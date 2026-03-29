@@ -1,0 +1,7 @@
+/.lone-wolf/
+/gui-fallback/assets/
+
+# Editor / OS noise
+.DS_Store
+*.swp
+*.swo
