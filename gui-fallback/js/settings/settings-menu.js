@@ -92,6 +92,79 @@ const SettingsMenuConfig = createHubMenu({
     ],
 });
 
+function _fleetUpdateModalEls() {
+    return {
+        dialog:     document.getElementById('fleet-update-modal'),
+        status:     document.getElementById('fleet-update-modal-status'),
+        error:      document.getElementById('fleet-update-modal-error'),
+        confirmBtn: document.getElementById('fleet-update-modal-confirm'),
+        closeBtns:  Array.from(document.querySelectorAll('#fleet-update-modal .hub-modal-close')),
+    };
+}
+
+function _resetFleetUpdateModal() {
+    const { dialog, status, error, confirmBtn, closeBtns } = _fleetUpdateModalEls();
+    if (dialog) dialog.dataset.busy = '0';
+    if (status) {
+        status.textContent = '';
+        status.style.color = 'var(--text-dim)';
+    }
+    if (error) error.textContent = '';
+    if (confirmBtn) confirmBtn.disabled = false;
+    closeBtns.forEach(btn => { btn.disabled = false; });
+}
+
+function openFleetUpdateModal() {
+    const { dialog } = _fleetUpdateModalEls();
+    if (!dialog) return;
+    _resetFleetUpdateModal();
+    HubModal.open(dialog, { onClose: _resetFleetUpdateModal });
+}
+
+async function submitFleetUpdate() {
+    const { dialog, status, error, confirmBtn, closeBtns } = _fleetUpdateModalEls();
+    if (!dialog || dialog.dataset.busy === '1') return;
+
+    dialog.dataset.busy = '1';
+    if (error) error.textContent = '';
+    if (status) {
+        status.textContent = 'Queuing update across the fleet...';
+        status.style.color = 'var(--text-dim)';
+    }
+    if (confirmBtn) confirmBtn.disabled = true;
+    closeBtns.forEach(btn => { btn.disabled = true; });
+
+    try {
+        const r = await apiFetch('/api/v1/sync/git-pull', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scope: 'all' }),
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+
+        if (status) {
+            status.textContent = 'Queued on this node and all fleet peers.';
+            status.style.color = 'var(--ok,#3fb950)';
+        }
+        setTimeout(() => {
+            HubModal.close(dialog);
+            loadNodes();
+        }, 900);
+    } catch (e) {
+        dialog.dataset.busy = '0';
+        if (error) error.textContent = `Unable to queue fleet update: ${e.message}`;
+        if (status) status.textContent = '';
+        if (confirmBtn) confirmBtn.disabled = false;
+        closeBtns.forEach(btn => { btn.disabled = false; });
+    }
+}
+
+const _fleetUpdateConfirmBtn = document.getElementById('fleet-update-modal-confirm');
+if (_fleetUpdateConfirmBtn && !_fleetUpdateConfirmBtn.dataset.bound) {
+    _fleetUpdateConfirmBtn.addEventListener('click', submitFleetUpdate);
+    _fleetUpdateConfirmBtn.dataset.bound = '1';
+}
+
 // ── Function registrations ───────────────────────────────────────────────────
 // settings-menu.js loads after all settings page scripts so all referenced
 // globals are in scope.
@@ -103,27 +176,7 @@ SettingsMenuConfig.registerFunctions({
 
     // Fleet Nodes
     'nod.refresh':  () => loadNodes(),
-    'nod.update':   () => {
-        if (!confirm('Trigger git pull (public + private repos) on this node and queue for all fleet peers?\n\nAll nodes will pull latest code and restart if there are new commits.')) return;
-        const statusEl = document.getElementById('fleet-update-status');
-        if (statusEl) { statusEl.textContent = '⏳ Updating…'; statusEl.style.color = ''; }
-        apiFetch('/api/v1/sync/git-pull', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ scope: 'both' }),
-        }).then(r => {
-            if (r.ok) {
-                if (statusEl) { statusEl.textContent = '✓ Queued for all nodes'; statusEl.style.color = 'var(--ok,#3fb950)'; }
-                setTimeout(() => { loadNodes(); }, 4000);
-            } else {
-                if (statusEl) { statusEl.textContent = `✗ HTTP ${r.status}`; statusEl.style.color = 'var(--danger,#f85149)'; }
-            }
-        }).catch(e => {
-            if (statusEl) { statusEl.textContent = `✗ ${e.message}`; statusEl.style.color = 'var(--danger,#f85149)'; }
-        }).finally(() => {
-            setTimeout(() => { if (statusEl) { statusEl.textContent = ''; statusEl.style.color = ''; } }, 10000);
-        });
-    },
+    'nod.update':   () => openFleetUpdateModal(),
 
     // App Config
     'cfg.add':      () => openAddSettingModal(),
