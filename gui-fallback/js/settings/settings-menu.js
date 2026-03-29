@@ -122,6 +122,14 @@ function _sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function _repoLabel(repoKey) {
+    return {
+        outer: 'Root public repo',
+        non_root: 'Non-root public repo',
+        inner: 'Private repo',
+    }[repoKey] || repoKey;
+}
+
 async function _fetchFleetNodesForUpdate() {
     const r = await apiFetch('/api/v1/nodes');
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -141,6 +149,25 @@ async function _fetchNodeRepoVersions(nodeId) {
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.json();
+}
+
+async function _checkFleetUpdatePreflight(nodes) {
+    const findings = [];
+    await Promise.all(nodes.map(async node => {
+        try {
+            const versions = await _fetchNodeRepoVersions(node.node_id);
+            for (const repoKey of ['outer', 'non_root', 'inner']) {
+                const repo = versions[repoKey] || {};
+                if (!repo.exists) continue;
+                if (repo.dirty) {
+                    findings.push(`${node.node_id}: ${_repoLabel(repoKey)} dirty at ${repo.commit || 'unknown'}${repo.branch ? ` (${repo.branch})` : ''}`);
+                }
+            }
+        } catch (e) {
+            findings.push(`${node.node_id}: unable to inspect repo state (${e.message})`);
+        }
+    }));
+    return findings;
 }
 
 async function _verifyFleetRepoStage(nodes, expectedVersions, repoKey, label) {
@@ -256,6 +283,15 @@ async function submitFleetUpdate() {
             _fetchFleetNodesForUpdate(),
             _fetchExpectedRepoVersions(),
         ]);
+
+        if (status) status.textContent = 'Running preflight repo checks...';
+        _fleetUpdateAppendLog('Running preflight dirty-repo check across all fleet nodes.', '');
+        const preflightFindings = await _checkFleetUpdatePreflight(nodes);
+        if (preflightFindings.length) {
+            preflightFindings.forEach(line => _fleetUpdateAppendLog(`  ${line}`, 'err'));
+            throw new Error(`preflight blocked by dirty or unreadable repos:\n${preflightFindings.join('\n')}`);
+        }
+        _fleetUpdateAppendLog('Preflight passed: no dirty repos detected across the fleet.', 'ok');
 
         for (const stage of stages) {
             await _runFleetUpdateStage(nodes, expectedVersions, stage);
