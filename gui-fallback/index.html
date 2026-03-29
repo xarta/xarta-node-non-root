@@ -1210,6 +1210,28 @@
   </div>
 </dialog>
 
+<!-- Node restart confirmation modal -->
+<dialog class="hub-modal" id="node-restart-modal" style="width:min(520px,95vw)">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">Restart Blueprints App?</h2>
+    <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+  </div>
+  <div class="hub-modal-body">
+    <p id="node-restart-modal-message" style="color:var(--text-dim);font-size:13px;line-height:1.7;margin:0 0 12px;">
+      Restart blueprints-app on this node?
+    </p>
+    <p style="color:var(--text-dim);font-size:13px;line-height:1.7;margin:0 0 12px;">
+      This only restarts the service on the selected node. It does not trigger any repo pull.
+    </p>
+    <p id="node-restart-modal-status" style="min-height:1.4em;color:var(--text-dim);font-size:12px;margin:0;"></p>
+    <p class="hub-modal-error" id="node-restart-modal-error"></p>
+  </div>
+  <div class="hub-modal-footer">
+    <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Cancel</button>
+    <button class="hub-modal-btn" type="button" id="node-restart-modal-confirm">Restart</button>
+  </div>
+</dialog>
+
 <!-- Fleet update confirmation modal -->
 <dialog class="hub-modal" id="fleet-update-modal" style="width:min(560px,95vw)">
   <div class="hub-modal-header">

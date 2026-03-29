@@ -5,6 +5,11 @@ document.addEventListener('DOMContentLoaded', () => {
   if (retouchBtn) {
     retouchBtn.addEventListener('click', function() { retouchTable(this); });
   }
+  const restartConfirmBtn = document.getElementById('node-restart-modal-confirm');
+  if (restartConfirmBtn && !restartConfirmBtn.dataset.bound) {
+    restartConfirmBtn.addEventListener('click', submitNodeRestart);
+    restartConfirmBtn.dataset.bound = '1';
+  }
   if (typeof HubSelect !== 'undefined') {
     HubSelect.init('retouch-table-select');
   }
@@ -12,6 +17,92 @@ document.addEventListener('DOMContentLoaded', () => {
     ResponsiveLayout.registerTabControls('nodes', 'pg-ctrl-nodes');
   }
 });
+
+let _pendingNodeRestart = null;
+
+function _nodeRestartModalEls() {
+  return {
+    dialog: document.getElementById('node-restart-modal'),
+    message: document.getElementById('node-restart-modal-message'),
+    status: document.getElementById('node-restart-modal-status'),
+    error: document.getElementById('node-restart-modal-error'),
+    confirmBtn: document.getElementById('node-restart-modal-confirm'),
+    closeBtns: Array.from(document.querySelectorAll('#node-restart-modal .hub-modal-close')),
+  };
+}
+
+function _resetNodeRestartModal() {
+  const { dialog, message, status, error, confirmBtn, closeBtns } = _nodeRestartModalEls();
+  if (dialog) dialog.dataset.busy = '0';
+  if (message) message.textContent = 'Restart blueprints-app on this node?';
+  if (status) {
+    status.textContent = '';
+    status.style.color = 'var(--text-dim)';
+  }
+  if (error) error.textContent = '';
+  if (confirmBtn) confirmBtn.disabled = false;
+  closeBtns.forEach(btn => { btn.disabled = false; });
+  _pendingNodeRestart = null;
+}
+
+function openNodeRestartModal(nodeId, btn) {
+  const { dialog, message } = _nodeRestartModalEls();
+  if (!dialog) return;
+  _pendingNodeRestart = { nodeId, btn };
+  _resetNodeRestartModal();
+  _pendingNodeRestart = { nodeId, btn };
+  if (message) message.textContent = `Restart blueprints-app on ${nodeId}?`;
+  HubModal.open(dialog, { onClose: _resetNodeRestartModal });
+}
+
+async function submitNodeRestart() {
+  const pending = _pendingNodeRestart;
+  const { dialog, status, error, confirmBtn, closeBtns } = _nodeRestartModalEls();
+  if (!pending || !dialog || dialog.dataset.busy === '1') return;
+
+  const btn = pending.btn;
+  const orig = btn ? btn.innerHTML : '';
+  dialog.dataset.busy = '1';
+  if (error) error.textContent = '';
+  if (status) {
+    status.textContent = 'Sending restart request...';
+    status.style.color = 'var(--text-dim)';
+  }
+  if (confirmBtn) confirmBtn.disabled = true;
+  closeBtns.forEach(closeBtn => { closeBtn.disabled = true; });
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '…';
+  }
+
+  try {
+    const r = await apiFetch(`/api/v1/nodes/${encodeURIComponent(pending.nodeId)}/restart`, { method: 'POST' });
+    if (btn) {
+      btn.innerHTML = r.ok ? '&#10003; Sent' : `&#10007; ${r.status}`;
+      btn.style.color = r.ok ? 'var(--ok,#3fb950)' : 'var(--danger,#f85149)';
+    }
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    if (status) {
+      status.textContent = 'Restart request queued.';
+      status.style.color = 'var(--ok,#3fb950)';
+    }
+    setTimeout(() => { HubModal.close(dialog); }, 900);
+  } catch (e) {
+    dialog.dataset.busy = '0';
+    if (status) status.textContent = '';
+    if (error) error.textContent = `Unable to restart node: ${e.message}`;
+    if (confirmBtn) confirmBtn.disabled = false;
+    closeBtns.forEach(closeBtn => { closeBtn.disabled = false; });
+  } finally {
+    if (btn) {
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+        btn.style.color = '';
+      }, 3000);
+    }
+  }
+}
 
 async function retouchTable(btn) {
   const sel = document.getElementById('retouch-table-select');
@@ -153,17 +244,7 @@ async function fleetUpdate(btn) {
 }
 
 async function nodeRestart(nodeId, btn) {
-  if (!confirm(`Restart blueprints-app on ${nodeId}?`)) return;
-  const orig = btn.innerHTML;
-  btn.disabled = true; btn.textContent = '…';
-  try {
-    const r = await apiFetch(`/api/v1/nodes/${encodeURIComponent(nodeId)}/restart`, { method: 'POST' });
-    btn.innerHTML = r.ok ? '&#10003; Sent' : `&#10007; ${r.status}`;
-    btn.style.color = r.ok ? 'var(--ok,#3fb950)' : 'var(--danger,#f85149)';
-  } catch {
-    btn.innerHTML = '&#10007; err'; btn.style.color = 'var(--danger,#f85149)';
-  }
-  setTimeout(() => { btn.disabled = false; btn.innerHTML = orig; btn.style.color = ''; }, 3000);
+  openNodeRestartModal(nodeId, btn);
 }
 
 async function nodeGitPull(nodeId, btn) {
