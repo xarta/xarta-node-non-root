@@ -1,58 +1,35 @@
-# xarta-node-non-root-repo
+# xarta-node-non-root
 
-Working git and documentation name for this repo: `xarta-node-non-root-repo`.
-
-Actual local filesystem path on this node: `/xarta-node`.
+Public GUI content for the [xarta-node](https://github.com/xarta/xarta-node)
+Blueprints fleet stack, served from a non-root filesystem path.
 
 ## Purpose
 
-This is the staged additional public repo for non-root path migration work.
+This repo holds the public-facing GUI components that the Blueprints
+application serves to users:
 
-It exists so selected public GUI-facing content can move to `/xarta-node`
-without breaking the active fleet-wide public repo workflow that still uses
-`/root/xarta-node`.
+- `gui-fallback/` — the primary Blueprints dashboard (HTML/CSS/JS)
+- `gui/db/` — shared database schema pages (interactive table and ER diagram views)
+- `gui-embed/` — the node-selector embed widget used across the fleet
 
-## Current intended scope
+It complements the main [xarta-node](https://github.com/xarta/xarta-node) repo,
+which contains the FastAPI application, bootstrap scripts, and fleet
+infrastructure tooling.
 
-- `gui-fallback/`
-- `gui/`
-- `gui/db/`
+## Relationship to xarta-node
 
-## Current non-scope
+The `xarta-node` repo contains `gui-fallback/`, `gui-embed/`, and related GUI
+sources at the root level. This repo exists so those assets can be served from
+a non-root path (e.g. `/xarta-node` on each fleet LXC) without coupling the
+GUI deployment to the root-owned repo layout.
 
-- `.lone-wolf/` — node-local repo, nested here but not part of this repo
-- `.xarta/` — private repo, not copied here
-- the rest of the active public repo under `/root/xarta-node`
+Fleet bootstrap scripts in `xarta-node` (`setup-blueprints.sh`,
+`setup-caddy.sh`, `setup-syncthing.sh`) support `BLUEPRINTS_FALLBACK_GUI_DIR`,
+`BLUEPRINTS_EMBED_DIR`, and `BLUEPRINTS_ASSETS_DIR` environment variables to
+point the application at this repo's content instead.
 
-## Guardrails
+## License
 
-- local-node only for this stage
-- no remote origin assumed yet
-- preserve public/private separation
-- keep `gui-fallback/assets/` gitignored for now
-- do not treat this repo as fleet-ready until the path audit has been worked
-  through and the distribution model is documented
-
-## Current status
-
-This repo is a local staging point for the migration, not yet the live source of
-truth for the Blueprints GUI.
-
-Current staged content on this node:
-
-- `gui-fallback/` contains a public copy of the root-repo `gui-fallback/`
-  content, excluding `assets/`, `embed/`, and the old `db` symlink
-- `gui/db/` contains a public copy of the shared database pages currently kept
-  in `/root/xarta-node/gui-db`
-- `gui-fallback/db` is staged here as a symlink to `../gui/db`
-
-Intentional omissions for this stage:
-
-- `gui-fallback/assets/` is still ignored here and remains rooted in the active
-  `/root/xarta-node` workflow for now
-- `gui/index.html` is intentionally not copied from `.xarta/gui/index.html`
-  because the private `/ui` placeholder is not public content
-- `gui-embed/` is not yet part of this repo; the setup scripts now support an
-  override path for it when that move is ready
+MIT — see [LICENSE](LICENSE).
 
 Live serving has not been switched to this repo yet.
