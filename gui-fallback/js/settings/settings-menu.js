@@ -98,6 +98,7 @@ function _fleetUpdateModalEls() {
         status:     document.getElementById('fleet-update-modal-status'),
         log:        document.getElementById('fleet-update-modal-log'),
         error:      document.getElementById('fleet-update-modal-error'),
+        closeBtn:   document.getElementById('fleet-update-modal-close-btn'),
         confirmBtn: document.getElementById('fleet-update-modal-confirm'),
         closeBtns:  Array.from(document.querySelectorAll('#fleet-update-modal .hub-modal-close')),
     };
@@ -210,7 +211,7 @@ async function _runFleetUpdateStage(nodes, expectedVersions, stage) {
 }
 
 function _resetFleetUpdateModal() {
-    const { dialog, status, log, error, confirmBtn, closeBtns } = _fleetUpdateModalEls();
+    const { dialog, status, log, error, closeBtn, confirmBtn, closeBtns } = _fleetUpdateModalEls();
     if (dialog) dialog.dataset.busy = '0';
     if (status) {
         status.textContent = '';
@@ -218,6 +219,7 @@ function _resetFleetUpdateModal() {
     }
     if (log) log.innerHTML = '';
     if (error) error.textContent = '';
+    if (closeBtn) closeBtn.textContent = 'Cancel';
     if (confirmBtn) confirmBtn.disabled = false;
     closeBtns.forEach(btn => { btn.disabled = false; });
 }
@@ -230,7 +232,7 @@ function openFleetUpdateModal() {
 }
 
 async function submitFleetUpdate() {
-    const { dialog, status, error, confirmBtn, closeBtns } = _fleetUpdateModalEls();
+    const { dialog, status, error, closeBtn, confirmBtn, closeBtns } = _fleetUpdateModalEls();
     if (!dialog || dialog.dataset.busy === '1') return;
 
     const stages = [
@@ -264,6 +266,7 @@ async function submitFleetUpdate() {
             status.style.color = 'var(--ok,#3fb950)';
         }
         _fleetUpdateAppendLog('All three repos match the coordinator commit on all fleet nodes.', 'ok');
+        if (closeBtn) closeBtn.textContent = 'CLOSE';
         closeBtns.forEach(btn => { btn.disabled = false; });
         loadNodes();
     } catch (e) {
