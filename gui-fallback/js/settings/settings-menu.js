@@ -96,19 +96,127 @@ function _fleetUpdateModalEls() {
     return {
         dialog:     document.getElementById('fleet-update-modal'),
         status:     document.getElementById('fleet-update-modal-status'),
+        log:        document.getElementById('fleet-update-modal-log'),
         error:      document.getElementById('fleet-update-modal-error'),
         confirmBtn: document.getElementById('fleet-update-modal-confirm'),
         closeBtns:  Array.from(document.querySelectorAll('#fleet-update-modal .hub-modal-close')),
     };
 }
 
+const _FLEET_UPDATE_DELAY_MS = 10000;
+
+function _fleetUpdateAppendLog(message, tone) {
+    const { log } = _fleetUpdateModalEls();
+    if (!log) return;
+    const line = document.createElement('div');
+    line.textContent = message;
+    if (tone === 'ok') line.style.color = 'var(--ok,#3fb950)';
+    else if (tone === 'err') line.style.color = 'var(--err,#f85149)';
+    else if (tone === 'warn') line.style.color = 'var(--warn,#e6a817)';
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+}
+
+function _sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function _fetchFleetNodesForUpdate() {
+    const r = await apiFetch('/api/v1/nodes');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const nodes = await r.json();
+    return nodes.filter(node => node.fleet_peer !== false);
+}
+
+async function _fetchExpectedRepoVersions() {
+    const r = await apiFetch('/health/repos');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+}
+
+async function _fetchNodeRepoVersions(nodeId) {
+    const r = await apiFetch(`/api/v1/nodes/${encodeURIComponent(nodeId)}/repo-versions`, {
+        signal: AbortSignal.timeout(12000),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+}
+
+async function _verifyFleetRepoStage(nodes, expectedVersions, repoKey, label) {
+    const checks = await Promise.all(nodes.map(async node => {
+        try {
+            const versions = await _fetchNodeRepoVersions(node.node_id);
+            const repo = versions[repoKey] || {};
+            if (!repo.exists) {
+                return `${node.node_id}: ${label} repo missing`;
+            }
+            if (repo.dirty) {
+                return `${node.node_id}: ${label} repo dirty at ${repo.commit || 'unknown'}`;
+            }
+            if ((repo.commit || '') !== (expectedVersions[repoKey]?.commit || '')) {
+                return `${node.node_id}: ${label} commit ${repo.commit || 'unknown'} != expected ${expectedVersions[repoKey]?.commit || 'unknown'}`;
+            }
+            return null;
+        } catch (e) {
+            return `${node.node_id}: ${e.message}`;
+        }
+    }));
+    return checks.filter(Boolean);
+}
+
+async function _runFleetUpdateStage(nodes, expectedVersions, stage) {
+    const { status } = _fleetUpdateModalEls();
+    if (status) {
+        status.textContent = `Queueing ${stage.label} update...`;
+        status.style.color = 'var(--text-dim)';
+    }
+    _fleetUpdateAppendLog(`Queueing ${stage.label}.`, '');
+
+    const queueResp = await apiFetch('/api/v1/sync/git-pull', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope: stage.scope }),
+    });
+    if (!queueResp.ok) throw new Error(`${stage.label}: HTTP ${queueResp.status}`);
+
+    _fleetUpdateAppendLog(`${stage.label}: queued. Waiting ${Math.round(_FLEET_UPDATE_DELAY_MS / 1000)}s for fleet to settle.`, '');
+    await _sleep(_FLEET_UPDATE_DELAY_MS);
+
+    let failures = await _verifyFleetRepoStage(nodes, expectedVersions, stage.repoKey, stage.label);
+    if (!failures.length) {
+        _fleetUpdateAppendLog(`${stage.label}: all nodes verified at ${expectedVersions[stage.repoKey]?.commit || 'unknown'}.`, 'ok');
+        return;
+    }
+
+    _fleetUpdateAppendLog(`${stage.label}: first verification failed, retrying once.`, 'warn');
+    failures.forEach(line => _fleetUpdateAppendLog(`  ${line}`, 'warn'));
+
+    const retryResp = await apiFetch('/api/v1/sync/git-pull', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope: stage.scope }),
+    });
+    if (!retryResp.ok) throw new Error(`${stage.label} retry: HTTP ${retryResp.status}`);
+
+    _fleetUpdateAppendLog(`${stage.label}: retry queued. Waiting ${Math.round(_FLEET_UPDATE_DELAY_MS / 1000)}s again.`, '');
+    await _sleep(_FLEET_UPDATE_DELAY_MS);
+
+    failures = await _verifyFleetRepoStage(nodes, expectedVersions, stage.repoKey, stage.label);
+    if (failures.length) {
+        throw new Error(`${stage.label} failed after retry:\n${failures.join('\n')}`);
+    }
+
+    _fleetUpdateAppendLog(`${stage.label}: verified after retry at ${expectedVersions[stage.repoKey]?.commit || 'unknown'}.`, 'ok');
+}
+
 function _resetFleetUpdateModal() {
-    const { dialog, status, error, confirmBtn, closeBtns } = _fleetUpdateModalEls();
+    const { dialog, status, log, error, confirmBtn, closeBtns } = _fleetUpdateModalEls();
     if (dialog) dialog.dataset.busy = '0';
     if (status) {
         status.textContent = '';
         status.style.color = 'var(--text-dim)';
     }
+    if (log) log.innerHTML = '';
     if (error) error.textContent = '';
     if (confirmBtn) confirmBtn.disabled = false;
     closeBtns.forEach(btn => { btn.disabled = false; });
@@ -125,38 +233,54 @@ async function submitFleetUpdate() {
     const { dialog, status, error, confirmBtn, closeBtns } = _fleetUpdateModalEls();
     if (!dialog || dialog.dataset.busy === '1') return;
 
+    const stages = [
+        { scope: 'outer', repoKey: 'outer', label: 'Root public repo' },
+        { scope: 'non_root', repoKey: 'non_root', label: 'Non-root public repo' },
+        { scope: 'inner', repoKey: 'inner', label: 'Private repo' },
+    ];
+
     dialog.dataset.busy = '1';
     if (error) error.textContent = '';
     if (status) {
-        status.textContent = 'Queuing update across the fleet...';
+        status.textContent = 'Preparing staged fleet update...';
         status.style.color = 'var(--text-dim)';
     }
     if (confirmBtn) confirmBtn.disabled = true;
     closeBtns.forEach(btn => { btn.disabled = true; });
 
     try {
-        const r = await apiFetch('/api/v1/sync/git-pull', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ scope: 'all' }),
-        });
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        _fleetUpdateAppendLog('Collecting expected commit versions from this node.', '');
+        const [nodes, expectedVersions] = await Promise.all([
+            _fetchFleetNodesForUpdate(),
+            _fetchExpectedRepoVersions(),
+        ]);
+
+        for (const stage of stages) {
+            await _runFleetUpdateStage(nodes, expectedVersions, stage);
+        }
 
         if (status) {
-            status.textContent = 'Queued on this node and all fleet peers.';
+            status.textContent = 'Fleet update completed successfully.';
             status.style.color = 'var(--ok,#3fb950)';
         }
-        setTimeout(() => {
-            HubModal.close(dialog);
-            loadNodes();
-        }, 900);
+        _fleetUpdateAppendLog('All three repos match the coordinator commit on all fleet nodes.', 'ok');
+        closeBtns.forEach(btn => { btn.disabled = false; });
+        loadNodes();
     } catch (e) {
         dialog.dataset.busy = '0';
-        if (error) error.textContent = `Unable to queue fleet update: ${e.message}`;
-        if (status) status.textContent = '';
-        if (confirmBtn) confirmBtn.disabled = false;
+        if (error) error.textContent = `Fleet update failed: ${e.message}`;
+        if (status) {
+            status.textContent = 'Fleet update failed.';
+            status.style.color = 'var(--err,#f85149)';
+        }
+        _fleetUpdateAppendLog(`Fleet update failed: ${e.message}`, 'err');
         closeBtns.forEach(btn => { btn.disabled = false; });
+        if (confirmBtn) confirmBtn.disabled = false;
+        return;
     }
+
+    dialog.dataset.busy = '0';
+    if (confirmBtn) confirmBtn.disabled = true;
 }
 
 const _fleetUpdateConfirmBtn = document.getElementById('fleet-update-modal-confirm');
