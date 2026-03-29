@@ -66,7 +66,7 @@
     if (handle) handle.classList.remove('is-dragging');
     document.body.classList.add('shade-is-up');
     // Shade has settled at top — resize the fill table to the new position.
-    sizeFillTable();
+    sizeActivePane();
   }
 
   /* ── Release held-up state (shade stays at same translateY visually) ────── */
@@ -146,7 +146,7 @@
       // Snap went down — restore header and menu zone.
       document.body.classList.remove('shade-is-up');
       // After the CSS transition settles, resize fill table to restored position.
-      setTimeout(sizeFillTable, TRANSITION + 50);
+      setTimeout(sizeActivePane, TRANSITION + 50);
     }
   }
 
@@ -234,19 +234,50 @@
     fill.style.height = Math.max(50, window.innerHeight - top - pagerH) + 'px';
   }
 
+  function sizeDocsPane() {
+    var panel = document.getElementById('tab-docs');
+    var editor = document.getElementById('docs-editor');
+    var preview = document.getElementById('docs-preview');
+    if (!panel || !editor || !preview) return;
+
+    if (!panel.classList.contains('active') || window.innerWidth <= 600) {
+      [editor, preview].forEach(function (el) {
+        el.style.height = '';
+        el.style.maxHeight = '';
+        el.style.minHeight = '';
+      });
+      return;
+    }
+
+    var visible = preview.style.display !== 'none' ? preview : editor;
+    var top = visible.getBoundingClientRect().top;
+    var height = Math.max(140, window.innerHeight - top - 20);
+
+    [editor, preview].forEach(function (el) {
+      el.style.height = height + 'px';
+      el.style.minHeight = height + 'px';
+      el.style.maxHeight = height + 'px';
+    });
+  }
+
+  function sizeActivePane() {
+    sizeFillTable();
+    sizeDocsPane();
+  }
+
   function scheduleSizeFillTable() {
     _fillSettleTimers.forEach(clearTimeout);
     _fillSettleTimers = [];
     clearTimeout(_fillTimer);
     // First pass: near-immediate for normal tab switches.
-    _fillTimer = setTimeout(sizeFillTable, 50);
+    _fillTimer = setTimeout(sizeActivePane, 50);
 
     // Follow-up passes: mobile emulation/orientation changes can settle the
     // visual viewport, menu-zone height, and browser chrome slightly later.
     // Re-measure a few times with short delays so the active fill tab lands on
     // the correct final height without requiring a manual shade drag.
     [180, 360, 700].forEach(function (delay) {
-      _fillSettleTimers.push(setTimeout(sizeFillTable, delay));
+      _fillSettleTimers.push(setTimeout(sizeActivePane, delay));
     });
   }
 
@@ -357,6 +388,8 @@
   window.BodyShade = window.BodyShade || {};
   window.BodyShade.sizeFillTable = sizeFillTable;
   window.BodyShade.scheduleSizeFillTable = scheduleSizeFillTable;
+  window.BodyShade.sizeActivePane = sizeActivePane;
+  window.BodyShade.sizeDocsPane = sizeDocsPane;
   window.BodyShade.snapDown = snapDown;
   window.BodyShade.snapUp = snapUp;
 

@@ -87,10 +87,16 @@ body.has-fill-tab {
   transition: none;
 }
 
-/* Up state: shade is held at translateY(-maxTravel) — still in normal flow.
-   No position:fixed; header and menu zone remain visible and accessible. */
-.body-shade.is-up {
-  /* translateY is already set via --shade-y; no additional styles needed. */
+#docs-editor,
+#docs-preview {
+  box-sizing: border-box;
+  min-height: calc(100vh - 220px);
+}
+
+@media (min-width: 601px) {
+  #tab-docs {
+    margin-bottom: 0;
+  }
 }
 
 /* Handle in up state — keep it fully visible so the user can drag back down */

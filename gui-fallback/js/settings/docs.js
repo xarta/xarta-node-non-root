@@ -6,6 +6,12 @@ let _docsDirty     = false; // unsaved changes in the textarea
 let _docsPreview   = false; // preview mode active for current doc (kept in sync with _docsViewModes)
 const _docsViewModes = {}; // doc_id → true (preview) | false (edit); default preview on first open
 
+function _docsSchedulePaneSize() {
+  if (window.BodyShade && typeof window.BodyShade.scheduleSizeFillTable === 'function') {
+    window.BodyShade.scheduleSizeFillTable();
+  }
+}
+
 // ── List view state ──────────────────────────────────────────────────────────
 let _docsGroups    = [];   // array of DocGroupOut records
 let _docsDragId    = null;  // doc_id currently being dragged
@@ -227,6 +233,7 @@ function _docsFillPane(doc) {
   }
   // Track changes
   editor.oninput = () => { _docsDirty = true; };
+  _docsSchedulePaneSize();
 }
 
 function _docsShowPane(docId) {
@@ -248,6 +255,7 @@ function _docsHidePane() {
   const pb = document.getElementById('docs-preview-btn');
   if (pb) pb.textContent = '👁 Preview';
   // Note: do NOT clear _docsViewModes here — keep per-doc memory across hide/show cycles
+  _docsSchedulePaneSize();
 }
 
 // ── Save ─────────────────────────────────────────────────────────────────────
@@ -327,6 +335,7 @@ async function docsTogglePreview() {
     editor.style.display  = 'block';
     if (btn) btn.textContent = '👁 Preview';
   }
+  _docsSchedulePaneSize();
 }
 
 async function _docsRenderPreview() {
