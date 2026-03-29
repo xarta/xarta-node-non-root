@@ -5,6 +5,11 @@ document.addEventListener('DOMContentLoaded', () => {
   if (retouchBtn) {
     retouchBtn.addEventListener('click', function() { retouchTable(this); });
   }
+  const actionConfirmBtn = document.getElementById('node-action-modal-confirm');
+  if (actionConfirmBtn && !actionConfirmBtn.dataset.bound) {
+    actionConfirmBtn.addEventListener('click', submitNodeActionModal);
+    actionConfirmBtn.dataset.bound = '1';
+  }
   const restartConfirmBtn = document.getElementById('node-restart-modal-confirm');
   if (restartConfirmBtn && !restartConfirmBtn.dataset.bound) {
     restartConfirmBtn.addEventListener('click', submitNodeRestart);
@@ -18,7 +23,113 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+let _pendingNodeAction = null;
 let _pendingNodeRestart = null;
+
+function _nodeActionModalEls() {
+  return {
+    dialog: document.getElementById('node-action-modal'),
+    title: document.getElementById('node-action-modal-title'),
+    message: document.getElementById('node-action-modal-message'),
+    note: document.getElementById('node-action-modal-note'),
+    status: document.getElementById('node-action-modal-status'),
+    error: document.getElementById('node-action-modal-error'),
+    closeBtn: document.getElementById('node-action-modal-close-btn'),
+    confirmBtn: document.getElementById('node-action-modal-confirm'),
+    closeBtns: Array.from(document.querySelectorAll('#node-action-modal .hub-modal-close')),
+  };
+}
+
+function _resetNodeActionModal() {
+  const { dialog, title, message, note, status, error, closeBtn, confirmBtn, closeBtns } = _nodeActionModalEls();
+  if (dialog) dialog.dataset.busy = '0';
+  if (title) title.textContent = 'Confirm Action';
+  if (message) message.textContent = '';
+  if (note) note.textContent = '';
+  if (status) {
+    status.textContent = '';
+    status.style.color = 'var(--text-dim)';
+  }
+  if (error) error.textContent = '';
+  if (closeBtn) closeBtn.textContent = 'Cancel';
+  if (confirmBtn) {
+    confirmBtn.textContent = 'Confirm';
+    confirmBtn.disabled = false;
+    confirmBtn.hidden = false;
+    confirmBtn.classList.remove('danger');
+  }
+  closeBtns.forEach(btn => { btn.disabled = false; });
+  _pendingNodeAction = null;
+}
+
+function openNodeActionModal(opts) {
+  const { dialog, title, message, note, closeBtn, confirmBtn } = _nodeActionModalEls();
+  if (!dialog) return;
+  _resetNodeActionModal();
+  _pendingNodeAction = opts || null;
+  if (title) title.textContent = opts.title || 'Confirm Action';
+  if (message) message.textContent = opts.message || '';
+  if (note) note.textContent = opts.note || '';
+  if (closeBtn) closeBtn.textContent = opts.infoOnly ? 'CLOSE' : 'Cancel';
+  if (confirmBtn) {
+    confirmBtn.textContent = opts.confirmLabel || 'Confirm';
+    confirmBtn.hidden = !!opts.infoOnly;
+    confirmBtn.classList.toggle('danger', opts.confirmTone === 'danger');
+  }
+  HubModal.open(dialog, { onClose: _resetNodeActionModal });
+}
+
+async function submitNodeActionModal() {
+  const pending = _pendingNodeAction;
+  const { dialog, status, error, closeBtn, confirmBtn, closeBtns } = _nodeActionModalEls();
+  if (!pending || !dialog || dialog.dataset.busy === '1') return;
+
+  dialog.dataset.busy = '1';
+  if (error) error.textContent = '';
+  if (status) {
+    status.textContent = pending.pendingText || 'Sending request...';
+    status.style.color = 'var(--text-dim)';
+  }
+  if (confirmBtn) confirmBtn.disabled = true;
+  closeBtns.forEach(btn => { btn.disabled = true; });
+
+  try {
+    if (typeof pending.run === 'function') {
+      await pending.run();
+    }
+    if (status) {
+      status.textContent = pending.successText || 'Request queued.';
+      status.style.color = 'var(--ok,#3fb950)';
+    }
+    if (closeBtn) closeBtn.textContent = 'CLOSE';
+    setTimeout(() => { HubModal.close(dialog); }, 900);
+  } catch (e) {
+    dialog.dataset.busy = '0';
+    if (status) status.textContent = '';
+    if (error) error.textContent = pending.errorPrefix ? `${pending.errorPrefix}: ${e.message}` : e.message;
+    if (confirmBtn) confirmBtn.disabled = false;
+    closeBtns.forEach(btn => { btn.disabled = false; });
+    return;
+  }
+}
+
+function _restoreNodeActionButton(btn, orig, delayMs) {
+  if (!btn) return;
+  setTimeout(() => {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+    btn.style.color = '';
+    btn.title = btn.dataset.origTitle || btn.title || '';
+  }, delayMs || 3000);
+}
+
+function _setNodeActionButton(btn, html, color, title) {
+  if (!btn) return;
+  if (!btn.dataset.origTitle) btn.dataset.origTitle = btn.title || '';
+  btn.innerHTML = html;
+  btn.style.color = color || '';
+  if (title !== undefined) btn.title = title;
+}
 
 function _nodeRestartModalEls() {
   return {
@@ -248,48 +359,96 @@ async function nodeRestart(nodeId, btn) {
 }
 
 async function nodeGitPull(nodeId, btn) {
-  if (!confirm(`Trigger git pull (outer) on ${nodeId}?`)) return;
-  const orig = btn.innerHTML;
-  btn.disabled = true; btn.textContent = '…';
-  try {
-    const r = await apiFetch(`/api/v1/nodes/${encodeURIComponent(nodeId)}/git-pull`, { method: 'POST' });
-    btn.innerHTML = r.ok ? '&#10003; Pull' : `&#10007; ${r.status}`;
-    btn.style.color = r.ok ? 'var(--ok,#3fb950)' : 'var(--danger,#f85149)';
-  } catch {
-    btn.innerHTML = '&#10007; err'; btn.style.color = 'var(--danger,#f85149)';
-  }
-  setTimeout(() => { btn.disabled = false; btn.innerHTML = orig; btn.style.color = ''; }, 3000);
+  const orig = btn ? btn.innerHTML : '';
+  openNodeActionModal({
+    title: 'Pull Root Repo?',
+    message: `Trigger a root public repo git pull on ${nodeId}?`,
+    note: 'This only pulls the selected node\'s /root/xarta-node repo.',
+    confirmLabel: 'Pull',
+    pendingText: 'Sending git pull request...',
+    successText: 'Git pull request queued.',
+    errorPrefix: 'Unable to trigger git pull',
+    run: async () => {
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = '…';
+      }
+      try {
+        const r = await apiFetch(`/api/v1/nodes/${encodeURIComponent(nodeId)}/git-pull`, { method: 'POST' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        _setNodeActionButton(btn, '&#10003; Pull', 'var(--ok,#3fb950)');
+      } catch (e) {
+        _setNodeActionButton(btn, '&#10007; err', 'var(--danger,#f85149)');
+        _restoreNodeActionButton(btn, orig, 3000);
+        throw e;
+      }
+      _restoreNodeActionButton(btn, orig, 3000);
+    },
+  });
 }
 
 async function nodePurgeQueue(nodeId, btn) {
   const n = _nodes.find(x => x.node_id === nodeId);
   const cnt = n ? (n.pending_count || 0) : '?';
-  if (!confirm(`Purge ${cnt} unsent sync queue entries for ${nodeId}?`)) return;
-  const orig = btn.innerHTML;
-  btn.disabled = true; btn.textContent = '…';
-  try {
-    const r = await apiFetch(`/api/v1/nodes/${encodeURIComponent(nodeId)}/sync-queue`, { method: 'DELETE' });
-    btn.innerHTML = r.ok ? '&#10003; Done' : `&#10007; ${r.status}`;
-    btn.style.color = r.ok ? 'var(--ok,#3fb950)' : 'var(--danger,#f85149)';
-    if (r.ok) { _nodes = []; setTimeout(loadNodes, 500); }
-  } catch {
-    btn.innerHTML = '&#10007; err'; btn.style.color = 'var(--danger,#f85149)';
-    setTimeout(() => { btn.disabled = false; btn.innerHTML = orig; btn.style.color = ''; }, 3000);
-  }
+  const orig = btn ? btn.innerHTML : '';
+  openNodeActionModal({
+    title: 'Purge Sync Queue?',
+    message: `Purge ${cnt} unsent sync queue entr${cnt === 1 ? 'y' : 'ies'} for ${nodeId}?`,
+    note: 'This affects only unsent queue entries targeting the selected node.',
+    confirmLabel: 'Purge Queue',
+    confirmTone: 'danger',
+    pendingText: 'Purging unsent queue entries...',
+    successText: 'Queue entries purged.',
+    errorPrefix: 'Unable to purge queue',
+    run: async () => {
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = '…';
+      }
+      try {
+        const r = await apiFetch(`/api/v1/nodes/${encodeURIComponent(nodeId)}/sync-queue`, { method: 'DELETE' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        _setNodeActionButton(btn, '&#10003; Done', 'var(--ok,#3fb950)');
+        _nodes = [];
+        setTimeout(loadNodes, 500);
+      } catch (e) {
+        _setNodeActionButton(btn, '&#10007; err', 'var(--danger,#f85149)');
+        _restoreNodeActionButton(btn, orig, 3000);
+        throw e;
+      }
+      _restoreNodeActionButton(btn, orig, 3000);
+    },
+  });
 }
 
 async function nodeDeleteRow(nodeId, btn) {
-  if (!confirm(`Delete node "${nodeId}" from this node's DB?\n\nThis does not purge the sync queue — use Purge Queue first if needed.`)) return;
-  btn.disabled = true; btn.textContent = '…';
-  try {
-    const r = await apiFetch(`/api/v1/nodes/${encodeURIComponent(nodeId)}`, { method: 'DELETE' });
-    if (r.ok) { _nodes = []; loadNodes(); return; }
-    btn.textContent = `✗ ${r.status}`; btn.style.color = 'var(--danger,#f85149)';
-    btn.disabled = false;
-  } catch {
-    btn.textContent = '✗ err'; btn.style.color = 'var(--danger,#f85149)';
-    btn.disabled = false;
-  }
+  const orig = btn ? btn.innerHTML : '';
+  openNodeActionModal({
+    title: 'Delete Node Row?',
+    message: `Delete node "${nodeId}" from this node's local database?`,
+    note: 'This does not purge the sync queue. Use Purge Queue first if needed.',
+    confirmLabel: 'Delete',
+    confirmTone: 'danger',
+    pendingText: 'Deleting node row...',
+    successText: 'Node row deleted from local DB.',
+    errorPrefix: 'Unable to delete node',
+    run: async () => {
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = '…';
+      }
+      try {
+        const r = await apiFetch(`/api/v1/nodes/${encodeURIComponent(nodeId)}`, { method: 'DELETE' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        _nodes = [];
+        loadNodes();
+      } catch (e) {
+        _setNodeActionButton(btn, '&#10007; err', 'var(--danger,#f85149)');
+        _restoreNodeActionButton(btn, orig, 3000);
+        throw e;
+      }
+    },
+  });
 }
 
 async function enrichNodePctStatus() {
@@ -322,45 +481,73 @@ async function enrichNodePctStatus() {
 async function nodePct(nodeId, btn) {
   const currentStatus = btn.dataset.pctStatus || 'unknown';
   let action;
+  let title;
+  let message;
+  let note;
+  let confirmLabel;
   if (currentStatus === 'running') {
-    if (!confirm(`Stop LXC for ${nodeId}?\n\nThis will shut down the container via pct stop.`)) return;
     action = 'stop';
+    title = 'Stop Node Container?';
+    message = `Stop the LXC for ${nodeId}?`;
+    note = 'This will issue pct stop on the parent Proxmox host.';
+    confirmLabel = 'Stop';
   } else if (currentStatus === 'stopped') {
-    if (!confirm(`Start LXC for ${nodeId}?`)) return;
     action = 'start';
+    title = 'Start Node Container?';
+    message = `Start the LXC for ${nodeId}?`;
+    note = 'This will issue pct start on the parent Proxmox host.';
+    confirmLabel = 'Start';
   } else {
-    const choice = prompt(`PCT action for ${nodeId}:\nEnter "start" or "stop"`);
-    if (!choice) return;
-    action = choice.trim().toLowerCase();
-    if (action !== 'start' && action !== 'stop') { alert('Invalid action. Enter "start" or "stop".'); return; }
+    openNodeActionModal({
+      title: 'PCT Status Unknown',
+      message: `Unable to determine whether ${nodeId} should be started or stopped.`,
+      note: 'Refresh the Fleet Nodes page and try again once the pct status is available.',
+      infoOnly: true,
+    });
+    return;
   }
   const orig = btn.innerHTML;
-  btn.disabled = true; btn.textContent = '…';
-  try {
-    const r = await apiFetch(`/api/v1/nodes/${encodeURIComponent(nodeId)}/pct`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action }),
-    });
-    if (r.ok) {
-      btn.innerHTML = '&#10003; Done';
-      btn.style.color = 'var(--ok,#3fb950)';
-      btn.dataset.pctStatus = action === 'start' ? 'running' : 'stopped';
-      setTimeout(() => {
-        btn.disabled = false;
-        btn.innerHTML = action === 'start' ? '&#9632; Stop' : '&#9654; Start';
-        btn.style.color = '';
+  openNodeActionModal({
+    title,
+    message,
+    note,
+    confirmLabel,
+    confirmTone: action === 'stop' ? 'danger' : '',
+    pendingText: `${confirmLabel} request in progress...`,
+    successText: `${confirmLabel} request sent.`,
+    errorPrefix: `Unable to ${action} node`,
+    run: async () => {
+      btn.disabled = true;
+      btn.textContent = '…';
+      try {
+        const r = await apiFetch(`/api/v1/nodes/${encodeURIComponent(nodeId)}/pct`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          const detail = err.detail || `HTTP ${r.status}`;
+          _setNodeActionButton(btn, `&#10007; ${r.status}`, 'var(--danger,#f85149)', detail);
+          _restoreNodeActionButton(btn, orig, 4000);
+          throw new Error(detail);
+        }
+        _setNodeActionButton(btn, '&#10003; Done', 'var(--ok,#3fb950)');
         btn.dataset.pctStatus = action === 'start' ? 'running' : 'stopped';
-      }, 3000);
-    } else {
-      const err = await r.json().catch(() => ({}));
-      btn.innerHTML = `&#10007; ${r.status}`;
-      btn.style.color = 'var(--danger,#f85149)';
-      btn.title = err.detail || r.statusText;
-      setTimeout(() => { btn.disabled = false; btn.innerHTML = orig; btn.style.color = ''; }, 4000);
-    }
-  } catch {
-    btn.innerHTML = '&#10007; err'; btn.style.color = 'var(--danger,#f85149)';
-    setTimeout(() => { btn.disabled = false; btn.innerHTML = orig; btn.style.color = ''; }, 3000);
-  }
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.innerHTML = action === 'start' ? '&#9632; Stop' : '&#9654; Start';
+          btn.style.color = '';
+          btn.dataset.pctStatus = action === 'start' ? 'running' : 'stopped';
+          btn.title = btn.dataset.origTitle || btn.title || '';
+        }, 3000);
+      } catch (e) {
+        if (!String(e.message || '').startsWith('HTTP') && !btn.innerHTML.includes('&#10007;')) {
+          _setNodeActionButton(btn, '&#10007; err', 'var(--danger,#f85149)');
+          _restoreNodeActionButton(btn, orig, 3000);
+        }
+        throw e;
+      }
+    },
+  });
 }
