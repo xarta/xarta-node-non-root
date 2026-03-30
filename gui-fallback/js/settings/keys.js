@@ -153,20 +153,27 @@ function openKeyInfo(id) {
 }
 
 async function deleteKey(id, label) {
-  if (id === 'xarta_node') {
-    if (!confirm(
-      '\u26A0\uFE0F CRITICAL \u2014 ALL FLEET SSH ACCESS DEPENDS ON THIS KEY\n\n' +
-      'Deleting "' + label + '" will immediately break:\n' +
-      '\u2022 All fleet-pull scripts (node-to-node SSH)\n' +
-      '\u2022 Git push/pull on every fleet node (GitHub deploy key)\n' +
-      '\u2022 Onboarding any new fleet node\n' +
-      '\u2022 All SSH probe access to fleet LXCs\n\n' +
-      'Only proceed if this key is backed up and you can re-onboard every affected node.\n\n' +
-      'Are you absolutely sure you want to delete this key?'
-    )) return;
-  } else {
-    if (!confirm(`Delete key files for "${label}" from this node?\n\nThe private and public key files will be permanently removed. Ensure they are backed up before deleting.`)) return;
-  }
+  const ok = id === 'xarta_node'
+    ? await HubDialogs.confirmDelete({
+        title: 'Delete fleet-critical key?',
+        message: `Delete "${label}" from this node?`,
+        detail:
+          'Deleting this key will immediately break:\n' +
+          '• All fleet-pull scripts (node-to-node SSH)\n' +
+          '• Git push/pull on every fleet node (GitHub deploy key)\n' +
+          '• Onboarding any new fleet node\n' +
+          '• All SSH probe access to fleet LXCs\n\n' +
+          'Only proceed if this key is backed up and you can re-onboard every affected node.',
+        confirmText: 'Delete key',
+        badge: 'CRIT',
+      })
+    : await HubDialogs.confirmDelete({
+        title: 'Delete key files?',
+        message: `Delete key files for "${label}" from this node?`,
+        detail: 'The private and public key files will be permanently removed. Ensure they are backed up before deleting.',
+        confirmText: 'Delete key',
+      });
+  if (!ok) return;
   try {
     const r = await apiFetch(`/api/v1/keys/${encodeURIComponent(id)}`, { method: 'DELETE' });
     if (r.status !== 204 && !r.ok) {
@@ -175,7 +182,10 @@ async function deleteKey(id, label) {
     }
     await loadKeys();
   } catch (e) {
-    alert(`Failed to delete key: ${e.message}`);
+    await HubDialogs.alertError({
+      title: 'Delete failed',
+      message: `Failed to delete key: ${e.message}`,
+    });
   }
 }
 
@@ -323,7 +333,12 @@ function copyStoreBundle() {
     s.textContent = '✓ Copied to clipboard';
     s.style.color = 'var(--ok)';
     setTimeout(() => { s.textContent = prev; }, 2000);
-  }).catch(e => alert(`Copy failed: ${e.message}`));
+  }).catch(async e => {
+    await HubDialogs.alertError({
+      title: 'Copy failed',
+      message: `Copy failed: ${e.message}`,
+    });
+  });
 }
 
 

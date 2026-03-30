@@ -267,7 +267,10 @@ async function _bmDownloadExtension(btn) {
     a.remove();
     URL.revokeObjectURL(url);
   } catch (e) {
-    alert(`Download failed: ${e.message}`);
+    await HubDialogs.alertError({
+      title: 'Download failed',
+      message: `Download failed: ${e.message}`,
+    });
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = orig; }
   }
@@ -1260,7 +1263,12 @@ async function saveBookmark() {
 }
 
 async function deleteBookmark(id, title) {
-  if (!confirm(`Delete bookmark "${title}"?`)) return;
+  const ok = await HubDialogs.confirmDelete({
+    title: 'Delete bookmark?',
+    message: `Delete bookmark "${title}"?`,
+    detail: 'This removes the bookmark from Blueprints and the browser-links store.',
+  });
+  if (!ok) return;
   try {
     const r = await apiFetch(`/api/v1/bookmarks/${id}`, { method: 'DELETE' });
     if (!r.ok && r.status !== 204) throw new Error(`HTTP ${r.status}`);
@@ -1270,6 +1278,10 @@ async function deleteBookmark(id, title) {
     const err = document.getElementById('bm-error');
     err.textContent = `Delete failed: ${e.message}`;
     err.hidden = false;
+    await HubDialogs.alertError({
+      title: 'Delete failed',
+      message: `Failed to delete bookmark: ${e.message}`,
+    });
   }
 }
 

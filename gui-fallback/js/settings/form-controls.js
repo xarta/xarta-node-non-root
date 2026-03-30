@@ -15,7 +15,6 @@
 
 let _fcItems = [];
 let _editingFcControlId = null;
-let _deletingFcControlId = null;
 let _fcPickerAssets = [];
 let _fcDiscoveredKeys = [];
 
@@ -44,16 +43,6 @@ function _fcEditModalEls() {
         notes: document.getElementById('fc-edit-notes'),
         error: document.getElementById('fc-edit-modal-error'),
         saveBtn: document.getElementById('fc-edit-modal-save-btn'),
-    };
-}
-
-function _fcDeleteModalEls() {
-    return {
-        dialog: document.getElementById('fc-delete-modal'),
-        message: document.getElementById('fc-delete-modal-message'),
-        error: document.getElementById('fc-delete-modal-error'),
-        cancelBtn: document.getElementById('fc-delete-modal-cancel'),
-        confirmBtn: document.getElementById('fc-delete-modal-confirm'),
     };
 }
 
@@ -513,45 +502,36 @@ async function _fcOpenEditModal(controlId) {
 async function _fcOpenDeleteModal(controlId) {
     const item = _fcItems.find(i => i.control_id === controlId);
     if (!item) return;
-    const modal = _fcDeleteModalEls();
-    _deletingFcControlId = controlId;
-    modal.message.textContent = `Delete form control "${item.label}" (key: ${item.control_key})?`;
-    _fcSetModalMessage(modal.error, '');
-    modal.cancelBtn.hidden = false;
-    modal.confirmBtn.disabled = false;
-    modal.confirmBtn.textContent = 'Delete';
-    HubModal.open(modal.dialog, {
-        onClose: () => _fcSetModalMessage(modal.error, ''),
+    const ok = await HubDialogs.confirmDelete({
+        title: 'Delete form control?',
+        message: `Delete form control "${item.label}" (key: ${item.control_key})?`,
+        detail: 'This removes only the database entry. The underlying key will simply have no icon or sound until it is created again.',
     });
+    if (!ok) return;
+    await _fcDeleteRow(controlId);
 }
 
-async function _fcDeleteRow() {
-    const controlId = _deletingFcControlId;
+async function _fcDeleteRow(controlId) {
     const item = _fcItems.find(i => i.control_id === controlId);
     if (!item) return;
 
-    const modal = _fcDeleteModalEls();
     const statusEl = document.getElementById('fc-status');
     try {
-        modal.cancelBtn.disabled = true;
-        modal.confirmBtn.disabled = true;
-        modal.confirmBtn.textContent = 'Deleting...';
         const resp = await apiFetch(`/api/v1/form-controls/${controlId}`, { method: 'DELETE' });
         if (!resp.ok && resp.status !== 204) {
             const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
             throw new Error(err.detail || `HTTP ${resp.status}`);
         }
         _fcItems = _fcItems.filter(i => i.control_id !== controlId);
-        HubModal.close(modal.dialog);
         renderFormControls();
         if (typeof FormControlManager !== 'undefined') FormControlManager.reload();
         if (statusEl) { statusEl.textContent = `✓ Deleted "${item.label}"`; statusEl.style.color = 'var(--ok,#3fb950)'; }
     } catch (e) {
-        _fcSetModalMessage(modal.error, `Delete failed: ${e.message}`);
-        modal.cancelBtn.disabled = false;
-        modal.confirmBtn.disabled = false;
-        modal.confirmBtn.textContent = 'Delete';
         if (statusEl) { statusEl.textContent = `✗ ${e.message}`; statusEl.style.color = 'var(--danger,#f85149)'; }
+        await HubDialogs.alertError({
+            title: 'Delete failed',
+            message: `Delete failed: ${e.message}`,
+        });
     }
 }
 
@@ -685,14 +665,9 @@ function _fmtBytes(b) {
 
 (function initFormControlModalActions() {
     const editModal = _fcEditModalEls();
-    const deleteModal = _fcDeleteModalEls();
     if (editModal.saveBtn && !editModal.saveBtn.dataset.fcWired) {
         editModal.saveBtn.dataset.fcWired = '1';
         editModal.saveBtn.addEventListener('click', () => { void _fcSubmitEditModal(); });
-    }
-    if (deleteModal.confirmBtn && !deleteModal.confirmBtn.dataset.fcDeleteWired) {
-        deleteModal.confirmBtn.dataset.fcDeleteWired = '1';
-        deleteModal.confirmBtn.addEventListener('click', () => { void _fcDeleteRow(); });
     }
     if (editModal.keyFilter && !editModal.keyFilter.dataset.fcKeysWired) {
         editModal.keyFilter.dataset.fcKeysWired = '1';

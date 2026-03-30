@@ -324,7 +324,16 @@ async function enrichNodeVersions() {
 }
 
 async function fleetUpdate(btn) {
-  if (!confirm('Trigger git pull (public + private repos) on this node and queue for all fleet peers?\n\nAll nodes will pull latest code and restart if there are new commits.')) return;
+  const ok = await HubDialogs.confirm({
+    tone: 'warning',
+    badge: 'WARN',
+    title: 'Trigger fleet update?',
+    message: 'Trigger git pull for the public and private repos on this node and queue the same action for all fleet peers?',
+    detail: 'All nodes will pull latest code and restart if there are new commits.',
+    confirmText: 'Update fleet',
+    cancelText: 'Cancel',
+  });
+  if (!ok) return;
   const statusEl = document.getElementById('fleet-update-status');
   btn.disabled = true;
   const orig = btn.innerHTML;
@@ -422,33 +431,32 @@ async function nodePurgeQueue(nodeId, btn) {
 }
 
 async function nodeDeleteRow(nodeId, btn) {
-  const orig = btn ? btn.innerHTML : '';
-  openNodeActionModal({
-    title: 'Delete Node Row?',
+  const ok = await HubDialogs.confirmDelete({
+    title: 'Delete node row?',
     message: `Delete node "${nodeId}" from this node's local database?`,
-    note: 'This does not purge the sync queue. Use Purge Queue first if needed.',
-    confirmLabel: 'Delete',
-    confirmTone: 'danger',
-    pendingText: 'Deleting node row...',
-    successText: 'Node row deleted from local DB.',
-    errorPrefix: 'Unable to delete node',
-    run: async () => {
-      if (btn) {
-        btn.disabled = true;
-        btn.textContent = '…';
-      }
-      try {
-        const r = await apiFetch(`/api/v1/nodes/${encodeURIComponent(nodeId)}`, { method: 'DELETE' });
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        _nodes = [];
-        loadNodes();
-      } catch (e) {
-        _setNodeActionButton(btn, '&#10007; err', 'var(--danger,#f85149)');
-        _restoreNodeActionButton(btn, orig, 3000);
-        throw e;
-      }
-    },
+    detail: 'This does not purge the sync queue. Use Purge Queue first if needed.',
   });
+  if (!ok) return;
+  const orig = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '…';
+  }
+  try {
+    const r = await apiFetch(`/api/v1/nodes/${encodeURIComponent(nodeId)}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    _nodes = [];
+    loadNodes();
+  } catch (e) {
+    _setNodeActionButton(btn, '&#10007; err', 'var(--danger,#f85149)');
+    _restoreNodeActionButton(btn, orig, 3000);
+    await HubDialogs.alertError({
+      title: 'Delete failed',
+      message: `Unable to delete node: ${e.message}`,
+    });
+    return;
+  }
+  _restoreNodeActionButton(btn, orig, 3000);
 }
 
 async function enrichNodePctStatus() {

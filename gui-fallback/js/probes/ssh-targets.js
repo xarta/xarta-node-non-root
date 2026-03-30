@@ -57,11 +57,21 @@ async function rebuildSshTargets() {
 }
 
 async function deleteSshTarget(ip) {
-  if (!confirm(`Remove ssh_target for ${ip}?`)) return;
+  const ok = await HubDialogs.confirmDelete({
+    title: 'Delete SSH target?',
+    message: `Remove SSH target for ${ip}?`,
+    detail: 'This deletes the Blueprints SSH target record from the table.',
+  });
+  if (!ok) return;
   try {
     const r = await apiFetch(`/api/v1/ssh-targets/${encodeURIComponent(ip)}`, { method: 'DELETE' });
     if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
     _sshTargets = _sshTargets.filter(e => e.ip_address !== ip);
     renderSshTargets();
-  } catch (e) { alert(`Failed to delete: ${e.message}`); }
+  } catch (e) {
+    await HubDialogs.alertError({
+      title: 'Delete failed',
+      message: `Failed to delete SSH target: ${e.message}`,
+    });
+  }
 }

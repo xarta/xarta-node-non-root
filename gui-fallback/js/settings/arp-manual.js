@@ -84,13 +84,23 @@ async function _submitArpManualEdit() {
 async function deleteArpManualEntry(entry_id) {
   const entry = _arpManual.find(e => e.entry_id === entry_id);
   const ip = entry ? entry.ip_address : entry_id;
-  if (!confirm(`Delete manual ARP entry for ${ip}?`)) return;
+  const ok = await HubDialogs.confirmDelete({
+    title: 'Delete manual ARP entry?',
+    message: `Delete manual ARP entry for ${ip}?`,
+    detail: 'This removes the manual entry from Blueprints only.',
+  });
+  if (!ok) return;
   try {
     const r = await apiFetch(`/api/v1/arp-manual/${encodeURIComponent(entry_id)}`, { method: 'DELETE' });
     if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
     _arpManual = _arpManual.filter(e => e.entry_id !== entry_id);
     renderArpManual();
-  } catch (e) { alert(`Failed to delete entry: ${e.message}`); }
+  } catch (e) {
+    await HubDialogs.alertError({
+      title: 'Delete failed',
+      message: `Failed to delete entry: ${e.message}`,
+    });
+  }
 }
 
 document.addEventListener('DOMContentLoaded', () => {

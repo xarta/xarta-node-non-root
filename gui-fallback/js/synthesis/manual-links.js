@@ -367,7 +367,12 @@ async function submitManualLink() {
 }
 
 async function deleteManualLink(linkId) {
-  if (!confirm('Delete this link?')) return;
+  const ok = await HubDialogs.confirmDelete({
+    title: 'Delete manual link?',
+    message: 'Delete this manual link from Blueprints?',
+    detail: 'This removes the link record from Blueprints only.',
+  });
+  if (!ok) return;
   const err = document.getElementById('ml-error');
   if (err) err.hidden = true;
   try {
@@ -376,6 +381,10 @@ async function deleteManualLink(linkId) {
     await loadManualLinks();
   } catch (e) {
     if (err) { err.textContent = e.message; err.hidden = false; }
+    await HubDialogs.alertError({
+      title: 'Delete failed',
+      message: `Failed to delete manual link: ${e.message}`,
+    });
   }
 }
 

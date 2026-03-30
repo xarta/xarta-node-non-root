@@ -56,7 +56,12 @@ function renderPveHosts() {
 }
 
 async function pveHostDelete(pveId, btn) {
-  if (!confirm(`Delete PVE host ${pveId}?`)) return;
+  const ok = await HubDialogs.confirmDelete({
+    title: 'Delete PVE host?',
+    message: `Delete PVE host ${pveId}?`,
+    detail: 'This removes the host record from Blueprints only.',
+  });
+  if (!ok) return;
   if (btn) btn.disabled = true;
   try {
     const r = await apiFetch(`/api/v1/pve-hosts/${encodeURIComponent(pveId)}`, { method: 'DELETE' });
@@ -66,7 +71,10 @@ async function pveHostDelete(pveId, btn) {
     renderPveHosts();
   } catch (e) {
     if (btn) btn.disabled = false;
-    alert(`Delete failed: ${e.message}`);
+    await HubDialogs.alertError({
+      title: 'Delete failed',
+      message: `Failed to delete PVE host: ${e.message}`,
+    });
   }
 }
 

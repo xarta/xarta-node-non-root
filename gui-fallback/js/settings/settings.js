@@ -88,14 +88,22 @@ async function submitSetting() {
 }
 
 async function deleteSetting(key) {
-  if (!confirm(`Delete setting "${key}"?`)) return;
+  const ok = await HubDialogs.confirmDelete({
+    title: 'Delete setting?',
+    message: `Delete setting "${key}"?`,
+    detail: 'This removes the setting record from Blueprints.',
+  });
+  if (!ok) return;
   try {
     const r = await apiFetch(`/api/v1/settings/${encodeURIComponent(key)}`, { method: 'DELETE' });
     if (!r.ok && r.status !== 204) throw new Error(`HTTP ${r.status}`);
     _settings = [];
     await loadSettings();
   } catch (e) {
-    alert(`Delete failed: ${e.message}`);
+    await HubDialogs.alertError({
+      title: 'Delete failed',
+      message: `Failed to delete setting: ${e.message}`,
+    });
   }
 }
 

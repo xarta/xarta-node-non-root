@@ -208,14 +208,24 @@ async function toggleDockgeObsolete(stackId) {
     row.obsolete = newVal;
     renderDockgeStacks();
   } catch (e) {
-    alert(`Failed to update obsolete flag: ${e.message}`);
+    await HubDialogs.alertError({
+      title: 'Update failed',
+      message: `Failed to update obsolete flag: ${e.message}`,
+    });
   }
 }
 
 async function editDockgeNote(stackId, el) {
   const row = _dockgeStacks.find(d => d.stack_id === stackId);
   if (!row) return;
-  const newNote = prompt('Edit note for "' + stackId + '":', row.notes || '');
+  const newNote = await HubDialogs.prompt({
+    title: 'Edit Dockge note',
+    message: `Edit note for "${stackId}".`,
+    inputLabel: 'Note',
+    value: row.notes || '',
+    confirmText: 'Save',
+    cancelText: 'Cancel',
+  });
   if (newNote === null) return; // cancelled
   try {
     const r = await apiFetch(`/api/v1/dockge-stacks/${encodeURIComponent(stackId)}`, {
@@ -227,7 +237,10 @@ async function editDockgeNote(stackId, el) {
     row.notes = newNote;
     renderDockgeStacks();
   } catch (e) {
-    alert(`Failed to save note: ${e.message}`);
+    await HubDialogs.alertError({
+      title: 'Save failed',
+      message: `Failed to save note: ${e.message}`,
+    });
   }
 }
 

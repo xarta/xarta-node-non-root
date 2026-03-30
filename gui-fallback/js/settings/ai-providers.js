@@ -177,7 +177,12 @@ async function submitAiProviderModal() {
 }
 
 async function deleteAiProvider(provider_id, name) {
-  if (!confirm(`Delete provider "${name}"?\n\nAny project assignments using this provider will be orphaned.`)) return;
+  const ok = await HubDialogs.confirmDelete({
+    title: 'Delete AI provider?',
+    message: `Delete provider "${name}"?`,
+    detail: 'Any project assignments using this provider will be orphaned.',
+  });
+  if (!ok) return;
   try {
     const r = await apiFetch(`/api/v1/ai-providers/${encodeURIComponent(provider_id)}`, { method: 'DELETE' });
     if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
@@ -185,7 +190,12 @@ async function deleteAiProvider(provider_id, name) {
     renderAiProviders();
     _aiAssignments = _aiAssignments.filter(a => a.provider_id !== provider_id);
     renderAiAssignments();
-  } catch (e) { alert(`Delete failed: ${e.message}`); }
+  } catch (e) {
+    await HubDialogs.alertError({
+      title: 'Delete failed',
+      message: `Failed to delete provider: ${e.message}`,
+    });
+  }
 }
 
 /* ── Assignment modal ───────────────────────────────────────────────── */
@@ -240,13 +250,23 @@ async function submitAiAssignmentModal() {
 }
 
 async function deleteAiAssignment(assignment_id, project, role) {
-  if (!confirm(`Remove ${role} assignment for project "${project}"?`)) return;
+  const ok = await HubDialogs.confirmDelete({
+    title: 'Delete project assignment?',
+    message: `Remove ${role} assignment for project "${project}"?`,
+    detail: 'This removes the assignment from Blueprints.',
+  });
+  if (!ok) return;
   try {
     const r = await apiFetch(`/api/v1/ai-project-assignments/${encodeURIComponent(assignment_id)}`, { method: 'DELETE' });
     if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
     _aiAssignments = _aiAssignments.filter(a => a.assignment_id !== assignment_id);
     renderAiAssignments();
-  } catch (e) { alert(`Delete failed: ${e.message}`); }
+  } catch (e) {
+    await HubDialogs.alertError({
+      title: 'Delete failed',
+      message: `Failed to delete assignment: ${e.message}`,
+    });
+  }
 }
 
 (function initAiProviderModalActions() {

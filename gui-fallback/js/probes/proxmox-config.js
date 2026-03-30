@@ -161,25 +161,41 @@ async function findIpsViaPfsenseSweep() {
 }
 
 async function deleteProxmoxNet(net_id, net_key) {
-  if (!confirm(`Delete NIC "${net_key}" (${net_id})?\nThis removes it from Blueprints only — not from Proxmox.`)) return;
+  const ok = await HubDialogs.confirmDelete({
+    title: 'Delete NIC record?',
+    message: `Delete NIC "${net_key}" (${net_id})?`,
+    detail: 'This removes the NIC record from Blueprints only. It does not change Proxmox.',
+  });
+  if (!ok) return;
   try {
     const r = await apiFetch(`/api/v1/proxmox-nets/${encodeURIComponent(net_id)}`, { method: 'DELETE' });
     if (!r.ok && r.status !== 204) { const d = await r.json().catch(()=>{}); throw new Error(d?.detail || `HTTP ${r.status}`); }
     await loadProxmoxNets();
     renderProxmoxConfig();
   } catch (e) {
-    alert(`Failed to delete NIC: ${e.message}`);
+    await HubDialogs.alertError({
+      title: 'Delete failed',
+      message: `Failed to delete NIC: ${e.message}`,
+    });
   }
 }
 
 async function deleteProxmoxConfig(config_id) {
-  if (!confirm(`Delete "${config_id}" from Blueprints?\nThis removes it from all nodes — the VM/LXC itself is unaffected.`)) return;
+  const ok = await HubDialogs.confirmDelete({
+    title: 'Delete Proxmox config?',
+    message: `Delete "${config_id}" from Blueprints?`,
+    detail: 'This removes the config from all Blueprints nodes. The VM or LXC itself is unaffected.',
+  });
+  if (!ok) return;
   try {
     const r = await apiFetch(`/api/v1/proxmox-config/${encodeURIComponent(config_id)}`, { method: 'DELETE' });
     if (!r.ok && r.status !== 204) { const d = await r.json().catch(()=>{}); throw new Error(d?.detail || `HTTP ${r.status}`); }
     await loadProxmoxConfig();
   } catch (e) {
-    alert(`Failed to delete config: ${e.message}`);
+    await HubDialogs.alertError({
+      title: 'Delete failed',
+      message: `Failed to delete config: ${e.message}`,
+    });
   }
 }
 

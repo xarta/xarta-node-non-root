@@ -298,7 +298,15 @@ async function docsSave(silent = false) {
 async function docsRefreshContent() {
   if (!_docsActiveId) return;
   if (_docsDirty) {
-    if (!confirm('You have unsaved changes. Discard and reload from disk?')) return;
+    const ok = await HubDialogs.confirm({
+      tone: 'warning',
+      badge: 'WARN',
+      title: 'Discard unsaved changes?',
+      message: 'You have unsaved changes. Discard them and reload from disk?',
+      confirmText: 'Discard changes',
+      cancelText: 'Keep editing',
+    });
+    if (!ok) return;
   }
   _docsDirty = false;
   await _docsOpenDoc(_docsActiveId);
@@ -833,15 +841,24 @@ async function _docsSubmitGroupModal() {
 
 async function docsListDeleteGroup(groupId, name) {
   const docsInGroup = _docsAll.filter(d => d.group_id === groupId).length;
-  const msg = docsInGroup > 0
-    ? `Delete group "${name}"? The ${docsInGroup} document(s) in it will move to Undefined Group.`
-    : `Delete group "${name}"?`;
-  if (!confirm(msg)) return;
+  const ok = await HubDialogs.confirmDelete({
+    title: 'Delete document group?',
+    message: `Delete group "${name}"?`,
+    detail: docsInGroup > 0
+      ? `The ${docsInGroup} document(s) in this group will move to Undefined Group.`
+      : 'Only the group will be removed.',
+  });
+  if (!ok) return;
   try {
     const r = await apiFetch(`/api/v1/doc-groups/${groupId}`, { method: 'DELETE' });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     await loadDocs();
-  } catch (e) { alert(`Failed to delete group: ${e.message}`); }
+  } catch (e) {
+    await HubDialogs.alertError({
+      title: 'Delete failed',
+      message: `Failed to delete group: ${e.message}`,
+    });
+  }
 }
 
 // ── Drag & drop handlers ──────────────────────────────────────────────────────
