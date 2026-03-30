@@ -11,6 +11,199 @@
 
 'use strict';
 
+const NavLayoutDialogs = (() => {
+        let _els = null;
+
+        function _fallbackAlert(message) {
+                alert(message);
+                return Promise.resolve();
+        }
+
+        function _fallbackConfirm(message) {
+                return Promise.resolve(confirm(message));
+        }
+
+        function _fallbackPrompt(message, value) {
+                return Promise.resolve(prompt(message, value));
+        }
+
+        function _close(dialog) {
+                if (!dialog) return;
+                if (typeof HubModal !== 'undefined') {
+                        HubModal.close(dialog);
+                } else if (dialog.open) {
+                        dialog.close();
+                }
+        }
+
+        function _open(dialog, onOpen) {
+                if (!dialog) return;
+                if (typeof HubModal !== 'undefined') {
+                        HubModal.open(dialog, { onOpen });
+                } else {
+                        if (!dialog.open) dialog.showModal();
+                        if (typeof onOpen === 'function') onOpen();
+                }
+        }
+
+        function ensure() {
+                if (_els) return _els;
+                if (typeof document === 'undefined') return null;
+
+                const host = document.createElement('div');
+                host.id = 'nav-layout-modal-host';
+                host.innerHTML = `
+<dialog class="hub-modal" id="nav-layout-confirm-modal" style="width:min(520px,95vw)">
+    <div class="hub-modal-header">
+        <h2 class="hub-modal-title" id="nav-layout-confirm-title">Confirm</h2>
+        <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+    </div>
+    <div class="hub-modal-body">
+        <p id="nav-layout-confirm-message" style="margin:0;color:var(--text-dim);font-size:13px;line-height:1.7;"></p>
+    </div>
+    <div class="hub-modal-footer">
+        <button class="hub-modal-btn secondary hub-modal-close" type="button" id="nav-layout-confirm-cancel" data-fc-key="modal.close">Cancel</button>
+        <button class="hub-modal-btn" type="button" id="nav-layout-confirm-ok">Confirm</button>
+    </div>
+</dialog>
+
+<dialog class="hub-modal" id="nav-layout-prompt-modal" style="width:min(560px,95vw)">
+    <div class="hub-modal-header">
+        <h2 class="hub-modal-title" id="nav-layout-prompt-title">Edit Label</h2>
+        <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+    </div>
+    <div class="hub-modal-body">
+        <p id="nav-layout-prompt-message" style="margin:0 0 14px;color:var(--text-dim);font-size:13px;line-height:1.7;"></p>
+        <div class="field">
+            <label for="nav-layout-prompt-input" id="nav-layout-prompt-label">Label</label>
+            <input id="nav-layout-prompt-input" type="text" autocomplete="off" spellcheck="false" />
+        </div>
+        <p class="hub-modal-error" id="nav-layout-prompt-error"></p>
+    </div>
+    <div class="hub-modal-footer">
+        <button class="hub-modal-btn secondary hub-modal-close" type="button" id="nav-layout-prompt-cancel" data-fc-key="modal.close">Cancel</button>
+        <button class="hub-modal-btn" type="button" id="nav-layout-prompt-save">Save</button>
+    </div>
+</dialog>
+
+<dialog class="hub-modal" id="nav-layout-alert-modal" style="width:min(480px,95vw)">
+    <div class="hub-modal-header">
+        <h2 class="hub-modal-title" id="nav-layout-alert-title">Layout Notice</h2>
+        <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+    </div>
+    <div class="hub-modal-body">
+        <p id="nav-layout-alert-message" style="margin:0;color:var(--text-dim);font-size:13px;line-height:1.7;"></p>
+    </div>
+    <div class="hub-modal-footer">
+        <button class="hub-modal-btn hub-modal-close" type="button" id="nav-layout-alert-close" data-fc-key="modal.close">Close</button>
+    </div>
+</dialog>`;
+                document.body.appendChild(host);
+
+                if (typeof HubModal !== 'undefined') HubModal.init(host);
+
+                _els = {
+                        confirmDialog: host.querySelector('#nav-layout-confirm-modal'),
+                        confirmTitle: host.querySelector('#nav-layout-confirm-title'),
+                        confirmMessage: host.querySelector('#nav-layout-confirm-message'),
+                        confirmCancel: host.querySelector('#nav-layout-confirm-cancel'),
+                        confirmOk: host.querySelector('#nav-layout-confirm-ok'),
+                        promptDialog: host.querySelector('#nav-layout-prompt-modal'),
+                        promptTitle: host.querySelector('#nav-layout-prompt-title'),
+                        promptMessage: host.querySelector('#nav-layout-prompt-message'),
+                        promptLabel: host.querySelector('#nav-layout-prompt-label'),
+                        promptInput: host.querySelector('#nav-layout-prompt-input'),
+                        promptError: host.querySelector('#nav-layout-prompt-error'),
+                        promptSave: host.querySelector('#nav-layout-prompt-save'),
+                        alertDialog: host.querySelector('#nav-layout-alert-modal'),
+                        alertTitle: host.querySelector('#nav-layout-alert-title'),
+                        alertMessage: host.querySelector('#nav-layout-alert-message'),
+                };
+
+                _els.confirmOk.addEventListener('click', () => {
+                        _els.confirmDialog._navLayoutResult = true;
+                        _close(_els.confirmDialog);
+                });
+                _els.promptSave.addEventListener('click', () => {
+                        _els.promptDialog._navLayoutResult = _els.promptInput.value;
+                        _close(_els.promptDialog);
+                });
+                _els.promptInput.addEventListener('keydown', (event) => {
+                        if (event.key !== 'Enter') return;
+                        event.preventDefault();
+                        _els.promptSave.click();
+                });
+
+                [_els.confirmDialog, _els.promptDialog, _els.alertDialog].forEach((dialog) => {
+                        dialog.addEventListener('close', () => {
+                                if (typeof dialog._navLayoutResolve !== 'function') return;
+                                const resolve = dialog._navLayoutResolve;
+                                dialog._navLayoutResolve = null;
+                                const result = Object.prototype.hasOwnProperty.call(dialog, '_navLayoutResult')
+                                        ? dialog._navLayoutResult
+                                        : dialog._navLayoutDefault;
+                                delete dialog._navLayoutResult;
+                                resolve(result);
+                        });
+                });
+
+                return _els;
+        }
+
+        function alertDialog(opts) {
+                const els = ensure();
+                if (!els) return _fallbackAlert(opts.message || '');
+                els.alertTitle.textContent = opts.title || 'Layout Notice';
+                els.alertMessage.textContent = opts.message || '';
+                els.alertDialog._navLayoutDefault = undefined;
+                return new Promise((resolve) => {
+                        els.alertDialog._navLayoutResolve = resolve;
+                        _open(els.alertDialog);
+                });
+        }
+
+        function confirmDialog(opts) {
+                const els = ensure();
+                if (!els) return _fallbackConfirm(opts.message || '');
+                els.confirmTitle.textContent = opts.title || 'Confirm';
+                els.confirmMessage.textContent = opts.message || '';
+                els.confirmCancel.textContent = opts.cancelLabel || 'Cancel';
+                els.confirmOk.textContent = opts.confirmLabel || 'Confirm';
+                els.confirmDialog._navLayoutDefault = false;
+                return new Promise((resolve) => {
+                        els.confirmDialog._navLayoutResolve = resolve;
+                        _open(els.confirmDialog);
+                });
+        }
+
+        function promptDialog(opts) {
+                const els = ensure();
+                if (!els) return _fallbackPrompt(opts.message || '', opts.value || '');
+                els.promptTitle.textContent = opts.title || 'Edit Label';
+                els.promptMessage.textContent = opts.message || '';
+                els.promptLabel.textContent = opts.inputLabel || 'Label';
+                els.promptInput.value = opts.value || '';
+                els.promptInput.placeholder = opts.placeholder || '';
+                els.promptSave.textContent = opts.confirmLabel || 'Save';
+                els.promptError.textContent = '';
+                els.promptDialog._navLayoutDefault = null;
+                return new Promise((resolve) => {
+                        els.promptDialog._navLayoutResolve = resolve;
+                        _open(els.promptDialog, () => {
+                                els.promptInput.focus();
+                                els.promptInput.select();
+                        });
+                });
+        }
+
+        return {
+                ensure,
+                alert: alertDialog,
+                confirm: confirmDialog,
+                prompt: promptDialog,
+        };
+})();
+
 // cfg = {
 //   storageKey      : string  — localStorage key (unique per group)
 //   toggleId        : string  — hamburger toggle button element ID
@@ -73,6 +266,8 @@ function createHubMenu(cfg) {
                 const resetBtn = document.getElementById(cfg.resetButtonId);
                 if (resetBtn) resetBtn.addEventListener('click', () => this.resetConfig());
 
+                NavLayoutDialogs.ensure();
+
                 // Load DB-driven icons and sounds in background; re-renders navbar when done
                 this.loadNavItemsFromDB();
             }
@@ -115,8 +310,14 @@ function createHubMenu(cfg) {
             this.showSaveNotification();
         },
 
-        resetConfig() {
-            if (confirm(cfg.resetConfirmMsg)) {
+        async resetConfig() {
+            const ok = await NavLayoutDialogs.confirm({
+                title: 'Reset Layout?',
+                message: cfg.resetConfirmMsg,
+                confirmLabel: 'Reset',
+                cancelLabel: 'Cancel',
+            });
+            if (ok) {
                 localStorage.removeItem(this.STORAGE_KEY);
                 this.currentMenu = JSON.parse(JSON.stringify(this.defaultMenu));
                 this.saveConfig(false);
@@ -606,10 +807,17 @@ function createHubMenu(cfg) {
             return div;
         },
 
-        editItem(id) {
+        async editItem(id) {
             const item = this.currentMenu.find(m => m.id === id);
             if (!item) return;
-            const newLabel = prompt('Enter new nav label (without emoji):', item.label.replace(item.icon, '').trim());
+            const newLabel = await NavLayoutDialogs.prompt({
+                title: 'Rename Nav Label',
+                message: 'Enter the label shown in the navbar and layout editor. The icon stays separate.',
+                inputLabel: 'Nav label',
+                placeholder: 'Label',
+                value: item.label.replace(item.icon, '').trim(),
+                confirmLabel: 'Save',
+            });
             if (newLabel !== null && newLabel.trim()) {
                 item.label = item.icon + ' ' + newLabel.trim();
                 this.saveConfig(false);
@@ -618,11 +826,18 @@ function createHubMenu(cfg) {
             }
         },
 
-        editPageLabel(id) {
+        async editPageLabel(id) {
             const item = this.currentMenu.find(m => m.id === id);
             if (!item) return;
             const current = item.pageLabel || item.label.replace(item.icon, '').trim();
-            const newLabel = prompt('Enter page label (shown as the active tab indicator):', current);
+            const newLabel = await NavLayoutDialogs.prompt({
+                title: 'Rename Active Tab Label',
+                message: 'Enter the label shown in the highlighted split-button when this page is active.',
+                inputLabel: 'Active label',
+                placeholder: 'Active label',
+                value: current,
+                confirmLabel: 'Save',
+            });
             if (newLabel !== null && newLabel.trim()) {
                 item.pageLabel = newLabel.trim();
                 this.saveConfig(false);
@@ -708,7 +923,10 @@ function createHubMenu(cfg) {
                     const draggedId = this.draggedItem.dataset.id;
                     if (parentId === draggedId) return;
                     if (this.getChildren(draggedId).length > 0) {
-                        alert('Cannot nest an item that already has sub-items.');
+                        NavLayoutDialogs.alert({
+                            title: 'Cannot Nest Item',
+                            message: 'Items that already have sub-items must stay top-level. Promote or rehome their children first.',
+                        });
                         return;
                     }
                     const item = this.currentMenu.find(m => m.id === draggedId);
