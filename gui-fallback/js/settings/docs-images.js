@@ -14,6 +14,16 @@ let _docImgDeleteTarget = null;
 let _docImgResizeTimer = null;
 const _DOC_IMG_VIEW_LS_KEY = 'blueprintsDocsImagesView';
 
+function _docImgRequestFillResize() {
+  if (window.BodyShade && typeof window.BodyShade.scheduleSizeFillTable === 'function') {
+    window.BodyShade.scheduleSizeFillTable();
+  }
+}
+
+function _getDocImgPagerEl() {
+  return document.getElementById('doc-img-pagination');
+}
+
 function openDocImagesModal() {
   _loadDocImagesViewPref();
   _syncDocImageControls();
@@ -23,12 +33,18 @@ function openDocImagesModal() {
 async function _loadDocImages() {
   const list = document.getElementById('doc-images-list');
   const summary = document.getElementById('doc-img-results-summary');
+  const pager = _getDocImgPagerEl();
   if (list) {
     list.innerHTML = '<div class="doc-img-empty">Loading images…</div>';
   }
   if (summary) {
     summary.textContent = 'Loading images…';
   }
+  if (pager) {
+    pager.innerHTML = '';
+    pager.hidden = true;
+  }
+  _docImgRequestFillResize();
 
   const url = _docImagesFilter === 'unused'
     ? '/api/v1/doc-images?unused=true'
@@ -47,6 +63,7 @@ async function _loadDocImages() {
       summary.textContent = 'Image loading failed';
     }
     _refreshDocImgTagSelect();
+    _docImgRequestFillResize();
     return;
   }
 
@@ -240,6 +257,7 @@ function _getFilteredDocImages() {
 function _renderDocImagesList() {
   const list = document.getElementById('doc-images-list');
   const summary = document.getElementById('doc-img-results-summary');
+  const pager = _getDocImgPagerEl();
   if (!list) return;
 
   _refreshDocImgTagSelect();
@@ -262,6 +280,7 @@ function _renderDocImagesList() {
 
   if (!items.length) {
     list.innerHTML = '<div class="doc-img-empty">No images match the current filters.</div>';
+    _renderDocImgPager(0);
     return;
   }
 
@@ -273,8 +292,8 @@ function _renderDocImagesList() {
   pageItems.forEach(img => grid.appendChild(_buildImgCard(img)));
   list.appendChild(grid);
 
-  if (totalPages > 1) {
-    list.appendChild(_buildDocImgPager(totalPages));
+  if (pager) {
+    _renderDocImgPager(totalPages);
   }
 }
 
@@ -460,9 +479,16 @@ function _buildImgCard(img) {
   return card;
 }
 
-function _buildDocImgPager(totalPages) {
-  const pager = document.createElement('div');
-  pager.className = 'doc-img-pager';
+function _renderDocImgPager(totalPages) {
+  const pager = _getDocImgPagerEl();
+  if (!pager) return;
+
+  pager.innerHTML = '';
+  pager.hidden = totalPages <= 1;
+  if (pager.hidden) {
+    _docImgRequestFillResize();
+    return;
+  }
 
   const prevBtn = document.createElement('button');
   prevBtn.className = 'secondary';
@@ -493,7 +519,7 @@ function _buildDocImgPager(totalPages) {
   pager.appendChild(prevBtn);
   pager.appendChild(info);
   pager.appendChild(nextBtn);
-  return pager;
+  _docImgRequestFillResize();
 }
 
 async function _loadThumb(imageId, imgEl) {

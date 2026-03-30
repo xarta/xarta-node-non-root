@@ -378,7 +378,7 @@
   </section>
 
   <!-- Docs — Images -->
-  <section id="tab-docs-images" class="tab-panel">
+  <section id="tab-docs-images" class="tab-panel tab-panel--fill">
     <p class="doc-img-intro">Image assets for document embeds. Upload stays simple; browsing, filtering, and copy-link flow are optimised for larger libraries.</p>
     <div class="doc-img-upload-panel">
       <div class="doc-img-upload-head">
@@ -398,9 +398,10 @@
       <p id="doc-img-results-summary" class="doc-img-results-summary">Loading images…</p>
     </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
-    <div class="tab-scroll-shell">
+    <div id="doc-images-scroll" class="table-wrap table-wrap--fill doc-img-results-shell">
       <div id="doc-images-list" class="doc-img-results"></div>
     </div>
+    <div id="doc-img-pagination" class="table-pager doc-img-pager" hidden></div>
   </section>
 
   <!-- Self Diagnostic -->

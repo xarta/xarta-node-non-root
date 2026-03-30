@@ -87,6 +87,30 @@
     padding: 7px 9px;
 }
 
+.doc-img-file-input::file-selector-button,
+.doc-img-file-input::-webkit-file-upload-button {
+    margin: 0 10px 0 0;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: rgba(91, 156, 246, 0.12);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.doc-img-file-input:hover::file-selector-button,
+.doc-img-file-input:hover::-webkit-file-upload-button,
+.doc-img-file-input:focus-within::file-selector-button,
+.doc-img-file-input:focus-within::-webkit-file-upload-button {
+    background-color: rgba(91, 156, 246, 0.2);
+    border-color: rgba(91, 156, 246, 0.42);
+    color: var(--text);
+}
+
 .doc-img-upload-status {
     min-height: 1.2em;
     margin: 0;
@@ -113,6 +137,13 @@
     flex-direction: column;
     gap: 14px;
     padding-bottom: 8px;
+}
+
+.doc-img-results-shell {
+    overflow-x: hidden;
+    overflow-y: auto;
+    background: transparent;
+    padding-right: 2px;
 }
 
 .doc-img-empty {
@@ -516,11 +547,7 @@
 }
 
 .doc-img-pager {
-    display: flex;
-    align-items: center;
     justify-content: center;
-    gap: 10px;
-    padding-top: 6px;
 }
 
 .doc-img-pager-info {
@@ -551,6 +578,10 @@
 @media (max-width: 768px) {
     .doc-img-grid {
         grid-template-columns: 1fr;
+    }
+
+    .doc-img-results-shell {
+        padding-right: 0;
     }
 
     .doc-img-grid--small,
