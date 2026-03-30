@@ -105,6 +105,7 @@ function _fleetUpdateModalEls() {
 }
 
 const _FLEET_UPDATE_DELAY_MS = 10000;
+const _FLEET_UPDATE_MAX_ATTEMPTS = 3;
 
 function _fleetUpdateAppendLog(message, tone) {
     const { log } = _fleetUpdateModalEls();
@@ -210,31 +211,34 @@ async function _runFleetUpdateStage(nodes, expectedVersions, stage) {
     _fleetUpdateAppendLog(`${stage.label}: queued. Waiting ${Math.round(_FLEET_UPDATE_DELAY_MS / 1000)}s for fleet to settle.`, '');
     await _sleep(_FLEET_UPDATE_DELAY_MS);
 
-    let failures = await _verifyFleetRepoStage(nodes, expectedVersions, stage.repoKey, stage.label);
-    if (!failures.length) {
-        _fleetUpdateAppendLog(`${stage.label}: all nodes verified at ${expectedVersions[stage.repoKey]?.commit || 'unknown'}.`, 'ok');
-        return;
+    for (let attempt = 1; attempt <= _FLEET_UPDATE_MAX_ATTEMPTS; attempt += 1) {
+        const failures = await _verifyFleetRepoStage(nodes, expectedVersions, stage.repoKey, stage.label);
+        if (!failures.length) {
+            if (attempt === 1) {
+                _fleetUpdateAppendLog(`${stage.label}: all nodes verified at ${expectedVersions[stage.repoKey]?.commit || 'unknown'}.`, 'ok');
+            } else {
+                _fleetUpdateAppendLog(`${stage.label}: verified after attempt ${attempt} at ${expectedVersions[stage.repoKey]?.commit || 'unknown'}.`, 'ok');
+            }
+            return;
+        }
+
+        if (attempt >= _FLEET_UPDATE_MAX_ATTEMPTS) {
+            throw new Error(`${stage.label} failed after ${attempt} attempts:\n${failures.join('\n')}`);
+        }
+
+        _fleetUpdateAppendLog(`${stage.label}: verification attempt ${attempt} failed, retrying (${attempt + 1}/${_FLEET_UPDATE_MAX_ATTEMPTS}).`, 'warn');
+        failures.forEach(line => _fleetUpdateAppendLog(`  ${line}`, 'warn'));
+
+        const retryResp = await apiFetch('/api/v1/sync/git-pull', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scope: stage.scope }),
+        });
+        if (!retryResp.ok) throw new Error(`${stage.label} retry ${attempt + 1}: HTTP ${retryResp.status}`);
+
+        _fleetUpdateAppendLog(`${stage.label}: retry queued. Waiting ${Math.round(_FLEET_UPDATE_DELAY_MS / 1000)}s again.`, '');
+        await _sleep(_FLEET_UPDATE_DELAY_MS);
     }
-
-    _fleetUpdateAppendLog(`${stage.label}: first verification failed, retrying once.`, 'warn');
-    failures.forEach(line => _fleetUpdateAppendLog(`  ${line}`, 'warn'));
-
-    const retryResp = await apiFetch('/api/v1/sync/git-pull', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scope: stage.scope }),
-    });
-    if (!retryResp.ok) throw new Error(`${stage.label} retry: HTTP ${retryResp.status}`);
-
-    _fleetUpdateAppendLog(`${stage.label}: retry queued. Waiting ${Math.round(_FLEET_UPDATE_DELAY_MS / 1000)}s again.`, '');
-    await _sleep(_FLEET_UPDATE_DELAY_MS);
-
-    failures = await _verifyFleetRepoStage(nodes, expectedVersions, stage.repoKey, stage.label);
-    if (failures.length) {
-        throw new Error(`${stage.label} failed after retry:\n${failures.join('\n')}`);
-    }
-
-    _fleetUpdateAppendLog(`${stage.label}: verified after retry at ${expectedVersions[stage.repoKey]?.commit || 'unknown'}.`, 'ok');
 }
 
 function _resetFleetUpdateModal() {

@@ -37,6 +37,7 @@ function _backupActionModalEls() {
 function _resetBackupActionModal() {
   const { dialog, title, filename, message, normalWarn, forceWarn, deleteWarn, status, result, error, closeBtn, confirmBtn, closeBtns } = _backupActionModalEls();
   if (dialog) dialog.dataset.busy = '0';
+  if (dialog) dialog.dataset.completed = '0';
   if (title) title.textContent = 'Backup Action';
   if (filename) filename.textContent = '';
   if (message) message.textContent = '';
@@ -51,9 +52,14 @@ function _resetBackupActionModal() {
     result.hidden = true;
     result.textContent = '';
     result.className = 'restore-result';
+    result.style.whiteSpace = 'pre-wrap';
   }
   if (error) error.textContent = '';
-  if (closeBtn) closeBtn.textContent = 'Cancel';
+  if (closeBtn) {
+    closeBtn.textContent = 'Cancel';
+    closeBtn.hidden = false;
+    closeBtn.style.display = '';
+  }
   if (confirmBtn) {
     confirmBtn.textContent = 'Confirm';
     confirmBtn.disabled = false;
@@ -62,6 +68,25 @@ function _resetBackupActionModal() {
   }
   closeBtns.forEach(btn => { btn.disabled = false; });
   _pendingBackupAction = null;
+}
+
+function _finishDeleteBackupActionModal() {
+  const { dialog, closeBtn, confirmBtn, closeBtns } = _backupActionModalEls();
+  if (dialog) {
+    dialog.dataset.busy = '0';
+    dialog.dataset.completed = '1';
+  }
+  if (closeBtn) {
+    closeBtn.hidden = true;
+    closeBtn.style.display = 'none';
+  }
+  if (confirmBtn) {
+    confirmBtn.hidden = false;
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = 'CLOSE';
+    confirmBtn.classList.remove('danger');
+  }
+  closeBtns.forEach(closeActionBtn => { closeActionBtn.disabled = false; });
 }
 
 function onBackupTableClick(event) {
@@ -167,6 +192,11 @@ async function submitBackupAction() {
   const { dialog, status, result, error, closeBtn, confirmBtn, closeBtns } = _backupActionModalEls();
   if (!pending || !dialog || dialog.dataset.busy === '1') return;
 
+  if (dialog.dataset.completed === '1') {
+    HubModal.close(dialog);
+    return;
+  }
+
   const { filename, action, btn } = pending;
   const isDelete = action === 'delete';
   const isForce = action === 'force';
@@ -201,10 +231,8 @@ async function submitBackupAction() {
         status.textContent = 'Backup deleted.';
         status.style.color = 'var(--ok,#3fb950)';
       }
-      if (closeBtn) closeBtn.textContent = 'CLOSE';
-      if (confirmBtn) confirmBtn.hidden = true;
+      _finishDeleteBackupActionModal();
       await loadBackups();
-      setTimeout(() => { HubModal.close(dialog); }, 700);
       return;
     }
 
@@ -226,6 +254,7 @@ async function submitBackupAction() {
     if (result) {
       result.textContent = msg;
       result.className = 'restore-result';
+      result.style.whiteSpace = 'pre-wrap';
       result.hidden = false;
     }
     if (status) {
@@ -242,8 +271,18 @@ async function submitBackupAction() {
         status.style.color = 'var(--ok,#3fb950)';
       }
     }
-    if (closeBtn) closeBtn.textContent = 'CLOSE';
-    if (confirmBtn) confirmBtn.hidden = true;
+    if (closeBtn) {
+      closeBtn.hidden = false;
+      closeBtn.textContent = 'CLOSE';
+      closeBtn.style.display = '';
+    }
+    dialog.dataset.completed = '1';
+    if (confirmBtn) {
+      confirmBtn.hidden = false;
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'CLOSE';
+      confirmBtn.classList.remove('danger');
+    }
     closeBtns.forEach(closeActionBtn => { closeActionBtn.disabled = false; });
     dialog.dataset.busy = '0';
     setTimeout(() => { loadHealth(); loadSyncStatus(); loadBackups(); }, 500);
@@ -254,6 +293,11 @@ async function submitBackupAction() {
     if (confirmBtn) {
       confirmBtn.disabled = false;
       confirmBtn.textContent = isDelete ? 'Delete' : isForce ? 'Force Restore' : 'Restore';
+    }
+    if (closeBtn) {
+      closeBtn.hidden = false;
+      closeBtn.textContent = 'Cancel';
+      closeBtn.style.display = '';
     }
     closeBtns.forEach(closeActionBtn => { closeActionBtn.disabled = false; });
   } finally {
