@@ -20,6 +20,8 @@ function _backupActionModalEls() {
   return {
     dialog: document.getElementById('backup-action-modal'),
     title: document.getElementById('backup-action-modal-title'),
+    titleText: document.getElementById('backup-action-modal-title-text'),
+    badge: document.getElementById('backup-action-modal-badge'),
     filename: document.getElementById('backup-action-modal-filename'),
     message: document.getElementById('backup-action-modal-message'),
     normalWarn: document.getElementById('backup-action-modal-normal-warn'),
@@ -28,6 +30,7 @@ function _backupActionModalEls() {
     status: document.getElementById('backup-action-modal-status'),
     result: document.getElementById('backup-action-modal-result'),
     error: document.getElementById('backup-action-modal-error'),
+    headerCloseBtn: document.getElementById('backup-action-modal-header-close'),
     closeBtn: document.getElementById('backup-action-modal-close-btn'),
     confirmBtn: document.getElementById('backup-action-modal-confirm'),
     closeBtns: Array.from(document.querySelectorAll('#backup-action-modal .hub-modal-close')),
@@ -35,10 +38,15 @@ function _backupActionModalEls() {
 }
 
 function _resetBackupActionModal() {
-  const { dialog, title, filename, message, normalWarn, forceWarn, deleteWarn, status, result, error, closeBtn, confirmBtn, closeBtns } = _backupActionModalEls();
+  const { dialog, title, titleText, badge, filename, message, normalWarn, forceWarn, deleteWarn, status, result, error, headerCloseBtn, closeBtn, confirmBtn, closeBtns } = _backupActionModalEls();
   if (dialog) dialog.dataset.busy = '0';
   if (dialog) dialog.dataset.completed = '0';
-  if (title) title.textContent = 'Backup Action';
+  if (dialog) {
+    dialog.classList.remove('hub-dialog');
+    delete dialog.dataset.tone;
+  }
+  if (titleText) titleText.textContent = 'Backup Action';
+  if (badge) badge.hidden = true;
   if (filename) filename.textContent = '';
   if (message) message.textContent = '';
   if (normalWarn) normalWarn.hidden = true;
@@ -55,6 +63,11 @@ function _resetBackupActionModal() {
     result.style.whiteSpace = 'pre-wrap';
   }
   if (error) error.textContent = '';
+  if (headerCloseBtn) {
+    headerCloseBtn.textContent = 'CLOSE';
+    headerCloseBtn.classList.remove('hub-dialog-close');
+    headerCloseBtn.removeAttribute('aria-label');
+  }
   if (closeBtn) {
     closeBtn.textContent = 'Cancel';
     closeBtn.hidden = false;
@@ -96,7 +109,7 @@ function onBackupTableClick(event) {
 }
 
 function openBackupActionModal(filename, action, btn) {
-  const { dialog, title, filename: filenameEl, message, normalWarn, forceWarn, deleteWarn, closeBtn, confirmBtn } = _backupActionModalEls();
+  const { dialog, titleText, badge, filename: filenameEl, message, normalWarn, forceWarn, deleteWarn, headerCloseBtn, closeBtn, confirmBtn } = _backupActionModalEls();
   if (!dialog) return;
 
   _resetBackupActionModal();
@@ -105,7 +118,13 @@ function openBackupActionModal(filename, action, btn) {
   const isForce = action === 'force';
   const isDelete = action === 'delete';
 
-  if (title) title.textContent = isDelete ? 'Delete Backup' : isForce ? 'Force Restore Backup' : 'Restore Backup';
+  if (dialog) {
+    dialog.classList.toggle('hub-dialog', isDelete);
+    if (isDelete) dialog.dataset.tone = 'danger';
+    else delete dialog.dataset.tone;
+  }
+  if (badge) badge.hidden = !isDelete;
+  if (titleText) titleText.textContent = isDelete ? 'Delete Backup' : isForce ? 'Force Restore Backup' : 'Restore Backup';
   if (filenameEl) filenameEl.textContent = filename;
   if (message) {
     message.textContent = isDelete
@@ -117,6 +136,12 @@ function openBackupActionModal(filename, action, btn) {
   if (normalWarn) normalWarn.hidden = action !== 'restore';
   if (forceWarn) forceWarn.hidden = !isForce;
   if (deleteWarn) deleteWarn.hidden = !isDelete;
+  if (headerCloseBtn) {
+    headerCloseBtn.textContent = isDelete ? '\u2715' : 'CLOSE';
+    headerCloseBtn.classList.toggle('hub-dialog-close', isDelete);
+    if (isDelete) headerCloseBtn.setAttribute('aria-label', 'Close');
+    else headerCloseBtn.removeAttribute('aria-label');
+  }
   if (closeBtn) closeBtn.textContent = 'Cancel';
   if (confirmBtn) {
     confirmBtn.textContent = isDelete ? 'Delete' : isForce ? 'Force Restore' : 'Restore';
