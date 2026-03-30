@@ -410,14 +410,17 @@ function openEditDocModal() {
 
 function _docsModalMode(mode) {
   _docsCurrentModalMode = mode;
+  const badge   = document.getElementById('docs-modal-badge');
   const title   = document.getElementById('docs-modal-title');
   const initRow = document.getElementById('docs-modal-init-row');
   const submit  = document.getElementById('docs-modal-submit');
   if (mode === 'new') {
+    if (badge) badge.textContent = 'NEW';
     title.textContent     = 'New Document';
     initRow.style.display = '';
     submit.textContent    = 'Create';
   } else {
+    if (badge) badge.textContent = 'EDIT';
     title.textContent     = 'Edit Document Metadata';
     initRow.style.display = 'none';
     submit.textContent    = 'Save';
@@ -436,7 +439,8 @@ function _docsResetGroupModal() {
 
 function _docsOpenGroupModal(mode, groupId = null, currentName = '') {
   const modal = document.getElementById('docs-group-modal');
-  const title = document.getElementById('docs-group-modal-title');
+  const badge = document.getElementById('docs-group-modal-badge');
+  const title = document.getElementById('docs-group-modal-title-text');
   const input = document.getElementById('docs-group-modal-name');
   const submit = document.getElementById('docs-group-modal-submit');
   const errEl = document.getElementById('docs-group-modal-error');
@@ -446,7 +450,8 @@ function _docsOpenGroupModal(mode, groupId = null, currentName = '') {
   _docsEditingGroupId = groupId;
   _docsEditingGroupName = currentName;
 
-  title.textContent = mode === 'add' ? 'Add Group' : 'Rename Group';
+  if (badge) badge.textContent = mode === 'add' ? 'ADD' : 'EDIT';
+  title.textContent = 'Document Group';
   submit.textContent = mode === 'add' ? 'Create' : 'Save';
   input.value = currentName;
   errEl.textContent = '';

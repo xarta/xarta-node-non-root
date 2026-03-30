@@ -843,10 +843,13 @@
     </div><!-- /tab-scroll-shell -->
   </section>
 
-  <dialog class="hub-modal" id="ai-provider-modal" style="width:min(640px,96vw);max-width:96vw">
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="ai-provider-modal" style="width:min(640px,96vw);max-width:96vw">
     <div class="hub-modal-header">
-      <h2 class="hub-modal-title" id="ai-provider-modal-title">Add AI Provider</h2>
-      <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge" id="ai-provider-modal-badge">ADD</span>
+        <span class="hub-dialog-title-text" id="ai-provider-modal-title">Add AI Provider</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
     </div>
     <div class="hub-modal-body">
       <div class="field">
@@ -899,10 +902,13 @@
     </div>
   </dialog>
 
-  <dialog class="hub-modal" id="ai-assignment-modal" style="width:min(540px,96vw);max-width:96vw">
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="ai-assignment-modal" style="width:min(540px,96vw);max-width:96vw">
     <div class="hub-modal-header">
-      <h2 class="hub-modal-title" id="ai-assignment-modal-title">Add Project Assignment</h2>
-      <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge" id="ai-assignment-modal-badge">ADD</span>
+        <span class="hub-dialog-title-text" id="ai-assignment-modal-title">Add Project Assignment</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
     </div>
     <div class="hub-modal-body">
       <div class="field">
@@ -950,10 +956,13 @@
     </div>
   </section>
 
-  <dialog class="hub-modal" id="nav-item-edit-modal" style="width:min(560px,96vw);max-width:96vw">
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="nav-item-edit-modal" style="width:min(560px,96vw);max-width:96vw">
     <div class="hub-modal-header">
-      <h2 class="hub-modal-title" id="nav-item-edit-title">Edit Nav Item</h2>
-      <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">EDIT</span>
+        <span class="hub-dialog-title-text" id="nav-item-edit-title">Edit Nav Item</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
     </div>
     <div class="hub-modal-body">
       <p id="nav-item-edit-context" style="margin:0 0 10px;font-size:12px;color:var(--text-dim)"></p>
@@ -981,10 +990,13 @@
     </div>
   </dialog>
 
-  <dialog class="hub-modal" id="asset-picker-modal" style="width:min(920px,96vw);max-width:96vw">
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="asset-picker-modal" style="width:min(920px,96vw);max-width:96vw">
     <div class="hub-modal-header">
-      <h2 class="hub-modal-title" id="asset-picker-title">Choose asset</h2>
-      <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">ASSET</span>
+        <span class="hub-dialog-title-text" id="asset-picker-title">Choose asset</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
     </div>
     <div class="hub-modal-body">
       <p id="asset-picker-status" style="font-size:12px;margin:0 0 10px;color:var(--text-dim)"></p>
@@ -1021,10 +1033,13 @@
     </div>
   </section>
 
-  <dialog class="hub-modal" id="fc-edit-modal" style="width:min(620px,96vw);max-width:96vw">
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="fc-edit-modal" style="width:min(620px,96vw);max-width:96vw">
     <div class="hub-modal-header">
-      <h2 class="hub-modal-title" id="fc-edit-modal-title">Add Control Key</h2>
-      <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge" id="fc-edit-modal-badge">ADD</span>
+        <span class="hub-dialog-title-text" id="fc-edit-modal-title">Add Control Key</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
     </div>
     <div class="hub-modal-body">
       <p id="fc-edit-modal-context" style="margin:0 0 10px;font-size:12px;color:var(--text-dim)"></p>
@@ -1276,10 +1291,13 @@
 </main>
 
 <!-- Bookmark Add / Edit modal -->
-<dialog class="hub-modal" id="bm-modal">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="bm-modal">
   <div class="hub-modal-header">
-    <h2 class="hub-modal-title" id="bm-modal-heading">Add bookmark</h2>
-    <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge" id="bm-modal-badge">ADD</span>
+      <span class="hub-dialog-title-text" id="bm-modal-heading">Add bookmark</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
     <input type="hidden" id="bm-modal-id" />
@@ -1319,10 +1337,13 @@
 </dialog>
 
 <!-- Manual Links: Add/Edit modal -->
-<dialog class="hub-modal" id="ml-modal">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="ml-modal">
   <div class="hub-modal-header">
-    <h2 class="hub-modal-title" id="ml-modal-title">Add link</h2>
-    <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge" id="ml-modal-badge">ADD</span>
+      <span class="hub-dialog-title-text" id="ml-modal-title">Add link</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px 16px">
@@ -1416,10 +1437,13 @@
 </dialog>
 
 <!-- Quick-add service modal -->
-<dialog class="hub-modal" id="add-modal">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="add-modal">
   <div class="hub-modal-header">
-    <h2 class="hub-modal-title">Add service</h2>
-    <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">ADD</span>
+      <span class="hub-dialog-title-text">Add service</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
     <div class="field">
@@ -1455,10 +1479,13 @@
 </dialog>
 
 <!-- Generic Fleet Nodes action modal -->
-<dialog class="hub-modal" id="node-action-modal" style="width:min(540px,95vw)">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="node-action-modal" style="width:min(540px,95vw)">
   <div class="hub-modal-header">
-    <h2 class="hub-modal-title" id="node-action-modal-title">Confirm Action</h2>
-    <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge" id="node-action-modal-badge">INFO</span>
+      <span class="hub-dialog-title-text" id="node-action-modal-title">Node Action</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
     <p id="node-action-modal-message" style="color:var(--text);font-size:13px;line-height:1.7;margin:0 0 12px;"></p>
@@ -1473,10 +1500,13 @@
 </dialog>
 
 <!-- Node restart confirmation modal -->
-<dialog class="hub-modal" id="node-restart-modal" style="width:min(520px,95vw)">
+<dialog class="hub-modal hub-dialog" data-tone="warning" id="node-restart-modal" style="width:min(520px,95vw)">
   <div class="hub-modal-header">
-    <h2 class="hub-modal-title">Restart Blueprints App?</h2>
-    <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge" id="node-restart-modal-badge">RST</span>
+      <span class="hub-dialog-title-text" id="node-restart-modal-title">Restart Blueprints App</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
     <p id="node-restart-modal-message" style="color:var(--text-dim);font-size:13px;line-height:1.7;margin:0 0 12px;">
@@ -1490,15 +1520,18 @@
   </div>
   <div class="hub-modal-footer">
     <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Cancel</button>
-    <button class="hub-modal-btn" type="button" id="node-restart-modal-confirm">Restart</button>
+    <button class="hub-modal-btn warning" type="button" id="node-restart-modal-confirm">Restart</button>
   </div>
 </dialog>
 
 <!-- Fleet update confirmation modal -->
-<dialog class="hub-modal" id="fleet-update-modal" style="width:min(560px,95vw)">
+<dialog class="hub-modal hub-dialog" data-tone="warning" id="fleet-update-modal" style="width:min(560px,95vw)">
   <div class="hub-modal-header">
-    <h2 class="hub-modal-title">Trigger Fleet Update?</h2>
-    <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge" id="fleet-update-modal-badge">SYNC</span>
+      <span class="hub-dialog-title-text" id="fleet-update-modal-title">Trigger Fleet Update</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
     <p style="color:var(--text-dim);font-size:13px;line-height:1.7;margin:0 0 14px;">
@@ -1515,15 +1548,18 @@
   </div>
   <div class="hub-modal-footer">
     <button class="hub-modal-btn secondary hub-modal-close" type="button" id="fleet-update-modal-close-btn" data-fc-key="modal.close">Cancel</button>
-    <button class="hub-modal-btn" type="button" id="fleet-update-modal-confirm">Queue Update</button>
+    <button class="hub-modal-btn warning" type="button" id="fleet-update-modal-confirm">Queue Update</button>
   </div>
 </dialog>
 
 <!-- Integrity diagnostic modal (OK and FAILED) -->
-<dialog class="hub-modal" id="integrity-modal">
+<dialog class="hub-modal hub-dialog" data-tone="warning" id="integrity-modal">
   <div class="hub-modal-header">
-    <h2 class="hub-modal-title" id="integrity-modal-title">&#9888; Integrity FAILED</h2>
-    <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge" id="integrity-modal-badge">WARN</span>
+      <span class="hub-dialog-title-text" id="integrity-modal-title">Integrity Check</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
     <p id="integrity-modal-intro" style="color:var(--text-dim);font-size:13px;margin-bottom:16px;line-height:1.6;">
@@ -1559,15 +1595,18 @@
     </div>
   </div>
   <div class="hub-modal-footer">
-    <button class="hub-modal-btn hub-modal-close" type="button" data-fc-key="modal.close">Close</button>
+    <button class="hub-modal-btn warning hub-modal-close" type="button" data-fc-key="modal.close">Close</button>
   </div>
 </dialog>
 
 <!-- Edit VLAN modal -->
-<dialog class="hub-modal" id="vlan-modal">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="vlan-modal">
   <div class="hub-modal-header">
-    <h2 class="hub-modal-title" id="vlan-modal-title">Edit VLAN</h2>
-    <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge" id="vlan-modal-badge">EDIT</span>
+      <span class="hub-dialog-title-text" id="vlan-modal-title">Edit VLAN</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
     <div class="field">
@@ -1587,10 +1626,13 @@
 </dialog>
 
 <!-- Cert upload modal -->
-<dialog class="hub-modal" id="certs-upload-modal" style="width:min(560px,95vw)">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="certs-upload-modal" style="width:min(560px,95vw)">
   <div class="hub-modal-header">
-    <h2 class="hub-modal-title" id="certs-upload-title">Upload</h2>
-    <button class="hub-modal-close" type="button">CLOSE</button>
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge" id="certs-upload-badge">FILE</span>
+      <span class="hub-dialog-title-text" id="certs-upload-title">Upload</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
     <p id="certs-upload-hint" class="muted"></p>
@@ -1609,10 +1651,13 @@
 
 <!-- Edit PVE Host modal -->
 <!-- Add / Edit Manual ARP entry modal -->
-<dialog class="hub-modal" id="arp-manual-edit-modal">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="arp-manual-edit-modal">
   <div class="hub-modal-header">
-    <h2 class="hub-modal-title" id="arp-manual-edit-title">Add entry</h2>
-    <button class="hub-modal-close" type="button">CLOSE</button>
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge" id="arp-manual-edit-badge">ADD</span>
+      <span class="hub-dialog-title-text" id="arp-manual-edit-title">Add entry</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
     <div class="field">
@@ -1635,10 +1680,13 @@
   </div>
 </dialog>
 
-<dialog class="hub-modal" id="pve-host-edit-modal">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="pve-host-edit-modal">
   <div class="hub-modal-header">
-    <h2 class="hub-modal-title">Edit PVE Host</h2>
-    <button class="hub-modal-close" type="button">CLOSE</button>
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">PVE</span>
+      <span class="hub-dialog-title-text">Edit PVE Host</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
     <div class="field">
@@ -1658,10 +1706,13 @@
 </dialog>
 
 <!-- Add / Edit setting modal -->
-<dialog class="hub-modal" id="setting-modal">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="setting-modal">
   <div class="hub-modal-header">
-    <h2 class="hub-modal-title" id="setting-modal-title">Add setting</h2>
-    <button class="hub-modal-close" type="button">CLOSE</button>
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge" id="setting-modal-badge">ADD</span>
+      <span class="hub-dialog-title-text" id="setting-modal-title">Add setting</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
     <div class="field">
@@ -1685,10 +1736,13 @@
 </dialog>
 
 <!-- Add (register existing) document modal -->
-<dialog class="hub-modal" id="add-doc-modal" style="width:min(560px,95vw)">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="add-doc-modal" style="width:min(560px,95vw)">
   <div class="hub-modal-header">
-    <h2 class="hub-modal-title">Add Existing Document</h2>
-    <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">ADD</span>
+      <span class="hub-dialog-title-text">Add Existing Document</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
     <div class="field">
@@ -1731,10 +1785,13 @@
 </dialog>
 
 <!-- New / Edit doc modal -->
-<dialog class="hub-modal" id="docs-modal" style="width:min(540px,95vw)">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="docs-modal" style="width:min(540px,95vw)">
   <div class="hub-modal-header">
-    <h2 class="hub-modal-title" id="docs-modal-title">New Document</h2>
-    <button class="hub-modal-close" type="button">CLOSE</button>
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge" id="docs-modal-badge">NEW</span>
+      <span class="hub-dialog-title-text" id="docs-modal-title">New Document</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
     <div class="field">
@@ -1778,10 +1835,13 @@
 </dialog>
 
 <!-- Add / Rename doc group modal -->
-<dialog class="hub-modal" id="docs-group-modal" style="width:min(460px,95vw)">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="docs-group-modal" style="width:min(460px,95vw)">
   <div class="hub-modal-header">
-    <h2 class="hub-modal-title" id="docs-group-modal-title">Rename Group</h2>
-    <button class="hub-modal-close" type="button">CLOSE</button>
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge" id="docs-group-modal-badge">EDIT</span>
+      <span class="hub-dialog-title-text" id="docs-group-modal-title-text">Document Group</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
     <div class="field">
@@ -1882,7 +1942,7 @@
 <script src="js/app.js"></script>
 
 <!-- Backup action modal -->
-<dialog class="hub-modal" id="backup-action-modal" style="width:min(560px,95vw)">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="backup-action-modal" style="width:min(560px,95vw)">
   <div class="hub-modal-header">
     <h2 class="hub-modal-title" id="backup-action-modal-title"><span class="hub-dialog-badge" id="backup-action-modal-badge" hidden>DEL</span><span class="hub-dialog-title-text" id="backup-action-modal-title-text">Backup Action</span></h2>
     <button class="hub-modal-close" type="button" id="backup-action-modal-header-close" aria-label="Close" data-fc-key="modal.close">CLOSE</button>
@@ -1915,10 +1975,13 @@
 </dialog>
 
 <!-- Key info modal -->
-<dialog class="hub-modal" id="key-info-modal">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="key-info-modal">
   <div class="hub-modal-header">
-    <h2 class="hub-modal-title" id="key-info-title"></h2>
-    <button class="hub-modal-close" type="button">CLOSE</button>
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge" id="key-info-badge">INFO</span>
+      <span class="hub-dialog-title-text" id="key-info-title"></span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
     <div id="key-info-body"></div>
@@ -1929,10 +1992,13 @@
 </dialog>
 
 <!-- Connectivity diagnostic modal -->
-<dialog class="hub-modal" id="diag-modal" style="width:min(760px,96vw);max-width:96vw">
+<dialog class="hub-modal hub-dialog" data-tone="warning" id="diag-modal" style="width:min(760px,96vw);max-width:96vw">
   <div class="hub-modal-header">
-    <h2 class="hub-modal-title">Connection Issue</h2>
-    <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">NET</span>
+      <span class="hub-dialog-title-text">Connection Issue</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
     <p class="muted" style="margin-bottom:14px">
@@ -1946,15 +2012,18 @@
   <div class="hub-modal-footer">
     <button class="hub-modal-btn secondary" type="button" id="diag-api-key-btn" title="Configure API key">&#128273; API Key</button>
     <button class="hub-modal-btn secondary" type="button" id="diag-retry-btn">&#8635; Retry</button>
-    <button class="hub-modal-btn hub-modal-close" type="button" data-fc-key="modal.close">Close</button>
+    <button class="hub-modal-btn warning hub-modal-close" type="button" data-fc-key="modal.close">Close</button>
   </div>
 </dialog>
 
 <!-- API key configuration modal -->
-<dialog class="hub-modal" id="api-key-modal" style="width:min(480px,95vw)">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="api-key-modal" style="width:min(480px,95vw)">
   <div class="hub-modal-header">
-    <h2 class="hub-modal-title">API Key</h2>
-    <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">KEY</span>
+      <span class="hub-dialog-title-text">API Key</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
     <p style="margin:0 0 14px;font-size:13px;color:var(--text-dim);line-height:1.7;">Paste your
@@ -2071,11 +2140,14 @@
   .bm-tc-active { min-width:46px;text-align:right;padding-right:6px;color:var(--ok,#4ade80) }
   .bm-tc-arch   { min-width:46px;text-align:right;padding-left:6px;border-left:1px solid var(--border);color:var(--text-dim) }
 </style>
-<dialog class="hub-modal" id="bm-excl-tag-modal" style="width:min(600px,95vw)">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="bm-excl-tag-modal" style="width:min(600px,95vw)">
   <div class="hub-modal-header" style="flex-direction:column;align-items:stretch;padding:0;gap:0">
     <div style="display:flex;align-items:center;gap:10px;padding:14px 16px 12px">
-      <span class="hub-modal-title">&#127991; Select tags to exclude from embeddings</span>
-      <button class="hub-modal-close secondary">&#10005;</button>
+      <h2 class="hub-modal-title" style="margin:0">
+        <span class="hub-dialog-badge">TAGS</span>
+        <span class="hub-dialog-title-text">Select tags to exclude from embeddings</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
     </div>
     <div style="padding:8px 16px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px">
       <input type="text" id="bm-excl-modal-search" placeholder="Filter tags…" style="flex:1;font-size:13px;padding:5px 10px" autocomplete="off" />
@@ -2095,71 +2167,80 @@
   </div>
   <div class="hub-modal-footer" style="justify-content:flex-end">
     <span id="bm-excl-modal-status" style="font-size:12px;color:var(--text-dim);flex:1;text-align:left"></span>
-    <button class="secondary hub-modal-close">Cancel</button>
-    <button id="bm-excl-modal-apply-btn">&#10003; Apply &amp; Save</button>
+    <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
+    <button class="hub-modal-btn" id="bm-excl-modal-apply-btn" type="button">&#10003; Apply &amp; Save</button>
   </div>
 </dialog>
 
-<dialog class="hub-modal" id="bm-cols-modal">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="bm-cols-modal">
   <div class="hub-modal-header">
-    <span class="hub-modal-title">&#9776; Visible columns</span>
-    <button class="hub-modal-close secondary">&#10005;</button>
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">COLS</span>
+      <span class="hub-dialog-title-text">Visible columns</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
     <div id="bm-cols-modal-list"></div>
   </div>
   <div class="hub-modal-footer">
-    <button class="secondary hub-modal-close">Cancel</button>
-    <button id="bm-cols-modal-apply">&#10003; Apply</button>
+    <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
+    <button class="hub-modal-btn" id="bm-cols-modal-apply" type="button">&#10003; Apply</button>
   </div>
 </dialog>
 
-<dialog class="hub-modal" id="vis-cols-modal">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="vis-cols-modal">
   <div class="hub-modal-header">
-    <span class="hub-modal-title">&#9776; Visit columns</span>
-    <button class="hub-modal-close secondary">&#10005;</button>
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">COLS</span>
+      <span class="hub-dialog-title-text">Visit columns</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
     <div id="vis-cols-modal-list"></div>
   </div>
   <div class="hub-modal-footer">
-    <button class="secondary hub-modal-close">Cancel</button>
-    <button id="vis-cols-modal-apply">&#10003; Apply</button>
+    <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
+    <button class="hub-modal-btn" id="vis-cols-modal-apply" type="button">&#10003; Apply</button>
   </div>
 </dialog>
 
 <!-- Score analysis overview modal -->
-<dialog class="hub-modal" id="bm-score-modal" style="width:min(920px,96vw);max-width:96vw">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="bm-score-modal" style="width:min(920px,96vw);max-width:96vw">
   <div class="hub-modal-header">
-    <div style="flex:1;min-width:0">
-      <span style="font-weight:700;font-size:15px">&#128269; Score Analysis</span>
+    <h2 class="hub-modal-title" style="flex:1;min-width:0">
+      <span class="hub-dialog-badge">SCORE</span>
+      <span class="hub-dialog-title-text">Score Analysis</span>
       <span id="bm-score-modal-subtitle" style="font-size:12px;color:var(--text-dim);margin-left:12px"></span>
-    </div>
-    <button class="hub-modal-close" type="button">&#10005;</button>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body" id="bm-score-modal-body" style="padding:20px 24px;font-size:13.5px;line-height:1.65"></div>
 </dialog>
 
 <!-- Score detail modal (per-metric drill-down, stacks on top of overview) -->
-<dialog class="hub-modal" id="bm-score-detail-modal" style="width:min(800px,94vw);max-width:94vw;border-color:var(--accent)">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="bm-score-detail-modal" style="width:min(800px,94vw);max-width:94vw;border-color:var(--accent)">
   <div class="hub-modal-header">
-    <div style="flex:1;min-width:0">
-      <span style="font-weight:700;font-size:14px">&#128270; Metric Detail</span>
+    <h2 class="hub-modal-title" style="flex:1;min-width:0">
+      <span class="hub-dialog-badge">DETAIL</span>
+      <span class="hub-dialog-title-text">Metric Detail</span>
       <span id="bm-score-detail-subtitle" style="font-size:12px;color:var(--text-dim);margin-left:12px"></span>
-    </div>
+    </h2>
     <button class="hub-modal-close" type="button">&#8592; Back</button>
   </div>
   <div class="hub-modal-body" id="bm-score-detail-body" style="padding:20px 24px;font-size:13.5px;line-height:1.65"></div>
 </dialog>
 
 <!-- Sort explanation modal -->
-<dialog class="hub-modal" id="bm-sort-explain-modal" style="width:min(960px,96vw);max-width:96vw">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="bm-sort-explain-modal" style="width:min(960px,96vw);max-width:96vw">
   <div class="hub-modal-header">
-    <div style="flex:1;min-width:0">
-      <span style="font-weight:700;font-size:15px">&#128202; Sort Order Explanation</span>
+    <h2 class="hub-modal-title" style="flex:1;min-width:0">
+      <span class="hub-dialog-badge">SORT</span>
+      <span class="hub-dialog-title-text">Sort Order Explanation</span>
       <span id="bm-sort-explain-subtitle" style="font-size:12px;color:var(--text-dim);margin-left:12px"></span>
-    </div>
-    <button class="hub-modal-close" type="button">&#10005;</button>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body" id="bm-sort-explain-body" style="padding:20px 24px;font-size:13.5px;line-height:1.65"></div>
 </dialog>

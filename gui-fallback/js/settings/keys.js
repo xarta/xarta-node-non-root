@@ -114,6 +114,8 @@ function openKeyInfo(id) {
   const key   = _keys.find(k => k.id === id);
   const modal = document.getElementById('key-info-modal');
   if (!info || !key || !modal) return;
+  const badge = document.getElementById('key-info-badge');
+  if (badge) badge.textContent = 'KEY';
   document.getElementById('key-info-title').textContent = key.label;
   document.getElementById('key-info-body').innerHTML = `
     <div style="margin-bottom:14px">

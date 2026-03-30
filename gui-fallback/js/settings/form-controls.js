@@ -374,6 +374,8 @@ function _fcRowEl(item) {
 async function _fcAddNew() {
     const modal = _fcEditModalEls();
     _editingFcControlId = null;
+    const badge = document.getElementById('fc-edit-modal-badge');
+    if (badge) badge.textContent = 'ADD';
     modal.title.textContent = 'Add Control Key';
     modal.context.textContent = 'Create a new form-control mapping for a data-fc-key used in the GUI.';
     modal.key.disabled = false;
@@ -481,6 +483,8 @@ async function _fcOpenEditModal(controlId) {
     if (!item) return;
     const modal = _fcEditModalEls();
     _editingFcControlId = controlId;
+    const badge = document.getElementById('fc-edit-modal-badge');
+    if (badge) badge.textContent = 'EDIT';
     modal.title.textContent = 'Edit Control Key';
     modal.context.textContent = `${item.control_key}${item.context ? ` • ${item.context}` : ''}`;
     modal.key.disabled = true;

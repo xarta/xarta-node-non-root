@@ -41,10 +41,7 @@ function _resetBackupActionModal() {
   const { dialog, title, titleText, badge, filename, message, normalWarn, forceWarn, deleteWarn, status, result, error, headerCloseBtn, closeBtn, confirmBtn, closeBtns } = _backupActionModalEls();
   if (dialog) dialog.dataset.busy = '0';
   if (dialog) dialog.dataset.completed = '0';
-  if (dialog) {
-    dialog.classList.remove('hub-dialog');
-    delete dialog.dataset.tone;
-  }
+  if (dialog) dialog.dataset.tone = 'info';
   if (titleText) titleText.textContent = 'Backup Action';
   if (badge) badge.hidden = true;
   if (filename) filename.textContent = '';
@@ -119,9 +116,8 @@ function openBackupActionModal(filename, action, btn) {
   const isDelete = action === 'delete';
 
   if (dialog) {
-    dialog.classList.toggle('hub-dialog', isDelete);
     if (isDelete) dialog.dataset.tone = 'danger';
-    else delete dialog.dataset.tone;
+    else dialog.dataset.tone = 'info';
   }
   if (badge) badge.hidden = !isDelete;
   if (titleText) titleText.textContent = isDelete ? 'Delete Backup' : isForce ? 'Force Restore Backup' : 'Restore Backup';

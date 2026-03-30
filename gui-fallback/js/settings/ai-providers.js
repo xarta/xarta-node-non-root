@@ -6,6 +6,7 @@ let _editingAiAssignmentId = null;
 function _providerModalEls() {
   return {
     dialog: document.getElementById('ai-provider-modal'),
+    badge: document.getElementById('ai-provider-modal-badge'),
     title: document.getElementById('ai-provider-modal-title'),
     saveBtn: document.getElementById('ai-provider-modal-save-btn'),
     name: document.getElementById('aip-name'),
@@ -24,6 +25,7 @@ function _providerModalEls() {
 function _assignmentModalEls() {
   return {
     dialog: document.getElementById('ai-assignment-modal'),
+    badge: document.getElementById('ai-assignment-modal-badge'),
     title: document.getElementById('ai-assignment-modal-title'),
     saveBtn: document.getElementById('ai-assignment-modal-save-btn'),
     project: document.getElementById('aia-project'),
@@ -121,6 +123,7 @@ function openAiProviderModal(provider_id) {
   const modal = _providerModalEls();
   const existing = provider_id ? _aiProviders.find(p => p.provider_id === provider_id) : null;
   _editingAiProviderId = existing ? existing.provider_id : null;
+  if (modal.badge) modal.badge.textContent = existing ? 'EDIT' : 'ADD';
   modal.title.textContent = `${existing ? 'Edit' : 'Add'} AI Provider`;
   modal.saveBtn.textContent = 'Save';
   modal.name.value = existing?.name || '';
@@ -204,6 +207,7 @@ function openAiAssignmentModal(assignment_id) {
   const modal = _assignmentModalEls();
   const existing = assignment_id ? _aiAssignments.find(a => a.assignment_id === assignment_id) : null;
   _editingAiAssignmentId = existing ? existing.assignment_id : null;
+  if (modal.badge) modal.badge.textContent = existing ? 'EDIT' : 'ADD';
   modal.title.textContent = `${existing ? 'Edit' : 'Add'} Project Assignment`;
   modal.saveBtn.textContent = 'Save';
   modal.provider.innerHTML = _aiProviders.map(p =>

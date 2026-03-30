@@ -41,6 +41,8 @@ function _openArpManualEditModal(entry_id) {
   if (!modal) return;
   _arpManualEditId = entry_id;
   const entry = entry_id ? _arpManual.find(e => e.entry_id === entry_id) : null;
+  const badge = document.getElementById('arp-manual-edit-badge');
+  if (badge) badge.textContent = entry ? 'EDIT' : 'ADD';
   document.getElementById('arp-manual-edit-title').textContent = entry ? 'Edit entry' : 'Add entry';
   document.getElementById('arp-manual-edit-ip').value    = entry ? (entry.ip_address  || '') : '';
   document.getElementById('arp-manual-edit-mac').value   = entry ? (entry.mac_address || '') : '';

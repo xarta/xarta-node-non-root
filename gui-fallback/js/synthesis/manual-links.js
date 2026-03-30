@@ -289,6 +289,8 @@ function renderManualLinksRendered() {
 function openManualLinkModal(linkId) {
   _editingLinkId = linkId || null;
   const dlg = document.getElementById('ml-modal');
+  const badge = document.getElementById('ml-modal-badge');
+  if (badge) badge.textContent = linkId ? 'EDIT' : 'ADD';
   document.getElementById('ml-modal-title').textContent = linkId ? 'Edit link' : 'Add link';
   const modalErr = document.getElementById('ml-modal-error');
   if (modalErr) modalErr.textContent = '';

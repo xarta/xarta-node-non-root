@@ -29,6 +29,7 @@ let _pendingNodeRestart = null;
 function _nodeActionModalEls() {
   return {
     dialog: document.getElementById('node-action-modal'),
+    badge: document.getElementById('node-action-modal-badge'),
     title: document.getElementById('node-action-modal-title'),
     message: document.getElementById('node-action-modal-message'),
     note: document.getElementById('node-action-modal-note'),
@@ -41,9 +42,11 @@ function _nodeActionModalEls() {
 }
 
 function _resetNodeActionModal() {
-  const { dialog, title, message, note, status, error, closeBtn, confirmBtn, closeBtns } = _nodeActionModalEls();
+  const { dialog, badge, title, message, note, status, error, closeBtn, confirmBtn, closeBtns } = _nodeActionModalEls();
   if (dialog) dialog.dataset.busy = '0';
-  if (title) title.textContent = 'Confirm Action';
+  if (dialog) dialog.dataset.tone = 'info';
+  if (badge) badge.textContent = 'INFO';
+  if (title) title.textContent = 'Node Action';
   if (message) message.textContent = '';
   if (note) note.textContent = '';
   if (status) {
@@ -56,25 +59,31 @@ function _resetNodeActionModal() {
     confirmBtn.textContent = 'Confirm';
     confirmBtn.disabled = false;
     confirmBtn.hidden = false;
-    confirmBtn.classList.remove('danger');
+    confirmBtn.classList.remove('danger', 'warning');
   }
   closeBtns.forEach(btn => { btn.disabled = false; });
   _pendingNodeAction = null;
 }
 
 function openNodeActionModal(opts) {
-  const { dialog, title, message, note, closeBtn, confirmBtn } = _nodeActionModalEls();
+  const { dialog, badge, title, message, note, closeBtn, confirmBtn } = _nodeActionModalEls();
   if (!dialog) return;
   _resetNodeActionModal();
   _pendingNodeAction = opts || null;
-  if (title) title.textContent = opts.title || 'Confirm Action';
+  const tone = opts.infoOnly ? 'info' : (opts.confirmTone === 'danger' ? 'danger' : 'warning');
+  if (dialog) dialog.dataset.tone = tone;
+  if (badge) badge.textContent = opts.infoOnly ? 'INFO' : (opts.confirmTone === 'danger' ? 'WARN' : 'ACT');
+  if (title) title.textContent = opts.title || 'Node Action';
   if (message) message.textContent = opts.message || '';
   if (note) note.textContent = opts.note || '';
   if (closeBtn) closeBtn.textContent = opts.infoOnly ? 'CLOSE' : 'Cancel';
   if (confirmBtn) {
     confirmBtn.textContent = opts.confirmLabel || 'Confirm';
     confirmBtn.hidden = !!opts.infoOnly;
-    confirmBtn.classList.toggle('danger', opts.confirmTone === 'danger');
+    confirmBtn.classList.remove('danger', 'warning');
+    if (!opts.infoOnly) {
+      confirmBtn.classList.add(opts.confirmTone === 'danger' ? 'danger' : 'warning');
+    }
   }
   HubModal.open(dialog, { onClose: _resetNodeActionModal });
 }
@@ -134,6 +143,8 @@ function _setNodeActionButton(btn, html, color, title) {
 function _nodeRestartModalEls() {
   return {
     dialog: document.getElementById('node-restart-modal'),
+    badge: document.getElementById('node-restart-modal-badge'),
+    title: document.getElementById('node-restart-modal-title'),
     message: document.getElementById('node-restart-modal-message'),
     status: document.getElementById('node-restart-modal-status'),
     error: document.getElementById('node-restart-modal-error'),
@@ -143,8 +154,11 @@ function _nodeRestartModalEls() {
 }
 
 function _resetNodeRestartModal() {
-  const { dialog, message, status, error, confirmBtn, closeBtns } = _nodeRestartModalEls();
+  const { dialog, badge, title, message, status, error, confirmBtn, closeBtns } = _nodeRestartModalEls();
   if (dialog) dialog.dataset.busy = '0';
+  if (dialog) dialog.dataset.tone = 'warning';
+  if (badge) badge.textContent = 'RST';
+  if (title) title.textContent = 'Restart Blueprints App';
   if (message) message.textContent = 'Restart blueprints-app on this node?';
   if (status) {
     status.textContent = '';

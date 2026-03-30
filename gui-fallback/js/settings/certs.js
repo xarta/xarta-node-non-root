@@ -98,11 +98,16 @@ function renderCertsTable(certs, certsDir) {
 /* ── Upload modal ───────────────────────────────────────────────────────── */
 function openCertUpload(id, label, kind) {
   document.getElementById('certs-upload-id').value   = id;
+  const badgeEl = document.getElementById('certs-upload-badge');
   document.getElementById('certs-upload-title').textContent = `Upload: ${label}`;
   document.getElementById('certs-upload-pem').value  = '';
   document.getElementById('certs-upload-result').textContent = '';
   document.getElementById('certs-upload-result').style.color = '';
   document.getElementById('certs-upload-btn').disabled = false;
+
+  if (badgeEl) {
+    badgeEl.textContent = kind === 'key' ? 'KEY' : (kind === 'ca' ? 'CA' : 'CERT');
+  }
 
   const hints = {
     ca:   'Paste the CA certificate PEM (-----BEGIN CERTIFICATE-----). ' +

@@ -44,6 +44,8 @@ function openAddSettingModal() {
   ['setting-key','setting-val','setting-desc'].forEach(id => {
     document.getElementById(id).value = '';
   });
+  const badge = document.getElementById('setting-modal-badge');
+  if (badge) badge.textContent = 'ADD';
   document.getElementById('setting-modal-title').textContent = 'Add setting';
   document.getElementById('setting-key').readOnly = false;
   document.getElementById('setting-error').textContent = '';
@@ -55,6 +57,8 @@ function editSetting(key, value, description) {
   document.getElementById('setting-key').value  = key;
   document.getElementById('setting-val').value  = value;
   document.getElementById('setting-desc').value = description;
+  const badge = document.getElementById('setting-modal-badge');
+  if (badge) badge.textContent = 'EDIT';
   document.getElementById('setting-modal-title').textContent = 'Edit setting';
   document.getElementById('setting-key').readOnly = true;
   document.getElementById('setting-error').textContent = '';

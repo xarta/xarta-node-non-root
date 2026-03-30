@@ -76,14 +76,19 @@ function updateKeyBadge(keys) {
 
 async function openIntegrityModal(isOk = false) {
   const modal = document.getElementById('integrity-modal');
+  const badge = document.getElementById('integrity-modal-badge');
+  const title = document.getElementById('integrity-modal-title');
+  const closeBtn = document.querySelector('#integrity-modal .hub-modal-footer .hub-modal-close');
   const diag  = document.getElementById('integrity-diag');
 
   // Adapt modal to OK vs FAILED state
-  modal.style.borderColor = isOk ? 'var(--ok,#3fb950)' : 'var(--err,#f85149)';
-  document.getElementById('integrity-modal-title').innerHTML =
-    isOk ? '&#10003; Integrity OK' : '&#9888; Integrity FAILED';
-  document.getElementById('integrity-modal-title').style.color =
-    isOk ? 'var(--ok,#3fb950)' : 'var(--err,#f85149)';
+  modal.dataset.tone = isOk ? 'success' : 'warning';
+  if (badge) badge.textContent = isOk ? 'OK' : 'WARN';
+  if (title) title.textContent = isOk ? 'Integrity OK' : 'Integrity Failed';
+  if (closeBtn) {
+    closeBtn.classList.remove('ok', 'warning');
+    closeBtn.classList.add(isOk ? 'ok' : 'warning');
+  }
   document.getElementById('integrity-modal-intro').innerHTML = isOk
     ? 'This node\'s database is <strong>healthy</strong>. Sync is active and peer writes are accepted. The readings below confirm the current state.'
     : 'This node\'s database has been marked as <strong>degraded</strong>. Sync is paused \u2014 no outgoing writes will be sent to peers, and this node will not accept incoming sync actions until recovery.';

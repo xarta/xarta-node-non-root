@@ -95,6 +95,8 @@ const SettingsMenuConfig = createHubMenu({
 function _fleetUpdateModalEls() {
     return {
         dialog:     document.getElementById('fleet-update-modal'),
+        badge:      document.getElementById('fleet-update-modal-badge'),
+        title:      document.getElementById('fleet-update-modal-title'),
         status:     document.getElementById('fleet-update-modal-status'),
         log:        document.getElementById('fleet-update-modal-log'),
         error:      document.getElementById('fleet-update-modal-error'),
@@ -242,8 +244,11 @@ async function _runFleetUpdateStage(nodes, expectedVersions, stage) {
 }
 
 function _resetFleetUpdateModal() {
-    const { dialog, status, log, error, closeBtn, confirmBtn, closeBtns } = _fleetUpdateModalEls();
+    const { dialog, badge, title, status, log, error, closeBtn, confirmBtn, closeBtns } = _fleetUpdateModalEls();
     if (dialog) dialog.dataset.busy = '0';
+    if (dialog) dialog.dataset.tone = 'warning';
+    if (badge) badge.textContent = 'SYNC';
+    if (title) title.textContent = 'Trigger Fleet Update';
     if (status) {
         status.textContent = '';
         status.style.color = 'var(--text-dim)';

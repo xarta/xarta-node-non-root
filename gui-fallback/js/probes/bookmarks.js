@@ -1199,7 +1199,9 @@ function promoteVisitToBookmark(url, title) {
 
 async function openBookmarkModal(id) {
   const modal = document.getElementById('bm-modal');
+  const badge = document.getElementById('bm-modal-badge');
   document.getElementById('bm-modal-id').value = id || '';
+  if (badge) badge.textContent = id ? 'EDIT' : 'ADD';
   document.getElementById('bm-modal-heading').textContent = id ? 'Edit bookmark' : 'Add bookmark';
   document.getElementById('bm-modal-error').textContent = '';
   if (id) {
