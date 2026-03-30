@@ -218,9 +218,10 @@ function _bmOpenColsModal() {
   list.innerHTML = _bmDynCols.map(key => {
     const label   = _bmFieldLabel(key);
     const checked = !_bmHiddenCols.has(key) ? 'checked' : '';
-    return `<label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 4px;font-size:13px;border-bottom:1px solid var(--border)">
-      <input type="checkbox" data-col="${key}" ${checked} style="width:15px;height:15px;cursor:pointer" />
-      <span>${label}</span>
+    return `<label class="hub-checkbox hub-checkbox--row" style="font-size:13px">
+      <input class="hub-checkbox__input" type="checkbox" data-col="${key}" ${checked} />
+      <span class="hub-checkbox__box" aria-hidden="true"></span>
+      <span class="hub-checkbox__label">${label}</span>
     </label>`;
   }).join('');
   HubModal.open(document.getElementById('bm-cols-modal'));
@@ -558,9 +559,10 @@ function _visOpenColsModal() {
   list.innerHTML = _VIS_ALL_COLS.map(k => {
     const label   = _VIS_FIELD_META[k]?.label ?? k;
     const checked = !_visHiddenCols.has(k) ? 'checked' : '';
-    return `<label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 4px;font-size:13px;border-bottom:1px solid var(--border)">
-      <input type="checkbox" data-col="${k}" ${checked} style="width:15px;height:15px;cursor:pointer" />
-      <span>${label}</span>
+    return `<label class="hub-checkbox hub-checkbox--row" style="font-size:13px">
+      <input class="hub-checkbox__input" type="checkbox" data-col="${k}" ${checked} />
+      <span class="hub-checkbox__box" aria-hidden="true"></span>
+      <span class="hub-checkbox__label">${label}</span>
     </label>`;
   }).join('');
   HubModal.open(document.getElementById('vis-cols-modal'));
@@ -936,7 +938,7 @@ function _bmRenderExclTagModalList(excluded, filter) {
     const c = _bmTagCounts[tag] || { active: 0, archived: 0 };
     const activeTxt = `<span class="bm-tc-active" title="active">${c.active}</span>`;
     const archTxt   = `<span class="bm-tc-arch"   title="archived">${c.archived}</span>`;
-    return `<label><input type="checkbox" data-tag="${esc(tag)}" ${checked} /><span class="bm-tc-name">${esc(tag)}</span><span class="bm-tc-counts">${activeTxt}${archTxt}</span></label>`;
+    return `<label class="hub-checkbox hub-checkbox--row"><input class="hub-checkbox__input" type="checkbox" data-tag="${esc(tag)}" ${checked} /><span class="hub-checkbox__box" aria-hidden="true"></span><span class="bm-tc-name">${esc(tag)}</span><span class="bm-tc-counts">${activeTxt}${archTxt}</span></label>`;
   }).join('');
 }
 

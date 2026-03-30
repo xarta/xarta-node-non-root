@@ -233,9 +233,10 @@ function parseKeyBundle() {
     const keyMeta = _keys.find(k => k.id === e.id);
     const lbl = keyMeta ? `${keyMeta.label} <span style="color:var(--text-dim);font-size:11px">[${e.id}]</span>`
                         : `<span style="color:var(--warn)">${esc(e.label)} [${esc(e.id)}] — unknown id, will not import</span>`;
-    return `<label style="display:flex;align-items:center;gap:8px;cursor:${known?'pointer':'default'}">
-      <input type="checkbox" data-bundle-id="${esc(e.id)}" ${known ? 'checked' : 'disabled'}>
-      ${lbl}
+    return `<label class="hub-checkbox hub-checkbox--row" style="cursor:${known?'pointer':'default'}">
+      <input class="hub-checkbox__input" type="checkbox" data-bundle-id="${esc(e.id)}" ${known ? 'checked' : 'disabled'}>
+      <span class="hub-checkbox__box" aria-hidden="true"></span>
+      <span class="hub-checkbox__label">${lbl}</span>
     </label>`;
   }).join('');
 
@@ -497,9 +498,10 @@ async function openEncrypted() {
 
     cbWrap.innerHTML = ids.map(id => {
       const lbl = entries[id].label || id;
-      return '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;">' +
-             '<input type="checkbox" value="' + esc(id) + '" checked style="cursor:pointer;">' +
-             '<span>' + esc(lbl) + '</span>' +
+          return '<label class="hub-checkbox hub-checkbox--row">' +
+            '<input class="hub-checkbox__input" type="checkbox" value="' + esc(id) + '" checked>' +
+            '<span class="hub-checkbox__box" aria-hidden="true"></span>' +
+            '<span class="hub-checkbox__label">' + esc(lbl) + '</span>' +
              '</label>';
     }).join('');
     checklist.style.display = '';
