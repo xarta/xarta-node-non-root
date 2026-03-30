@@ -12,6 +12,34 @@
 'use strict';
 
 let _navItems = [];
+let _editingNavItemId = null;
+
+function _niAssetUrl(path, updatedAt) {
+    if (!path) return '';
+    const ts = updatedAt ? new Date(updatedAt).getTime() : 0;
+    return `/fallback-ui/assets/${path}${ts ? `?v=${ts}` : ''}`;
+}
+
+function _niEditModalEls() {
+    return {
+        dialog: document.getElementById('nav-item-edit-modal'),
+        title: document.getElementById('nav-item-edit-title'),
+        context: document.getElementById('nav-item-edit-context'),
+        label: document.getElementById('nav-item-edit-label'),
+        pageLabel: document.getElementById('nav-item-edit-page-label'),
+        emoji: document.getElementById('nav-item-edit-emoji'),
+        order: document.getElementById('nav-item-edit-order'),
+        error: document.getElementById('nav-item-edit-error'),
+        saveBtn: document.getElementById('nav-item-edit-save-btn'),
+    };
+}
+
+function _niSetModalMessage(el, message, color) {
+    if (!el) return;
+    el.textContent = message || '';
+    if (color) el.style.color = color;
+    else el.style.color = '';
+}
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
@@ -198,8 +226,7 @@ function _niBulkUploadPanelEl() {
 
 function _resolvedIconHtml(item) {
     if (item.icon_asset) {
-        const ts = item.updated_at ? new Date(item.updated_at).getTime() : 0;
-        return `<img class="ni-icon-preview menu-icon" src="/fallback-ui/assets/${item.icon_asset}?v=${ts}" alt=""
+        return `<img class="ni-icon-preview menu-icon" src="${_esc(_niAssetUrl(item.icon_asset, item.updated_at))}" alt=""
             data-fallback="1">`;
     }
     if (item.icon_emoji) {
@@ -261,9 +288,8 @@ function _niRowEl(item) {
     tr.querySelectorAll('.ni-sound-play').forEach(btn => {
         btn.addEventListener('click', () => {
             const path = btn.dataset.soundPath;
-            const ts = btn.dataset.updated ? new Date(btn.dataset.updated).getTime() : 0;
             if (path && typeof SoundManager !== 'undefined') {
-                SoundManager.preview(`/fallback-ui/assets/${path}?v=${ts}`);
+                SoundManager.previewToggle(_niAssetUrl(path, btn.dataset.updated), { button: btn });
             }
         });
     });
@@ -275,7 +301,7 @@ function _niRowEl(item) {
 
     // Wire edit button
     tr.querySelectorAll('.ni-edit-btn').forEach(btn => {
-        btn.addEventListener('click', () => _niEditRow(btn.dataset.itemId));
+        btn.addEventListener('click', () => _niOpenEditModal(btn.dataset.itemId));
     });
 
     // Icon img fallback
@@ -293,151 +319,100 @@ function _niRowEl(item) {
 
 // ── Asset picker modal ────────────────────────────────────────────────────────
 
-let _pickerItemId = null;
-let _pickerAssetType = null;
-
 async function _niOpenPicker(itemId, assetType) {
-    _pickerItemId = itemId;
-    _pickerAssetType = assetType;
-
-    const modal = _niGetOrCreatePickerModal();
-    const title = modal.querySelector('#ni-picker-title');
-    const grid  = modal.querySelector('#ni-picker-grid');
-    const status = modal.querySelector('#ni-picker-status');
-
-    title.textContent = `Choose ${assetType === 'icons' ? 'icon' : 'sound'}`;
-    grid.innerHTML = '<p style="color:var(--text-dim);font-size:12px">Loading…</p>';
-    status.textContent = '';
-    modal.showModal();
-
-    try {
-        const resp = await apiFetch(`/api/v1/nav-items/assets?type=${assetType}`);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const assets = await resp.json();
-
-        if (!assets.length) {
-            grid.innerHTML = '<p style="color:var(--text-dim);font-size:12px">No assets uploaded yet.</p>';
-            return;
-        }
-
-        grid.innerHTML = '';
-        for (const asset of assets) {
-            const card = document.createElement('div');
-            card.className = 'ni-picker-card';
-            card.dataset.path = asset.path;
-
-            if (assetType === 'icons') {
-                card.innerHTML = `
-                    <img class="ni-picker-thumb" src="${_esc(asset.url)}" alt="${_esc(asset.filename)}">
-                    <span class="ni-picker-name">${_esc(asset.filename)}</span>
-                `;
-            } else {
-                // sounds — show filename and play button
-                card.innerHTML = `
-                    <button class="ni-picker-play btn-small secondary" data-url="${_esc(asset.url)}" title="Preview">▶</button>
-                    <span class="ni-picker-name">${_esc(asset.filename)}</span>
-                    <small style="color:var(--text-dim)">${_fmtBytes(asset.size)}</small>
-                `;
-                card.querySelector('.ni-picker-play').addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const url = e.currentTarget.dataset.url;
-                    if (typeof SoundManager !== 'undefined') SoundManager.preview(url);
-                });
-            }
-
-            card.addEventListener('click', () => _niPickerSelect(asset.path));
-            grid.appendChild(card);
-        }
-    } catch (e) {
-        grid.innerHTML = `<p style="color:var(--danger,#f85149);font-size:12px">✗ ${_esc(e.message)}</p>`;
-    }
+    AssetPicker.open({
+        title: `Choose ${assetType === 'icons' ? 'icon' : 'sound'}`,
+        kind: assetType === 'icons' ? 'icon' : 'sound',
+        browseUrl: `/api/v1/nav-items/assets?type=${assetType}`,
+        emptyMessage: 'No assets uploaded yet.',
+        onSelect: async (assetPath) => {
+            await _niPickerSelect(itemId, assetType, assetPath);
+        },
+    });
 }
 
-function _niGetOrCreatePickerModal() {
-    let modal = document.getElementById('ni-picker-modal');
-    if (modal) return modal;
-
-    modal = document.createElement('dialog');
-    modal.id = 'ni-picker-modal';
-    modal.className = 'ni-picker-modal';
-    modal.innerHTML = `
-        <div class="ni-picker-header">
-            <span id="ni-picker-title">Choose asset</span>
-            <button class="btn-small secondary" id="ni-picker-close">✕ Close</button>
-        </div>
-        <p id="ni-picker-status" style="font-size:12px;margin:4px 0 8px"></p>
-        <div id="ni-picker-grid" class="ni-picker-grid"></div>
-    `;
-    document.body.appendChild(modal);
-
-    modal.querySelector('#ni-picker-close').addEventListener('click', () => modal.close());
-    // Close on backdrop click
-    modal.addEventListener('click', (e) => { if (e.target === modal) modal.close(); });
-    return modal;
-}
-
-async function _niPickerSelect(assetPath) {
-    const modal = document.getElementById('ni-picker-modal');
-    const status = modal ? modal.querySelector('#ni-picker-status') : null;
-    if (status) { status.textContent = '⏳ Assigning…'; status.style.color = ''; }
-
+async function _niPickerSelect(itemId, assetType, assetPath) {
     const form = new FormData();
-    form.append('item_id', _pickerItemId);
+    form.append('item_id', itemId);
     form.append('asset_path', assetPath);
-    form.append('asset_type', _pickerAssetType);
+    form.append('asset_type', assetType);
 
-    try {
-        const resp = await apiFetch('/api/v1/nav-items/assign-asset', { method: 'POST', body: form });
-        if (!resp.ok) {
-            const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
-            throw new Error(err.detail || `HTTP ${resp.status}`);
-        }
-        const result = await resp.json();
+    const resp = await apiFetch('/api/v1/nav-items/assign-asset', { method: 'POST', body: form });
+    if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
+        throw new Error(err.detail || `HTTP ${resp.status}`);
+    }
+    const result = await resp.json();
 
-        // Update local cache
-        const field = _pickerAssetType === 'icons' ? 'icon_asset' : 'sound_asset';
-        const idx = _navItems.findIndex(i => i.item_id === _pickerItemId);
-        if (idx !== -1) _navItems[idx][field] = result.path;
+    const field = assetType === 'icons' ? 'icon_asset' : 'sound_asset';
+    const idx = _navItems.findIndex(i => i.item_id === itemId);
+    if (idx !== -1) _navItems[idx][field] = result.path;
 
-        if (modal) modal.close();
-        renderNavItems();
-        _niReloadNavConfig(_pickerItemId);
+    renderNavItems();
+    _niReloadNavConfig(itemId);
 
-        const pageStatus = document.getElementById('nav-items-status');
-        if (pageStatus) {
-            pageStatus.textContent = `✓ Assigned: ${result.path}`;
-            pageStatus.style.color = 'var(--ok,#3fb950)';
-            setTimeout(() => { pageStatus.textContent = ''; }, 2500);
-        }
-    } catch (e) {
-        if (status) { status.textContent = `✗ ${e.message}`; status.style.color = 'var(--danger,#f85149)'; }
+    const pageStatus = document.getElementById('nav-items-status');
+    if (pageStatus) {
+        pageStatus.textContent = `✓ Assigned: ${result.path}`;
+        pageStatus.style.color = 'var(--ok,#3fb950)';
+        setTimeout(() => { pageStatus.textContent = ''; }, 2500);
     }
 }
 
 // ── Edit / save ───────────────────────────────────────────────────────────────
 
-function _niEditRow(itemId) {
+function _niOpenEditModal(itemId) {
     const item = _navItems.find(i => i.item_id === itemId);
     if (!item) return;
 
-    const fields = {
-        label:       prompt('Label:', item.label),
-        page_label:  prompt('Page Label:', item.page_label || ''),
-        icon_emoji:  prompt('Icon Emoji (e.g. 🔥):', item.icon_emoji || ''),
-        sort_order:  prompt('Sort Order (number):', String(item.sort_order)),
-    };
-
-    if (Object.values(fields).some(v => v === null)) return;
-
-    _niSaveItem(itemId, {
-        label:      fields.label.trim() || item.label,
-        page_label: fields.page_label.trim() || null,
-        icon_emoji: fields.icon_emoji.trim() || null,
-        sort_order: parseInt(fields.sort_order, 10) || 0,
+    const modal = _niEditModalEls();
+    _editingNavItemId = itemId;
+    modal.title.textContent = 'Edit Nav Item';
+    modal.context.textContent = `${item.menu_group} • ${item.item_key}${item.fn_key ? ` • ${item.fn_key}` : ''}`;
+    modal.label.value = item.label || '';
+    modal.pageLabel.value = item.page_label || '';
+    modal.emoji.value = item.icon_emoji || '';
+    modal.order.value = item.sort_order ?? 0;
+    _niSetModalMessage(modal.error, '');
+    HubModal.open(modal.dialog, {
+        onOpen: () => modal.label.focus(),
+        onClose: () => _niSetModalMessage(modal.error, ''),
     });
 }
 
-function _niSaveItem(itemId, update) {
+function _niSubmitEditModal() {
+    const modal = _niEditModalEls();
+    const itemId = _editingNavItemId;
+    const item = _navItems.find(i => i.item_id === itemId);
+    if (!item) return;
+
+    const label = modal.label.value.trim();
+    const pageLabel = modal.pageLabel.value.trim();
+    const emoji = modal.emoji.value.trim();
+    const orderRaw = modal.order.value.trim();
+
+    if (!label) {
+        _niSetModalMessage(modal.error, 'Label is required.');
+        return;
+    }
+    if (orderRaw && Number.isNaN(parseInt(orderRaw, 10))) {
+        _niSetModalMessage(modal.error, 'Sort order must be a number.');
+        return;
+    }
+
+    _niSetModalMessage(modal.error, '');
+    _niSaveItem(itemId, {
+        label,
+        page_label: pageLabel || null,
+        icon_emoji: emoji || null,
+        sort_order: parseInt(orderRaw || String(item.sort_order), 10) || 0,
+    }, {
+        onSuccess: () => HubModal.close(modal.dialog),
+        onError: (message) => _niSetModalMessage(modal.error, message),
+    });
+}
+
+function _niSaveItem(itemId, update, handlers) {
     const statusEl = document.getElementById('nav-items-status');
     apiFetch(`/api/v1/nav-items/${itemId}`, {
         method: 'PUT',
@@ -455,9 +430,11 @@ function _niSaveItem(itemId, update) {
         _niReloadNavConfig(itemId);
         if (statusEl) { statusEl.textContent = '✓ Saved'; statusEl.style.color = 'var(--ok,#3fb950)'; }
         setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 2500);
+        if (handlers && typeof handlers.onSuccess === 'function') handlers.onSuccess(updated);
     })
     .catch(e => {
         if (statusEl) { statusEl.textContent = `✗ ${e.message}`; statusEl.style.color = 'var(--danger,#f85149)'; }
+        if (handlers && typeof handlers.onError === 'function') handlers.onError(`Save failed: ${e.message}`);
     });
 }
 
@@ -516,6 +493,14 @@ function _fmtBytes(n) {
     if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
     return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
+
+(function initNavItemModalActions() {
+    const editModal = _niEditModalEls();
+    if (editModal.saveBtn && !editModal.saveBtn.dataset.navItemsWired) {
+        editModal.saveBtn.dataset.navItemsWired = '1';
+        editModal.saveBtn.addEventListener('click', _niSubmitEditModal);
+    }
+})();
 
 // Reload the navbar for the group that owns itemId so icon/label changes
 // are visible immediately without a full page refresh.

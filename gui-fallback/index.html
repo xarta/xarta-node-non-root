@@ -805,6 +805,102 @@
     </div><!-- /tab-scroll-shell -->
   </section>
 
+  <dialog class="hub-modal" id="ai-provider-modal" style="width:min(640px,96vw);max-width:96vw">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title" id="ai-provider-modal-title">Add AI Provider</h2>
+      <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+    </div>
+    <div class="hub-modal-body">
+      <div class="field">
+        <label for="aip-name">Name</label>
+        <input type="text" id="aip-name" placeholder="e.g. Local GPU LLM" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="aip-url">Base URL</label>
+        <input type="text" id="aip-url" placeholder="https://..." autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="aip-key">API Key</label>
+        <input type="text" id="aip-key" placeholder="Bearer token" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="aip-model">Model name <span class="field-hint" style="display:inline">(stable alias)</span></label>
+        <input type="text" id="aip-model" placeholder="PRIMARY-LOCAL" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="aip-type">Model type</label>
+        <select id="aip-type">
+          <option value="llm">llm</option>
+          <option value="embedding">embedding</option>
+          <option value="reranker">reranker</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="aip-dims">Dimensions <span class="field-hint" style="display:inline">(embedding only)</span></label>
+        <input type="number" id="aip-dims" placeholder="e.g. 2048" />
+      </div>
+      <div class="field">
+        <label for="aip-opts">Options JSON <span class="field-hint" style="display:inline">(verify_tls, timeout, no_think_supported...)</span></label>
+        <textarea id="aip-opts" rows="4" placeholder='{"verify_tls":false}' style="font-family:monospace;font-size:12px"></textarea>
+      </div>
+      <div class="field">
+        <label for="aip-notes">Notes <span class="field-hint" style="display:inline">(optional)</span></label>
+        <textarea id="aip-notes" rows="4" placeholder="Optional notes"></textarea>
+      </div>
+      <div class="field" style="justify-content:flex-end;padding-bottom:2px">
+        <label class="toggle-wrap" style="margin-left:auto">
+          <input type="checkbox" id="aip-enabled" checked />
+          <span class="bm-toggle-label">Enabled</span>
+        </label>
+      </div>
+      <p class="hub-modal-error" id="aip-error"></p>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Cancel</button>
+      <button class="hub-modal-btn" type="button" id="ai-provider-modal-save-btn">Save</button>
+    </div>
+  </dialog>
+
+  <dialog class="hub-modal" id="ai-assignment-modal" style="width:min(540px,96vw);max-width:96vw">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title" id="ai-assignment-modal-title">Add Project Assignment</h2>
+      <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+    </div>
+    <div class="hub-modal-body">
+      <div class="field">
+        <label for="aia-project">Project name</label>
+        <input type="text" id="aia-project" placeholder="e.g. browser-links" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="aia-role">Role</label>
+        <select id="aia-role">
+          <option value="embedding">embedding</option>
+          <option value="reranker">reranker</option>
+          <option value="llm">llm</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="aia-provider">Provider</label>
+        <select id="aia-provider"></select>
+      </div>
+      <div class="field">
+        <label for="aia-priority">Priority <span class="field-hint" style="display:inline">(higher = preferred)</span></label>
+        <input type="number" id="aia-priority" value="0" />
+      </div>
+      <div class="field" style="justify-content:flex-end;padding-bottom:2px">
+        <label class="toggle-wrap" style="margin-left:auto">
+          <input type="checkbox" id="aia-enabled" checked />
+          <span class="bm-toggle-label">Enabled</span>
+        </label>
+      </div>
+      <p class="hub-modal-error" id="aia-error"></p>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Cancel</button>
+      <button class="hub-modal-btn" type="button" id="ai-assignment-modal-save-btn">Save</button>
+    </div>
+  </dialog>
+
   <!-- Nav Items -->
   <section id="tab-nav-items" class="tab-panel">
     <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">CMS-driven navigation items — edit labels, icons, sounds and sort order. Changes are fleet-synced automatically.</p>
@@ -816,15 +912,141 @@
     </div>
   </section>
 
+  <dialog class="hub-modal" id="nav-item-edit-modal" style="width:min(560px,96vw);max-width:96vw">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title" id="nav-item-edit-title">Edit Nav Item</h2>
+      <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+    </div>
+    <div class="hub-modal-body">
+      <p id="nav-item-edit-context" style="margin:0 0 10px;font-size:12px;color:var(--text-dim)"></p>
+      <div class="field">
+        <label for="nav-item-edit-label">Label</label>
+        <input type="text" id="nav-item-edit-label" placeholder="Visible label" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="nav-item-edit-page-label">Page label <span class="field-hint" style="display:inline">(optional)</span></label>
+        <input type="text" id="nav-item-edit-page-label" placeholder="Active tab label" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="nav-item-edit-emoji">Emoji <span class="field-hint" style="display:inline">(optional)</span></label>
+        <input type="text" id="nav-item-edit-emoji" placeholder="e.g. 🔥" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="nav-item-edit-order">Sort order</label>
+        <input type="number" id="nav-item-edit-order" />
+      </div>
+      <p class="hub-modal-error" id="nav-item-edit-error"></p>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Cancel</button>
+      <button class="hub-modal-btn" type="button" id="nav-item-edit-save-btn">Save</button>
+    </div>
+  </dialog>
+
+  <dialog class="hub-modal" id="asset-picker-modal" style="width:min(920px,96vw);max-width:96vw">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title" id="asset-picker-title">Choose asset</h2>
+      <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+    </div>
+    <div class="hub-modal-body">
+      <p id="asset-picker-status" style="font-size:12px;margin:0 0 10px;color:var(--text-dim)"></p>
+      <div class="asset-picker-toolbar">
+        <div class="field">
+          <label for="asset-picker-filter">Filter</label>
+          <input type="text" id="asset-picker-filter" placeholder="Filter by filename" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="asset-picker-sort">Sort</label>
+          <select id="asset-picker-sort">
+            <option value="name-asc">Name A-Z</option>
+            <option value="name-desc">Name Z-A</option>
+            <option value="size-desc">Largest first</option>
+            <option value="size-asc">Smallest first</option>
+          </select>
+        </div>
+      </div>
+      <div id="asset-picker-grid" class="asset-picker-grid"></div>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Cancel</button>
+    </div>
+  </dialog>
+
   <!-- Form Controls -->
   <section id="tab-form-controls" class="tab-panel">
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Assign sounds and icons to form controls (inputs, selects, toggles, buttons) by their <code>data-fc-key</code> identifier. Changes are fleet-synced. Bulk asset uploads are done via the Nav Items page — both pages share the same asset folder.</p>
+    <p style="font-size:12px;color:var(--text-dim);margin-bottom:8px">Assign sounds and icons to form controls (inputs, selects, toggles, buttons) by their <code>data-fc-key</code> identifier. Changes are fleet-synced.</p>
+    <p style="font-size:12px;color:var(--text-dim);margin:0 0 12px">This page uses the shared Blueprints asset library, so individual uploads here and bulk icon or sound uploads elsewhere in the GUI all become available to Form Controls automatically.</p>
     <p id="fc-status" style="font-size:13px;margin-bottom:8px"></p>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="tab-scroll-shell">
       <div id="fc-container"></div>
     </div>
   </section>
+
+  <dialog class="hub-modal" id="fc-edit-modal" style="width:min(620px,96vw);max-width:96vw">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title" id="fc-edit-modal-title">Add Control Key</h2>
+      <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+    </div>
+    <div class="hub-modal-body">
+      <p id="fc-edit-modal-context" style="margin:0 0 10px;font-size:12px;color:var(--text-dim)"></p>
+      <div class="field">
+        <label for="fc-edit-key">Control key</label>
+        <input type="text" id="fc-edit-key" placeholder="e.g. bookmarks.filter.archived" autocomplete="off" />
+      </div>
+      <div id="fc-key-browser" class="fc-key-browser">
+        <div class="fc-key-browser-head">
+          <strong>Known GUI keys</strong>
+          <button class="btn-small secondary" type="button" id="fc-key-refresh-btn">Refresh Cache</button>
+        </div>
+        <p id="fc-key-cache-status" class="fc-key-cache-status"></p>
+        <div class="fc-key-browser-tools">
+          <div class="field">
+            <label for="fc-key-filter">Filter discovered keys</label>
+            <input type="text" id="fc-key-filter" placeholder="Type to narrow the list" autocomplete="off" />
+          </div>
+        </div>
+        <div id="fc-key-list" class="fc-key-list" role="listbox" aria-label="Discovered form control keys"></div>
+      </div>
+      <div class="field">
+        <label for="fc-edit-label">Label</label>
+        <input type="text" id="fc-edit-label" placeholder="Human-readable label" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="fc-edit-type">Control type <span class="field-hint" style="display:inline">(optional)</span></label>
+        <input type="text" id="fc-edit-type" placeholder="input, select, toggle, button..." autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="fc-edit-context">Context <span class="field-hint" style="display:inline">(optional)</span></label>
+        <input type="text" id="fc-edit-context" placeholder="Where this control appears" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="fc-edit-notes">Notes <span class="field-hint" style="display:inline">(optional)</span></label>
+        <textarea id="fc-edit-notes" rows="4" placeholder="Optional notes"></textarea>
+      </div>
+      <p class="hub-modal-error" id="fc-edit-modal-error"></p>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Cancel</button>
+      <button class="hub-modal-btn" type="button" id="fc-edit-modal-save-btn">Save</button>
+    </div>
+  </dialog>
+
+  <dialog class="hub-modal" id="fc-delete-modal" style="width:min(560px,96vw);max-width:96vw">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">Delete Control Key?</h2>
+      <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+    </div>
+    <div class="hub-modal-body">
+      <p id="fc-delete-modal-message" style="margin:0 0 10px;font-size:14px"></p>
+      <p style="margin:0;color:var(--text-dim);font-size:12px">This removes only the database entry. The underlying key will simply have no icon or sound until it is created again.</p>
+      <p class="hub-modal-error" id="fc-delete-modal-error"></p>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button" id="fc-delete-modal-cancel" data-fc-key="modal.close">Cancel</button>
+      <button class="hub-modal-btn danger" type="button" id="fc-delete-modal-confirm">Delete</button>
+    </div>
+  </dialog>
 
   <!-- SSH Targets -->
   <section id="tab-ssh-targets" class="tab-panel tab-panel--fill">
@@ -1563,6 +1785,7 @@
 <script src="js/sound-manager.js"></script>
 <script src="js/form-control-manager.js"></script>
 <script src="js/hub-modal.js"></script>
+<script src="js/shared-asset-picker.js"></script>
 <script src="js/hub-menu.js"></script>
 <script src="js/hieroglyphs.js"></script>
 <script src="js/synthesis/synthesis-menu.js"></script>

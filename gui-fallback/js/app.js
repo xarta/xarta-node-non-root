@@ -42,6 +42,7 @@ function switchGroup(group) {
 }
 
 function switchTab(tab) {
+  if (typeof SoundManager !== 'undefined') SoundManager.stopPreview();
   document.querySelectorAll('.table-nav button').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   const btn = document.querySelector(`.table-nav button[onclick*="'${tab}'"]`);

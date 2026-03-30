@@ -23,6 +23,14 @@ const SoundManager = (() => {
     let _volume = 0.8;
     let _cache = {};    // { url: AudioBuffer }
     let _loading = {};  // { url: Promise<void> }  — dedup concurrent loads
+    let _previewSource = null;
+    let _previewUrl = '';
+    let _previewOffset = 0;
+    let _previewStartedAt = 0;
+    let _previewPlaying = false;
+    let _previewButton = null;
+    let _previewToken = 0;
+    let _lifecycleWired = false;
 
     function _getCtx() {
         if (!_ctx) {
@@ -66,6 +74,142 @@ const SoundManager = (() => {
         document.addEventListener('keydown', handler, true);
     }
 
+    function _setPreviewButtonState(button, state) {
+        if (!button || !button.isConnected) return;
+        if (state === 'playing') {
+            button.textContent = '⏸';
+            button.title = 'Pause preview';
+            button.setAttribute('aria-pressed', 'true');
+            button.dataset.previewState = 'playing';
+            return;
+        }
+        if (state === 'paused') {
+            button.textContent = '▶';
+            button.title = 'Resume preview';
+            button.setAttribute('aria-pressed', 'false');
+            button.dataset.previewState = 'paused';
+            return;
+        }
+        button.textContent = '▶';
+        button.title = 'Preview sound';
+        button.setAttribute('aria-pressed', 'false');
+        button.dataset.previewState = 'idle';
+    }
+
+    function _disconnectPreviewSource() {
+        if (!_previewSource) return;
+        try { _previewSource.onended = null; } catch (e) {}
+        try { _previewSource.stop(0); } catch (e) {}
+        try { _previewSource.disconnect(); } catch (e) {}
+        _previewSource = null;
+    }
+
+    function _resetPreviewState(buttonState) {
+        const button = _previewButton;
+        _disconnectPreviewSource();
+        _previewUrl = '';
+        _previewOffset = 0;
+        _previewStartedAt = 0;
+        _previewPlaying = false;
+        _previewButton = null;
+        _previewToken += 1;
+        _setPreviewButtonState(button, buttonState || 'idle');
+    }
+
+    function _pausePreview() {
+        const ctx = _getCtx();
+        if (!ctx || !_previewPlaying) return;
+        _previewOffset = Math.max(0, ctx.currentTime - _previewStartedAt);
+        _previewPlaying = false;
+        _disconnectPreviewSource();
+        _setPreviewButtonState(_previewButton, 'paused');
+    }
+
+    function _clearBrokenPreview(button) {
+        if (_previewButton === button) {
+            _previewUrl = '';
+            _previewOffset = 0;
+            _previewStartedAt = 0;
+            _previewPlaying = false;
+            _previewButton = null;
+        }
+        _setPreviewButtonState(button, 'idle');
+    }
+
+    async function _startPreview(url, button, offset) {
+        const ctx = _getCtx();
+        if (!ctx || !url) {
+            _clearBrokenPreview(button);
+            return;
+        }
+
+        _resumeCtx();
+        const gainNode = _getGainNode();
+        const token = ++_previewToken;
+
+        _previewUrl = url;
+        _previewOffset = Math.max(0, offset || 0);
+        _previewStartedAt = 0;
+        _previewPlaying = false;
+
+        if (_previewButton && _previewButton !== button) {
+            _setPreviewButtonState(_previewButton, 'idle');
+        }
+        _previewButton = button || null;
+        _setPreviewButtonState(_previewButton, 'playing');
+
+        if (!_cache[url]) {
+            await _loading[url] || this.preload(url);
+        }
+
+        if (_previewToken !== token || _previewUrl !== url || _previewButton !== (button || null)) {
+            return;
+        }
+
+        const buffer = _cache[url];
+        if (!buffer) {
+            _clearBrokenPreview(button);
+            return;
+        }
+
+        const resumeOffset = Math.min(_previewOffset, Math.max(0, buffer.duration - 0.01));
+
+        try {
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(gainNode || ctx.destination);
+            source.onended = () => {
+                if (_previewSource !== source) return;
+                try { source.disconnect(); } catch (e) {}
+                _previewSource = null;
+                _previewUrl = '';
+                _previewOffset = 0;
+                _previewStartedAt = 0;
+                _previewPlaying = false;
+                const activeButton = _previewButton;
+                _previewButton = null;
+                _setPreviewButtonState(activeButton, 'idle');
+            };
+            _previewSource = source;
+            _previewStartedAt = ctx.currentTime - resumeOffset;
+            _previewPlaying = true;
+            source.start(0, resumeOffset);
+        } catch (e) {
+            _clearBrokenPreview(button);
+        }
+    }
+
+    function _setupLifecycleCleanup() {
+        if (_lifecycleWired) return;
+        _lifecycleWired = true;
+        window.addEventListener('pagehide', () => {
+            _resetPreviewState('idle');
+        });
+        window.addEventListener('beforeunload', () => {
+            _resetPreviewState('idle');
+        });
+    }
+
     return {
         init() {
             // Read the setting from localStorage cache (set by loadFrontendSettings)
@@ -76,6 +220,7 @@ const SoundManager = (() => {
             const stored = parseFloat(localStorage.getItem('fe.sound_volume') ?? '0.8');
             _volume = isNaN(stored) ? 0.8 : Math.max(0, Math.min(1, stored));
             _setupResumeOnGesture();
+            _setupLifecycleCleanup();
         },
 
         setVolume(v) {
@@ -122,7 +267,30 @@ const SoundManager = (() => {
         // preview() bypasses the sound_enabled flag — for test/preview buttons in settings.
         preview(url) {
             if (!url) return;
-            this._playNow(url);
+            this.previewToggle(url);
+        },
+
+        previewToggle(url, opts) {
+            if (!url) return;
+            const button = (opts || {}).button || null;
+            const sameChoice = _previewUrl === url && _previewButton === button;
+
+            if (sameChoice && _previewPlaying) {
+                _pausePreview();
+                return;
+            }
+
+            if (sameChoice && !_previewPlaying && _previewOffset > 0) {
+                void _startPreview.call(this, url, button, _previewOffset);
+                return;
+            }
+
+            _resetPreviewState('idle');
+            void _startPreview.call(this, url, button, 0);
+        },
+
+        stopPreview() {
+            _resetPreviewState('idle');
         },
 
         _playNow(url) {

@@ -14,6 +14,145 @@
 'use strict';
 
 let _fcItems = [];
+let _editingFcControlId = null;
+let _deletingFcControlId = null;
+let _fcPickerAssets = [];
+let _fcDiscoveredKeys = [];
+
+const _FC_KEY_CACHE_KEY = 'blueprintsFormControlDiscoveredKeys';
+
+function _fcAssetUrl(path, updatedAt) {
+    if (!path) return '';
+    const ts = updatedAt ? new Date(updatedAt).getTime() : 0;
+    return `/fallback-ui/assets/${path}${ts ? `?v=${ts}` : ''}`;
+}
+
+function _fcEditModalEls() {
+    return {
+        dialog: document.getElementById('fc-edit-modal'),
+        title: document.getElementById('fc-edit-modal-title'),
+        context: document.getElementById('fc-edit-modal-context'),
+        key: document.getElementById('fc-edit-key'),
+        keyBrowser: document.getElementById('fc-key-browser'),
+        keyCacheStatus: document.getElementById('fc-key-cache-status'),
+        keyFilter: document.getElementById('fc-key-filter'),
+        keyList: document.getElementById('fc-key-list'),
+        keyRefreshBtn: document.getElementById('fc-key-refresh-btn'),
+        label: document.getElementById('fc-edit-label'),
+        type: document.getElementById('fc-edit-type'),
+        fieldContext: document.getElementById('fc-edit-context'),
+        notes: document.getElementById('fc-edit-notes'),
+        error: document.getElementById('fc-edit-modal-error'),
+        saveBtn: document.getElementById('fc-edit-modal-save-btn'),
+    };
+}
+
+function _fcDeleteModalEls() {
+    return {
+        dialog: document.getElementById('fc-delete-modal'),
+        message: document.getElementById('fc-delete-modal-message'),
+        error: document.getElementById('fc-delete-modal-error'),
+        cancelBtn: document.getElementById('fc-delete-modal-cancel'),
+        confirmBtn: document.getElementById('fc-delete-modal-confirm'),
+    };
+}
+
+function _fcSetModalMessage(el, message, color) {
+    if (!el) return;
+    el.textContent = message || '';
+    el.style.color = color || '';
+}
+
+function _fcReadKeyCache() {
+    try {
+        const raw = localStorage.getItem(_FC_KEY_CACHE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || !Array.isArray(parsed.keys)) return null;
+        return parsed;
+    } catch {
+        return null;
+    }
+}
+
+function _fcWriteKeyCache(keys) {
+    try {
+        localStorage.setItem(_FC_KEY_CACHE_KEY, JSON.stringify({
+            keys,
+            fetchedAt: Date.now(),
+        }));
+    } catch {
+        // ignore storage failures
+    }
+}
+
+function _fcFormatCacheTime(ts) {
+    if (!ts) return 'No local cache yet.';
+    try {
+        return `Cached ${new Date(ts).toLocaleString()}`;
+    } catch {
+        return 'Cache time unavailable.';
+    }
+}
+
+function _fcRenderDiscoveredKeyList() {
+    const modal = _fcEditModalEls();
+    if (!modal.keyList) return;
+
+    const filter = (modal.keyFilter.value || '').trim().toLowerCase();
+    const items = _fcDiscoveredKeys.filter(entry => !filter || entry.key.toLowerCase().includes(filter));
+
+    if (!items.length) {
+        modal.keyList.innerHTML = '<p class="fc-key-list-empty">No discovered keys match the current filter.</p>';
+        return;
+    }
+
+    modal.keyList.innerHTML = '';
+    for (const entry of items) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'fc-key-option';
+        btn.innerHTML = `
+            <span class="fc-key-option-key">${_esc(entry.key)}</span>
+            <span class="fc-key-option-meta">${_esc((entry.sources || []).slice(0, 2).join(' • '))}${entry.sources && entry.sources.length > 2 ? ` +${entry.sources.length - 2} more` : ''}</span>
+        `;
+        btn.addEventListener('click', () => {
+            modal.key.value = entry.key;
+            modal.key.focus();
+            modal.key.select();
+        });
+        modal.keyList.appendChild(btn);
+    }
+}
+
+async function _fcLoadDiscoveredKeys(forceRefresh) {
+    const modal = _fcEditModalEls();
+    const cached = !forceRefresh ? _fcReadKeyCache() : null;
+
+    if (cached && Array.isArray(cached.keys) && cached.keys.length) {
+        _fcDiscoveredKeys = cached.keys;
+        _fcSetModalMessage(modal.keyCacheStatus, `${cached.keys.length} keys found. ${_fcFormatCacheTime(cached.fetchedAt)}`, '');
+        _fcRenderDiscoveredKeyList();
+        return cached.keys;
+    }
+
+    _fcSetModalMessage(modal.keyCacheStatus, 'Scanning gui-fallback for data-fc-key values...', '');
+    modal.keyList.innerHTML = '<p class="fc-key-list-empty">Scanning...</p>';
+    try {
+        const resp = await apiFetch('/api/v1/form-controls/discover-keys');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        _fcDiscoveredKeys = Array.isArray(data.keys) ? data.keys : [];
+        _fcWriteKeyCache(_fcDiscoveredKeys);
+        _fcSetModalMessage(modal.keyCacheStatus, `${_fcDiscoveredKeys.length} keys found. ${_fcFormatCacheTime(Date.now())}`, '');
+        _fcRenderDiscoveredKeyList();
+        return _fcDiscoveredKeys;
+    } catch (e) {
+        _fcSetModalMessage(modal.keyCacheStatus, `Key scan failed: ${e.message}`, 'var(--danger,#f85149)');
+        modal.keyList.innerHTML = '<p class="fc-key-list-empty">Unable to load discovered keys.</p>';
+        return [];
+    }
+}
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
@@ -24,6 +163,12 @@ async function loadFormControls() {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         _fcItems = await resp.json();
         renderFormControls();
+        const cached = _fcReadKeyCache();
+        if (!cached || !Array.isArray(cached.keys) || !cached.keys.length) {
+            void _fcLoadDiscoveredKeys(false);
+        } else {
+            _fcDiscoveredKeys = cached.keys;
+        }
         if (statusEl) statusEl.textContent = '';
     } catch (e) {
         if (statusEl) {
@@ -40,32 +185,10 @@ function renderFormControls() {
     if (!container) return;
     container.innerHTML = '';
 
-    // Add New button row
-    const toolbar = document.createElement('div');
-    toolbar.className = 'fc-toolbar';
-    const addBtn = document.createElement('button');
-    addBtn.className = 'btn-small';
-    addBtn.textContent = '➕ Add Control Key';
-    addBtn.addEventListener('click', _fcAddNew);
-    toolbar.appendChild(addBtn);
-
-    const uploadHint = document.createElement('p');
-    uploadHint.className = 'fc-upload-hint';
-    uploadHint.innerHTML =
-        '💡 <strong>To upload new icon or sound files</strong>, use the ' +
-        '<a href="#" id="fc-goto-nav-items">Nav Items</a> page — ' +
-        'both pages share the same asset folder.';
-    uploadHint.querySelector('#fc-goto-nav-items').addEventListener('click', (e) => {
-        e.preventDefault();
-        if (typeof window.switchTab === 'function') window.switchTab('nav-items');
-    });
-    toolbar.appendChild(uploadHint);
-    container.appendChild(toolbar);
-
     if (!_fcItems.length) {
         const empty = document.createElement('p');
         empty.style.cssText = 'font-size:13px;color:var(--text-dim);padding:12px 0;margin:0';
-        empty.textContent = 'No form controls registered yet. Click "Add Control Key" to define the first one.';
+        empty.textContent = 'No form controls registered yet. Use the Settings context menu to add the first key.';
         container.appendChild(empty);
         return;
     }
@@ -109,9 +232,8 @@ function renderFormControls() {
 
 function _resolvedIconHtml(item) {
     if (item.icon_asset) {
-        const ts = item.updated_at ? new Date(item.updated_at).getTime() : 0;
         return `<img class="fc-icon-preview menu-icon"
-            src="/fallback-ui/assets/${_esc(item.icon_asset)}?v=${ts}"
+            src="${_esc(_fcAssetUrl(item.icon_asset, item.updated_at))}"
             alt="" data-fallback="1">`;
     }
     return `<span class="fc-icon-placeholder" title="No icon assigned">—</span>`;
@@ -224,9 +346,8 @@ function _fcRowEl(item) {
     tr.querySelectorAll('.fc-sound-play').forEach(btn => {
         btn.addEventListener('click', () => {
             const path = btn.dataset.soundPath;
-            const ts   = btn.dataset.updated ? new Date(btn.dataset.updated).getTime() : 0;
             if (path && typeof SoundManager !== 'undefined') {
-                SoundManager.preview(`/fallback-ui/assets/${path}?v=${ts}`);
+                SoundManager.previewToggle(_fcAssetUrl(path, btn.dataset.updated), { button: btn });
             }
         });
     });
@@ -238,12 +359,12 @@ function _fcRowEl(item) {
 
     // Edit button
     tr.querySelectorAll('.fc-edit-btn').forEach(btn => {
-        btn.addEventListener('click', () => _fcEditRow(btn.dataset.controlId));
+        btn.addEventListener('click', () => _fcOpenEditModal(btn.dataset.controlId));
     });
 
     // Delete button
     tr.querySelectorAll('.fc-delete-btn').forEach(btn => {
-        btn.addEventListener('click', () => _fcDeleteRow(btn.dataset.controlId));
+        btn.addEventListener('click', () => _fcOpenDeleteModal(btn.dataset.controlId));
     });
 
     // Icon img error fallback
@@ -262,100 +383,174 @@ function _fcRowEl(item) {
 // ── Add new control ───────────────────────────────────────────────────────────
 
 async function _fcAddNew() {
-    const key = prompt('Control key (e.g. bookmarks.filter.archived):');
-    if (!key || !key.trim()) return;
-    const label = prompt('Label (human-readable name):');
-    if (!label || !label.trim()) return;
-    const controlType = prompt('Control type (input / select / toggle / button / checkbox / range / textarea — leave blank to skip):') || '';
-    const context = prompt('Context (where this control appears — leave blank to skip):') || '';
+    const modal = _fcEditModalEls();
+    _editingFcControlId = null;
+    modal.title.textContent = 'Add Control Key';
+    modal.context.textContent = 'Create a new form-control mapping for a data-fc-key used in the GUI.';
+    modal.key.disabled = false;
+    modal.keyBrowser.hidden = false;
+    modal.key.value = '';
+    modal.keyFilter.value = '';
+    modal.label.value = '';
+    modal.type.value = '';
+    modal.fieldContext.value = '';
+    modal.notes.value = '';
+    _fcSetModalMessage(modal.error, '');
+    const cached = _fcReadKeyCache();
+    if (cached && Array.isArray(cached.keys) && cached.keys.length) {
+        _fcDiscoveredKeys = cached.keys;
+        _fcSetModalMessage(modal.keyCacheStatus, `${cached.keys.length} keys found. ${_fcFormatCacheTime(cached.fetchedAt)}`, '');
+        _fcRenderDiscoveredKeyList();
+    } else {
+        modal.keyList.innerHTML = '<p class="fc-key-list-empty">Scanning...</p>';
+    }
+    HubModal.open(modal.dialog, {
+        onOpen: () => {
+            modal.key.focus();
+            if (!cached || !Array.isArray(cached.keys) || !cached.keys.length) {
+                void _fcLoadDiscoveredKeys(false);
+            }
+        },
+        onClose: () => {
+            _fcSetModalMessage(modal.error, '');
+            _fcSetModalMessage(modal.keyCacheStatus, '');
+        },
+    });
+}
 
+async function _fcSubmitEditModal() {
+    const modal = _fcEditModalEls();
     const statusEl = document.getElementById('fc-status');
+    const key = modal.key.value.trim();
+    const label = modal.label.value.trim();
+    const controlType = modal.type.value.trim();
+    const context = modal.fieldContext.value.trim();
+    const notes = modal.notes.value.trim();
+
+    if (!key) {
+        _fcSetModalMessage(modal.error, 'Control key is required.');
+        return;
+    }
+    if (!label) {
+        _fcSetModalMessage(modal.error, 'Label is required.');
+        return;
+    }
+
+    _fcSetModalMessage(modal.error, '');
+
+    const isEdit = !!_editingFcControlId;
+
     try {
-        const resp = await apiFetch('/api/v1/form-controls', {
-            method: 'POST',
+        const payload = isEdit
+            ? {
+                label,
+                control_type: controlType || null,
+                context: context || null,
+                notes: notes || null,
+            }
+            : {
+                control_key: key,
+                label,
+                control_type: controlType || null,
+                context: context || null,
+                notes: notes || null,
+            };
+
+        const resp = await apiFetch(isEdit ? `/api/v1/form-controls/${_editingFcControlId}` : '/api/v1/form-controls', {
+            method: isEdit ? 'PUT' : 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                control_key:  key.trim(),
-                label:        label.trim(),
-                control_type: controlType.trim() || null,
-                context:      context.trim() || null,
-            }),
+            body: JSON.stringify(payload),
         });
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
             throw new Error(err.detail || `HTTP ${resp.status}`);
         }
-        const created = await resp.json();
-        _fcItems.push(created);
+        const saved = await resp.json();
+        if (isEdit) {
+            const idx = _fcItems.findIndex(i => i.control_id === _editingFcControlId);
+            if (idx !== -1) _fcItems[idx] = saved;
+        } else {
+            _fcItems.push(saved);
+        }
+        HubModal.close(modal.dialog);
         renderFormControls();
         if (typeof FormControlManager !== 'undefined') FormControlManager.reload();
-        if (statusEl) { statusEl.textContent = `✓ Created "${created.label}"`; statusEl.style.color = 'var(--ok,#3fb950)'; }
+        if (statusEl) {
+            statusEl.textContent = isEdit ? `✓ Updated "${saved.label}"` : `✓ Created "${saved.label}"`;
+            statusEl.style.color = 'var(--ok,#3fb950)';
+        }
     } catch (e) {
+        _fcSetModalMessage(modal.error, `Save failed: ${e.message}`);
         if (statusEl) { statusEl.textContent = `✗ ${e.message}`; statusEl.style.color = 'var(--danger,#f85149)'; }
     }
 }
 
 // ── Inline edit dialog ────────────────────────────────────────────────────────
 
-async function _fcEditRow(controlId) {
+async function _fcOpenEditModal(controlId) {
     const item = _fcItems.find(i => i.control_id === controlId);
     if (!item) return;
-
-    const label       = prompt('Label:', item.label);
-    if (label === null) return;
-    const controlType = prompt('Control type:', item.control_type || '');
-    if (controlType === null) return;
-    const context     = prompt('Context:', item.context || '');
-    if (context === null) return;
-    const notes       = prompt('Notes:', item.notes || '');
-    if (notes === null) return;
-
-    const statusEl = document.getElementById('fc-status');
-    try {
-        const resp = await apiFetch(`/api/v1/form-controls/${controlId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                label:        label.trim() || item.label,
-                control_type: controlType.trim() || null,
-                context:      context.trim()  || null,
-                notes:        notes.trim()    || null,
-            }),
-        });
-        if (!resp.ok) {
-            const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
-            throw new Error(err.detail || `HTTP ${resp.status}`);
-        }
-        const updated = await resp.json();
-        const idx = _fcItems.findIndex(i => i.control_id === controlId);
-        if (idx !== -1) _fcItems[idx] = updated;
-        renderFormControls();
-        if (typeof FormControlManager !== 'undefined') FormControlManager.reload();
-        if (statusEl) { statusEl.textContent = `✓ Updated "${updated.label}"`; statusEl.style.color = 'var(--ok,#3fb950)'; }
-    } catch (e) {
-        if (statusEl) { statusEl.textContent = `✗ ${e.message}`; statusEl.style.color = 'var(--danger,#f85149)'; }
-    }
+    const modal = _fcEditModalEls();
+    _editingFcControlId = controlId;
+    modal.title.textContent = 'Edit Control Key';
+    modal.context.textContent = `${item.control_key}${item.context ? ` • ${item.context}` : ''}`;
+    modal.key.disabled = true;
+    modal.keyBrowser.hidden = true;
+    modal.key.value = item.control_key || '';
+    modal.label.value = item.label || '';
+    modal.type.value = item.control_type || '';
+    modal.fieldContext.value = item.context || '';
+    modal.notes.value = item.notes || '';
+    _fcSetModalMessage(modal.error, '');
+    HubModal.open(modal.dialog, {
+        onOpen: () => modal.label.focus(),
+        onClose: () => _fcSetModalMessage(modal.error, ''),
+    });
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────────
 
-async function _fcDeleteRow(controlId) {
+async function _fcOpenDeleteModal(controlId) {
     const item = _fcItems.find(i => i.control_id === controlId);
     if (!item) return;
-    if (!confirm(`Delete form control "${item.label}" (key: ${item.control_key})?\n\nThis removes only the DB entry — the key will simply have no sound/icon until re-created.`)) return;
+    const modal = _fcDeleteModalEls();
+    _deletingFcControlId = controlId;
+    modal.message.textContent = `Delete form control "${item.label}" (key: ${item.control_key})?`;
+    _fcSetModalMessage(modal.error, '');
+    modal.cancelBtn.hidden = false;
+    modal.confirmBtn.disabled = false;
+    modal.confirmBtn.textContent = 'Delete';
+    HubModal.open(modal.dialog, {
+        onClose: () => _fcSetModalMessage(modal.error, ''),
+    });
+}
 
+async function _fcDeleteRow() {
+    const controlId = _deletingFcControlId;
+    const item = _fcItems.find(i => i.control_id === controlId);
+    if (!item) return;
+
+    const modal = _fcDeleteModalEls();
     const statusEl = document.getElementById('fc-status');
     try {
+        modal.cancelBtn.disabled = true;
+        modal.confirmBtn.disabled = true;
+        modal.confirmBtn.textContent = 'Deleting...';
         const resp = await apiFetch(`/api/v1/form-controls/${controlId}`, { method: 'DELETE' });
         if (!resp.ok && resp.status !== 204) {
             const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
             throw new Error(err.detail || `HTTP ${resp.status}`);
         }
         _fcItems = _fcItems.filter(i => i.control_id !== controlId);
+        HubModal.close(modal.dialog);
         renderFormControls();
         if (typeof FormControlManager !== 'undefined') FormControlManager.reload();
         if (statusEl) { statusEl.textContent = `✓ Deleted "${item.label}"`; statusEl.style.color = 'var(--ok,#3fb950)'; }
     } catch (e) {
+        _fcSetModalMessage(modal.error, `Delete failed: ${e.message}`);
+        modal.cancelBtn.disabled = false;
+        modal.confirmBtn.disabled = false;
+        modal.confirmBtn.textContent = 'Delete';
         if (statusEl) { statusEl.textContent = `✗ ${e.message}`; statusEl.style.color = 'var(--danger,#f85149)'; }
     }
 }
@@ -434,126 +629,40 @@ async function _fcClearAsset(controlId, field) {
     }
 }
 
-// ── Asset picker modal ────────────────────────────────────────────────────────
-
-let _fcPickerControlId  = null;
-let _fcPickerAssetType  = null;
-
 async function _fcOpenPicker(controlId, assetType) {
-    _fcPickerControlId = controlId;
-    _fcPickerAssetType = assetType;
-
-    const modal  = _fcGetOrCreatePickerModal();
-    const title  = modal.querySelector('#fc-picker-title');
-    const grid   = modal.querySelector('#fc-picker-grid');
-    const status = modal.querySelector('#fc-picker-status');
-
-    title.textContent = `Choose ${assetType === 'icons' ? 'icon' : (assetType === 'sounds_off' ? 'off sound' : 'sound')}`;
-    grid.innerHTML = '<p style="color:var(--text-dim);font-size:12px">Loading…</p>';
-    status.textContent = '';
-    modal.showModal();
-
-    try {
-        // Browse from the shared nav_items asset listing (same folder)
-        // sounds_off still browses the sounds folder
-        const browseType = assetType === 'sounds_off' ? 'sounds' : assetType;
-        const resp = await apiFetch(`/api/v1/form-controls/assets?type=${browseType}`);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const assets = await resp.json();
-
-        if (!assets.length) {
-            grid.innerHTML =
-                '<p style="color:var(--text-dim);font-size:12px">No assets uploaded yet. ' +
-                'Use the Nav Items page to upload assets.</p>';
-            return;
-        }
-
-        grid.innerHTML = '';
-        for (const asset of assets) {
-            const card = document.createElement('div');
-            card.className = 'fc-picker-card';
-            card.dataset.path = asset.path;
-
-            if (assetType === 'icons') {
-                card.innerHTML = `
-                    <img class="fc-picker-thumb" src="${_esc(asset.url)}" alt="${_esc(asset.filename)}">
-                    <span class="fc-picker-name">${_esc(asset.filename)}</span>
-                `;
-            } else {
-                card.innerHTML = `
-                    <button class="fc-picker-play btn-small secondary"
-                        data-url="${_esc(asset.url)}" title="Preview">▶</button>
-                    <span class="fc-picker-name">${_esc(asset.filename)}</span>
-                    <small style="color:var(--text-dim)">${_fmtBytes(asset.size)}</small>
-                `;
-                card.querySelector('.fc-picker-play').addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const url = e.currentTarget.dataset.url;
-                    if (typeof SoundManager !== 'undefined') SoundManager.preview(url);
-                });
-            }
-
-            card.addEventListener('click', () => _fcPickerSelect(asset.path));
-            grid.appendChild(card);
-        }
-    } catch (e) {
-        grid.innerHTML =
-            `<p style="color:var(--danger,#f85149);font-size:12px">✗ ${_esc(e.message)}</p>`;
-    }
+    const browseType = assetType === 'sounds_off' ? 'sounds' : assetType;
+    AssetPicker.open({
+        title: `Choose ${assetType === 'icons' ? 'icon' : (assetType === 'sounds_off' ? 'off sound' : 'sound')}`,
+        kind: assetType === 'icons' ? 'icon' : 'sound',
+        browseUrl: `/api/v1/form-controls/assets?type=${browseType}`,
+        emptyMessage: 'No assets uploaded yet.',
+        onSelect: async (assetPath) => {
+            await _fcPickerSelect(controlId, assetType, assetPath);
+        },
+    });
 }
 
-function _fcGetOrCreatePickerModal() {
-    let modal = document.getElementById('fc-picker-modal');
-    if (modal) return modal;
-
-    modal = document.createElement('dialog');
-    modal.id = 'fc-picker-modal';
-    modal.className = 'ni-picker-modal';    // reuse nav-items picker CSS
-    modal.innerHTML = `
-        <div class="ni-picker-header">
-            <span id="fc-picker-title">Choose asset</span>
-            <button class="btn-small secondary" id="fc-picker-close">✕ Close</button>
-        </div>
-        <p id="fc-picker-status" style="font-size:12px;margin:4px 0 8px"></p>
-        <div id="fc-picker-grid" class="ni-picker-grid"></div>
-    `;
-    document.body.appendChild(modal);
-
-    modal.querySelector('#fc-picker-close').addEventListener('click', () => modal.close());
-    modal.addEventListener('click', (e) => { if (e.target === modal) modal.close(); });
-    return modal;
-}
-
-async function _fcPickerSelect(assetPath) {
-    const modal  = document.getElementById('fc-picker-modal');
-    const status = modal ? modal.querySelector('#fc-picker-status') : null;
-    if (status) { status.textContent = '⏳ Assigning…'; status.style.color = ''; }
-
+async function _fcPickerSelect(controlId, assetType, assetPath) {
     const form = new FormData();
-    form.append('control_id', _fcPickerControlId);
+    form.append('control_id', controlId);
     form.append('asset_path', assetPath);
-    form.append('asset_type', _fcPickerAssetType);
+    form.append('asset_type', assetType);
 
-    try {
-        const resp = await apiFetch('/api/v1/form-controls/assign-asset', { method: 'POST', body: form });
-        if (!resp.ok) {
-            const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
-            throw new Error(err.detail || `HTTP ${resp.status}`);
-        }
-        const result = await resp.json();
-        const field  = _fcPickerAssetType === 'icons' ? 'icon_asset' : (_fcPickerAssetType === 'sounds_off' ? 'sound_asset_off' : 'sound_asset');
-        const idx    = _fcItems.findIndex(i => i.control_id === _fcPickerControlId);
-        if (idx !== -1) _fcItems[idx][field] = result.path;
-
-        if (modal) modal.close();
-        renderFormControls();
-        if (typeof FormControlManager !== 'undefined') FormControlManager.reload();
-
-        const pageStatus = document.getElementById('fc-status');
-        if (pageStatus) { pageStatus.textContent = `✓ Assigned ${result.path}`; pageStatus.style.color = 'var(--ok,#3fb950)'; }
-    } catch (e) {
-        if (status) { status.textContent = `✗ ${_esc(e.message)}`; status.style.color = 'var(--danger,#f85149)'; }
+    const resp = await apiFetch('/api/v1/form-controls/assign-asset', { method: 'POST', body: form });
+    if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
+        throw new Error(err.detail || `HTTP ${resp.status}`);
     }
+    const result = await resp.json();
+    const field  = assetType === 'icons' ? 'icon_asset' : (assetType === 'sounds_off' ? 'sound_asset_off' : 'sound_asset');
+    const idx    = _fcItems.findIndex(i => i.control_id === controlId);
+    if (idx !== -1) _fcItems[idx][field] = result.path;
+
+    renderFormControls();
+    if (typeof FormControlManager !== 'undefined') FormControlManager.reload();
+
+    const pageStatus = document.getElementById('fc-status');
+    if (pageStatus) { pageStatus.textContent = `✓ Assigned ${result.path}`; pageStatus.style.color = 'var(--ok,#3fb950)'; }
 }
 
 // ── Utilities (re-use from nav-items scope if present; else define locally) ───
@@ -573,3 +682,24 @@ function _fmtBytes(b) {
     if (b < 1048576)    return `${(b / 1024).toFixed(1)} KB`;
     return `${(b / 1048576).toFixed(1)} MB`;
 }
+
+(function initFormControlModalActions() {
+    const editModal = _fcEditModalEls();
+    const deleteModal = _fcDeleteModalEls();
+    if (editModal.saveBtn && !editModal.saveBtn.dataset.fcWired) {
+        editModal.saveBtn.dataset.fcWired = '1';
+        editModal.saveBtn.addEventListener('click', () => { void _fcSubmitEditModal(); });
+    }
+    if (deleteModal.confirmBtn && !deleteModal.confirmBtn.dataset.fcDeleteWired) {
+        deleteModal.confirmBtn.dataset.fcDeleteWired = '1';
+        deleteModal.confirmBtn.addEventListener('click', () => { void _fcDeleteRow(); });
+    }
+    if (editModal.keyFilter && !editModal.keyFilter.dataset.fcKeysWired) {
+        editModal.keyFilter.dataset.fcKeysWired = '1';
+        editModal.keyFilter.addEventListener('input', _fcRenderDiscoveredKeyList);
+    }
+    if (editModal.keyRefreshBtn && !editModal.keyRefreshBtn.dataset.fcKeysWired) {
+        editModal.keyRefreshBtn.dataset.fcKeysWired = '1';
+        editModal.keyRefreshBtn.addEventListener('click', () => { void _fcLoadDiscoveredKeys(true); });
+    }
+})();
