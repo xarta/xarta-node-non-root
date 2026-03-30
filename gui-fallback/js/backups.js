@@ -1,4 +1,106 @@
 /* ── Backups ───────────────────────────────────────────────────────────── */
+
+document.addEventListener('DOMContentLoaded', () => {
+  const tbody = document.getElementById('backup-tbody');
+  if (tbody && !tbody.dataset.bound) {
+    tbody.addEventListener('click', onBackupTableClick);
+    tbody.dataset.bound = '1';
+  }
+
+  const confirmBtn = document.getElementById('backup-action-modal-confirm');
+  if (confirmBtn && !confirmBtn.dataset.bound) {
+    confirmBtn.addEventListener('click', submitBackupAction);
+    confirmBtn.dataset.bound = '1';
+  }
+});
+
+let _pendingBackupAction = null;
+
+function _backupActionModalEls() {
+  return {
+    dialog: document.getElementById('backup-action-modal'),
+    title: document.getElementById('backup-action-modal-title'),
+    filename: document.getElementById('backup-action-modal-filename'),
+    message: document.getElementById('backup-action-modal-message'),
+    normalWarn: document.getElementById('backup-action-modal-normal-warn'),
+    forceWarn: document.getElementById('backup-action-modal-force-warn'),
+    deleteWarn: document.getElementById('backup-action-modal-delete-warn'),
+    status: document.getElementById('backup-action-modal-status'),
+    result: document.getElementById('backup-action-modal-result'),
+    error: document.getElementById('backup-action-modal-error'),
+    closeBtn: document.getElementById('backup-action-modal-close-btn'),
+    confirmBtn: document.getElementById('backup-action-modal-confirm'),
+    closeBtns: Array.from(document.querySelectorAll('#backup-action-modal .hub-modal-close')),
+  };
+}
+
+function _resetBackupActionModal() {
+  const { dialog, title, filename, message, normalWarn, forceWarn, deleteWarn, status, result, error, closeBtn, confirmBtn, closeBtns } = _backupActionModalEls();
+  if (dialog) dialog.dataset.busy = '0';
+  if (title) title.textContent = 'Backup Action';
+  if (filename) filename.textContent = '';
+  if (message) message.textContent = '';
+  if (normalWarn) normalWarn.hidden = true;
+  if (forceWarn) forceWarn.hidden = true;
+  if (deleteWarn) deleteWarn.hidden = true;
+  if (status) {
+    status.textContent = '';
+    status.style.color = 'var(--text-dim)';
+  }
+  if (result) {
+    result.hidden = true;
+    result.textContent = '';
+    result.className = 'restore-result';
+  }
+  if (error) error.textContent = '';
+  if (closeBtn) closeBtn.textContent = 'Cancel';
+  if (confirmBtn) {
+    confirmBtn.textContent = 'Confirm';
+    confirmBtn.disabled = false;
+    confirmBtn.hidden = false;
+    confirmBtn.classList.remove('danger');
+  }
+  closeBtns.forEach(btn => { btn.disabled = false; });
+  _pendingBackupAction = null;
+}
+
+function onBackupTableClick(event) {
+  const btn = event.target.closest('button[data-backup-action]');
+  if (!btn) return;
+  openBackupActionModal(btn.dataset.filename || '', btn.dataset.backupAction || '', btn);
+}
+
+function openBackupActionModal(filename, action, btn) {
+  const { dialog, title, filename: filenameEl, message, normalWarn, forceWarn, deleteWarn, closeBtn, confirmBtn } = _backupActionModalEls();
+  if (!dialog) return;
+
+  _resetBackupActionModal();
+  _pendingBackupAction = { filename, action, btn: btn || null };
+
+  const isForce = action === 'force';
+  const isDelete = action === 'delete';
+
+  if (title) title.textContent = isDelete ? 'Delete Backup' : isForce ? 'Force Restore Backup' : 'Restore Backup';
+  if (filenameEl) filenameEl.textContent = filename;
+  if (message) {
+    message.textContent = isDelete
+      ? 'This will permanently remove this backup archive from this node.'
+      : isForce
+        ? 'This will restore the selected backup and push that restored state back out to all peers.'
+        : 'This will restore the selected backup on this node only.';
+  }
+  if (normalWarn) normalWarn.hidden = action !== 'restore';
+  if (forceWarn) forceWarn.hidden = !isForce;
+  if (deleteWarn) deleteWarn.hidden = !isDelete;
+  if (closeBtn) closeBtn.textContent = 'Cancel';
+  if (confirmBtn) {
+    confirmBtn.textContent = isDelete ? 'Delete' : isForce ? 'Force Restore' : 'Restore';
+    confirmBtn.classList.toggle('danger', isDelete || isForce);
+  }
+
+  HubModal.open(dialog, { onClose: _resetBackupActionModal });
+}
+
 async function loadBackups() {
   const tbody = document.getElementById('backup-tbody');
   const err   = document.getElementById('backup-error');
@@ -26,33 +128,15 @@ async function loadBackups() {
         <td style="white-space:nowrap">${esc(kb)} KB</td>
         <td style="white-space:nowrap;color:var(--text-dim)">${esc(ts)}</td>
         <td style="white-space:nowrap">
-          <button class="btn-restore secondary" onclick="confirmRestore('${esc(b.filename)}', false)">Restore</button>
-          <button class="btn-force"              onclick="confirmRestore('${esc(b.filename)}', true)">&#9888; Force restore</button>
-          <button class="secondary" style="color:var(--danger,#f85149)" onclick="deleteBackup('${esc(b.filename)}', this)">&#10005; Delete</button>
+          <button class="btn-restore secondary" type="button" data-backup-action="restore" data-filename="${esc(b.filename)}">Restore</button>
+          <button class="btn-force" type="button" data-backup-action="force" data-filename="${esc(b.filename)}">&#9888; Force restore</button>
+          <button class="secondary" type="button" style="color:var(--danger,#f85149)" data-backup-action="delete" data-filename="${esc(b.filename)}">&#10005; Delete</button>
         </td>
       </tr>`;
     }).join('');
   } catch (e) {
     err.textContent = `Failed to load backups: ${e.message}`;
     err.hidden = false;
-  }
-}
-
-async function deleteBackup(filename, btn) {
-  if (!confirm(`Delete backup ${filename}?\n\nThis cannot be undone.`)) return;
-  const orig = btn.innerHTML;
-  btn.disabled = true; btn.textContent = '…';
-  try {
-    const r = await apiFetch(`/api/v1/backup/${encodeURIComponent(filename)}`, { method: 'DELETE' });
-    if (r.ok) {
-      await loadBackups();
-    } else {
-      btn.innerHTML = `&#10007; ${r.status}`; btn.style.color = 'var(--danger,#f85149)';
-      setTimeout(() => { btn.disabled = false; btn.innerHTML = orig; btn.style.color = ''; }, 3000);
-    }
-  } catch (e) {
-    btn.innerHTML = '&#10007; err'; btn.style.color = 'var(--danger,#f85149)';
-    setTimeout(() => { btn.disabled = false; btn.innerHTML = orig; btn.style.color = ''; }, 3000);
   }
 }
 
@@ -78,44 +162,88 @@ async function createBackup(btn) {
   }
 }
 
-function confirmRestore(filename, force) {
-  document.getElementById('restore-filename').textContent = filename;
-  document.getElementById('restore-warn-normal').hidden = force;
-  document.getElementById('restore-warn-force').hidden  = !force;
-  document.getElementById('restore-result').hidden = true;
-  document.getElementById('restore-result').textContent = '';
-  document.getElementById('restore-modal').dataset.filename = filename;
-  document.getElementById('restore-modal').dataset.force = force ? 'true' : 'false';
-  document.getElementById('restore-modal').showModal();
-}
+async function submitBackupAction() {
+  const pending = _pendingBackupAction;
+  const { dialog, status, result, error, closeBtn, confirmBtn, closeBtns } = _backupActionModalEls();
+  if (!pending || !dialog || dialog.dataset.busy === '1') return;
 
-async function submitRestore() {
-  const modal    = document.getElementById('restore-modal');
-  const filename = modal.dataset.filename;
-  const force    = modal.dataset.force === 'true';
-  const btn      = document.getElementById('restore-confirm-btn');
-  const resultEl = document.getElementById('restore-result');
-  btn.disabled = true;
-  btn.textContent = 'Restoring…';
-  resultEl.hidden = true;
+  const { filename, action, btn } = pending;
+  const isDelete = action === 'delete';
+  const isForce = action === 'force';
+  const orig = btn ? btn.innerHTML : '';
+
+  dialog.dataset.busy = '1';
+  if (error) error.textContent = '';
+  if (result) {
+    result.hidden = true;
+    result.textContent = '';
+    result.className = 'restore-result';
+  }
+  if (status) {
+    status.textContent = isDelete ? 'Deleting backup…' : 'Restoring backup…';
+    status.style.color = 'var(--text-dim)';
+  }
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = isDelete ? 'Deleting…' : 'Restoring…';
+  }
+  closeBtns.forEach(closeActionBtn => { closeActionBtn.disabled = true; });
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '…';
+  }
+
   try {
-    const url = `/api/v1/backup/restore/${encodeURIComponent(filename)}${force ? '?force=true' : ''}`;
-    const r = await apiFetch(url, { method: 'POST' });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
-    let msg = `✓ Restored from ${d.restored_from}. Gen: ${d.gen_before} → ${d.gen_after}.`;
-    if (d.warning) msg += `\n⚠ ${d.warning}`;
-    resultEl.textContent = msg;
-    resultEl.className = 'restore-result';
-    resultEl.hidden = false;
-    btn.textContent = 'Done';
-    // Refresh health + sync after restore
+    if (isDelete) {
+      const response = await apiFetch(`/api/v1/backup/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (status) {
+        status.textContent = 'Backup deleted.';
+        status.style.color = 'var(--ok,#3fb950)';
+      }
+      if (closeBtn) closeBtn.textContent = 'CLOSE';
+      if (confirmBtn) confirmBtn.hidden = true;
+      await loadBackups();
+      setTimeout(() => { HubModal.close(dialog); }, 700);
+      return;
+    }
+
+    const url = `/api/v1/backup/restore/${encodeURIComponent(filename)}${isForce ? '?force=true' : ''}`;
+    const response = await apiFetch(url, { method: 'POST' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+
+    let msg = `Restored from ${data.restored_from}. Gen: ${data.gen_before} → ${data.gen_after}.`;
+    if (data.warning) msg += `\n${data.warning}`;
+    if (result) {
+      result.textContent = msg;
+      result.className = 'restore-result';
+      result.hidden = false;
+    }
+    if (status) {
+      status.textContent = isForce ? 'Force restore completed.' : 'Restore completed.';
+      status.style.color = 'var(--ok,#3fb950)';
+    }
+    if (closeBtn) closeBtn.textContent = 'CLOSE';
+    if (confirmBtn) confirmBtn.hidden = true;
+    closeBtns.forEach(closeActionBtn => { closeActionBtn.disabled = false; });
+    dialog.dataset.busy = '0';
     setTimeout(() => { loadHealth(); loadSyncStatus(); loadBackups(); }, 500);
   } catch (e) {
-    resultEl.textContent = `Error: ${e.message}`;
-    resultEl.className = 'restore-result force-box';
-    resultEl.hidden = false;
-    btn.textContent = 'Restore';
-    btn.disabled = false;
+    dialog.dataset.busy = '0';
+    if (status) status.textContent = '';
+    if (error) error.textContent = isDelete ? `Unable to delete backup: ${e.message}` : `Unable to restore backup: ${e.message}`;
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = isDelete ? 'Delete' : isForce ? 'Force Restore' : 'Restore';
+    }
+    closeBtns.forEach(closeActionBtn => { closeActionBtn.disabled = false; });
+  } finally {
+    if (btn) {
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+      }, 3000);
+    }
   }
 }
