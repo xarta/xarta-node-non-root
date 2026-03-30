@@ -1610,7 +1610,7 @@
     </div>
 
     <div id="backup-action-modal-force-warn" class="force-box" hidden>
-      <strong>Force Restore</strong> raises this node's generation above all peers. On the next sync drain, this restored state will be pushed to the rest of the fleet and overwrite their current data. Use only for disaster recovery or corruption repair.
+      <strong>Force Restore</strong> is a fleet-wide disaster recovery action. It restores this backup on the current node, then attempts to send the same restored database to every configured peer node and overwrite their current Blueprints data.
     </div>
 
     <div id="backup-action-modal-delete-warn" class="warn-box" hidden>

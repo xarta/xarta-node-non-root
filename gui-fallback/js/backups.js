@@ -86,7 +86,7 @@ function openBackupActionModal(filename, action, btn) {
     message.textContent = isDelete
       ? 'This will permanently remove this backup archive from this node.'
       : isForce
-        ? 'This will restore the selected backup and push that restored state back out to all peers.'
+        ? 'This will restore the selected backup on this node, then attempt to overwrite the Blueprints database on all configured peers using the same restored database.'
         : 'This will restore the selected backup on this node only.';
   }
   if (normalWarn) normalWarn.hidden = action !== 'restore';
@@ -214,6 +214,14 @@ async function submitBackupAction() {
     if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
 
     let msg = `Restored from ${data.restored_from}. Gen: ${data.gen_before} → ${data.gen_after}.`;
+    if (isForce && Array.isArray(data.peer_results) && data.peer_results.length) {
+      const lines = data.peer_results.map(result => {
+        const target = result.address ? `${result.node_id} via ${result.address}` : result.node_id;
+        const detail = result.detail ? ` — ${result.detail}` : '';
+        return `${result.ok ? 'OK' : 'FAIL'} ${target}${detail}`;
+      });
+      msg += `\n\nFleet results:\n${lines.join('\n')}`;
+    }
     if (data.warning) msg += `\n${data.warning}`;
     if (result) {
       result.textContent = msg;
@@ -221,8 +229,18 @@ async function submitBackupAction() {
       result.hidden = false;
     }
     if (status) {
-      status.textContent = isForce ? 'Force restore completed.' : 'Restore completed.';
-      status.style.color = 'var(--ok,#3fb950)';
+      if (isForce) {
+        const attemptedPeers = Array.isArray(data.peer_results) ? data.peer_results.length : 0;
+        status.textContent = data.fleet_success === false
+          ? 'Force restore completed locally with peer failures.'
+          : attemptedPeers
+            ? 'Force restore completed across configured peers.'
+            : 'Force restore completed locally.';
+        status.style.color = data.fleet_success === false ? 'var(--warn,#e6a817)' : 'var(--ok,#3fb950)';
+      } else {
+        status.textContent = 'Restore completed.';
+        status.style.color = 'var(--ok,#3fb950)';
+      }
     }
     if (closeBtn) closeBtn.textContent = 'CLOSE';
     if (confirmBtn) confirmBtn.hidden = true;
