@@ -17,6 +17,9 @@ let _docsGroups    = [];   // array of DocGroupOut records
 let _docsDragId    = null;  // doc_id currently being dragged
 let _groupDragId   = null;  // group_id currently being dragged
 let _docsCurrentModalMode = 'new'; // 'new' | 'edit'
+let _docsGroupModalMode = 'add'; // 'add' | 'edit'
+let _docsEditingGroupId = null;
+let _docsEditingGroupName = '';
 
 // ── Load + Sidebar ───────────────────────────────────────────────────────────
 
@@ -414,6 +417,44 @@ function _docsModalMode(mode) {
   document.getElementById('docs-modal-error').textContent = '';
 }
 
+function _docsResetGroupModal() {
+  const input = document.getElementById('docs-group-modal-name');
+  const errEl = document.getElementById('docs-group-modal-error');
+  const submit = document.getElementById('docs-group-modal-submit');
+  if (input) input.value = '';
+  if (errEl) errEl.textContent = '';
+  if (submit) submit.disabled = false;
+}
+
+function _docsOpenGroupModal(mode, groupId = null, currentName = '') {
+  const modal = document.getElementById('docs-group-modal');
+  const title = document.getElementById('docs-group-modal-title');
+  const input = document.getElementById('docs-group-modal-name');
+  const submit = document.getElementById('docs-group-modal-submit');
+  const errEl = document.getElementById('docs-group-modal-error');
+  if (!modal || !title || !input || !submit || !errEl) return;
+
+  _docsGroupModalMode = mode;
+  _docsEditingGroupId = groupId;
+  _docsEditingGroupName = currentName;
+
+  title.textContent = mode === 'add' ? 'Add Group' : 'Rename Group';
+  submit.textContent = mode === 'add' ? 'Create' : 'Save';
+  input.value = currentName;
+  errEl.textContent = '';
+  submit.disabled = false;
+
+  HubModal.open(modal, {
+    onOpen: () => {
+      input.focus();
+      input.select();
+    },
+    onClose: () => {
+      _docsResetGroupModal();
+    },
+  });
+}
+
 async function _docsModalSubmit() {
   const label   = document.getElementById('docs-modal-label').value.trim();
   const desc    = document.getElementById('docs-modal-desc').value.trim();
@@ -722,34 +763,63 @@ function docsListOpenDoc(docId) {
 }
 
 async function docsListAddGroup() {
-  const name = prompt('Group name:');
-  if (!name || !name.trim()) return;
-  // Sort order = current max + 10
-  const maxSort = _docsGroups.length > 0 ? Math.max(..._docsGroups.map(g => g.sort_order)) : -10;
-  try {
-    const r = await apiFetch('/api/v1/doc-groups', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim(), sort_order: maxSort + 10 }),
-    });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    await loadDocs();
-  } catch (e) { alert(`Failed to add group: ${e.message}`); }
+  _docsOpenGroupModal('add');
 }
 
 async function docsListEditGroup(groupId, currentName) {
-  const name = prompt('Rename group:', currentName);
-  if (name === null || name === currentName) return;
-  if (!name.trim()) { alert('Group name cannot be empty.'); return; }
+  _docsOpenGroupModal('edit', groupId, currentName);
+}
+
+async function _docsSubmitGroupModal() {
+  const input = document.getElementById('docs-group-modal-name');
+  const errEl = document.getElementById('docs-group-modal-error');
+  const submit = document.getElementById('docs-group-modal-submit');
+  if (!input || !errEl || !submit) return;
+
+  const name = input.value.trim();
+  if (!name) {
+    errEl.textContent = 'Group name cannot be empty.';
+    input.focus();
+    return;
+  }
+
+  if (_docsGroupModalMode === 'edit' && name === (_docsEditingGroupName || '').trim()) {
+    HubModal.close(document.getElementById('docs-group-modal'));
+    return;
+  }
+
+  submit.disabled = true;
+  errEl.textContent = '';
+
   try {
-    const r = await apiFetch(`/api/v1/doc-groups/${groupId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim() }),
-    });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    let r;
+    if (_docsGroupModalMode === 'add') {
+      const maxSort = _docsGroups.length > 0 ? Math.max(..._docsGroups.map(g => g.sort_order)) : -10;
+      r = await apiFetch('/api/v1/doc-groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, sort_order: maxSort + 10 }),
+      });
+    } else {
+      r = await apiFetch(`/api/v1/doc-groups/${_docsEditingGroupId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+    }
+
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      throw new Error(data.detail || `HTTP ${r.status}`);
+    }
+
+    HubModal.close(document.getElementById('docs-group-modal'));
     await loadDocs();
-  } catch (e) { alert(`Failed to rename group: ${e.message}`); }
+  } catch (e) {
+    errEl.textContent = `Error: ${e.message}`;
+  } finally {
+    submit.disabled = false;
+  }
 }
 
 async function docsListDeleteGroup(groupId, name) {
@@ -1169,4 +1239,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const addDocSubmit = document.getElementById('add-doc-modal-submit');
   if (addDocSubmit) addDocSubmit.addEventListener('click', _addDocSubmit);
+
+  const docsGroupSubmit = document.getElementById('docs-group-modal-submit');
+  if (docsGroupSubmit) docsGroupSubmit.addEventListener('click', _docsSubmitGroupModal);
+
+  const docsGroupInput = document.getElementById('docs-group-modal-name');
+  if (docsGroupInput) {
+    docsGroupInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        _docsSubmitGroupModal();
+      }
+    });
+  }
 });
