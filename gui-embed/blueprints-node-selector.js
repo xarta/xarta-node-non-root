@@ -28,6 +28,231 @@
 
   const SEEDS = (typeof window !== 'undefined' && window.BLUEPRINTS_SEED_NODES) || [];
 
+  if (typeof window !== 'undefined' && typeof window.openBlueprintsEmbedApiKeyModal !== 'function') {
+    const LS_SECRET = 'blueprints_api_secret';
+    const MODAL_ID = 'bp-embed-api-key-modal';
+    const STYLE_ID = 'bp-embed-api-key-modal-style';
+
+    function ensureApiKeyModal() {
+      if (typeof document === 'undefined') return null;
+
+      if (!document.getElementById(STYLE_ID)) {
+        const style = document.createElement('style');
+        style.id = STYLE_ID;
+        style.textContent = `
+          #${MODAL_ID} {
+            width: min(480px, calc(100vw - 20px));
+            max-width: calc(100vw - 20px);
+            max-height: calc(100dvh - 20px);
+            inset: 0;
+            margin: auto;
+            padding: 0;
+            border: 1px solid rgba(0, 212, 255, 0.24);
+            border-radius: 10px;
+            color: #e2e6f3;
+            background: rgba(10, 12, 20, 0.85);
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+          }
+          @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+            #${MODAL_ID} {
+              background: rgba(10, 12, 20, 0.72);
+              backdrop-filter: blur(18px) saturate(160%);
+              -webkit-backdrop-filter: blur(18px) saturate(160%);
+            }
+          }
+          #${MODAL_ID}::backdrop {
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+          }
+          #${MODAL_ID} .bp-auth-modal-header,
+          #${MODAL_ID} .bp-auth-modal-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 16px 18px;
+            border-bottom: 1px solid rgba(0, 212, 255, 0.12);
+          }
+          #${MODAL_ID} .bp-auth-modal-footer {
+            justify-content: flex-end;
+            border-bottom: 0;
+            border-top: 1px solid rgba(0, 212, 255, 0.12);
+          }
+          #${MODAL_ID} .bp-auth-modal-title {
+            margin: 0;
+            font: 600 16px/1.3 'Segoe UI', system-ui, sans-serif;
+            color: #e2e6f3;
+          }
+          #${MODAL_ID} .bp-auth-modal-body {
+            padding: 18px;
+          }
+          #${MODAL_ID} .bp-auth-copy {
+            margin: 0 0 14px;
+            color: #7b82a0;
+            font: 400 13px/1.7 'Segoe UI', system-ui, sans-serif;
+          }
+          #${MODAL_ID} .bp-auth-field {
+            display: grid;
+            gap: 6px;
+          }
+          #${MODAL_ID} .bp-auth-field-label {
+            color: #e2e6f3;
+            font: 600 12px/1.4 'Segoe UI', system-ui, sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+          }
+          #${MODAL_ID} .bp-auth-input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px 12px;
+            border: 1px solid rgba(0, 212, 255, 0.24);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.28);
+            color: #e2e6f3;
+            font: 400 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+          }
+          #${MODAL_ID} .bp-auth-input:focus {
+            outline: none;
+            border-color: rgba(0, 212, 255, 0.6);
+            box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.14);
+          }
+          #${MODAL_ID} .bp-auth-error {
+            min-height: 1.4em;
+            margin: 10px 0 0;
+            color: #e05c5c;
+            font: 400 12px/1.5 'Segoe UI', system-ui, sans-serif;
+          }
+          #${MODAL_ID} .bp-auth-btn {
+            height: 38px;
+            padding: 0 14px;
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.28);
+            color: #e2e6f3;
+            font: 500 13px/1 'Segoe UI', system-ui, sans-serif;
+            cursor: pointer;
+          }
+          #${MODAL_ID} .bp-auth-btn:hover {
+            background: rgba(0, 212, 255, 0.08);
+            border-color: rgba(0, 212, 255, 0.5);
+          }
+          #${MODAL_ID} .bp-auth-btn.bp-auth-btn-primary {
+            color: #00d4ff;
+            border-color: rgba(0, 212, 255, 0.55);
+            background: rgba(0, 212, 255, 0.12);
+          }
+          #${MODAL_ID} .bp-auth-btn.bp-auth-btn-primary:hover {
+            background: rgba(0, 212, 255, 0.18);
+          }
+          @media (max-width: 600px) {
+            #${MODAL_ID} {
+              width: calc(100vw - 16px);
+              max-width: calc(100vw - 16px);
+              max-height: calc(100dvh - 16px);
+            }
+            #${MODAL_ID} .bp-auth-input {
+              font-size: 16px;
+            }
+          }
+        `;
+        document.head.appendChild(style);
+      }
+
+      let dialog = document.getElementById(MODAL_ID);
+      if (dialog) return dialog;
+
+      dialog = document.createElement('dialog');
+      dialog.id = MODAL_ID;
+      dialog.innerHTML = `
+        <div class="bp-auth-modal-header">
+          <h2 class="bp-auth-modal-title">API Key</h2>
+          <button class="bp-auth-btn" type="button" data-role="close">CLOSE</button>
+        </div>
+        <div class="bp-auth-modal-body">
+          <p class="bp-auth-copy">Paste your BLUEPRINTS_API_SECRET from the Blueprints node .env file. It is stored only in this browser's localStorage and never transmitted directly - only a derived time-based token is sent with requests.</p>
+          <label class="bp-auth-field">
+            <span class="bp-auth-field-label">BLUEPRINTS_API_SECRET</span>
+            <input class="bp-auth-input" id="bp-embed-api-key-input" type="password" placeholder="64-char hex secret" autocomplete="new-password" spellcheck="false" autocorrect="off" autocapitalize="off" />
+          </label>
+          <p class="bp-auth-error" id="bp-embed-api-key-error"></p>
+        </div>
+        <div class="bp-auth-modal-footer">
+          <button class="bp-auth-btn" type="button" data-role="cancel">Cancel</button>
+          <button class="bp-auth-btn bp-auth-btn-primary" type="button" data-role="save">Save</button>
+        </div>
+      `;
+      document.body.appendChild(dialog);
+
+      const input = dialog.querySelector('#bp-embed-api-key-input');
+      const error = dialog.querySelector('#bp-embed-api-key-error');
+      const close = dialog.querySelector('[data-role="close"]');
+      const cancel = dialog.querySelector('[data-role="cancel"]');
+      const save = dialog.querySelector('[data-role="save"]');
+
+      function finish(result) {
+        if (typeof dialog._bpResolve === 'function') {
+          const resolve = dialog._bpResolve;
+          dialog._bpResolve = null;
+          resolve(result);
+        }
+      }
+
+      function closeDialog(result) {
+        dialog._bpResult = result;
+        if (dialog.open) dialog.close();
+      }
+
+      close.addEventListener('click', () => closeDialog(null));
+      cancel.addEventListener('click', () => closeDialog(null));
+      save.addEventListener('click', () => {
+        const value = input.value.trim();
+        if (value) localStorage.setItem(LS_SECRET, value);
+        else localStorage.removeItem(LS_SECRET);
+        error.textContent = '';
+        closeDialog(value || '');
+      });
+      input.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        save.click();
+      });
+      dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) closeDialog(null);
+      });
+      dialog.addEventListener('close', () => {
+        const result = Object.prototype.hasOwnProperty.call(dialog, '_bpResult') ? dialog._bpResult : null;
+        delete dialog._bpResult;
+        finish(result);
+      });
+
+      return dialog;
+    }
+
+    window.openBlueprintsEmbedApiKeyModal = function openBlueprintsEmbedApiKeyModal(opts = {}) {
+      const dialog = ensureApiKeyModal();
+      if (!dialog) return Promise.resolve(null);
+      const input = dialog.querySelector('#bp-embed-api-key-input');
+      const error = dialog.querySelector('#bp-embed-api-key-error');
+      if (!input || !error) return Promise.resolve(null);
+
+      if (dialog.open) dialog.close();
+      error.textContent = opts.authFailed ? 'Authentication failed. Check your API secret.' : '';
+      input.value = typeof opts.currentValue === 'string'
+        ? opts.currentValue
+        : (localStorage.getItem(LS_SECRET) || '');
+
+      return new Promise((resolve) => {
+        dialog._bpResolve = resolve;
+        dialog.showModal();
+        requestAnimationFrame(() => {
+          input.focus();
+          input.select();
+        });
+      });
+    };
+  }
+
   /* ── Internal authenticated fetch ───────────────────────────────────────
    * Uses window.apiFetch when the host page provides it (e.g. full Blueprints
    * GUI), otherwise derives a TOTP token from localStorage itself so the
@@ -77,10 +302,21 @@
       doAction() {
         if (typeof window.openApiKeyModal === 'function') {
           window.openApiKeyModal();
-        } else {
-          const cur = localStorage.getItem('blueprints_api_secret') || '';
-          const v = prompt('Blueprints API Key\n\nEnter your BLUEPRINTS_API_SECRET (64-char hex):', cur);
-          if (v !== null && v.trim()) localStorage.setItem('blueprints_api_secret', v.trim());
+        } else if (typeof window.openBlueprintsEmbedApiKeyModal === 'function') {
+          window.openBlueprintsEmbedApiKeyModal({
+            currentValue: localStorage.getItem('blueprints_api_secret') || ''
+          });
+        }
+      },
+    },
+    'api-key-test': {
+      icon: '🗝️', label: 'Test Embedded API Key Modal',
+      doAction() {
+        if (typeof window.openBlueprintsEmbedApiKeyModal === 'function') {
+          window.openBlueprintsEmbedApiKeyModal({
+            authFailed: true,
+            currentValue: localStorage.getItem('blueprints_api_secret') || ''
+          });
         }
       },
     },

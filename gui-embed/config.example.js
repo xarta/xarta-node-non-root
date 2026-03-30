@@ -15,6 +15,11 @@ window.BLUEPRINTS_SEED_NODES = [
 
 // Optional: selector action buttons rendered next to the dropdown.
 // Valid button keys:
+// - 'synthesis'
+// - 'probes'
+// - 'settings'
+// - 'api-key'
+// - 'api-key-test'  (force-opens the embedded API key modal in its auth-failed state)
 // - 'fallback-ui'
 // - 'ui'
 // - 'database-tables'
@@ -24,7 +29,8 @@ window.BLUEPRINTS_SELECTOR_BUTTONS = {
   // Preferred: explicit page mapping (each nested array is one page).
   pages: [
     ['ui', 'synthesis', 'probes', 'settings'],
-    ['api-key', 'database-tables', 'database-diagram'],
+    ['database-tables', 'database-diagram'],
+    ['api-key', 'api-key-test'],
   ],
   showPagingButton: true,
 
