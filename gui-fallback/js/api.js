@@ -32,20 +32,56 @@ async function apiFetch(url, options = {}) {
 
 function openApiKeyModal(authFailed = false) {
   const modal = document.getElementById('api-key-modal');
-  document.getElementById('api-key-failed-msg').hidden = !authFailed;
-  document.getElementById('api-key-input').value = localStorage.getItem(_LS_SECRET_KEY) || '';
-  modal.showModal();
+  const input = document.getElementById('api-key-input');
+  const errEl = document.getElementById('api-key-modal-error');
+  if (!modal || !input || !errEl) return;
+  errEl.textContent = authFailed ? 'Authentication failed. Check your API secret.' : '';
+  input.value = localStorage.getItem(_LS_SECRET_KEY) || '';
+  if (typeof HubModal !== 'undefined') {
+    HubModal.open(modal, {
+      onOpen: () => {
+        input.focus();
+        input.select();
+      }
+    });
+    return;
+  }
+  if (!modal.open) modal.showModal();
+  input.focus();
+  input.select();
 }
 
 function saveApiKey() {
-  const val = document.getElementById('api-key-input').value.trim();
+  const modal = document.getElementById('api-key-modal');
+  const input = document.getElementById('api-key-input');
+  const errEl = document.getElementById('api-key-modal-error');
+  if (!input) return;
+  const val = input.value.trim();
   if (val) {
     localStorage.setItem(_LS_SECRET_KEY, val);
   } else {
     localStorage.removeItem(_LS_SECRET_KEY);
   }
-  document.getElementById('api-key-modal').close();
+  if (errEl) errEl.textContent = '';
+  if (typeof HubModal !== 'undefined' && modal) {
+    HubModal.close(modal);
+  } else if (modal && modal.open) {
+    modal.close();
+  }
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+  const input = document.getElementById('api-key-input');
+  const saveBtn = document.getElementById('api-key-save-btn');
+  if (input) {
+    input.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      saveApiKey();
+    });
+  }
+  if (saveBtn) saveBtn.addEventListener('click', saveApiKey);
+});
 
 /* ── Frontend settings (localStorage cache of fe.* server settings) ─── */
 

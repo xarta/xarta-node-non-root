@@ -1830,19 +1830,23 @@
 </dialog>
 
 <!-- Delete doc confirmation modal -->
-<dialog id="docs-delete-modal" style="background:var(--surface);border:1px solid var(--border);
-  border-radius:var(--radius);color:var(--text);padding:24px;min-width:360px;max-width:480px;">
-  <h2 style="margin-bottom:12px;">Delete document?</h2>
-  <p>Remove <strong id="docs-delete-name"></strong> from the docs index.</p>
-  <p style="font-size:12px;color:var(--text-dim);margin-top:4px">File: <code id="docs-delete-path"></code></p>
-  <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;cursor:pointer">
-    <input type="checkbox" id="docs-delete-file-chk" />
-    Also delete the file from disk
-  </label>
-  <p id="docs-delete-error" class="error-msg" hidden></p>
-  <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
-    <button class="secondary" onclick="document.getElementById('docs-delete-modal').close()">Cancel</button>
-    <button id="docs-delete-confirm-btn" style="background:#dc2626" onclick="submitDeleteDoc()">Delete</button>
+<dialog class="hub-modal" id="docs-delete-modal" style="width:min(480px,95vw)">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">Delete document?</h2>
+    <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+  </div>
+  <div class="hub-modal-body">
+    <p style="margin:0 0 8px;color:var(--text);font-size:13px;line-height:1.7;">Remove <strong id="docs-delete-name"></strong> from the docs index.</p>
+    <p style="font-size:12px;color:var(--text-dim);margin:0 0 12px;line-height:1.7;">File: <code id="docs-delete-path"></code></p>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;color:var(--text);">
+      <input type="checkbox" id="docs-delete-file-chk" />
+      Also delete the file from disk
+    </label>
+    <p class="hub-modal-error" id="docs-delete-error"></p>
+  </div>
+  <div class="hub-modal-footer">
+    <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Cancel</button>
+    <button class="hub-modal-btn" type="button" id="docs-delete-confirm-btn" style="background:var(--err);border-color:var(--err);">Delete</button>
   </div>
 </dialog>
 
@@ -1961,26 +1965,28 @@
 </dialog>
 
 <!-- API key configuration modal -->
-<dialog id="api-key-modal" style="background:var(--surface);border:1px solid var(--border);
-  border-radius:var(--radius);color:var(--text);padding:24px;min-width:380px;max-width:480px;">
-  <h2 style="margin-bottom:12px;">🔑 API Key</h2>
-  <p id="api-key-failed-msg" style="color:var(--danger);margin-bottom:10px;" hidden>
-    ⚠ Authentication failed — check your API secret.
-  </p>
-  <p style="margin-bottom:14px;font-size:13px;color:var(--text-muted);">Paste your
-    <code>BLUEPRINTS_API_SECRET</code> (64-hex char string) from the node's
-    <code>.env</code> file. It is stored only in this browser's localStorage and
-    never transmitted — only a derived time-based token is sent with each request.
-  </p>
-  <input id="api-key-input" type="password" placeholder="64-char hex secret"
-    autocomplete="new-password" spellcheck="false" autocorrect="off" autocapitalize="off"
-    style="width:100%;box-sizing:border-box;font-family:monospace;font-size:13px;
-           padding:8px;border:1px solid var(--border);border-radius:var(--radius);
-           background:var(--surface-alt, #1e1e2e);color:var(--text);margin-bottom:16px;"
-    onkeydown="if(event.key==='Enter')saveApiKey()" />
-  <div style="display:flex;gap:10px;justify-content:flex-end;">
-    <button class="secondary" onclick="document.getElementById('api-key-modal').close()">Cancel</button>
-    <button onclick="saveApiKey()">Save</button>
+<dialog class="hub-modal" id="api-key-modal" style="width:min(480px,95vw)">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">API Key</h2>
+    <button class="hub-modal-close" type="button" data-fc-key="modal.close">CLOSE</button>
+  </div>
+  <div class="hub-modal-body">
+    <p style="margin:0 0 14px;font-size:13px;color:var(--text-dim);line-height:1.7;">Paste your
+      <code>BLUEPRINTS_API_SECRET</code> (64-hex char string) from the node's
+      <code>.env</code> file. It is stored only in this browser's localStorage and
+      never transmitted - only a derived time-based token is sent with each request.
+    </p>
+    <div class="field">
+      <label for="api-key-input">BLUEPRINTS_API_SECRET</label>
+      <input id="api-key-input" type="password" placeholder="64-char hex secret"
+        autocomplete="new-password" spellcheck="false" autocorrect="off" autocapitalize="off"
+        style="font-family:monospace;font-size:13px;" />
+    </div>
+    <p class="hub-modal-error" id="api-key-modal-error"></p>
+  </div>
+  <div class="hub-modal-footer">
+    <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Cancel</button>
+    <button class="hub-modal-btn" type="button" id="api-key-save-btn">Save</button>
   </div>
 </dialog>
 

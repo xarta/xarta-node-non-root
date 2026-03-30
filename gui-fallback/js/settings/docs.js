@@ -524,8 +524,13 @@ function openDeleteDocModal() {
   document.getElementById('docs-delete-name').textContent = doc.label;
   document.getElementById('docs-delete-path').textContent = doc.path;
   document.getElementById('docs-delete-file-chk').checked = false;
-  document.getElementById('docs-delete-error').hidden = true;
-  document.getElementById('docs-delete-modal').showModal();
+  document.getElementById('docs-delete-error').textContent = '';
+  const modal = document.getElementById('docs-delete-modal');
+  if (typeof HubModal !== 'undefined' && modal) {
+    HubModal.open(modal);
+  } else if (modal && !modal.open) {
+    modal.showModal();
+  }
 }
 
 async function submitDeleteDoc() {
@@ -538,7 +543,12 @@ async function submitDeleteDoc() {
     const url = `/api/v1/docs/${_docsActiveId}${deleteFile ? '?delete_file=true' : ''}`;
     const r = await apiFetch(url, { method: 'DELETE' });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    document.getElementById('docs-delete-modal').close();
+    const modal = document.getElementById('docs-delete-modal');
+    if (typeof HubModal !== 'undefined' && modal) {
+      HubModal.close(modal);
+    } else if (modal && modal.open) {
+      modal.close();
+    }
     if (typeof docsHistRemoveDoc === 'function') {
       _docsActiveId = docsHistRemoveDoc(deletingDocId) || null;
     } else {
@@ -548,7 +558,6 @@ async function submitDeleteDoc() {
     await loadDocs();
   } catch (e) {
     errEl.textContent = `Error: ${e.message}`;
-    errEl.hidden = false;
   } finally {
     btn.disabled = false;
   }
@@ -1252,4 +1261,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  const docsDeleteBtn = document.getElementById('docs-delete-confirm-btn');
+  if (docsDeleteBtn) docsDeleteBtn.addEventListener('click', submitDeleteDoc);
 });
