@@ -126,7 +126,7 @@
             Event handlers wired in bookmarks.js via addEventListener. -->
         <div class="page-control-group" id="pg-ctrl-bookmarks-main"
             data-for-tab="bookmarks-main" hidden>
-          <input class="hub-ctrl" type="text" id="bm-search"
+              <input class="hub-ctrl" type="text" id="bm-search" data-clearable-input
                 placeholder="Search bookmarks… (Enter triggers SeekDB hybrid search)" />
           <select id="bm-tag-filter">
             <option value="">All tags</option>
@@ -143,7 +143,7 @@
             Event handlers wired in pfsense.js via addEventListener. -->
         <div class="page-control-group" id="pg-ctrl-pfsense-dns"
             data-for-tab="pfsense-dns" hidden>
-          <input class="hub-ctrl" type="text" id="dns-search"
+              <input class="hub-ctrl" type="text" id="dns-search" data-clearable-input
                 placeholder="Filter DNS entries…"
                 data-fc-key="pfsense-dns.filter" />
           <label class="hub-ctrl-toggle-label">
@@ -159,7 +159,7 @@
             Event handlers wired in proxmox-config.js via addEventListener. -->
         <div class="page-control-group" id="pg-ctrl-proxmox-config"
             data-for-tab="proxmox-config" hidden>
-          <input class="hub-ctrl" type="text" id="pve-search"
+              <input class="hub-ctrl" type="text" id="pve-search" data-clearable-input
                 placeholder="Filter configs…" />
         </div>
 
@@ -168,7 +168,7 @@
             Event handlers wired in dockge.js via addEventListener. -->
         <div class="page-control-group" id="pg-ctrl-dockge-stacks"
             data-for-tab="dockge-stacks" hidden>
-          <input class="hub-ctrl" type="text" id="dockge-search"
+              <input class="hub-ctrl" type="text" id="dockge-search" data-clearable-input
                 placeholder="Filter stacks…" />
           <label class="hub-ctrl-toggle-label">
             <input type="checkbox" id="dockge-hide-obsolete" checked />
@@ -182,7 +182,7 @@
             Event handlers wired in caddy.js via addEventListener. -->
         <div class="page-control-group" id="pg-ctrl-caddy-configs"
             data-for-tab="caddy-configs" hidden>
-          <input class="hub-ctrl" type="text" id="caddy-search"
+              <input class="hub-ctrl" type="text" id="caddy-search" data-clearable-input
                 placeholder="Filter configs…" />
         </div>
 
@@ -191,7 +191,7 @@
             Event handlers wired in bookmarks.js via addEventListener. -->
         <div class="page-control-group" id="pg-ctrl-bookmarks-history"
             data-for-tab="bookmarks-history" hidden>
-          <input class="hub-ctrl" type="text" id="bm-visit-search"
+              <input class="hub-ctrl" type="text" id="bm-visit-search" data-clearable-input
                 placeholder="Filter visits…" />
           <select class="hub-ctrl" id="bm-visit-saved-filter">
             <option value="all">All</option>
@@ -205,7 +205,7 @@
             Event handlers wired in manual-links.js via addEventListener. -->
         <div class="page-control-group" id="pg-ctrl-manual-links-table"
             data-for-tab="manual-links-table" hidden>
-          <input class="hub-ctrl" type="text" id="ml-filter"
+              <input class="hub-ctrl" type="text" id="ml-filter" data-clearable-input
                 placeholder="Filter links…" />
         </div>
 
@@ -214,7 +214,7 @@
             Event handlers wired in services.js via addEventListener. -->
         <div class="page-control-group" id="pg-ctrl-services"
             data-for-tab="services" hidden>
-          <input class="hub-ctrl" type="text" id="search-input"
+              <input class="hub-ctrl" type="text" id="search-input" data-clearable-input
                 placeholder="Filter services…" />
         </div>
 
@@ -223,7 +223,7 @@
             Event handlers wired in machines.js via addEventListener. -->
         <div class="page-control-group" id="pg-ctrl-machines"
             data-for-tab="machines" hidden>
-          <input class="hub-ctrl" type="text" id="machine-search"
+              <input class="hub-ctrl" type="text" id="machine-search" data-clearable-input
                 placeholder="Filter machines…" />
         </div>
 
@@ -259,7 +259,7 @@
         <!-- Docs Images — search, usage, tags, date, sort. -->
         <div class="page-control-group" id="pg-ctrl-docs-images"
             data-for-tab="docs-images" hidden>
-          <input class="hub-ctrl" type="text" id="doc-img-search"
+              <input class="hub-ctrl" type="text" id="doc-img-search" data-clearable-input
                 placeholder="Filter file name, description, or tags…" />
           <select id="doc-img-usage-filter">
             <option value="all">All images</option>
@@ -1014,7 +1014,7 @@
       <div class="asset-picker-toolbar">
         <div class="field">
           <label for="asset-picker-filter">Filter</label>
-          <input type="text" id="asset-picker-filter" placeholder="Filter by filename" autocomplete="off" />
+          <input type="text" id="asset-picker-filter" data-clearable-input placeholder="Filter by filename" autocomplete="off" />
         </div>
         <div class="field">
           <label for="asset-picker-sort">Sort</label>
@@ -1067,7 +1067,7 @@
         <div class="fc-key-browser-tools">
           <div class="field">
             <label for="fc-key-filter">Filter discovered keys</label>
-            <input type="text" id="fc-key-filter" placeholder="Type to narrow the list" autocomplete="off" />
+            <input type="text" id="fc-key-filter" data-clearable-input placeholder="Type to narrow the list" autocomplete="off" />
           </div>
         </div>
         <div id="fc-key-list" class="fc-key-list" role="listbox" aria-label="Discovered form control keys"></div>
@@ -1834,7 +1834,7 @@
   <div class="hub-modal-body">
     <div class="field">
       <label>File <span class="field-hint" style="display:inline">(unregistered .md files in the private repo)</span></label>
-      <input type="text" id="add-doc-filter" placeholder="Filter files…" autocomplete="off"
+      <input type="text" id="add-doc-filter" data-clearable-input placeholder="Filter files…" autocomplete="off"
         style="width:100%;box-sizing:border-box;margin-bottom:6px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:5px 8px;font-size:13px" />
       <select id="add-doc-file-list" size="7"
         style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);font-size:12px;font-family:monospace;padding:4px;box-sizing:border-box">
@@ -2025,6 +2025,7 @@
 <script src="js/probes/bookmarks.js?v={{$assetVersion}}"></script>
 <script src="js/probes/probes-menu.js?v={{$assetVersion}}"></script>
 <script src="js/settings/settings-menu.js?v={{$assetVersion}}"></script>
+<script src="js/hub-clear-input.js?v={{$assetVersion}}"></script>
 <script src="js/hub-select.js?v={{$assetVersion}}"></script>
 <script src="js/responsive-layout.js?v={{$assetVersion}}"></script>
 <script src="js/body-shade.js?v={{$assetVersion}}"></script>
@@ -2238,7 +2239,7 @@
       <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
     </div>
     <div style="padding:8px 16px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px">
-      <input type="text" id="bm-excl-modal-search" placeholder="Filter tags…" style="flex:1;font-size:13px;padding:5px 10px" autocomplete="off" />
+      <input type="text" id="bm-excl-modal-search" data-clearable-input placeholder="Filter tags…" style="flex:1;font-size:13px;padding:5px 10px" autocomplete="off" />
       <span id="bm-excl-modal-count" style="font-size:12px;color:var(--text-dim);white-space:nowrap"></span>
     </div>
     <div style="padding:4px 14px 6px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text-dim);font-weight:600;letter-spacing:.3px">
