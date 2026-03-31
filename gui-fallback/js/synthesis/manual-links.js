@@ -107,8 +107,8 @@ function _mlHostParts(lnk) {
 }
 
 function _mlActionButtons(lnk) {
-  return `<button class="secondary" style="padding:2px 8px;font-size:12px" type="button" data-ml-edit="${esc(lnk.link_id)}">Edit</button>
-    <button class="secondary" style="padding:2px 8px;font-size:12px;color:var(--err)" type="button" data-ml-del="${esc(lnk.link_id)}">Del</button>`;
+  return `<button class="secondary table-icon-btn table-icon-btn--edit" type="button" title="Edit manual link" aria-label="Edit manual link" data-ml-edit="${esc(lnk.link_id)}"></button>
+    <button class="secondary table-icon-btn table-icon-btn--delete" type="button" title="Delete manual link" aria-label="Delete manual link" data-ml-del="${esc(lnk.link_id)}"></button>`;
 }
 
 function _mlRenderActionsCell(lnk) {

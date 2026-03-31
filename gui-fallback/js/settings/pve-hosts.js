@@ -74,8 +74,8 @@ function _pveSortValue(host, sortKey) {
 }
 
 function _pveActionButtons(h) {
-  return `<button class="secondary" style="padding:2px 8px;font-size:11px" data-pve-edit="${h.pve_id}">Edit</button>
-    <button class="secondary" style="padding:2px 8px;font-size:11px;color:#f87171" data-pve-del="${h.pve_id}">Del</button>`;
+  return `<button class="secondary table-icon-btn table-icon-btn--edit" type="button" title="Edit PVE host" aria-label="Edit PVE host" data-pve-edit="${h.pve_id}"></button>
+    <button class="secondary table-icon-btn table-icon-btn--delete" type="button" title="Delete PVE host" aria-label="Delete PVE host" data-pve-del="${h.pve_id}"></button>`;
 }
 
 function _pveRenderActionsCell(h) {

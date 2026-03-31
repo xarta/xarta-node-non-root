@@ -106,10 +106,10 @@ function _bmActionCellWidth() {
 
 function _bmBookmarkActionButtons(b) {
   const archBtn = b.archived
-    ? `<button class="secondary" style="padding:1px 6px;font-size:11px;color:var(--ok);border-color:var(--ok);margin-left:2px" title="Restore from archive" onclick="archiveBookmark('${esc(b.bookmark_id)}', true)">&#128228;</button>`
-    : `<button class="secondary" style="padding:1px 6px;font-size:11px;color:var(--text-dim);border-color:var(--border);margin-left:2px" title="Archive" onclick="archiveBookmark('${esc(b.bookmark_id)}', false)">&#128229;</button>`;
-  return `<button class="secondary" style="padding:1px 6px;font-size:11px" onclick="openBookmarkModal('${esc(b.bookmark_id)}')">&#9998;</button>${archBtn}
-    <button class="secondary" style="padding:1px 6px;font-size:11px;color:#f87171;border-color:#f87171;margin-left:2px" onclick="deleteBookmark('${esc(b.bookmark_id)}','${esc(b.title||b.url)}')">&#x2715;</button>`;
+    ? `<button class="secondary table-icon-btn table-icon-btn--restore" type="button" title="Restore from archive" aria-label="Restore bookmark" onclick="archiveBookmark('${esc(b.bookmark_id)}', true)"></button>`
+    : `<button class="secondary table-icon-btn table-icon-btn--archive" type="button" title="Archive bookmark" aria-label="Archive bookmark" onclick="archiveBookmark('${esc(b.bookmark_id)}', false)"></button>`;
+  return `<button class="secondary table-icon-btn table-icon-btn--edit" type="button" title="Edit bookmark" aria-label="Edit bookmark" onclick="openBookmarkModal('${esc(b.bookmark_id)}')"></button>${archBtn}
+    <button class="secondary table-icon-btn table-icon-btn--delete" type="button" title="Delete bookmark" aria-label="Delete bookmark" onclick="deleteBookmark('${esc(b.bookmark_id)}','${esc(b.title||b.url)}')"></button>`;
 }
 
 function _bmRenderBookmarkActionsCell(b) {
@@ -199,6 +199,7 @@ function _bmCurrentTableSort() {
 
 function _bmSetSearchActive(active) {
   _bmSearchActive = active;
+  _bmHiddenCols = _bmCurrentTablePrefs().getHiddenSet(_bmCurrentDynCols());
   if (!active) _bmDisplayedSearchRows = [];
   const btn = document.getElementById('bm-explain-sort-btn');
   if (btn) btn.disabled = !active;
@@ -856,11 +857,11 @@ function renderVisits(opts = {}) {
 function _visRenderVisitActionsCell(v) {
   const actions = [];
   if (!v.bookmark_id) {
-    actions.push(`<button class="secondary" style="padding:1px 6px;font-size:11px" onclick="promoteVisitToBookmark('${esc(v.url)}','${esc(v.title || '')}')">&#128278; Save</button>`);
+    actions.push(`<button class="secondary table-icon-btn table-icon-btn--save" type="button" title="Save as bookmark" aria-label="Save as bookmark" onclick="promoteVisitToBookmark('${esc(v.url)}','${esc(v.title || '')}')"></button>`);
   }
   if (v.visit_count > 1) {
     const expandId = `ve-${esc(v.visit_id)}`;
-    actions.push(`<button class="secondary" style="padding:1px 6px;font-size:11px" title="Show individual visit times" onclick="_bmToggleVisitEvents('${esc(v.normalized_url)}','${expandId}')">&#128337;</button>`);
+    actions.push(`<button class="secondary table-icon-btn table-icon-btn--history" type="button" title="Show individual visit times" aria-label="Show individual visit times" onclick="_bmToggleVisitEvents('${esc(v.normalized_url)}','${expandId}')"></button>`);
   }
   if (!actions.length) return '<td></td>';
   if (_bmCompactRowActions()) {
