@@ -27,36 +27,30 @@ const _DNS_FIELD_META = {
 };
 
 let _dnsFilterTimer = null;
-let _dnsTablePrefs = null;
-let _dnsHiddenCols = new Set();
-let _dnsTableSort = null;
+let _dnsTableView = null;
 let _dnsOpenGroups = new Set();
 
-function _ensureDnsTablePrefs() {
-  if (_dnsTablePrefs || typeof TablePrefs === 'undefined') return _dnsTablePrefs;
-  _dnsTablePrefs = TablePrefs.create({
+function _ensureDnsTableView() {
+  if (_dnsTableView || typeof TableView === 'undefined') return _dnsTableView;
+  _dnsTableView = TableView.create({
     storageKey: 'pfsense-dns-table-prefs',
-    defaultHidden: [],
+    columns: _DNS_COLS,
+    meta: _DNS_FIELD_META,
+    getTable: _dnsTableEl,
+    fallbackColumn: 'ip_address',
     minWidth: 40,
+    sort: {
+      storageKey: 'pfsense-dns-table-sort',
+      defaultKey: 'ip_address',
+      defaultDir: 1,
+    },
+    onSortChange: renderPfSenseDns,
   });
-  _dnsTablePrefs.syncColumns(_DNS_COLS);
-  _dnsHiddenCols = _dnsTablePrefs.getHiddenSet(_DNS_COLS);
-  return _dnsTablePrefs;
-}
-
-function _ensureDnsTableSort() {
-  if (_dnsTableSort || typeof TableSort === 'undefined') return _dnsTableSort;
-  _dnsTableSort = TableSort.create({
-    storageKey: 'pfsense-dns-table-sort',
-    defaultKey: 'ip_address',
-    defaultDir: 1,
-  });
-  return _dnsTableSort;
+  return _dnsTableView;
 }
 
 function _dnsVisibleCols() {
-  const visible = _DNS_COLS.filter(col => !_dnsHiddenCols.has(col));
-  return visible.length ? visible : ['ip_address'];
+  return _ensureDnsTableView()?.getVisibleCols() || ['ip_address'];
 }
 
 function _dnsTableEl() {
@@ -240,57 +234,23 @@ function _dnsRenderGroupRow(group, isOpen, visibleCols) {
   </tr>`;
 }
 
-function _dnsRebuildThead() {
-  const table = _dnsTableEl();
-  if (!table) return;
-  const tr = table.querySelector('thead tr');
-  if (!tr) return;
-  const prefs = _ensureDnsTablePrefs();
-  const sorter = _ensureDnsTableSort();
-  tr.innerHTML = _dnsVisibleCols().map(col => {
-    const meta = _DNS_FIELD_META[col];
-    const width = prefs ? prefs.getWidth(col) : null;
-    const style = width ? ` style="width:${width}px"` : '';
-    const sortAttrs = meta.sortKey ? ` data-sort-key="${meta.sortKey}"` : '';
-    const classAttr = meta.sortKey ? ' class="table-th-sort"' : '';
-    const labelHtml = sorter && meta.sortKey ? sorter.renderLabel(meta.label, meta.sortKey) : meta.label;
-    return `<th data-col="${col}"${sortAttrs}${classAttr}${style}>${labelHtml}</th>`;
-  }).join('');
-}
-
 function _dnsRenderSharedTable(renderBody) {
-  const prefs = _ensureDnsTablePrefs();
-  if (!prefs) return;
-  prefs.renderTable({
-    getTable: _dnsTableEl,
-    rebuildHead: _dnsRebuildThead,
-    renderBody,
-    minWidth: 40,
-    afterBind: tableEl => {
-      const sorter = _ensureDnsTableSort();
-      sorter?.bind(tableEl, renderPfSenseDns);
-      sorter?.syncIndicators(tableEl);
-    },
-  });
+  const view = _ensureDnsTableView();
+  view?.render(renderBody);
 }
 
 function _dnsOpenColsModal() {
-  const prefs = _ensureDnsTablePrefs();
-  if (!prefs) return;
+  const view = _ensureDnsTableView();
+  if (!view) return;
   const list = document.getElementById('dns-cols-modal-list');
-  TablePrefs.renderColumnChooser(list, _DNS_COLS, _dnsHiddenCols, col => _DNS_FIELD_META[col].label);
-  HubModal.open(document.getElementById('dns-cols-modal'));
+  view.openColumns(list, document.getElementById('dns-cols-modal'), col => _DNS_FIELD_META[col].label);
 }
 
 function _dnsApplyColsModal() {
-  const prefs = _ensureDnsTablePrefs();
-  if (!prefs) return;
+  const view = _ensureDnsTableView();
+  if (!view) return;
   const modal = document.getElementById('dns-cols-modal');
-  const newHidden = TablePrefs.readHiddenFromChooser(modal, new Set(_dnsHiddenCols));
-  prefs.setHiddenSet(newHidden);
-  _dnsHiddenCols = prefs.getHiddenSet(_DNS_COLS);
-  _dnsRebuildThead();
-  renderPfSenseDns();
+  view.applyColumns(modal, renderPfSenseDns);
   HubModal.close(modal);
 }
 
@@ -298,7 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const dnsSearch = document.getElementById('dns-search');
   const dnsHideInact = document.getElementById('dns-hide-inactive');
 
-  _ensureDnsTablePrefs();
+  _ensureDnsTableView();
 
   if (dnsSearch) {
     dnsSearch.addEventListener('input', () => {
@@ -310,9 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
     dnsHideInact.addEventListener('change', renderPfSenseDns);
   }
 
-  _dnsTablePrefs?.onLayoutChange(() => {
-    _dnsHiddenCols = _dnsTablePrefs.getHiddenSet(_DNS_COLS);
-    _dnsRebuildThead();
+  _dnsTableView?.onLayoutChange(() => {
     renderPfSenseDns();
   });
 
@@ -380,9 +338,8 @@ function renderPfSenseDns() {
     )
   );
   const tbody = _dnsTbodyEl();
-  _ensureDnsTablePrefs();
-  const sorter = _ensureDnsTableSort();
-  const sortState = sorter?.getState() || { key: 'ip_address', dir: 1 };
+  const view = _ensureDnsTableView();
+  const sortState = view?.getSortState() || { key: 'ip_address', dir: 1 };
   const visibleCols = _dnsVisibleCols();
   if (!rows.length) {
     const msg = hideInactive ? 'No active DNS entries match the filter.' : 'No DNS entries found.';

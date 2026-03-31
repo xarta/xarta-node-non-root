@@ -64,9 +64,11 @@ const ProbesMenuConfig = createHubMenu({
 
         // ── VLANs page function items ──────────────────────────────────────
         { id: 'vlan-fn-refresh',    label: 'Refresh',             icon: HIEROGLYPHS.nefer,      fn: 'vlan.refresh',    activeOn: ['vlans'],             parent: 'probes-settings', order: 0 },
+        { id: 'vlan-fn-cols',       label: 'Columns',             icon: 'icons/ui/table-columns-blue.svg', fn: 'vlan.cols', activeOn: ['vlans'], parent: 'probes-settings', order: 1 },
 
         // ── SSH Targets page function items ────────────────────────────────
         { id: 'ssh-fn-rebuild',     label: 'Rebuild from config', icon: HIEROGLYPHS.doorBolt,   fn: 'ssh.rebuild',     activeOn: ['ssh-targets'],       parent: 'probes-settings', order: 0 },
+        { id: 'ssh-fn-cols',        label: 'Columns',             icon: 'icons/ui/table-columns-blue.svg', fn: 'ssh.cols', activeOn: ['ssh-targets'], parent: 'probes-settings', order: 1 },
 
         // ── Dockge Stacks page function items ──────────────────────────────
         { id: 'dockge-fn-refresh',  label: 'Refresh',             icon: HIEROGLYPHS.nefer,      fn: 'dockge.refresh',  activeOn: ['dockge-stacks'],     parent: 'probes-settings', order: 0 },
@@ -135,9 +137,11 @@ ProbesMenuConfig.registerFunctions({
 
     // VLANs
     'vlan.refresh':   () => loadVlans(),
+    'vlan.cols':      () => openVlansColsModal(),
 
     // SSH Targets
     'ssh.rebuild':    () => rebuildSshTargets(),
+    'ssh.cols':       () => openSshTargetsColsModal(),
 
     // Dockge Stacks
     'dockge.refresh':    () => loadDockgeStacks(),

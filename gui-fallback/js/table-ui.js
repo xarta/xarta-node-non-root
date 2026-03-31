@@ -491,6 +491,139 @@
     };
   }
 
+  function createTableView(cfg) {
+    cfg = cfg || {};
+    var columns = Array.isArray(cfg.columns) ? cfg.columns.slice() : [];
+    var fallbackColumn = cfg.fallbackColumn || columns[0] || null;
+    var prefs = createTablePrefs({
+      storageKey: cfg.storageKey,
+      legacyHiddenKey: cfg.legacyHiddenKey,
+      defaultHidden: cfg.defaultHidden || [],
+      minWidth: cfg.minWidth || 40,
+    });
+    var sorter = cfg.sort ? createTableSort(cfg.sort) : null;
+    var hiddenCols = new Set();
+
+    function getColumns() {
+      var next = typeof cfg.getColumns === 'function' ? cfg.getColumns() : columns;
+      return Array.isArray(next) ? next.slice() : [];
+    }
+
+    function syncColumns() {
+      var nextCols = getColumns();
+      prefs.syncColumns(nextCols);
+      hiddenCols = prefs.getHiddenSet(nextCols);
+      return nextCols;
+    }
+
+    function getHiddenSet() {
+      syncColumns();
+      return new Set(hiddenCols);
+    }
+
+    function getVisibleCols() {
+      var nextCols = syncColumns();
+      var visible = nextCols.filter(function (col) { return !hiddenCols.has(col); });
+      if (visible.length) return visible;
+      if (fallbackColumn) return [fallbackColumn];
+      return nextCols.length ? [nextCols[0]] : [];
+    }
+
+    function getMeta(col) {
+      if (typeof cfg.getMeta === 'function') return cfg.getMeta(col);
+      if (cfg.meta && cfg.meta[col]) return cfg.meta[col];
+      return { label: col };
+    }
+
+    function rebuildHead() {
+      var table = typeof cfg.getTable === 'function' ? cfg.getTable() : null;
+      if (!table) return;
+      var tr = table.querySelector('thead tr');
+      if (!tr) return;
+      tr.innerHTML = getVisibleCols().map(function (col) {
+        var meta = getMeta(col) || { label: col };
+        var width = prefs.getWidth(col);
+        var styleParts = [];
+        if (width) {
+          styleParts.push('width:' + width + 'px');
+        } else if (typeof cfg.getDefaultWidth === 'function') {
+          var defaultWidth = cfg.getDefaultWidth(col);
+          if (defaultWidth) styleParts.push('width:' + defaultWidth + 'px');
+        }
+        if (typeof cfg.getHeaderStyle === 'function') {
+          var extraStyle = cfg.getHeaderStyle(col, width, meta);
+          if (extraStyle) styleParts.push(extraStyle);
+        }
+        var style = styleParts.length ? ' style="' + styleParts.join(';') + '"' : '';
+        var sortAttrs = meta.sortKey ? ' data-sort-key="' + meta.sortKey + '"' : '';
+        var classAttr = meta.sortKey ? ' class="table-th-sort"' : '';
+        var labelHtml = sorter && meta.sortKey ? sorter.renderLabel(meta.label, meta.sortKey) : meta.label;
+        return '<th data-col="' + col + '"' + sortAttrs + classAttr + style + '>' + labelHtml + '</th>';
+      }).join('');
+    }
+
+    function render(renderBody) {
+      prefs.renderTable({
+        getTable: cfg.getTable,
+        rebuildHead: rebuildHead,
+        renderBody: renderBody,
+        minWidth: cfg.minWidth || 40,
+        afterBind: function (tableEl) {
+          if (sorter) {
+            sorter.bind(tableEl, cfg.onSortChange);
+            sorter.syncIndicators(tableEl);
+          }
+          if (typeof cfg.afterBind === 'function') {
+            cfg.afterBind(tableEl);
+          }
+        },
+      });
+    }
+
+    function openColumns(listEl, modalEl, getLabel) {
+      renderColumnChooser(listEl, getColumns(), hiddenCols, getLabel || function (col) {
+        var meta = getMeta(col) || { label: col };
+        return meta.label || col;
+      });
+      if (modalEl && typeof HubModal !== 'undefined') {
+        HubModal.open(modalEl);
+      }
+    }
+
+    function applyColumns(rootEl, afterApply) {
+      var newHidden = readHiddenFromChooser(rootEl, new Set(hiddenCols));
+      prefs.setHiddenSet(newHidden);
+      syncColumns();
+      rebuildHead();
+      if (typeof afterApply === 'function') afterApply();
+    }
+
+    function onLayoutChange(listener) {
+      return prefs.onLayoutChange(function () {
+        syncColumns();
+        if (typeof listener === 'function') listener();
+      });
+    }
+
+    syncColumns();
+
+    return {
+      prefs: prefs,
+      sorter: sorter,
+      getHiddenSet: getHiddenSet,
+      getVisibleCols: getVisibleCols,
+      getSortState: function () {
+        return sorter ? sorter.getState() : { key: null, dir: 0 };
+      },
+      rebuildHead: rebuildHead,
+      render: render,
+      openColumns: openColumns,
+      applyColumns: applyColumns,
+      onLayoutChange: onLayoutChange,
+      syncColumns: syncColumns,
+    };
+  }
+
   function isCompactActions() {
     return isCompactLayout();
   }
@@ -557,6 +690,10 @@
 
   window.TableSort = {
     create: createTableSort,
+  };
+
+  window.TableView = {
+    create: createTableView,
   };
 
   window.TableRowActions = {

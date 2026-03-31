@@ -31,37 +31,32 @@ const _PVE_CFG_FIELD_META = {
 };
 
 let _pveFilterTimer = null;  // debounce handle for pve-search input
-let _pveConfigTablePrefs = null;
-let _pveConfigHiddenCols = new Set();
-let _pveConfigTableSort = null;
+let _pveConfigTableView = null;
 let _pveOpenGroups = new Set();
 let _pveOpenNetDetails = new Set();
 
-function _ensurePveConfigTablePrefs() {
-  if (_pveConfigTablePrefs || typeof TablePrefs === 'undefined') return _pveConfigTablePrefs;
-  _pveConfigTablePrefs = TablePrefs.create({
+function _ensurePveConfigTableView() {
+  if (_pveConfigTableView || typeof TableView === 'undefined') return _pveConfigTableView;
+  _pveConfigTableView = TableView.create({
     storageKey: 'proxmox-config-table-prefs',
-    defaultHidden: [],
+    columns: _PVE_CFG_COLS,
+    meta: _PVE_CFG_FIELD_META,
+    getTable: _pveConfigTableEl,
+    fallbackColumn: 'pve_name',
     minWidth: 40,
+    getDefaultWidth: col => col === '_actions' ? _pveConfigActionCellWidth() : null,
+    sort: {
+      storageKey: 'proxmox-config-table-sort',
+      defaultKey: 'pve_name',
+      defaultDir: 1,
+    },
+    onSortChange: renderProxmoxConfig,
   });
-  _pveConfigTablePrefs.syncColumns(_PVE_CFG_COLS);
-  _pveConfigHiddenCols = _pveConfigTablePrefs.getHiddenSet(_PVE_CFG_COLS);
-  return _pveConfigTablePrefs;
-}
-
-function _ensurePveConfigTableSort() {
-  if (_pveConfigTableSort || typeof TableSort === 'undefined') return _pveConfigTableSort;
-  _pveConfigTableSort = TableSort.create({
-    storageKey: 'proxmox-config-table-sort',
-    defaultKey: 'pve_name',
-    defaultDir: 1,
-  });
-  return _pveConfigTableSort;
+  return _pveConfigTableView;
 }
 
 function _pveConfigVisibleCols() {
-  const visible = _PVE_CFG_COLS.filter(col => !_pveConfigHiddenCols.has(col));
-  return visible.length ? visible : ['pve_name'];
+  return _ensurePveConfigTableView()?.getVisibleCols() || ['pve_name'];
 }
 
 function _pveConfigTableEl() {
@@ -211,65 +206,28 @@ function _pveConfigRenderNetDetailRow(groupSafePve, safeid, nets, colspan) {
   return `<tr id="nets-detail-${safeid}" data-pve-group="${groupSafePve}" data-nets-detail="1" style="display:table-row"><td colspan="${colspan}" style="padding:0;border-top:1px solid var(--border,#30363d)"><table style="width:100%;border-collapse:collapse"><thead><tr style="font-size:10px;color:var(--text-dim);background:var(--bg-darker,#0d1117)"><th style="padding:2px 4px 2px 16px;text-align:left">NIC</th><th colspan="2" style="text-align:left">IP</th><th style="text-align:left">MAC</th><th style="text-align:left">VLAN</th><th style="text-align:left">Bridge</th><th style="text-align:left">Model</th><th colspan="4"></th></tr></thead><tbody>${netsHtml}</tbody></table></td></tr>`;
 }
 
-function _pveConfigRebuildThead() {
-  const table = _pveConfigTableEl();
-  if (!table) return;
-  const tr = table.querySelector('thead tr');
-  if (!tr) return;
-  const prefs = _ensurePveConfigTablePrefs();
-  const sorter = _ensurePveConfigTableSort();
-  tr.innerHTML = _pveConfigVisibleCols().map(col => {
-    const meta = _PVE_CFG_FIELD_META[col];
-    const width = prefs ? prefs.getWidth(col) : null;
-    const styleParts = [];
-    if (width) styleParts.push(`width:${width}px`);
-    else if (col === '_actions') styleParts.push(`width:${_pveConfigActionCellWidth()}px`);
-    const style = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
-    const sortAttrs = meta.sortKey ? ` data-sort-key="${meta.sortKey}"` : '';
-    const classAttr = meta.sortKey ? ' class="table-th-sort"' : '';
-    const labelHtml = sorter && meta.sortKey ? sorter.renderLabel(meta.label, meta.sortKey) : meta.label;
-    return `<th data-col="${col}"${sortAttrs}${classAttr}${style}>${labelHtml}</th>`;
-  }).join('');
-}
-
 function _pveConfigRenderSharedTable(renderBody) {
-  const prefs = _ensurePveConfigTablePrefs();
-  if (!prefs) return;
-  prefs.renderTable({
-    getTable: _pveConfigTableEl,
-    rebuildHead: _pveConfigRebuildThead,
-    renderBody,
-    minWidth: 40,
-    afterBind: tableEl => {
-      const sorter = _ensurePveConfigTableSort();
-      sorter?.bind(tableEl, renderProxmoxConfig);
-      sorter?.syncIndicators(tableEl);
-    },
-  });
+  const view = _ensurePveConfigTableView();
+  view?.render(renderBody);
 }
 
 function _pveOpenConfigColsModal() {
-  const prefs = _ensurePveConfigTablePrefs();
-  if (!prefs) return;
+  const view = _ensurePveConfigTableView();
+  if (!view) return;
   const list = document.getElementById('pve-config-cols-modal-list');
-  TablePrefs.renderColumnChooser(list, _PVE_CFG_COLS, _pveConfigHiddenCols, col => _PVE_CFG_FIELD_META[col].label);
-  HubModal.open(document.getElementById('pve-config-cols-modal'));
+  view.openColumns(list, document.getElementById('pve-config-cols-modal'), col => _PVE_CFG_FIELD_META[col].label);
 }
 
 function _pveApplyConfigColsModal() {
-  const prefs = _ensurePveConfigTablePrefs();
-  if (!prefs) return;
+  const view = _ensurePveConfigTableView();
+  if (!view) return;
   const modal = document.getElementById('pve-config-cols-modal');
-  const newHidden = TablePrefs.readHiddenFromChooser(modal, new Set(_pveConfigHiddenCols));
-  prefs.setHiddenSet(newHidden);
-  _pveConfigHiddenCols = prefs.getHiddenSet(_PVE_CFG_COLS);
-  _pveConfigRebuildThead();
-  renderProxmoxConfig();
+  view.applyColumns(modal, renderProxmoxConfig);
   HubModal.close(modal);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  _ensurePveConfigTablePrefs();
+  _ensurePveConfigTableView();
 
   const pveSearch = document.getElementById('pve-search');
   if (pveSearch) {
@@ -290,9 +248,7 @@ document.addEventListener('DOMContentLoaded', () => {
   wire('pve-probe-services-btn',        () => probeVmServices());
   wire('pve-config-cols-modal-apply',   () => _pveApplyConfigColsModal());
 
-  _pveConfigTablePrefs?.onLayoutChange(() => {
-    _pveConfigHiddenCols = _pveConfigTablePrefs.getHiddenSet(_PVE_CFG_COLS);
-    _pveConfigRebuildThead();
+  _pveConfigTableView?.onLayoutChange(() => {
     renderProxmoxConfig();
   });
 
@@ -543,9 +499,8 @@ function renderProxmoxConfig() {
     (d.tags     || '').toLowerCase().includes(q)
   );
   const tbody = _pveConfigTbodyEl();
-  _ensurePveConfigTablePrefs();
-  const sorter = _ensurePveConfigTableSort();
-  const sortState = sorter?.getState() || { key: 'pve_name', dir: 1 };
+  const view = _ensurePveConfigTableView();
+  const sortState = view?.getSortState() || { key: 'pve_name', dir: 1 };
   const visibleCols = _pveConfigVisibleCols();
   const stepsToggleBtn     = document.getElementById('pve-steps-toggle-btn');
   const expandAllBtn       = document.getElementById('pve-expand-all-btn');
