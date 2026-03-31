@@ -39,7 +39,12 @@
   var lastPointerY  = 0;
   var lastPointerT  = 0;
   var vel           = 0;   // px/s, EMA (negative = moving up)
-  var SHADE_BOTTOM_CLEARANCE = 28;
+  function getShadeBottomClearance() {
+    if (window.matchMedia && (window.matchMedia('(pointer: coarse)').matches || window.innerWidth <= 768)) {
+      return 8;
+    }
+    return 0;
+  }
 
   function getViewportHeight() {
     if (window.visualViewport && Number.isFinite(window.visualViewport.height) && window.visualViewport.height > 0) {
@@ -50,9 +55,10 @@
 
   function updateViewportVars() {
     var viewportH = getViewportHeight();
-    var shadeUpMaxH = Math.max(50, Math.round(viewportH - 20 - SHADE_BOTTOM_CLEARANCE));
+    var bottomClearance = getShadeBottomClearance();
+    var shadeUpMaxH = Math.max(50, Math.round(viewportH - 20));
     document.documentElement.style.setProperty('--shade-up-max-h', shadeUpMaxH + 'px');
-    document.documentElement.style.setProperty('--shade-bottom-clearance', SHADE_BOTTOM_CLEARANCE + 'px');
+    document.documentElement.style.setProperty('--shade-bottom-clearance', bottomClearance + 'px');
   }
 
     /* ── Compute maxTravel for the current handle ───────────────────────────── */
@@ -267,7 +273,7 @@
 
     var visible = preview.style.display !== 'none' ? preview : editor;
     var top = visible.getBoundingClientRect().top;
-    var height = Math.max(140, getViewportHeight() - top - 20 - SHADE_BOTTOM_CLEARANCE);
+    var height = Math.max(140, getViewportHeight() - top - 20);
 
     [editor, preview].forEach(function (el) {
       el.style.height = height + 'px';
@@ -290,7 +296,7 @@
         return;
       }
       var top = shell.getBoundingClientRect().top;
-      shell.style.maxHeight = Math.max(50, Math.round(viewportH - top - SHADE_BOTTOM_CLEARANCE)) + 'px';
+      shell.style.maxHeight = Math.max(50, Math.round(viewportH - top)) + 'px';
       shell.style.overflow = 'auto';
     });
 
@@ -314,7 +320,7 @@
       }
 
       var top = wrap.getBoundingClientRect().top;
-      wrap.style.maxHeight = Math.max(50, Math.round(viewportH - top - 20 - SHADE_BOTTOM_CLEARANCE)) + 'px';
+      wrap.style.maxHeight = Math.max(50, Math.round(viewportH - top - 20)) + 'px';
     });
   }
 

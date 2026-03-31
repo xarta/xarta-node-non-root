@@ -22,7 +22,7 @@
 :root {
   --header-h: 0px;
   --shade-up-max-h: calc(100vh - 20px);
-  --shade-bottom-clearance: 28px;
+  --shade-bottom-clearance: 0px;
 }
 
 /* When a fill tab is active, prevent the page from scrolling.
