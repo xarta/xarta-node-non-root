@@ -73,12 +73,14 @@ const ProbesMenuConfig = createHubMenu({
         // ── Dockge Stacks page function items ──────────────────────────────
         { id: 'dockge-fn-refresh',  label: 'Refresh',             icon: HIEROGLYPHS.nefer,      fn: 'dockge.refresh',  activeOn: ['dockge-stacks'],     parent: 'probes-settings', order: 0 },
         { id: 'dockge-fn-probe',    label: 'Probe Dockge',        icon: HIEROGLYPHS.wasScepter, fn: 'dockge.probe',    activeOn: ['dockge-stacks'],     parent: 'probes-settings', order: 1 },
-        { id: 'dockge-fn-expand',   label: 'Expand all',           icon: 'icons/ui/chevron-down-blue.svg', fn: 'dockge.expandAll',activeOn: ['dockge-stacks'],     parent: 'probes-settings', order: 2 },
-        { id: 'dockge-fn-collapse', label: 'Collapse all',         icon: 'icons/ui/chevron-up-blue.svg',   fn: 'dockge.collapse', activeOn: ['dockge-stacks'],     parent: 'probes-settings', order: 3 },
+        { id: 'dockge-fn-cols',     label: 'Columns',             icon: 'icons/ui/table-columns-blue.svg', fn: 'dockge.cols',    activeOn: ['dockge-stacks'],     parent: 'probes-settings', order: 2 },
+        { id: 'dockge-fn-expand',   label: 'Expand all',          icon: 'icons/ui/chevron-down-blue.svg', fn: 'dockge.expandAll',activeOn: ['dockge-stacks'],     parent: 'probes-settings', order: 3 },
+        { id: 'dockge-fn-collapse', label: 'Collapse all',        icon: 'icons/ui/chevron-up-blue.svg',   fn: 'dockge.collapse', activeOn: ['dockge-stacks'],     parent: 'probes-settings', order: 4 },
 
         // ── Caddy Configs page function items ──────────────────────────────
         { id: 'caddy-fn-refresh',   label: 'Refresh',             icon: HIEROGLYPHS.nefer,      fn: 'caddy.refresh',   activeOn: ['caddy-configs'],     parent: 'probes-settings', order: 0 },
         { id: 'caddy-fn-probe',     label: 'Probe Caddy',         icon: HIEROGLYPHS.wasScepter, fn: 'caddy.probe',     activeOn: ['caddy-configs'],     parent: 'probes-settings', order: 1 },
+        { id: 'caddy-fn-cols',      label: 'Columns',             icon: 'icons/ui/table-columns-blue.svg', fn: 'caddy.cols', activeOn: ['caddy-configs'], parent: 'probes-settings', order: 2 },
 
         // ── Visit History page function items ──────────────────────────────
         { id: 'vis-fn-refresh',     label: 'Refresh',             icon: HIEROGLYPHS.nefer,      fn: 'vis.refresh',     activeOn: ['bookmarks-history'], parent: 'probes-settings', order: 0 },
@@ -146,12 +148,14 @@ ProbesMenuConfig.registerFunctions({
     // Dockge Stacks
     'dockge.refresh':    () => loadDockgeStacks(),
     'dockge.probe':      () => probeDockgeStacks(),
+    'dockge.cols':       () => openDockgeColsModal(),
     'dockge.expandAll':  () => setAllDockgeServices(true),
     'dockge.collapse':   () => setAllDockgeServices(false),
 
     // Caddy Configs
     'caddy.refresh':  () => loadCaddyConfigs(),
     'caddy.probe':    () => probeCaddyConfigs(),
+    'caddy.cols':     () => openCaddyColsModal(),
 
     // Visit History
     'vis.refresh':    () => loadVisits(),

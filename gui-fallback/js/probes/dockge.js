@@ -1,18 +1,100 @@
 /* ── Dockge Stacks ──────────────────────────────────────────────────────── */
 
+const _DOCKGE_COLS = ['services', 'pve_host', 'source_vmid', 'vm_type_badge', 'source_lxc_name', 'stack_name', 'status', 'env_file_exists', 'host_type', 'parent', 'obsolete', 'notes', 'last_probed'];
+const _DOCKGE_FIELD_META = {
+  services: { label: 'SVCS', sortKey: 'services' },
+  pve_host: { label: 'PVE', sortKey: 'pve_host' },
+  source_vmid: { label: 'VMID', sortKey: 'source_vmid' },
+  vm_type_badge: { label: 'TYPE', sortKey: 'vm_type' },
+  source_lxc_name: { label: 'LXC', sortKey: 'source_lxc_name' },
+  stack_name: { label: 'Stack', sortKey: 'stack_name' },
+  status: { label: 'Status', sortKey: 'status' },
+  env_file_exists: { label: '.ENV', sortKey: 'env_file_exists' },
+  host_type: { label: 'Host type', sortKey: 'host_type' },
+  parent: { label: 'Parent', sortKey: 'parent' },
+  obsolete: { label: 'Obs', sortKey: 'obsolete' },
+  notes: { label: 'Notes', sortKey: 'notes' },
+  last_probed: { label: 'Last Probed', sortKey: 'last_probed' },
+};
+
+let _dockgeTableView = null;
+let _dockgeOpenServices = new Set();
+
 document.addEventListener('DOMContentLoaded', () => {
   let _dockgeFilterTimer = null;
   const searchEl = document.getElementById('dockge-search');
   const toggleEl = document.getElementById('dockge-hide-obsolete');
+  _ensureDockgeTableView();
   if (searchEl) searchEl.addEventListener('input', () => {
     clearTimeout(_dockgeFilterTimer);
     _dockgeFilterTimer = setTimeout(renderDockgeStacks, 250);
   });
   if (toggleEl) toggleEl.addEventListener('change', renderDockgeStacks);
+  document.getElementById('dockge-cols-modal-apply')?.addEventListener('click', _applyDockgeColsModal);
+  document.getElementById('dockge-tbody')?.addEventListener('click', e => {
+    const svcToggle = e.target.closest('[data-dockge-svc-toggle]');
+    if (svcToggle) {
+      toggleDockgeServices(svcToggle.dataset.dockgeSvcToggle);
+      return;
+    }
+    const obsToggle = e.target.closest('[data-dockge-obs]');
+    if (obsToggle) {
+      toggleDockgeObsolete(obsToggle.dataset.dockgeObs);
+      return;
+    }
+  });
+  document.getElementById('dockge-tbody')?.addEventListener('dblclick', e => {
+    const noteEl = e.target.closest('[data-dockge-note]');
+    if (!noteEl) return;
+    editDockgeNote(noteEl.dataset.dockgeNote, noteEl);
+  });
+  _dockgeTableView?.onLayoutChange(() => {
+    renderDockgeStacks();
+  });
   if (typeof ResponsiveLayout !== 'undefined') {
     ResponsiveLayout.registerTabControls('dockge-stacks', 'pg-ctrl-dockge-stacks');
   }
 });
+
+function _ensureDockgeTableView() {
+  if (_dockgeTableView || typeof TableView === 'undefined') return _dockgeTableView;
+  _dockgeTableView = TableView.create({
+    storageKey: 'dockge-table-prefs',
+    columns: _DOCKGE_COLS,
+    meta: _DOCKGE_FIELD_META,
+    getTable: () => document.getElementById('dockge-table'),
+    fallbackColumn: 'stack_name',
+    minWidth: 40,
+    sort: {
+      storageKey: 'dockge-table-sort',
+      defaultKey: 'stack_name',
+      defaultDir: 1,
+    },
+    onSortChange: renderDockgeStacks,
+  });
+  return _dockgeTableView;
+}
+
+function _dockgeVisibleCols() {
+  return _ensureDockgeTableView()?.getVisibleCols() || ['stack_name'];
+}
+
+function openDockgeColsModal() {
+  const view = _ensureDockgeTableView();
+  if (!view) return;
+  view.openColumns(
+    document.getElementById('dockge-cols-modal-list'),
+    document.getElementById('dockge-cols-modal'),
+    col => _DOCKGE_FIELD_META[col].label
+  );
+}
+
+function _applyDockgeColsModal() {
+  const view = _ensureDockgeTableView();
+  if (!view) return;
+  view.applyColumns(document.getElementById('dockge-cols-modal'), renderDockgeStacks);
+  HubModal.close(document.getElementById('dockge-cols-modal'));
+}
 
 async function loadDockgeStacks() {
   const err = document.getElementById('dockge-error');
@@ -65,21 +147,33 @@ async function checkDockgeProbeStatus() {
 }
 
 function toggleDockgeServices(safeid) {
-  const detail = document.getElementById(`dockge-svc-${safeid}`);
-  const btn    = document.getElementById(`dockge-svc-btn-${safeid}`);
-  if (!detail) return;
-  const open = detail.style.display !== 'none';
-  detail.style.display = open ? 'none' : 'table-row';
-  if (btn) btn.textContent = btn.textContent.replace(open ? '▼' : '▶', open ? '▶' : '▼');
+  if (_dockgeOpenServices.has(safeid)) _dockgeOpenServices.delete(safeid);
+  else _dockgeOpenServices.add(safeid);
+  renderDockgeStacks();
 }
 
 function setAllDockgeServices(open) {
-  document.querySelectorAll('[id^="dockge-svc-"]').forEach(detail => {
-    const safeid = detail.id.replace('dockge-svc-', '');
-    const btn = document.getElementById(`dockge-svc-btn-${safeid}`);
-    detail.style.display = open ? 'table-row' : 'none';
-    if (btn) btn.textContent = btn.textContent.replace(open ? '▶' : '▼', open ? '▼' : '▶');
-  });
+  const q = (document.getElementById('dockge-search').value || '').toLowerCase();
+  const hideObs = document.getElementById('dockge-hide-obsolete').checked;
+  if (open) {
+    _dockgeStacks.forEach(row => {
+      const matches = (!hideObs || !row.obsolete) && (
+        (row.source_vmid || '').toString().includes(q) ||
+        (row.source_lxc_name || '').toLowerCase().includes(q) ||
+        (row.stack_name || '').toLowerCase().includes(q) ||
+        (row.status || '').toLowerCase().includes(q) ||
+        (row.parent_context || '').toLowerCase().includes(q) ||
+        (row.ip_address || '').toLowerCase().includes(q) ||
+        (row.notes || '').toLowerCase().includes(q)
+      );
+      if (matches && (_dockgeServicesMap[row.stack_id] || []).length > 0) {
+        _dockgeOpenServices.add((row.stack_id || '').replace(/[^a-zA-Z0-9_-]/g,'_'));
+      }
+    });
+  } else {
+    _dockgeOpenServices.clear();
+  }
+  renderDockgeStacks();
 }
 
 function _parentBadge(ctx, stackName) {
@@ -118,11 +212,17 @@ function renderDockgeStacks() {
     )
   );
   const tbody = document.getElementById('dockge-tbody');
+  const view = _ensureDockgeTableView();
+  const visibleCols = _dockgeVisibleCols();
   if (!rows.length) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="13">No Dockge stacks found.</td></tr>`;
+    view?.render(() => {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="${Math.max(1, visibleCols.length)}">No Dockge stacks found.</td></tr>`;
+    });
     return;
   }
-  tbody.innerHTML = rows.map(d => {
+  const sortedRows = view?.sorter ? view.sorter.sortRows(rows, (row, key) => _dockgeSortValue(row, key)) : rows.slice();
+  view?.render(() => {
+    tbody.innerHTML = sortedRows.map(d => {
     const probed      = (d.last_probed || '—').replace('T',' ').slice(0,19);
     const safeid      = (d.stack_id || '').replace(/[^a-zA-Z0-9_-]/g,'_');
     const svcs        = _dockgeServicesMap[d.stack_id] || [];
@@ -135,19 +235,20 @@ function renderDockgeStacks() {
                       : d.status === 'partial'  ? '#fbbf24'
                       : 'var(--text-dim)';
     const obsBadge    = d.obsolete
-      ? `<button class="secondary" title="Mark as active" style="padding:1px 5px;font-size:11px;color:#f87171" onclick="toggleDockgeObsolete('${esc(d.stack_id)}')">obs</button>`
-      : `<button class="secondary" title="Mark as obsolete" style="padding:1px 5px;font-size:11px;color:var(--text-dim)" onclick="toggleDockgeObsolete('${esc(d.stack_id)}')">—</button>`;
-    const notesCell   = `<span style="font-size:11px;color:var(--text-dim);cursor:pointer" title="Double-click to edit" ondblclick="editDockgeNote('${esc(d.stack_id)}', this)">${esc(d.notes||'')}</span>`;
+      ? `<button class="secondary" title="Mark as active" style="padding:1px 5px;font-size:11px;color:#f87171" type="button" data-dockge-obs="${esc(d.stack_id)}">obs</button>`
+      : `<button class="secondary" title="Mark as obsolete" style="padding:1px 5px;font-size:11px;color:var(--text-dim)" type="button" data-dockge-obs="${esc(d.stack_id)}">—</button>`;
+    const notesCell   = `<span style="font-size:11px;color:var(--text-dim);cursor:pointer" title="Double-click to edit" data-dockge-note="${esc(d.stack_id)}">${esc(d.notes||'')}</span>`;
 
     // Toggle button (shows service count)
+    const servicesOpen = _dockgeOpenServices.has(safeid);
     const toggleCell = svcCount > 0
-      ? `<button class="secondary" id="dockge-svc-btn-${safeid}" style="padding:1px 5px;font-size:11px" onclick="toggleDockgeServices('${safeid}')">&#9658; ${svcCount}</button>`
+      ? `<button class="secondary" id="dockge-svc-btn-${safeid}" style="padding:1px 5px;font-size:11px" type="button" data-dockge-svc-toggle="${safeid}">${servicesOpen ? '&#9660;' : '&#9658;'} ${svcCount}</button>`
       : `<span style="color:var(--text-dim)">${svcCount}</span>`;
 
     // Services expandable sub-row
     const svcSubRow = svcCount > 0 ? `
-      <tr id="dockge-svc-${safeid}" style="display:none">
-        <td colspan="13" style="padding:0 0 4px 28px;background:var(--bg-el)">
+      <tr id="dockge-svc-${safeid}" style="display:${servicesOpen ? 'table-row' : 'none'}">
+        <td colspan="${Math.max(1, visibleCols.length)}" style="padding:0 0 4px 28px;background:var(--bg-el)">
           <table style="width:100%;font-size:12px;border-collapse:collapse">
             <thead><tr style="color:var(--text-dim);border-bottom:1px solid var(--border)">
               <th style="padding:3px 8px;text-align:left">Service</th>
@@ -176,22 +277,44 @@ function renderDockgeStacks() {
         </td>
       </tr>` : '';
 
-    return `<tr>
-      <td>${toggleCell}</td>
-      <td><code>${esc(d.pve_host||'')}</code></td>
-      <td>${esc(d.source_vmid||'')}</td>
-      <td>${typeBadge}</td>
-      <td>${esc(d.source_lxc_name||'—')}</td>
-      <td><strong>${esc(d.stack_name||'')}</strong></td>
-      <td style="color:${statusCol}">${esc(d.status||'—')}</td>
-      <td style="text-align:center">${envBadge}</td>
-      <td style="font-size:11px;color:var(--text-dim)">${esc(d.vm_type==='lxc'?'LXC':d.vm_type==='qemu'?'VM':'—')}</td>
-      <td>${parentBadge}</td>
-      <td style="text-align:center">${obsBadge}</td>
-      <td style="max-width:180px">${notesCell}</td>
-      <td style="white-space:nowrap;color:var(--text-dim)">${esc(probed)}</td>
-    </tr>${svcSubRow}`;
+    const cellMap = {
+      services: `<td>${toggleCell}</td>`,
+      pve_host: `<td><code>${esc(d.pve_host||'')}</code></td>`,
+      source_vmid: `<td>${esc(d.source_vmid||'')}</td>`,
+      vm_type_badge: `<td>${typeBadge}</td>`,
+      source_lxc_name: `<td>${esc(d.source_lxc_name||'—')}</td>`,
+      stack_name: `<td><strong>${esc(d.stack_name||'')}</strong></td>`,
+      status: `<td style="color:${statusCol}">${esc(d.status||'—')}</td>`,
+      env_file_exists: `<td style="text-align:center">${envBadge}</td>`,
+      host_type: `<td style="font-size:11px;color:var(--text-dim)">${esc(d.vm_type==='lxc'?'LXC':d.vm_type==='qemu'?'VM':'—')}</td>`,
+      parent: `<td>${parentBadge}</td>`,
+      obsolete: `<td style="text-align:center">${obsBadge}</td>`,
+      notes: `<td style="max-width:180px">${notesCell}</td>`,
+      last_probed: `<td style="white-space:nowrap;color:var(--text-dim)">${esc(probed)}</td>`,
+    };
+    return `<tr>${visibleCols.map(col => cellMap[col] || '<td></td>').join('')}</tr>${svcSubRow}`;
   }).join('');
+  });
+}
+
+function _dockgeSortValue(row, sortKey) {
+  const svcs = _dockgeServicesMap[row.stack_id] || [];
+  switch (sortKey) {
+    case 'services': return svcs.length;
+    case 'pve_host': return row.pve_host || '';
+    case 'source_vmid': return Number(row.source_vmid || 0);
+    case 'vm_type': return row.vm_type || '';
+    case 'source_lxc_name': return row.source_lxc_name || '';
+    case 'stack_name': return row.stack_name || '';
+    case 'status': return row.status || '';
+    case 'env_file_exists': return row.env_file_exists ? 1 : 0;
+    case 'host_type': return row.vm_type === 'lxc' ? 'LXC' : row.vm_type === 'qemu' ? 'VM' : '';
+    case 'parent': return `${row.parent_context || ''} ${row.parent_stack_name || ''}`.trim();
+    case 'obsolete': return row.obsolete ? 1 : 0;
+    case 'notes': return row.notes || '';
+    case 'last_probed': return row.last_probed || '';
+    default: return '';
+  }
 }
 
 async function toggleDockgeObsolete(stackId) {
