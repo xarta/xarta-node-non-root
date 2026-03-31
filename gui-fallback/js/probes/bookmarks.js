@@ -1419,15 +1419,6 @@ function _bmUpdateSortHeaders() {
 
 // ── Column resize ───────────────────────────────────────────────────────
 
-function _bmInitColResize() {
-  if (_bmColResizeDone) return;
-  const table = document.querySelector('#bm-main-view table');
-  if (!table) return;
-  _bmColResizeDone = true;
-  _bmTablePrefs.applyWidths(table);
-  _bmTablePrefs.bindColumnResize(table, { minWidth: 40 });
-}
-
 function _bmRenderSharedTable(renderBody) {
   _bmTablePrefs.renderTable({
     getTable: () => document.querySelector('#bm-main-view table'),

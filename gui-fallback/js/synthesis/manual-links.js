@@ -182,16 +182,6 @@ function _mlRebuildThead() {
   _mlUpdateSortArrows();
 }
 
-function _mlInitColResize() {
-  if (_mlColResizeDone) return;
-  const table = document.getElementById('ml-table');
-  const prefs = _ensureManualLinksTablePrefs();
-  if (!table || !prefs) return;
-  _mlColResizeDone = true;
-  prefs.applyWidths(table);
-  prefs.bindColumnResize(table, { minWidth: 40 });
-}
-
 function _mlRenderSharedTable(renderBody) {
   const prefs = _ensureManualLinksTablePrefs();
   if (!prefs) return;

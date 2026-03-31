@@ -39,6 +39,21 @@
   var lastPointerY  = 0;
   var lastPointerT  = 0;
   var vel           = 0;   // px/s, EMA (negative = moving up)
+  var SHADE_BOTTOM_CLEARANCE = 28;
+
+  function getViewportHeight() {
+    if (window.visualViewport && Number.isFinite(window.visualViewport.height) && window.visualViewport.height > 0) {
+      return window.visualViewport.height;
+    }
+    return window.innerHeight || document.documentElement.clientHeight || 0;
+  }
+
+  function updateViewportVars() {
+    var viewportH = getViewportHeight();
+    var shadeUpMaxH = Math.max(50, Math.round(viewportH - 20 - SHADE_BOTTOM_CLEARANCE));
+    document.documentElement.style.setProperty('--shade-up-max-h', shadeUpMaxH + 'px');
+    document.documentElement.style.setProperty('--shade-bottom-clearance', SHADE_BOTTOM_CLEARANCE + 'px');
+  }
 
     /* ── Compute maxTravel for the current handle ───────────────────────────── */
     /* maxTravel = pixels the shade must slide up so the handle reaches the
@@ -231,7 +246,7 @@
     // getBoundingClientRect gives viewport-relative position.
     // has-fill-tab sets overflow:hidden so scroll is locked at 0 — accurate.
     var top = fill.getBoundingClientRect().top;
-    fill.style.height = Math.max(50, window.innerHeight - top - pagerH) + 'px';
+    fill.style.height = Math.max(50, getViewportHeight() - top - pagerH) + 'px';
   }
 
   function sizeDocsPane() {
@@ -240,7 +255,8 @@
     var preview = document.getElementById('docs-preview');
     if (!panel || !editor || !preview) return;
 
-    if (!panel.classList.contains('active') || window.innerWidth <= 600) {
+    var isShadeUp = document.body.classList.contains('shade-is-up');
+    if (!panel.classList.contains('active') || (window.innerWidth <= 600 && !isShadeUp)) {
       [editor, preview].forEach(function (el) {
         el.style.height = '';
         el.style.maxHeight = '';
@@ -251,7 +267,7 @@
 
     var visible = preview.style.display !== 'none' ? preview : editor;
     var top = visible.getBoundingClientRect().top;
-    var height = Math.max(140, window.innerHeight - top - 20);
+    var height = Math.max(140, getViewportHeight() - top - 20 - SHADE_BOTTOM_CLEARANCE);
 
     [editor, preview].forEach(function (el) {
       el.style.height = height + 'px';
@@ -260,9 +276,53 @@
     });
   }
 
+  function sizeShadeUpScrollablePane() {
+    var panel = shade ? shade.querySelector('.tab-panel.active') : null;
+    if (!panel) return;
+
+    var viewportH = getViewportHeight();
+    var isShadeUp = document.body.classList.contains('shade-is-up');
+
+    panel.querySelectorAll('.tab-scroll-shell').forEach(function (shell) {
+      if (!isShadeUp) {
+        shell.style.maxHeight = '';
+        shell.style.overflow = '';
+        return;
+      }
+      var top = shell.getBoundingClientRect().top;
+      shell.style.maxHeight = Math.max(50, Math.round(viewportH - top - SHADE_BOTTOM_CLEARANCE)) + 'px';
+      shell.style.overflow = 'auto';
+    });
+
+    panel.querySelectorAll('.table-wrap').forEach(function (wrap) {
+      if (wrap.classList.contains('table-wrap--fill')) return;
+
+      if (wrap.closest('.tab-scroll-shell')) {
+        if (isShadeUp) {
+          wrap.style.maxHeight = 'none';
+          wrap.style.overflow = 'visible';
+        } else {
+          wrap.style.maxHeight = '';
+          wrap.style.overflow = '';
+        }
+        return;
+      }
+
+      if (!isShadeUp) {
+        wrap.style.maxHeight = '';
+        return;
+      }
+
+      var top = wrap.getBoundingClientRect().top;
+      wrap.style.maxHeight = Math.max(50, Math.round(viewportH - top - 20 - SHADE_BOTTOM_CLEARANCE)) + 'px';
+    });
+  }
+
   function sizeActivePane() {
+    updateViewportVars();
     sizeFillTable();
     sizeDocsPane();
+    sizeShadeUpScrollablePane();
   }
 
   function scheduleSizeFillTable() {

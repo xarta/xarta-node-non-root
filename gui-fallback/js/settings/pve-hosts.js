@@ -74,16 +74,6 @@ function _pveRebuildThead() {
   _pveColResizeDone = false;
 }
 
-function _pveInitColResize() {
-  if (_pveColResizeDone) return;
-  const table = document.getElementById('pve-hosts-table');
-  const prefs = _ensurePveHostsTablePrefs();
-  if (!table || !prefs) return;
-  _pveColResizeDone = true;
-  prefs.applyWidths(table);
-  prefs.bindColumnResize(table, { minWidth: 40 });
-}
-
 function _pveRenderSharedTable(renderBody) {
   const prefs = _ensurePveHostsTablePrefs();
   if (!prefs) return;
