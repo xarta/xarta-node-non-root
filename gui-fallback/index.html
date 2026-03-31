@@ -4,22 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Blueprints</title>
-  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=20260331f">
-  <link rel="stylesheet" href="css/tokens.css?v=20260331f" />
-  <link rel="stylesheet" href="css/layout-nav.css?v=20260331f" />
-  <link rel="stylesheet" href="css/tables.css?v=20260331f" />
-  <link rel="stylesheet" href="css/components.css?v=20260331f" />
-  <link rel="stylesheet" href="css/hub-menu.css?v=20260331f" />
-  <link rel="stylesheet" href="css/probes-menu.css?v=20260331f" />
-  <link rel="stylesheet" href="css/settings-menu.css?v=20260331f" />
-  <link rel="stylesheet" href="css/synthesis-menu.css?v=20260331f" />
-  <link rel="stylesheet" href="css/hub-controls.css?v=20260331f" />
-  <link rel="stylesheet" href="css/hub-checkbox.css?v=20260331f" />
-  <link rel="stylesheet" href="css/responsive-header.css?v=20260331f" />
-  <link rel="stylesheet" href="css/body-shade.css?v=20260331f" />
-  <link rel="stylesheet" href="css/docs-images.css?v=20260331f" />
-  <link rel="stylesheet" href="css/hub-modal.css?v=20260331f" />
-  <link rel="stylesheet" href="css/hub-dialogs.css?v=20260331f" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=20260331l">
+  <link rel="stylesheet" href="css/tokens.css?v=20260331l" />
+  <link rel="stylesheet" href="css/layout-nav.css?v=20260331l" />
+  <link rel="stylesheet" href="css/tables.css?v=20260331l" />
+  <link rel="stylesheet" href="css/components.css?v=20260331l" />
+  <link rel="stylesheet" href="css/hub-menu.css?v=20260331l" />
+  <link rel="stylesheet" href="css/probes-menu.css?v=20260331l" />
+  <link rel="stylesheet" href="css/settings-menu.css?v=20260331l" />
+  <link rel="stylesheet" href="css/synthesis-menu.css?v=20260331l" />
+  <link rel="stylesheet" href="css/hub-controls.css?v=20260331l" />
+  <link rel="stylesheet" href="css/hub-checkbox.css?v=20260331l" />
+  <link rel="stylesheet" href="css/responsive-header.css?v=20260331l" />
+  <link rel="stylesheet" href="css/body-shade.css?v=20260331l" />
+  <link rel="stylesheet" href="css/docs-images.css?v=20260331l" />
+  <link rel="stylesheet" href="css/hub-modal.css?v=20260331l" />
+  <link rel="stylesheet" href="css/hub-dialogs.css?v=20260331l" />
 </head>
 <body>
 
@@ -462,17 +462,8 @@
     <!-- TABLE VIEW -->
     <div id="ml-table-view" style="display:none">
       <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th style="width:72px">ID</th>
-            <th class="ml-th-sort" onclick="mlSortBy('label')">Label <span id="ml-arrow-label" class="ml-sort-arrow">&#8597;</span></th>
-            <th class="ml-th-sort" onclick="mlSortBy('addr')">Addresses <span id="ml-arrow-addr" class="ml-sort-arrow">&#8597;</span></th>
-            <th class="ml-th-sort" onclick="mlSortBy('group')">Group <span id="ml-arrow-group" class="ml-sort-arrow">&#8597;</span></th>
-            <th class="ml-th-sort" style="width:48px" onclick="mlSortBy('order')">Order <span id="ml-arrow-order" class="ml-sort-arrow">&#8597;</span></th>
-            <th class="ml-th-sort" onclick="mlSortBy('host')">Host <span id="ml-arrow-host" class="ml-sort-arrow">&#8597;</span></th>
-            <th class="ml-th-sort" onclick="mlSortBy('notes')">Notes <span id="ml-arrow-notes" class="ml-sort-arrow">&#8597;</span></th>
-            <th style="width:80px">Actions</th>
-          </tr></thead>
+        <table id="ml-table">
+          <thead><tr></tr></thead>
           <tbody id="ml-tbody"></tbody>
         </table>
       </div>
@@ -1459,6 +1450,24 @@
   </div>
 </dialog>
 
+<dialog class="hub-modal hub-dialog" data-tone="info" id="ml-cols-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">COLS</span>
+      <span class="hub-dialog-title-text">Manual Links Columns</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body">
+    <p style="font-size:12px;color:var(--text-dim);margin:0 0 10px">Choose which columns stay visible for this layout. Preferences are browser-local.</p>
+    <div id="ml-cols-modal-list" class="hub-checkbox-list"></div>
+  </div>
+  <div class="hub-modal-footer">
+    <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
+    <button class="hub-modal-btn" id="ml-cols-modal-apply" type="button">&#10003; Apply</button>
+  </div>
+</dialog>
+
 <!-- Quick-add service modal -->
 <dialog class="hub-modal hub-dialog" data-tone="info" id="add-modal">
   <div class="hub-modal-header">
@@ -1937,52 +1946,52 @@
   </div>
 </dialog>
 
-<script src="js/utils.js?v=20260331f"></script>
-<script src="js/api.js?v=20260331f"></script>
-<script src="js/state.js?v=20260331f"></script>
-<script src="js/connectivity.js?v=20260331f"></script>
-<script src="js/health.js?v=20260331f"></script>
-<script src="js/sync.js?v=20260331f"></script>
-<script src="js/backups.js?v=20260331f"></script>
-<script src="js/synthesis/manual-links.js?v=20260331f"></script>
-<script src="js/synthesis/services.js?v=20260331f"></script>
-<script src="js/synthesis/machines.js?v=20260331f"></script>
-<script src="js/sound-manager.js?v=20260331f"></script>
-<script src="js/form-control-manager.js?v=20260331f"></script>
-<script src="js/hub-modal.js?v=20260331f"></script>
-<script src="js/hub-dialogs.js?v=20260331f"></script>
-<script src="js/shared-asset-picker.js?v=20260331f"></script>
-<script src="js/hub-menu.js?v=20260331f"></script>
-<script src="js/hieroglyphs.js?v=20260331f"></script>
-<script src="js/synthesis/synthesis-menu.js?v=20260331f"></script>
-<script src="js/settings/nodes.js?v=20260331f"></script>
-<script src="js/settings/keys.js?v=20260331f"></script>
-<script src="js/settings/certs.js?v=20260331f"></script>
-<script src="js/settings/docs-history.js?v=20260331f"></script>
-<script src="js/settings/docs.js?v=20260331f"></script>
-<script src="js/settings/docs-images.js?v=20260331f"></script>
-<script src="js/settings/self-diag.js?v=20260331f"></script>
-<script src="js/settings/settings.js?v=20260331f"></script>
-<script src="js/settings/pve-hosts.js?v=20260331f"></script>
-<script src="js/settings/arp-manual.js?v=20260331f"></script>
-<script src="js/settings/ai-providers.js?v=20260331f"></script>
-<script src="js/settings/nav-items.js?v=20260331f"></script>
-<script src="js/settings/form-controls.js?v=20260331f"></script>
-<script src="js/probes/pfsense.js?v=20260331f"></script>
-<script src="js/probes/proxmox-config.js?v=20260331f"></script>
-<script src="js/probes/vlans.js?v=20260331f"></script>
-<script src="js/probes/ssh-targets.js?v=20260331f"></script>
-<script src="js/probes/dockge.js?v=20260331f"></script>
-<script src="js/probes/caddy.js?v=20260331f"></script>
-<script src="js/table-pager.js?v=20260331f"></script>
-<script src="js/table-ui.js?v=20260331f"></script>
-<script src="js/probes/bookmarks.js?v=20260331f"></script>
-<script src="js/probes/probes-menu.js?v=20260331f"></script>
-<script src="js/settings/settings-menu.js?v=20260331f"></script>
-<script src="js/hub-select.js?v=20260331f"></script>
-<script src="js/responsive-layout.js?v=20260331f"></script>
-<script src="js/body-shade.js?v=20260331f"></script>
-<script src="js/app.js?v=20260331f"></script>
+<script src="js/utils.js?v=20260331l"></script>
+<script src="js/api.js?v=20260331l"></script>
+<script src="js/state.js?v=20260331l"></script>
+<script src="js/connectivity.js?v=20260331l"></script>
+<script src="js/health.js?v=20260331l"></script>
+<script src="js/sync.js?v=20260331l"></script>
+<script src="js/backups.js?v=20260331l"></script>
+<script src="js/synthesis/manual-links.js?v=20260331l"></script>
+<script src="js/synthesis/services.js?v=20260331l"></script>
+<script src="js/synthesis/machines.js?v=20260331l"></script>
+<script src="js/sound-manager.js?v=20260331l"></script>
+<script src="js/form-control-manager.js?v=20260331l"></script>
+<script src="js/hub-modal.js?v=20260331l"></script>
+<script src="js/hub-dialogs.js?v=20260331l"></script>
+<script src="js/shared-asset-picker.js?v=20260331l"></script>
+<script src="js/hub-menu.js?v=20260331l"></script>
+<script src="js/hieroglyphs.js?v=20260331l"></script>
+<script src="js/synthesis/synthesis-menu.js?v=20260331l"></script>
+<script src="js/settings/nodes.js?v=20260331l"></script>
+<script src="js/settings/keys.js?v=20260331l"></script>
+<script src="js/settings/certs.js?v=20260331l"></script>
+<script src="js/settings/docs-history.js?v=20260331l"></script>
+<script src="js/settings/docs.js?v=20260331l"></script>
+<script src="js/settings/docs-images.js?v=20260331l"></script>
+<script src="js/settings/self-diag.js?v=20260331l"></script>
+<script src="js/settings/settings.js?v=20260331l"></script>
+<script src="js/settings/pve-hosts.js?v=20260331l"></script>
+<script src="js/settings/arp-manual.js?v=20260331l"></script>
+<script src="js/settings/ai-providers.js?v=20260331l"></script>
+<script src="js/settings/nav-items.js?v=20260331l"></script>
+<script src="js/settings/form-controls.js?v=20260331l"></script>
+<script src="js/probes/pfsense.js?v=20260331l"></script>
+<script src="js/probes/proxmox-config.js?v=20260331l"></script>
+<script src="js/probes/vlans.js?v=20260331l"></script>
+<script src="js/probes/ssh-targets.js?v=20260331l"></script>
+<script src="js/probes/dockge.js?v=20260331l"></script>
+<script src="js/probes/caddy.js?v=20260331l"></script>
+<script src="js/table-pager.js?v=20260331l"></script>
+<script src="js/table-ui.js?v=20260331l"></script>
+<script src="js/probes/bookmarks.js?v=20260331l"></script>
+<script src="js/probes/probes-menu.js?v=20260331l"></script>
+<script src="js/settings/settings-menu.js?v=20260331l"></script>
+<script src="js/hub-select.js?v=20260331l"></script>
+<script src="js/responsive-layout.js?v=20260331l"></script>
+<script src="js/body-shade.js?v=20260331l"></script>
+<script src="js/app.js?v=20260331l"></script>
 
 <!-- Backup action modal -->
 <dialog class="hub-modal hub-dialog" data-tone="info" id="backup-action-modal" style="width:min(560px,95vw)">
@@ -2102,7 +2111,7 @@
     nodeSwitchPath: '/ui/',
   };
 </script>
-<link rel="stylesheet" href="embed/blueprints-node-selector.css?v=20260331f" />
+<link rel="stylesheet" href="embed/blueprints-node-selector.css?v=20260331l" />
 <style>
   /* Replace the 🏠 home emoji on the /ui/ button with a Starfleet combadge SVG icon. */
   .bp-ns-action-btn[data-action="ui"] { font-size: 0; position: relative; }
@@ -2170,7 +2179,7 @@
     position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   }
 </style>
-<script src="embed/blueprints-node-selector.js?v=20260331f"></script>
+<script src="embed/blueprints-node-selector.js?v=20260331l"></script>
 
 <!-- Tag exclusion multi-select modal -->
 <style>

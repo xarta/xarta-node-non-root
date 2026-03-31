@@ -84,6 +84,20 @@ function _pveInitColResize() {
   prefs.bindColumnResize(table, { minWidth: 40 });
 }
 
+function _pveRenderSharedTable(renderBody) {
+  const prefs = _ensurePveHostsTablePrefs();
+  if (!prefs) return;
+  prefs.renderTable({
+    getTable: () => document.getElementById('pve-hosts-table'),
+    rebuildHead: _pveRebuildThead,
+    renderBody,
+    minWidth: 40,
+    afterBind: () => {
+      _pveColResizeDone = true;
+    },
+  });
+}
+
 function _pveOpenColsModal() {
   const prefs = _ensurePveHostsTablePrefs();
   if (!prefs) return;
@@ -129,13 +143,16 @@ async function loadPveHosts() {
 function renderPveHosts() {
   const tbody = document.getElementById('pve-hosts-tbody');
   _ensurePveHostsTablePrefs();
-  _pveRebuildThead();
+  _pveColResizeDone = false;
   if (!_pveHosts.length) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="${Math.max(1, _pveVisibleCols().length)}">No PVE hosts found — run the scan first.</td></tr>`;
+    _pveRenderSharedTable(() => {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="${Math.max(1, _pveVisibleCols().length)}">No PVE hosts found — run the scan first.</td></tr>`;
+    });
     return;
   }
-  tbody.innerHTML = _pveHosts.map(h => `<tr>${_pveVisibleCols().map(col => _PVE_HOST_FIELD_META[col].render(h)).join('')}</tr>`).join('');
-  _pveInitColResize();
+  _pveRenderSharedTable(() => {
+    tbody.innerHTML = _pveHosts.map(h => `<tr>${_pveVisibleCols().map(col => _PVE_HOST_FIELD_META[col].render(h)).join('')}</tr>`).join('');
+  });
 }
 
 function _pveOpenRowActions(pveId) {

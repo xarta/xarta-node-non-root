@@ -334,6 +334,11 @@ function createHubMenu(cfg) {
             return item.label.replace(item.icon || '', '').trim();
         },
 
+        _navLabel(item) {
+            const label = this._displayLabel(item);
+            return label === '☰' ? '' : label;
+        },
+
         // ── Data helpers ───────────────────────────────────────────
 
         getTopLevelItems() {
@@ -424,9 +429,11 @@ function createHubMenu(cfg) {
                 // Combine visible nav and fn items — fn items come after nav items.
                 const allDropdownItems = [...dropdownNavItems, ...visibleFnChildren];
 
+                const activeLabel = activeMember ? (activeMember.pageLabel || this._navLabel(activeMember)) : '';
+                const itemLabel = this._navLabel(item);
                 const labelText = isGroupActive
-                    ? this._iconHtml(activeMember.id, activeMember.icon) + '\u00a0' + (activeMember.pageLabel || activeMember.label.replace(activeMember.icon || '', '').trim())
-                    : this._iconHtml(item.id, item.icon) + '\u00a0' + this._displayLabel(item);
+                    ? this._iconHtml(activeMember.id, activeMember.icon) + (activeLabel ? ('\u00a0' + activeLabel) : '')
+                    : this._iconHtml(item.id, item.icon) + (itemLabel ? ('\u00a0' + itemLabel) : '');
 
                 if (allDropdownItems.length > 0) {
                     // ── Split-button with dropdown ────────────────────────────
@@ -510,7 +517,8 @@ function createHubMenu(cfg) {
                     // ── Top-level function button (promoted fn item) ──────────
                     const btn = document.createElement('button');
                     btn.className = 'hub-tab';
-                    btn.innerHTML = this._iconHtml(item.id, item.icon) + '\u00a0' + this._displayLabel(item);
+                    const itemLabel = this._navLabel(item);
+                    btn.innerHTML = this._iconHtml(item.id, item.icon) + (itemLabel ? ('\u00a0' + itemLabel) : '');
                     btn.addEventListener('click', () => {
                         this._playItemSound(item.id);
                         const fn = this._fnRegistry[item.fn];
@@ -525,7 +533,8 @@ function createHubMenu(cfg) {
                     const btn = document.createElement('button');
                     btn.className = 'hub-tab';
                     btn.dataset.tab = item.id;
-                    btn.innerHTML = this._iconHtml(item.id, item.icon) + '\u00a0' + this._displayLabel(item);
+                    const itemLabel = this._navLabel(item);
+                    btn.innerHTML = this._iconHtml(item.id, item.icon) + (itemLabel ? ('\u00a0' + itemLabel) : '');
                     if (isGroupActive) btn.classList.add('active');
                     btn.addEventListener('click', () => {
                         this._playItemSound(item.id);

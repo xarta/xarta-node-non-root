@@ -43,11 +43,12 @@ const SynthesisMenuConfig = createHubMenu({
         { id: 'mch-fn-refresh', label: 'Refresh',     icon: HIEROGLYPHS.nefer,    fn: 'mch.refresh', activeOn: ['machines'], parent: 'synthesis-layout', order: 0 },
 
         // ── Manual Links (table view) function items ──────────────────────
-        { id: 'ml-fn-add',      label: 'Add link',    icon: HIEROGLYPHS.ropeCoil, fn: 'ml.add',      activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 0 },
-        { id: 'ml-fn-refresh',  label: 'Refresh',     icon: HIEROGLYPHS.nefer,    fn: 'ml.refresh',  activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 1 },
-        { id: 'ml-fn-grp-none', label: 'Group: None',  icon: 'icons/ui/minus-box-blue.svg',    fn: 'ml.grpNone',  activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 2 },
-        { id: 'ml-fn-grp-grp',  label: 'Group: Group', icon: 'icons/ui/group-folder-blue.svg', fn: 'ml.grpGroup', activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 3 },
-        { id: 'ml-fn-grp-host', label: 'Group: Host',  icon: 'icons/ui/monitor-blue.svg',      fn: 'ml.grpHost',  activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 4 },
+        { id: 'ml-fn-add',      label: 'Add link',     icon: HIEROGLYPHS.ropeCoil, fn: 'ml.add',      activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 0 },
+        { id: 'ml-fn-refresh',  label: 'Refresh',      icon: HIEROGLYPHS.nefer,    fn: 'ml.refresh',  activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 1 },
+        { id: 'ml-fn-cols',     label: 'Columns',      icon: HIEROGLYPHS.khaHorizon, fn: 'ml.columns', activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 2 },
+        { id: 'ml-fn-grp-none', label: 'Group: None',  icon: 'icons/ui/minus-box-blue.svg',    fn: 'ml.grpNone',  activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 3 },
+        { id: 'ml-fn-grp-grp',  label: 'Group: Group', icon: 'icons/ui/group-folder-blue.svg', fn: 'ml.grpGroup', activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 4 },
+        { id: 'ml-fn-grp-host', label: 'Group: Host',  icon: 'icons/ui/monitor-blue.svg',      fn: 'ml.grpHost',  activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 5 },
     ],
 });
 
@@ -61,6 +62,7 @@ SynthesisMenuConfig.registerFunctions({
     'mch.refresh':  () => loadMachines(),
     'ml.add':       () => openManualLinkModal(null),
     'ml.refresh':   () => loadManualLinks(),
+    'ml.columns':   () => mlOpenColsModal(),
     'ml.grpNone':   () => mlSetGroupBy('none'),
     'ml.grpGroup':  () => mlSetGroupBy('group'),
     'ml.grpHost':   () => mlSetGroupBy('host'),

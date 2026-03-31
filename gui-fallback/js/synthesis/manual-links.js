@@ -7,6 +7,224 @@ let _mlSort      = { col: null, dir: 1 }; // active sort column + direction (1=a
 let _mlGroupBy   = 'none';          // 'none' | 'group' | 'host'
 let _mlCollapsed = new Set();       // collapsed group keys
 let _mlFilterTimer = null;          // debounce handle for ml-filter input
+const _ML_TABLE_COLS = ['link_id', 'label', 'addresses', 'group_name', 'sort_order', 'host', 'notes', '_actions'];
+const _ML_TABLE_FIELD_META = {
+  link_id: {
+    label: 'ID',
+    render: lnk => `<td style="font-family:monospace;font-size:11px;color:var(--text-dim);max-width:80px;overflow:hidden;text-overflow:ellipsis" title="${esc(lnk.link_id)}">${esc(lnk.link_id.slice(0, 8))}</td>`,
+  },
+  label: {
+    label: 'Label',
+    headerHtml: 'Label <span data-ml-arrow="label" class="ml-sort-arrow">⇕</span>',
+    sortKey: 'label',
+    className: 'ml-th-sort',
+    render: lnk => `<td style="max-width:160px">${lnk.icon ? `<span style="margin-right:4px">${esc(lnk.icon)}</span>` : ''}${lnk.label ? `<strong>${esc(lnk.label)}</strong>` : '<span style="color:var(--text-dim)">—</span>'}</td>`,
+  },
+  addresses: {
+    label: 'Addresses',
+    headerHtml: 'Addresses <span data-ml-arrow="addr" class="ml-sort-arrow">⇕</span>',
+    sortKey: 'addr',
+    className: 'ml-th-sort',
+    render: lnk => `<td style="max-width:200px">${_mlAddressParts(lnk).join(' ') || '<span style="color:var(--text-dim)">—</span>'}</td>`,
+  },
+  group_name: {
+    label: 'Group',
+    headerHtml: 'Group <span data-ml-arrow="group" class="ml-sort-arrow">⇕</span>',
+    sortKey: 'group',
+    className: 'ml-th-sort',
+    render: lnk => `<td>${lnk.group_name ? esc(lnk.group_name) : '<span style="color:var(--text-dim)">—</span>'}</td>`,
+  },
+  sort_order: {
+    label: 'Order',
+    headerHtml: 'Order <span data-ml-arrow="order" class="ml-sort-arrow">⇕</span>',
+    sortKey: 'order',
+    className: 'ml-th-sort',
+    defaultWidth: 64,
+    render: lnk => `<td>${lnk.sort_order}</td>`,
+  },
+  host: {
+    label: 'Host',
+    headerHtml: 'Host <span data-ml-arrow="host" class="ml-sort-arrow">⇕</span>',
+    sortKey: 'host',
+    className: 'ml-th-sort',
+    render: lnk => `<td style="font-size:12px">${_mlHostParts(lnk).join(', ') || '<span style="color:var(--text-dim)">—</span>'}</td>`,
+  },
+  notes: {
+    label: 'Notes',
+    headerHtml: 'Notes <span data-ml-arrow="notes" class="ml-sort-arrow">⇕</span>',
+    sortKey: 'notes',
+    className: 'ml-th-sort',
+    render: lnk => `<td style="max-width:200px;font-size:12px;color:var(--text-dim)">${lnk.notes ? esc(lnk.notes) : ''}</td>`,
+  },
+  _actions: {
+    label: 'Actions',
+    defaultWidth: 96,
+    render: lnk => _mlRenderActionsCell(lnk),
+  },
+};
+
+let _mlTablePrefs = null;
+let _mlHiddenCols = new Set();
+let _mlColResizeDone = false;
+
+function _ensureManualLinksTablePrefs() {
+  if (_mlTablePrefs || typeof TablePrefs === 'undefined') return _mlTablePrefs;
+  _mlTablePrefs = TablePrefs.create({
+    storageKey: 'manual-links-table-prefs',
+    defaultHidden: [],
+    minWidth: 40,
+  });
+  _mlTablePrefs.syncColumns(_ML_TABLE_COLS);
+  _mlHiddenCols = _mlTablePrefs.getHiddenSet(_ML_TABLE_COLS);
+  return _mlTablePrefs;
+}
+
+function _mlVisibleCols() {
+  return _ML_TABLE_COLS.filter(col => !_mlHiddenCols.has(col));
+}
+
+function _mlCompactRowActions() {
+  return typeof TableRowActions !== 'undefined' && TableRowActions.isCompact();
+}
+
+function _mlActionCellWidth() {
+  return _mlCompactRowActions() ? 48 : 96;
+}
+
+function _mlAddressParts(lnk) {
+  const addrParts = [];
+  if (lnk.vlan_ip) addrParts.push(`<span class="badge" title="VLAN IP">${esc(lnk.vlan_ip)}</span>`);
+  if (lnk.vlan_uri) addrParts.push(`<span class="badge" title="VLAN URI">${esc(lnk.vlan_uri)}</span>`);
+  if (lnk.tailnet_ip) addrParts.push(`<span class="badge" title="Tailnet IP">${esc(lnk.tailnet_ip)}</span>`);
+  if (lnk.tailnet_uri) addrParts.push(`<span class="badge" title="Tailnet URI">${esc(lnk.tailnet_uri)}</span>`);
+  return addrParts;
+}
+
+function _mlHostParts(lnk) {
+  const hostParts = [];
+  if (lnk.pve_host) hostParts.push(`PVE: ${esc(lnk.pve_host)}`);
+  if (lnk.is_internet) hostParts.push('<span class="badge" style="background:var(--accent-dim)">internet</span>');
+  if (lnk.vm_id) hostParts.push(`VM ${esc(lnk.vm_id)}${lnk.vm_name ? ` (${esc(lnk.vm_name)})` : ''}`);
+  if (lnk.lxc_id) hostParts.push(`LXC ${esc(lnk.lxc_id)}${lnk.lxc_name ? ` (${esc(lnk.lxc_name)})` : ''}`);
+  if (lnk.location) hostParts.push(`<span style="color:var(--text-dim);font-size:11px">${esc(lnk.location)}</span>`);
+  return hostParts;
+}
+
+function _mlActionButtons(lnk) {
+  return `<button class="secondary" style="padding:2px 8px;font-size:12px" type="button" data-ml-edit="${esc(lnk.link_id)}">Edit</button>
+    <button class="secondary" style="padding:2px 8px;font-size:12px;color:var(--err)" type="button" data-ml-del="${esc(lnk.link_id)}">Del</button>`;
+}
+
+function _mlRenderActionsCell(lnk) {
+  if (_mlCompactRowActions()) {
+    return `<td class="table-action-cell table-action-cell--compact" style="width:${_mlActionCellWidth()}px">
+      <button class="table-row-action-trigger secondary" type="button" title="Manual link actions" data-ml-row-actions="${esc(lnk.link_id)}">&#8942;</button>
+    </td>`;
+  }
+  return `<td class="table-action-cell" style="white-space:nowrap;width:${_mlActionCellWidth()}px"><div class="table-inline-actions">${_mlActionButtons(lnk)}</div></td>`;
+}
+
+function _mlOpenRowActions(linkId) {
+  if (typeof TableRowActions === 'undefined') return;
+  const link = _manualLinks.find(item => String(item.link_id) === String(linkId));
+  if (!link) return;
+  TableRowActions.open({
+    title: link.label || link.link_id.slice(0, 8),
+    subtitle: link.group_name || '',
+    actions: [
+      {
+        label: 'Edit link',
+        detail: 'Open the manual link editor',
+        onClick: () => openManualLinkModal(link.link_id),
+      },
+      {
+        label: 'Delete link',
+        detail: 'Remove this manual link from Blueprints',
+        tone: 'danger',
+        onClick: () => deleteManualLink(link.link_id),
+      },
+    ],
+  });
+}
+
+function _mlUpdateSortArrows() {
+  ['label', 'addr', 'group', 'order', 'host', 'notes'].forEach(col => {
+    const el = document.querySelector(`[data-ml-arrow="${col}"]`);
+    if (!el) return;
+    if (_mlSort.col === col) {
+      el.textContent = _mlSort.dir === 1 ? '▲' : '▼';
+      el.classList.add('active');
+    } else {
+      el.textContent = '⇕';
+      el.classList.remove('active');
+    }
+  });
+}
+
+function _mlRebuildThead() {
+  const table = document.getElementById('ml-table');
+  if (!table) return;
+  const tr = table.querySelector('thead tr');
+  if (!tr) return;
+  const prefs = _ensureManualLinksTablePrefs();
+  tr.innerHTML = _mlVisibleCols().map(col => {
+    const meta = _ML_TABLE_FIELD_META[col];
+    const width = prefs ? prefs.getWidth(col) : null;
+    const styleParts = [];
+    if (width) styleParts.push(`width:${width}px`);
+    else if (meta.defaultWidth) styleParts.push(`width:${col === '_actions' ? _mlActionCellWidth() : meta.defaultWidth}px`);
+    const style = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
+    const sortAttr = meta.sortKey ? ` data-ml-sort="${meta.sortKey}" onclick="mlSortBy('${meta.sortKey}')"` : '';
+    const classAttr = meta.className ? ` class="${meta.className}"` : '';
+    return `<th data-col="${col}"${sortAttr}${classAttr}${style}>${meta.headerHtml || meta.label}</th>`;
+  }).join('');
+  _mlColResizeDone = false;
+  _mlUpdateSortArrows();
+}
+
+function _mlInitColResize() {
+  if (_mlColResizeDone) return;
+  const table = document.getElementById('ml-table');
+  const prefs = _ensureManualLinksTablePrefs();
+  if (!table || !prefs) return;
+  _mlColResizeDone = true;
+  prefs.applyWidths(table);
+  prefs.bindColumnResize(table, { minWidth: 40 });
+}
+
+function _mlRenderSharedTable(renderBody) {
+  const prefs = _ensureManualLinksTablePrefs();
+  if (!prefs) return;
+  prefs.renderTable({
+    getTable: () => document.getElementById('ml-table'),
+    rebuildHead: _mlRebuildThead,
+    renderBody,
+    minWidth: 40,
+    afterBind: () => {
+      _mlColResizeDone = true;
+    },
+  });
+}
+
+function mlOpenColsModal() {
+  const prefs = _ensureManualLinksTablePrefs();
+  if (!prefs) return;
+  const list = document.getElementById('ml-cols-modal-list');
+  TablePrefs.renderColumnChooser(list, _ML_TABLE_COLS, _mlHiddenCols, col => _ML_TABLE_FIELD_META[col].label);
+  HubModal.open(document.getElementById('ml-cols-modal'));
+}
+
+function _mlApplyColsModal() {
+  const prefs = _ensureManualLinksTablePrefs();
+  if (!prefs) return;
+  const modal = document.getElementById('ml-cols-modal');
+  const newHidden = TablePrefs.readHiddenFromChooser(modal, new Set(_mlHiddenCols));
+  prefs.setHiddenSet(newHidden);
+  _mlHiddenCols = prefs.getHiddenSet(_ML_TABLE_COLS);
+  _mlRebuildThead();
+  renderManualLinksTable();
+  HubModal.close(modal);
+}
 
 /* ── View toggle ─────────────────────────────────────────────────────────── */
 
@@ -38,6 +256,8 @@ async function loadManualLinks() {
 }
 
 function renderManualLinksTable() {
+  _ensureManualLinksTablePrefs();
+
   const tbody = document.getElementById('ml-tbody');
   if (!tbody) return;
 
@@ -50,15 +270,12 @@ function renderManualLinksTable() {
       ].some(v => v && v.toLowerCase().includes(q)))
     : [..._manualLinks];
 
-  const _clearArrows = () =>
-    ['label','addr','group','order','host','notes'].forEach(c => {
-      const el = document.getElementById(`ml-arrow-${c}`);
-      if (el) { el.textContent = '⇕'; el.classList.remove('active'); }
-    });
-
   if (!rows.length) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="8">${q ? 'No matches.' : 'No links yet — click + Add link'}</td></tr>`;
-    _clearArrows();
+    _mlColResizeDone = false;
+    _mlRenderSharedTable(() => {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="${Math.max(1, _mlVisibleCols().length)}">${q ? 'No matches.' : 'No links yet — click + Add link'}</td></tr>`;
+      _mlUpdateSortArrows();
+    });
     return;
   }
 
@@ -71,51 +288,18 @@ function renderManualLinksTable() {
     });
   }
 
-  // Update sort arrows
-  ['label','addr','group','order','host','notes'].forEach(c => {
-    const el = document.getElementById(`ml-arrow-${c}`);
-    if (!el) return;
-    if (_mlSort.col === c) {
-      el.textContent = _mlSort.dir === 1 ? '▲' : '▼';
-      el.classList.add('active');
-    } else {
-      el.textContent = '⇕';
-      el.classList.remove('active');
-    }
-  });
+  _mlUpdateSortArrows();
 
   // Row HTML builder
   function rowHtml(lnk) {
-    const addrParts = [];
-    if (lnk.vlan_ip)     addrParts.push(`<span class="badge" title="VLAN IP">${esc(lnk.vlan_ip)}</span>`);
-    if (lnk.vlan_uri)    addrParts.push(`<span class="badge" title="VLAN URI">${esc(lnk.vlan_uri)}</span>`);
-    if (lnk.tailnet_ip)  addrParts.push(`<span class="badge" title="Tailnet IP">${esc(lnk.tailnet_ip)}</span>`);
-    if (lnk.tailnet_uri) addrParts.push(`<span class="badge" title="Tailnet URI">${esc(lnk.tailnet_uri)}</span>`);
-
-    const hostParts = [];
-    if (lnk.pve_host)    hostParts.push(`PVE: ${esc(lnk.pve_host)}`);
-    if (lnk.is_internet) hostParts.push(`<span class="badge" style="background:var(--accent-dim)">internet</span>`);
-    if (lnk.vm_id)       hostParts.push(`VM ${esc(lnk.vm_id)}${lnk.vm_name ? ` (${esc(lnk.vm_name)})` : ''}`);
-    if (lnk.lxc_id)      hostParts.push(`LXC ${esc(lnk.lxc_id)}${lnk.lxc_name ? ` (${esc(lnk.lxc_name)})` : ''}`);
-    if (lnk.location)    hostParts.push(`<span style="color:var(--text-dim);font-size:11px">${esc(lnk.location)}</span>`);
-
-    return `<tr>
-      <td style="font-family:monospace;font-size:11px;color:var(--text-dim);max-width:80px;overflow:hidden;text-overflow:ellipsis" title="${esc(lnk.link_id)}">${esc(lnk.link_id.slice(0,8))}</td>
-      <td style="max-width:160px">${lnk.icon ? `<span style="margin-right:4px">${esc(lnk.icon)}</span>` : ''}${lnk.label ? `<strong>${esc(lnk.label)}</strong>` : '<span style="color:var(--text-dim)">—</span>'}</td>
-      <td style="max-width:200px">${addrParts.join(' ') || '<span style="color:var(--text-dim)">—</span>'}</td>
-      <td>${lnk.group_name ? esc(lnk.group_name) : '<span style="color:var(--text-dim)">—</span>'}</td>
-      <td>${lnk.sort_order}</td>
-      <td style="font-size:12px">${hostParts.join(', ') || '<span style="color:var(--text-dim)">—</span>'}</td>
-      <td style="max-width:200px;font-size:12px;color:var(--text-dim)">${lnk.notes ? esc(lnk.notes) : ''}</td>
-      <td style="white-space:nowrap">
-        <button class="secondary" style="padding:2px 8px;font-size:12px" onclick="openManualLinkModal('${esc(lnk.link_id)}')">Edit</button>
-        <button class="secondary" style="padding:2px 8px;font-size:12px;color:var(--err)" onclick="deleteManualLink('${esc(lnk.link_id)}')">Del</button>
-      </td>
-    </tr>`;
+    return `<tr>${_mlVisibleCols().map(col => _ML_TABLE_FIELD_META[col].render(lnk)).join('')}</tr>`;
   }
 
   if (_mlGroupBy === 'none') {
-    tbody.innerHTML = rows.map(rowHtml).join('');
+    _mlColResizeDone = false;
+    _mlRenderSharedTable(() => {
+      tbody.innerHTML = rows.map(rowHtml).join('');
+    });
     return;
   }
 
@@ -131,12 +315,15 @@ function renderManualLinksTable() {
   let html = '';
   keys.forEach(k => {
     const collapsed = _mlCollapsed.has(k);
-    html += `<tr class="ml-group-hdr" data-gkey="${esc(k)}" onclick="mlToggleGroup(this.dataset.gkey)">
-      <td colspan="8">${collapsed ? '▶' : '▼'} ${esc(k)} <span style="font-weight:400;opacity:.6">(${map[k].length})</span></td>
+    html += `<tr class="ml-group-hdr" data-gkey="${esc(k)}">
+      <td colspan="${Math.max(1, _mlVisibleCols().length)}">${collapsed ? '▶' : '▼'} ${esc(k)} <span style="font-weight:400;opacity:.6">(${map[k].length})</span></td>
     </tr>`;
     if (!collapsed) html += map[k].map(rowHtml).join('');
   });
-  tbody.innerHTML = html;
+  _mlColResizeDone = false;
+  _mlRenderSharedTable(() => {
+    tbody.innerHTML = html;
+  });
 }
 
 /* ── Table helpers: sort / filter / group ────────────────────────────────── */
@@ -400,7 +587,9 @@ async function deleteManualLink(linkId) {
 // from there rather than from the normal switchTab flow).
 
 document.addEventListener('DOMContentLoaded', () => {
+  _ensureManualLinksTablePrefs();
   document.getElementById('ml-modal-save-btn')?.addEventListener('click', submitManualLink);
+  document.getElementById('ml-cols-modal-apply')?.addEventListener('click', _mlApplyColsModal);
 
   const mlFilter = document.getElementById('ml-filter');
   if (mlFilter) {
@@ -409,7 +598,33 @@ document.addEventListener('DOMContentLoaded', () => {
       _mlFilterTimer = setTimeout(renderManualLinksTable, 250);
     });
   }
+  document.getElementById('ml-tbody')?.addEventListener('click', e => {
+    const groupRow = e.target.closest('tr.ml-group-hdr[data-gkey]');
+    if (groupRow) {
+      mlToggleGroup(groupRow.dataset.gkey);
+      return;
+    }
+    const editBtn = e.target.closest('[data-ml-edit]');
+    if (editBtn) {
+      openManualLinkModal(editBtn.dataset.mlEdit);
+      return;
+    }
+    const delBtn = e.target.closest('[data-ml-del]');
+    if (delBtn) {
+      deleteManualLink(delBtn.dataset.mlDel);
+      return;
+    }
+    const actionsBtn = e.target.closest('[data-ml-row-actions]');
+    if (actionsBtn) {
+      _mlOpenRowActions(actionsBtn.dataset.mlRowActions);
+    }
+  });
   if (typeof ResponsiveLayout !== 'undefined') {
     ResponsiveLayout.registerTabControls('manual-links-table', 'pg-ctrl-manual-links-table');
   }
+  _mlTablePrefs?.onLayoutChange(() => {
+    _mlHiddenCols = _mlTablePrefs.getHiddenSet(_ML_TABLE_COLS);
+    _mlRebuildThead();
+    renderManualLinksTable();
+  });
 });

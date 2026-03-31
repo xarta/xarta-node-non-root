@@ -397,8 +397,10 @@ function _renderBmSearchResults(results) {
     return;
   }
   _bmDetectCols(rows);  // search results have extra fields (score_sources, rrf_score, etc.)
-  _bmRebuildThead();
-  tbody.innerHTML = rows.map((r, i) => _bmBuildSearchRow(r, i)).join('');
+  _bmColResizeDone = false;
+  _bmRenderSharedTable(() => {
+    tbody.innerHTML = rows.map((r, i) => _bmBuildSearchRow(r, i)).join('');
+  });
   if (status) { status.textContent = rows.length + ' result' + (rows.length === 1 ? '' : 's') + (tagFilter ? ` (tag: ${tagFilter})` : ''); status.hidden = false; }
 }
 
@@ -444,16 +446,19 @@ function renderBookmarks(opts = {}) {
     status.textContent = totalRows + ' bookmark' + (totalRows === 1 ? '' : 's');
   }
   status.hidden = false;
-  _bmRebuildThead();
+  _bmColResizeDone = false;
   if (!pageRows.length) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="${_bmColCount()}">No bookmarks found.</td></tr>`;
-    _bmUpdateSortHeaders();
+    _bmRenderSharedTable(() => {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="${_bmColCount()}">No bookmarks found.</td></tr>`;
+      _bmUpdateSortHeaders();
+    });
     _BM_PAGER.render(totalRows);
     return;
   }
-  tbody.innerHTML = pageRows.map(b => _bmBuildBookmarkRow(b)).join('');
-  _bmUpdateSortHeaders();
-  _bmInitColResize();
+  _bmRenderSharedTable(() => {
+    tbody.innerHTML = pageRows.map(b => _bmBuildBookmarkRow(b)).join('');
+    _bmUpdateSortHeaders();
+  });
   _BM_PAGER.render(totalRows);
 }
 
@@ -1421,6 +1426,18 @@ function _bmInitColResize() {
   _bmColResizeDone = true;
   _bmTablePrefs.applyWidths(table);
   _bmTablePrefs.bindColumnResize(table, { minWidth: 40 });
+}
+
+function _bmRenderSharedTable(renderBody) {
+  _bmTablePrefs.renderTable({
+    getTable: () => document.querySelector('#bm-main-view table'),
+    rebuildHead: _bmRebuildThead,
+    renderBody,
+    minWidth: 40,
+    afterBind: () => {
+      _bmColResizeDone = true;
+    },
+  });
 }
 
 // ── Auto-archive dead links ─────────────────────────────────────────────

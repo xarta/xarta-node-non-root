@@ -46,6 +46,7 @@
   display: flex;
 }
 table { width: 100%; border-collapse: collapse; min-width: 400px; }
+table.table-shared-ui { table-layout: fixed; }
 thead th { background: var(--surface); color: var(--text-dim); font-size: 11px;
            text-transform: uppercase; letter-spacing: .6px; padding: 8px 10px;
            text-align: left; border-bottom: 1px solid var(--border);
@@ -54,6 +55,7 @@ thead th[data-col] { padding-right: 22px; }
 tbody tr { border-bottom: 1px solid var(--border); }
 tbody tr:hover { background: rgba(91,156,246,.06); }
 tbody td { padding: 9px 10px; vertical-align: top; }
+table.table-shared-ui tbody td { overflow: hidden; }
 
 .table-col-resize {
   position: absolute;

@@ -197,7 +197,10 @@
 
           var startX = e.clientX;
           var startW = th.getBoundingClientRect().width;
+          var pointerId = e.pointerId;
+          var didDrag = false;
           tableEl.classList.add('table-resize-handles-visible');
+          tableEl.dataset.colResizeDragging = '1';
           resizer.classList.add('dragging');
           document.body.classList.add('table-col-resizing');
           if (typeof resizer.setPointerCapture === 'function') {
@@ -206,16 +209,26 @@
 
           function onMove(ev) {
             if (ev.isPrimary === false) return;
+            if (typeof ev.preventDefault === 'function') ev.preventDefault();
             var nextW = Math.max(minWidth, Math.round(startW + (ev.clientX - startX)));
+            if (Math.abs(ev.clientX - startX) > 2) didDrag = true;
             th.style.width = nextW + 'px';
           }
 
           function onUp() {
+            delete tableEl.dataset.colResizeDragging;
+            if (didDrag) {
+              tableEl.dataset.colResizeSuppressUntil = String(Date.now() + 700);
+            }
             resizer.classList.remove('dragging');
             document.body.classList.remove('table-col-resizing');
-            window.removeEventListener('pointermove', onMove);
-            window.removeEventListener('pointerup', onUp);
-            window.removeEventListener('pointercancel', onUp);
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup', onUp);
+            document.removeEventListener('pointercancel', onUp);
+            resizer.removeEventListener('lostpointercapture', onUp);
+            if (typeof resizer.releasePointerCapture === 'function') {
+              try { resizer.releasePointerCapture(pointerId); } catch (_) {}
+            }
             if (isCoarsePointer()) {
               window.setTimeout(function () {
                 tableEl.classList.remove('table-resize-handles-visible');
@@ -227,12 +240,40 @@
             }
           }
 
-          window.addEventListener('pointermove', onMove);
-          window.addEventListener('pointerup', onUp);
-          window.addEventListener('pointercancel', onUp);
+          document.addEventListener('pointermove', onMove, { passive: false });
+          document.addEventListener('pointerup', onUp);
+          document.addEventListener('pointercancel', onUp);
+          resizer.addEventListener('lostpointercapture', onUp);
         });
         th.appendChild(resizer);
       });
+    }
+
+    function renderTable(options) {
+      options = options || {};
+      var tableEl = options.tableEl;
+      if (!tableEl && typeof options.getTable === 'function') {
+        tableEl = options.getTable();
+      }
+      if (typeof options.rebuildHead === 'function') {
+        options.rebuildHead();
+      }
+      if (!tableEl && typeof options.getTable === 'function') {
+        tableEl = options.getTable();
+      }
+      if (typeof options.renderBody === 'function') {
+        options.renderBody();
+      }
+      if (!tableEl && typeof options.getTable === 'function') {
+        tableEl = options.getTable();
+      }
+      if (!tableEl) return;
+      tableEl.classList.add('table-shared-ui');
+      applyWidths(tableEl);
+      bindColumnResize(tableEl, { minWidth: options.minWidth || minWidth });
+      if (typeof options.afterBind === 'function') {
+        options.afterBind(tableEl);
+      }
     }
 
     function onLayoutChange(listener) {
@@ -266,6 +307,7 @@
       setWidth: setWidth,
       applyWidths: applyWidths,
       bindColumnResize: bindColumnResize,
+      renderTable: renderTable,
       onLayoutChange: onLayoutChange,
     };
   }
