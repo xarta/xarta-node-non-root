@@ -106,17 +106,17 @@ function _bmActionCellWidth() {
 
 function _bmBookmarkActionButtons(b) {
   const archBtn = b.archived
-    ? `<button class="secondary table-icon-btn table-icon-btn--restore" type="button" title="Restore from archive" aria-label="Restore bookmark" onclick="archiveBookmark('${esc(b.bookmark_id)}', true)"></button>`
-    : `<button class="secondary table-icon-btn table-icon-btn--archive" type="button" title="Archive bookmark" aria-label="Archive bookmark" onclick="archiveBookmark('${esc(b.bookmark_id)}', false)"></button>`;
-  return `<button class="secondary table-icon-btn table-icon-btn--edit" type="button" title="Edit bookmark" aria-label="Edit bookmark" onclick="openBookmarkModal('${esc(b.bookmark_id)}')"></button>${archBtn}
-    <button class="secondary table-icon-btn table-icon-btn--delete" type="button" title="Delete bookmark" aria-label="Delete bookmark" onclick="deleteBookmark('${esc(b.bookmark_id)}','${esc(b.title||b.url)}')"></button>`;
+    ? `<button class="secondary table-icon-btn table-icon-btn--restore" type="button" title="Restore from archive" aria-label="Restore bookmark" data-bm-archive-id="${esc(b.bookmark_id)}" data-bm-archive-state="1"></button>`
+    : `<button class="secondary table-icon-btn table-icon-btn--archive" type="button" title="Archive bookmark" aria-label="Archive bookmark" data-bm-archive-id="${esc(b.bookmark_id)}" data-bm-archive-state="0"></button>`;
+  return `<button class="secondary table-icon-btn table-icon-btn--edit" type="button" title="Edit bookmark" aria-label="Edit bookmark" data-bm-edit-id="${esc(b.bookmark_id)}"></button>${archBtn}
+    <button class="secondary table-icon-btn table-icon-btn--delete" type="button" title="Delete bookmark" aria-label="Delete bookmark" data-bm-delete-id="${esc(b.bookmark_id)}" data-bm-delete-title="${esc(b.title||b.url)}"></button>`;
 }
 
 function _bmRenderBookmarkActionsCell(b) {
   if (b._item_type === 'visit') return '<td></td>';
   if (_bmCompactRowActions()) {
     return `<td class="table-action-cell table-action-cell--compact" style="width:${_bmActionCellWidth()}px">
-      <button class="table-row-action-trigger secondary" type="button" title="Bookmark actions" onclick="_bmOpenBookmarkRowActions('${esc(b.bookmark_id)}')">&#8942;</button>
+      <button class="table-row-action-trigger secondary" type="button" title="Bookmark actions" data-bm-row-actions="${esc(b.bookmark_id)}">&#8942;</button>
     </td>`;
   }
   return `<td class="table-action-cell" style="white-space:nowrap;width:${_bmActionCellWidth()}px">
@@ -857,16 +857,16 @@ function renderVisits(opts = {}) {
 function _visRenderVisitActionsCell(v) {
   const actions = [];
   if (!v.bookmark_id) {
-    actions.push(`<button class="secondary table-icon-btn table-icon-btn--save" type="button" title="Save as bookmark" aria-label="Save as bookmark" onclick="promoteVisitToBookmark('${esc(v.url)}','${esc(v.title || '')}')"></button>`);
+    actions.push(`<button class="secondary table-icon-btn table-icon-btn--save" type="button" title="Save as bookmark" aria-label="Save as bookmark" data-vis-save-url="${esc(v.url)}" data-vis-save-title="${esc(v.title || '')}"></button>`);
   }
   if (v.visit_count > 1) {
     const expandId = `ve-${esc(v.visit_id)}`;
-    actions.push(`<button class="secondary table-icon-btn table-icon-btn--history" type="button" title="Show individual visit times" aria-label="Show individual visit times" onclick="_bmToggleVisitEvents('${esc(v.normalized_url)}','${expandId}')"></button>`);
+    actions.push(`<button class="secondary table-icon-btn table-icon-btn--history" type="button" title="Show individual visit times" aria-label="Show individual visit times" data-vis-expand-url="${esc(v.normalized_url)}" data-vis-expand-id="${expandId}"></button>`);
   }
   if (!actions.length) return '<td></td>';
   if (_bmCompactRowActions()) {
     return `<td class="table-action-cell table-action-cell--compact" style="width:48px">
-      <button class="table-row-action-trigger secondary" type="button" title="Visit actions" onclick="_visOpenRowActions('${esc(v.visit_id)}')">&#8942;</button>
+      <button class="table-row-action-trigger secondary" type="button" title="Visit actions" data-vis-row-actions="${esc(v.visit_id)}">&#8942;</button>
     </td>`;
   }
   return `<td class="table-action-cell" style="white-space:nowrap;width:90px"><div class="table-inline-actions">${actions.join(' ')}</div></td>`;
@@ -1753,7 +1753,51 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('bm-tbody')?.addEventListener('click', e => {
     const cell = e.target.closest('.bm-score-cell');
-    if (cell) _bmOpenScoreModal(cell);
+    if (cell) {
+      _bmOpenScoreModal(cell);
+      return;
+    }
+
+    const editBtn = e.target.closest('[data-bm-edit-id]');
+    if (editBtn) {
+      openBookmarkModal(editBtn.dataset.bmEditId);
+      return;
+    }
+
+    const archiveBtn = e.target.closest('[data-bm-archive-id]');
+    if (archiveBtn) {
+      archiveBookmark(archiveBtn.dataset.bmArchiveId, archiveBtn.dataset.bmArchiveState === '1');
+      return;
+    }
+
+    const deleteBtn = e.target.closest('[data-bm-delete-id]');
+    if (deleteBtn) {
+      deleteBookmark(deleteBtn.dataset.bmDeleteId, deleteBtn.dataset.bmDeleteTitle || '');
+      return;
+    }
+
+    const bmActionsBtn = e.target.closest('[data-bm-row-actions]');
+    if (bmActionsBtn) {
+      _bmOpenBookmarkRowActions(bmActionsBtn.dataset.bmRowActions);
+      return;
+    }
+
+    const visSaveBtn = e.target.closest('[data-vis-save-url]');
+    if (visSaveBtn) {
+      promoteVisitToBookmark(visSaveBtn.dataset.visSaveUrl || '', visSaveBtn.dataset.visSaveTitle || '');
+      return;
+    }
+
+    const visExpandBtn = e.target.closest('[data-vis-expand-url]');
+    if (visExpandBtn) {
+      _bmToggleVisitEvents(visExpandBtn.dataset.visExpandUrl || '', visExpandBtn.dataset.visExpandId || '');
+      return;
+    }
+
+    const visActionsBtn = e.target.closest('[data-vis-row-actions]');
+    if (visActionsBtn) {
+      _visOpenRowActions(visActionsBtn.dataset.visRowActions);
+    }
   });
   document.getElementById('bm-score-modal-body')?.addEventListener('click', e => {
     const link = e.target.closest('.bm-score-drill');
