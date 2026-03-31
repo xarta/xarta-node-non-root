@@ -4,22 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Blueprints</title>
-  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=20260331e">
-  <link rel="stylesheet" href="css/tokens.css?v=20260331e" />
-  <link rel="stylesheet" href="css/layout-nav.css?v=20260331e" />
-  <link rel="stylesheet" href="css/tables.css?v=20260331e" />
-  <link rel="stylesheet" href="css/components.css?v=20260331e" />
-  <link rel="stylesheet" href="css/hub-menu.css?v=20260331e" />
-  <link rel="stylesheet" href="css/probes-menu.css?v=20260331e" />
-  <link rel="stylesheet" href="css/settings-menu.css?v=20260331e" />
-  <link rel="stylesheet" href="css/synthesis-menu.css?v=20260331e" />
-  <link rel="stylesheet" href="css/hub-controls.css?v=20260331e" />
-  <link rel="stylesheet" href="css/hub-checkbox.css?v=20260331e" />
-  <link rel="stylesheet" href="css/responsive-header.css?v=20260331e" />
-  <link rel="stylesheet" href="css/body-shade.css?v=20260331e" />
-  <link rel="stylesheet" href="css/docs-images.css?v=20260331e" />
-  <link rel="stylesheet" href="css/hub-modal.css?v=20260331e" />
-  <link rel="stylesheet" href="css/hub-dialogs.css?v=20260331e" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=20260331f">
+  <link rel="stylesheet" href="css/tokens.css?v=20260331f" />
+  <link rel="stylesheet" href="css/layout-nav.css?v=20260331f" />
+  <link rel="stylesheet" href="css/tables.css?v=20260331f" />
+  <link rel="stylesheet" href="css/components.css?v=20260331f" />
+  <link rel="stylesheet" href="css/hub-menu.css?v=20260331f" />
+  <link rel="stylesheet" href="css/probes-menu.css?v=20260331f" />
+  <link rel="stylesheet" href="css/settings-menu.css?v=20260331f" />
+  <link rel="stylesheet" href="css/synthesis-menu.css?v=20260331f" />
+  <link rel="stylesheet" href="css/hub-controls.css?v=20260331f" />
+  <link rel="stylesheet" href="css/hub-checkbox.css?v=20260331f" />
+  <link rel="stylesheet" href="css/responsive-header.css?v=20260331f" />
+  <link rel="stylesheet" href="css/body-shade.css?v=20260331f" />
+  <link rel="stylesheet" href="css/docs-images.css?v=20260331f" />
+  <link rel="stylesheet" href="css/hub-modal.css?v=20260331f" />
+  <link rel="stylesheet" href="css/hub-dialogs.css?v=20260331f" />
 </head>
 <body>
 
@@ -160,13 +160,6 @@
             data-for-tab="proxmox-config" hidden>
           <input class="hub-ctrl" type="text" id="pve-search"
                 placeholder="Filter configs…" />
-        </div>
-
-        <!-- PVE Hosts — shared columns chooser.
-            Event handlers wired in settings/pve-hosts.js via addEventListener. -->
-        <div class="page-control-group" id="pg-ctrl-pve-hosts"
-            data-for-tab="pve-hosts" hidden>
-          <button class="hub-action-btn" id="pve-hosts-cols-btn" type="button">Columns</button>
         </div>
 
         <!-- Dockge Stacks — search filter + hide-obsolete toggle.
@@ -1944,52 +1937,52 @@
   </div>
 </dialog>
 
-<script src="js/utils.js?v=20260331e"></script>
-<script src="js/api.js?v=20260331e"></script>
-<script src="js/state.js?v=20260331e"></script>
-<script src="js/connectivity.js?v=20260331e"></script>
-<script src="js/health.js?v=20260331e"></script>
-<script src="js/sync.js?v=20260331e"></script>
-<script src="js/backups.js?v=20260331e"></script>
-<script src="js/synthesis/manual-links.js?v=20260331e"></script>
-<script src="js/synthesis/services.js?v=20260331e"></script>
-<script src="js/synthesis/machines.js?v=20260331e"></script>
-<script src="js/sound-manager.js?v=20260331e"></script>
-<script src="js/form-control-manager.js?v=20260331e"></script>
-<script src="js/hub-modal.js?v=20260331e"></script>
-<script src="js/hub-dialogs.js?v=20260331e"></script>
-<script src="js/shared-asset-picker.js?v=20260331e"></script>
-<script src="js/hub-menu.js?v=20260331e"></script>
-<script src="js/hieroglyphs.js?v=20260331e"></script>
-<script src="js/synthesis/synthesis-menu.js?v=20260331e"></script>
-<script src="js/settings/nodes.js?v=20260331e"></script>
-<script src="js/settings/keys.js?v=20260331e"></script>
-<script src="js/settings/certs.js?v=20260331e"></script>
-<script src="js/settings/docs-history.js?v=20260331e"></script>
-<script src="js/settings/docs.js?v=20260331e"></script>
-<script src="js/settings/docs-images.js?v=20260331e"></script>
-<script src="js/settings/self-diag.js?v=20260331e"></script>
-<script src="js/settings/settings.js?v=20260331e"></script>
-<script src="js/settings/pve-hosts.js?v=20260331e"></script>
-<script src="js/settings/arp-manual.js?v=20260331e"></script>
-<script src="js/settings/ai-providers.js?v=20260331e"></script>
-<script src="js/settings/nav-items.js?v=20260331e"></script>
-<script src="js/settings/form-controls.js?v=20260331e"></script>
-<script src="js/probes/pfsense.js?v=20260331e"></script>
-<script src="js/probes/proxmox-config.js?v=20260331e"></script>
-<script src="js/probes/vlans.js?v=20260331e"></script>
-<script src="js/probes/ssh-targets.js?v=20260331e"></script>
-<script src="js/probes/dockge.js?v=20260331e"></script>
-<script src="js/probes/caddy.js?v=20260331e"></script>
-<script src="js/table-pager.js?v=20260331e"></script>
-<script src="js/table-ui.js?v=20260331e"></script>
-<script src="js/probes/bookmarks.js?v=20260331e"></script>
-<script src="js/probes/probes-menu.js?v=20260331e"></script>
-<script src="js/settings/settings-menu.js?v=20260331e"></script>
-<script src="js/hub-select.js?v=20260331e"></script>
-<script src="js/responsive-layout.js?v=20260331e"></script>
-<script src="js/body-shade.js?v=20260331e"></script>
-<script src="js/app.js?v=20260331e"></script>
+<script src="js/utils.js?v=20260331f"></script>
+<script src="js/api.js?v=20260331f"></script>
+<script src="js/state.js?v=20260331f"></script>
+<script src="js/connectivity.js?v=20260331f"></script>
+<script src="js/health.js?v=20260331f"></script>
+<script src="js/sync.js?v=20260331f"></script>
+<script src="js/backups.js?v=20260331f"></script>
+<script src="js/synthesis/manual-links.js?v=20260331f"></script>
+<script src="js/synthesis/services.js?v=20260331f"></script>
+<script src="js/synthesis/machines.js?v=20260331f"></script>
+<script src="js/sound-manager.js?v=20260331f"></script>
+<script src="js/form-control-manager.js?v=20260331f"></script>
+<script src="js/hub-modal.js?v=20260331f"></script>
+<script src="js/hub-dialogs.js?v=20260331f"></script>
+<script src="js/shared-asset-picker.js?v=20260331f"></script>
+<script src="js/hub-menu.js?v=20260331f"></script>
+<script src="js/hieroglyphs.js?v=20260331f"></script>
+<script src="js/synthesis/synthesis-menu.js?v=20260331f"></script>
+<script src="js/settings/nodes.js?v=20260331f"></script>
+<script src="js/settings/keys.js?v=20260331f"></script>
+<script src="js/settings/certs.js?v=20260331f"></script>
+<script src="js/settings/docs-history.js?v=20260331f"></script>
+<script src="js/settings/docs.js?v=20260331f"></script>
+<script src="js/settings/docs-images.js?v=20260331f"></script>
+<script src="js/settings/self-diag.js?v=20260331f"></script>
+<script src="js/settings/settings.js?v=20260331f"></script>
+<script src="js/settings/pve-hosts.js?v=20260331f"></script>
+<script src="js/settings/arp-manual.js?v=20260331f"></script>
+<script src="js/settings/ai-providers.js?v=20260331f"></script>
+<script src="js/settings/nav-items.js?v=20260331f"></script>
+<script src="js/settings/form-controls.js?v=20260331f"></script>
+<script src="js/probes/pfsense.js?v=20260331f"></script>
+<script src="js/probes/proxmox-config.js?v=20260331f"></script>
+<script src="js/probes/vlans.js?v=20260331f"></script>
+<script src="js/probes/ssh-targets.js?v=20260331f"></script>
+<script src="js/probes/dockge.js?v=20260331f"></script>
+<script src="js/probes/caddy.js?v=20260331f"></script>
+<script src="js/table-pager.js?v=20260331f"></script>
+<script src="js/table-ui.js?v=20260331f"></script>
+<script src="js/probes/bookmarks.js?v=20260331f"></script>
+<script src="js/probes/probes-menu.js?v=20260331f"></script>
+<script src="js/settings/settings-menu.js?v=20260331f"></script>
+<script src="js/hub-select.js?v=20260331f"></script>
+<script src="js/responsive-layout.js?v=20260331f"></script>
+<script src="js/body-shade.js?v=20260331f"></script>
+<script src="js/app.js?v=20260331f"></script>
 
 <!-- Backup action modal -->
 <dialog class="hub-modal hub-dialog" data-tone="info" id="backup-action-modal" style="width:min(560px,95vw)">
@@ -2109,7 +2102,7 @@
     nodeSwitchPath: '/ui/',
   };
 </script>
-<link rel="stylesheet" href="embed/blueprints-node-selector.css?v=20260331e" />
+<link rel="stylesheet" href="embed/blueprints-node-selector.css?v=20260331f" />
 <style>
   /* Replace the 🏠 home emoji on the /ui/ button with a Starfleet combadge SVG icon. */
   .bp-ns-action-btn[data-action="ui"] { font-size: 0; position: relative; }
@@ -2177,7 +2170,7 @@
     position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   }
 </style>
-<script src="embed/blueprints-node-selector.js?v=20260331e"></script>
+<script src="embed/blueprints-node-selector.js?v=20260331f"></script>
 
 <!-- Tag exclusion multi-select modal -->
 <style>

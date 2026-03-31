@@ -256,9 +256,6 @@ async function scanPveHosts() {
 
 document.addEventListener('DOMContentLoaded', () => {
   _ensurePveHostsTablePrefs();
-  if (typeof ResponsiveLayout !== 'undefined') {
-    ResponsiveLayout.registerTabControls('pve-hosts', 'pg-ctrl-pve-hosts');
-  }
 
   _pveHostsTablePrefs?.onLayoutChange(() => {
     _pveHiddenCols = _pveHostsTablePrefs.getHiddenSet(_PVE_HOST_COLS);
@@ -276,6 +273,5 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Edit modal Save button
   document.getElementById('pve-host-edit-save-btn')?.addEventListener('click', _submitPveHostEdit);
-  document.getElementById('pve-hosts-cols-btn')?.addEventListener('click', _pveOpenColsModal);
   document.getElementById('pve-hosts-cols-modal-apply')?.addEventListener('click', _pveApplyColsModal);
 });
