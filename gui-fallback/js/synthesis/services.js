@@ -82,7 +82,9 @@ function _svcVisibleCols() {
 
 function _ensureServicesTableSort() {
   if (_svcTableSort || typeof TableSort === 'undefined') return _svcTableSort;
-  _svcTableSort = TableSort.create();
+  _svcTableSort = TableSort.create({
+    storageKey: 'services-table-sort',
+  });
   return _svcTableSort;
 }
 

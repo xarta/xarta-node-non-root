@@ -46,7 +46,9 @@ function _pveVisibleCols() {
 
 function _ensurePveHostsTableSort() {
   if (_pveTableSort || typeof TableSort === 'undefined') return _pveTableSort;
-  _pveTableSort = TableSort.create();
+  _pveTableSort = TableSort.create({
+    storageKey: 'pve-hosts-table-sort',
+  });
   return _pveTableSort;
 }
 

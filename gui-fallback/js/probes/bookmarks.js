@@ -133,66 +133,115 @@ let _bmAllTags = [];
 let _bmTagCounts = {};       // {tag -> {active, archived}}
 let _bmCurrentExclTags = []; // source of truth; kept in sync with server
 let _bmLastSearchResults = []; // cached for re-render on column toggle
+let _bmDisplayedSearchRows = []; // current filtered/sorted search rows shown in the table
 
 // ── Pagination state ─────────────────────────────────────────────────────
 // Visual-only pagination: full _bookmarks array is always loaded; only the
 // rendered slice changes.  All client-side filter/sort/search still operates
 // on the complete dataset — only the table render is sliced.
-const _BM_PAGE_SIZE_OPTIONS = [25, 50, 100, 250, 1000, 2000, 5000, 10000];
+const _BM_PAGE_SIZE_OPTIONS = [25, 50, 75, 100, 250, 1000, 2000, 5000, 10000];
 const _BM_PAGER = TablePager.create({
   pagerId: 'bm-pagination',
   pageSizeOptions: _BM_PAGE_SIZE_OPTIONS,
   defaultPageSize: 100,
-  pageSizeStorageKey: 'bm-page-size',
-  enabledStorageKey: 'bm-pagination-enabled',
+  storageKey: 'bm-pagination-prefs',
+  stateScope: () => _bmModeKey(),
   defaultEnabled: true,
   onChange: function () {
     renderBookmarks({ keepPage: true });
   },
 });
 
-// Dynamic column list — derived from actual API response keys, not hardcoded
-let _bmDynCols = []; // populated by _bmDetectCols(); drives everything
+// Dynamic column lists — derived from actual API response keys, not hardcoded.
+// Browse and search results intentionally keep separate column state because
+// search adds transparency fields and can include visit-shaped rows.
+let _bmDynColsByMode = {
+  browse: [],
+  search: [],
+};
 
-const _bmTablePrefs = TablePrefs.create({
+const _bmBrowseTablePrefs = TablePrefs.create({
   storageKey: 'bm-table-prefs',
   legacyHiddenKey: 'bm-hidden-cols',
   defaultHidden: _BM_DEFAULT_HIDDEN,
   minWidth: 40,
 });
-const _bmTableSort = TableSort.create({
+const _bmSearchTablePrefs = TablePrefs.create({
+  storageKey: 'bm-search-table-prefs',
+  defaultHidden: _BM_DEFAULT_HIDDEN,
+  minWidth: 40,
+});
+const _bmBrowseTableSort = TableSort.create({
   defaultKey: 'created_at',
   defaultDir: -1,
+  storageKey: 'bookmarks-table-sort',
 });
+const _bmSearchTableSort = TableSort.create({
+  storageKey: 'bookmarks-search-table-sort',
+});
+
+function _bmModeKey(forceSearch) {
+  const isSearch = typeof forceSearch === 'boolean' ? forceSearch : _bmSearchActive;
+  return isSearch ? 'search' : 'browse';
+}
+
+function _bmCurrentDynCols() {
+  return _bmDynColsByMode[_bmModeKey()];
+}
+
+function _bmCurrentTablePrefs() {
+  return _bmSearchActive ? _bmSearchTablePrefs : _bmBrowseTablePrefs;
+}
+
+function _bmCurrentTableSort() {
+  return _bmSearchActive ? _bmSearchTableSort : _bmBrowseTableSort;
+}
 
 function _bmSetSearchActive(active) {
   _bmSearchActive = active;
+  if (!active) _bmDisplayedSearchRows = [];
   const btn = document.getElementById('bm-explain-sort-btn');
   if (btn) btn.disabled = !active;
 }
 
 let _bmHiddenCols = new Set();
 
-// Called after each API load — derives column list from actual response keys.
-// Preserves existing order for known cols; appends any new/unknown cols at end.
+// Called after each API load or search render — derives column list from the
+// current row shape for the active logical view. Browse and search keep
+// separate remembered column sets because search can expose extra fields.
 // _icon and _actions are synthetic (not from API): always first and last.
 function _bmDetectCols(rows) {
-  const apiKeys = rows.length ? Object.keys(rows[0]).filter(k => !_BM_EXCLUDE_COLS.has(k)) : [];
-  const existingApiCols = _bmDynCols.filter(k => k !== '_icon' && k !== '_actions');
+  const modeKey = _bmModeKey();
+  const apiKeys = [];
+  const apiKeySet = new Set();
+  (rows || []).forEach(row => {
+    Object.keys(row || {}).forEach(key => {
+      if (_BM_EXCLUDE_COLS.has(key) || apiKeySet.has(key)) return;
+      apiKeySet.add(key);
+      apiKeys.push(key);
+    });
+  });
+  const existingApiCols = _bmDynColsByMode[modeKey].filter(k => k !== '_icon' && k !== '_actions');
   const existingSet = new Set(existingApiCols);
-  const newSet = new Set(apiKeys);
-  _bmDynCols = [
+  const preserveMissing = modeKey === 'search';
+  const nextApiCols = preserveMissing
+    ? [...existingApiCols, ...apiKeys.filter(k => !existingSet.has(k))]
+    : [
+        ...existingApiCols.filter(k => apiKeySet.has(k)),
+        ...apiKeys.filter(k => !existingSet.has(k)),
+      ];
+  _bmDynColsByMode[modeKey] = [
     '_icon',
-    ...existingApiCols.filter(k => newSet.has(k)), // keep order, drop removed
-    ...apiKeys.filter(k => !existingSet.has(k)),   // append new keys
+    ...nextApiCols,
     '_actions',
   ];
-  _bmTablePrefs.syncColumns(_bmDynCols);
-  _bmHiddenCols = _bmTablePrefs.getHiddenSet(_bmDynCols);
+  const prefs = _bmCurrentTablePrefs();
+  prefs.syncColumns(_bmDynColsByMode[modeKey]);
+  _bmHiddenCols = prefs.getHiddenSet(_bmDynColsByMode[modeKey]);
 }
 
 function _bmVisibleDataCols() {
-  return _bmDynCols.filter(k => !_bmHiddenCols.has(k));
+  return _bmCurrentDynCols().filter(k => !_bmHiddenCols.has(k));
 }
 
 function _bmColCount() { return _bmVisibleDataCols().length; }
@@ -215,18 +264,20 @@ function _bmSortValue(item, sortKey) {
 function _bmRebuildThead() {
   const tr = document.querySelector('#bm-main-view thead tr');
   if (!tr) return;
+  const prefs = _bmCurrentTablePrefs();
+  const sorter = _bmCurrentTableSort();
   let html = '';
   for (const key of _bmVisibleDataCols()) {
     const sortKey = _BM_FIELD_META[key]?.sortKey ?? null;
     const label   = _bmFieldLabel(key);
-    const width = _bmTablePrefs.getWidth(key);
+    const width = prefs.getWidth(key);
     const styleParts = [];
     if (width) styleParts.push(`width:${width}px`);
     else if (key === '_icon') styleParts.push('width:30px');
     else if (key === '_actions') styleParts.push(`width:${_bmActionCellWidth()}px`);
     const style = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
     html += sortKey
-      ? `<th class="table-th-sort" data-col="${key}" data-sort-key="${sortKey}"${style}>${_bmTableSort.renderLabel(label, sortKey)}</th>`
+      ? `<th class="table-th-sort" data-col="${key}" data-sort-key="${sortKey}"${style}>${sorter.renderLabel(label, sortKey)}</th>`
       : `<th data-col="${key}"${style}>${label}</th>`;
   }
   tr.innerHTML = html;
@@ -259,11 +310,11 @@ function _bmBuildSearchRow(r, scoreIdx) {
 }
 
 // ── Column visibility modal ──────────────────────────────────────────────
-// Modal list is built from _bmDynCols — whatever the API actually returned.
+// Modal list is built from the active view's detected columns.
 // No column names are hardcoded here.
 function _bmOpenColsModal() {
   const list = document.getElementById('bm-cols-modal-list');
-  TablePrefs.renderColumnChooser(list, _bmDynCols, _bmHiddenCols, _bmFieldLabel);
+  TablePrefs.renderColumnChooser(list, _bmCurrentDynCols(), _bmHiddenCols, _bmFieldLabel);
   HubModal.open(document.getElementById('bm-cols-modal'));
 }
 
@@ -274,8 +325,9 @@ function _bmApplyColsModal() {
   // like domain/item_type/score cols when the modal was opened in browse mode)
   // keep their current hidden/visible state and are NOT implicitly un-hidden.
   const newHidden = TablePrefs.readHiddenFromChooser(modal, new Set(_bmHiddenCols));
-  _bmTablePrefs.setHiddenSet(newHidden);
-  _bmHiddenCols = _bmTablePrefs.getHiddenSet(_bmDynCols);
+  const prefs = _bmCurrentTablePrefs();
+  prefs.setHiddenSet(newHidden);
+  _bmHiddenCols = prefs.getHiddenSet(_bmCurrentDynCols());
   _bmRebuildThead();
   if (_bmSearchActive) {
     _renderBmSearchResults(_bmLastSearchResults);
@@ -321,8 +373,8 @@ async function loadBookmarks() {
     const r = await apiFetch(`/api/v1/bookmarks?archived=${archived}&limit=${limit}`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     _bookmarks = await r.json();
-    _bmDetectCols(_bookmarks);  // derive column list from actual API response keys
     _bmSetSearchActive(false);
+    _bmDetectCols(_bookmarks);  // derive column list from actual API response keys
     document.getElementById('bm-search-status').hidden = true;
     await Promise.all([_loadBookmarkTags(), _loadExcludedTags()]);
     renderBookmarks();
@@ -404,16 +456,20 @@ function _renderBmSearchResults(results) {
   // Search results replace the paginated browse view — hide the pager entirely.
   _BM_PAGER.hide();
   const tagFilter = document.getElementById('bm-tag-filter')?.value || '';
+  _bmDetectCols(results);
+  const sorter = _bmCurrentTableSort();
   let rows = tagFilter ? results.filter(r => (r.tags || []).includes(tagFilter)) : results;
+  rows = sorter.sortRows(rows, _bmSortValue);
+  _bmDisplayedSearchRows = rows.slice();
   const tbody = document.getElementById('bm-tbody');
   const status = document.getElementById('bm-search-status');
   if (!rows.length) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="${_bmColCount()}">No results found.</td></tr>`;
+    _bmRenderSharedTable(() => {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="${_bmColCount()}">No results found.</td></tr>`;
+    });
     if (status) { status.textContent = '0 results'; status.hidden = false; }
     return;
   }
-  rows = _bmTableSort.sortRows(rows, _bmSortValue);
-  _bmDetectCols(rows);  // search results have extra fields (score_sources, rrf_score, etc.)
   _bmColResizeDone = false;
   _bmRenderSharedTable(() => {
     tbody.innerHTML = rows.map((r, i) => _bmBuildSearchRow(r, i)).join('');
@@ -445,7 +501,7 @@ function renderBookmarks(opts = {}) {
   if (tagFilter) {
     rows = rows.filter(b => (b.tags || []).includes(tagFilter));
   }
-  rows = _bmTableSort.sortRows(rows, _bmSortValue);
+  rows = _bmCurrentTableSort().sortRows(rows, _bmSortValue);
   const pageData = _BM_PAGER.getSlice(rows);
   const totalRows = pageData.totalItems;
   const pageRows = pageData.items;
@@ -512,17 +568,21 @@ let _visColResizeDone = false;
 const _visTableSort = TableSort.create({
   defaultKey: 'visited_at',
   defaultDir: -1,
+  storageKey: 'visit-history-table-sort',
 });
 let _visLastSortKey = _visTableSort.getState().key;
 
 // Visual-only pagination for visits — same pattern as bookmarks
-const _VIS_PAGE_SIZE_OPTIONS = [25, 50, 100, 250, 1000];
+const _VIS_PAGE_SIZE_OPTIONS = [25, 50, 75, 100, 250, 1000];
 const _VIS_PAGER = TablePager.create({
   pagerId: 'vis-pagination',
   pageSizeOptions: _VIS_PAGE_SIZE_OPTIONS,
   defaultPageSize: 100,
-  pageSizeStorageKey: 'vis-page-size',
-  enabledStorageKey: 'vis-pagination-enabled',
+  storageKey: 'vis-pagination-prefs',
+  stateScope: function () {
+    var state = _visTableSort.getState();
+    return state.key === 'url' || state.key === 'domain' ? 'grouped' : 'rows';
+  },
   defaultEnabled: true,
   onChange: function () {
     renderVisits({ keepPage: true });
@@ -1391,18 +1451,20 @@ async function archiveBookmark(id, currentArchived) {
 // ── Column resize ───────────────────────────────────────────────────────
 
 function _bmRenderSharedTable(renderBody) {
-  _bmTablePrefs.renderTable({
+  const prefs = _bmCurrentTablePrefs();
+  const sorter = _bmCurrentTableSort();
+  prefs.renderTable({
     getTable: () => document.querySelector('#bm-main-view table'),
     rebuildHead: _bmRebuildThead,
     renderBody,
     minWidth: 40,
     afterBind: tableEl => {
       _bmColResizeDone = true;
-      _bmTableSort.bind(tableEl, () => {
+      sorter.bind(tableEl, () => {
         if (_bmSearchActive) _renderBmSearchResults(_bmLastSearchResults);
         else renderBookmarks();
       });
-      _bmTableSort.syncIndicators(tableEl);
+      sorter.syncIndicators(tableEl);
     },
   });
 }
@@ -1578,7 +1640,7 @@ function _bmOpenScoreModal(cell) {
   const tr = cell.closest('tr[data-score-idx]');
   if (!tr) return;
   const idx = parseInt(tr.dataset.scoreIdx, 10);
-  const result = _bmLastSearchResults[idx];
+  const result = _bmDisplayedSearchRows[idx];
   if (!result) return;
   const query = (document.getElementById('bm-search')?.value || '').trim();
   _bmScoreCtx = { query, result };
@@ -1670,8 +1732,16 @@ document.addEventListener('DOMContentLoaded', () => {
     ResponsiveLayout.registerTabControls('bookmarks-main', 'pg-ctrl-bookmarks-main');
   }
 
-  _bmTablePrefs.onLayoutChange(() => {
-    _bmHiddenCols = _bmTablePrefs.getHiddenSet(_bmDynCols);
+  _bmBrowseTablePrefs.onLayoutChange(() => {
+    if (_bmModeKey() !== 'browse') return;
+    _bmHiddenCols = _bmBrowseTablePrefs.getHiddenSet(_bmCurrentDynCols());
+    _bmRebuildThead();
+    renderBookmarks({ keepPage: true });
+  });
+
+  _bmSearchTablePrefs.onLayoutChange(() => {
+    if (_bmModeKey() !== 'search') return;
+    _bmHiddenCols = _bmSearchTablePrefs.getHiddenSet(_bmCurrentDynCols());
     _bmRebuildThead();
     if (_bmSearchActive) _renderBmSearchResults(_bmLastSearchResults);
     else renderBookmarks({ keepPage: true });
@@ -1719,9 +1789,10 @@ document.addEventListener('DOMContentLoaded', () => {
 // ── Sort explanation modal ───────────────────────────────────────────────
 
 async function _bmOpenSortExplainModal() {
-  if (!_bmSearchActive || !_bmLastSearchResults.length) return;
+  if (!_bmSearchActive || !_bmDisplayedSearchRows.length) return;
   const query = (document.getElementById('bm-search')?.value || '').trim();
-  const top = _bmLastSearchResults.slice(0, 20);
+  const top = _bmDisplayedSearchRows.slice(0, 20);
+  const searchSortState = _bmSearchTableSort.getState();
   const subtitle = document.getElementById('bm-sort-explain-subtitle');
   subtitle.textContent = `"${query}" — top ${top.length} results`;
   const body = document.getElementById('bm-sort-explain-body');
@@ -1734,8 +1805,8 @@ async function _bmOpenSortExplainModal() {
       body: JSON.stringify({
         query,
         results: top,
-        sort_col: _bmSortCol || 'compound',
-        sort_dir: _bmSortDir || 'asc',
+        sort_col: searchSortState.key || 'compound',
+        sort_dir: searchSortState.key ? (searchSortState.dir === -1 ? 'desc' : 'asc') : 'desc',
       }),
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);

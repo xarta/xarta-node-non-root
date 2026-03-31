@@ -356,47 +356,97 @@
     return 0;
   }
 
+  function ensureSortLayoutState(state, layoutKey, defaultKey, defaultDir) {
+    if (!state.layouts) state.layouts = {};
+    if (!state.layouts[layoutKey]) {
+      state.layouts[layoutKey] = {
+        key: defaultKey || null,
+        dir: defaultKey ? defaultDir : 0,
+      };
+    }
+    if (!state.layouts[layoutKey].key) {
+      state.layouts[layoutKey].key = null;
+      state.layouts[layoutKey].dir = 0;
+    } else if (state.layouts[layoutKey].dir !== 1 && state.layouts[layoutKey].dir !== -1) {
+      state.layouts[layoutKey].dir = defaultDir;
+    }
+    return state.layouts[layoutKey];
+  }
+
   function createTableSort(cfg) {
     cfg = cfg || {};
     var defaultDir = cfg.defaultDir === -1 ? -1 : 1;
-    var sortKey = cfg.defaultKey || null;
-    var sortDir = defaultDir;
+    var defaultKey = cfg.defaultKey || null;
+    var storageKey = cfg.storageKey || null;
+    var persistedState = storageKey ? readJson(storageKey, null) : null;
+    var sortKey = defaultKey;
+    var sortDir = defaultKey ? defaultDir : 0;
+
+    if (storageKey && (!persistedState || typeof persistedState !== 'object')) {
+      persistedState = { layouts: {} };
+      writeJson(storageKey, persistedState);
+    }
+
+    function persist() {
+      if (!storageKey) return;
+      writeJson(storageKey, persistedState);
+    }
+
+    function getActiveState() {
+      if (!storageKey) {
+        return {
+          key: sortKey,
+          dir: sortKey ? sortDir : 0,
+        };
+      }
+      return ensureSortLayoutState(persistedState, getLayoutKey(), defaultKey, defaultDir);
+    }
 
     function getState() {
+      var active = getActiveState();
       return {
-        key: sortKey,
-        dir: sortKey ? sortDir : 0,
+        key: active.key,
+        dir: active.key ? active.dir : 0,
       };
     }
 
     function toggle(nextKey) {
+      var active = getActiveState();
       if (!nextKey) return getState();
-      if (sortKey === nextKey) {
-        sortDir = sortDir === 1 ? -1 : 1;
+      if (active.key === nextKey) {
+        active.dir = active.dir === 1 ? -1 : 1;
       } else {
-        sortKey = nextKey;
-        sortDir = defaultDir;
+        active.key = nextKey;
+        active.dir = defaultDir;
+      }
+      if (!storageKey) {
+        sortKey = active.key;
+        sortDir = active.key ? active.dir : 0;
+      } else {
+        persist();
       }
       return getState();
     }
 
     function renderLabel(label, key) {
-      var active = sortKey === key;
-      var arrow = active ? (sortDir === 1 ? '&#9650;' : '&#9660;') : '&#x21C5;';
+      var activeState = getActiveState();
+      var active = activeState.key === key;
+      var arrow = active ? (activeState.dir === 1 ? '&#9650;' : '&#9660;') : '&#x21C5;';
       return String(label || '')
         + '<span class="table-sort-arrow' + (active ? ' active' : '') + '" data-sort-arrow="' + key + '">' + arrow + '</span>';
     }
 
     function syncIndicators(tableEl) {
       if (!tableEl) return;
+      var activeState = getActiveState();
       tableEl.querySelectorAll('thead th[data-sort-key]').forEach(function (th) {
-        var isActive = th.dataset.sortKey === sortKey;
+        var isActive = th.dataset.sortKey === activeState.key;
         th.classList.add('table-th-sort');
-        th.setAttribute('aria-sort', isActive ? (sortDir === 1 ? 'ascending' : 'descending') : 'none');
+        th.setAttribute('aria-sort', isActive ? (activeState.dir === 1 ? 'ascending' : 'descending') : 'none');
         var arrow = th.querySelector('[data-sort-arrow]');
         if (!arrow) return;
         arrow.classList.toggle('active', isActive);
-        arrow.innerHTML = isActive ? (sortDir === 1 ? '&#9650;' : '&#9660;') : '&#x21C5;';
+        arrow.innerHTML = isActive ? (activeState.dir === 1 ? '&#9650;' : '&#9660;') : '&#x21C5;';
       });
     }
 
@@ -423,9 +473,10 @@
 
     function sortRows(rows, getValue) {
       var next = Array.isArray(rows) ? rows.slice() : [];
-      if (!sortKey || typeof getValue !== 'function') return next;
+      var activeState = getActiveState();
+      if (!activeState.key || typeof getValue !== 'function') return next;
       next.sort(function (left, right) {
-        return compareSortValues(getValue(left, sortKey), getValue(right, sortKey)) * sortDir;
+        return compareSortValues(getValue(left, activeState.key), getValue(right, activeState.key)) * activeState.dir;
       });
       return next;
     }

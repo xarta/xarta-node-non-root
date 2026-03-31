@@ -88,7 +88,9 @@ function _mchVisibleCols() {
 
 function _ensureMachinesTableSort() {
   if (_mchTableSort || typeof TableSort === 'undefined') return _mchTableSort;
-  _mchTableSort = TableSort.create();
+  _mchTableSort = TableSort.create({
+    storageKey: 'machines-table-sort',
+  });
   return _mchTableSort;
 }
 

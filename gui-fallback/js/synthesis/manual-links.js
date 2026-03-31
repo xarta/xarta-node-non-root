@@ -73,7 +73,9 @@ function _mlVisibleCols() {
 
 function _ensureManualLinksTableSort() {
   if (_mlTableSort || typeof TableSort === 'undefined') return _mlTableSort;
-  _mlTableSort = TableSort.create();
+  _mlTableSort = TableSort.create({
+    storageKey: 'manual-links-table-sort',
+  });
   return _mlTableSort;
 }
 
