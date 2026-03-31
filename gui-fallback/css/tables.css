@@ -173,6 +173,18 @@ button.table-icon-btn {
   background: rgba(var(--table-action-rgb, 123, 130, 160), 0.08);
 }
 
+button.table-icon-btn--sm {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  border-radius: 6px;
+}
+
+button.table-icon-btn--sm::before {
+  width: 11px;
+  height: 11px;
+}
+
 button.table-icon-btn::before {
   content: '';
   width: 14px;

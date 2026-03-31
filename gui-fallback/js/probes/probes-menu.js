@@ -50,15 +50,17 @@ const ProbesMenuConfig = createHubMenu({
         { id: 'dns-fn-refresh',  label: 'Refresh',       icon: HIEROGLYPHS.nefer,      fn: 'dns.refresh',    activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 0 },
         { id: 'dns-fn-probe',    label: 'Probe pfSense', icon: HIEROGLYPHS.wasScepter, fn: 'dns.probe',      activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 1 },
         { id: 'dns-fn-sweep',    label: 'Ping Sweep',    icon: HIEROGLYPHS.wasScepter, fn: 'dns.sweep',      activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 2 },
-        { id: 'dns-fn-expand',   label: 'Expand all',   icon: 'icons/ui/chevron-down-blue.svg', fn: 'dns.expandAll',  activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 3 },
-        { id: 'dns-fn-collapse', label: 'Collapse all', icon: 'icons/ui/chevron-up-blue.svg',   fn: 'dns.collapseAll',activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 4 },
+        { id: 'dns-fn-cols',     label: 'Columns',       icon: 'icons/ui/table-columns-blue.svg', fn: 'dns.cols', activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 3 },
+        { id: 'dns-fn-expand',   label: 'Expand all',    icon: 'icons/ui/chevron-down-blue.svg', fn: 'dns.expandAll',  activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 4 },
+        { id: 'dns-fn-collapse', label: 'Collapse all',  icon: 'icons/ui/chevron-up-blue.svg',   fn: 'dns.collapseAll',activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 5 },
 
         // ── Proxmox Config page function items ────────────────────────────
         { id: 'pve-fn-refresh',   label: 'Refresh',     icon: HIEROGLYPHS.nefer,      fn: 'pve.refresh',    activeOn: ['proxmox-config'], parent: 'probes-settings', order: 0 },
         { id: 'pve-fn-fullprobe', label: 'Full Probe',  icon: HIEROGLYPHS.wasScepter, fn: 'pve.fullProbe',  activeOn: ['proxmox-config'], parent: 'probes-settings', order: 1 },
         { id: 'pve-fn-steps',     label: 'Steps',       icon: HIEROGLYPHS.djedPillar, fn: 'pve.steps',      activeOn: ['proxmox-config'], parent: 'probes-settings', order: 2 },
-        { id: 'pve-fn-expand',    label: 'Expand all',   icon: 'icons/ui/chevron-down-blue.svg', fn: 'pve.expandAll',  activeOn: ['proxmox-config'], parent: 'probes-settings', order: 3 },
-        { id: 'pve-fn-collapse',  label: 'Collapse all', icon: 'icons/ui/chevron-up-blue.svg',   fn: 'pve.collapseAll',activeOn: ['proxmox-config'], parent: 'probes-settings', order: 4 },
+        { id: 'pve-fn-cols',      label: 'Columns',     icon: 'icons/ui/table-columns-blue.svg', fn: 'pve.cols',      activeOn: ['proxmox-config'], parent: 'probes-settings', order: 3 },
+        { id: 'pve-fn-expand',    label: 'Expand all',  icon: 'icons/ui/chevron-down-blue.svg',  fn: 'pve.expandAll', activeOn: ['proxmox-config'], parent: 'probes-settings', order: 4 },
+        { id: 'pve-fn-collapse',  label: 'Collapse all', icon: 'icons/ui/chevron-up-blue.svg',   fn: 'pve.collapseAll',activeOn: ['proxmox-config'], parent: 'probes-settings', order: 5 },
 
         // ── VLANs page function items ──────────────────────────────────────
         { id: 'vlan-fn-refresh',    label: 'Refresh',             icon: HIEROGLYPHS.nefer,      fn: 'vlan.refresh',    activeOn: ['vlans'],             parent: 'probes-settings', order: 0 },
@@ -119,6 +121,7 @@ ProbesMenuConfig.registerFunctions({
     'dns.refresh':    () => loadPfSenseDns(),
     'dns.probe':      () => probePfSense(),
     'dns.sweep':      () => pingSweep(),
+    'dns.cols':       () => _dnsOpenColsModal(),
     'dns.expandAll':  () => setAllDnsGroups(true),
     'dns.collapseAll':() => setAllDnsGroups(false),
 
@@ -126,6 +129,7 @@ ProbesMenuConfig.registerFunctions({
     'pve.refresh':    () => loadProxmoxConfig(),
     'pve.fullProbe':  () => fullProbeProxmox(),
     'pve.steps':      () => togglePveSteps(),
+    'pve.cols':       () => _pveOpenConfigColsModal(),
     'pve.expandAll':  () => setAllNets(true),
     'pve.collapseAll':() => setAllNets(false),
 

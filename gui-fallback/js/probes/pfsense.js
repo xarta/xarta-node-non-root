@@ -1,10 +1,304 @@
 /* ── pfSense DNS ──────────────────────────────────────────────────────── */
 
-let _dnsFilterTimer = null;  // debounce handle for dns-search input
+const _DNS_COLS = [
+  'ip_address',
+  'fqdn',
+  'record_type',
+  'source',
+  'mac_address',
+  'active',
+  'last_seen',
+  'last_probed',
+  'ping_ms',
+  'last_ping_check',
+];
+
+const _DNS_FIELD_META = {
+  ip_address: { label: 'IP Address', sortKey: 'ip_address' },
+  fqdn: { label: 'FQDN', sortKey: 'fqdn' },
+  record_type: { label: 'Type', sortKey: 'record_type' },
+  source: { label: 'Source', sortKey: 'source' },
+  mac_address: { label: 'MAC', sortKey: 'mac_address' },
+  active: { label: 'Active', sortKey: 'active' },
+  last_seen: { label: 'Last Seen', sortKey: 'last_seen' },
+  last_probed: { label: 'Last Probed', sortKey: 'last_probed' },
+  ping_ms: { label: 'Ping ms', sortKey: 'ping_ms' },
+  last_ping_check: { label: 'Last Check', sortKey: 'last_ping_check' },
+};
+
+let _dnsFilterTimer = null;
+let _dnsTablePrefs = null;
+let _dnsHiddenCols = new Set();
+let _dnsTableSort = null;
+let _dnsOpenGroups = new Set();
+
+function _ensureDnsTablePrefs() {
+  if (_dnsTablePrefs || typeof TablePrefs === 'undefined') return _dnsTablePrefs;
+  _dnsTablePrefs = TablePrefs.create({
+    storageKey: 'pfsense-dns-table-prefs',
+    defaultHidden: [],
+    minWidth: 40,
+  });
+  _dnsTablePrefs.syncColumns(_DNS_COLS);
+  _dnsHiddenCols = _dnsTablePrefs.getHiddenSet(_DNS_COLS);
+  return _dnsTablePrefs;
+}
+
+function _ensureDnsTableSort() {
+  if (_dnsTableSort || typeof TableSort === 'undefined') return _dnsTableSort;
+  _dnsTableSort = TableSort.create({
+    storageKey: 'pfsense-dns-table-sort',
+    defaultKey: 'ip_address',
+    defaultDir: 1,
+  });
+  return _dnsTableSort;
+}
+
+function _dnsVisibleCols() {
+  const visible = _DNS_COLS.filter(col => !_dnsHiddenCols.has(col));
+  return visible.length ? visible : ['ip_address'];
+}
+
+function _dnsTableEl() {
+  return document.getElementById('dns-table');
+}
+
+function _dnsTbodyEl() {
+  return document.getElementById('dns-tbody');
+}
+
+function _dnsFormatDate(value) {
+  return ((value || '—').replace('T', ' ').slice(0, 19)) || '—';
+}
+
+function _dnsIpToken(ip) {
+  return String(ip || '')
+    .split('.')
+    .map(part => String(parseInt(part, 10) || 0).padStart(3, '0'))
+    .join('.');
+}
+
+function _dnsNormalizeSortValue(value) {
+  if (value == null) return '';
+  if (typeof value === 'number') return value;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  return String(value).toLowerCase();
+}
+
+function _dnsCompareValues(left, right) {
+  const a = _dnsNormalizeSortValue(left);
+  const b = _dnsNormalizeSortValue(right);
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
+function _dnsSortValue(record, sortKey) {
+  switch (sortKey) {
+    case 'ip_address':
+      return _dnsIpToken(record.ip_address || '');
+    case 'fqdn':
+      return record.fqdn || '';
+    case 'record_type':
+      return record.record_type || '';
+    case 'source':
+      return record.source || '';
+    case 'mac_address':
+      return record.mac_address || '';
+    case 'active':
+      return record.active ? 1 : 0;
+    case 'last_seen':
+      return record.last_seen || '';
+    case 'last_probed':
+      return record.last_probed || '';
+    case 'ping_ms':
+      return record.ping_ms == null ? Number.POSITIVE_INFINITY : Number(record.ping_ms);
+    case 'last_ping_check':
+      return record.last_ping_check || '';
+    default:
+      return '';
+  }
+}
+
+function _dnsSortRecords(records, sortKey, sortDir) {
+  const activeKey = sortKey || 'ip_address';
+  const dir = sortDir === -1 ? -1 : 1;
+  return (records || []).slice().sort((left, right) => {
+    let cmp = _dnsCompareValues(_dnsSortValue(left, activeKey), _dnsSortValue(right, activeKey));
+    if (cmp === 0 && activeKey !== 'fqdn') {
+      cmp = _dnsCompareValues(left.fqdn || '', right.fqdn || '');
+    }
+    if (cmp === 0 && activeKey !== 'record_type') {
+      cmp = _dnsCompareValues(left.record_type || '', right.record_type || '');
+    }
+    if (cmp === 0) {
+      cmp = _dnsCompareValues(left.source || '', right.source || '');
+    }
+    return cmp * dir;
+  });
+}
+
+function _dnsGroupStats(records) {
+  const activeCount = records.filter(r => r.active).length;
+  const bestPing = records.reduce((best, record) => {
+    if (record.ping_ms == null) return best;
+    return best == null || record.ping_ms < best ? record.ping_ms : best;
+  }, null);
+  const mac = records.find(record => record.mac_address)?.mac_address || '—';
+  return { activeCount, bestPing, mac };
+}
+
+function _dnsBuildGroups(rows, sortState) {
+  const byIp = new Map();
+  rows.forEach(record => {
+    const ip = record.ip_address || '';
+    if (!byIp.has(ip)) byIp.set(ip, []);
+    byIp.get(ip).push(record);
+  });
+
+  const activeKey = sortState?.key || 'ip_address';
+  const activeDir = sortState?.dir === -1 ? -1 : 1;
+  const groups = Array.from(byIp.entries()).map(([ip, records]) => {
+    const sortedRecords = _dnsSortRecords(records, activeKey, activeDir);
+    const stats = _dnsGroupStats(sortedRecords);
+    return {
+      ip,
+      safeip: 'dg' + ip.replace(/\./g, '_'),
+      records: sortedRecords,
+      stats,
+      sortValue: activeKey === 'ip_address'
+        ? _dnsIpToken(ip)
+        : _dnsSortValue(sortedRecords[0] || {}, activeKey),
+    };
+  });
+
+  groups.sort((left, right) => {
+    let cmp = _dnsCompareValues(left.sortValue, right.sortValue);
+    if (cmp === 0) cmp = _dnsCompareValues(_dnsIpToken(left.ip), _dnsIpToken(right.ip));
+    return cmp * activeDir;
+  });
+
+  return groups;
+}
+
+function _dnsRenderPingCell(pingMs) {
+  if (pingMs == null) {
+    return '<td style="text-align:right;color:var(--text-dim)">—</td>';
+  }
+  if (pingMs < 10) {
+    return `<td style="text-align:right;color:var(--ok)">${pingMs.toFixed(1)}</td>`;
+  }
+  if (pingMs < 100) {
+    return `<td style="text-align:right;color:var(--warn)">${pingMs.toFixed(1)}</td>`;
+  }
+  return `<td style="text-align:right;color:var(--err)">${pingMs.toFixed(1)}</td>`;
+}
+
+function _dnsRenderDetailCell(record, col) {
+  switch (col) {
+    case 'ip_address':
+      return '<td style="padding-left:20px;color:var(--text-dim);font-size:11px">↳</td>';
+    case 'fqdn':
+      return `<td class="table-cell-clip">${esc(record.fqdn || '')}</td>`;
+    case 'record_type':
+      return `<td>${esc(record.record_type || '')}</td>`;
+    case 'source':
+      return `<td class="table-cell-clip">${esc(record.source || '')}</td>`;
+    case 'mac_address':
+      return `<td><code style="font-size:11px">${esc(record.mac_address || '—')}</code></td>`;
+    case 'active':
+      return `<td style="text-align:center">${record.active ? '<span style="color:var(--ok)">✓</span>' : '<span style="color:var(--text-dim)">✗</span>'}</td>`;
+    case 'last_seen':
+      return `<td style="white-space:nowrap;color:var(--text-dim)">${esc(_dnsFormatDate(record.last_seen))}</td>`;
+    case 'last_probed':
+      return `<td style="white-space:nowrap;color:var(--text-dim)">${esc(_dnsFormatDate(record.last_probed))}</td>`;
+    case 'ping_ms':
+      return _dnsRenderPingCell(record.ping_ms);
+    case 'last_ping_check':
+      return `<td style="white-space:nowrap;color:var(--text-dim)">${esc(_dnsFormatDate(record.last_ping_check))}</td>`;
+    default:
+      return '<td></td>';
+  }
+}
+
+function _dnsRenderGroupRow(group, isOpen, visibleCols) {
+  const cellCount = Math.max(1, visibleCols.length);
+  const stats = group.stats;
+  const pingSummary = stats.bestPing == null
+    ? ''
+    : ` · <span style="color:${stats.bestPing < 10 ? 'var(--ok)' : stats.bestPing < 100 ? 'var(--warn)' : 'var(--err)'}">${stats.bestPing.toFixed(1)} ms</span>`;
+  const summary = `${group.records.length} record${group.records.length !== 1 ? 's' : ''}${stats.activeCount < group.records.length ? ` · ${stats.activeCount} active` : ''}${pingSummary} · MAC ${esc(stats.mac)}`;
+  if (cellCount === 1) {
+    return `<tr data-dns-group-hdr="${group.safeip}" data-dns-group-open="${isOpen ? '1' : '0'}" data-dns-toggle="${group.safeip}" style="cursor:pointer;background:var(--surface);border-top:2px solid var(--border)">
+      <td style="font-weight:600"><span id="dns-grp-arrow-${group.safeip}" style="font-size:10px;color:var(--text-dim);margin-right:5px">${isOpen ? '▼' : '▶'}</span><code>${esc(group.ip)}</code> <span style="color:var(--text-dim);font-size:12px">${summary}</span></td>
+    </tr>`;
+  }
+  return `<tr data-dns-group-hdr="${group.safeip}" data-dns-group-open="${isOpen ? '1' : '0'}" data-dns-toggle="${group.safeip}" style="cursor:pointer;background:var(--surface);border-top:2px solid var(--border)">
+    <td style="font-weight:600"><span id="dns-grp-arrow-${group.safeip}" style="font-size:10px;color:var(--text-dim);margin-right:5px">${isOpen ? '▼' : '▶'}</span><code>${esc(group.ip)}</code></td>
+    <td colspan="${cellCount - 1}" style="color:var(--text-dim);font-size:12px">${summary}</td>
+  </tr>`;
+}
+
+function _dnsRebuildThead() {
+  const table = _dnsTableEl();
+  if (!table) return;
+  const tr = table.querySelector('thead tr');
+  if (!tr) return;
+  const prefs = _ensureDnsTablePrefs();
+  const sorter = _ensureDnsTableSort();
+  tr.innerHTML = _dnsVisibleCols().map(col => {
+    const meta = _DNS_FIELD_META[col];
+    const width = prefs ? prefs.getWidth(col) : null;
+    const style = width ? ` style="width:${width}px"` : '';
+    const sortAttrs = meta.sortKey ? ` data-sort-key="${meta.sortKey}"` : '';
+    const classAttr = meta.sortKey ? ' class="table-th-sort"' : '';
+    const labelHtml = sorter && meta.sortKey ? sorter.renderLabel(meta.label, meta.sortKey) : meta.label;
+    return `<th data-col="${col}"${sortAttrs}${classAttr}${style}>${labelHtml}</th>`;
+  }).join('');
+}
+
+function _dnsRenderSharedTable(renderBody) {
+  const prefs = _ensureDnsTablePrefs();
+  if (!prefs) return;
+  prefs.renderTable({
+    getTable: _dnsTableEl,
+    rebuildHead: _dnsRebuildThead,
+    renderBody,
+    minWidth: 40,
+    afterBind: tableEl => {
+      const sorter = _ensureDnsTableSort();
+      sorter?.bind(tableEl, renderPfSenseDns);
+      sorter?.syncIndicators(tableEl);
+    },
+  });
+}
+
+function _dnsOpenColsModal() {
+  const prefs = _ensureDnsTablePrefs();
+  if (!prefs) return;
+  const list = document.getElementById('dns-cols-modal-list');
+  TablePrefs.renderColumnChooser(list, _DNS_COLS, _dnsHiddenCols, col => _DNS_FIELD_META[col].label);
+  HubModal.open(document.getElementById('dns-cols-modal'));
+}
+
+function _dnsApplyColsModal() {
+  const prefs = _ensureDnsTablePrefs();
+  if (!prefs) return;
+  const modal = document.getElementById('dns-cols-modal');
+  const newHidden = TablePrefs.readHiddenFromChooser(modal, new Set(_dnsHiddenCols));
+  prefs.setHiddenSet(newHidden);
+  _dnsHiddenCols = prefs.getHiddenSet(_DNS_COLS);
+  _dnsRebuildThead();
+  renderPfSenseDns();
+  HubModal.close(modal);
+}
 
 document.addEventListener('DOMContentLoaded', () => {
-  const dnsSearch     = document.getElementById('dns-search');
-  const dnsHideInact  = document.getElementById('dns-hide-inactive');
+  const dnsSearch = document.getElementById('dns-search');
+  const dnsHideInact = document.getElementById('dns-hide-inactive');
+
+  _ensureDnsTablePrefs();
 
   if (dnsSearch) {
     dnsSearch.addEventListener('input', () => {
@@ -15,6 +309,20 @@ document.addEventListener('DOMContentLoaded', () => {
   if (dnsHideInact) {
     dnsHideInact.addEventListener('change', renderPfSenseDns);
   }
+
+  _dnsTablePrefs?.onLayoutChange(() => {
+    _dnsHiddenCols = _dnsTablePrefs.getHiddenSet(_DNS_COLS);
+    _dnsRebuildThead();
+    renderPfSenseDns();
+  });
+
+  _dnsTbodyEl()?.addEventListener('click', e => {
+    const toggle = e.target.closest('[data-dns-toggle]');
+    if (!toggle) return;
+    toggleDnsGroup(toggle.dataset.dnsToggle);
+  });
+
+  document.getElementById('dns-cols-modal-apply')?.addEventListener('click', _dnsApplyColsModal);
 
   if (typeof ResponsiveLayout !== 'undefined') {
     ResponsiveLayout.registerTabControls('pfsense-dns', 'pg-ctrl-pfsense-dns');
@@ -71,128 +379,48 @@ function renderPfSenseDns() {
       (d.mac_address || '').toLowerCase().includes(q)
     )
   );
-  const tbody = document.getElementById('dns-tbody');
-  const expandAllBtn   = document.getElementById('dns-expand-all-btn');
-  const collapseAllBtn = document.getElementById('dns-collapse-all-btn');
+  const tbody = _dnsTbodyEl();
+  _ensureDnsTablePrefs();
+  const sorter = _ensureDnsTableSort();
+  const sortState = sorter?.getState() || { key: 'ip_address', dir: 1 };
+  const visibleCols = _dnsVisibleCols();
   if (!rows.length) {
     const msg = hideInactive ? 'No active DNS entries match the filter.' : 'No DNS entries found.';
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="10">${msg}</td></tr>`;
-    if (expandAllBtn)   expandAllBtn.hidden   = true;
-    if (collapseAllBtn) collapseAllBtn.hidden = true;
+    _dnsRenderSharedTable(() => {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="${Math.max(1, visibleCols.length)}">${msg}</td></tr>`;
+    });
     return;
   }
-  if (expandAllBtn)   expandAllBtn.hidden   = false;
-  if (collapseAllBtn) collapseAllBtn.hidden = false;
+  const groups = _dnsBuildGroups(rows, sortState);
 
-  // Preserve which groups are open across re-renders (only when not filtering)
-  const openGroups = new Set();
-  if (!q) {
-    tbody.querySelectorAll('[data-dns-group-hdr]').forEach(el => {
-      if (el.dataset.dnsGroupOpen === '1') openGroups.add(el.dataset.dnsGroupHdr);
+  _dnsRenderSharedTable(() => {
+    const html = [];
+    groups.forEach(group => {
+      const isOpen = q.length > 0 || _dnsOpenGroups.has(group.safeip);
+      html.push(_dnsRenderGroupRow(group, isOpen, visibleCols));
+      group.records.forEach(record => {
+        html.push(`<tr data-dns-ip="${group.safeip}" style="display:${isOpen ? 'table-row' : 'none'}">${visibleCols.map(col => _dnsRenderDetailCell(record, col)).join('')}</tr>`);
+      });
     });
-  }
-
-  // Sort numerically by IP, then by FQDN within each group
-  rows.sort((a, b) => {
-    const c = _ipCmp(a.ip_address || '', b.ip_address || '');
-    return c !== 0 ? c : (a.fqdn || '').localeCompare(b.fqdn || '');
+    tbody.innerHTML = html.join('');
   });
-
-  // Group by IP address
-  const groups = new Map();
-  for (const d of rows) {
-    const ip = d.ip_address || '';
-    if (!groups.has(ip)) groups.set(ip, []);
-    groups.get(ip).push(d);
-  }
-
-  const html = [];
-  for (const [ip, records] of groups) {
-    const safeip = 'dg' + ip.replace(/\./g, '_');
-    const isOpen = q.length > 0 || openGroups.has(safeip);
-    const activeCount = records.filter(r => r.active).length;
-    const mac  = records.find(r => r.mac_address)?.mac_address || '—';
-    const bestPing = records.reduce(
-      (b, r) => r.ping_ms != null && (b == null || r.ping_ms < b) ? r.ping_ms : b, null);
-    let pingSummary = '';
-    if (bestPing != null) {
-      const pc = bestPing < 10 ? 'var(--ok)' : bestPing < 100 ? 'var(--warn)' : 'var(--err)';
-      pingSummary = ` &middot; <span style="color:${pc}">${bestPing.toFixed(1)} ms</span>`;
-    }
-
-    // Group header row
-    html.push(`<tr data-dns-group-hdr="${safeip}" data-dns-group-open="${isOpen ? '1' : '0'}"
-        style="cursor:pointer;background:var(--surface);border-top:2px solid var(--border)"
-        onclick="toggleDnsGroup('${safeip}')">
-      <td style="font-weight:600"><span id="dns-grp-arrow-${safeip}" style="font-size:10px;color:var(--text-dim);margin-right:5px">${isOpen ? '▼' : '▶'}</span><code>${esc(ip)}</code></td>
-      <td colspan="3" style="color:var(--text-dim);font-size:12px">${records.length} record${records.length !== 1 ? 's' : ''}${activeCount < records.length ? ` &middot; ${activeCount} active` : ''}${pingSummary}</td>
-      <td><code style="font-size:11px">${esc(mac)}</code></td>
-      <td style="text-align:center">${activeCount > 0 ? '<span style="color:var(--ok)">✓</span>' : '<span style="color:var(--err)">✗</span>'}</td>
-      <td colspan="4"></td>
-    </tr>`);
-
-    // Detail rows for this IP
-    for (const d of records) {
-      const active  = d.active ? '<span style="color:var(--ok)">✓</span>' : '<span style="color:var(--text-dim)">✗</span>';
-      const seen    = (d.last_seen       || '—').replace('T',' ').slice(0,19);
-      const probed  = (d.last_probed     || '—').replace('T',' ').slice(0,19);
-      const checked = (d.last_ping_check || '—').replace('T',' ').slice(0,19);
-      let pingCell;
-      if (d.ping_ms == null) {
-        pingCell = `<td style="text-align:right;color:var(--text-dim)">—</td>`;
-      } else if (d.ping_ms < 10) {
-        pingCell = `<td style="text-align:right;color:var(--ok)">${d.ping_ms.toFixed(1)}</td>`;
-      } else if (d.ping_ms < 100) {
-        pingCell = `<td style="text-align:right;color:var(--warn)">${d.ping_ms.toFixed(1)}</td>`;
-      } else {
-        pingCell = `<td style="text-align:right;color:var(--err)">${d.ping_ms.toFixed(1)}</td>`;
-      }
-      html.push(`<tr data-dns-ip="${safeip}" style="display:${isOpen ? 'table-row' : 'none'}">
-        <td style="padding-left:20px;color:var(--text-dim);font-size:11px">↳</td>
-        <td>${esc(d.fqdn || '')}</td>
-        <td>${esc(d.record_type || '')}</td>
-        <td>${esc(d.source || '')}</td>
-        <td><code style="font-size:11px">${esc(d.mac_address || '—')}</code></td>
-        <td style="text-align:center">${active}</td>
-        <td style="white-space:nowrap;color:var(--text-dim)">${esc(seen)}</td>
-        <td style="white-space:nowrap;color:var(--text-dim)">${esc(probed)}</td>
-        ${pingCell}
-        <td style="white-space:nowrap;color:var(--text-dim)">${esc(checked)}</td>
-      </tr>`);
-    }
-  }
-  tbody.innerHTML = html.join('');
 }
 
 function setAllDnsGroups(open) {
   document.querySelectorAll('[data-dns-group-hdr]').forEach(hdr => {
     const safeip = hdr.dataset.dnsGroupHdr;
-    const rows   = document.querySelectorAll(`[data-dns-ip="${safeip}"]`);
-    const arrow  = document.getElementById(`dns-grp-arrow-${safeip}`);
-    rows.forEach(r => r.style.display = open ? 'table-row' : 'none');
-    hdr.dataset.dnsGroupOpen = open ? '1' : '0';
-    if (arrow) arrow.textContent = open ? '▼' : '▶';
+    if (open) _dnsOpenGroups.add(safeip);
+    else _dnsOpenGroups.delete(safeip);
   });
+  renderPfSenseDns();
 }
 
 function toggleDnsGroup(safeip) {
   const hdr   = document.querySelector(`[data-dns-group-hdr="${safeip}"]`);
-  const rows  = document.querySelectorAll(`[data-dns-ip="${safeip}"]`);
-  const arrow = document.getElementById(`dns-grp-arrow-${safeip}`);
   const isOpen = hdr && hdr.dataset.dnsGroupOpen === '1';
-  rows.forEach(r => r.style.display = isOpen ? 'none' : 'table-row');
-  if (hdr)   hdr.dataset.dnsGroupOpen = isOpen ? '0' : '1';
-  if (arrow) arrow.textContent = isOpen ? '▶' : '▼';
-}
-
-function _ipCmp(a, b) {
-  const pa = a.split('.').map(n => parseInt(n, 10) || 0);
-  const pb = b.split('.').map(n => parseInt(n, 10) || 0);
-  for (let i = 0; i < 4; i++) {
-    const d = (pa[i] || 0) - (pb[i] || 0);
-    if (d !== 0) return d;
-  }
-  return 0;
+  if (isOpen) _dnsOpenGroups.delete(safeip);
+  else _dnsOpenGroups.add(safeip);
+  renderPfSenseDns();
 }
 
 async function probePfSense() {

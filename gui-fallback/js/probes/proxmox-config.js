@@ -1,8 +1,276 @@
 /* ── Proxmox Config ───────────────────────────────────────────────────────── */
 
+const _PVE_CFG_COLS = [
+  'pve_name',
+  'vmid',
+  'vm_type',
+  'name',
+  'status',
+  'cores',
+  'memory_mb',
+  'networks',
+  'detected',
+  'tags',
+  'last_probed',
+  '_actions',
+];
+
+const _PVE_CFG_FIELD_META = {
+  pve_name: { label: 'PVE', sortKey: 'pve_name' },
+  vmid: { label: 'VMID', sortKey: 'vmid' },
+  vm_type: { label: 'Type', sortKey: 'vm_type' },
+  name: { label: 'Name', sortKey: 'name' },
+  status: { label: 'Status', sortKey: 'status' },
+  cores: { label: 'Cores', sortKey: 'cores' },
+  memory_mb: { label: 'RAM MB', sortKey: 'memory_mb' },
+  networks: { label: 'Networks', sortKey: 'networks' },
+  detected: { label: 'Detected', sortKey: 'detected' },
+  tags: { label: 'Tags', sortKey: 'tags' },
+  last_probed: { label: 'Last Probed', sortKey: 'last_probed' },
+  _actions: { label: 'Actions' },
+};
+
 let _pveFilterTimer = null;  // debounce handle for pve-search input
+let _pveConfigTablePrefs = null;
+let _pveConfigHiddenCols = new Set();
+let _pveConfigTableSort = null;
+let _pveOpenGroups = new Set();
+let _pveOpenNetDetails = new Set();
+
+function _ensurePveConfigTablePrefs() {
+  if (_pveConfigTablePrefs || typeof TablePrefs === 'undefined') return _pveConfigTablePrefs;
+  _pveConfigTablePrefs = TablePrefs.create({
+    storageKey: 'proxmox-config-table-prefs',
+    defaultHidden: [],
+    minWidth: 40,
+  });
+  _pveConfigTablePrefs.syncColumns(_PVE_CFG_COLS);
+  _pveConfigHiddenCols = _pveConfigTablePrefs.getHiddenSet(_PVE_CFG_COLS);
+  return _pveConfigTablePrefs;
+}
+
+function _ensurePveConfigTableSort() {
+  if (_pveConfigTableSort || typeof TableSort === 'undefined') return _pveConfigTableSort;
+  _pveConfigTableSort = TableSort.create({
+    storageKey: 'proxmox-config-table-sort',
+    defaultKey: 'pve_name',
+    defaultDir: 1,
+  });
+  return _pveConfigTableSort;
+}
+
+function _pveConfigVisibleCols() {
+  const visible = _PVE_CFG_COLS.filter(col => !_pveConfigHiddenCols.has(col));
+  return visible.length ? visible : ['pve_name'];
+}
+
+function _pveConfigTableEl() {
+  return document.getElementById('pve-config-table');
+}
+
+function _pveConfigTbodyEl() {
+  return document.getElementById('pve-tbody');
+}
+
+function _pveConfigActionCellWidth() {
+  return 46;
+}
+
+function _pveConfigFormatDate(value) {
+  return ((value || '—').replace('T', ' ').slice(0, 19)) || '—';
+}
+
+function _pveConfigDetectedItems(row) {
+  const badges = [];
+  const dockge = (() => { try { return JSON.parse(row.dockge_json || '[]'); } catch (_) { return []; } })();
+  const portainer = (() => { try { return JSON.parse(row.portainer_json || '[]'); } catch (_) { return []; } })();
+  const caddy = (() => { try { return JSON.parse(row.caddy_json || '[]'); } catch (_) { return []; } })();
+  if (row.has_docker) badges.push('<span class="tag" style="background:#1d4ed8;color:#fff">docker</span>');
+  portainer.forEach(p => badges.push(`<span class="tag" style="background:#0f766e;color:#fff" title="${esc(p.data_dir || p.method || '')}">portainer</span>`));
+  caddy.forEach(c => badges.push(`<span class="tag" style="background:#15803d;color:#fff" title="${esc(c.caddyfile || '')}">caddy</span>`));
+  dockge.forEach(g => badges.push(`<span class="tag" style="background:#92400e;color:#fff" title="${esc(g.stacks_dir || g.container || '')}">dockge</span>`));
+  return badges;
+}
+
+function _pveConfigSortValue(row, sortKey) {
+  const nets = _proxmoxNetsMap[row.config_id] || [];
+  switch (sortKey) {
+    case 'pve_name': return row.pve_name || '';
+    case 'vmid': return Number(row.vmid || 0);
+    case 'vm_type': return row.vm_type || '';
+    case 'name': return row.name || '';
+    case 'status': return row.status || '';
+    case 'cores': return Number(row.cores || 0);
+    case 'memory_mb': return Number(row.memory_mb || 0);
+    case 'networks': return nets[0]?.ip_address || row.ip_address || '';
+    case 'detected': return _pveConfigDetectedItems(row).length;
+    case 'tags': return row.tags || '';
+    case 'last_probed': return row.last_probed || '';
+    default: return '';
+  }
+}
+
+function _pveConfigDetectSummaryRows(rows, sortKey, sortDir) {
+  const byPve = new Map();
+  rows.forEach(row => {
+    const pve = row.pve_name || '';
+    if (!byPve.has(pve)) byPve.set(pve, []);
+    byPve.get(pve).push(row);
+  });
+
+  const groups = Array.from(byPve.entries()).map(([pve, groupRows]) => {
+    const sortedRows = groupRows.slice().sort((left, right) => {
+      let cmp = 0;
+      if (sortKey) {
+        const l = _pveConfigSortValue(left, sortKey);
+        const r = _pveConfigSortValue(right, sortKey);
+        if (typeof l === 'number' && typeof r === 'number') cmp = l - r;
+        else cmp = String(l).localeCompare(String(r), undefined, { numeric: true, sensitivity: 'base' });
+      }
+      if (cmp === 0) cmp = (left.pve_name || '').localeCompare((right.pve_name || ''), undefined, { numeric: true, sensitivity: 'base' });
+      if (cmp === 0) cmp = Number(left.vmid || 0) - Number(right.vmid || 0);
+      return cmp * sortDir;
+    });
+    const lxcCnt = sortedRows.filter(row => row.vm_type === 'lxc').length;
+    const qemuCnt = sortedRows.filter(row => row.vm_type === 'qemu').length;
+    return {
+      pve,
+      safePve: 'pg' + pve.replace(/[^a-zA-Z0-9]/g, '_'),
+      rows: sortedRows,
+      typeSummary: [
+        qemuCnt ? `${qemuCnt} VM${qemuCnt !== 1 ? 's' : ''}` : '',
+        lxcCnt ? `${lxcCnt} LXC${lxcCnt !== 1 ? 's' : ''}` : '',
+      ].filter(Boolean).join(', ') || `${sortedRows.length} machine${sortedRows.length !== 1 ? 's' : ''}`,
+      sortValue: sortKey === 'pve_name' || !sortKey ? pve : _pveConfigSortValue(sortedRows[0] || {}, sortKey),
+    };
+  });
+
+  groups.sort((left, right) => {
+    let cmp;
+    if (typeof left.sortValue === 'number' && typeof right.sortValue === 'number') cmp = left.sortValue - right.sortValue;
+    else cmp = String(left.sortValue).localeCompare(String(right.sortValue), undefined, { numeric: true, sensitivity: 'base' });
+    if (cmp === 0) cmp = left.pve.localeCompare(right.pve, undefined, { numeric: true, sensitivity: 'base' });
+    return cmp * sortDir;
+  });
+
+  return groups;
+}
+
+function _pveConfigRenderDeleteCell(configId) {
+  return `<td class="table-action-cell" style="text-align:right;width:${_pveConfigActionCellWidth()}px"><div class="table-inline-actions"><button class="secondary table-icon-btn table-icon-btn--delete" type="button" title="Delete Proxmox config" aria-label="Delete Proxmox config" data-pve-del-config="${esc(configId)}"></button></div></td>`;
+}
+
+function _pveConfigRenderNetDeleteButton(netId, netKey) {
+  return `<button class="secondary table-icon-btn table-icon-btn--delete table-icon-btn--sm" type="button" title="Delete NIC ${esc(netKey)}" aria-label="Delete NIC ${esc(netKey)}" data-pve-del-net="${esc(netId)}" data-pve-del-net-key="${esc(netKey)}"></button>`;
+}
+
+function _pveConfigRenderNetworksCell(configId, safeid, nets, ipAddress) {
+  if (!nets.length) {
+    return ipAddress ? `<td><code>${esc(ipAddress)}</code></td>` : '<td><span style="color:var(--text-dim)">—</span></td>';
+  }
+  const firstIp = nets[0].ip_address || '—';
+  const isOpen = _pveOpenNetDetails.has(safeid);
+  return `<td><button class="secondary" style="padding:1px 5px;font-size:11px;margin-right:4px" type="button" data-pve-nets-toggle="${safeid}" id="nets-btn-${safeid}">${isOpen ? '▼' : '▶'} ${nets.length}</button><code>${esc(firstIp)}</code></td>`;
+}
+
+function _pveConfigRenderMainCell(row, col, safeid, nets) {
+  switch (col) {
+    case 'pve_name': return `<td><code>${esc(row.pve_name || '')}</code></td>`;
+    case 'vmid': return `<td>${esc(String(row.vmid || ''))}</td>`;
+    case 'vm_type': return `<td>${esc(row.vm_type || '')}</td>`;
+    case 'name': return `<td class="table-cell-clip">${esc(row.name || '')}</td>`;
+    case 'status': return `<td>${esc(row.status || '—')}</td>`;
+    case 'cores': return `<td style="text-align:right">${row.cores ?? '—'}</td>`;
+    case 'memory_mb': return `<td style="text-align:right">${row.memory_mb ?? '—'}</td>`;
+    case 'networks': return _pveConfigRenderNetworksCell(row.config_id, safeid, nets, row.ip_address || '');
+    case 'detected': {
+      const badges = _pveConfigDetectedItems(row);
+      return `<td>${badges.length ? badges.join(' ') : '<span style="color:var(--text-dim)">—</span>'}</td>`;
+    }
+    case 'tags': return `<td class="table-cell-clip">${esc(row.tags || '—')}</td>`;
+    case 'last_probed': return `<td style="white-space:nowrap;color:var(--text-dim)">${esc(_pveConfigFormatDate(row.last_probed))}</td>`;
+    case '_actions': return _pveConfigRenderDeleteCell(row.config_id);
+    default: return '<td></td>';
+  }
+}
+
+function _pveConfigRenderGroupRow(group, visibleCols, isOpen) {
+  const cellCount = Math.max(1, visibleCols.length);
+  if (cellCount === 1) {
+    return `<tr data-pve-group-hdr="${group.safePve}" data-pve-group-open="${isOpen ? '1' : '0'}" data-pve-group-toggle="${group.safePve}" style="cursor:pointer;background:var(--surface);border-top:2px solid var(--border)"><td style="padding:7px 10px;font-weight:600"><span id="pve-grp-arrow-${group.safePve}" style="font-size:10px;color:var(--text-dim);margin-right:6px">${isOpen ? '▼' : '▶'}</span><code>${esc(group.pve)}</code><span style="font-size:11px;font-weight:normal;color:var(--text-dim);margin-left:8px">${group.typeSummary}</span></td></tr>`;
+  }
+  return `<tr data-pve-group-hdr="${group.safePve}" data-pve-group-open="${isOpen ? '1' : '0'}" data-pve-group-toggle="${group.safePve}" style="cursor:pointer;background:var(--surface);border-top:2px solid var(--border)"><td colspan="${cellCount}" style="padding:7px 10px;font-weight:600"><span id="pve-grp-arrow-${group.safePve}" style="font-size:10px;color:var(--text-dim);margin-right:6px">${isOpen ? '▼' : '▶'}</span><code>${esc(group.pve)}</code><span style="font-size:11px;font-weight:normal;color:var(--text-dim);margin-left:8px">${group.typeSummary}</span></td></tr>`;
+}
+
+function _pveConfigRenderNetDetailRow(groupSafePve, safeid, nets, colspan) {
+  const netsHtml = nets.map(net => {
+    const srcTag = net.ip_source && net.ip_source !== 'conf'
+      ? ` <span style="color:#94a3b8;font-size:10px">(${esc(net.ip_source)})</span>` : '';
+    return `<tr style="background:var(--bg-alt,#161b22)"><td style="padding:2px 4px 2px 16px;color:var(--text-dim);font-size:11px;white-space:nowrap">${esc(net.net_key)} <span style="display:inline-flex;vertical-align:middle;margin-left:4px">${_pveConfigRenderNetDeleteButton(net.net_id, net.net_key)}</span></td><td colspan="2"><code style="font-size:11px">${esc(net.ip_address || '—')}</code>${srcTag}</td><td><code style="font-size:11px">${esc(net.mac_address || '—')}</code></td><td style="font-size:11px">${net.vlan_tag ?? '—'}</td><td style="font-size:11px;color:var(--text-dim)">${esc(net.bridge || '—')}</td><td style="font-size:11px;color:var(--text-dim)">${esc(net.model || '—')}</td><td colspan="4"></td></tr>`;
+  }).join('');
+  return `<tr id="nets-detail-${safeid}" data-pve-group="${groupSafePve}" data-nets-detail="1" style="display:table-row"><td colspan="${colspan}" style="padding:0;border-top:1px solid var(--border,#30363d)"><table style="width:100%;border-collapse:collapse"><thead><tr style="font-size:10px;color:var(--text-dim);background:var(--bg-darker,#0d1117)"><th style="padding:2px 4px 2px 16px;text-align:left">NIC</th><th colspan="2" style="text-align:left">IP</th><th style="text-align:left">MAC</th><th style="text-align:left">VLAN</th><th style="text-align:left">Bridge</th><th style="text-align:left">Model</th><th colspan="4"></th></tr></thead><tbody>${netsHtml}</tbody></table></td></tr>`;
+}
+
+function _pveConfigRebuildThead() {
+  const table = _pveConfigTableEl();
+  if (!table) return;
+  const tr = table.querySelector('thead tr');
+  if (!tr) return;
+  const prefs = _ensurePveConfigTablePrefs();
+  const sorter = _ensurePveConfigTableSort();
+  tr.innerHTML = _pveConfigVisibleCols().map(col => {
+    const meta = _PVE_CFG_FIELD_META[col];
+    const width = prefs ? prefs.getWidth(col) : null;
+    const styleParts = [];
+    if (width) styleParts.push(`width:${width}px`);
+    else if (col === '_actions') styleParts.push(`width:${_pveConfigActionCellWidth()}px`);
+    const style = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
+    const sortAttrs = meta.sortKey ? ` data-sort-key="${meta.sortKey}"` : '';
+    const classAttr = meta.sortKey ? ' class="table-th-sort"' : '';
+    const labelHtml = sorter && meta.sortKey ? sorter.renderLabel(meta.label, meta.sortKey) : meta.label;
+    return `<th data-col="${col}"${sortAttrs}${classAttr}${style}>${labelHtml}</th>`;
+  }).join('');
+}
+
+function _pveConfigRenderSharedTable(renderBody) {
+  const prefs = _ensurePveConfigTablePrefs();
+  if (!prefs) return;
+  prefs.renderTable({
+    getTable: _pveConfigTableEl,
+    rebuildHead: _pveConfigRebuildThead,
+    renderBody,
+    minWidth: 40,
+    afterBind: tableEl => {
+      const sorter = _ensurePveConfigTableSort();
+      sorter?.bind(tableEl, renderProxmoxConfig);
+      sorter?.syncIndicators(tableEl);
+    },
+  });
+}
+
+function _pveOpenConfigColsModal() {
+  const prefs = _ensurePveConfigTablePrefs();
+  if (!prefs) return;
+  const list = document.getElementById('pve-config-cols-modal-list');
+  TablePrefs.renderColumnChooser(list, _PVE_CFG_COLS, _pveConfigHiddenCols, col => _PVE_CFG_FIELD_META[col].label);
+  HubModal.open(document.getElementById('pve-config-cols-modal'));
+}
+
+function _pveApplyConfigColsModal() {
+  const prefs = _ensurePveConfigTablePrefs();
+  if (!prefs) return;
+  const modal = document.getElementById('pve-config-cols-modal');
+  const newHidden = TablePrefs.readHiddenFromChooser(modal, new Set(_pveConfigHiddenCols));
+  prefs.setHiddenSet(newHidden);
+  _pveConfigHiddenCols = prefs.getHiddenSet(_PVE_CFG_COLS);
+  _pveConfigRebuildThead();
+  renderProxmoxConfig();
+  HubModal.close(modal);
+}
 
 document.addEventListener('DOMContentLoaded', () => {
+  _ensurePveConfigTablePrefs();
+
   const pveSearch = document.getElementById('pve-search');
   if (pveSearch) {
     pveSearch.addEventListener('input', () => {
@@ -20,6 +288,35 @@ document.addEventListener('DOMContentLoaded', () => {
   wire('pve-findips-qemu-btn',          () => findIpsViaQemuAgent());
   wire('pve-findips-pfsense-sweep-btn', () => findIpsViaPfsenseSweep());
   wire('pve-probe-services-btn',        () => probeVmServices());
+  wire('pve-config-cols-modal-apply',   () => _pveApplyConfigColsModal());
+
+  _pveConfigTablePrefs?.onLayoutChange(() => {
+    _pveConfigHiddenCols = _pveConfigTablePrefs.getHiddenSet(_PVE_CFG_COLS);
+    _pveConfigRebuildThead();
+    renderProxmoxConfig();
+  });
+
+  _pveConfigTbodyEl()?.addEventListener('click', e => {
+    const groupToggle = e.target.closest('[data-pve-group-toggle]');
+    if (groupToggle) {
+      togglePveGroup(groupToggle.dataset.pveGroupToggle);
+      return;
+    }
+    const netsToggle = e.target.closest('[data-pve-nets-toggle]');
+    if (netsToggle) {
+      toggleNets(netsToggle.dataset.pveNetsToggle);
+      return;
+    }
+    const delConfig = e.target.closest('[data-pve-del-config]');
+    if (delConfig) {
+      deleteProxmoxConfig(delConfig.dataset.pveDelConfig);
+      return;
+    }
+    const delNet = e.target.closest('[data-pve-del-net]');
+    if (delNet) {
+      deleteProxmoxNet(delNet.dataset.pveDelNet, delNet.dataset.pveDelNetKey || '');
+    }
+  });
 
   if (typeof ResponsiveLayout !== 'undefined') {
     ResponsiveLayout.registerTabControls('proxmox-config', 'pg-ctrl-proxmox-config');
@@ -245,24 +542,22 @@ function renderProxmoxConfig() {
     (d.ip_address || '').toLowerCase().includes(q) ||
     (d.tags     || '').toLowerCase().includes(q)
   );
-  const tbody = document.getElementById('pve-tbody');
+  const tbody = _pveConfigTbodyEl();
+  _ensurePveConfigTablePrefs();
+  const sorter = _ensurePveConfigTableSort();
+  const sortState = sorter?.getState() || { key: 'pve_name', dir: 1 };
+  const visibleCols = _pveConfigVisibleCols();
   const stepsToggleBtn     = document.getElementById('pve-steps-toggle-btn');
   const expandAllBtn       = document.getElementById('pve-expand-all-btn');
   const collapseAllBtn     = document.getElementById('pve-collapse-all-btn');
   if (!rows.length) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="12">No Proxmox configs found.</td></tr>`;
+    _pveConfigRenderSharedTable(() => {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="${Math.max(1, visibleCols.length)}">No Proxmox configs found.</td></tr>`;
+    });
     if (stepsToggleBtn) stepsToggleBtn.hidden = true;
     if (expandAllBtn)   expandAllBtn.hidden   = true;
     if (collapseAllBtn) collapseAllBtn.hidden = true;
     return;
-  }
-
-  // Preserve open PVE groups across re-renders (only when not filtering)
-  const openPveGroups = new Set();
-  if (!q) {
-    tbody.querySelectorAll('[data-pve-group-hdr]').forEach(el => {
-      if (el.dataset.pveGroupOpen === '1') openPveGroups.add(el.dataset.pveGroupHdr);
-    });
   }
 
   const hasAnyNets = rows.some(d => (_proxmoxNetsMap[d.config_id] || []).length > 0);
@@ -270,163 +565,61 @@ function renderProxmoxConfig() {
   if (expandAllBtn)   expandAllBtn.hidden   = !hasAnyNets;
   if (collapseAllBtn) collapseAllBtn.hidden = !hasAnyNets;
 
-  // Sort by pve_name then vmid
-  rows.sort((a, b) => {
-    const c = (a.pve_name || '').localeCompare(b.pve_name || '');
-    return c !== 0 ? c : (a.vmid || 0) - (b.vmid || 0);
+  const groups = _pveConfigDetectSummaryRows(rows, sortState.key || 'pve_name', sortState.dir === -1 ? -1 : 1);
+  _pveConfigRenderSharedTable(() => {
+    const html = [];
+    groups.forEach(group => {
+      const isOpen = q.length > 0 || _pveOpenGroups.has(group.safePve);
+      html.push(_pveConfigRenderGroupRow(group, visibleCols, isOpen));
+      group.rows.forEach(row => {
+        const safeid = row.config_id.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const nets = _proxmoxNetsMap[row.config_id] || [];
+        if (isOpen) {
+          html.push(`<tr data-pve-group="${group.safePve}" data-vm-row="${safeid}" style="display:table-row">${visibleCols.map(col => _pveConfigRenderMainCell(row, col, safeid, nets)).join('')}</tr>`);
+          if (nets.length > 0 && _pveOpenNetDetails.has(safeid)) {
+            html.push(_pveConfigRenderNetDetailRow(group.safePve, safeid, nets, Math.max(1, visibleCols.length)));
+          }
+        }
+      });
+    });
+    tbody.innerHTML = html.join('');
   });
-
-  // Group by pve_name
-  const groups = new Map();
-  for (const d of rows) {
-    const pve = d.pve_name || '';
-    if (!groups.has(pve)) groups.set(pve, []);
-    groups.get(pve).push(d);
-  }
-
-  const html = [];
-  for (const [pve, pveRows] of groups) {
-    const safePve = 'pg' + pve.replace(/[^a-zA-Z0-9]/g, '_');
-    const isOpen  = q.length > 0 || openPveGroups.has(safePve);
-
-    // Build type summary for group header
-    const lxcCnt  = pveRows.filter(d => d.vm_type === 'lxc').length;
-    const qemuCnt = pveRows.filter(d => d.vm_type === 'qemu').length;
-    const typeSummary = [
-      qemuCnt ? `${qemuCnt} VM${qemuCnt !== 1 ? 's' : ''}` : '',
-      lxcCnt  ? `${lxcCnt} LXC${lxcCnt !== 1 ? 's' : ''}` : '',
-    ].filter(Boolean).join(', ') || `${pveRows.length} machine${pveRows.length !== 1 ? 's' : ''}`;
-
-    // PVE group header row
-    html.push(`<tr data-pve-group-hdr="${safePve}" data-pve-group-open="${isOpen ? '1' : '0'}"
-        style="cursor:pointer;background:var(--surface);border-top:2px solid var(--border)"
-        onclick="togglePveGroup('${safePve}')">
-      <td colspan="12" style="padding:7px 10px;font-weight:600"><span id="pve-grp-arrow-${safePve}" style="font-size:10px;color:var(--text-dim);margin-right:6px">${isOpen ? '▼' : '▶'}</span><code>${esc(pve)}</code><span style="font-size:11px;font-weight:normal;color:var(--text-dim);margin-left:8px">${typeSummary}</span></td>
-    </tr>`);
-
-    for (const d of pveRows) {
-      const probed  = (d.last_probed || '—').replace('T',' ').slice(0,19);
-      const safeid  = d.config_id.replace(/[^a-zA-Z0-9_-]/g, '_');
-      const nets    = _proxmoxNetsMap[d.config_id] || [];
-
-      // Networks cell: toggle button + first IP
-      let netsCell;
-      if (nets.length === 0) {
-        netsCell = d.ip_address ? `<code>${esc(d.ip_address)}</code>` : '<span style="color:var(--text-dim)">—</span>';
-      } else {
-        const firstIp = nets[0].ip_address || '—';
-        netsCell = `<button class="secondary" style="padding:1px 5px;font-size:11px;margin-right:4px" onclick="toggleNets('${safeid}')" id="nets-btn-${safeid}">▶ ${nets.length}</button><code>${esc(firstIp)}</code>`;
-      }
-
-      // Detected services badges — driven from JSON columns
-      const badges = [];
-      const _dockge    = (() => { try { return JSON.parse(d.dockge_json    || '[]'); } catch(e) { return []; } })();
-      const _portainer = (() => { try { return JSON.parse(d.portainer_json || '[]'); } catch(e) { return []; } })();
-      const _caddy     = (() => { try { return JSON.parse(d.caddy_json     || '[]'); } catch(e) { return []; } })();
-      if (d.has_docker) badges.push('<span class="tag" style="background:#1d4ed8;color:#fff">docker</span>');
-      _portainer.forEach(p => badges.push(`<span class="tag" style="background:#0f766e;color:#fff" title="${esc(p.data_dir||p.method||'')}">portainer</span>`));
-      _caddy.forEach(c    => badges.push(`<span class="tag" style="background:#15803d;color:#fff" title="${esc(c.caddyfile||'')}">caddy</span>`));
-      _dockge.forEach(g   => badges.push(`<span class="tag" style="background:#92400e;color:#fff" title="${esc(g.stacks_dir||g.container||'')}">dockge</span>`));
-      const detectedHtml = badges.length ? badges.join(' ') : '<span style="color:var(--text-dim)">—</span>';
-
-      const mainRow = `<tr data-pve-group="${safePve}" data-vm-row="${safeid}" style="display:${isOpen ? 'table-row' : 'none'}">
-        <td><code>${esc(d.pve_name || '')}</code></td>
-        <td>${esc(String(d.vmid || ''))}</td>
-        <td>${esc(d.vm_type || '')}</td>
-        <td>${esc(d.name || '')}</td>
-        <td>${esc(d.status || '—')}</td>
-        <td style="text-align:right">${d.cores ?? '—'}</td>
-        <td style="text-align:right">${d.memory_mb ?? '—'}</td>
-        <td>${netsCell}</td>
-        <td>${detectedHtml}</td>
-        <td>${esc(d.tags || '—')}</td>
-        <td style="white-space:nowrap;color:var(--text-dim)">${esc(probed)}</td>
-        <td style="text-align:right;white-space:nowrap"><button class="secondary" style="padding:1px 6px;font-size:11px;color:#f87171;border-color:#f87171" onclick="deleteProxmoxConfig('${esc(d.config_id)}')">Del</button></td>
-      </tr>`;
-
-      let detailRow = '';
-      if (nets.length > 0) {
-        const netsHtml = nets.map(n => {
-          const srcTag = n.ip_source && n.ip_source !== 'conf'
-            ? ` <span style="color:#94a3b8;font-size:10px">(${esc(n.ip_source)})</span>` : '';
-          return `<tr style="background:var(--bg-alt,#161b22)">
-            <td style="padding:2px 4px 2px 16px;color:var(--text-dim);font-size:11px;white-space:nowrap">${esc(n.net_key)} <button class="secondary" style="padding:1px 5px;font-size:10px;color:#f87171;border-color:#f87171;margin-left:4px" onclick="deleteProxmoxNet('${esc(n.net_id)}','${esc(n.net_key)}')">&#x2715;</button></td>
-            <td colspan="2"><code style="font-size:11px">${esc(n.ip_address || '—')}</code>${srcTag}</td>
-            <td><code style="font-size:11px">${esc(n.mac_address || '—')}</code></td>
-            <td style="font-size:11px">${n.vlan_tag ?? '—'}</td>
-            <td style="font-size:11px;color:var(--text-dim)">${esc(n.bridge || '—')}</td>
-            <td style="font-size:11px;color:var(--text-dim)">${esc(n.model || '—')}</td>
-            <td colspan="4"></td>
-          </tr>`;
-        }).join('');
-        detailRow = `<tr id="nets-detail-${safeid}" data-pve-group="${safePve}" data-nets-detail="1" style="display:none">
-          <td colspan="12" style="padding:0;border-top:1px solid var(--border,#30363d)">
-            <table style="width:100%;border-collapse:collapse">
-              <thead><tr style="font-size:10px;color:var(--text-dim);background:var(--bg-darker,#0d1117)">
-                <th style="padding:2px 4px 2px 16px;text-align:left">NIC</th>
-                <th colspan="2" style="text-align:left">IP</th>
-                <th style="text-align:left">MAC</th>
-                <th style="text-align:left">VLAN</th>
-                <th style="text-align:left">Bridge</th>
-                <th style="text-align:left">Model</th>
-                <th colspan="4"></th>
-              </tr></thead>
-              <tbody>${netsHtml}</tbody>
-            </table>
-          </td>
-        </tr>`;
-      }
-      html.push(mainRow, detailRow);
-    }
-  }
-  tbody.innerHTML = html.join('');
 }
 
 function toggleNets(safeid) {
-  const detail = document.getElementById(`nets-detail-${safeid}`);
-  const btn    = document.getElementById(`nets-btn-${safeid}`);
-  if (!detail) return;
-  const open = detail.style.display !== 'none';
-  detail.style.display = open ? 'none' : 'table-row';
-  if (btn) btn.textContent = btn.textContent.replace(open ? '▼' : '▶', open ? '▶' : '▼');
+  if (_pveOpenNetDetails.has(safeid)) _pveOpenNetDetails.delete(safeid);
+  else _pveOpenNetDetails.add(safeid);
+  renderProxmoxConfig();
 }
 
 function togglePveGroup(safePve) {
-  const hdr     = document.querySelector(`[data-pve-group-hdr="${safePve}"]`);
-  const vmRows  = document.querySelectorAll(`[data-pve-group="${safePve}"]:not([data-nets-detail])`);
-  const allRows = document.querySelectorAll(`[data-pve-group="${safePve}"]`);
-  const arrow   = document.getElementById(`pve-grp-arrow-${safePve}`);
-  const isOpen  = hdr && hdr.dataset.pveGroupOpen === '1';
-  if (isOpen) {
-    allRows.forEach(r => r.style.display = 'none');
-    if (hdr)   hdr.dataset.pveGroupOpen = '0';
-    if (arrow) arrow.textContent = '▶';
-  } else {
-    vmRows.forEach(r => r.style.display = 'table-row');
-    if (hdr)   hdr.dataset.pveGroupOpen = '1';
-    if (arrow) arrow.textContent = '▼';
-  }
+  if (_pveOpenGroups.has(safePve)) _pveOpenGroups.delete(safePve);
+  else _pveOpenGroups.add(safePve);
+  renderProxmoxConfig();
 }
 
 function setAllNets(open) {
-  if (open) {
-    // Expand all PVE groups first so VM rows are visible
-    document.querySelectorAll('[data-pve-group-hdr]').forEach(hdr => {
-      if (hdr.dataset.pveGroupOpen !== '1') togglePveGroup(hdr.dataset.pveGroupHdr);
-    });
-  }
-  document.querySelectorAll('[id^="nets-detail-"]').forEach(detail => {
-    const safeid = detail.id.replace('nets-detail-', '');
-    const btn    = document.getElementById(`nets-btn-${safeid}`);
-    detail.style.display = open ? 'table-row' : 'none';
-    if (btn) btn.textContent = btn.textContent.replace(open ? '▶' : '▼', open ? '▼' : '▶');
+  const filteredRows = _proxmoxConfig.filter(d => {
+    const q = (document.getElementById('pve-search').value || '').toLowerCase();
+    return (d.pve_name || '').toLowerCase().includes(q)
+      || String(d.vmid || '').toLowerCase().includes(q)
+      || (d.name || '').toLowerCase().includes(q)
+      || (d.ip_address || '').toLowerCase().includes(q)
+      || (d.tags || '').toLowerCase().includes(q);
   });
-  if (!open) {
-    // Collapse all PVE groups too — mirrors what Expand All opened
-    document.querySelectorAll('[data-pve-group-hdr]').forEach(hdr => {
-      if (hdr.dataset.pveGroupOpen === '1') togglePveGroup(hdr.dataset.pveGroupHdr);
+  if (open) {
+    filteredRows.forEach(row => {
+      const safePve = 'pg' + String(row.pve_name || '').replace(/[^a-zA-Z0-9]/g, '_');
+      _pveOpenGroups.add(safePve);
+      if ((_proxmoxNetsMap[row.config_id] || []).length > 0) {
+        _pveOpenNetDetails.add(String(row.config_id).replace(/[^a-zA-Z0-9_-]/g, '_'));
+      }
     });
+  } else {
+    _pveOpenGroups.clear();
+    _pveOpenNetDetails.clear();
   }
+  renderProxmoxConfig();
 }
 
 async function loadProxmoxNets() {
