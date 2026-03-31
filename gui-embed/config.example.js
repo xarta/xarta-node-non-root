@@ -20,6 +20,7 @@ window.BLUEPRINTS_SEED_NODES = [
 // - 'settings'
 // - 'api-key'
 // - 'api-key-test'  (force-opens the embedded API key modal in its auth-failed state)
+// - 'cache-mode'   (toggles node-local fallback UI dev cache mode via the API)
 // - 'fallback-ui'
 // - 'ui'
 // - 'database-tables'
@@ -30,12 +31,12 @@ window.BLUEPRINTS_SELECTOR_BUTTONS = {
   pages: [
     ['ui', 'synthesis', 'probes', 'settings'],
     ['database-tables', 'database-diagram'],
-    ['api-key', 'api-key-test'],
+    ['api-key', 'api-key-test', 'cache-mode'],
   ],
   showPagingButton: true,
 
   // Back-compat alternative (auto-chunked pages):
-  // enabledButtons: ['ui', 'synthesis', 'probes', 'settings', 'api-key', 'database-tables', 'database-diagram', 'paging-button'],
+  // enabledButtons: ['ui', 'synthesis', 'probes', 'settings', 'api-key', 'cache-mode', 'database-tables', 'database-diagram', 'paging-button'],
   // pageSize: 2,
 
   side: 'left',          // 'left' | 'right' of the dropdown

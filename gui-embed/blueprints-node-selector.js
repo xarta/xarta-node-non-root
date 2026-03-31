@@ -6,7 +6,7 @@
  *   window.BLUEPRINTS_API_BASE
  *   window.BLUEPRINTS_SEED_NODES
  *   window.BLUEPRINTS_SELECTOR_BUTTONS = {
- *     enabledButtons: ['ui', 'synthesis', 'probes', 'settings', 'api-key', 'database-tables', 'database-diagram', 'paging-button'],
+ *     enabledButtons: ['ui', 'synthesis', 'probes', 'settings', 'api-key', 'cache-mode', 'database-tables', 'database-diagram', 'paging-button'],
  *     side: 'left' | 'right',
  *     pageSize: 4,
  *     nodeSwitchPath: '/ui/' | 'current'
@@ -280,6 +280,8 @@
     });
   }
 
+  const FALLBACK_CACHE_PATH = '/api/v1/ui-cache/fallback';
+
   let SELECTOR_CFG = {
     enabledButtons: [],
     pages: null,
@@ -288,6 +290,97 @@
     pageSize: 4,
     nodeSwitchPath: '/ui/',
   };
+
+  let _fallbackCacheState = null;
+  let _fallbackCacheBusy = false;
+
+  function updateCacheModeButtons() {
+    if (typeof document === 'undefined') return;
+    const buttons = document.querySelectorAll('.bp-ns-action-btn[data-action="cache-mode"]');
+    if (!buttons.length) return;
+
+    const mode = _fallbackCacheState && _fallbackCacheState.current_mode === 'development'
+      ? 'development'
+      : 'production';
+    const detail = mode === 'development'
+      ? 'Fallback UI cache: DEV no-store'
+      : 'Fallback UI cache: production revalidate';
+    const action = mode === 'development'
+      ? 'Disable fallback dev cache mode'
+      : 'Enable fallback dev cache mode';
+    const version = _fallbackCacheState && _fallbackCacheState.asset_version
+      ? ` (${_fallbackCacheState.asset_version})`
+      : '';
+    const title = _fallbackCacheBusy
+      ? 'Applying fallback cache mode…'
+      : `${detail}${version}. ${action}.`;
+
+    buttons.forEach(btn => {
+      btn.dataset.cacheMode = mode;
+      btn.dataset.busy = _fallbackCacheBusy ? 'true' : 'false';
+      btn.title = title;
+      btn.setAttribute('aria-label', title);
+      btn.disabled = _fallbackCacheBusy;
+      btn.classList.toggle('is-busy', _fallbackCacheBusy);
+    });
+  }
+
+  async function refreshFallbackCacheStatus() {
+    const resp = await _authFetch(FALLBACK_CACHE_PATH, { method: 'GET' });
+    if (!resp.ok) {
+      if (resp.status === 401) {
+        updateCacheModeButtons();
+        return null;
+      }
+      throw new Error(`Fallback cache status failed (HTTP ${resp.status})`);
+    }
+    _fallbackCacheState = await resp.json();
+    updateCacheModeButtons();
+    return _fallbackCacheState;
+  }
+
+  async function toggleFallbackCacheMode() {
+    if (_fallbackCacheBusy) return;
+
+    _fallbackCacheBusy = true;
+    updateCacheModeButtons();
+
+    try {
+      const current = _fallbackCacheState || await refreshFallbackCacheStatus();
+      if (!current) {
+        if (typeof window.openBlueprintsEmbedApiKeyModal === 'function') {
+          window.openBlueprintsEmbedApiKeyModal({
+            authFailed: true,
+            currentValue: localStorage.getItem('blueprints_api_secret') || ''
+          });
+        } else {
+          window.alert('Set the Blueprints API secret before toggling fallback cache mode.');
+        }
+        return;
+      }
+
+      const nextMode = current.current_mode === 'development' ? 'production' : 'development';
+      const resp = await _authFetch(FALLBACK_CACHE_PATH, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: nextMode }),
+      });
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok) {
+        throw new Error((data && data.detail) || `Fallback cache update failed (HTTP ${resp.status})`);
+      }
+
+      _fallbackCacheState = data;
+      updateCacheModeButtons();
+      window.dispatchEvent(new CustomEvent('bp:fallback-cache-mode-changed', { detail: data }));
+    } catch (error) {
+      const message = error && error.message ? error.message : 'Fallback cache update failed.';
+      window.alert(message);
+    } finally {
+      _fallbackCacheBusy = false;
+      updateCacheModeButtons();
+    }
+  }
 
   const BUTTON_DEFS = {
     'fallback-ui':      { icon: '🧰', label: 'Fallback UI',      buildPath: () => '/fallback-ui/' },
@@ -318,6 +411,12 @@
             currentValue: localStorage.getItem('blueprints_api_secret') || ''
           });
         }
+      },
+    },
+    'cache-mode': {
+      icon: '♺', label: 'Toggle Fallback Cache Mode',
+      doAction() {
+        toggleFallbackCacheMode();
       },
     },
   };
@@ -751,6 +850,7 @@
     renderBtn();
     renderActionButtons();
     renderPanel();
+    void refreshFallbackCacheStatus().catch(() => {});
 
     refreshNodeList().then(() => pollNodes());
 
@@ -908,6 +1008,8 @@
         navigateToNodePath(def.buildPath());
       });
     });
+
+    updateCacheModeButtons();
   }
 
   function renderPanel() {

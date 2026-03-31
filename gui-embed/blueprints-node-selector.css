@@ -46,14 +46,16 @@ blueprints-node-selector,
 
 .bp-ns-action-btn[data-action="paging-button"],
 .bp-ns-action-btn[data-action="api-key"],
-.bp-ns-action-btn[data-action="api-key-test"] {
+.bp-ns-action-btn[data-action="api-key-test"],
+.bp-ns-action-btn[data-action="cache-mode"] {
   font-size: 0;
   position: relative;
 }
 
 .bp-ns-action-btn[data-action="paging-button"]::before,
 .bp-ns-action-btn[data-action="api-key"]::before,
-.bp-ns-action-btn[data-action="api-key-test"]::before {
+.bp-ns-action-btn[data-action="api-key-test"]::before,
+.bp-ns-action-btn[data-action="cache-mode"]::before {
   content: '';
   display: block;
   width: 22px;
@@ -87,6 +89,51 @@ blueprints-node-selector,
 
 .bp-ns-action-btn[data-action="api-key-test"]::before {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' stroke='%23c96f36' stroke-linecap='round' fill='none'%3E%3Ccircle cx='12' cy='8' r='4.5' stroke-width='2.2'/%3E%3Cline x1='12' y1='13' x2='12' y2='22' stroke-width='2.2'/%3E%3Cline x1='5' y1='15.5' x2='19' y2='15.5' stroke-width='2.2'/%3E%3C/svg%3E");
+}
+
+.bp-ns-action-btn[data-action="cache-mode"] {
+  background: rgba(31, 69, 84, 0.38);
+  border-color: rgba(104, 176, 203, 0.5);
+}
+
+.bp-ns-action-btn[data-action="cache-mode"]:hover {
+  background: rgba(41, 87, 106, 0.52);
+  border-color: rgba(135, 207, 235, 0.7);
+}
+
+.bp-ns-action-btn[data-action="cache-mode"][data-cache-mode="development"] {
+  background: rgba(112, 72, 24, 0.48);
+  border-color: rgba(214, 159, 67, 0.72);
+}
+
+.bp-ns-action-btn[data-action="cache-mode"][data-cache-mode="development"]:hover {
+  background: rgba(138, 88, 28, 0.62);
+  border-color: rgba(235, 186, 95, 0.84);
+}
+
+.bp-ns-action-btn[data-action="cache-mode"]::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c8a84b' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 7h8.5l-2.3-2.3'/%3E%3Cpath d='M17 17H8.5l2.3 2.3'/%3E%3Cpath d='M17.5 8.5A6.6 6.6 0 0 1 19 12a7 7 0 0 1-7 7'/%3E%3Cpath d='M6.5 15.5A6.6 6.6 0 0 1 5 12a7 7 0 0 1 7-7'/%3E%3C/svg%3E");
+}
+
+.bp-ns-action-btn[data-action="cache-mode"]::after {
+  content: '';
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4caf7d;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.38);
+}
+
+.bp-ns-action-btn[data-action="cache-mode"][data-cache-mode="development"]::after {
+  background: #d89a3a;
+}
+
+.bp-ns-action-btn[data-action="cache-mode"][data-busy="true"] {
+  cursor: progress;
+  opacity: 0.7;
 }
 
 /* Collapsed button */
