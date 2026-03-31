@@ -4,22 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Blueprints</title>
-  <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="css/tokens.css" />
-  <link rel="stylesheet" href="css/layout-nav.css" />
-  <link rel="stylesheet" href="css/tables.css" />
-  <link rel="stylesheet" href="css/components.css" />
-  <link rel="stylesheet" href="css/hub-menu.css" />
-  <link rel="stylesheet" href="css/probes-menu.css" />
-  <link rel="stylesheet" href="css/settings-menu.css" />
-  <link rel="stylesheet" href="css/synthesis-menu.css" />
-  <link rel="stylesheet" href="css/hub-controls.css" />
-  <link rel="stylesheet" href="css/hub-checkbox.css" />
-  <link rel="stylesheet" href="css/responsive-header.css" />
-  <link rel="stylesheet" href="css/body-shade.css" />
-  <link rel="stylesheet" href="css/docs-images.css" />
-  <link rel="stylesheet" href="css/hub-modal.css" />
-  <link rel="stylesheet" href="css/hub-dialogs.css" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=20260331d">
+  <link rel="stylesheet" href="css/tokens.css?v=20260331d" />
+  <link rel="stylesheet" href="css/layout-nav.css?v=20260331d" />
+  <link rel="stylesheet" href="css/tables.css?v=20260331d" />
+  <link rel="stylesheet" href="css/components.css?v=20260331d" />
+  <link rel="stylesheet" href="css/hub-menu.css?v=20260331d" />
+  <link rel="stylesheet" href="css/probes-menu.css?v=20260331d" />
+  <link rel="stylesheet" href="css/settings-menu.css?v=20260331d" />
+  <link rel="stylesheet" href="css/synthesis-menu.css?v=20260331d" />
+  <link rel="stylesheet" href="css/hub-controls.css?v=20260331d" />
+  <link rel="stylesheet" href="css/hub-checkbox.css?v=20260331d" />
+  <link rel="stylesheet" href="css/responsive-header.css?v=20260331d" />
+  <link rel="stylesheet" href="css/body-shade.css?v=20260331d" />
+  <link rel="stylesheet" href="css/docs-images.css?v=20260331d" />
+  <link rel="stylesheet" href="css/hub-modal.css?v=20260331d" />
+  <link rel="stylesheet" href="css/hub-dialogs.css?v=20260331d" />
 </head>
 <body>
 
@@ -110,6 +110,15 @@
           Recipe for new pages: add a .page-control-group div with data-for-tab set,
           then call ResponsiveLayout.registerTabControls(tabId, groupElId) in the page JS. -->
       <div id="page-controls-slot">
+
+        <!-- App Config — visible UI refresh control in the header action row.
+            Event handler wired in settings.js via addEventListener. -->
+        <div class="page-control-group" id="pg-ctrl-settings"
+            data-for-tab="settings" hidden>
+          <button class="hub-action-btn" id="ui-refresh-assets-header-btn" type="button">
+            Refresh UI Assets
+          </button>
+        </div>
 
         <!-- Bookmarks main — search / tag filter / archived toggle.
             Formerly in a .toolbar div inside #tab-bookmarks-main.
@@ -320,6 +329,10 @@
       <span id="sound-volume-label" style="font-size:12px;color:var(--text-dim);min-width:34px;white-space:nowrap;"></span>
       <span id="sound-enabled-status" style="font-size:12px;color:var(--text-dim)"></span>
     </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <button id="ui-refresh-assets-btn" class="secondary" type="button">Refresh UI Assets</button>
+      <span id="ui-refresh-assets-status" style="font-size:12px;color:var(--text-dim)">Also available from the Settings header row and the Settings menu. Best effort: clears app-controlled caches, then reopens this page with a fresh asset URL.</span>
+    </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
       <table>
@@ -421,7 +434,7 @@
 
   <!-- Synthesis — Layout editor -->
   <section id="tab-synthesis-layout" class="tab-panel">
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:16px">Customise the Synthesis navigation menu. Drag items to reorder; drag into the dashed zone to nest as a submenu item. Layout is saved to this browser only.</p>
+    <p style="font-size:12px;color:var(--text-dim);margin-bottom:16px">Customise the Synthesis navigation menu. Drag items to reorder on desktop, or use the arrow and nest buttons on touch devices. Layout is saved to this browser only.</p>
     <div class="menu-editor-container">
       <div class="menu-editor-header">
         <h3>Synthesis Navigation</h3>
@@ -431,7 +444,7 @@
         </div>
       </div>
       <div class="menu-editor-instructions">
-        <p>Drag items to reorder. Drag into the <strong>dashed drop zone</strong> inside a group to nest it as a submenu item.</p>
+        <p>Drag items to reorder on desktop. On touch devices, use the <strong>↑</strong>, <strong>↓</strong>, <strong>↳</strong>, and promote buttons instead.</p>
         <p><strong>⬆️</strong> promotes a nested item back to the top level. <strong>✏️</strong> renames the label. Changes are browser-local only.</p>
       </div>
       <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
@@ -1254,7 +1267,7 @@
 
   <!-- Settings — Layout editor -->
   <section id="tab-settings-layout" class="tab-panel">
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:16px">Customise the Settings navigation menu. Drag items to reorder; drag into the dashed zone to nest as a submenu item. Layout is saved to this browser only.</p>
+    <p style="font-size:12px;color:var(--text-dim);margin-bottom:16px">Customise the Settings navigation menu. Drag items to reorder on desktop, or use the arrow and nest buttons on touch devices. Layout is saved to this browser only.</p>
     <div class="menu-editor-container">
       <div class="menu-editor-header">
         <h3>Settings Navigation</h3>
@@ -1264,7 +1277,7 @@
         </div>
       </div>
       <div class="menu-editor-instructions">
-        <p>Drag items to reorder. Drag into the <strong>dashed drop zone</strong> inside a group to nest it as a submenu item.</p>
+        <p>Drag items to reorder on desktop. On touch devices, use the <strong>↑</strong>, <strong>↓</strong>, <strong>↳</strong>, and promote buttons instead.</p>
         <p><strong>⬆️</strong> promotes a nested item back to the top level. <strong>✏️</strong> renames the label. Changes are browser-local only.</p>
       </div>
       <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
@@ -1274,7 +1287,7 @@
 
   <!-- Probes — Layout editor -->
   <section id="tab-probes-settings" class="tab-panel">
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:16px">Customise the Probes navigation menu. Drag items to reorder; drag into the dashed zone to nest as a submenu item. Layout is saved to this browser only.</p>
+    <p style="font-size:12px;color:var(--text-dim);margin-bottom:16px">Customise the Probes navigation menu. Drag items to reorder on desktop, or use the arrow and nest buttons on touch devices. Layout is saved to this browser only.</p>
     <div class="menu-editor-container">
       <div class="menu-editor-header">
         <h3>Probes Navigation</h3>
@@ -1284,7 +1297,7 @@
         </div>
       </div>
       <div class="menu-editor-instructions">
-        <p>Drag items to reorder. Drag into the <strong>dashed drop zone</strong> inside a group to nest it as a submenu item.</p>
+        <p>Drag items to reorder on desktop. On touch devices, use the <strong>↑</strong>, <strong>↓</strong>, <strong>↳</strong>, and promote buttons instead.</p>
         <p><strong>⬆️</strong> promotes a nested item back to the top level. <strong>✏️</strong> renames the label. Changes are browser-local only.</p>
       </div>
       <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
@@ -1906,51 +1919,52 @@
   </div>
 </dialog>
 
-<script src="js/utils.js"></script>
-<script src="js/api.js"></script>
-<script src="js/state.js"></script>
-<script src="js/connectivity.js"></script>
-<script src="js/health.js"></script>
-<script src="js/sync.js"></script>
-<script src="js/backups.js"></script>
-<script src="js/synthesis/manual-links.js"></script>
-<script src="js/synthesis/services.js"></script>
-<script src="js/synthesis/machines.js"></script>
-<script src="js/sound-manager.js"></script>
-<script src="js/form-control-manager.js"></script>
-<script src="js/hub-modal.js"></script>
-<script src="js/hub-dialogs.js"></script>
-<script src="js/shared-asset-picker.js"></script>
-<script src="js/hub-menu.js"></script>
-<script src="js/hieroglyphs.js"></script>
-<script src="js/synthesis/synthesis-menu.js"></script>
-<script src="js/settings/nodes.js"></script>
-<script src="js/settings/keys.js"></script>
-<script src="js/settings/certs.js"></script>
-<script src="js/settings/docs-history.js"></script>
-<script src="js/settings/docs.js"></script>
-<script src="js/settings/docs-images.js"></script>
-<script src="js/settings/self-diag.js"></script>
-<script src="js/settings/settings.js"></script>
-<script src="js/settings/pve-hosts.js"></script>
-<script src="js/settings/arp-manual.js"></script>
-<script src="js/settings/ai-providers.js"></script>
-<script src="js/settings/nav-items.js"></script>
-<script src="js/settings/form-controls.js"></script>
-<script src="js/probes/pfsense.js"></script>
-<script src="js/probes/proxmox-config.js"></script>
-<script src="js/probes/vlans.js"></script>
-<script src="js/probes/ssh-targets.js"></script>
-<script src="js/probes/dockge.js"></script>
-<script src="js/probes/caddy.js"></script>
-<script src="js/table-pager.js"></script>
-<script src="js/probes/bookmarks.js"></script>
-<script src="js/probes/probes-menu.js"></script>
-<script src="js/settings/settings-menu.js"></script>
-<script src="js/hub-select.js"></script>
-<script src="js/responsive-layout.js"></script>
-<script src="js/body-shade.js"></script>
-<script src="js/app.js"></script>
+<script src="js/utils.js?v=20260331d"></script>
+<script src="js/api.js?v=20260331d"></script>
+<script src="js/state.js?v=20260331d"></script>
+<script src="js/connectivity.js?v=20260331d"></script>
+<script src="js/health.js?v=20260331d"></script>
+<script src="js/sync.js?v=20260331d"></script>
+<script src="js/backups.js?v=20260331d"></script>
+<script src="js/synthesis/manual-links.js?v=20260331d"></script>
+<script src="js/synthesis/services.js?v=20260331d"></script>
+<script src="js/synthesis/machines.js?v=20260331d"></script>
+<script src="js/sound-manager.js?v=20260331d"></script>
+<script src="js/form-control-manager.js?v=20260331d"></script>
+<script src="js/hub-modal.js?v=20260331d"></script>
+<script src="js/hub-dialogs.js?v=20260331d"></script>
+<script src="js/shared-asset-picker.js?v=20260331d"></script>
+<script src="js/hub-menu.js?v=20260331d"></script>
+<script src="js/hieroglyphs.js?v=20260331d"></script>
+<script src="js/synthesis/synthesis-menu.js?v=20260331d"></script>
+<script src="js/settings/nodes.js?v=20260331d"></script>
+<script src="js/settings/keys.js?v=20260331d"></script>
+<script src="js/settings/certs.js?v=20260331d"></script>
+<script src="js/settings/docs-history.js?v=20260331d"></script>
+<script src="js/settings/docs.js?v=20260331d"></script>
+<script src="js/settings/docs-images.js?v=20260331d"></script>
+<script src="js/settings/self-diag.js?v=20260331d"></script>
+<script src="js/settings/settings.js?v=20260331d"></script>
+<script src="js/settings/pve-hosts.js?v=20260331d"></script>
+<script src="js/settings/arp-manual.js?v=20260331d"></script>
+<script src="js/settings/ai-providers.js?v=20260331d"></script>
+<script src="js/settings/nav-items.js?v=20260331d"></script>
+<script src="js/settings/form-controls.js?v=20260331d"></script>
+<script src="js/probes/pfsense.js?v=20260331d"></script>
+<script src="js/probes/proxmox-config.js?v=20260331d"></script>
+<script src="js/probes/vlans.js?v=20260331d"></script>
+<script src="js/probes/ssh-targets.js?v=20260331d"></script>
+<script src="js/probes/dockge.js?v=20260331d"></script>
+<script src="js/probes/caddy.js?v=20260331d"></script>
+<script src="js/table-pager.js?v=20260331d"></script>
+<script src="js/table-ui.js?v=20260331d"></script>
+<script src="js/probes/bookmarks.js?v=20260331d"></script>
+<script src="js/probes/probes-menu.js?v=20260331d"></script>
+<script src="js/settings/settings-menu.js?v=20260331d"></script>
+<script src="js/hub-select.js?v=20260331d"></script>
+<script src="js/responsive-layout.js?v=20260331d"></script>
+<script src="js/body-shade.js?v=20260331d"></script>
+<script src="js/app.js?v=20260331d"></script>
 
 <!-- Backup action modal -->
 <dialog class="hub-modal hub-dialog" data-tone="info" id="backup-action-modal" style="width:min(560px,95vw)">
@@ -2070,7 +2084,7 @@
     nodeSwitchPath: '/ui/',
   };
 </script>
-<link  rel="stylesheet" href="embed/blueprints-node-selector.css" />
+<link rel="stylesheet" href="embed/blueprints-node-selector.css?v=20260331d" />
 <style>
   /* Replace the 🏠 home emoji on the /ui/ button with a Starfleet combadge SVG icon. */
   .bp-ns-action-btn[data-action="ui"] { font-size: 0; position: relative; }
@@ -2138,7 +2152,7 @@
     position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   }
 </style>
-<script src="embed/blueprints-node-selector.js"></script>
+<script src="embed/blueprints-node-selector.js?v=20260331d"></script>
 
 <!-- Tag exclusion multi-select modal -->
 <style>
@@ -2213,6 +2227,23 @@
   <div class="hub-modal-footer">
     <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
     <button class="hub-modal-btn" id="vis-cols-modal-apply" type="button">&#10003; Apply</button>
+  </div>
+</dialog>
+
+<dialog class="hub-modal hub-dialog" data-tone="info" id="table-row-actions-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title" style="flex-direction:column;align-items:flex-start;gap:4px">
+      <span class="hub-dialog-badge">ROW</span>
+      <span class="hub-dialog-title-text" id="table-row-actions-title">Row actions</span>
+      <span id="table-row-actions-subtitle" style="font-size:12px;color:var(--text-dim);font-weight:400"></span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body">
+    <div id="table-row-actions-list" class="table-row-actions-list"></div>
+  </div>
+  <div class="hub-modal-footer">
+    <button class="hub-modal-btn secondary hub-modal-close" type="button">Close</button>
   </div>
 </dialog>
 

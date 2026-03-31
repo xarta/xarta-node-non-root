@@ -605,6 +605,11 @@ function createHubMenu(cfg) {
 
             const children = this.getChildren(item.id);
             const hasChildren = children.length > 0;
+            const topItems = this.getTopLevelItems();
+            const topIndex = topItems.findIndex(entry => entry.id === item.id);
+            const canMoveTopUp = topIndex > 0;
+            const canMoveTopDown = topIndex !== -1 && topIndex < topItems.length - 1;
+            const canNestUnderPrevious = topIndex > 0 && !hasChildren;
 
             div.innerHTML = `
                 <div class="menu-item-header">
@@ -614,6 +619,9 @@ function createHubMenu(cfg) {
                     ${hasChildren ? '<span class="has-children-badge">▼ ' + children.length + '</span>' : ''}
                     <span class="menu-item-page-label" title="Page label (shown when active)">→ ${item.pageLabel || '—'}</span>
                     <div class="menu-item-actions">
+                        <button class="btn-move-item" data-id="${item.id}" data-dir="up" title="Move up"${canMoveTopUp ? '' : ' disabled'}>↑</button>
+                        <button class="btn-move-item" data-id="${item.id}" data-dir="down" title="Move down"${canMoveTopDown ? '' : ' disabled'}>↓</button>
+                        <button class="btn-nest-prev" data-id="${item.id}" title="Nest under previous item"${canNestUnderPrevious ? '' : ' disabled'}>↳</button>
                         <button class="btn-edit-item" data-id="${item.id}" title="Edit nav label">✏️</button>
                         <button class="btn-edit-page-label" data-id="${item.id}" title="Edit page label">🏷️</button>
                     </div>
@@ -652,6 +660,9 @@ function createHubMenu(cfg) {
                         const editPageBtnHtml = isFn ? ''
                             : `<button class="btn-edit-page-label" data-id="${child.id}" title="Edit page label">🏷️</button>`;
                         const inactiveClass = (isFn && !isInContext) ? ' menu-editor-fn-child--inactive' : '';
+                        const childIndex = children.findIndex(entry => entry.id === child.id);
+                        const canMoveChildUp = childIndex > 0;
+                        const canMoveChildDown = childIndex < children.length - 1;
                         return `
                         <div class="menu-editor-item menu-editor-child${isFn ? ' menu-editor-fn-child' : ''}${inactiveClass}" data-id="${child.id}" draggable="true">
                             <div class="menu-item-header">
@@ -660,6 +671,8 @@ function createHubMenu(cfg) {
                                 <span class="menu-item-label">${this._displayLabel(child)}</span>
                                 ${rightColHtml}
                                 <div class="menu-item-actions">
+                                    <button class="btn-move-item" data-id="${child.id}" data-dir="up" title="Move up"${canMoveChildUp ? '' : ' disabled'}>↑</button>
+                                    <button class="btn-move-item" data-id="${child.id}" data-dir="down" title="Move down"${canMoveChildDown ? '' : ' disabled'}>↓</button>
                                     ${editPageBtnHtml}
                                     <button class="btn-promote-item" data-id="${child.id}" title="Promote to top level">⬆️</button>
                                 </div>
@@ -679,6 +692,12 @@ function createHubMenu(cfg) {
             });
             div.querySelectorAll('.btn-promote-item').forEach(btn => {
                 btn.addEventListener('click', () => this.promoteItem(btn.dataset.id));
+            });
+            div.querySelectorAll('.btn-move-item').forEach(btn => {
+                btn.addEventListener('click', () => this.moveItem(btn.dataset.id, btn.dataset.dir === 'up' ? -1 : 1));
+            });
+            div.querySelectorAll('.btn-nest-prev').forEach(btn => {
+                btn.addEventListener('click', () => this.nestUnderPrevious(btn.dataset.id));
             });
 
             return div;
@@ -734,6 +753,44 @@ function createHubMenu(cfg) {
             }
         },
 
+        moveItem(id, delta) {
+            const item = this.currentMenu.find(m => m.id === id);
+            if (!item || !delta) return;
+            const siblings = item.parent ? this.getChildren(item.parent) : this.getTopLevelItems();
+            const idx = siblings.findIndex(entry => entry.id === id);
+            const swap = siblings[idx + delta];
+            if (idx === -1 || !swap) return;
+
+            const nextOrder = item.order;
+            item.order = swap.order;
+            swap.order = nextOrder;
+            this.saveConfig(false);
+            this.renderEditor();
+            this.setupDragAndDrop();
+        },
+
+        nestUnderPrevious(id) {
+            const item = this.currentMenu.find(m => m.id === id);
+            if (!item || item.parent) return;
+            if (this.getChildren(id).length > 0) {
+                NavLayoutDialogs.alert({
+                    title: 'Cannot Nest Item',
+                    message: 'Items that already have sub-items must stay top-level. Promote or rehome their children first.',
+                });
+                return;
+            }
+
+            const topItems = this.getTopLevelItems();
+            const idx = topItems.findIndex(entry => entry.id === id);
+            if (idx <= 0) return;
+            const parent = topItems[idx - 1];
+            item.parent = parent.id;
+            item.order = this.getChildren(parent.id).length;
+            this.saveConfig(false);
+            this.renderEditor();
+            this.setupDragAndDrop();
+        },
+
         // ── Drag & Drop ────────────────────────────────────────────
 
         setupDragAndDrop() {
@@ -753,6 +810,12 @@ function createHubMenu(cfg) {
             });
             fresh.querySelectorAll('.btn-promote-item').forEach(btn => {
                 btn.addEventListener('click', () => this.promoteItem(btn.dataset.id));
+            });
+            fresh.querySelectorAll('.btn-move-item').forEach(btn => {
+                btn.addEventListener('click', () => this.moveItem(btn.dataset.id, btn.dataset.dir === 'up' ? -1 : 1));
+            });
+            fresh.querySelectorAll('.btn-nest-prev').forEach(btn => {
+                btn.addEventListener('click', () => this.nestUnderPrevious(btn.dataset.id));
             });
 
             fresh.addEventListener('dragstart', (e) => {

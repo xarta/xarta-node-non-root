@@ -1,4 +1,17 @@
 /* ── Settings ─────────────────────────────────────────────────────────── */
+function _setUiRefreshStatus(message, tone = '') {
+  document.querySelectorAll('[id="ui-refresh-assets-status"]').forEach(el => {
+    el.textContent = message;
+    el.style.color = tone === 'warn' ? 'var(--warn)' : 'var(--text-dim)';
+  });
+}
+
+function _setUiRefreshButtonsDisabled(disabled) {
+  document.querySelectorAll('#ui-refresh-assets-btn, #ui-refresh-assets-header-btn').forEach(btn => {
+    btn.disabled = disabled;
+  });
+}
+
 async function loadSettings() {
   await loadSettingsCidr();
   const err = document.getElementById('settings-error');
@@ -195,9 +208,42 @@ async function saveSoundEnabled(enabled) {
   }
 }
 
+async function forceRefreshUiAssets() {
+  _setUiRefreshButtonsDisabled(true);
+  _setUiRefreshStatus('Clearing app-controlled caches and reopening the page...');
+
+  try {
+    try { localStorage.removeItem('bp_fe_settings'); } catch (_) {}
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(reg => reg.unregister().catch(() => false)));
+    }
+
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(key => caches.delete(key).catch(() => false)));
+    }
+
+    try { sessionStorage.clear(); } catch (_) {}
+    _setUiRefreshStatus('Reloading the page...');
+    window.location.reload();
+    return;
+  } catch (e) {
+    _setUiRefreshStatus('Could not fully clear app caches. You can still use a private tab or clear site data from the browser settings.', 'warn');
+  }
+
+  _setUiRefreshButtonsDisabled(false);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  if (typeof ResponsiveLayout !== 'undefined') {
+    ResponsiveLayout.registerTabControls('settings', 'pg-ctrl-settings');
+  }
+
   // Save button
   document.getElementById('setting-modal-save-btn')?.addEventListener('click', submitSetting);
+  document.getElementById('ui-refresh-assets-btn')?.addEventListener('click', forceRefreshUiAssets);
+  document.getElementById('ui-refresh-assets-header-btn')?.addEventListener('click', forceRefreshUiAssets);
 
   // Table event delegation — Edit and Delete buttons
   document.getElementById('settings-tbody')?.addEventListener('click', e => {

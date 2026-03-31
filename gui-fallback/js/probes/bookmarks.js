@@ -79,15 +79,7 @@ const _BM_FIELD_META = {
                      return `<td><span class="bm-score-cell" data-metric="exact_tier" style="cursor:pointer;font-size:11px;white-space:nowrap;color:${colors[tier]||'#6b7280'}" title="${labels[tier]||''} — Click to analyse">${tier} – ${labels[tier]||'?'}</span></td>`;
                    } },
   _actions:    { label: 'Actions',     sortKey: null,
-                 render: b => {
-                   if (b._item_type === 'visit') return '<td></td>';
-                   const archBtn = b.archived
-                     ? `<button class="secondary" style="padding:1px 6px;font-size:11px;color:var(--ok);border-color:var(--ok);margin-left:2px" title="Restore from archive" onclick="archiveBookmark('${esc(b.bookmark_id)}', true)">&#128228;</button>`
-                     : `<button class="secondary" style="padding:1px 6px;font-size:11px;color:var(--text-dim);border-color:var(--border);margin-left:2px" title="Archive" onclick="archiveBookmark('${esc(b.bookmark_id)}', false)">&#128229;</button>`;
-                   return `<td style="white-space:nowrap;width:110px">
-                     <button class="secondary" style="padding:1px 6px;font-size:11px" onclick="openBookmarkModal('${esc(b.bookmark_id)}')">&#9998;</button>${archBtn}
-                     <button class="secondary" style="padding:1px 6px;font-size:11px;color:#f87171;border-color:#f87171;margin-left:2px" onclick="deleteBookmark('${esc(b.bookmark_id)}','${esc(b.title||b.url)}')">&#x2715;</button></td>`;
-                 } },
+                 render: b => _bmRenderBookmarkActionsCell(b) },
 };
 
 // Fields never shown as columns (used internally for operations)
@@ -102,6 +94,34 @@ function _bmFieldLabel(key) {
   const m = _BM_FIELD_META[key];
   if (m) return m.label;
   return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function _bmCompactRowActions() {
+  return typeof TableRowActions !== 'undefined' && TableRowActions.isCompact();
+}
+
+function _bmActionCellWidth() {
+  return _bmCompactRowActions() ? 48 : 110;
+}
+
+function _bmBookmarkActionButtons(b) {
+  const archBtn = b.archived
+    ? `<button class="secondary" style="padding:1px 6px;font-size:11px;color:var(--ok);border-color:var(--ok);margin-left:2px" title="Restore from archive" onclick="archiveBookmark('${esc(b.bookmark_id)}', true)">&#128228;</button>`
+    : `<button class="secondary" style="padding:1px 6px;font-size:11px;color:var(--text-dim);border-color:var(--border);margin-left:2px" title="Archive" onclick="archiveBookmark('${esc(b.bookmark_id)}', false)">&#128229;</button>`;
+  return `<button class="secondary" style="padding:1px 6px;font-size:11px" onclick="openBookmarkModal('${esc(b.bookmark_id)}')">&#9998;</button>${archBtn}
+    <button class="secondary" style="padding:1px 6px;font-size:11px;color:#f87171;border-color:#f87171;margin-left:2px" onclick="deleteBookmark('${esc(b.bookmark_id)}','${esc(b.title||b.url)}')">&#x2715;</button>`;
+}
+
+function _bmRenderBookmarkActionsCell(b) {
+  if (b._item_type === 'visit') return '<td></td>';
+  if (_bmCompactRowActions()) {
+    return `<td class="table-action-cell table-action-cell--compact" style="width:${_bmActionCellWidth()}px">
+      <button class="table-row-action-trigger secondary" type="button" title="Bookmark actions" onclick="_bmOpenBookmarkRowActions('${esc(b.bookmark_id)}')">&#8942;</button>
+    </td>`;
+  }
+  return `<td class="table-action-cell" style="white-space:nowrap;width:${_bmActionCellWidth()}px">
+    <div class="table-inline-actions">${_bmBookmarkActionButtons(b)}</div>
+  </td>`;
 }
 
 let _bmSearchTimer = null;      // server SeekDB search debounce
@@ -136,15 +156,20 @@ const _BM_PAGER = TablePager.create({
 // Dynamic column list — derived from actual API response keys, not hardcoded
 let _bmDynCols = []; // populated by _bmDetectCols(); drives everything
 
+const _bmTablePrefs = TablePrefs.create({
+  storageKey: 'bm-table-prefs',
+  legacyHiddenKey: 'bm-hidden-cols',
+  defaultHidden: _BM_DEFAULT_HIDDEN,
+  minWidth: 40,
+});
+
 function _bmSetSearchActive(active) {
   _bmSearchActive = active;
   const btn = document.getElementById('bm-explain-sort-btn');
   if (btn) btn.disabled = !active;
 }
 
-// Hidden cols: persisted to localStorage. On first visit, apply default hidden set.
-const _bmHiddenColsRaw = localStorage.getItem('bm-hidden-cols');
-let _bmHiddenCols = new Set(_bmHiddenColsRaw ? JSON.parse(_bmHiddenColsRaw) : _BM_DEFAULT_HIDDEN);
+let _bmHiddenCols = new Set();
 
 // Called after each API load — derives column list from actual response keys.
 // Preserves existing order for known cols; appends any new/unknown cols at end.
@@ -160,6 +185,8 @@ function _bmDetectCols(rows) {
     ...apiKeys.filter(k => !existingSet.has(k)),   // append new keys
     '_actions',
   ];
+  _bmTablePrefs.syncColumns(_bmDynCols);
+  _bmHiddenCols = _bmTablePrefs.getHiddenSet(_bmDynCols);
 }
 
 function _bmVisibleDataCols() {
@@ -175,10 +202,15 @@ function _bmRebuildThead() {
   for (const key of _bmVisibleDataCols()) {
     const sortKey = _BM_FIELD_META[key]?.sortKey ?? null;
     const label   = _bmFieldLabel(key);
-    const style   = key === '_icon' ? ' style="width:30px"' : key === '_actions' ? ' style="width:110px"' : '';
+    const width = _bmTablePrefs.getWidth(key);
+    const styleParts = [];
+    if (width) styleParts.push(`width:${width}px`);
+    else if (key === '_icon') styleParts.push('width:30px');
+    else if (key === '_actions') styleParts.push(`width:${_bmActionCellWidth()}px`);
+    const style = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
     html += sortKey
-      ? `<th class="bm-th-sort" onclick="_bmSortBy('${sortKey}')"${style}>${label}<span class="bm-sort-arrow" data-col="${sortKey}">&#x21C5;</span></th>`
-      : `<th${style}>${label}</th>`;
+      ? `<th class="bm-th-sort" data-col="${key}" onclick="_bmSortBy('${sortKey}')"${style}>${label}<span class="bm-sort-arrow" data-col="${sortKey}">&#x21C5;</span></th>`
+      : `<th data-col="${key}"${style}>${label}</th>`;
   }
   tr.innerHTML = html;
   _bmColResizeDone = false;
@@ -215,15 +247,7 @@ function _bmBuildSearchRow(r, scoreIdx) {
 // No column names are hardcoded here.
 function _bmOpenColsModal() {
   const list = document.getElementById('bm-cols-modal-list');
-  list.innerHTML = _bmDynCols.map(key => {
-    const label   = _bmFieldLabel(key);
-    const checked = !_bmHiddenCols.has(key) ? 'checked' : '';
-    return `<label class="hub-checkbox hub-checkbox--row" style="font-size:13px">
-      <input class="hub-checkbox__input" type="checkbox" data-col="${key}" ${checked} />
-      <span class="hub-checkbox__box" aria-hidden="true"></span>
-      <span class="hub-checkbox__label">${label}</span>
-    </label>`;
-  }).join('');
+  TablePrefs.renderColumnChooser(list, _bmDynCols, _bmHiddenCols, _bmFieldLabel);
   HubModal.open(document.getElementById('bm-cols-modal'));
 }
 
@@ -233,16 +257,9 @@ function _bmApplyColsModal() {
   // shown in this modal.  Columns not in the modal (e.g. search-only fields
   // like domain/item_type/score cols when the modal was opened in browse mode)
   // keep their current hidden/visible state and are NOT implicitly un-hidden.
-  const newHidden = new Set(_bmHiddenCols);
-  modal.querySelectorAll('input[data-col]').forEach(cb => {
-    if (cb.checked) {
-      newHidden.delete(cb.dataset.col); // user made it visible
-    } else {
-      newHidden.add(cb.dataset.col);    // user hid it
-    }
-  });
-  _bmHiddenCols = newHidden;
-  localStorage.setItem('bm-hidden-cols', JSON.stringify([..._bmHiddenCols]));
+  const newHidden = TablePrefs.readHiddenFromChooser(modal, new Set(_bmHiddenCols));
+  _bmTablePrefs.setHiddenSet(newHidden);
+  _bmHiddenCols = _bmTablePrefs.getHiddenSet(_bmDynCols);
   _bmRebuildThead();
   if (_bmSearchActive) {
     _renderBmSearchResults(_bmLastSearchResults);
@@ -452,22 +469,14 @@ function _bmTogglePagination() {
 
 // ── Visit column metadata ────────────────────────────────────────────────
 const _VIS_FIELD_META = {
-  title:       { label: 'Title',       render: v => `<td>${esc(v.title || '')}</td>` },
+  title:       { label: 'Title',       render: v => `<td><a href="${esc(v.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">${esc(v.title || v.url || '')}</a></td>` },
   url:         { label: 'URL',         render: v => `<td style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(v.url)}"><a href="${esc(v.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--text-dim);text-decoration:none" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${_bmTruncUrl(v.url)}</a></td>` },
   domain:      { label: 'Domain',      render: v => `<td style="font-size:11px;color:var(--text-dim)">${esc(v.domain || '')}</td>` },
   source:      { label: 'Source',      render: v => `<td style="font-size:11px;color:var(--text-dim)">${esc(v.source || '')}</td>` },
   dwell_seconds:{ label: 'Dwell',      render: v => `<td style="font-size:11px;color:var(--text-dim)">${v.dwell_seconds ? v.dwell_seconds + 's' : '—'}</td>` },
   visit_count: { label: 'Times',       render: v => `<td style="font-size:11px;text-align:center">${v.visit_count > 1 ? `<span style="font-weight:600;color:var(--accent)">${v.visit_count}</span>` : `<span style="color:var(--text-dim)">1</span>`}</td>` },
   visited_at:  { label: 'Visited',     render: v => `<td style="font-size:11px;color:var(--text-dim);white-space:nowrap">${_bmFmtDate(v.visited_at || '')}</td>` },
-  _actions:    { label: 'Actions',     render: v => {
-    const expandId = `ve-${esc(v.visit_id)}`;
-    const saveBtn = v.bookmark_id ? '' :
-      `<button class="secondary" style="padding:1px 6px;font-size:11px" onclick="promoteVisitToBookmark('${esc(v.url)}','${esc(v.title || '')}')">&#128278; Save</button>`;
-    const expandBtn = v.visit_count > 1
-      ? `<button class="secondary" style="padding:1px 6px;font-size:11px" title="Show individual visit times" onclick="_bmToggleVisitEvents('${esc(v.normalized_url)}','${expandId}')">&#128337;</button>`
-      : '';
-    return `<td style="white-space:nowrap">${saveBtn} ${expandBtn}</td>`;
-  }},
+  _actions:    { label: 'Actions',     render: v => _visRenderVisitActionsCell(v) },
 };
 
 const _VIS_ALL_COLS    = ['title', 'url', 'domain', 'source', 'dwell_seconds', 'visit_count', 'visited_at', '_actions'];
@@ -476,8 +485,15 @@ const _VIS_DEFAULT_HIDDEN = ['domain'];
 const _VIS_SORT_KEYS = { title: 'title', url: 'url', domain: 'domain', source: 'source',
   dwell_seconds: 'dwell_seconds', visit_count: 'visit_count', visited_at: 'visited_at' };
 
-const _visHiddenColsRaw = localStorage.getItem('vis-hidden-cols');
-let _visHiddenCols = new Set(_visHiddenColsRaw ? JSON.parse(_visHiddenColsRaw) : _VIS_DEFAULT_HIDDEN);
+const _visTablePrefs = TablePrefs.create({
+  storageKey: 'vis-table-prefs',
+  legacyHiddenKey: 'vis-hidden-cols',
+  defaultHidden: _VIS_DEFAULT_HIDDEN,
+  minWidth: 40,
+});
+_visTablePrefs.syncColumns(_VIS_ALL_COLS);
+
+let _visHiddenCols = _visTablePrefs.getHiddenSet(_VIS_ALL_COLS);
 let _visColResizeDone = false;
 let _visSortCol = 'visited_at';
 let _visSortDir = 'desc';
@@ -522,10 +538,15 @@ function _visRebuildThead() {
   tr.innerHTML = _visVisibleCols().map(k => {
     const label   = _VIS_FIELD_META[k]?.label ?? k;
     const sortKey = _VIS_SORT_KEYS[k] ?? null;
-    const style   = k === '_actions' ? ' style="width:90px"' : k === 'visit_count' ? ' style="width:50px;text-align:center"' : '';
+    const width = _visTablePrefs.getWidth(k);
+    const styleParts = [];
+    if (width) styleParts.push(`width:${width}px`);
+    else if (k === '_actions') styleParts.push(`width:${_bmCompactRowActions() ? 48 : 90}px`);
+    else if (k === 'visit_count') styleParts.push('width:50px;text-align:center');
+    const style = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
     return sortKey
-      ? `<th class="bm-th-sort" onclick="_visSortBy('${sortKey}')"${style}>${label}<span class="bm-sort-arrow vis-sort-arrow" data-col="${sortKey}">&#x21C5;</span></th>`
-      : `<th${style}>${label}</th>`;
+      ? `<th class="bm-th-sort" data-col="${k}" onclick="_visSortBy('${sortKey}')"${style}>${label}<span class="bm-sort-arrow vis-sort-arrow" data-col="${sortKey}">&#x21C5;</span></th>`
+      : `<th data-col="${k}"${style}>${label}</th>`;
   }).join('');
   _visColResizeDone = false;
   _visUpdateSortHeaders();
@@ -536,47 +557,21 @@ function _visInitColResize() {
   const table = document.getElementById('vis-table');
   if (!table) return;
   _visColResizeDone = true;
-  table.querySelectorAll('thead th').forEach(th => {
-    const resizer = document.createElement('div');
-    resizer.className = 'bm-col-resize';
-    th.appendChild(resizer);
-    resizer.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); });
-    let startX = 0, startW = 0;
-    resizer.addEventListener('mousedown', e => {
-      e.preventDefault(); e.stopPropagation();
-      startX = e.clientX; startW = th.offsetWidth;
-      resizer.classList.add('dragging');
-      const onMove = ev => { th.style.width = Math.max(40, startW + ev.clientX - startX) + 'px'; };
-      const onUp   = () => { resizer.classList.remove('dragging'); document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
-    });
-  });
+  _visTablePrefs.applyWidths(table);
+  _visTablePrefs.bindColumnResize(table, { minWidth: 40 });
 }
 
 function _visOpenColsModal() {
   const list = document.getElementById('vis-cols-modal-list');
-  list.innerHTML = _VIS_ALL_COLS.map(k => {
-    const label   = _VIS_FIELD_META[k]?.label ?? k;
-    const checked = !_visHiddenCols.has(k) ? 'checked' : '';
-    return `<label class="hub-checkbox hub-checkbox--row" style="font-size:13px">
-      <input class="hub-checkbox__input" type="checkbox" data-col="${k}" ${checked} />
-      <span class="hub-checkbox__box" aria-hidden="true"></span>
-      <span class="hub-checkbox__label">${label}</span>
-    </label>`;
-  }).join('');
+  TablePrefs.renderColumnChooser(list, _VIS_ALL_COLS, _visHiddenCols, k => _VIS_FIELD_META[k]?.label ?? k);
   HubModal.open(document.getElementById('vis-cols-modal'));
 }
 
 function _visApplyColsModal() {
   const modal = document.getElementById('vis-cols-modal');
-  const newHidden = new Set(_visHiddenCols);
-  modal.querySelectorAll('input[data-col]').forEach(cb => {
-    if (cb.checked) newHidden.delete(cb.dataset.col);
-    else            newHidden.add(cb.dataset.col);
-  });
-  _visHiddenCols = newHidden;
-  localStorage.setItem('vis-hidden-cols', JSON.stringify([..._visHiddenCols]));
+  const newHidden = TablePrefs.readHiddenFromChooser(modal, new Set(_visHiddenCols));
+  _visTablePrefs.setHiddenSet(newHidden);
+  _visHiddenCols = _visTablePrefs.getHiddenSet(_VIS_ALL_COLS);
   _visRebuildThead();
   renderVisits({ keepPage: true }); // column toggle — stay on current page
   HubModal.close(document.getElementById('vis-cols-modal'));
@@ -755,6 +750,76 @@ function renderVisits(opts = {}) {
   _visInitColResize();
   _visUpdateSortHeaders();
   _VIS_PAGER.render(totalItems);
+}
+
+function _visRenderVisitActionsCell(v) {
+  const actions = [];
+  if (!v.bookmark_id) {
+    actions.push(`<button class="secondary" style="padding:1px 6px;font-size:11px" onclick="promoteVisitToBookmark('${esc(v.url)}','${esc(v.title || '')}')">&#128278; Save</button>`);
+  }
+  if (v.visit_count > 1) {
+    const expandId = `ve-${esc(v.visit_id)}`;
+    actions.push(`<button class="secondary" style="padding:1px 6px;font-size:11px" title="Show individual visit times" onclick="_bmToggleVisitEvents('${esc(v.normalized_url)}','${expandId}')">&#128337;</button>`);
+  }
+  if (!actions.length) return '<td></td>';
+  if (_bmCompactRowActions()) {
+    return `<td class="table-action-cell table-action-cell--compact" style="width:48px">
+      <button class="table-row-action-trigger secondary" type="button" title="Visit actions" onclick="_visOpenRowActions('${esc(v.visit_id)}')">&#8942;</button>
+    </td>`;
+  }
+  return `<td class="table-action-cell" style="white-space:nowrap;width:90px"><div class="table-inline-actions">${actions.join(' ')}</div></td>`;
+}
+
+function _bmOpenBookmarkRowActions(bookmarkId) {
+  if (typeof TableRowActions === 'undefined') return;
+  const item = _bookmarks.find(b => String(b.bookmark_id) === String(bookmarkId));
+  if (!item) return;
+  TableRowActions.open({
+    title: item.title || item.url || 'Bookmark actions',
+    subtitle: item.url || '',
+    actions: [
+      { label: 'Edit bookmark', detail: 'Open the bookmark editor', onClick: () => openBookmarkModal(bookmarkId) },
+      {
+        label: item.archived ? 'Restore bookmark' : 'Archive bookmark',
+        detail: item.archived ? 'Move this bookmark back into the active set' : 'Hide this bookmark from the active set',
+        onClick: () => archiveBookmark(bookmarkId, !!item.archived),
+      },
+      {
+        label: 'Delete bookmark',
+        detail: 'Remove this bookmark permanently',
+        tone: 'danger',
+        onClick: () => deleteBookmark(bookmarkId, item.title || item.url),
+      },
+    ],
+  });
+}
+
+function _visOpenRowActions(visitId) {
+  if (typeof TableRowActions === 'undefined') return;
+  const visit = _bmVisits.find(v => String(v.visit_id) === String(visitId));
+  if (!visit) return;
+  const actions = [];
+  if (!visit.bookmark_id) {
+    actions.push({
+      label: 'Save as bookmark',
+      detail: 'Create a bookmark from this visit',
+      onClick: () => promoteVisitToBookmark(visit.url, visit.title || ''),
+    });
+  }
+  if (visit.visit_count > 1) {
+    const expandId = `ve-${visit.visit_id}`;
+    actions.push({
+      label: 'Show visit events',
+      detail: 'Expand the grouped visit timestamps for this URL',
+      onClick: () => _bmToggleVisitEvents(visit.normalized_url, expandId),
+    });
+  }
+  if (!actions.length) return;
+  TableRowActions.open({
+    title: visit.title || visit.url || 'Visit actions',
+    subtitle: visit.url || '',
+    actions,
+  });
 }
 
 function _visSortBy(col) {
@@ -1354,32 +1419,8 @@ function _bmInitColResize() {
   const table = document.querySelector('#bm-main-view table');
   if (!table) return;
   _bmColResizeDone = true;
-  table.querySelectorAll('thead th').forEach(th => {
-    const resizer = document.createElement('div');
-    resizer.className = 'bm-col-resize';
-    th.appendChild(resizer);
-    // Prevent resize click from triggering column sort
-    resizer.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); });
-    let startX = 0, startW = 0;
-    resizer.addEventListener('mousedown', e => {
-      e.preventDefault();
-      e.stopPropagation();
-      startX = e.clientX;
-      startW = th.offsetWidth;
-      resizer.classList.add('dragging');
-      const onMove = ev => {
-        const w = Math.max(40, startW + ev.clientX - startX);
-        th.style.width = w + 'px';
-      };
-      const onUp = () => {
-        resizer.classList.remove('dragging');
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
-      };
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
-    });
-  });
+  _bmTablePrefs.applyWidths(table);
+  _bmTablePrefs.bindColumnResize(table, { minWidth: 40 });
 }
 
 // ── Auto-archive dead links ─────────────────────────────────────────────
@@ -1645,6 +1686,13 @@ document.addEventListener('DOMContentLoaded', () => {
     ResponsiveLayout.registerTabControls('bookmarks-main', 'pg-ctrl-bookmarks-main');
   }
 
+  _bmTablePrefs.onLayoutChange(() => {
+    _bmHiddenCols = _bmTablePrefs.getHiddenSet(_bmDynCols);
+    _bmRebuildThead();
+    if (_bmSearchActive) _renderBmSearchResults(_bmLastSearchResults);
+    else renderBookmarks({ keepPage: true });
+  });
+
   document.getElementById('bm-cols-modal-apply')?.addEventListener('click', _bmApplyColsModal);
   document.getElementById('vis-cols-modal-apply')?.addEventListener('click', _visApplyColsModal);
 
@@ -1676,6 +1724,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (typeof ResponsiveLayout !== 'undefined') {
     ResponsiveLayout.registerTabControls('bookmarks-history', 'pg-ctrl-bookmarks-history');
   }
+
+  _visTablePrefs.onLayoutChange(() => {
+    _visHiddenCols = _visTablePrefs.getHiddenSet(_VIS_ALL_COLS);
+    _visRebuildThead();
+    renderVisits({ keepPage: true });
+  });
 });
 
 // ── Sort explanation modal ───────────────────────────────────────────────

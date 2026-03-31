@@ -2,9 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="refresh" content="0; url=/fallback-ui/db/database-diagram.html" />
   <title>Redirecting…</title>
-  <script>window.location.replace('/fallback-ui/db/database-diagram.html');</script>
+  <script>
+    const target = '/fallback-ui/db/database-diagram.html' + window.location.search;
+    window.location.replace(target);
+  </script>
 </head>
 <body>
   <p>Redirecting to <a href="/fallback-ui/db/database-diagram.html">/fallback-ui/db/database-diagram.html</a>…</p>
