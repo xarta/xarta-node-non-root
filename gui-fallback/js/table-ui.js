@@ -628,6 +628,43 @@
     return isCompactLayout();
   }
 
+  function shouldCollapseActions(opts) {
+    opts = opts || {};
+    var requiredWidth = Number(opts.requiredWidth || 0);
+    var availableWidth = Number(opts.availableWidth);
+    var prefs = opts.prefs || (opts.view && opts.view.prefs) || null;
+    var columnKey = opts.columnKey || '_actions';
+    var tableEl = opts.tableEl || (typeof opts.getTable === 'function' ? opts.getTable() : null);
+
+    if ((!Number.isFinite(availableWidth) || availableWidth <= 0) && prefs) {
+      var prefList = Array.isArray(prefs) ? prefs : [prefs];
+      prefList.forEach(function (pref) {
+        if (!pref || typeof pref.getWidth !== 'function') return;
+        var width = Number(pref.getWidth(columnKey));
+        if (Number.isFinite(width) && width > 0) {
+          availableWidth = Math.max(Number.isFinite(availableWidth) ? availableWidth : 0, width);
+        }
+      });
+    }
+
+    if ((!Number.isFinite(availableWidth) || availableWidth <= 0) && tableEl) {
+      var headerCell = tableEl.querySelector('thead th[data-col="' + columnKey + '"]');
+      if (headerCell) {
+        var measuredWidth = headerCell.getBoundingClientRect().width;
+        if (Number.isFinite(measuredWidth) && measuredWidth > 0) {
+          availableWidth = measuredWidth;
+        }
+      }
+    }
+    if ((!Number.isFinite(availableWidth) || availableWidth <= 0) && Number.isFinite(Number(opts.defaultWidth))) {
+      availableWidth = Number(opts.defaultWidth);
+    }
+    if (Number.isFinite(requiredWidth) && requiredWidth > 0 && Number.isFinite(availableWidth) && availableWidth > 0) {
+      return availableWidth < requiredWidth;
+    }
+    return isCompactLayout();
+  }
+
   function openRowActions(opts) {
     var dialog = document.getElementById('table-row-actions-modal');
     if (!dialog || !opts) return;
@@ -698,6 +735,7 @@
 
   window.TableRowActions = {
     isCompact: isCompactActions,
+    shouldCollapse: shouldCollapseActions,
     open: openRowActions,
   };
 }());

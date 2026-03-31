@@ -19,6 +19,8 @@ let _pveHostsTablePrefs = null;
 let _pveHiddenCols = new Set();
 let _pveColResizeDone = false;
 let _pveTableSort = null;
+const _PVE_ACTION_INLINE_WIDTH = 90;
+const _PVE_ACTION_COMPACT_WIDTH = 48;
 
 function _ensurePveHostsTablePrefs() {
   if (_pveHostsTablePrefs || typeof TablePrefs === 'undefined') return _pveHostsTablePrefs;
@@ -33,11 +35,18 @@ function _ensurePveHostsTablePrefs() {
 }
 
 function _pveCompactRowActions() {
-  return typeof TableRowActions !== 'undefined' && TableRowActions.isCompact();
+  const prefs = _ensurePveHostsTablePrefs();
+  return typeof TableRowActions !== 'undefined' && TableRowActions.shouldCollapse({
+    prefs,
+    getTable: () => document.getElementById('pve-hosts-table'),
+    columnKey: '_actions',
+    requiredWidth: _PVE_ACTION_INLINE_WIDTH,
+    defaultWidth: _PVE_ACTION_INLINE_WIDTH,
+  });
 }
 
 function _pveActionCellWidth() {
-  return _pveCompactRowActions() ? 48 : 90;
+  return _pveCompactRowActions() ? _PVE_ACTION_COMPACT_WIDTH : _PVE_ACTION_INLINE_WIDTH;
 }
 
 function _pveVisibleCols() {
@@ -84,7 +93,7 @@ function _pveRenderActionsCell(h) {
       <button class="table-row-action-trigger secondary" type="button" title="PVE host actions" onclick="_pveOpenRowActions('${esc(h.pve_id)}')">&#8942;</button>
     </td>`;
   }
-  return `<td class="table-action-cell" style="white-space:nowrap;width:${_pveActionCellWidth()}px"><div class="table-inline-actions">${_pveActionButtons(h)}</div></td>`;
+  return `<td class="table-action-cell" style="white-space:nowrap"><div class="table-inline-actions">${_pveActionButtons(h)}</div></td>`;
 }
 
 function _pveRebuildThead() {
@@ -99,7 +108,9 @@ function _pveRebuildThead() {
     const width = prefs ? prefs.getWidth(col) : null;
     const styleParts = [];
     if (width) styleParts.push(`width:${width}px`);
-    else if (col === '_actions') styleParts.push(`width:${_pveActionCellWidth()}px`);
+    else if (col === '_actions') {
+      if (_pveCompactRowActions()) styleParts.push(`width:${_pveActionCellWidth()}px`);
+    }
     const style = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
     const sortAttrs = meta.sortKey ? ` data-sort-key="${meta.sortKey}"` : '';
     const classAttr = meta.sortKey ? ' class="table-th-sort"' : '';

@@ -147,6 +147,18 @@ table.table-shared-ui tbody td { overflow: hidden; line-height: 1.35; }
 :root {
   --table-action-edit-color: var(--accent);
   --table-action-edit-rgb: 91, 156, 246;
+  --table-action-restart-color: var(--accent);
+  --table-action-restart-rgb: 91, 156, 246;
+  --table-action-pull-color: var(--accent);
+  --table-action-pull-rgb: 91, 156, 246;
+  --table-action-queue-color: var(--warn);
+  --table-action-queue-rgb: 230, 168, 23;
+  --table-action-power-color: var(--text-dim);
+  --table-action-power-rgb: 123, 130, 160;
+  --table-action-power-start-color: var(--ok);
+  --table-action-power-start-rgb: 76, 175, 125;
+  --table-action-power-stop-color: var(--warn);
+  --table-action-power-stop-rgb: 230, 168, 23;
   --table-action-delete-color: var(--err);
   --table-action-delete-rgb: 224, 92, 92;
   --table-action-archive-color: var(--text-dim);
@@ -205,6 +217,74 @@ button.table-icon-btn:focus-visible {
   border-color: rgba(var(--table-action-rgb, 123, 130, 160), 0.72);
   background: rgba(var(--table-action-rgb, 123, 130, 160), 0.16);
   outline: none;
+}
+
+button.table-icon-btn.is-busy {
+  opacity: 0.55;
+}
+
+button.table-icon-btn.is-success {
+  color: var(--ok);
+  border-color: rgba(76, 175, 125, 0.72);
+  background: rgba(76, 175, 125, 0.16);
+}
+
+button.table-icon-btn.is-error {
+  color: var(--err);
+  border-color: rgba(224, 92, 92, 0.72);
+  background: rgba(224, 92, 92, 0.16);
+}
+
+button.table-icon-btn--restart {
+  --table-action-color: var(--table-action-restart-color);
+  --table-action-rgb: var(--table-action-restart-rgb);
+}
+
+button.table-icon-btn--restart::before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M12 6V3L8 7l4 4V8c2.76 0 5 2.24 5 5a5 5 0 0 1-8.66 3.54l-1.42 1.42A7 7 0 1 0 12 6z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M12 6V3L8 7l4 4V8c2.76 0 5 2.24 5 5a5 5 0 0 1-8.66 3.54l-1.42 1.42A7 7 0 1 0 12 6z'/%3E%3C/svg%3E");
+}
+
+button.table-icon-btn--pull {
+  --table-action-color: var(--table-action-pull-color);
+  --table-action-rgb: var(--table-action-pull-rgb);
+}
+
+button.table-icon-btn--pull::before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M11 4h2v8h3l-4 4-4-4h3V4zm-5 14h12v2H6v-2z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M11 4h2v8h3l-4 4-4-4h3V4zm-5 14h12v2H6v-2z'/%3E%3C/svg%3E");
+}
+
+button.table-icon-btn--queue {
+  --table-action-color: var(--table-action-queue-color);
+  --table-action-rgb: var(--table-action-queue-rgb);
+}
+
+button.table-icon-btn--queue::before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M3 5h14v2H3V5zm0 6h14v2H3v-2zm0 6h10v2H3v-2zm16-8 2.5 2.5L24 9l-1.4-1.4-1.1 1.1-1.1-1.1L19 9z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M3 5h14v2H3V5zm0 6h14v2H3v-2zm0 6h10v2H3v-2zm16-8 2.5 2.5L24 9l-1.4-1.4-1.1 1.1-1.1-1.1L19 9z'/%3E%3C/svg%3E");
+}
+
+button.table-icon-btn--power {
+  --table-action-color: var(--table-action-power-color);
+  --table-action-rgb: var(--table-action-power-rgb);
+}
+
+button.table-icon-btn--power-start {
+  --table-action-color: var(--table-action-power-start-color);
+  --table-action-rgb: var(--table-action-power-start-rgb);
+}
+
+button.table-icon-btn--power-stop {
+  --table-action-color: var(--table-action-power-stop-color);
+  --table-action-rgb: var(--table-action-power-stop-rgb);
+}
+
+button.table-icon-btn--power::before,
+button.table-icon-btn--power-start::before,
+button.table-icon-btn--power-stop::before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42A7 7 0 1 1 7.59 6.6L6.17 5.17a9 9 0 1 0 11.66 0z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42A7 7 0 1 1 7.59 6.6L6.17 5.17a9 9 0 1 0 11.66 0z'/%3E%3C/svg%3E");
 }
 
 button.table-icon-btn--edit {

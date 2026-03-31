@@ -535,7 +535,7 @@
     <p id="retouch-status" style="font-size:12px;min-height:1.2em;margin-bottom:6px"></p>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap">
-      <table>
+      <table id="nodes-table">
         <thead>
           <tr>
             <th style="min-width:120px;white-space:nowrap">Display Name</th>
@@ -1125,7 +1125,7 @@
     <!-- Bookmarks table -->
     <div id="bm-main-view">
       <div class="table-wrap table-wrap--fill">
-        <table>
+        <table id="bm-table">
           <thead><tr></tr></thead>
           <tbody id="bm-tbody"><tr class="empty-row"><td colspan="8">Loading&hellip;</td></tr></tbody>
         </table>
@@ -1789,6 +1789,24 @@
   <div class="hub-modal-footer">
     <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
     <button class="hub-modal-btn" id="pve-hosts-cols-modal-apply" type="button">&#10003; Apply</button>
+  </div>
+</dialog>
+
+<dialog class="hub-modal hub-dialog" data-tone="info" id="nodes-cols-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">COLS</span>
+      <span class="hub-dialog-title-text">Fleet Nodes Columns</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body">
+    <p style="font-size:12px;color:var(--text-dim);margin:0 0 10px">Choose which columns stay visible for this layout. Preferences are browser-local.</p>
+    <div id="nodes-cols-modal-list" class="hub-checkbox-list"></div>
+  </div>
+  <div class="hub-modal-footer">
+    <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
+    <button class="hub-modal-btn" id="nodes-cols-modal-apply" type="button">&#10003; Apply</button>
   </div>
 </dialog>
 

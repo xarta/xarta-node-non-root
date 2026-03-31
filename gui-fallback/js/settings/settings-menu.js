@@ -54,7 +54,8 @@ const SettingsMenuConfig = createHubMenu({
 
         // ── Fleet Nodes page function items ───────────────────────────────
         { id: 'nod-fn-refresh',  label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'nod.refresh',  activeOn: ['nodes'],        parent: 'settings-layout', order: 0 },
-        { id: 'nod-fn-update',   label: 'Fleet Update',     icon: HIEROGLYPHS.crookFlail, fn: 'nod.update',   activeOn: ['nodes'],        parent: 'settings-layout', order: 1 },
+        { id: 'nod-fn-cols',     label: 'Columns',          icon: HIEROGLYPHS.khaHorizon, fn: 'nod.columns',  activeOn: ['nodes'],        parent: 'settings-layout', order: 1 },
+        { id: 'nod-fn-update',   label: 'Fleet Update',     icon: HIEROGLYPHS.crookFlail, fn: 'nod.update',   activeOn: ['nodes'],        parent: 'settings-layout', order: 2 },
 
         // ── App Config page function items ────────────────────────────────
         { id: 'cfg-fn-add',      label: 'Add setting',      icon: HIEROGLYPHS.djedPillar, fn: 'cfg.add',      activeOn: ['settings'],     parent: 'settings-layout', order: 0 },
@@ -350,6 +351,7 @@ SettingsMenuConfig.registerFunctions({
 
     // Fleet Nodes
     'nod.refresh':  () => loadNodes(),
+    'nod.columns':  () => openNodesColsModal(),
     'nod.update':   () => openFleetUpdateModal(),
 
     // App Config

@@ -96,12 +96,33 @@ function _bmFieldLabel(key) {
   return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
+const _BM_ACTION_INLINE_WIDTH = 110;
+const _BM_ACTION_COMPACT_WIDTH = 48;
+const _VIS_ACTION_INLINE_WIDTH = 90;
+const _VIS_ACTION_COMPACT_WIDTH = 48;
+
 function _bmCompactRowActions() {
-  return typeof TableRowActions !== 'undefined' && TableRowActions.isCompact();
+  return typeof TableRowActions !== 'undefined' && TableRowActions.shouldCollapse({
+    prefs: [_bmCurrentTablePrefs(), _bmSearchActive ? _bmBrowseTablePrefs : _bmSearchTablePrefs],
+    getTable: () => document.getElementById('bm-table'),
+    columnKey: '_actions',
+    requiredWidth: _BM_ACTION_INLINE_WIDTH,
+    defaultWidth: _BM_ACTION_INLINE_WIDTH,
+  });
 }
 
 function _bmActionCellWidth() {
-  return _bmCompactRowActions() ? 48 : 110;
+  return _bmCompactRowActions() ? _BM_ACTION_COMPACT_WIDTH : _BM_ACTION_INLINE_WIDTH;
+}
+
+function _visCompactRowActions() {
+  return typeof TableRowActions !== 'undefined' && TableRowActions.shouldCollapse({
+    prefs: _visTablePrefs,
+    getTable: () => document.getElementById('vis-table'),
+    columnKey: '_actions',
+    requiredWidth: _VIS_ACTION_INLINE_WIDTH,
+    defaultWidth: _VIS_ACTION_INLINE_WIDTH,
+  });
 }
 
 function _bmBookmarkActionButtons(b) {
@@ -119,7 +140,7 @@ function _bmRenderBookmarkActionsCell(b) {
       <button class="table-row-action-trigger secondary" type="button" title="Bookmark actions" data-bm-row-actions="${esc(b.bookmark_id)}">&#8942;</button>
     </td>`;
   }
-  return `<td class="table-action-cell" style="white-space:nowrap;width:${_bmActionCellWidth()}px">
+  return `<td class="table-action-cell" style="white-space:nowrap">
     <div class="table-inline-actions">${_bmBookmarkActionButtons(b)}</div>
   </td>`;
 }
@@ -275,7 +296,9 @@ function _bmRebuildThead() {
     const styleParts = [];
     if (width) styleParts.push(`width:${width}px`);
     else if (key === '_icon') styleParts.push('width:30px');
-    else if (key === '_actions') styleParts.push(`width:${_bmActionCellWidth()}px`);
+    else if (key === '_actions') {
+      if (_bmCompactRowActions()) styleParts.push(`width:${_bmActionCellWidth()}px`);
+    }
     const style = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
     html += sortKey
       ? `<th class="table-th-sort" data-col="${key}" data-sort-key="${sortKey}"${style}>${sorter.renderLabel(label, sortKey)}</th>`
@@ -864,12 +887,12 @@ function _visRenderVisitActionsCell(v) {
     actions.push(`<button class="secondary table-icon-btn table-icon-btn--history" type="button" title="Show individual visit times" aria-label="Show individual visit times" data-vis-expand-url="${esc(v.normalized_url)}" data-vis-expand-id="${expandId}"></button>`);
   }
   if (!actions.length) return '<td></td>';
-  if (_bmCompactRowActions()) {
-    return `<td class="table-action-cell table-action-cell--compact" style="width:48px">
+  if (_visCompactRowActions()) {
+    return `<td class="table-action-cell table-action-cell--compact" style="width:${_VIS_ACTION_COMPACT_WIDTH}px">
       <button class="table-row-action-trigger secondary" type="button" title="Visit actions" data-vis-row-actions="${esc(v.visit_id)}">&#8942;</button>
     </td>`;
   }
-  return `<td class="table-action-cell" style="white-space:nowrap;width:90px"><div class="table-inline-actions">${actions.join(' ')}</div></td>`;
+  return `<td class="table-action-cell" style="white-space:nowrap"><div class="table-inline-actions">${actions.join(' ')}</div></td>`;
 }
 
 function _bmOpenBookmarkRowActions(bookmarkId) {

@@ -54,6 +54,8 @@ let _mlTablePrefs = null;
 let _mlHiddenCols = new Set();
 let _mlColResizeDone = false;
 let _mlTableSort = null;
+const _ML_ACTION_INLINE_WIDTH = 96;
+const _ML_ACTION_COMPACT_WIDTH = 48;
 
 function _ensureManualLinksTablePrefs() {
   if (_mlTablePrefs || typeof TablePrefs === 'undefined') return _mlTablePrefs;
@@ -80,11 +82,18 @@ function _ensureManualLinksTableSort() {
 }
 
 function _mlCompactRowActions() {
-  return typeof TableRowActions !== 'undefined' && TableRowActions.isCompact();
+  const prefs = _ensureManualLinksTablePrefs();
+  return typeof TableRowActions !== 'undefined' && TableRowActions.shouldCollapse({
+    prefs,
+    getTable: () => document.getElementById('ml-table'),
+    columnKey: '_actions',
+    requiredWidth: _ML_ACTION_INLINE_WIDTH,
+    defaultWidth: _ML_ACTION_INLINE_WIDTH,
+  });
 }
 
 function _mlActionCellWidth() {
-  return _mlCompactRowActions() ? 48 : 96;
+  return _mlCompactRowActions() ? _ML_ACTION_COMPACT_WIDTH : _ML_ACTION_INLINE_WIDTH;
 }
 
 function _mlAddressParts(lnk) {
@@ -117,7 +126,7 @@ function _mlRenderActionsCell(lnk) {
       <button class="table-row-action-trigger secondary" type="button" title="Manual link actions" data-ml-row-actions="${esc(lnk.link_id)}">&#8942;</button>
     </td>`;
   }
-  return `<td class="table-action-cell" style="white-space:nowrap;width:${_mlActionCellWidth()}px"><div class="table-inline-actions">${_mlActionButtons(lnk)}</div></td>`;
+  return `<td class="table-action-cell" style="white-space:nowrap"><div class="table-inline-actions">${_mlActionButtons(lnk)}</div></td>`;
 }
 
 function _mlOpenRowActions(linkId) {
@@ -155,7 +164,11 @@ function _mlRebuildThead() {
     const width = prefs ? prefs.getWidth(col) : null;
     const styleParts = [];
     if (width) styleParts.push(`width:${width}px`);
-    else if (meta.defaultWidth) styleParts.push(`width:${col === '_actions' ? _mlActionCellWidth() : meta.defaultWidth}px`);
+    else if (col === '_actions') {
+      if (_mlCompactRowActions()) styleParts.push(`width:${_mlActionCellWidth()}px`);
+    } else if (meta.defaultWidth) {
+      styleParts.push(`width:${meta.defaultWidth}px`);
+    }
     const style = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
     const sortAttr = meta.sortKey ? ` data-sort-key="${meta.sortKey}"` : '';
     const classAttr = meta.sortKey ? ' class="table-th-sort"' : '';

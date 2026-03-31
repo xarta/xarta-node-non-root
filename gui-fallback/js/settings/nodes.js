@@ -1,5 +1,21 @@
 /* ── Nodes ────────────────────────────────────────────────────────────── */
 
+const _NODE_COLS = ['display_name', 'addresses', 'hostnames', 'gen', 'commit', 'pending', '_actions'];
+const _NODE_FIELD_META = {
+  display_name: { label: 'Display Name', sortKey: 'display_name' },
+  addresses: { label: 'Addresses', sortKey: 'addresses' },
+  hostnames: { label: 'Hostnames', sortKey: 'hostnames' },
+  gen: { label: 'Gen', sortKey: 'gen' },
+  commit: { label: 'Commit', sortKey: 'commit' },
+  pending: { label: 'Pending', sortKey: 'pending' },
+  _actions: { label: 'Actions' },
+};
+
+const _NODE_ACTION_INLINE_WIDTH = 172;
+const _NODE_ACTION_COMPACT_WIDTH = 48;
+
+let _nodesTableView = null;
+
 document.addEventListener('DOMContentLoaded', () => {
   const retouchBtn = document.getElementById('retouch-btn');
   if (retouchBtn) {
@@ -18,6 +34,47 @@ document.addEventListener('DOMContentLoaded', () => {
   if (typeof HubSelect !== 'undefined') {
     HubSelect.init('retouch-table-select');
   }
+  _ensureNodesTableView();
+  document.getElementById('nodes-cols-modal-apply')?.addEventListener('click', _applyNodesColsModal);
+  document.getElementById('nodes-tbody')?.addEventListener('click', e => {
+    const restartBtn = e.target.closest('[data-node-restart]');
+    if (restartBtn) {
+      nodeRestart(restartBtn.dataset.nodeRestart, restartBtn);
+      return;
+    }
+
+    const pullBtn = e.target.closest('[data-node-pull]');
+    if (pullBtn) {
+      nodeGitPull(pullBtn.dataset.nodePull, pullBtn);
+      return;
+    }
+
+    const queueBtn = e.target.closest('[data-node-queue]');
+    if (queueBtn) {
+      nodePurgeQueue(queueBtn.dataset.nodeQueue, queueBtn);
+      return;
+    }
+
+    const pctBtn = e.target.closest('[data-node-pct]');
+    if (pctBtn) {
+      nodePct(pctBtn.dataset.nodePct, pctBtn);
+      return;
+    }
+
+    const deleteBtn = e.target.closest('[data-node-delete]');
+    if (deleteBtn) {
+      nodeDeleteRow(deleteBtn.dataset.nodeDelete, deleteBtn);
+      return;
+    }
+
+    const rowActionsBtn = e.target.closest('[data-node-actions]');
+    if (rowActionsBtn) {
+      _openNodeRowActions(rowActionsBtn.dataset.nodeActions);
+    }
+  });
+  _nodesTableView?.onLayoutChange(() => {
+    renderNodes();
+  });
   if (typeof ResponsiveLayout !== 'undefined') {
     ResponsiveLayout.registerTabControls('nodes', 'pg-ctrl-nodes');
   }
@@ -25,6 +82,171 @@ document.addEventListener('DOMContentLoaded', () => {
 
 let _pendingNodeAction = null;
 let _pendingNodeRestart = null;
+
+function _ensureNodesTableView() {
+  if (_nodesTableView || typeof TableView === 'undefined') return _nodesTableView;
+  _nodesTableView = TableView.create({
+    storageKey: 'nodes-table-prefs',
+    columns: _NODE_COLS,
+    meta: _NODE_FIELD_META,
+    getTable: () => document.getElementById('nodes-table'),
+    fallbackColumn: 'display_name',
+    minWidth: 40,
+    getDefaultWidth: col => col === '_actions' && _nodeCompactRowActions() ? _nodeActionCellWidth() : null,
+    sort: {
+      storageKey: 'nodes-table-sort',
+      defaultKey: 'display_name',
+      defaultDir: 1,
+    },
+    onSortChange: renderNodes,
+  });
+  return _nodesTableView;
+}
+
+function _nodeCompactRowActions() {
+  const view = _ensureNodesTableView();
+  return typeof TableRowActions !== 'undefined' && TableRowActions.shouldCollapse({
+    view,
+    getTable: () => document.getElementById('nodes-table'),
+    columnKey: '_actions',
+    requiredWidth: _NODE_ACTION_INLINE_WIDTH,
+    defaultWidth: _NODE_ACTION_INLINE_WIDTH,
+  });
+}
+
+function _nodeActionCellWidth() {
+  return _nodeCompactRowActions() ? _NODE_ACTION_COMPACT_WIDTH : _NODE_ACTION_INLINE_WIDTH;
+}
+
+function openNodesColsModal() {
+  const view = _ensureNodesTableView();
+  if (!view) return;
+  view.openColumns(
+    document.getElementById('nodes-cols-modal-list'),
+    document.getElementById('nodes-cols-modal'),
+    col => _NODE_FIELD_META[col].label
+  );
+}
+
+function _applyNodesColsModal() {
+  const view = _ensureNodesTableView();
+  if (!view) return;
+  view.applyColumns(document.getElementById('nodes-cols-modal'), renderNodes);
+  HubModal.close(document.getElementById('nodes-cols-modal'));
+}
+
+function _nodeVisibleCols() {
+  return _ensureNodesTableView()?.getVisibleCols() || ['display_name'];
+}
+
+function _nodeSortValue(node, sortKey) {
+  switch (sortKey) {
+    case 'display_name': return node.display_name || node.node_id || '';
+    case 'addresses': return (node.addresses && node.addresses[0]) || '';
+    case 'hostnames': return [node.primary_hostname || '', node.tailnet_hostname || ''].join(' ');
+    case 'gen': return node._gen == null ? Number.NEGATIVE_INFINITY : Number(node._gen);
+    case 'commit': return node._commit || '';
+    case 'pending': return Number(node.pending_count || 0);
+    default: return '';
+  }
+}
+
+function _nodePctMeta(status, info) {
+  const vmid = info && info.vmid ? ` ${info.vmid}` : '';
+  const pveHost = info && info.pve_host ? ` on ${info.pve_host}` : '';
+  if (status === 'running') {
+    return {
+      action: 'stop',
+      className: 'table-icon-btn--power-stop',
+      title: `Stop LXC${vmid}${pveHost}`,
+      aria: 'Stop node container',
+    };
+  }
+  if (status === 'stopped') {
+    return {
+      action: 'start',
+      className: 'table-icon-btn--power-start',
+      title: `Start LXC${vmid}${pveHost}`,
+      aria: 'Start node container',
+    };
+  }
+  return {
+    action: 'unknown',
+    className: 'table-icon-btn--power',
+    title: 'Start or stop LXC via pct on the PVE host (status unknown)',
+    aria: 'Container power action',
+  };
+}
+
+function _nodePctButtonHtml(node) {
+  const safeid = node.node_id.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const meta = _nodePctMeta(node._pct_status || 'unknown', node._pct_info || null);
+  return `<button id="node-pct-${safeid}" class="secondary table-icon-btn ${meta.className}" type="button" title="${esc(meta.title)}" aria-label="${esc(meta.aria)}" data-node-pct="${esc(node.node_id)}" data-pct-status="${esc(node._pct_status || 'unknown')}"></button>`;
+}
+
+function _nodeActionButtons(node) {
+  return `<button class="secondary table-icon-btn table-icon-btn--restart" type="button" title="Restart blueprints-app service" aria-label="Restart node service" data-node-restart="${esc(node.node_id)}"></button>
+    <button class="secondary table-icon-btn table-icon-btn--pull" type="button" title="Git pull the root public repo on this node" aria-label="Git pull node repo" data-node-pull="${esc(node.node_id)}"></button>
+    <button class="secondary table-icon-btn table-icon-btn--queue" type="button" title="Purge unsent sync queue entries for this node" aria-label="Purge node queue" data-node-queue="${esc(node.node_id)}"></button>
+    ${_nodePctButtonHtml(node)}
+    <button class="secondary table-icon-btn table-icon-btn--delete" type="button" title="Delete this node row from the local database" aria-label="Delete node row" data-node-delete="${esc(node.node_id)}"></button>`;
+}
+
+function _renderNodeActionsCell(node) {
+  if (_nodeCompactRowActions()) {
+    return `<td class="table-action-cell table-action-cell--compact" style="width:${_nodeActionCellWidth()}px">
+      <button class="table-row-action-trigger secondary" type="button" title="Node actions" data-node-actions="${esc(node.node_id)}">&#8942;</button>
+    </td>`;
+  }
+  return `<td class="table-action-cell" style="white-space:nowrap"><div class="table-inline-actions">${_nodeActionButtons(node)}</div></td>`;
+}
+
+function _openNodeRowActions(nodeId) {
+  if (typeof TableRowActions === 'undefined') return;
+  const node = _nodes.find(n => String(n.node_id) === String(nodeId));
+  if (!node) return;
+  const pctMeta = _nodePctMeta(node._pct_status || 'unknown', node._pct_info || null);
+  const pctLabel = pctMeta.action === 'start' ? 'Start container' : pctMeta.action === 'stop' ? 'Stop container' : 'Container action unavailable';
+  const pctDetail = pctMeta.action === 'start'
+    ? 'Issue pct start on the parent Proxmox host'
+    : pctMeta.action === 'stop'
+      ? 'Issue pct stop on the parent Proxmox host'
+      : 'Refresh Fleet Nodes once pct status is available';
+  TableRowActions.open({
+    title: node.display_name || node.node_id || 'Node actions',
+    subtitle: node.node_id || '',
+    actions: [
+      {
+        label: 'Restart service',
+        detail: 'Restart blueprints-app on this node only',
+        onClick: () => nodeRestart(nodeId),
+      },
+      {
+        label: 'Pull root repo',
+        detail: 'Trigger /root/xarta-node git pull on this node only',
+        onClick: () => nodeGitPull(nodeId),
+      },
+      {
+        label: 'Purge queue',
+        detail: 'Delete unsent sync queue entries for this node',
+        tone: 'danger',
+        onClick: () => nodePurgeQueue(nodeId),
+      },
+      {
+        label: pctLabel,
+        detail: pctDetail,
+        tone: pctMeta.action === 'stop' ? 'danger' : undefined,
+        onClick: () => nodePct(nodeId),
+      },
+      {
+        label: 'Delete node row',
+        detail: 'Remove this node record from the local database',
+        tone: 'danger',
+        onClick: () => nodeDeleteRow(nodeId),
+      },
+    ],
+  });
+}
 
 function _nodeActionModalEls() {
   return {
@@ -126,8 +348,11 @@ function _restoreNodeActionButton(btn, orig, delayMs) {
   if (!btn) return;
   setTimeout(() => {
     btn.disabled = false;
-    btn.innerHTML = orig;
-    btn.style.color = '';
+    btn.classList.remove('is-busy', 'is-success', 'is-error');
+    if (btn.dataset.restorePctStatus) {
+      _applyNodePctButtonState(btn, btn.dataset.restorePctStatus, null);
+      delete btn.dataset.restorePctStatus;
+    }
     btn.title = btn.dataset.origTitle || btn.title || '';
   }, delayMs || 3000);
 }
@@ -135,9 +360,21 @@ function _restoreNodeActionButton(btn, orig, delayMs) {
 function _setNodeActionButton(btn, html, color, title) {
   if (!btn) return;
   if (!btn.dataset.origTitle) btn.dataset.origTitle = btn.title || '';
-  btn.innerHTML = html;
-  btn.style.color = color || '';
+  btn.classList.remove('is-busy', 'is-success', 'is-error');
+  if (html === 'busy') btn.classList.add('is-busy');
+  if (html === 'success') btn.classList.add('is-success');
+  if (html === 'error') btn.classList.add('is-error');
   if (title !== undefined) btn.title = title;
+}
+
+function _applyNodePctButtonState(btn, status, info) {
+  if (!btn) return;
+  const meta = _nodePctMeta(status, info);
+  btn.dataset.pctStatus = status || 'unknown';
+  btn.classList.remove('table-icon-btn--power', 'table-icon-btn--power-start', 'table-icon-btn--power-stop');
+  btn.classList.add(meta.className);
+  btn.title = meta.title;
+  btn.setAttribute('aria-label', meta.aria);
 }
 
 function _nodeRestartModalEls() {
@@ -197,14 +434,13 @@ async function submitNodeRestart() {
   closeBtns.forEach(closeBtn => { closeBtn.disabled = true; });
   if (btn) {
     btn.disabled = true;
-    btn.textContent = '…';
+    _setNodeActionButton(btn, 'busy');
   }
 
   try {
     const r = await apiFetch(`/api/v1/nodes/${encodeURIComponent(pending.nodeId)}/restart`, { method: 'POST' });
     if (btn) {
-      btn.innerHTML = r.ok ? '&#10003; Sent' : `&#10007; ${r.status}`;
-      btn.style.color = r.ok ? 'var(--ok,#3fb950)' : 'var(--danger,#f85149)';
+      _setNodeActionButton(btn, r.ok ? 'success' : 'error', '', r.ok ? 'Restart request queued' : `HTTP ${r.status}`);
     }
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     if (status) {
@@ -222,8 +458,7 @@ async function submitNodeRestart() {
     if (btn) {
       setTimeout(() => {
         btn.disabled = false;
-        btn.innerHTML = orig;
-        btn.style.color = '';
+        btn.classList.remove('is-busy', 'is-success', 'is-error');
       }, 3000);
     }
   }
@@ -267,11 +502,17 @@ async function loadNodes() {
 
 function renderNodes() {
   const tbody = document.getElementById('nodes-tbody');
+  const view = _ensureNodesTableView();
+  const visibleCols = _nodeVisibleCols();
   if (!_nodes.length) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No nodes registered.</td></tr>';
+    view?.render(() => {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="${Math.max(1, visibleCols.length)}">No nodes registered.</td></tr>`;
+    });
     return;
   }
-  tbody.innerHTML = _nodes.flatMap(n => {
+  const rows = view?.sorter ? view.sorter.sortRows(_nodes, _nodeSortValue) : _nodes.slice();
+  view?.render(() => {
+    tbody.innerHTML = rows.flatMap(n => {
     const nameStyle = n.fleet_peer === false ? ' style="text-decoration:line-through;opacity:0.55"' : '';
     const pending = n.pending_count || 0;
     const pendingBadge = pending > 0
@@ -284,23 +525,19 @@ function renderNodes() {
     const hostnamesHtml = ph
       ? `<span class="ip-chip">${esc(ph)}</span>${th ? `<br><span class="ip-chip" style="opacity:0.75">${esc(th)}</span>` : ''}`
       : '<span style="color:var(--text-dim)">—</span>';
-    const mainRow = `<tr>
-      <td style="white-space:nowrap"><strong title="${esc(n.node_id)}"${nameStyle}>${esc(n.display_name || n.node_id)}</strong></td>
-      <td>${addrs || '<span style="color:var(--text-dim)">—</span>'}</td>
-      <td>${hostnamesHtml}</td>
-      <td id="node-gen-${safeid}" style="font-size:12px;color:var(--text-dim)">…</td>
-      <td id="node-ver-${safeid}" style="font-size:12px;color:var(--text-dim)">…</td>
-      <td>${pendingBadge}</td>
-      <td style="width:200px;max-width:200px"><div style="display:flex;flex-wrap:wrap;gap:3px">
-        <button class="secondary" style="font-size:11px;padding:2px 7px" onclick="nodeRestart('${esc(n.node_id)}',this)" title="restart blueprints-app service">&#8635; Restart</button>
-        <button class="secondary" style="font-size:11px;padding:2px 7px" onclick="nodeGitPull('${esc(n.node_id)}',this)" title="git pull outer on this node">&#8593; Pull</button>
-        <button class="secondary" style="font-size:11px;padding:2px 7px" onclick="nodePurgeQueue('${esc(n.node_id)}',this)" title="purge unsent sync queue entries">&#128465; Queue</button>
-        <button id="node-pct-${safeid}" class="secondary" style="font-size:11px;padding:2px 7px" onclick="nodePct('${esc(n.node_id)}',this)" title="start or stop LXC via pct on PVE host" data-pct-status="unknown">&#x23FB; Stop</button>
-        <button class="secondary" style="font-size:11px;padding:2px 7px;color:var(--danger,#f85149)" onclick="nodeDeleteRow('${esc(n.node_id)}',this)" title="remove this node from DB">&#10005; Delete</button>
-      </div></td>
-    </tr>`;
+    const cellMap = {
+      display_name: `<td style="white-space:nowrap"><strong title="${esc(n.node_id)}"${nameStyle}>${esc(n.display_name || n.node_id)}</strong></td>`,
+      addresses: `<td>${addrs || '<span style="color:var(--text-dim)">—</span>'}</td>`,
+      hostnames: `<td>${hostnamesHtml}</td>`,
+      gen: `<td id="node-gen-${safeid}" style="font-size:12px;color:${n._gen == null ? 'var(--text-dim)' : 'inherit'}">${n._gen == null ? '…' : esc(String(n._gen))}</td>`,
+      commit: `<td id="node-ver-${safeid}" style="font-size:12px;color:${n._commit == null ? 'var(--text-dim)' : 'inherit'}" title="${esc(n._commit || '')}">${n._commit == null ? '…' : esc(n._commit)}</td>`,
+      pending: `<td>${pendingBadge}</td>`,
+      _actions: _renderNodeActionsCell(n),
+    };
+    const mainRow = `<tr>${visibleCols.map(col => cellMap[col] || '<td></td>').join('')}</tr>`;
     return mainRow;
   }).join('');
+  });
 }
 
 
@@ -328,13 +565,19 @@ async function enrichNodeVersions() {
       const r = await apiFetch(healthUrl, { signal: AbortSignal.timeout(4000) });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const d = await r.json();
+      n._gen = d.gen ?? '—';
+      n._commit = d.commit || '—';
       if (genCell) { genCell.textContent = d.gen ?? '—'; genCell.style.color = ''; }
       if (verCell) { verCell.textContent = d.commit || '—'; verCell.style.color = ''; verCell.title = ''; }
     } catch {
+      n._gen = '?';
+      n._commit = '?';
       if (genCell) { genCell.textContent = '?'; genCell.style.color = 'var(--text-dim)'; }
       if (verCell) { verCell.textContent = '?'; verCell.style.color = 'var(--text-dim)'; }
     }
   }
+  const sortKey = _nodesTableView?.getSortState().key;
+  if (sortKey === 'gen' || sortKey === 'commit') renderNodes();
 }
 
 async function fleetUpdate(btn) {
@@ -382,7 +625,6 @@ async function nodeRestart(nodeId, btn) {
 }
 
 async function nodeGitPull(nodeId, btn) {
-  const orig = btn ? btn.innerHTML : '';
   openNodeActionModal({
     title: 'Pull Root Repo?',
     message: `Trigger a root public repo git pull on ${nodeId}?`,
@@ -394,18 +636,18 @@ async function nodeGitPull(nodeId, btn) {
     run: async () => {
       if (btn) {
         btn.disabled = true;
-        btn.textContent = '…';
+        _setNodeActionButton(btn, 'busy');
       }
       try {
         const r = await apiFetch(`/api/v1/nodes/${encodeURIComponent(nodeId)}/git-pull`, { method: 'POST' });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        _setNodeActionButton(btn, '&#10003; Pull', 'var(--ok,#3fb950)');
+        _setNodeActionButton(btn, 'success', '', 'Git pull request queued');
       } catch (e) {
-        _setNodeActionButton(btn, '&#10007; err', 'var(--danger,#f85149)');
-        _restoreNodeActionButton(btn, orig, 3000);
+        _setNodeActionButton(btn, 'error', '', 'Git pull request failed');
+        _restoreNodeActionButton(btn, '', 3000);
         throw e;
       }
-      _restoreNodeActionButton(btn, orig, 3000);
+      _restoreNodeActionButton(btn, '', 3000);
     },
   });
 }
@@ -413,7 +655,6 @@ async function nodeGitPull(nodeId, btn) {
 async function nodePurgeQueue(nodeId, btn) {
   const n = _nodes.find(x => x.node_id === nodeId);
   const cnt = n ? (n.pending_count || 0) : '?';
-  const orig = btn ? btn.innerHTML : '';
   openNodeActionModal({
     title: 'Purge Sync Queue?',
     message: `Purge ${cnt} unsent sync queue entr${cnt === 1 ? 'y' : 'ies'} for ${nodeId}?`,
@@ -426,20 +667,20 @@ async function nodePurgeQueue(nodeId, btn) {
     run: async () => {
       if (btn) {
         btn.disabled = true;
-        btn.textContent = '…';
+        _setNodeActionButton(btn, 'busy');
       }
       try {
         const r = await apiFetch(`/api/v1/nodes/${encodeURIComponent(nodeId)}/sync-queue`, { method: 'DELETE' });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        _setNodeActionButton(btn, '&#10003; Done', 'var(--ok,#3fb950)');
+        _setNodeActionButton(btn, 'success', '', 'Queue entries purged');
         _nodes = [];
         setTimeout(loadNodes, 500);
       } catch (e) {
-        _setNodeActionButton(btn, '&#10007; err', 'var(--danger,#f85149)');
-        _restoreNodeActionButton(btn, orig, 3000);
+        _setNodeActionButton(btn, 'error', '', 'Queue purge failed');
+        _restoreNodeActionButton(btn, '', 3000);
         throw e;
       }
-      _restoreNodeActionButton(btn, orig, 3000);
+      _restoreNodeActionButton(btn, '', 3000);
     },
   });
 }
@@ -451,10 +692,9 @@ async function nodeDeleteRow(nodeId, btn) {
     detail: 'This does not purge the sync queue. Use Purge Queue first if needed.',
   });
   if (!ok) return;
-  const orig = btn ? btn.innerHTML : '';
   if (btn) {
     btn.disabled = true;
-    btn.textContent = '…';
+    _setNodeActionButton(btn, 'busy');
   }
   try {
     const r = await apiFetch(`/api/v1/nodes/${encodeURIComponent(nodeId)}`, { method: 'DELETE' });
@@ -462,46 +702,55 @@ async function nodeDeleteRow(nodeId, btn) {
     _nodes = [];
     loadNodes();
   } catch (e) {
-    _setNodeActionButton(btn, '&#10007; err', 'var(--danger,#f85149)');
-    _restoreNodeActionButton(btn, orig, 3000);
+    _setNodeActionButton(btn, 'error', '', 'Delete failed');
+    _restoreNodeActionButton(btn, '', 3000);
     await HubDialogs.alertError({
       title: 'Delete failed',
       message: `Unable to delete node: ${e.message}`,
     });
     return;
   }
-  _restoreNodeActionButton(btn, orig, 3000);
+  _restoreNodeActionButton(btn, '', 3000);
 }
 
 async function enrichNodePctStatus() {
   await Promise.all(_nodes.map(async n => {
     const safeid = n.node_id.replace(/[^a-zA-Z0-9_-]/g, '_');
     const btn = document.getElementById(`node-pct-${safeid}`);
-    if (!btn || btn.disabled) return;  // skip buttons mid-action
+    if (btn && btn.disabled) return;  // skip buttons mid-action
     try {
       const r = await apiFetch(`/api/v1/nodes/${encodeURIComponent(n.node_id)}/pct-status`);
-      if (!r.ok) { btn.dataset.pctStatus = 'unknown'; return; }
+      if (!r.ok) {
+        n._pct_status = 'unknown';
+        n._pct_info = null;
+        if (btn) {
+          btn.dataset.pctStatus = 'unknown';
+          _applyNodePctButtonState(btn, 'unknown', null);
+        }
+        return;
+      }
       const d = await r.json();
       const st = (d.status || 'unknown').toLowerCase();
-      btn.dataset.pctStatus = st;
-      if (st === 'running') {
-        btn.innerHTML = '&#9632; Stop';
-        btn.title = `Stop LXC ${d.vmid} on ${d.pve_host}`;
-      } else if (st === 'stopped') {
-        btn.innerHTML = '&#9654; Start';
-        btn.title = `Start LXC ${d.vmid} on ${d.pve_host}`;
-      } else {
-        btn.innerHTML = '&#x23FB; PCT';
-        btn.title = 'start or stop LXC via pct on PVE host (status unknown)';
+      n._pct_status = st;
+      n._pct_info = { vmid: d.vmid, pve_host: d.pve_host };
+      if (btn) {
+        btn.dataset.pctStatus = st;
+        _applyNodePctButtonState(btn, st, d);
       }
     } catch {
-      btn.dataset.pctStatus = 'unknown';
+      n._pct_status = 'unknown';
+      n._pct_info = null;
+      if (btn) {
+        btn.dataset.pctStatus = 'unknown';
+        _applyNodePctButtonState(btn, 'unknown', null);
+      }
     }
   }));
 }
 
 async function nodePct(nodeId, btn) {
-  const currentStatus = btn.dataset.pctStatus || 'unknown';
+  const node = _nodes.find(x => x.node_id === nodeId);
+  const currentStatus = btn?.dataset.pctStatus || node?._pct_status || 'unknown';
   let action;
   let title;
   let message;
@@ -528,7 +777,6 @@ async function nodePct(nodeId, btn) {
     });
     return;
   }
-  const orig = btn.innerHTML;
   openNodeActionModal({
     title,
     message,
@@ -539,8 +787,11 @@ async function nodePct(nodeId, btn) {
     successText: `${confirmLabel} request sent.`,
     errorPrefix: `Unable to ${action} node`,
     run: async () => {
-      btn.disabled = true;
-      btn.textContent = '…';
+      if (btn) {
+        btn.disabled = true;
+        btn.dataset.restorePctStatus = btn.dataset.pctStatus || 'unknown';
+        _setNodeActionButton(btn, 'busy');
+      }
       try {
         const r = await apiFetch(`/api/v1/nodes/${encodeURIComponent(nodeId)}/pct`, {
           method: 'POST',
@@ -550,23 +801,29 @@ async function nodePct(nodeId, btn) {
         if (!r.ok) {
           const err = await r.json().catch(() => ({}));
           const detail = err.detail || `HTTP ${r.status}`;
-          _setNodeActionButton(btn, `&#10007; ${r.status}`, 'var(--danger,#f85149)', detail);
-          _restoreNodeActionButton(btn, orig, 4000);
+          _setNodeActionButton(btn, 'error', '', detail);
+          _restoreNodeActionButton(btn, '', 4000);
           throw new Error(detail);
         }
-        _setNodeActionButton(btn, '&#10003; Done', 'var(--ok,#3fb950)');
-        btn.dataset.pctStatus = action === 'start' ? 'running' : 'stopped';
-        setTimeout(() => {
-          btn.disabled = false;
-          btn.innerHTML = action === 'start' ? '&#9632; Stop' : '&#9654; Start';
-          btn.style.color = '';
-          btn.dataset.pctStatus = action === 'start' ? 'running' : 'stopped';
-          btn.title = btn.dataset.origTitle || btn.title || '';
-        }, 3000);
+        if (btn) {
+          const nextStatus = action === 'start' ? 'running' : 'stopped';
+          _setNodeActionButton(btn, 'success', '', `${confirmLabel} request sent`);
+          btn.dataset.restorePctStatus = nextStatus;
+          setTimeout(() => {
+            btn.disabled = false;
+            _applyNodePctButtonState(btn, nextStatus, null);
+            btn.classList.remove('is-busy', 'is-success', 'is-error');
+            delete btn.dataset.restorePctStatus;
+          }, 3000);
+        }
+        const node = _nodes.find(x => x.node_id === nodeId);
+        if (node) {
+          node._pct_status = action === 'start' ? 'running' : 'stopped';
+        }
       } catch (e) {
-        if (!String(e.message || '').startsWith('HTTP') && !btn.innerHTML.includes('&#10007;')) {
-          _setNodeActionButton(btn, '&#10007; err', 'var(--danger,#f85149)');
-          _restoreNodeActionButton(btn, orig, 3000);
+        if (btn && !String(e.message || '').startsWith('HTTP')) {
+          _setNodeActionButton(btn, 'error', '', `${confirmLabel} failed`);
+          _restoreNodeActionButton(btn, '', 3000);
         }
         throw e;
       }
