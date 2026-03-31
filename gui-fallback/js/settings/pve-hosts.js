@@ -3,6 +3,107 @@ const _LS_PVE_HOSTS    = 'bp_pve_hosts';
 const _LS_PVE_HOSTS_TS = 'bp_pve_hosts_ts';
 const _PVE_HOSTS_TTL   = 3_600_000; // 1 hour
 
+const _PVE_HOST_COLS = ['ip_address', 'name', 'tailnet_ip', 'version', 'port', 'ssh', 'last_scanned', '_actions'];
+const _PVE_HOST_FIELD_META = {
+  ip_address:   { label: 'IP', render: h => `<td><code>${esc(h.ip_address || '—')}</code></td>` },
+  name:         { label: 'Name', render: h => `<td>${esc(h.pve_name || h.hostname || h.pve_id || '—')}</td>` },
+  tailnet_ip:   { label: 'Tailnet IP', render: h => `<td><code>${esc(h.tailnet_ip || '—')}</code></td>` },
+  version:      { label: 'Version', render: h => `<td>${esc(h.version || '—')}</td>` },
+  port:         { label: 'Port', render: h => `<td>${h.port || 8006}</td>` },
+  ssh:          { label: 'SSH', render: h => `<td>${h.ssh_reachable ? '✅' : '—'}</td>` },
+  last_scanned: { label: 'Last Scanned', render: h => `<td style="white-space:nowrap;color:var(--text-dim)">${esc(((h.last_scanned || '—').replace('T', ' ').slice(0, 19)))}</td>` },
+  _actions:     { label: 'Actions', render: h => _pveRenderActionsCell(h) },
+};
+
+let _pveHostsTablePrefs = null;
+let _pveHiddenCols = new Set();
+let _pveColResizeDone = false;
+
+function _ensurePveHostsTablePrefs() {
+  if (_pveHostsTablePrefs || typeof TablePrefs === 'undefined') return _pveHostsTablePrefs;
+  _pveHostsTablePrefs = TablePrefs.create({
+    storageKey: 'pve-hosts-table-prefs',
+    defaultHidden: [],
+    minWidth: 40,
+  });
+  _pveHostsTablePrefs.syncColumns(_PVE_HOST_COLS);
+  _pveHiddenCols = _pveHostsTablePrefs.getHiddenSet(_PVE_HOST_COLS);
+  return _pveHostsTablePrefs;
+}
+
+function _pveCompactRowActions() {
+  return typeof TableRowActions !== 'undefined' && TableRowActions.isCompact();
+}
+
+function _pveActionCellWidth() {
+  return _pveCompactRowActions() ? 48 : 90;
+}
+
+function _pveVisibleCols() {
+  return _PVE_HOST_COLS.filter(col => !_pveHiddenCols.has(col));
+}
+
+function _pveActionButtons(h) {
+  return `<button class="secondary" style="padding:2px 8px;font-size:11px" data-pve-edit="${h.pve_id}">Edit</button>
+    <button class="secondary" style="padding:2px 8px;font-size:11px;color:#f87171" data-pve-del="${h.pve_id}">Del</button>`;
+}
+
+function _pveRenderActionsCell(h) {
+  if (_pveCompactRowActions()) {
+    return `<td class="table-action-cell table-action-cell--compact" style="width:${_pveActionCellWidth()}px">
+      <button class="table-row-action-trigger secondary" type="button" title="PVE host actions" onclick="_pveOpenRowActions('${esc(h.pve_id)}')">&#8942;</button>
+    </td>`;
+  }
+  return `<td class="table-action-cell" style="white-space:nowrap;width:${_pveActionCellWidth()}px"><div class="table-inline-actions">${_pveActionButtons(h)}</div></td>`;
+}
+
+function _pveRebuildThead() {
+  const table = document.getElementById('pve-hosts-table');
+  if (!table) return;
+  const tr = table.querySelector('thead tr');
+  if (!tr) return;
+  const prefs = _ensurePveHostsTablePrefs();
+  tr.innerHTML = _pveVisibleCols().map(col => {
+    const width = prefs ? prefs.getWidth(col) : null;
+    const styleParts = [];
+    if (width) styleParts.push(`width:${width}px`);
+    else if (col === '_actions') styleParts.push(`width:${_pveActionCellWidth()}px`);
+    const style = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
+    return `<th data-col="${col}"${style}>${_PVE_HOST_FIELD_META[col].label}</th>`;
+  }).join('');
+  _pveColResizeDone = false;
+}
+
+function _pveInitColResize() {
+  if (_pveColResizeDone) return;
+  const table = document.getElementById('pve-hosts-table');
+  const prefs = _ensurePveHostsTablePrefs();
+  if (!table || !prefs) return;
+  _pveColResizeDone = true;
+  prefs.applyWidths(table);
+  prefs.bindColumnResize(table, { minWidth: 40 });
+}
+
+function _pveOpenColsModal() {
+  const prefs = _ensurePveHostsTablePrefs();
+  if (!prefs) return;
+  const list = document.getElementById('pve-hosts-cols-modal-list');
+  TablePrefs.renderColumnChooser(list, _PVE_HOST_COLS, _pveHiddenCols, col => _PVE_HOST_FIELD_META[col].label);
+  HubModal.open(document.getElementById('pve-hosts-cols-modal'));
+}
+
+function _pveApplyColsModal() {
+  const prefs = _ensurePveHostsTablePrefs();
+  if (!prefs) return;
+  const modal = document.getElementById('pve-hosts-cols-modal');
+  const newHidden = TablePrefs.readHiddenFromChooser(modal, new Set(_pveHiddenCols));
+  prefs.setHiddenSet(newHidden);
+  _pveHiddenCols = prefs.getHiddenSet(_PVE_HOST_COLS);
+  _pveRebuildThead();
+  renderPveHosts();
+  HubModal.close(modal);
+}
+
 function _savePveHostsCache(hosts) {
   try {
     localStorage.setItem(_LS_PVE_HOSTS, JSON.stringify(hosts));
@@ -27,32 +128,37 @@ async function loadPveHosts() {
 
 function renderPveHosts() {
   const tbody = document.getElementById('pve-hosts-tbody');
+  _ensurePveHostsTablePrefs();
+  _pveRebuildThead();
   if (!_pveHosts.length) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No PVE hosts found — run the scan first.</td></tr>';
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="${Math.max(1, _pveVisibleCols().length)}">No PVE hosts found — run the scan first.</td></tr>`;
     return;
   }
-  tbody.innerHTML = _pveHosts.map(h => {
-    const scanned   = (h.last_scanned || '—').replace('T',' ').slice(0,19);
-    const ssh       = h.ssh_reachable ? '✅' : '—';
-    const name      = esc(h.pve_name || h.hostname || h.pve_id);
-    const tailnetIp = esc(h.tailnet_ip || '—');
-    const id        = h.pve_id;
-    return `<tr>
-      <td><code>${esc(h.ip_address)}</code></td>
-      <td>${name}</td>
-      <td><code>${tailnetIp}</code></td>
-      <td>${esc(h.version || '—')}</td>
-      <td>${h.port || 8006}</td>
-      <td>${ssh}</td>
-      <td style="white-space:nowrap;color:var(--text-dim)">${esc(scanned)}</td>
-      <td style="white-space:nowrap">
-        <button class="secondary" style="padding:2px 8px;font-size:11px"
-          data-pve-edit="${id}">Edit</button>
-        <button class="secondary" style="padding:2px 8px;font-size:11px;color:#f87171"
-          data-pve-del="${id}">Del</button>
-      </td>
-    </tr>`;
-  }).join('');
+  tbody.innerHTML = _pveHosts.map(h => `<tr>${_pveVisibleCols().map(col => _PVE_HOST_FIELD_META[col].render(h)).join('')}</tr>`).join('');
+  _pveInitColResize();
+}
+
+function _pveOpenRowActions(pveId) {
+  if (typeof TableRowActions === 'undefined') return;
+  const host = _pveHosts.find(h => String(h.pve_id) === String(pveId));
+  if (!host) return;
+  TableRowActions.open({
+    title: host.pve_name || host.hostname || host.pve_id || 'PVE host actions',
+    subtitle: host.ip_address || '',
+    actions: [
+      {
+        label: 'Edit host',
+        detail: 'Update the display name or tailnet IP',
+        onClick: () => _openPveHostEditModal(pveId),
+      },
+      {
+        label: 'Delete host',
+        detail: 'Remove this PVE host record from Blueprints',
+        tone: 'danger',
+        onClick: () => pveHostDelete(pveId),
+      },
+    ],
+  });
 }
 
 async function pveHostDelete(pveId, btn) {
@@ -149,6 +255,17 @@ async function scanPveHosts() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  _ensurePveHostsTablePrefs();
+  if (typeof ResponsiveLayout !== 'undefined') {
+    ResponsiveLayout.registerTabControls('pve-hosts', 'pg-ctrl-pve-hosts');
+  }
+
+  _pveHostsTablePrefs?.onLayoutChange(() => {
+    _pveHiddenCols = _pveHostsTablePrefs.getHiddenSet(_PVE_HOST_COLS);
+    _pveRebuildThead();
+    renderPveHosts();
+  });
+
   // Table event delegation — Edit and Del buttons
   document.getElementById('pve-hosts-tbody')?.addEventListener('click', e => {
     const editBtn = e.target.closest('[data-pve-edit]');
@@ -159,4 +276,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Edit modal Save button
   document.getElementById('pve-host-edit-save-btn')?.addEventListener('click', _submitPveHostEdit);
+  document.getElementById('pve-hosts-cols-btn')?.addEventListener('click', _pveOpenColsModal);
+  document.getElementById('pve-hosts-cols-modal-apply')?.addEventListener('click', _pveApplyColsModal);
 });

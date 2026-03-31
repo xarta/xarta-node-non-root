@@ -50,6 +50,7 @@ const SettingsMenuConfig = createHubMenu({
         // ── PVE Hosts page function items ─────────────────────────────────
         { id: 'pveh-fn-refresh', label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'pveh.refresh', activeOn: ['pve-hosts'],    parent: 'settings-layout', order: 0 },
         { id: 'pveh-fn-scan',    label: 'Scan for Proxmox', icon: HIEROGLYPHS.wasScepter, fn: 'pveh.scan',    activeOn: ['pve-hosts'],    parent: 'settings-layout', order: 1 },
+        { id: 'pveh-fn-cols',    label: 'Columns',          icon: HIEROGLYPHS.khaHorizon, fn: 'pveh.columns', activeOn: ['pve-hosts'],    parent: 'settings-layout', order: 2 },
 
         // ── Fleet Nodes page function items ───────────────────────────────
         { id: 'nod-fn-refresh',  label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'nod.refresh',  activeOn: ['nodes'],        parent: 'settings-layout', order: 0 },
@@ -345,6 +346,7 @@ SettingsMenuConfig.registerFunctions({
     // PVE Hosts
     'pveh.refresh': () => loadPveHosts(),
     'pveh.scan':    () => scanPveHosts(),
+    'pveh.columns': () => _pveOpenColsModal(),
 
     // Fleet Nodes
     'nod.refresh':  () => loadNodes(),
