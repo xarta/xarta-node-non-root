@@ -3,7 +3,6 @@
 let _manualLinksView = 'rendered';   // 'table' | 'rendered' — default to rendered
 let _editingLinkId   = null;         // null = add mode, string = edit mode
 let _mlFilter    = '';               // table filter text
-let _mlSort      = { col: null, dir: 1 }; // active sort column + direction (1=asc, -1=desc)
 let _mlGroupBy   = 'none';          // 'none' | 'group' | 'host'
 let _mlCollapsed = new Set();       // collapsed group keys
 let _mlFilterTimer = null;          // debounce handle for ml-filter input
@@ -15,45 +14,33 @@ const _ML_TABLE_FIELD_META = {
   },
   label: {
     label: 'Label',
-    headerHtml: 'Label <span data-ml-arrow="label" class="ml-sort-arrow">⇕</span>',
     sortKey: 'label',
-    className: 'ml-th-sort',
     render: lnk => `<td style="max-width:160px">${lnk.icon ? `<span style="margin-right:4px">${esc(lnk.icon)}</span>` : ''}${lnk.label ? `<strong>${esc(lnk.label)}</strong>` : '<span style="color:var(--text-dim)">—</span>'}</td>`,
   },
   addresses: {
     label: 'Addresses',
-    headerHtml: 'Addresses <span data-ml-arrow="addr" class="ml-sort-arrow">⇕</span>',
     sortKey: 'addr',
-    className: 'ml-th-sort',
     render: lnk => `<td style="max-width:200px">${_mlAddressParts(lnk).join(' ') || '<span style="color:var(--text-dim)">—</span>'}</td>`,
   },
   group_name: {
     label: 'Group',
-    headerHtml: 'Group <span data-ml-arrow="group" class="ml-sort-arrow">⇕</span>',
     sortKey: 'group',
-    className: 'ml-th-sort',
     render: lnk => `<td>${lnk.group_name ? esc(lnk.group_name) : '<span style="color:var(--text-dim)">—</span>'}</td>`,
   },
   sort_order: {
     label: 'Order',
-    headerHtml: 'Order <span data-ml-arrow="order" class="ml-sort-arrow">⇕</span>',
     sortKey: 'order',
-    className: 'ml-th-sort',
     defaultWidth: 64,
     render: lnk => `<td>${lnk.sort_order}</td>`,
   },
   host: {
     label: 'Host',
-    headerHtml: 'Host <span data-ml-arrow="host" class="ml-sort-arrow">⇕</span>',
     sortKey: 'host',
-    className: 'ml-th-sort',
     render: lnk => `<td style="font-size:12px">${_mlHostParts(lnk).join(', ') || '<span style="color:var(--text-dim)">—</span>'}</td>`,
   },
   notes: {
     label: 'Notes',
-    headerHtml: 'Notes <span data-ml-arrow="notes" class="ml-sort-arrow">⇕</span>',
     sortKey: 'notes',
-    className: 'ml-th-sort',
     render: lnk => `<td style="max-width:200px;font-size:12px;color:var(--text-dim)">${lnk.notes ? esc(lnk.notes) : ''}</td>`,
   },
   _actions: {
@@ -66,6 +53,7 @@ const _ML_TABLE_FIELD_META = {
 let _mlTablePrefs = null;
 let _mlHiddenCols = new Set();
 let _mlColResizeDone = false;
+let _mlTableSort = null;
 
 function _ensureManualLinksTablePrefs() {
   if (_mlTablePrefs || typeof TablePrefs === 'undefined') return _mlTablePrefs;
@@ -81,6 +69,12 @@ function _ensureManualLinksTablePrefs() {
 
 function _mlVisibleCols() {
   return _ML_TABLE_COLS.filter(col => !_mlHiddenCols.has(col));
+}
+
+function _ensureManualLinksTableSort() {
+  if (_mlTableSort || typeof TableSort === 'undefined') return _mlTableSort;
+  _mlTableSort = TableSort.create();
+  return _mlTableSort;
 }
 
 function _mlCompactRowActions() {
@@ -147,26 +141,13 @@ function _mlOpenRowActions(linkId) {
   });
 }
 
-function _mlUpdateSortArrows() {
-  ['label', 'addr', 'group', 'order', 'host', 'notes'].forEach(col => {
-    const el = document.querySelector(`[data-ml-arrow="${col}"]`);
-    if (!el) return;
-    if (_mlSort.col === col) {
-      el.textContent = _mlSort.dir === 1 ? '▲' : '▼';
-      el.classList.add('active');
-    } else {
-      el.textContent = '⇕';
-      el.classList.remove('active');
-    }
-  });
-}
-
 function _mlRebuildThead() {
   const table = document.getElementById('ml-table');
   if (!table) return;
   const tr = table.querySelector('thead tr');
   if (!tr) return;
   const prefs = _ensureManualLinksTablePrefs();
+  const sorter = _ensureManualLinksTableSort();
   tr.innerHTML = _mlVisibleCols().map(col => {
     const meta = _ML_TABLE_FIELD_META[col];
     const width = prefs ? prefs.getWidth(col) : null;
@@ -174,12 +155,12 @@ function _mlRebuildThead() {
     if (width) styleParts.push(`width:${width}px`);
     else if (meta.defaultWidth) styleParts.push(`width:${col === '_actions' ? _mlActionCellWidth() : meta.defaultWidth}px`);
     const style = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
-    const sortAttr = meta.sortKey ? ` data-ml-sort="${meta.sortKey}" onclick="mlSortBy('${meta.sortKey}')"` : '';
-    const classAttr = meta.className ? ` class="${meta.className}"` : '';
-    return `<th data-col="${col}"${sortAttr}${classAttr}${style}>${meta.headerHtml || meta.label}</th>`;
+    const sortAttr = meta.sortKey ? ` data-sort-key="${meta.sortKey}"` : '';
+    const classAttr = meta.sortKey ? ' class="table-th-sort"' : '';
+    const labelHtml = sorter && meta.sortKey ? sorter.renderLabel(meta.label, meta.sortKey) : (meta.headerHtml || meta.label);
+    return `<th data-col="${col}"${sortAttr}${classAttr}${style}>${labelHtml}</th>`;
   }).join('');
   _mlColResizeDone = false;
-  _mlUpdateSortArrows();
 }
 
 function _mlRenderSharedTable(renderBody) {
@@ -190,8 +171,11 @@ function _mlRenderSharedTable(renderBody) {
     rebuildHead: _mlRebuildThead,
     renderBody,
     minWidth: 40,
-    afterBind: () => {
+    afterBind: tableEl => {
       _mlColResizeDone = true;
+      const sorter = _ensureManualLinksTableSort();
+      sorter?.bind(tableEl, renderManualLinksTable);
+      sorter?.syncIndicators(tableEl);
     },
   });
 }
@@ -264,21 +248,13 @@ function renderManualLinksTable() {
     _mlColResizeDone = false;
     _mlRenderSharedTable(() => {
       tbody.innerHTML = `<tr class="empty-row"><td colspan="${Math.max(1, _mlVisibleCols().length)}">${q ? 'No matches.' : 'No links yet — click + Add link'}</td></tr>`;
-      _mlUpdateSortArrows();
     });
     return;
   }
 
   // Sort
-  if (_mlSort.col) {
-    rows.sort((a, b) => {
-      const av = _mlGetSortVal(a, _mlSort.col);
-      const bv = _mlGetSortVal(b, _mlSort.col);
-      return (av < bv ? -1 : av > bv ? 1 : 0) * _mlSort.dir;
-    });
-  }
-
-  _mlUpdateSortArrows();
+  const sorter = _ensureManualLinksTableSort();
+  rows = sorter ? sorter.sortRows(rows, _mlGetSortVal) : rows;
 
   // Row HTML builder
   function rowHtml(lnk) {
@@ -321,12 +297,6 @@ function renderManualLinksTable() {
 function mlSetGroupBy(by) {
   _mlGroupBy = by;
   _mlCollapsed.clear();
-  renderManualLinksTable();
-}
-
-function mlSortBy(col) {
-  _mlSort.dir = (_mlSort.col === col) ? _mlSort.dir * -1 : 1;
-  _mlSort.col = col;
   renderManualLinksTable();
 }
 

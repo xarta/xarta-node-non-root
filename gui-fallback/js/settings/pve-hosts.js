@@ -5,19 +5,20 @@ const _PVE_HOSTS_TTL   = 3_600_000; // 1 hour
 
 const _PVE_HOST_COLS = ['ip_address', 'name', 'tailnet_ip', 'version', 'port', 'ssh', 'last_scanned', '_actions'];
 const _PVE_HOST_FIELD_META = {
-  ip_address:   { label: 'IP', render: h => `<td><code>${esc(h.ip_address || '—')}</code></td>` },
-  name:         { label: 'Name', render: h => `<td>${esc(h.pve_name || h.hostname || h.pve_id || '—')}</td>` },
-  tailnet_ip:   { label: 'Tailnet IP', render: h => `<td><code>${esc(h.tailnet_ip || '—')}</code></td>` },
-  version:      { label: 'Version', render: h => `<td>${esc(h.version || '—')}</td>` },
-  port:         { label: 'Port', render: h => `<td>${h.port || 8006}</td>` },
-  ssh:          { label: 'SSH', render: h => `<td>${h.ssh_reachable ? '✅' : '—'}</td>` },
-  last_scanned: { label: 'Last Scanned', render: h => `<td style="white-space:nowrap;color:var(--text-dim)">${esc(((h.last_scanned || '—').replace('T', ' ').slice(0, 19)))}</td>` },
+  ip_address:   { label: 'IP', sortKey: 'ip_address', render: h => `<td><code>${esc(h.ip_address || '—')}</code></td>` },
+  name:         { label: 'Name', sortKey: 'name', render: h => `<td>${esc(h.pve_name || h.hostname || h.pve_id || '—')}</td>` },
+  tailnet_ip:   { label: 'Tailnet IP', sortKey: 'tailnet_ip', render: h => `<td><code>${esc(h.tailnet_ip || '—')}</code></td>` },
+  version:      { label: 'Version', sortKey: 'version', render: h => `<td>${esc(h.version || '—')}</td>` },
+  port:         { label: 'Port', sortKey: 'port', render: h => `<td>${h.port || 8006}</td>` },
+  ssh:          { label: 'SSH', sortKey: 'ssh', render: h => `<td>${h.ssh_reachable ? '✅' : '—'}</td>` },
+  last_scanned: { label: 'Last Scanned', sortKey: 'last_scanned', render: h => `<td style="white-space:nowrap;color:var(--text-dim)">${esc(((h.last_scanned || '—').replace('T', ' ').slice(0, 19)))}</td>` },
   _actions:     { label: 'Actions', render: h => _pveRenderActionsCell(h) },
 };
 
 let _pveHostsTablePrefs = null;
 let _pveHiddenCols = new Set();
 let _pveColResizeDone = false;
+let _pveTableSort = null;
 
 function _ensurePveHostsTablePrefs() {
   if (_pveHostsTablePrefs || typeof TablePrefs === 'undefined') return _pveHostsTablePrefs;
@@ -43,6 +44,33 @@ function _pveVisibleCols() {
   return _PVE_HOST_COLS.filter(col => !_pveHiddenCols.has(col));
 }
 
+function _ensurePveHostsTableSort() {
+  if (_pveTableSort || typeof TableSort === 'undefined') return _pveTableSort;
+  _pveTableSort = TableSort.create();
+  return _pveTableSort;
+}
+
+function _pveSortValue(host, sortKey) {
+  switch (sortKey) {
+    case 'ip_address':
+      return host.ip_address || '';
+    case 'name':
+      return host.pve_name || host.hostname || host.pve_id || '';
+    case 'tailnet_ip':
+      return host.tailnet_ip || '';
+    case 'version':
+      return host.version || '';
+    case 'port':
+      return host.port == null ? 8006 : Number(host.port);
+    case 'ssh':
+      return host.ssh_reachable ? 1 : 0;
+    case 'last_scanned':
+      return host.last_scanned || '';
+    default:
+      return '';
+  }
+}
+
 function _pveActionButtons(h) {
   return `<button class="secondary" style="padding:2px 8px;font-size:11px" data-pve-edit="${h.pve_id}">Edit</button>
     <button class="secondary" style="padding:2px 8px;font-size:11px;color:#f87171" data-pve-del="${h.pve_id}">Del</button>`;
@@ -63,13 +91,18 @@ function _pveRebuildThead() {
   const tr = table.querySelector('thead tr');
   if (!tr) return;
   const prefs = _ensurePveHostsTablePrefs();
+  const sorter = _ensurePveHostsTableSort();
   tr.innerHTML = _pveVisibleCols().map(col => {
+    const meta = _PVE_HOST_FIELD_META[col];
     const width = prefs ? prefs.getWidth(col) : null;
     const styleParts = [];
     if (width) styleParts.push(`width:${width}px`);
     else if (col === '_actions') styleParts.push(`width:${_pveActionCellWidth()}px`);
     const style = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
-    return `<th data-col="${col}"${style}>${_PVE_HOST_FIELD_META[col].label}</th>`;
+    const sortAttrs = meta.sortKey ? ` data-sort-key="${meta.sortKey}"` : '';
+    const classAttr = meta.sortKey ? ' class="table-th-sort"' : '';
+    const labelHtml = sorter && meta.sortKey ? sorter.renderLabel(meta.label, meta.sortKey) : meta.label;
+    return `<th data-col="${col}"${sortAttrs}${classAttr}${style}>${labelHtml}</th>`;
   }).join('');
   _pveColResizeDone = false;
 }
@@ -82,8 +115,11 @@ function _pveRenderSharedTable(renderBody) {
     rebuildHead: _pveRebuildThead,
     renderBody,
     minWidth: 40,
-    afterBind: () => {
+    afterBind: tableEl => {
       _pveColResizeDone = true;
+      const sorter = _ensurePveHostsTableSort();
+      sorter?.bind(tableEl, renderPveHosts);
+      sorter?.syncIndicators(tableEl);
     },
   });
 }
@@ -133,6 +169,7 @@ async function loadPveHosts() {
 function renderPveHosts() {
   const tbody = document.getElementById('pve-hosts-tbody');
   _ensurePveHostsTablePrefs();
+  const sorter = _ensurePveHostsTableSort();
   _pveColResizeDone = false;
   if (!_pveHosts.length) {
     _pveRenderSharedTable(() => {
@@ -140,8 +177,9 @@ function renderPveHosts() {
     });
     return;
   }
+  const rows = sorter ? sorter.sortRows(_pveHosts, _pveSortValue) : _pveHosts;
   _pveRenderSharedTable(() => {
-    tbody.innerHTML = _pveHosts.map(h => `<tr>${_pveVisibleCols().map(col => _PVE_HOST_FIELD_META[col].render(h)).join('')}</tr>`).join('');
+    tbody.innerHTML = rows.map(h => `<tr>${_pveVisibleCols().map(col => _PVE_HOST_FIELD_META[col].render(h)).join('')}</tr>`).join('');
   });
 }
 

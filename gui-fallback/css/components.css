@@ -22,11 +22,7 @@
 .ml-tip-row { display: flex; gap: 8px; align-items: baseline; }
 .ml-tip-lbl { color: var(--text-dim); font-size: 10px; text-transform: uppercase; letter-spacing: .5px; min-width: 56px; flex-shrink: 0; }
 
-/* ── Manual links table — sortable headers & collapsible group rows ── */
-.ml-th-sort { cursor: pointer; user-select: none; }
-.ml-th-sort:hover { color: var(--text); }
-.ml-sort-arrow { font-size: 10px; margin-left: 3px; opacity: .4; }
-.ml-sort-arrow.active { opacity: 1; color: var(--accent); }
+/* ── Manual links table — collapsible group rows ── */
 .ml-group-hdr td { background: var(--surface); font-size: 11px; font-weight: 700;
                    text-transform: uppercase; letter-spacing: .6px; color: var(--text-dim);
                    cursor: pointer; padding: 5px 10px; border-top: 2px solid var(--border); }
@@ -100,19 +96,6 @@ button.secondary:hover { color: var(--text); border-color: var(--text-dim); }
 }
 .bm-toggle-label input:checked + .bm-toggle-track { background: var(--accent); }
 .bm-toggle-label input:checked + .bm-toggle-track::after { left: 19px; background: #fff; }
-
-/* ── Bookmarks tab — sortable column headers ── */
-.bm-th-sort { cursor: pointer; user-select: none; }
-.bm-th-sort:hover { color: var(--text); }
-.bm-sort-arrow { font-size: 10px; margin-left: 3px; opacity: .45; }
-.bm-sort-arrow.active { opacity: 1; color: var(--accent); }
-
-/* ── Bookmarks tab — column resize handle ── */
-.bm-col-resize {
-  position: absolute; top: 0; right: 0; width: 5px; height: 100%;
-  cursor: col-resize; user-select: none; z-index: 2; border-radius: 0 2px 2px 0;
-}
-.bm-col-resize:hover, .bm-col-resize.dragging { background: var(--accent); opacity: .45; }
 
 /* Fixed-layout bookmarks table — cells clip to column width */
 #bm-main-view table { table-layout: fixed; }

@@ -335,6 +335,111 @@
     return nextHidden;
   }
 
+  function normalizeSortValue(value) {
+    if (value == null) return '';
+    if (Array.isArray(value)) {
+      return value.map(function (item) { return normalizeSortValue(item); }).join(' ');
+    }
+    if (typeof value === 'number') return value;
+    if (typeof value === 'boolean') return value ? 1 : 0;
+    return String(value).toLowerCase();
+  }
+
+  function compareSortValues(left, right) {
+    var a = normalizeSortValue(left);
+    var b = normalizeSortValue(right);
+    if (typeof a === 'number' && typeof b === 'number') {
+      return a - b;
+    }
+    if (a < b) return -1;
+    if (a > b) return 1;
+    return 0;
+  }
+
+  function createTableSort(cfg) {
+    cfg = cfg || {};
+    var defaultDir = cfg.defaultDir === -1 ? -1 : 1;
+    var sortKey = cfg.defaultKey || null;
+    var sortDir = defaultDir;
+
+    function getState() {
+      return {
+        key: sortKey,
+        dir: sortKey ? sortDir : 0,
+      };
+    }
+
+    function toggle(nextKey) {
+      if (!nextKey) return getState();
+      if (sortKey === nextKey) {
+        sortDir = sortDir === 1 ? -1 : 1;
+      } else {
+        sortKey = nextKey;
+        sortDir = defaultDir;
+      }
+      return getState();
+    }
+
+    function renderLabel(label, key) {
+      var active = sortKey === key;
+      var arrow = active ? (sortDir === 1 ? '&#9650;' : '&#9660;') : '&#x21C5;';
+      return String(label || '')
+        + '<span class="table-sort-arrow' + (active ? ' active' : '') + '" data-sort-arrow="' + key + '">' + arrow + '</span>';
+    }
+
+    function syncIndicators(tableEl) {
+      if (!tableEl) return;
+      tableEl.querySelectorAll('thead th[data-sort-key]').forEach(function (th) {
+        var isActive = th.dataset.sortKey === sortKey;
+        th.classList.add('table-th-sort');
+        th.setAttribute('aria-sort', isActive ? (sortDir === 1 ? 'ascending' : 'descending') : 'none');
+        var arrow = th.querySelector('[data-sort-arrow]');
+        if (!arrow) return;
+        arrow.classList.toggle('active', isActive);
+        arrow.innerHTML = isActive ? (sortDir === 1 ? '&#9650;' : '&#9660;') : '&#x21C5;';
+      });
+    }
+
+    function bind(tableEl, onChange) {
+      if (!tableEl || tableEl.dataset.tableSortBound === '1') {
+        syncIndicators(tableEl);
+        return;
+      }
+      tableEl.dataset.tableSortBound = '1';
+      tableEl.addEventListener('click', function (e) {
+        if (tableEl.dataset.colResizeDragging === '1') return;
+        var suppressUntil = Number(tableEl.dataset.colResizeSuppressUntil || 0);
+        if (suppressUntil && Date.now() < suppressUntil) return;
+        var th = e.target.closest('thead th[data-sort-key]');
+        if (!th || !tableEl.contains(th)) return;
+        toggle(th.dataset.sortKey);
+        syncIndicators(tableEl);
+        if (typeof onChange === 'function') {
+          onChange(getState());
+        }
+      });
+      syncIndicators(tableEl);
+    }
+
+    function sortRows(rows, getValue) {
+      var next = Array.isArray(rows) ? rows.slice() : [];
+      if (!sortKey || typeof getValue !== 'function') return next;
+      next.sort(function (left, right) {
+        return compareSortValues(getValue(left, sortKey), getValue(right, sortKey)) * sortDir;
+      });
+      return next;
+    }
+
+    return {
+      getState: getState,
+      toggle: toggle,
+      bind: bind,
+      syncIndicators: syncIndicators,
+      renderLabel: renderLabel,
+      sortRows: sortRows,
+    };
+  }
+
   function isCompactActions() {
     return isCompactLayout();
   }
@@ -397,6 +502,10 @@
     isCompactLayout: isCompactLayout,
     renderColumnChooser: renderColumnChooser,
     readHiddenFromChooser: readHiddenFromChooser,
+  };
+
+  window.TableSort = {
+    create: createTableSort,
   };
 
   window.TableRowActions = {

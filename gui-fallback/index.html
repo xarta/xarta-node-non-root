@@ -486,7 +486,7 @@
   <section id="tab-services" class="tab-panel tab-panel--fill">
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
-      <table>
+      <table id="services-table">
         <thead>
           <tr>
             <th>ID</th>
@@ -508,7 +508,7 @@
   <section id="tab-machines" class="tab-panel tab-panel--fill">
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
-      <table>
+      <table id="machines-table">
         <thead>
           <tr>
             <th>ID</th>
@@ -1466,6 +1466,42 @@
   <div class="hub-modal-footer">
     <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
     <button class="hub-modal-btn" id="ml-cols-modal-apply" type="button">&#10003; Apply</button>
+  </div>
+</dialog>
+
+<dialog class="hub-modal hub-dialog" data-tone="info" id="svc-cols-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">COLS</span>
+      <span class="hub-dialog-title-text">Services Columns</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body">
+    <p style="font-size:12px;color:var(--text-dim);margin:0 0 10px">Choose which columns stay visible for this layout. Preferences are browser-local.</p>
+    <div id="svc-cols-modal-list" class="hub-checkbox-list"></div>
+  </div>
+  <div class="hub-modal-footer">
+    <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
+    <button class="hub-modal-btn" id="svc-cols-modal-apply" type="button">&#10003; Apply</button>
+  </div>
+</dialog>
+
+<dialog class="hub-modal hub-dialog" data-tone="info" id="mch-cols-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">COLS</span>
+      <span class="hub-dialog-title-text">Machines Columns</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body">
+    <p style="font-size:12px;color:var(--text-dim);margin:0 0 10px">Choose which columns stay visible for this layout. Preferences are browser-local.</p>
+    <div id="mch-cols-modal-list" class="hub-checkbox-list"></div>
+  </div>
+  <div class="hub-modal-footer">
+    <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
+    <button class="hub-modal-btn" id="mch-cols-modal-apply" type="button">&#10003; Apply</button>
   </div>
 </dialog>
 

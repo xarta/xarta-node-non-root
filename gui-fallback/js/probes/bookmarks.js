@@ -8,7 +8,7 @@ const _BM_FIELD_META = {
   _icon:       { label: 'Icon',        sortKey: null,
                  render: b => `<td style="text-align:center;width:30px">${b._item_type === 'visit' ? '&#128065;' : '&#128278;'}</td>` },
   title:       { label: 'Title',       sortKey: 'title',
-                 render: b => `<td><a href="${esc(b.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">${esc(b.title || b.url)}</a></td>` },
+                 render: b => `<td><a class="table-cell-link" href="${esc(b.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent)"><span class="table-cell-clamp">${esc(b.title || b.url)}</span></a></td>` },
   url:         { label: 'URL',         sortKey: 'url',
                  render: b => `<td style="font-size:11px;color:var(--text-dim);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(b.url)}">${_bmTruncUrl(b.url)}</td>` },
   tags:        { label: 'Tags',        sortKey: 'tags',
@@ -128,8 +128,6 @@ let _bmSearchTimer = null;      // server SeekDB search debounce
 let _bmRenderTimer = null;      // client-side filter render debounce
 let _bmSearchActive = false;
 let _bmExcludedTags = new Set(); // tags excluded from embeddings — also skipped in client-side keyword filter
-let _bmSortCol = 'created_at';
-let _bmSortDir = 'desc';
 let _bmColResizeDone = false;
 let _bmAllTags = [];
 let _bmTagCounts = {};       // {tag -> {active, archived}}
@@ -161,6 +159,10 @@ const _bmTablePrefs = TablePrefs.create({
   legacyHiddenKey: 'bm-hidden-cols',
   defaultHidden: _BM_DEFAULT_HIDDEN,
   minWidth: 40,
+});
+const _bmTableSort = TableSort.create({
+  defaultKey: 'created_at',
+  defaultDir: -1,
 });
 
 function _bmSetSearchActive(active) {
@@ -195,6 +197,21 @@ function _bmVisibleDataCols() {
 
 function _bmColCount() { return _bmVisibleDataCols().length; }
 
+function _bmSortValue(item, sortKey) {
+  switch (sortKey) {
+    case 'tags':
+      return item.tags || [];
+    case 'rrf_score':
+    case 'kw_tier':
+    case 'cosine_distance':
+    case 'reranker_rank':
+    case 'exact_tier':
+      return item[sortKey] == null ? Number.NEGATIVE_INFINITY : Number(item[sortKey]);
+    default:
+      return item[sortKey];
+  }
+}
+
 function _bmRebuildThead() {
   const tr = document.querySelector('#bm-main-view thead tr');
   if (!tr) return;
@@ -209,12 +226,11 @@ function _bmRebuildThead() {
     else if (key === '_actions') styleParts.push(`width:${_bmActionCellWidth()}px`);
     const style = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
     html += sortKey
-      ? `<th class="bm-th-sort" data-col="${key}" onclick="_bmSortBy('${sortKey}')"${style}>${label}<span class="bm-sort-arrow" data-col="${sortKey}">&#x21C5;</span></th>`
+      ? `<th class="table-th-sort" data-col="${key}" data-sort-key="${sortKey}"${style}>${_bmTableSort.renderLabel(label, sortKey)}</th>`
       : `<th data-col="${key}"${style}>${label}</th>`;
   }
   tr.innerHTML = html;
   _bmColResizeDone = false;
-  _bmUpdateSortHeaders();
 }
 
 function _bmRenderDataTds(b) {
@@ -224,7 +240,7 @@ function _bmRenderDataTds(b) {
     // Unknown field — plain text fallback; this is the data-driven path
     const val = b[key];
     const text = val == null ? '' : (Array.isArray(val) ? val.join(', ') : String(val));
-    return `<td style="font-size:11px;color:var(--text-dim)">${esc(text)}</td>`;
+    return `<td class="table-cell-clip" title="${esc(text)}"><span class="table-cell-clip__text">${esc(text)}</span></td>`;
   }).join('');
 }
 
@@ -396,6 +412,7 @@ function _renderBmSearchResults(results) {
     if (status) { status.textContent = '0 results'; status.hidden = false; }
     return;
   }
+  rows = _bmTableSort.sortRows(rows, _bmSortValue);
   _bmDetectCols(rows);  // search results have extra fields (score_sources, rrf_score, etc.)
   _bmColResizeDone = false;
   _bmRenderSharedTable(() => {
@@ -428,13 +445,7 @@ function renderBookmarks(opts = {}) {
   if (tagFilter) {
     rows = rows.filter(b => (b.tags || []).includes(tagFilter));
   }
-  if (_bmSortCol) {
-    rows = [...rows].sort((a, b) => {
-      const av = _bmSortVal(a, _bmSortCol);
-      const bv = _bmSortVal(b, _bmSortCol);
-      return _bmSortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
-    });
-  }
+  rows = _bmTableSort.sortRows(rows, _bmSortValue);
   const pageData = _BM_PAGER.getSlice(rows);
   const totalRows = pageData.totalItems;
   const pageRows = pageData.items;
@@ -450,14 +461,12 @@ function renderBookmarks(opts = {}) {
   if (!pageRows.length) {
     _bmRenderSharedTable(() => {
       tbody.innerHTML = `<tr class="empty-row"><td colspan="${_bmColCount()}">No bookmarks found.</td></tr>`;
-      _bmUpdateSortHeaders();
     });
     _BM_PAGER.render(totalRows);
     return;
   }
   _bmRenderSharedTable(() => {
     tbody.innerHTML = pageRows.map(b => _bmBuildBookmarkRow(b)).join('');
-    _bmUpdateSortHeaders();
   });
   _BM_PAGER.render(totalRows);
 }
@@ -500,8 +509,11 @@ _visTablePrefs.syncColumns(_VIS_ALL_COLS);
 
 let _visHiddenCols = _visTablePrefs.getHiddenSet(_VIS_ALL_COLS);
 let _visColResizeDone = false;
-let _visSortCol = 'visited_at';
-let _visSortDir = 'desc';
+const _visTableSort = TableSort.create({
+  defaultKey: 'visited_at',
+  defaultDir: -1,
+});
+let _visLastSortKey = _visTableSort.getState().key;
 
 // Visual-only pagination for visits — same pattern as bookmarks
 const _VIS_PAGE_SIZE_OPTIONS = [25, 50, 100, 250, 1000];
@@ -522,6 +534,29 @@ let _visExpandedDomains = new Set(); // domains currently expanded in group mode
 
 function _visVisibleCols() { return _VIS_ALL_COLS.filter(k => !_visHiddenCols.has(k)); }
 function _visColCount()    { return _visVisibleCols().length; }
+
+function _visSortValue(visit, sortKey) {
+  switch (sortKey) {
+    case 'dwell_seconds':
+      return visit.dwell_seconds == null ? Number.NEGATIVE_INFINITY : Number(visit.dwell_seconds);
+    case 'visit_count':
+      return visit.visit_count == null ? 0 : Number(visit.visit_count);
+    case 'visited_at':
+      return visit.visited_at || '';
+    default:
+      return visit[sortKey];
+  }
+}
+
+function _visHandleSortChange(nextState) {
+  const prevKey = _visLastSortKey;
+  const wasGroupMode = prevKey === 'url' || prevKey === 'domain';
+  const nextKey = nextState?.key || null;
+  const nowGroupMode = nextKey === 'url' || nextKey === 'domain';
+  _visLastSortKey = nextKey;
+  if (!wasGroupMode && nowGroupMode) _visExpandedDomains = new Set();
+  renderVisits();
+}
 
 // Return the hostname (stripped of www.) for a URL string
 function _visDomain(url) {
@@ -550,20 +585,24 @@ function _visRebuildThead() {
     else if (k === 'visit_count') styleParts.push('width:50px;text-align:center');
     const style = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
     return sortKey
-      ? `<th class="bm-th-sort" data-col="${k}" onclick="_visSortBy('${sortKey}')"${style}>${label}<span class="bm-sort-arrow vis-sort-arrow" data-col="${sortKey}">&#x21C5;</span></th>`
+      ? `<th class="table-th-sort" data-col="${k}" data-sort-key="${sortKey}"${style}>${_visTableSort.renderLabel(label, sortKey)}</th>`
       : `<th data-col="${k}"${style}>${label}</th>`;
   }).join('');
   _visColResizeDone = false;
-  _visUpdateSortHeaders();
 }
 
-function _visInitColResize() {
-  if (_visColResizeDone) return;
-  const table = document.getElementById('vis-table');
-  if (!table) return;
-  _visColResizeDone = true;
-  _visTablePrefs.applyWidths(table);
-  _visTablePrefs.bindColumnResize(table, { minWidth: 40 });
+function _visRenderSharedTable(renderBody) {
+  _visTablePrefs.renderTable({
+    getTable: () => document.getElementById('vis-table'),
+    rebuildHead: _visRebuildThead,
+    renderBody,
+    minWidth: 40,
+    afterBind: tableEl => {
+      _visColResizeDone = true;
+      _visTableSort.bind(tableEl, _visHandleSortChange);
+      _visTableSort.syncIndicators(tableEl);
+    },
+  });
 }
 
 function _visOpenColsModal() {
@@ -611,15 +650,10 @@ function renderVisits(opts = {}) {
   }
   if (savedFilter === 'saved') rows = rows.filter(v => v.bookmark_id);
   if (savedFilter === 'unsaved') rows = rows.filter(v => !v.bookmark_id);
-  rows = [...rows].sort((a, b) => {
-    const av = String(a[_visSortCol] ?? '').toLowerCase();
-    const bv = String(b[_visSortCol] ?? '').toLowerCase();
-    return _visSortDir === 'asc'
-      ? av.localeCompare(bv, undefined, {numeric: true})
-      : bv.localeCompare(av, undefined, {numeric: true});
-  });
+  rows = _visTableSort.sortRows(rows, _visSortValue);
 
-  const groupMode = (_visSortCol === 'url' || _visSortCol === 'domain');
+  const visSortState = _visTableSort.getState();
+  const groupMode = visSortState.key === 'url' || visSortState.key === 'domain';
   const expandBtn = document.getElementById('vis-expand-all-btn');
   const collapseBtn = document.getElementById('vis-collapse-all-btn');
   if (expandBtn) expandBtn.hidden = !groupMode;
@@ -642,24 +676,25 @@ function renderVisits(opts = {}) {
       status.hidden = false;
     }
     if (!pageRows.length) {
-      tbody.innerHTML = `<tr class="empty-row"><td colspan="${cols.length}">No visit history.</td></tr>`;
-      _visUpdateSortHeaders();
+      _visRenderSharedTable(() => {
+        tbody.innerHTML = `<tr class="empty-row"><td colspan="${cols.length}">No visit history.</td></tr>`;
+      });
       _VIS_PAGER.render(total);
       return;
     }
     const expandColspan = cols.length;
-    tbody.innerHTML = pageRows.map(v => {
-      const expandId = `ve-${esc(v.visit_id)}`;
-      const tds = cols.map(k => (_VIS_FIELD_META[k]?.render ?? (v => `<td>${esc(String(v[k] ?? ''))}</td>`))(v)).join('');
-      return `<tr>${tds}</tr>
-      <tr id="${expandId}" style="display:none">
-        <td colspan="${expandColspan}" style="padding:0 0 6px 18px">
-          <div id="${expandId}-body" style="font-size:11px;color:var(--text-dim)">Loading&hellip;</div>
-        </td>
-      </tr>`;
-    }).join('');
-    _visInitColResize();
-    _visUpdateSortHeaders();
+    _visRenderSharedTable(() => {
+      tbody.innerHTML = pageRows.map(v => {
+        const expandId = `ve-${esc(v.visit_id)}`;
+        const tds = cols.map(k => (_VIS_FIELD_META[k]?.render ?? (v => `<td>${esc(String(v[k] ?? ''))}</td>`))(v)).join('');
+        return `<tr>${tds}</tr>
+        <tr id="${expandId}" style="display:none">
+          <td colspan="${expandColspan}" style="padding:0 0 6px 18px">
+            <div id="${expandId}-body" style="font-size:11px;color:var(--text-dim)">Loading&hellip;</div>
+          </td>
+        </tr>`;
+      }).join('');
+    });
     _VIS_PAGER.render(total);
     return;
   }
@@ -715,8 +750,9 @@ function renderVisits(opts = {}) {
   }
 
   if (!pageItems.length) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="${cols.length}">No visit history.</td></tr>`;
-    _visUpdateSortHeaders();
+    _visRenderSharedTable(() => {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="${cols.length}">No visit history.</td></tr>`;
+    });
     _VIS_PAGER.render(totalItems);
     return;
   }
@@ -751,9 +787,9 @@ function renderVisits(opts = {}) {
       </tr>`;
     }
   }
-  tbody.innerHTML = html;
-  _visInitColResize();
-  _visUpdateSortHeaders();
+  _visRenderSharedTable(() => {
+    tbody.innerHTML = html;
+  });
   _VIS_PAGER.render(totalItems);
 }
 
@@ -827,20 +863,6 @@ function _visOpenRowActions(visitId) {
   });
 }
 
-function _visSortBy(col) {
-  const wasGroupMode = (_visSortCol === 'url' || _visSortCol === 'domain');
-  if (_visSortCol === col) {
-    _visSortDir = _visSortDir === 'asc' ? 'desc' : 'asc';
-  } else {
-    _visSortCol = col;
-    _visSortDir = 'asc';
-  }
-  const nowGroupMode = (_visSortCol === 'url' || _visSortCol === 'domain');
-  // When entering group mode fresh, start with all groups collapsed
-  if (!wasGroupMode && nowGroupMode) _visExpandedDomains = new Set();
-  renderVisits();
-}
-
 // Toggle a single domain group open/closed
 function _visToggleDomain(domain) {
   if (_visExpandedDomains.has(domain)) {
@@ -871,19 +893,6 @@ function _visIsPaginationEnabled() {
 function _visTogglePagination() {
   _VIS_PAGER.toggleEnabled();
   if (typeof ProbesMenuConfig !== 'undefined') ProbesMenuConfig.updateActiveTab();
-}
-
-function _visUpdateSortHeaders() {
-  document.querySelectorAll('.vis-sort-arrow').forEach(span => {
-    const col = span.dataset.col;
-    if (col === _visSortCol) {
-      span.textContent = _visSortDir === 'asc' ? ' ↑' : ' ↓';
-      span.classList.add('active');
-    } else {
-      span.textContent = '⇅';
-      span.classList.remove('active');
-    }
-  });
 }
 
 async function _bmToggleVisitEvents(normalizedUrl, rowId) {
@@ -1379,44 +1388,6 @@ async function archiveBookmark(id, currentArchived) {
 
 // ── Sort helpers ────────────────────────────────────────────────────────
 
-function _bmSortBy(col) {
-  if (_bmSortCol === col) {
-    _bmSortDir = _bmSortDir === 'asc' ? 'desc' : 'asc';
-  } else {
-    _bmSortCol = col;
-    _bmSortDir = 'asc';
-  }
-  if (_bmSearchActive) {
-    _bmLastSearchResults = [..._bmLastSearchResults].sort((a, b) => {
-      const av = _bmSortVal(a, col);
-      const bv = _bmSortVal(b, col);
-      return _bmSortDir === 'asc' ? av.localeCompare(bv, undefined, {numeric: true}) : bv.localeCompare(av, undefined, {numeric: true});
-    });
-    _renderBmSearchResults(_bmLastSearchResults);
-  } else {
-    renderBookmarks();
-  }
-}
-
-function _bmSortVal(b, col) {
-  if (col === 'tags') return (b.tags || []).join(',').toLowerCase();
-  const v = b[col];
-  return v !== null && v !== undefined ? String(v).toLowerCase() : '';
-}
-
-function _bmUpdateSortHeaders() {
-  document.querySelectorAll('#bm-main-view .bm-sort-arrow').forEach(span => {
-    const col = span.dataset.col;
-    if (col === _bmSortCol) {
-      span.textContent = _bmSortDir === 'asc' ? ' \u2191' : ' \u2193';
-      span.classList.add('active');
-    } else {
-      span.textContent = '\u21C5';
-      span.classList.remove('active');
-    }
-  });
-}
-
 // ── Column resize ───────────────────────────────────────────────────────
 
 function _bmRenderSharedTable(renderBody) {
@@ -1425,8 +1396,13 @@ function _bmRenderSharedTable(renderBody) {
     rebuildHead: _bmRebuildThead,
     renderBody,
     minWidth: 40,
-    afterBind: () => {
+    afterBind: tableEl => {
       _bmColResizeDone = true;
+      _bmTableSort.bind(tableEl, () => {
+        if (_bmSearchActive) _renderBmSearchResults(_bmLastSearchResults);
+        else renderBookmarks();
+      });
+      _bmTableSort.syncIndicators(tableEl);
     },
   });
 }

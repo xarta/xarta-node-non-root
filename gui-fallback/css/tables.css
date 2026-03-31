@@ -52,10 +52,43 @@ thead th { background: var(--surface); color: var(--text-dim); font-size: 11px;
            text-align: left; border-bottom: 1px solid var(--border);
            position: sticky; top: 0; z-index: 1; }
 thead th[data-col] { padding-right: 22px; }
+.table-th-sort { cursor: pointer; user-select: none; }
+.table-th-sort:hover { color: var(--text); }
+.table-sort-arrow { font-size: 10px; margin-left: 3px; opacity: .45; }
+.table-sort-arrow.active { opacity: 1; color: var(--accent); }
 tbody tr { border-bottom: 1px solid var(--border); }
 tbody tr:hover { background: rgba(91,156,246,.06); }
 tbody td { padding: 9px 10px; vertical-align: top; }
-table.table-shared-ui tbody td { overflow: hidden; }
+table.table-shared-ui tbody td { overflow: hidden; line-height: 1.35; }
+
+.table-cell-clip {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.table-cell-clip__text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-cell-clamp {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  line-height: 1.2;
+  max-height: calc(2 * 1.2em);
+  word-break: break-word;
+}
+
+.table-cell-link {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+}
 
 .table-col-resize {
   position: absolute;
@@ -165,7 +198,12 @@ table.table-shared-ui tbody td { overflow: hidden; }
   .table-wrap { max-height: var(--table-wrap-max-h, calc(100vh - 160px)); }
   thead th { padding: 6px 8px; }
   thead th[data-col] { padding-right: 24px; }
-  tbody td { padding: 7px 8px; }
+  tbody td { padding: 3px 8px; }
+  table.table-shared-ui tbody td { line-height: 1.15; }
+  .table-cell-clamp {
+    line-height: 1.1;
+    max-height: calc(2 * 1.1em);
+  }
   .table-col-resize {
     top: 1px;
     right: 1px;
@@ -173,7 +211,7 @@ table.table-shared-ui tbody td { overflow: hidden; }
     height: calc(100% - 2px);
     background-size: 14px 100%;
   }
-  .table-row-action-trigger { min-width: 34px; }
+  .table-row-action-trigger { min-width: 30px; padding: 0 6px; }
 }
 
 @media (pointer: coarse) {

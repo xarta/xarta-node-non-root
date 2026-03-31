@@ -36,11 +36,13 @@ const SynthesisMenuConfig = createHubMenu({
         { id: 'synthesis-layout',      label: '☰',         icon: HIEROGLYPHS.kheper,     pageLabel: 'Navbar Layout',         parent: null,              order: 3 },
 
         // ── Services page function items ──────────────────────────────────
-        { id: 'svc-fn-add',     label: 'Add service', icon: HIEROGLYPHS.sekhem,   fn: 'svc.add',     activeOn: ['services'], parent: 'synthesis-layout', order: 0 },
-        { id: 'svc-fn-refresh', label: 'Refresh',     icon: HIEROGLYPHS.nefer,    fn: 'svc.refresh', activeOn: ['services'], parent: 'synthesis-layout', order: 1 },
+        { id: 'svc-fn-add',     label: 'Add service', icon: HIEROGLYPHS.sekhem,     fn: 'svc.add',     activeOn: ['services'], parent: 'synthesis-layout', order: 0 },
+        { id: 'svc-fn-refresh', label: 'Refresh',     icon: HIEROGLYPHS.nefer,      fn: 'svc.refresh', activeOn: ['services'], parent: 'synthesis-layout', order: 1 },
+        { id: 'svc-fn-cols',    label: 'Columns',     icon: HIEROGLYPHS.khaHorizon, fn: 'svc.columns', activeOn: ['services'], parent: 'synthesis-layout', order: 2 },
 
         // ── Machines page function items ──────────────────────────────────
-        { id: 'mch-fn-refresh', label: 'Refresh',     icon: HIEROGLYPHS.nefer,    fn: 'mch.refresh', activeOn: ['machines'], parent: 'synthesis-layout', order: 0 },
+        { id: 'mch-fn-refresh', label: 'Refresh',     icon: HIEROGLYPHS.nefer,      fn: 'mch.refresh', activeOn: ['machines'], parent: 'synthesis-layout', order: 0 },
+        { id: 'mch-fn-cols',    label: 'Columns',     icon: HIEROGLYPHS.khaHorizon, fn: 'mch.columns', activeOn: ['machines'], parent: 'synthesis-layout', order: 1 },
 
         // ── Manual Links (table view) function items ──────────────────────
         { id: 'ml-fn-add',      label: 'Add link',     icon: HIEROGLYPHS.ropeCoil, fn: 'ml.add',      activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 0 },
@@ -59,7 +61,9 @@ const SynthesisMenuConfig = createHubMenu({
 SynthesisMenuConfig.registerFunctions({
     'svc.add':      () => openAddModal(),
     'svc.refresh':  () => loadServices(),
+    'svc.columns':  () => svcOpenColsModal(),
     'mch.refresh':  () => loadMachines(),
+    'mch.columns':  () => mchOpenColsModal(),
     'ml.add':       () => openManualLinkModal(null),
     'ml.refresh':   () => loadManualLinks(),
     'ml.columns':   () => mlOpenColsModal(),
