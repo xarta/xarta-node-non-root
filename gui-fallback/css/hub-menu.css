@@ -171,11 +171,12 @@
 
 .hub-tab:hover {
     color: var(--hub-accent);
-    background: rgba(var(--hub-accent-rgb), 0.1);
+    background: rgba(var(--hub-accent-rgb), 0.08);
 }
 
 .hub-tab.active {
-    background: rgba(var(--hub-accent-rgb), 0.2);
+    background: rgba(var(--hub-accent-rgb), 0.12);
+    box-shadow: inset 0 0 0 1px rgba(var(--hub-accent-rgb), 0.2);
     color: var(--hub-accent);
     font-weight: 600;
 }
@@ -206,7 +207,7 @@
 }
 
 .hub-tab-split .hub-tab-caret {
-    background: rgba(var(--hub-accent-rgb), 0.1);
+    background: rgba(var(--hub-accent-rgb), 0.06);
     border: 1px solid rgba(var(--hub-accent-rgb), 0.3);
     border-left: none;
     border-radius: 0 8px 8px 0;
@@ -219,12 +220,12 @@
 }
 
 .hub-tab-split .hub-tab-caret:hover {
-    background: rgba(var(--hub-accent-rgb), 0.2);
+    background: rgba(var(--hub-accent-rgb), 0.12);
 }
 
 /* Caret rotates 180° when open */
 .hub-tab-dropdown.open .hub-tab-caret {
-    background: rgba(var(--hub-accent-rgb), 0.3);
+    background: rgba(var(--hub-accent-rgb), 0.16);
     transform: rotate(180deg);
 }
 
@@ -258,8 +259,8 @@
     transition: all 0.2s ease;
 }
 
-.hub-dropdown-item:hover { background: rgba(var(--hub-accent-rgb), 0.15); color: var(--hub-accent); }
-.hub-dropdown-item.active { background: rgba(var(--hub-accent-rgb), 0.2); color: var(--hub-accent); }
+.hub-dropdown-item:hover { background: rgba(var(--hub-accent-rgb), 0.1); color: var(--hub-accent); }
+.hub-dropdown-item.active { background: rgba(var(--hub-accent-rgb), 0.12); color: var(--hub-accent); }
 
 /* ── 3. Drag & Drop editor ───────────────────────────────────── */
 
@@ -747,7 +748,7 @@
 /* ── Menu icon images (asset icons replacing emoji) ─────────────────────── */
 /*
    Icons are rendered as CSS mask-image spans so they inherit `currentColor`
-   from the parent button. Active/hover colour changes (--hub-accent cyan) apply
+    from the parent button. Active/hover colour changes (--hub-accent) apply
    automatically to icons with no extra CSS states or image variants needed.
    Server pre-processes raster uploads → white-on-transparent PNG; SVG files
    work as-is (alpha channel provides the mask shape).
