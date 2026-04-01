@@ -240,7 +240,7 @@
 }
 
 .hub-tab-dropdown.open .hub-dropdown-menu {
-    padding: 5px 5px 5px 20px;
+    padding: 5px 5px 5px 2px;
     max-height: 500px;
 }
 
@@ -251,7 +251,7 @@
     background: transparent;
     border: none;
     color: #aaa;
-    padding: 10px 15px;
+    padding: 8px 12px;
     cursor: pointer;
     border-radius: 5px;
     font-size: 0.9em;
@@ -735,6 +735,12 @@
         pointer-events: auto;
         transform: translateY(0);
         overflow: visible;
+    }
+
+    .hub-tab-dropdown.open .hub-dropdown-menu.hub-dropdown-menu--clipped {
+        overflow-y: auto;
+        overflow-x: hidden;
+        overscroll-behavior: contain;
     }
 }
 

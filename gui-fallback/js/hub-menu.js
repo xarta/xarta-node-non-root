@@ -145,6 +145,14 @@ function createHubMenu(cfg) {
                 const resetBtn = document.getElementById(cfg.resetButtonId);
                 if (resetBtn) resetBtn.addEventListener('click', () => this.resetConfig());
 
+                this._fitDropdownsHandler = () => this.fitOpenDropdowns();
+                window.addEventListener('resize', this._fitDropdownsHandler, { passive: true });
+                window.addEventListener('orientationchange', this._fitDropdownsHandler, { passive: true });
+                if (window.visualViewport) {
+                    window.visualViewport.addEventListener('resize', this._fitDropdownsHandler, { passive: true });
+                    window.visualViewport.addEventListener('scroll', this._fitDropdownsHandler, { passive: true });
+                }
+
                 // Load DB-driven icons and sounds in background; re-renders navbar when done
                 this.loadNavItemsFromDB();
             }
@@ -479,7 +487,10 @@ function createHubMenu(cfg) {
                         e.stopPropagation();
                         const wasOpen = dropdown.classList.contains('open');
                         this.closeDropdowns();
-                        if (!wasOpen) dropdown.classList.add('open');
+                        if (!wasOpen) {
+                            dropdown.classList.add('open');
+                            requestAnimationFrame(() => this.fitOpenDropdowns());
+                        }
                     });
 
                     // Nav dropdown items → navigate (resolve missing panels to first child)
@@ -558,7 +569,46 @@ function createHubMenu(cfg) {
             const sel = `#${cfg.tabsId} .hub-tab-dropdown.open`;
             const pinnedSel = cfg.pinnedTabsId ? `, #${cfg.pinnedTabsId} .hub-tab-dropdown.open` : '';
             document.querySelectorAll(sel + pinnedSel)
-                .forEach(d => d.classList.remove('open'));
+                .forEach(d => {
+                    this._resetDropdownMenuFit(d.querySelector('.hub-dropdown-menu'));
+                    d.classList.remove('open');
+                });
+        },
+
+        _getViewportHeight() {
+            if (window.visualViewport && Number.isFinite(window.visualViewport.height) && window.visualViewport.height > 0) {
+                return window.visualViewport.height;
+            }
+            return window.innerHeight || document.documentElement.clientHeight || 0;
+        },
+
+        _resetDropdownMenuFit(menu) {
+            if (!menu) return;
+            menu.classList.remove('hub-dropdown-menu--clipped');
+            menu.style.removeProperty('max-height');
+            menu.style.removeProperty('overflow-y');
+            menu.style.removeProperty('overflow-x');
+        },
+
+        _fitDropdownMenu(menu) {
+            if (!menu) return;
+            this._resetDropdownMenuFit(menu);
+            const viewportHeight = this._getViewportHeight();
+            if (!viewportHeight) return;
+            const rect = menu.getBoundingClientRect();
+            const bottomPad = 8;
+            const available = Math.floor(viewportHeight - rect.top - bottomPad);
+            if (rect.bottom <= viewportHeight - bottomPad || available <= 0) return;
+            menu.classList.add('hub-dropdown-menu--clipped');
+            menu.style.maxHeight = Math.max(120, available) + 'px';
+            menu.style.overflowY = 'auto';
+            menu.style.overflowX = 'hidden';
+        },
+
+        fitOpenDropdowns() {
+            const sel = `#${cfg.tabsId} .hub-tab-dropdown.open .hub-dropdown-menu`;
+            const pinnedSel = cfg.pinnedTabsId ? `, #${cfg.pinnedTabsId} .hub-tab-dropdown.open .hub-dropdown-menu` : '';
+            document.querySelectorAll(sel + pinnedSel).forEach(menu => this._fitDropdownMenu(menu));
         },
 
         // Update active visual state. Accepts an explicit tabId or derives from DOM.
