@@ -470,7 +470,7 @@ SettingsMenuConfig.registerLabelGetters({
     'pveh-fn-scroll':      () => _settingsHorizontalScrollLabel('Horizontal Scroll', () => _ensurePveHostsTablePrefs()),
     'nod-fn-scroll':       () => _settingsHorizontalScrollLabel('Horizontal Scroll', () => _ensureNodesTableView()),
     'cfg-fn-scroll':       () => _settingsHorizontalScrollLabel('Horizontal Scroll', () => _ensureSettingsTableView()),
-    'arp-fn-scroll':       () => _settingsHorizontalScrollLabel('Horizontal Scroll', () => _ensureArpManualTableView()),
+    'arp-fn-scroll':       () => _settingsHorizontalScrollLabel('Horizontal Scroll', () => _ensureArpManualLayoutController()),
     'ai-fn-provscroll':    () => _settingsHorizontalScrollLabel('Provider Scroll', () => _ensureAiProvidersTableView()),
     'ai-fn-assignscroll':  () => _settingsHorizontalScrollLabel('Assignment Scroll', () => _ensureAiAssignmentsTableView()),
     'key-fn-scroll':       () => _settingsHorizontalScrollLabel('Horizontal Scroll', () => _ensureKeysTableView()),
