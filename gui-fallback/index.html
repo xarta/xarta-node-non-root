@@ -566,8 +566,8 @@
     <section style="margin-top:24px">
       <h2>Backups</h2>
       <div class="toolbar" style="margin-bottom:12px;">
-        <button onclick="createBackup(this)">&#128190; Create backup</button>
-        <button class="secondary" onclick="loadBackups()">&#8635; Refresh</button>
+        <button id="backup-create-btn">&#128190; Create backup</button>
+        <button class="secondary" id="backup-refresh-btn">&#8635; Refresh</button>
       </div>
       <div class="warn-box">
         &#9888; Restoring only updates <strong>this node</strong>.
@@ -575,7 +575,7 @@
         Use <strong>Force Restore</strong> to propagate the restored state to all peers and suppress incoming overwrites (disaster recovery only).
       </div>
       <div class="table-wrap">
-        <table class="backup-table">
+        <table id="backups-table">
           <thead><tr>
             <th>Filename</th>
             <th>Size</th>

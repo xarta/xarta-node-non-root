@@ -1,6 +1,33 @@
 /* ── Backups ───────────────────────────────────────────────────────────── */
 
+const _BACKUP_COLS = ['filename', 'size_bytes', 'created_at', '_actions'];
+const _BACKUP_FIELD_META = {
+  filename: { label: 'Filename', sortKey: 'filename' },
+  size_bytes: { label: 'Size', sortKey: 'size_bytes' },
+  created_at: { label: 'Created', sortKey: 'created_at' },
+  _actions: { label: 'Actions' },
+};
+
+const _BACKUP_ACTION_INLINE_WIDTH = 102;
+const _BACKUP_ACTION_COMPACT_WIDTH = 48;
+
+let _backups = [];
+let _backupEmptyMessage = 'Loading…';
+let _backupTableView = null;
+
 document.addEventListener('DOMContentLoaded', () => {
+  const createBtn = document.getElementById('backup-create-btn');
+  if (createBtn && !createBtn.dataset.bound) {
+    createBtn.addEventListener('click', () => createBackup(createBtn));
+    createBtn.dataset.bound = '1';
+  }
+
+  const refreshBtn = document.getElementById('backup-refresh-btn');
+  if (refreshBtn && !refreshBtn.dataset.bound) {
+    refreshBtn.addEventListener('click', () => loadBackups());
+    refreshBtn.dataset.bound = '1';
+  }
+
   const tbody = document.getElementById('backup-tbody');
   if (tbody && !tbody.dataset.bound) {
     tbody.addEventListener('click', onBackupTableClick);
@@ -12,9 +39,164 @@ document.addEventListener('DOMContentLoaded', () => {
     confirmBtn.addEventListener('click', submitBackupAction);
     confirmBtn.dataset.bound = '1';
   }
+
+  _ensureBackupsTableView();
+  _backupTableView?.onLayoutChange(() => {
+    renderBackups();
+  });
 });
 
 let _pendingBackupAction = null;
+
+function _ensureBackupsTableView() {
+  if (_backupTableView || typeof TableView === 'undefined') return _backupTableView;
+  _backupTableView = TableView.create({
+    storageKey: 'backups-table-prefs',
+    columns: _BACKUP_COLS,
+    meta: _BACKUP_FIELD_META,
+    getTable: () => document.getElementById('backups-table'),
+    fallbackColumn: 'filename',
+    minWidth: 40,
+    getDefaultWidth: col => {
+      if (col === '_actions') return _backupActionCellWidth();
+      if (col === 'size_bytes') return 90;
+      if (col === 'created_at') return 170;
+      return null;
+    },
+    sort: {
+      storageKey: 'backups-table-sort',
+      defaultKey: 'created_at',
+      defaultDir: -1,
+    },
+    onSortChange: renderBackups,
+  });
+  return _backupTableView;
+}
+
+function _backupVisibleCols() {
+  return _ensureBackupsTableView()?.getVisibleCols() || ['filename'];
+}
+
+function _backupSortValue(backup, sortKey) {
+  switch (sortKey) {
+    case 'filename':
+      return backup.filename || '';
+    case 'size_bytes':
+      return Number(backup.size_bytes || 0);
+    case 'created_at':
+      return backup.created_at || '';
+    default:
+      return '';
+  }
+}
+
+function _backupCompactRowActions() {
+  const view = _ensureBackupsTableView();
+  return typeof TableRowActions !== 'undefined' && TableRowActions.shouldCollapse({
+    view,
+    getTable: () => document.getElementById('backups-table'),
+    columnKey: '_actions',
+    requiredWidth: _BACKUP_ACTION_INLINE_WIDTH,
+    defaultWidth: _BACKUP_ACTION_INLINE_WIDTH,
+  });
+}
+
+function _backupActionCellWidth() {
+  return _backupCompactRowActions() ? _BACKUP_ACTION_COMPACT_WIDTH : _BACKUP_ACTION_INLINE_WIDTH;
+}
+
+function _backupFilenameCell(backup) {
+  return `<td><span class="table-cell-clip"><span class="table-cell-clip__text"><code style="font-size:12px">${esc(backup.filename || '—')}</code></span></span></td>`;
+}
+
+function _backupSizeCell(backup) {
+  const kb = (Number(backup.size_bytes || 0) / 1024).toFixed(1);
+  return `<td style="white-space:nowrap">${esc(kb)} KB</td>`;
+}
+
+function _backupCreatedCell(backup) {
+  const created = backup.created_at || '';
+  const ts = created ? created.replace('T', ' ').slice(0, 19) + ' UTC' : '—';
+  return `<td style="white-space:nowrap;color:var(--text-dim)">${esc(ts)}</td>`;
+}
+
+function _backupInlineActionButtons(backup) {
+  const filename = esc(backup.filename || '');
+  return `<button class="secondary table-icon-btn table-icon-btn--restore" type="button" title="Restore this backup on this node" aria-label="Restore backup" data-backup-action="restore" data-filename="${filename}"></button>
+    <button class="secondary table-icon-btn table-icon-btn--force-restore" type="button" title="Force restore this backup across peers" aria-label="Force restore backup" data-backup-action="force" data-filename="${filename}"></button>
+    <button class="secondary table-icon-btn table-icon-btn--delete" type="button" title="Delete this backup archive" aria-label="Delete backup" data-backup-action="delete" data-filename="${filename}"></button>`;
+}
+
+function _backupActionsCell(backup) {
+  const filename = esc(backup.filename || '');
+  if (_backupCompactRowActions()) {
+    return `<td class="table-action-cell table-action-cell--compact" style="width:${_backupActionCellWidth()}px">
+      <button class="table-row-action-trigger secondary" type="button" title="Backup actions" data-backup-row-actions="${filename}">&#8942;</button>
+    </td>`;
+  }
+  return `<td class="table-action-cell" style="white-space:nowrap"><div class="table-inline-actions">${_backupInlineActionButtons(backup)}</div></td>`;
+}
+
+function renderBackups() {
+  const tbody = document.getElementById('backup-tbody');
+  const view = _ensureBackupsTableView();
+  if (!tbody || !view) return;
+
+  if (!_backups.length) {
+    view.render(() => {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="${Math.max(1, _backupVisibleCols().length)}">${esc(_backupEmptyMessage)}</td></tr>`;
+    });
+    return;
+  }
+
+  const rows = view.sorter ? view.sorter.sortRows(_backups, _backupSortValue) : _backups;
+  view.render(() => {
+    tbody.innerHTML = rows.map(backup => `<tr>${_backupVisibleCols().map(col => {
+      switch (col) {
+        case 'filename':
+          return _backupFilenameCell(backup);
+        case 'size_bytes':
+          return _backupSizeCell(backup);
+        case 'created_at':
+          return _backupCreatedCell(backup);
+        case '_actions':
+          return _backupActionsCell(backup);
+        default:
+          return '<td>—</td>';
+      }
+    }).join('')}</tr>`).join('');
+  });
+}
+
+function _openBackupRowActions(filename) {
+  if (typeof TableRowActions === 'undefined') return;
+  const backup = _backups.find(item => String(item.filename) === String(filename));
+  if (!backup) return;
+
+  TableRowActions.open({
+    title: 'Backup actions',
+    subtitle: backup.filename || '',
+    actions: [
+      {
+        label: 'Restore here',
+        detail: 'Restore this backup on the current node only',
+        onClick: () => openBackupActionModal(backup.filename || '', 'restore'),
+      },
+      {
+        label: 'Force restore fleet-wide',
+        detail: 'Restore here, then attempt to overwrite configured peers',
+        tone: 'danger',
+        onClick: () => openBackupActionModal(backup.filename || '', 'force'),
+      },
+      {
+        label: 'Delete archive',
+        detail: 'Permanently remove this backup from this node',
+        tone: 'danger',
+        onClick: () => openBackupActionModal(backup.filename || '', 'delete'),
+      },
+    ],
+  });
+}
 
 function _backupActionModalEls() {
   return {
@@ -94,6 +276,11 @@ function _finishDeleteBackupActionModal() {
 }
 
 function onBackupTableClick(event) {
+  const rowActionsBtn = event.target.closest('button[data-backup-row-actions]');
+  if (rowActionsBtn) {
+    _openBackupRowActions(rowActionsBtn.dataset.backupRowActions || '');
+    return;
+  }
   const btn = event.target.closest('button[data-backup-action]');
   if (!btn) return;
   openBackupActionModal(btn.dataset.filename || '', btn.dataset.backupAction || '', btn);
@@ -143,32 +330,23 @@ async function loadBackups() {
     const r = await apiFetch('/api/v1/backup');
     if (!r.ok) {
       if (r.status === 503) {
-        tbody.innerHTML = '<tr class="empty-row"><td colspan="4">Backups not configured on this node.</td></tr>';
+        _backups = [];
+        _backupEmptyMessage = 'Backups not configured on this node.';
+        renderBackups();
         return;
       }
       throw new Error(`HTTP ${r.status}`);
     }
     const d = await r.json();
-    const list = d.backups || [];
-    if (!list.length) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="4">No backups yet — create one above.</td></tr>';
-      return;
-    }
-    tbody.innerHTML = list.map(b => {
-      const kb = (b.size_bytes / 1024).toFixed(1);
-      const ts = (b.created_at || '').replace('T', ' ').slice(0, 19) + ' UTC';
-      return `<tr>
-        <td><code style="font-size:12px">${esc(b.filename)}</code></td>
-        <td style="white-space:nowrap">${esc(kb)} KB</td>
-        <td style="white-space:nowrap;color:var(--text-dim)">${esc(ts)}</td>
-        <td style="white-space:nowrap">
-          <button class="btn-restore secondary" type="button" data-backup-action="restore" data-filename="${esc(b.filename)}">Restore</button>
-          <button class="btn-force" type="button" data-backup-action="force" data-filename="${esc(b.filename)}">&#9888; Force restore</button>
-          <button class="secondary" type="button" style="color:var(--danger,#f85149)" data-backup-action="delete" data-filename="${esc(b.filename)}">&#10005; Delete</button>
-        </td>
-      </tr>`;
-    }).join('');
+    _backups = Array.isArray(d.backups) ? d.backups : [];
+    _backupEmptyMessage = _backups.length ? 'Loading…' : 'No backups yet — create one above.';
+    renderBackups();
   } catch (e) {
+    if (tbody) {
+      _backups = [];
+      _backupEmptyMessage = 'Unable to load backups.';
+      renderBackups();
+    }
     err.textContent = `Failed to load backups: ${e.message}`;
     err.hidden = false;
   }
