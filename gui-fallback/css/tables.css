@@ -415,6 +415,84 @@ button.table-icon-btn--history::before {
   gap: 12px;
 }
 
+.table-layout-context-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.table-layout-context-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.table-layout-context-filter {
+  width: 92px;
+  min-height: 40px;
+  padding: 2px 2px;
+  border-radius: 10px;
+  border: 1px solid rgba(var(--hub-accent-rgb, 0, 212, 255), 0.22);
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: normal;
+  word-break: break-word;
+  cursor: pointer;
+}
+
+.table-layout-context-filter:hover {
+  border-color: rgba(var(--hub-accent-rgb, 0, 212, 255), 0.42);
+  color: var(--text);
+}
+
+.table-layout-context-filter.is-active {
+  border-color: rgba(var(--hub-accent-rgb, 0, 212, 255), 0.52);
+  background: rgba(var(--hub-accent-rgb, 0, 212, 255), 0.14);
+  color: var(--text);
+}
+
+.table-layout-context-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.table-layout-context-target {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.table-layout-context-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+#table-layout-context-generate.is-safe {
+  border-color: rgba(61, 220, 151, 0.45);
+  background: rgba(61, 220, 151, 0.15);
+  color: #c5f6da;
+}
+
+#table-layout-context-generate.is-caution {
+  border-color: rgba(248, 113, 113, 0.5);
+  background: rgba(248, 113, 113, 0.14);
+  color: #ffd0d0;
+}
+
 .table-layout-context-entry {
   width: 100%;
   display: flex;
@@ -463,17 +541,28 @@ button.table-icon-btn--history::before {
   cursor: pointer;
 }
 
+.table-layout-context-entry__top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.table-layout-context-entry__delete {
+  flex: 0 0 auto;
+}
+
 
 .table-layout-context-entry__actions {
-  width: 100%;
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
   gap: 10px;
-  margin-top: 2px;
+  margin-left: auto;
 }
 
 .table-layout-context-entry__action {
-  padding: 7px 12px;
+  min-width: 74px;
+  padding: 7px 10px;
   border-radius: 999px;
   border: 1px solid rgba(var(--hub-accent-rgb, 0, 212, 255), 0.24);
   background: rgba(255, 255, 255, 0.04);
@@ -481,6 +570,7 @@ button.table-icon-btn--history::before {
   font-size: 11px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+  text-align: center;
   cursor: pointer;
 }
 

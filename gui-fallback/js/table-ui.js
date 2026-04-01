@@ -56,6 +56,11 @@
     });
   }
 
+  function getShadeSiblingLayoutKey(layoutKey) {
+    var parsed = parseBaseLayoutKey(layoutKey);
+    return parsed.viewportKey + '|' + (parsed.shadeKey === 'shade-up' ? 'shade-down' : 'shade-up');
+  }
+
   function cloneLayoutState(source) {
     if (!source || typeof source !== 'object') return null;
     return {
@@ -188,10 +193,32 @@
     }
 
     function isHorizontalScrollEnabledForLayout(layoutKey) {
-      var layout = getActualLayoutState(layoutKey);
+      var resolvedLayout = layoutKey || currentLayout;
+      var layout = getActualLayoutState(resolvedLayout);
       if (layout.allowHorizontalScroll === true) return true;
       if (layout.allowHorizontalScroll === false) return false;
+      var siblingLayout = state.layouts && state.layouts[getShadeSiblingLayoutKey(resolvedLayout)];
+      if (siblingLayout && siblingLayout.allowHorizontalScroll === true) return true;
+      if (siblingLayout && siblingLayout.allowHorizontalScroll === false) return false;
       return !!cfg.defaultHorizontalScroll;
+    }
+
+    function syncShadeTransitionScrollPreference(fromLayoutKey, toLayoutKey) {
+      var fromParsed = parseBaseLayoutKey(fromLayoutKey);
+      var toParsed = parseBaseLayoutKey(toLayoutKey);
+      if (fromParsed.viewportKey !== toParsed.viewportKey) return false;
+      if (fromParsed.shadeKey === toParsed.shadeKey) return false;
+
+      var fromLayout = state.layouts && state.layouts[fromLayoutKey];
+      if (!fromLayout || (fromLayout.allowHorizontalScroll !== true && fromLayout.allowHorizontalScroll !== false)) {
+        return false;
+      }
+
+      var toLayout = getActualLayoutState(toLayoutKey);
+      toLayout.allowHorizontalScroll = fromLayout.allowHorizontalScroll;
+      toLayout.pendingHorizontalClamp = false;
+      persist();
+      return true;
     }
 
     function getEffectiveLayoutKey(layoutKey) {
@@ -448,6 +475,7 @@
       resizeTimer = setTimeout(function () {
         var nextLayout = getPrefsBaseLayoutKey();
         if (nextLayout === currentLayout) return;
+        syncShadeTransitionScrollPreference(currentLayout, nextLayout);
         currentLayout = nextLayout;
         listeners.forEach(function (listener) { listener(nextLayout); });
       }, 120);
@@ -863,10 +891,20 @@
 
   var _TABLE_LAYOUT_CONTEXT_ENTRIES = new Map();
   var _TABLE_LAYOUT_CONTEXT_SEQ = 0;
+  var _TABLE_LAYOUT_FLAG_DEFS = [
+    { key: 'shade_up', label: 'Shade Up', bit: 0 },
+    { key: 'horizontal_scroll', label: 'Horizontal Scroll', bit: 1 },
+    { key: 'mobile', label: 'Mobile', bit: 2 },
+    { key: 'portrait', label: 'Portrait', bit: 3 },
+    { key: 'wide', label: 'Wide', bit: 4 },
+  ];
   var _TABLE_LAYOUT_CONTEXT_STATE = {
     options: null,
+    entries: [],
     activeEntryId: null,
     saving: false,
+    filters: {},
+    busy: false,
   };
 
   function _escapeLayoutText(value) {
@@ -885,13 +923,64 @@
   }
 
   function _layoutFlagChips(layoutData) {
-    var flags = (layoutData && layoutData.bucket_flags) || {};
+    var flags = _normalizeLayoutFlags(layoutData && layoutData.bucket_flags);
     var chips = [];
-    Object.keys(flags).forEach(function (key) {
-      if (!flags[key]) return;
-      chips.push(key.replace(/_/g, ' '));
+    _TABLE_LAYOUT_FLAG_DEFS.forEach(function (def) {
+      if (!flags[def.key]) return;
+      chips.push(def.label.toLowerCase());
     });
     return chips;
+  }
+
+  function _normalizeLayoutFlags(flags) {
+    var normalized = {};
+    _TABLE_LAYOUT_FLAG_DEFS.forEach(function (def) {
+      normalized[def.key] = !!(flags && flags[def.key]);
+    });
+    return normalized;
+  }
+
+  function _hasActiveLayoutFilters(filters) {
+    return _TABLE_LAYOUT_FLAG_DEFS.some(function (def) {
+      return !!(filters && filters[def.key]);
+    });
+  }
+
+  function _bucketCodeFromFilters(filters) {
+    var value = 0;
+    _TABLE_LAYOUT_FLAG_DEFS.forEach(function (def) {
+      if (filters && filters[def.key]) value |= (1 << def.bit);
+    });
+    return value.toString(16).toUpperCase().padStart(2, '0');
+  }
+
+  function _entryMatchesLayoutFilters(entry, filters) {
+    var activeFilters = _normalizeLayoutFlags(filters);
+    if (!_hasActiveLayoutFilters(activeFilters)) return true;
+    var flags = _normalizeLayoutFlags(entry && entry.layoutData && entry.layoutData.bucket_flags);
+    return _TABLE_LAYOUT_FLAG_DEFS.every(function (def) {
+      return !activeFilters[def.key] || flags[def.key];
+    });
+  }
+
+  function _findExactLayoutEntry(entries, filters) {
+    var targetBucketCode = _bucketCodeFromFilters(filters);
+    return (entries || []).find(function (entry) {
+      var bucketCode = String(entry && entry.bucketCode || '').toUpperCase();
+      var layoutKey = String(entry && entry.layoutKey || '').toUpperCase();
+      return bucketCode === targetBucketCode || layoutKey.slice(-2) === targetBucketCode;
+    }) || null;
+  }
+
+  function _layoutBucketAdvisory(filters) {
+    var normalized = _normalizeLayoutFlags(filters);
+    var reasons = [];
+    if (normalized.wide && normalized.mobile) reasons.push('Wide + mobile is unusual');
+    if (normalized.wide && normalized.portrait) reasons.push('Wide + portrait is unusual');
+    return {
+      inadvisable: reasons.length > 0,
+      message: reasons[0] || 'Expected bucket selection',
+    };
   }
 
   function _renderLayoutDetail(entry) {
@@ -1053,63 +1142,173 @@
     }
   }
 
-  function openLayoutContext(opts) {
-    var dialog = document.getElementById('table-layout-context-modal');
+  async function _refreshLayoutContextEntries() {
+    var options = _TABLE_LAYOUT_CONTEXT_STATE.options || {};
+    if (typeof options.reloadEntries !== 'function') return;
+    var refreshed = await options.reloadEntries();
+    if (Array.isArray(refreshed)) {
+      _TABLE_LAYOUT_CONTEXT_STATE.entries = refreshed;
+    } else if (refreshed && typeof refreshed === 'object') {
+      _TABLE_LAYOUT_CONTEXT_STATE.entries = Array.isArray(refreshed.entries) ? refreshed.entries : [];
+      if (typeof refreshed.activeKey === 'string') options.activeKey = refreshed.activeKey;
+      if (typeof refreshed.subtitle === 'string') options.subtitle = refreshed.subtitle;
+    }
+    _renderLayoutContext();
+  }
+
+  async function _generateLayoutContextEntry() {
+    var options = _TABLE_LAYOUT_CONTEXT_STATE.options || {};
+    if (_TABLE_LAYOUT_CONTEXT_STATE.busy || typeof options.onGenerate !== 'function') return;
+    _TABLE_LAYOUT_CONTEXT_STATE.busy = true;
+    var generateBtn = document.getElementById('table-layout-context-generate');
+    if (generateBtn) generateBtn.disabled = true;
+    try {
+      var result = await options.onGenerate(_normalizeLayoutFlags(_TABLE_LAYOUT_CONTEXT_STATE.filters), _bucketCodeFromFilters(_TABLE_LAYOUT_CONTEXT_STATE.filters));
+      if (result !== false) {
+        await _refreshLayoutContextEntries();
+      }
+    } catch (error) {
+      if (window.HubDialogs && typeof HubDialogs.alertError === 'function') {
+        await HubDialogs.alertError({
+          title: 'Bucket generation failed',
+          message: error && error.message ? error.message : 'Failed to generate the requested layout bucket.',
+        });
+      }
+    } finally {
+      _TABLE_LAYOUT_CONTEXT_STATE.busy = false;
+      if (generateBtn) generateBtn.disabled = false;
+    }
+  }
+
+  async function _deleteLayoutContextEntry(entryId) {
+    var entry = _TABLE_LAYOUT_CONTEXT_ENTRIES.get(entryId);
+    var options = _TABLE_LAYOUT_CONTEXT_STATE.options || {};
+    if (!entry || _TABLE_LAYOUT_CONTEXT_STATE.busy || typeof options.onDelete !== 'function') return;
+    _TABLE_LAYOUT_CONTEXT_STATE.busy = true;
+    try {
+      var result = await options.onDelete(entry);
+      if (result !== false) {
+        await _refreshLayoutContextEntries();
+      }
+    } catch (error) {
+      if (window.HubDialogs && typeof HubDialogs.alertError === 'function') {
+        await HubDialogs.alertError({
+          title: 'Bucket delete failed',
+          message: error && error.message ? error.message : 'Failed to delete the selected layout bucket.',
+        });
+      }
+    } finally {
+      _TABLE_LAYOUT_CONTEXT_STATE.busy = false;
+    }
+  }
+
+  function _renderLayoutContext() {
+    var options = _TABLE_LAYOUT_CONTEXT_STATE.options || {};
     var titleEl = document.getElementById('table-layout-context-title');
     var subtitleEl = document.getElementById('table-layout-context-subtitle');
     var listEl = document.getElementById('table-layout-context-list');
-    if (!dialog || !titleEl || !subtitleEl || !listEl || !opts) return;
+    var filtersEl = document.getElementById('table-layout-context-filters');
+    var targetEl = document.getElementById('table-layout-context-target');
+    var generateBtn = document.getElementById('table-layout-context-generate');
+    var emptyEl = document.getElementById('table-layout-context-empty');
+    if (!titleEl || !subtitleEl || !listEl || !filtersEl || !targetEl || !generateBtn || !emptyEl) return;
 
-    var entries = Array.isArray(opts.entries) ? opts.entries : [];
-    titleEl.textContent = opts.title || 'Table Layout Context';
-    subtitleEl.textContent = opts.subtitle || '';
+    var entries = Array.isArray(_TABLE_LAYOUT_CONTEXT_STATE.entries) ? _TABLE_LAYOUT_CONTEXT_STATE.entries : [];
+    var filters = _normalizeLayoutFlags(_TABLE_LAYOUT_CONTEXT_STATE.filters);
+    var advisory = _layoutBucketAdvisory(filters);
+    var bucketCode = _bucketCodeFromFilters(filters);
+    var filteredEntries = entries.filter(function (entry) {
+      return _entryMatchesLayoutFilters(entry, filters);
+    });
+    var exactEntry = _findExactLayoutEntry(entries, filters);
+
+    titleEl.textContent = options.title || 'Table Layout Context';
+    subtitleEl.textContent = options.subtitle || '';
     subtitleEl.hidden = !subtitleEl.textContent;
+
+    filtersEl.innerHTML = _TABLE_LAYOUT_FLAG_DEFS.map(function (def) {
+      return '<button type="button" class="table-layout-context-filter' + (filters[def.key] ? ' is-active' : '') + '" data-layout-context-filter="' + def.key + '">' + _escapeLayoutText(def.label) + '</button>';
+    }).join('');
+
+    targetEl.innerHTML = '' +
+      '<span class="table-layout-context-chip">target bucket ' + _escapeLayoutText(bucketCode) + '</span>' +
+      '<span class="table-layout-context-chip">' + _escapeLayoutText(advisory.message) + '</span>';
+
+    generateBtn.hidden = !!exactEntry || typeof options.onGenerate !== 'function';
+    generateBtn.textContent = 'Generate ' + bucketCode;
+    generateBtn.classList.toggle('is-safe', !advisory.inadvisable);
+    generateBtn.classList.toggle('is-caution', advisory.inadvisable);
+
+    emptyEl.hidden = filteredEntries.length > 0;
+    emptyEl.textContent = _hasActiveLayoutFilters(filters)
+      ? 'No saved buckets match the selected flags.'
+      : (entries.length ? '' : 'No saved layouts were found for this table.');
+
     listEl.innerHTML = '';
     _TABLE_LAYOUT_CONTEXT_ENTRIES.clear();
+
+    filteredEntries.forEach(function (entry) {
+      var id = 'table-layout-context-' + (++_TABLE_LAYOUT_CONTEXT_SEQ);
+      _TABLE_LAYOUT_CONTEXT_ENTRIES.set(id, entry);
+      var card = document.createElement('article');
+      card.className = 'table-layout-context-entry';
+      if (options.activeKey && entry.layoutKey === options.activeKey) card.classList.add('is-active');
+
+      var chips = _layoutFlagChips(entry.layoutData).map(function (label) {
+        return '<span class="table-layout-context-chip">' + _escapeLayoutText(label) + '</span>';
+      }).join('');
+      var deleteHtml = '';
+      if (typeof options.onDelete === 'function' && (!options.activeKey || entry.layoutKey !== options.activeKey)) {
+        deleteHtml = '<button type="button" class="secondary table-icon-btn table-icon-btn--delete table-layout-context-entry__delete" title="Delete layout bucket" aria-label="Delete layout bucket" data-layout-context-open="delete" data-layout-context-id="' + _escapeLayoutText(id) + '"></button>';
+      }
+
+      card.innerHTML = '' +
+        '<div class="table-layout-context-entry__surface" role="button" tabindex="0" data-layout-context-open="detail" data-layout-context-id="' + _escapeLayoutText(id) + '">' +
+          '<div class="table-layout-context-entry__top">' +
+            '<span class="table-layout-context-entry__title">' + _escapeLayoutText(entry.title || entry.layoutKey || 'Layout') + '</span>' +
+            '<div class="table-layout-context-entry__top-actions">' +
+              '<div class="table-layout-context-entry__actions">' +
+                '<button type="button" class="table-layout-context-entry__action" data-layout-context-open="detail" data-layout-context-id="' + _escapeLayoutText(id) + '">Details</button>' +
+                '<button type="button" class="table-layout-context-entry__action" data-layout-context-open="columns" data-layout-context-id="' + _escapeLayoutText(id) + '">Columns</button>' +
+                deleteHtml +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="table-layout-context-entry__meta">' +
+            '<span class="table-layout-context-entry__badge">' + _escapeLayoutText(entry.layoutKey || '') + '</span>' +
+            '<span class="table-layout-context-chip">bucket ' + _escapeLayoutText(entry.bucketCode || '') + '</span>' +
+            '<span class="table-layout-context-chip">' + _escapeLayoutText(String(((entry.layoutData || {}).columns || []).length)) + ' columns</span>' +
+            (chips ? chips : '') +
+          '</div>' +
+          '<div class="table-layout-context-entry__hint">' + _escapeLayoutText(entry.hint || 'Open structured layout detail') + '</div>' +
+        '</div>';
+      listEl.appendChild(card);
+    });
+  }
+
+  function openLayoutContext(opts) {
+    var dialog = document.getElementById('table-layout-context-modal');
+    if (!dialog || !opts) return;
+
     _TABLE_LAYOUT_CONTEXT_STATE.options = opts;
+    _TABLE_LAYOUT_CONTEXT_STATE.entries = Array.isArray(opts.entries) ? opts.entries : [];
     _TABLE_LAYOUT_CONTEXT_STATE.activeEntryId = null;
-
-    if (!entries.length) {
-      listEl.innerHTML = '<div class="table-layout-context-entry__hint">No saved layouts were found for this table.</div>';
-    } else {
-      entries.forEach(function (entry) {
-        var id = 'table-layout-context-' + (++_TABLE_LAYOUT_CONTEXT_SEQ);
-        _TABLE_LAYOUT_CONTEXT_ENTRIES.set(id, entry);
-        var card = document.createElement('article');
-        card.className = 'table-layout-context-entry';
-        if (opts.activeKey && entry.layoutKey === opts.activeKey) card.classList.add('is-active');
-
-        var chips = _layoutFlagChips(entry.layoutData).map(function (label) {
-          return '<span class="table-layout-context-chip">' + _escapeLayoutText(label) + '</span>';
-        }).join('');
-
-        card.innerHTML = '' +
-          '<button type="button" class="table-layout-context-entry__surface" data-layout-context-open="detail" data-layout-context-id="' + _escapeLayoutText(id) + '">' +
-            '<div class="table-layout-context-entry__top">' +
-              '<span class="table-layout-context-entry__title">' + _escapeLayoutText(entry.title || entry.layoutKey || 'Layout') + '</span>' +
-              '<span class="table-layout-context-entry__badge">' + _escapeLayoutText(entry.layoutKey || '') + '</span>' +
-            '</div>' +
-            '<div class="table-layout-context-entry__meta">' +
-              '<span class="table-layout-context-chip">bucket ' + _escapeLayoutText(entry.bucketCode || '') + '</span>' +
-              '<span class="table-layout-context-chip">' + _escapeLayoutText(String(((entry.layoutData || {}).columns || []).length)) + ' columns</span>' +
-              (chips ? chips : '') +
-            '</div>' +
-            '<div class="table-layout-context-entry__hint">' + _escapeLayoutText(entry.hint || 'Open structured layout detail') + '</div>' +
-          '</button>' +
-          '<div class="table-layout-context-entry__actions">' +
-            '<button type="button" class="table-layout-context-entry__action" data-layout-context-open="detail" data-layout-context-id="' + _escapeLayoutText(id) + '">Details</button>' +
-            '<button type="button" class="table-layout-context-entry__action" data-layout-context-open="columns" data-layout-context-id="' + _escapeLayoutText(id) + '">Columns</button>' +
-          '</div>';
-        listEl.appendChild(card);
-      });
-    }
+    _TABLE_LAYOUT_CONTEXT_STATE.filters = _normalizeLayoutFlags(opts.initialFilters);
+    _TABLE_LAYOUT_CONTEXT_STATE.busy = false;
+    _renderLayoutContext();
 
     HubModal.open(dialog, {
       onClose: function () {
         _TABLE_LAYOUT_CONTEXT_ENTRIES.clear();
         _TABLE_LAYOUT_CONTEXT_STATE.options = null;
+        _TABLE_LAYOUT_CONTEXT_STATE.entries = [];
         _TABLE_LAYOUT_CONTEXT_STATE.activeEntryId = null;
-        listEl.innerHTML = '';
+        _TABLE_LAYOUT_CONTEXT_STATE.filters = {};
+        _TABLE_LAYOUT_CONTEXT_STATE.busy = false;
+        var listEl = document.getElementById('table-layout-context-list');
+        var emptyEl = document.getElementById('table-layout-context-empty');
+        if (listEl) listEl.innerHTML = '';
+        if (emptyEl) emptyEl.hidden = true;
       },
     });
   }
@@ -1158,11 +1357,22 @@
   }
 
   document.addEventListener('click', function (e) {
+    var filterBtn = e.target.closest('[data-layout-context-filter]');
+    if (filterBtn) {
+      var filterKey = filterBtn.dataset.layoutContextFilter;
+      if (filterKey) {
+        _TABLE_LAYOUT_CONTEXT_STATE.filters[filterKey] = !_TABLE_LAYOUT_CONTEXT_STATE.filters[filterKey];
+        _renderLayoutContext();
+      }
+      return;
+    }
     var layoutBtn = e.target.closest('[data-layout-context-open][data-layout-context-id]');
     if (layoutBtn) {
       var layoutEntry = _TABLE_LAYOUT_CONTEXT_ENTRIES.get(layoutBtn.dataset.layoutContextId);
       if (!layoutEntry) return;
-      if (layoutBtn.dataset.layoutContextOpen === 'columns') {
+      if (layoutBtn.dataset.layoutContextOpen === 'delete') {
+        _deleteLayoutContextEntry(layoutBtn.dataset.layoutContextId);
+      } else if (layoutBtn.dataset.layoutContextOpen === 'columns') {
         _openLayoutContextColumns(layoutBtn.dataset.layoutContextId);
       } else {
         _openLayoutContextDetail(layoutEntry);
@@ -1179,10 +1389,17 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     var applyBtn = document.getElementById('table-layout-context-columns-apply');
+    var generateBtn = document.getElementById('table-layout-context-generate');
     if (applyBtn && !applyBtn.dataset.boundLayoutContextColumns) {
       applyBtn.dataset.boundLayoutContextColumns = '1';
       applyBtn.addEventListener('click', function () {
         _applyLayoutContextColumns();
+      });
+    }
+    if (generateBtn && !generateBtn.dataset.boundLayoutContextGenerate) {
+      generateBtn.dataset.boundLayoutContextGenerate = '1';
+      generateBtn.addEventListener('click', function () {
+        _generateLayoutContextEntry();
       });
     }
   });

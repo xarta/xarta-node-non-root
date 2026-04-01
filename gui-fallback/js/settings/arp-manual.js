@@ -225,17 +225,64 @@ async function openArpManualLayoutContextModal() {
     await _arpManualResolveRemoteLayout({ rerender: false });
   }
   try {
-    const query = new URLSearchParams({
-      table_code: _arpManualTableCode(),
-      user_code: _ARP_LAYOUT_USER_CODE,
-    });
-    const response = await apiFetch(`/api/v1/table-layouts?${query.toString()}`);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const rows = await response.json();
+    const loadEntries = async () => {
+      const query = new URLSearchParams({
+        table_code: _arpManualTableCode(),
+        user_code: _ARP_LAYOUT_USER_CODE,
+      });
+      const response = await apiFetch(`/api/v1/table-layouts?${query.toString()}`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const rows = await response.json();
+      return {
+        activeKey: _arpManualLayoutKey,
+        subtitle: `${rows.length} saved bucket${rows.length === 1 ? '' : 's'} for ${_arpManualTableName()}`,
+        entries: rows.map(row => ({
+          layoutKey: row.layout_key,
+          reservedCode: row.reserved_code,
+          userCode: row.user_code,
+          tableCode: row.table_code,
+          bucketCode: row.bucket_code,
+          layoutData: row.layout_data || {},
+          title: `Bucket ${row.bucket_code}`,
+          subtitle: row.layout_key,
+          hint: row.layout_key === _arpManualLayoutKey ? 'Active layout for the current Manual ARP viewport' : 'Saved sibling layout for another Manual ARP context',
+        })),
+      };
+    };
+    const initialState = await loadEntries();
     TableLayoutInspector.open({
       title: 'Manual ARP Layout Context',
-      subtitle: `${rows.length} saved bucket${rows.length === 1 ? '' : 's'} for ${_arpManualTableName()}`,
-      activeKey: _arpManualLayoutKey,
+      subtitle: initialState.subtitle,
+      activeKey: initialState.activeKey,
+      reloadEntries: loadEntries,
+      onGenerate: async bucketFlags => {
+        const response = await apiFetch('/api/v1/table-layouts/resolve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            reserved_code: _ARP_LAYOUT_RESERVED_CODE,
+            user_code: _ARP_LAYOUT_USER_CODE,
+            table_code: _arpManualTableCode(),
+            table_name: _arpManualTableName(),
+            bucket_bits: bucketFlags,
+            columns: _arpManualColumnSeeds(),
+          }),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        await response.json();
+      },
+      onDelete: async entry => {
+        const confirmed = await HubDialogs.confirmDelete({
+          title: 'Delete layout bucket?',
+          message: `Delete Manual ARP layout bucket ${entry.bucketCode}?`,
+          detail: 'This removes the saved layout row so it can be regenerated later if needed.',
+        });
+        if (!confirmed) return false;
+        const response = await apiFetch(`/api/v1/table-layouts/${encodeURIComponent(entry.layoutKey)}`, {
+          method: 'DELETE',
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      },
       onSaveColumns: async (entry, nextLayoutData) => {
         const saveResponse = await apiFetch(`/api/v1/table-layouts/${encodeURIComponent(entry.layoutKey)}`, {
           method: 'PUT',
@@ -252,17 +299,7 @@ async function openArpManualLayoutContextModal() {
         }
         return { layoutData: savedLayout };
       },
-      entries: rows.map(row => ({
-        layoutKey: row.layout_key,
-        reservedCode: row.reserved_code,
-        userCode: row.user_code,
-        tableCode: row.table_code,
-        bucketCode: row.bucket_code,
-        layoutData: row.layout_data || {},
-        title: `Bucket ${row.bucket_code}`,
-        subtitle: row.layout_key,
-        hint: row.layout_key === _arpManualLayoutKey ? 'Active layout for the current Manual ARP viewport' : 'Saved sibling layout for another Manual ARP context',
-      })),
+      entries: initialState.entries,
     });
   } catch (error) {
     await HubDialogs.alertError({
