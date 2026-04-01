@@ -97,6 +97,11 @@ const SettingsMenuConfig = createHubMenu({
         // ── Self Diagnostic page function items ────────────────────────────
         { id: 'diag-fn-run',     label: 'Run Diagnostics',  icon: HIEROGLYPHS.wasScepter, fn: 'diag.run',     activeOn: ['self-diag'],    parent: 'settings-layout', order: 0 },
 
+        // ── SSH Keys page function items ─────────────────────────────────
+        { id: 'key-fn-refresh',  label: 'Refresh',           icon: HIEROGLYPHS.nefer,      fn: 'key.refresh',  activeOn: ['keys'],         parent: 'settings-layout', order: 0 },
+        { id: 'key-fn-cols',     label: 'Columns',           icon: HIEROGLYPHS.khaHorizon, fn: 'key.columns',  activeOn: ['keys'],         parent: 'settings-layout', order: 1 },
+        { id: 'key-fn-scroll',   label: 'Horizontal Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'key.scroll', activeOn: ['keys'], parent: 'settings-layout', order: 2 },
+
         // ── Nav Items page function items ──────────────────────────────────
         { id: 'ni-fn-refresh',   label: 'Refresh',           icon: HIEROGLYPHS.nefer,     fn: 'ni.refresh',   activeOn: ['nav-items'],    parent: 'settings-layout', order: 0 },
         // ── Form Controls page function items ────────────────────────────────
@@ -436,6 +441,11 @@ SettingsMenuConfig.registerFunctions({
     // Self Diagnostic
     'diag.run':     () => runSelfDiag(),
 
+    // SSH Keys
+    'key.refresh':  () => loadKeys(),
+    'key.columns':  () => openKeysColsModal(),
+    'key.scroll':   () => _settingsToggleHorizontalScroll(() => _ensureKeysTableView(), () => renderKeysTable()),
+
     // Nav Items
     'ni.refresh':   () => loadNavItems(),
 
@@ -451,4 +461,5 @@ SettingsMenuConfig.registerLabelGetters({
     'arp-fn-scroll':       () => _settingsHorizontalScrollLabel('Horizontal Scroll', () => _ensureArpManualTableView()),
     'ai-fn-provscroll':    () => _settingsHorizontalScrollLabel('Provider Scroll', () => _ensureAiProvidersTableView()),
     'ai-fn-assignscroll':  () => _settingsHorizontalScrollLabel('Assignment Scroll', () => _ensureAiAssignmentsTableView()),
+    'key-fn-scroll':       () => _settingsHorizontalScrollLabel('Horizontal Scroll', () => _ensureKeysTableView()),
 });

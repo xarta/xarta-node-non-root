@@ -1,4 +1,165 @@
 /* ── Keys ──────────────────────────────────────────────────────────────── */
+const _KEYS_COLS = ['label', 'env_var', 'path', 'present', 'pub_present', '_actions'];
+const _KEYS_FIELD_META = {
+  label: { label: 'Key', sortKey: 'label' },
+  env_var: { label: 'Scope', sortKey: 'env_var' },
+  path: { label: 'Path', sortKey: 'path' },
+  present: { label: 'Private', sortKey: 'present' },
+  pub_present: { label: 'Public', sortKey: 'pub_present' },
+  _actions: { label: 'Actions' },
+};
+
+const _KEYS_ACTION_INLINE_WIDTH = 62;
+const _KEYS_ACTION_COMPACT_WIDTH = 48;
+
+let _keysTableView = null;
+
+function _ensureKeysTableView() {
+  if (_keysTableView || typeof TableView === 'undefined') return _keysTableView;
+  _keysTableView = TableView.create({
+    storageKey: 'keys-status-table-prefs',
+    columns: _KEYS_COLS,
+    meta: _KEYS_FIELD_META,
+    getTable: () => document.getElementById('keys-status-table'),
+    fallbackColumn: 'label',
+    minWidth: 40,
+    getDefaultWidth: col => {
+      if (col === '_actions') return _keysActionCellWidth();
+      if (col === 'path') return 260;
+      if (col === 'env_var') return 170;
+      if (col === 'present' || col === 'pub_present') return 92;
+      return null;
+    },
+    sort: {
+      storageKey: 'keys-status-table-sort',
+      defaultKey: 'label',
+      defaultDir: 1,
+    },
+    onSortChange: renderKeysTable,
+  });
+  return _keysTableView;
+}
+
+function _keysVisibleCols() {
+  return _ensureKeysTableView()?.getVisibleCols() || ['label'];
+}
+
+function _keysCompactRowActions() {
+  const view = _ensureKeysTableView();
+  return typeof TableRowActions !== 'undefined' && TableRowActions.shouldCollapse({
+    view,
+    getTable: () => document.getElementById('keys-status-table'),
+    columnKey: '_actions',
+    requiredWidth: _KEYS_ACTION_INLINE_WIDTH,
+    defaultWidth: _KEYS_ACTION_INLINE_WIDTH,
+  });
+}
+
+function _keysActionCellWidth() {
+  return _keysCompactRowActions() ? _KEYS_ACTION_COMPACT_WIDTH : _KEYS_ACTION_INLINE_WIDTH;
+}
+
+function _keysSortValue(key, sortKey) {
+  switch (sortKey) {
+    case 'label':
+      return key.label || '';
+    case 'env_var':
+      return key.env_var || '';
+    case 'path':
+      return key.path || '';
+    case 'present':
+      return key.present ? 1 : 0;
+    case 'pub_present':
+      return key.pub_present ? 1 : 0;
+    default:
+      return '';
+  }
+}
+
+function _keysLabelCell(key) {
+  return `<td style="font-weight:600">${esc(key.label || '—')}</td>`;
+}
+
+function _keysEnvVarCell(key) {
+  return `<td style="color:var(--text-dim);font-size:12px">${esc(key.env_var || '—')}</td>`;
+}
+
+function _keysPathCell(key) {
+  return `<td><span class="table-cell-clip"><span class="table-cell-clip__text" style="font-family:monospace;font-size:11px;color:var(--text-dim)">${esc(key.path || '—')}</span></span></td>`;
+}
+
+function _keysPrivateCell(key) {
+  return `<td style="${key.present ? 'color:var(--ok)' : 'color:var(--err)'}">${key.present ? '&#10003; present' : '&#10007; missing'}</td>`;
+}
+
+function _keysPublicCell(key) {
+  return `<td style="${key.pub_present ? 'color:var(--ok)' : 'color:var(--text-dim)'}">${key.pub_present ? '&#10003; present' : '&#10007; missing'}</td>`;
+}
+
+function _keysActionButtons(key) {
+  const keyId = esc(key.id || '');
+  const keyLabel = esc(key.label || '');
+  const deleteBtn = key.present || key.pub_present
+    ? `<button class="secondary table-icon-btn table-icon-btn--delete" type="button" title="Delete key files" aria-label="Delete key files" data-key-del-id="${keyId}" data-key-del-label="${keyLabel}"></button>`
+    : '';
+  return `<button class="secondary table-icon-btn table-icon-btn--history" type="button" title="Show key details" aria-label="Show key details" data-key-info="${keyId}"></button>${deleteBtn}`;
+}
+
+function _keysActionsCell(key) {
+  if (_keysCompactRowActions()) {
+    return `<td class="table-action-cell table-action-cell--compact" style="width:${_keysActionCellWidth()}px">
+      <button class="table-row-action-trigger secondary" type="button" title="SSH key actions" aria-label="SSH key actions" data-key-actions="${esc(key.id || '')}">&#8942;</button>
+    </td>`;
+  }
+  return `<td class="table-action-cell" style="white-space:nowrap"><div class="table-inline-actions">${_keysActionButtons(key)}</div></td>`;
+}
+
+function openKeysColsModal() {
+  const view = _ensureKeysTableView();
+  if (!view) return;
+  view.openColumns(
+    document.getElementById('keys-cols-modal-list'),
+    document.getElementById('keys-cols-modal'),
+    col => _KEYS_FIELD_META[col].label
+  );
+}
+
+function _applyKeysColsModal() {
+  const view = _ensureKeysTableView();
+  if (!view) return;
+  const modal = document.getElementById('keys-cols-modal');
+  view.applyColumns(modal, () => {
+    renderKeysTable();
+    HubModal.close(modal);
+  });
+}
+
+function _openKeyRowActions(id) {
+  if (typeof TableRowActions === 'undefined') return;
+  const key = _keys.find(item => String(item.id) === String(id));
+  if (!key) return;
+  const actions = [
+    {
+      label: 'Show details',
+      detail: 'Open the SSH key scope and usage dialog',
+      onClick: () => openKeyInfo(id),
+    },
+  ];
+  if (key.present || key.pub_present) {
+    actions.push({
+      label: 'Delete key files',
+      detail: 'Remove the private and public key files from this node',
+      tone: 'danger',
+      onClick: () => deleteKey(id, key.label || id),
+    });
+  }
+  TableRowActions.open({
+    title: key.label || 'SSH key actions',
+    subtitle: key.env_var || '',
+    actions,
+  });
+}
+
 async function loadKeys() {
   const tbody = document.getElementById('keys-status-tbody');
   const err   = document.getElementById('keys-status-error');
@@ -83,30 +244,35 @@ const KEY_INFO = {
 
 function renderKeysTable() {
   const tbody = document.getElementById('keys-status-tbody');
+  const view = _ensureKeysTableView();
+  const visibleCols = _keysVisibleCols();
   if (!_keys.length) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No keys configured.</td></tr>';
+    view?.render(() => {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="${Math.max(1, visibleCols.length)}">No keys configured.</td></tr>`;
+    });
     return;
   }
-  tbody.innerHTML = _keys.map(k => `
-    <tr>
-      <td style="font-weight:600">${esc(k.label)}</td>
-      <td style="color:var(--text-dim);font-size:12px">${esc(k.env_var)}</td>
-      <td style="font-family:monospace;font-size:11px;color:var(--text-dim)">${esc(k.path)}</td>
-      <td style="${k.present ? 'color:var(--ok)' : 'color:var(--err)'}">
-        ${k.present ? '&#10003; present' : '&#10007; missing'}
-      </td>
-      <td style="${k.pub_present ? 'color:var(--ok)' : 'color:var(--text-dim)'}">
-        ${k.pub_present ? '&#10003; present' : '&#10007; missing'}
-      </td>
-      <td style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
-        <button class="secondary" style="padding:2px 8px;font-size:12px"
-          data-key-info="${esc(k.id)}">&#9432; Info</button>
-        ${k.present || k.pub_present
-          ? `<button class="secondary" style="padding:2px 8px;font-size:12px"
-              data-key-del-id="${esc(k.id)}" data-key-del-label="${esc(k.label)}">Delete</button>`
-          : ''}
-      </td>
-    </tr>`).join('');
+  const rows = view?.sorter ? view.sorter.sortRows(_keys, _keysSortValue) : _keys;
+  view?.render(() => {
+    tbody.innerHTML = rows.map(k => `<tr>${visibleCols.map(col => {
+      switch (col) {
+        case 'label':
+          return _keysLabelCell(k);
+        case 'env_var':
+          return _keysEnvVarCell(k);
+        case 'path':
+          return _keysPathCell(k);
+        case 'present':
+          return _keysPrivateCell(k);
+        case 'pub_present':
+          return _keysPublicCell(k);
+        case '_actions':
+          return _keysActionsCell(k);
+        default:
+          return '';
+      }
+    }).join('')}</tr>`).join('');
+  });
 }
 
 function openKeyInfo(id) {
@@ -553,10 +719,17 @@ async function importFromStore() {
   }
 }
 document.addEventListener('DOMContentLoaded', () => {
+  _ensureKeysTableView();
+  document.getElementById('keys-cols-modal-apply')?.addEventListener('click', _applyKeysColsModal);
   document.getElementById('keys-status-tbody')?.addEventListener('click', e => {
     const infoBtn = e.target.closest('[data-key-info]');
     const delBtn  = e.target.closest('[data-key-del-id]');
+    const actionBtn = e.target.closest('[data-key-actions]');
     if (infoBtn) openKeyInfo(infoBtn.dataset.keyInfo);
     if (delBtn)  deleteKey(delBtn.dataset.keyDelId, delBtn.dataset.keyDelLabel);
+    if (actionBtn) _openKeyRowActions(actionBtn.dataset.keyActions);
+  });
+  _keysTableView?.onLayoutChange(() => {
+    renderKeysTable();
   });
 });
