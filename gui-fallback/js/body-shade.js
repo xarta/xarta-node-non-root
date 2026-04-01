@@ -242,8 +242,10 @@
       short follow-up settle delays for mobile viewport stabilization. ── */
   function sizeFillTable() {
     var panel = shade ? shade.querySelector('.tab-panel--fill.active') : null;
-    // Toggle body class so page scroll is locked exactly when a fill tab is on.
-    document.body.classList.toggle('has-fill-tab', !!panel);
+    // Only lock page scroll for fill tabs when the handle is already reachable.
+    // If intro content pushes the handle below the viewport on short screens,
+    // keep normal page scroll available so the user can reach the handle first.
+    document.body.classList.toggle('has-fill-tab', shouldLockFillBodyScroll(panel));
     if (!panel) return;
     var fill = panel.querySelector('.table-wrap--fill');
     if (!fill) return;
@@ -251,8 +253,17 @@
     var pagerH = pager && !pager.hidden ? pager.offsetHeight : 0;
     // getBoundingClientRect gives viewport-relative position.
     // has-fill-tab sets overflow:hidden so scroll is locked at 0 — accurate.
-    var top = fill.getBoundingClientRect().top;
+    var top = Math.max(0, fill.getBoundingClientRect().top);
     fill.style.height = Math.max(50, getViewportHeight() - top - pagerH) + 'px';
+  }
+
+  function shouldLockFillBodyScroll(panel) {
+    if (!panel) return false;
+    if (document.body.classList.contains('shade-is-up')) return false;
+    if (window.scrollY > 0) return false;
+    var panelHandle = panel.querySelector('.body-shade-handle');
+    if (!panelHandle) return true;
+    return panelHandle.getBoundingClientRect().top <= (getViewportHeight() - 20);
   }
 
   function sizeDocsPane() {
@@ -366,6 +377,7 @@
 
     // Resize fill table on window resize (e.g. orientation change).
     window.addEventListener('resize', scheduleSizeFillTable);
+    window.addEventListener('scroll', scheduleSizeFillTable, { passive: true });
     window.addEventListener('orientationchange', scheduleSizeFillTable);
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', scheduleSizeFillTable);
