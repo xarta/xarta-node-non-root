@@ -1,7 +1,33 @@
 /* ── AI Providers + Project Assignments ─────────────────────────────── */
 
+const _AI_ACTION_INLINE_WIDTH = 90;
+const _AI_ACTION_COMPACT_WIDTH = 48;
+
+const _AI_PROVIDER_COLS = ['model_type', 'name', 'model_name', 'dimensions', 'enabled', 'notes', '_actions'];
+const _AI_PROVIDER_FIELD_META = {
+  model_type: { label: 'Type', sortKey: 'model_type', render: provider => `<td title="${esc(provider.model_type || '')}">${_typeIcon(provider.model_type)} ${esc(provider.model_type || 'unknown')}</td>` },
+  name: { label: 'Name', sortKey: 'name', render: provider => `<td><strong>${esc(provider.name || '—')}</strong></td>` },
+  model_name: { label: 'Model', sortKey: 'model_name', render: provider => `<td><code>${esc(provider.model_name || '—')}</code></td>` },
+  dimensions: { label: 'Dims', sortKey: 'dimensions', render: provider => `<td style="text-align:right">${provider.dimensions ?? '—'}</td>` },
+  enabled: { label: 'Enabled', sortKey: 'enabled', render: provider => `<td style="text-align:center">${provider.enabled ? '&#9989;' : '&#10060;'}</td>` },
+  notes: { label: 'Notes', sortKey: 'notes', render: provider => `<td style="color:var(--text-dim);font-size:12px">${esc(provider.notes || '')}</td>` },
+  _actions: { label: 'Actions', render: provider => _renderAiProviderActionsCell(provider) },
+};
+
+const _AI_ASSIGNMENT_COLS = ['project_name', 'role', 'provider_id', 'priority', 'enabled', '_actions'];
+const _AI_ASSIGNMENT_FIELD_META = {
+  project_name: { label: 'Project', sortKey: 'project_name', render: assignment => `<td><strong>${esc(assignment.project_name || '—')}</strong></td>` },
+  role: { label: 'Role', sortKey: 'role', render: assignment => `<td>${_typeIcon(assignment.role)} ${esc(assignment.role || '—')}</td>` },
+  provider_id: { label: 'Provider', sortKey: 'provider', render: assignment => `<td>${_renderAiAssignmentProviderCell(assignment)}</td>` },
+  priority: { label: 'Priority', sortKey: 'priority', render: assignment => `<td style="text-align:right">${assignment.priority ?? 0}</td>` },
+  enabled: { label: 'Enabled', sortKey: 'enabled', render: assignment => `<td style="text-align:center">${assignment.enabled ? '&#9989;' : '&#10060;'}</td>` },
+  _actions: { label: 'Actions', render: assignment => _renderAiAssignmentActionsCell(assignment) },
+};
+
 let _editingAiProviderId = null;
 let _editingAiAssignmentId = null;
+let _aiProvidersTableView = null;
+let _aiAssignmentsTableView = null;
 
 function _providerModalEls() {
   return {
@@ -67,54 +93,218 @@ function _typeIcon(type) {
   return '&#129302;';
 }
 
+function _aiProviderById(providerId) {
+  return _aiProviders.find(provider => provider.provider_id === providerId) || null;
+}
+
+function _aiAssignmentById(assignmentId) {
+  return _aiAssignments.find(assignment => assignment.assignment_id === assignmentId) || null;
+}
+
+function _aiProviderCompactActions() {
+  if (!_aiProvidersTableView || typeof TableRowActions === 'undefined') return false;
+  return TableRowActions.shouldCollapse({
+    view: _aiProvidersTableView,
+    getTable: () => document.getElementById('ai-providers-table'),
+    columnKey: '_actions',
+    requiredWidth: _AI_ACTION_INLINE_WIDTH,
+    defaultWidth: _AI_ACTION_INLINE_WIDTH,
+  });
+}
+
+function _aiAssignmentCompactActions() {
+  if (!_aiAssignmentsTableView || typeof TableRowActions === 'undefined') return false;
+  return TableRowActions.shouldCollapse({
+    view: _aiAssignmentsTableView,
+    getTable: () => document.getElementById('ai-assignments-table'),
+    columnKey: '_actions',
+    requiredWidth: _AI_ACTION_INLINE_WIDTH,
+    defaultWidth: _AI_ACTION_INLINE_WIDTH,
+  });
+}
+
+function _aiActionCellWidth(isCompact) {
+  return isCompact ? _AI_ACTION_COMPACT_WIDTH : _AI_ACTION_INLINE_WIDTH;
+}
+
+function _renderAiProviderActionButtons(provider) {
+  return `<button class="secondary table-icon-btn table-icon-btn--edit" type="button" title="Edit AI provider" aria-label="Edit AI provider" data-ai-provider-edit="${provider.provider_id}"></button>
+    <button class="secondary table-icon-btn table-icon-btn--delete" type="button" title="Delete AI provider" aria-label="Delete AI provider" data-ai-provider-delete="${provider.provider_id}"></button>`;
+}
+
+function _renderAiAssignmentActionButtons(assignment) {
+  return `<button class="secondary table-icon-btn table-icon-btn--edit" type="button" title="Edit project assignment" aria-label="Edit project assignment" data-ai-assignment-edit="${assignment.assignment_id}"></button>
+    <button class="secondary table-icon-btn table-icon-btn--delete" type="button" title="Delete project assignment" aria-label="Delete project assignment" data-ai-assignment-delete="${assignment.assignment_id}"></button>`;
+}
+
+function _renderAiProviderActionsCell(provider) {
+  const compact = _aiProviderCompactActions();
+  if (compact) {
+    return `<td class="table-action-cell table-action-cell--compact" style="width:${_aiActionCellWidth(true)}px">
+      <button class="table-row-action-trigger secondary" type="button" title="AI provider actions" aria-label="AI provider actions" data-ai-provider-actions="${provider.provider_id}">&#8942;</button>
+    </td>`;
+  }
+  return `<td class="table-action-cell" style="white-space:nowrap"><div class="table-inline-actions">${_renderAiProviderActionButtons(provider)}</div></td>`;
+}
+
+function _renderAiAssignmentActionsCell(assignment) {
+  const compact = _aiAssignmentCompactActions();
+  if (compact) {
+    return `<td class="table-action-cell table-action-cell--compact" style="width:${_aiActionCellWidth(true)}px">
+      <button class="table-row-action-trigger secondary" type="button" title="Project assignment actions" aria-label="Project assignment actions" data-ai-assignment-actions="${assignment.assignment_id}">&#8942;</button>
+    </td>`;
+  }
+  return `<td class="table-action-cell" style="white-space:nowrap"><div class="table-inline-actions">${_renderAiAssignmentActionButtons(assignment)}</div></td>`;
+}
+
+function _renderAiAssignmentProviderCell(assignment) {
+  const provider = _aiProviderById(assignment.provider_id);
+  if (!provider) return `<code>${esc((assignment.provider_id || '').slice(0, 8) || '—')}</code>`;
+  return `${esc(provider.model_name || '—')} <span style="color:var(--text-dim);font-size:11px">(${esc(provider.name || '—')})</span>`;
+}
+
+function _aiProviderSortValue(provider, sortKey) {
+  switch (sortKey) {
+    case 'model_type':
+      return provider.model_type || '';
+    case 'name':
+      return provider.name || '';
+    case 'model_name':
+      return provider.model_name || '';
+    case 'dimensions':
+      return provider.dimensions == null ? -1 : Number(provider.dimensions);
+    case 'enabled':
+      return provider.enabled ? 1 : 0;
+    case 'notes':
+      return provider.notes || '';
+    default:
+      return '';
+  }
+}
+
+function _aiAssignmentSortValue(assignment, sortKey) {
+  switch (sortKey) {
+    case 'project_name':
+      return assignment.project_name || '';
+    case 'role':
+      return assignment.role || '';
+    case 'provider': {
+      const provider = _aiProviderById(assignment.provider_id);
+      return provider ? `${provider.model_name || ''} ${provider.name || ''}` : assignment.provider_id || '';
+    }
+    case 'priority':
+      return Number(assignment.priority || 0);
+    case 'enabled':
+      return assignment.enabled ? 1 : 0;
+    default:
+      return '';
+  }
+}
+
+function _ensureAiProvidersTableView() {
+  if (_aiProvidersTableView || typeof TableView === 'undefined') return _aiProvidersTableView;
+  _aiProvidersTableView = TableView.create({
+    storageKey: 'ai-providers-table-prefs',
+    columns: _AI_PROVIDER_COLS,
+    meta: _AI_PROVIDER_FIELD_META,
+    getTable: () => document.getElementById('ai-providers-table'),
+    getDefaultWidth: col => (col === '_actions' ? _aiActionCellWidth(_aiProviderCompactActions()) : null),
+    minWidth: 40,
+    sort: {
+      storageKey: 'ai-providers-table-sort',
+    },
+    onSortChange: () => renderAiProviders(),
+  });
+  return _aiProvidersTableView;
+}
+
+function _ensureAiAssignmentsTableView() {
+  if (_aiAssignmentsTableView || typeof TableView === 'undefined') return _aiAssignmentsTableView;
+  _aiAssignmentsTableView = TableView.create({
+    storageKey: 'ai-assignments-table-prefs',
+    columns: _AI_ASSIGNMENT_COLS,
+    meta: _AI_ASSIGNMENT_FIELD_META,
+    getTable: () => document.getElementById('ai-assignments-table'),
+    getDefaultWidth: col => (col === '_actions' ? _aiActionCellWidth(_aiAssignmentCompactActions()) : null),
+    minWidth: 40,
+    sort: {
+      storageKey: 'ai-assignments-table-sort',
+    },
+    onSortChange: () => renderAiAssignments(),
+  });
+  return _aiAssignmentsTableView;
+}
+
+function _openAiProviderColsModal() {
+  const view = _ensureAiProvidersTableView();
+  if (!view) return;
+  view.openColumns(
+    document.getElementById('ai-providers-cols-modal-list'),
+    document.getElementById('ai-providers-cols-modal')
+  );
+}
+
+function _applyAiProviderColsModal() {
+  const view = _ensureAiProvidersTableView();
+  if (!view) return;
+  const modal = document.getElementById('ai-providers-cols-modal');
+  view.applyColumns(modal, () => {
+    renderAiProviders();
+    HubModal.close(modal);
+  });
+}
+
+function _openAiAssignmentColsModal() {
+  const view = _ensureAiAssignmentsTableView();
+  if (!view) return;
+  view.openColumns(
+    document.getElementById('ai-assignments-cols-modal-list'),
+    document.getElementById('ai-assignments-cols-modal')
+  );
+}
+
+function _applyAiAssignmentColsModal() {
+  const view = _ensureAiAssignmentsTableView();
+  if (!view) return;
+  const modal = document.getElementById('ai-assignments-cols-modal');
+  view.applyColumns(modal, () => {
+    renderAiAssignments();
+    HubModal.close(modal);
+  });
+}
+
 function renderAiProviders() {
   const tbody = document.getElementById('ai-providers-tbody');
   if (!tbody) return;
+  const view = _ensureAiProvidersTableView();
+  const visibleCols = view ? view.getVisibleCols() : _AI_PROVIDER_COLS;
   if (!_aiProviders.length) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No providers yet — click "+ Add provider" to add one.</td></tr>';
+    view?.render(() => {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="${Math.max(1, visibleCols.length)}">No providers yet — click "+ Add provider" to add one.</td></tr>`;
+    });
     return;
   }
-  tbody.innerHTML = _aiProviders.map(p => `<tr>
-    <td title="${esc(p.model_type)}">${_typeIcon(p.model_type)} ${esc(p.model_type)}</td>
-    <td><strong>${esc(p.name)}</strong></td>
-    <td><code>${esc(p.model_name)}</code></td>
-    <td style="text-align:right">${p.dimensions ?? '—'}</td>
-    <td style="text-align:center">${p.enabled ? '&#9989;' : '&#10060;'}</td>
-    <td style="color:var(--text-dim);font-size:12px">${esc(p.notes || '')}</td>
-    <td style="white-space:nowrap">
-      <button class="secondary" style="padding:1px 6px;font-size:11px"
-        onclick="openAiProviderModal('${esc(p.provider_id)}')">&#9998; Edit</button>
-      <button class="secondary" style="padding:1px 6px;font-size:11px;color:#f87171;border-color:#f87171;margin-left:4px"
-        onclick="deleteAiProvider('${esc(p.provider_id)}','${esc(p.name)}')">&#x2715;</button>
-    </td>
-  </tr>`).join('');
+  const rows = view?.sorter ? view.sorter.sortRows(_aiProviders, _aiProviderSortValue) : _aiProviders;
+  view?.render(() => {
+    tbody.innerHTML = rows.map(provider => `<tr>${visibleCols.map(col => _AI_PROVIDER_FIELD_META[col].render(provider)).join('')}</tr>`).join('');
+  });
 }
 
 function renderAiAssignments() {
   const tbody = document.getElementById('ai-assignments-tbody');
   if (!tbody) return;
+  const view = _ensureAiAssignmentsTableView();
+  const visibleCols = view ? view.getVisibleCols() : _AI_ASSIGNMENT_COLS;
   if (!_aiAssignments.length) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No assignments yet.</td></tr>';
+    view?.render(() => {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="${Math.max(1, visibleCols.length)}">No assignments yet.</td></tr>`;
+    });
     return;
   }
-  const providerMap = Object.fromEntries(_aiProviders.map(p => [p.provider_id, p]));
-  tbody.innerHTML = _aiAssignments.map(a => {
-    const prov = providerMap[a.provider_id];
-    const provLabel = prov ? `${esc(prov.model_name)} <span style="color:var(--text-dim);font-size:11px">(${esc(prov.name)})</span>` : esc(a.provider_id.slice(0,8));
-    return `<tr>
-      <td><strong>${esc(a.project_name)}</strong></td>
-      <td>${_typeIcon(a.role)} ${esc(a.role)}</td>
-      <td>${provLabel}</td>
-      <td style="text-align:right">${a.priority}</td>
-      <td style="text-align:center">${a.enabled ? '&#9989;' : '&#10060;'}</td>
-      <td style="white-space:nowrap">
-        <button class="secondary" style="padding:1px 6px;font-size:11px"
-          onclick="openAiAssignmentModal('${esc(a.assignment_id)}')">&#9998; Edit</button>
-        <button class="secondary" style="padding:1px 6px;font-size:11px;color:#f87171;border-color:#f87171;margin-left:4px"
-          onclick="deleteAiAssignment('${esc(a.assignment_id)}','${esc(a.project_name)}','${esc(a.role)}')">&#x2715;</button>
-      </td>
-    </tr>`;
-  }).join('');
+  const rows = view?.sorter ? view.sorter.sortRows(_aiAssignments, _aiAssignmentSortValue) : _aiAssignments;
+  view?.render(() => {
+    tbody.innerHTML = rows.map(assignment => `<tr>${visibleCols.map(col => _AI_ASSIGNMENT_FIELD_META[col].render(assignment)).join('')}</tr>`).join('');
+  });
 }
 
 /* ── Provider modal ─────────────────────────────────────────────────── */
@@ -179,7 +369,32 @@ async function submitAiProviderModal() {
   }
 }
 
-async function deleteAiProvider(provider_id, name) {
+function _openAiProviderRowActions(providerId) {
+  if (typeof TableRowActions === 'undefined') return;
+  const provider = _aiProviderById(providerId);
+  if (!provider) return;
+  TableRowActions.open({
+    title: provider.name || 'AI provider actions',
+    subtitle: provider.model_name || '',
+    actions: [
+      {
+        label: 'Edit provider',
+        detail: 'Update connection details, model alias, or notes',
+        onClick: () => openAiProviderModal(providerId),
+      },
+      {
+        label: 'Delete provider',
+        detail: 'Remove this provider from Blueprints',
+        tone: 'danger',
+        onClick: () => deleteAiProvider(providerId),
+      },
+    ],
+  });
+}
+
+async function deleteAiProvider(provider_id) {
+  const provider = _aiProviderById(provider_id);
+  const name = provider?.name || provider_id;
   const ok = await HubDialogs.confirmDelete({
     title: 'Delete AI provider?',
     message: `Delete provider "${name}"?`,
@@ -253,7 +468,33 @@ async function submitAiAssignmentModal() {
   }
 }
 
-async function deleteAiAssignment(assignment_id, project, role) {
+function _openAiAssignmentRowActions(assignmentId) {
+  if (typeof TableRowActions === 'undefined') return;
+  const assignment = _aiAssignmentById(assignmentId);
+  if (!assignment) return;
+  TableRowActions.open({
+    title: assignment.project_name || 'Project assignment actions',
+    subtitle: assignment.role || '',
+    actions: [
+      {
+        label: 'Edit assignment',
+        detail: 'Change the provider, role, or priority',
+        onClick: () => openAiAssignmentModal(assignmentId),
+      },
+      {
+        label: 'Delete assignment',
+        detail: 'Remove this assignment from Blueprints',
+        tone: 'danger',
+        onClick: () => deleteAiAssignment(assignmentId),
+      },
+    ],
+  });
+}
+
+async function deleteAiAssignment(assignment_id) {
+  const assignment = _aiAssignmentById(assignment_id);
+  const project = assignment?.project_name || assignment_id;
+  const role = assignment?.role || 'assignment';
   const ok = await HubDialogs.confirmDelete({
     title: 'Delete project assignment?',
     message: `Remove ${role} assignment for project "${project}"?`,
@@ -285,3 +526,36 @@ async function deleteAiAssignment(assignment_id, project, role) {
     assignmentModal.saveBtn.addEventListener('click', () => { void submitAiAssignmentModal(); });
   }
 })();
+
+document.addEventListener('DOMContentLoaded', () => {
+  _ensureAiProvidersTableView();
+  _ensureAiAssignmentsTableView();
+
+  _aiProvidersTableView?.onLayoutChange(() => {
+    renderAiProviders();
+  });
+  _aiAssignmentsTableView?.onLayoutChange(() => {
+    renderAiAssignments();
+  });
+
+  document.getElementById('ai-providers-tbody')?.addEventListener('click', e => {
+    const editBtn = e.target.closest('[data-ai-provider-edit]');
+    const deleteBtn = e.target.closest('[data-ai-provider-delete]');
+    const actionsBtn = e.target.closest('[data-ai-provider-actions]');
+    if (editBtn) openAiProviderModal(editBtn.dataset.aiProviderEdit);
+    if (deleteBtn) void deleteAiProvider(deleteBtn.dataset.aiProviderDelete);
+    if (actionsBtn) _openAiProviderRowActions(actionsBtn.dataset.aiProviderActions);
+  });
+
+  document.getElementById('ai-assignments-tbody')?.addEventListener('click', e => {
+    const editBtn = e.target.closest('[data-ai-assignment-edit]');
+    const deleteBtn = e.target.closest('[data-ai-assignment-delete]');
+    const actionsBtn = e.target.closest('[data-ai-assignment-actions]');
+    if (editBtn) openAiAssignmentModal(editBtn.dataset.aiAssignmentEdit);
+    if (deleteBtn) void deleteAiAssignment(deleteBtn.dataset.aiAssignmentDelete);
+    if (actionsBtn) _openAiAssignmentRowActions(actionsBtn.dataset.aiAssignmentActions);
+  });
+
+  document.getElementById('ai-providers-cols-modal-apply')?.addEventListener('click', _applyAiProviderColsModal);
+  document.getElementById('ai-assignments-cols-modal-apply')?.addEventListener('click', _applyAiAssignmentColsModal);
+});

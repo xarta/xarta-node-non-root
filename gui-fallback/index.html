@@ -831,7 +831,7 @@
     <div class="tab-scroll-shell">
     <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);margin:0 0 8px">Providers</h3>
     <div class="table-wrap" style="margin-bottom:20px">
-      <table>
+      <table id="ai-providers-table">
         <thead><tr>
           <th>Type</th><th>Name</th><th>Model</th><th>Dims</th><th>Enabled</th><th>Notes</th><th style="width:80px">Actions</th>
         </tr></thead>
@@ -841,7 +841,7 @@
 
     <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);margin:0 0 8px">Project Assignments</h3>
     <div class="table-wrap">
-      <table>
+      <table id="ai-assignments-table">
         <thead><tr>
           <th>Project</th><th>Role</th><th>Provider</th><th>Priority</th><th>Enabled</th><th style="width:60px">Actions</th>
         </tr></thead>
@@ -953,6 +953,42 @@
     <div class="hub-modal-footer">
       <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Cancel</button>
       <button class="hub-modal-btn" type="button" id="ai-assignment-modal-save-btn">Save</button>
+    </div>
+  </dialog>
+
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="ai-providers-cols-modal">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">COLS</span>
+        <span class="hub-dialog-title-text">AI Providers Columns</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body">
+      <p style="font-size:12px;color:var(--text-dim);margin:0 0 10px">Choose which provider columns stay visible for this layout. Preferences are browser-local.</p>
+      <div id="ai-providers-cols-modal-list" class="hub-checkbox-list"></div>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
+      <button class="hub-modal-btn" id="ai-providers-cols-modal-apply" type="button">&#10003; Apply</button>
+    </div>
+  </dialog>
+
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="ai-assignments-cols-modal">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">COLS</span>
+        <span class="hub-dialog-title-text">Project Assignments Columns</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body">
+      <p style="font-size:12px;color:var(--text-dim);margin:0 0 10px">Choose which assignment columns stay visible for this layout. Preferences are browser-local.</p>
+      <div id="ai-assignments-cols-modal-list" class="hub-checkbox-list"></div>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
+      <button class="hub-modal-btn" id="ai-assignments-cols-modal-apply" type="button">&#10003; Apply</button>
     </div>
   </dialog>
 

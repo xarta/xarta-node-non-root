@@ -68,9 +68,11 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'arp-fn-refresh',  label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'arp.refresh',  activeOn: ['arp-manual'],   parent: 'settings-layout', order: 1 },
 
         // ── AI Providers page function items ──────────────────────────────
-        { id: 'ai-fn-addprov',   label: 'Add provider',     icon: HIEROGLYPHS.falcon,     fn: 'ai.addProv',   activeOn: ['ai-providers'], parent: 'settings-layout', order: 0 },
-        { id: 'ai-fn-refresh',   label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'ai.refresh',   activeOn: ['ai-providers'], parent: 'settings-layout', order: 1 },
-        { id: 'ai-fn-addassign', label: 'Add assignment',   icon: HIEROGLYPHS.falcon,     fn: 'ai.addAssign', activeOn: ['ai-providers'], parent: 'settings-layout', order: 2 },
+        { id: 'ai-fn-addprov',   label: 'Add provider',     icon: HIEROGLYPHS.falcon,     fn: 'ai.addProv',      activeOn: ['ai-providers'], parent: 'settings-layout', order: 0 },
+        { id: 'ai-fn-refresh',   label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'ai.refresh',      activeOn: ['ai-providers'], parent: 'settings-layout', order: 1 },
+        { id: 'ai-fn-addassign', label: 'Add assignment',   icon: HIEROGLYPHS.falcon,     fn: 'ai.addAssign',    activeOn: ['ai-providers'], parent: 'settings-layout', order: 2 },
+        { id: 'ai-fn-provcols',  label: 'Provider columns', icon: HIEROGLYPHS.khaHorizon, fn: 'ai.providerCols', activeOn: ['ai-providers'], parent: 'settings-layout', order: 3 },
+        { id: 'ai-fn-assigncols',label: 'Assignment columns', icon: HIEROGLYPHS.khaHorizon, fn: 'ai.assignCols', activeOn: ['ai-providers'], parent: 'settings-layout', order: 4 },
 
         // ── Docs page function items ───────────────────────────────────────
         { id: 'doc-fn-reload',   label: 'Reload',           icon: HIEROGLYPHS.nefer,      fn: 'doc.reload',   activeOn: ['docs'],         parent: 'settings-layout', order: 0 },
@@ -366,9 +368,11 @@ SettingsMenuConfig.registerFunctions({
     'arp.refresh':  () => loadArpManual(),
 
     // AI Providers
-    'ai.addProv':   () => openAiProviderModal(null),
-    'ai.refresh':   () => loadAiProviders(),
-    'ai.addAssign': () => openAiAssignmentModal(null),
+    'ai.addProv':      () => openAiProviderModal(null),
+    'ai.refresh':      () => loadAiProviders(),
+    'ai.addAssign':    () => openAiAssignmentModal(null),
+    'ai.providerCols': () => _openAiProviderColsModal(),
+    'ai.assignCols':   () => _openAiAssignmentColsModal(),
 
     // Docs
     'doc.reload':   () => docsRefreshContent(),
