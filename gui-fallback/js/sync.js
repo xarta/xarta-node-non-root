@@ -18,9 +18,19 @@ async function loadSyncStatus() {
       items.push([`Queue → ${peer}`, depth === 0 ? '✓ clear' : `${depth} pending`]);
     });
     if (!Object.keys(qs).length) items.push(['Peers', '(none registered)']);
-    grid.innerHTML = items.map(([k,v]) => `
-      <div class="sync-item"><span style="color:var(--text-dim)">${esc(String(k))}</span>
-        <strong>${esc(String(v))}</strong></div>`).join('');
+    grid.innerHTML = items.map(([k, v]) => {
+      const label = String(k);
+      const value = String(v);
+      const isQueue = label.startsWith('Queue →');
+      const valueClass = isQueue
+        ? (value.includes('clear') ? 'sync-item__value sync-item__value--ok' : 'sync-item__value sync-item__value--warn')
+        : (/^(Gen|Last write at)$/.test(label) ? 'sync-item__value sync-item__value--mono' : 'sync-item__value');
+      return `
+        <div class="sync-item${isQueue ? ' sync-item--queue' : ''}">
+          <span class="sync-item__label">${esc(label)}</span>
+          <strong class="${valueClass}">${esc(value)}</strong>
+        </div>`;
+    }).join('');
   } catch (e) {
     err.textContent = `Sync status unavailable: ${e.message}`;
     err.hidden = false;

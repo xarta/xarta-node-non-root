@@ -31,11 +31,50 @@
 /* ── Sync panel ── */
 #sync-panel { background: var(--surface); border: 1px solid var(--border);
               border-radius: var(--radius); padding: 14px 18px; }
-.sync-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr));
-             gap: 12px; }
-.sync-item { display: flex; justify-content: space-between; padding: 6px 0;
-             border-bottom: 1px solid var(--border); }
-.sync-item:last-child { border-bottom: none; }
+.sync-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.sync-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 12px;
+  align-items: start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(123, 130, 160, 0.08);
+}
+.sync-item__label {
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.35;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.sync-item__value {
+  justify-self: end;
+  min-width: 0;
+  text-align: right;
+  line-height: 1.25;
+  color: var(--text);
+}
+.sync-item__value--mono {
+  font-variant-numeric: tabular-nums;
+}
+.sync-item__value--ok {
+  color: var(--ok);
+  white-space: nowrap;
+}
+.sync-item__value--warn {
+  color: var(--warn);
+  white-space: nowrap;
+}
+.sync-item--queue .sync-item__label {
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
 
 /* ── Toolbar ── */
 .toolbar { display: flex; gap: 10px; margin-bottom: 14px; align-items: center; flex-wrap: wrap; }
@@ -119,13 +158,17 @@ button.secondary:hover { color: var(--text); border-color: var(--text-dim); }
 
 /* ── Responsive component adjustments ── */
 @media (max-width: 900px) {
-  .sync-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  .sync-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 600px) {
   button { padding: 5px 10px; font-size: 12px; }
   input[type=text] { max-width: none; }
   #sync-panel { padding: 10px 12px; }
+  .sync-grid { grid-template-columns: 1fr; gap: 8px; }
+  .sync-item { padding: 9px 10px; }
+  .sync-item__label { font-size: 10px; }
+  .sync-item__value { font-size: 13px; }
   .toolbar { gap: 6px; margin-bottom: 10px; }
 }
 
