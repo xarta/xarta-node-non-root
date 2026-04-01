@@ -97,9 +97,20 @@
   function ensureLayoutState(state, layoutKey) {
     if (!state.layouts) state.layouts = {};
     if (!state.layouts[layoutKey]) {
-      state.layouts[layoutKey] = { hidden: null, widths: {} };
+      state.layouts[layoutKey] = {
+        hidden: null,
+        widths: {},
+        allowHorizontalScroll: null,
+        pendingHorizontalClamp: false,
+      };
     }
     if (!state.layouts[layoutKey].widths) state.layouts[layoutKey].widths = {};
+    if (!Object.prototype.hasOwnProperty.call(state.layouts[layoutKey], 'allowHorizontalScroll')) {
+      state.layouts[layoutKey].allowHorizontalScroll = null;
+    }
+    if (!Object.prototype.hasOwnProperty.call(state.layouts[layoutKey], 'pendingHorizontalClamp')) {
+      state.layouts[layoutKey].pendingHorizontalClamp = false;
+    }
     return state.layouts[layoutKey];
   }
 
@@ -124,14 +135,32 @@
       writeJson(cfg.storageKey, state);
     }
 
-    function getLayoutState(layoutKey) {
+    function getActualLayoutState(layoutKey) {
       return ensureLayoutState(state, layoutKey || currentLayout);
+    }
+
+    function isHorizontalScrollEnabledForLayout(layoutKey) {
+      var layout = getActualLayoutState(layoutKey);
+      if (layout.allowHorizontalScroll === true) return true;
+      if (layout.allowHorizontalScroll === false) return false;
+      return !!cfg.defaultHorizontalScroll;
+    }
+
+    function getEffectiveLayoutKey(layoutKey) {
+      var actualLayoutKey = layoutKey || currentLayout;
+      if (actualLayoutKey === 'desktop') return actualLayoutKey;
+      if (!isHorizontalScrollEnabledForLayout(actualLayoutKey)) return actualLayoutKey;
+      return cfg.horizontalScrollLayoutKey || 'desktop';
+    }
+
+    function getLayoutState(layoutKey) {
+      return ensureLayoutState(state, getEffectiveLayoutKey(layoutKey));
     }
 
     function syncColumns(columns) {
       var known = new Set(columns || []);
       Object.keys(state.layouts || {}).forEach(function (layoutKey) {
-        var layout = getLayoutState(layoutKey);
+        var layout = getActualLayoutState(layoutKey);
         if (Array.isArray(layout.hidden)) {
           layout.hidden = layout.hidden.filter(function (col) { return known.has(col); });
         }
@@ -169,12 +198,76 @@
       persist();
     }
 
+    function isHorizontalScrollEnabled() {
+      return isHorizontalScrollEnabledForLayout();
+    }
+
+    function hasPendingHorizontalClamp() {
+      return !!getActualLayoutState().pendingHorizontalClamp;
+    }
+
+    function clearPendingHorizontalClamp() {
+      var layout = getActualLayoutState();
+      if (!layout.pendingHorizontalClamp) return;
+      layout.pendingHorizontalClamp = false;
+      persist();
+    }
+
+    function updateScrollWidth(tableEl) {
+      if (!tableEl) return;
+      if (!isHorizontalScrollEnabled()) {
+        tableEl.style.removeProperty('--table-scroll-width');
+        return;
+      }
+      var totalWidth = 0;
+      tableEl.querySelectorAll('thead th[data-col]').forEach(function (th) {
+        var explicit = parseFloat(th.style.width || '0');
+        var measured = th.getBoundingClientRect().width || 0;
+        totalWidth += explicit > 0 ? explicit : measured;
+      });
+      if (totalWidth > 0) {
+        tableEl.style.setProperty('--table-scroll-width', Math.ceil(totalWidth) + 'px');
+      }
+    }
+
+    function clampOverwideColumns(tableEl) {
+      if (!tableEl) return false;
+      var viewportWidth = Math.max(
+        window.innerWidth || 0,
+        document.documentElement ? document.documentElement.clientWidth : 0
+      );
+      if (!viewportWidth) return false;
+      var maxWidth = Math.max(40, Math.floor(viewportWidth * 0.98));
+      var changed = false;
+      tableEl.querySelectorAll('thead th[data-col]').forEach(function (th) {
+        var width = Math.round(th.getBoundingClientRect().width || 0);
+        if (!Number.isFinite(width) || width <= viewportWidth) return;
+        setWidth(th.dataset.col, maxWidth);
+        changed = true;
+      });
+      if (changed) applyWidths(tableEl);
+      return changed;
+    }
+
+    function setHorizontalScrollEnabled(enabled) {
+      var layout = getActualLayoutState();
+      layout.allowHorizontalScroll = !!enabled;
+      layout.pendingHorizontalClamp = !!enabled;
+      persist();
+      return isHorizontalScrollEnabled();
+    }
+
+    function toggleHorizontalScroll() {
+      return setHorizontalScrollEnabled(!isHorizontalScrollEnabled());
+    }
+
     function applyWidths(tableEl) {
       if (!tableEl) return;
       tableEl.querySelectorAll('thead th[data-col]').forEach(function (th) {
         var width = getWidth(th.dataset.col);
         th.style.width = width ? width + 'px' : th.style.width || '';
       });
+      updateScrollWidth(tableEl);
     }
 
     function bindColumnResize(tableEl, options) {
@@ -235,6 +328,7 @@
               }, 3000);
             }
             setWidth(th.dataset.col, th.getBoundingClientRect().width);
+            updateScrollWidth(tableEl);
             if (options && typeof options.onResizeEnd === 'function') {
               options.onResizeEnd(th.dataset.col, getWidth(th.dataset.col));
             }
@@ -269,7 +363,13 @@
       }
       if (!tableEl) return;
       tableEl.classList.add('table-shared-ui');
+      tableEl.classList.toggle('table-shared-ui--scroll-x', isHorizontalScrollEnabled());
       applyWidths(tableEl);
+      if (isHorizontalScrollEnabled() && hasPendingHorizontalClamp()) {
+        clampOverwideColumns(tableEl);
+        clearPendingHorizontalClamp();
+      }
+      updateScrollWidth(tableEl);
       bindColumnResize(tableEl, { minWidth: options.minWidth || minWidth });
       if (typeof options.afterBind === 'function') {
         options.afterBind(tableEl);
@@ -305,6 +405,10 @@
       setHiddenSet: setHiddenSet,
       getWidth: getWidth,
       setWidth: setWidth,
+      getEffectiveLayoutKey: getEffectiveLayoutKey,
+      isHorizontalScrollEnabled: isHorizontalScrollEnabled,
+      setHorizontalScrollEnabled: setHorizontalScrollEnabled,
+      toggleHorizontalScroll: toggleHorizontalScroll,
       applyWidths: applyWidths,
       bindColumnResize: bindColumnResize,
       renderTable: renderTable,
@@ -617,6 +721,15 @@
       },
       rebuildHead: rebuildHead,
       render: render,
+      isHorizontalScrollEnabled: function () {
+        return prefs.isHorizontalScrollEnabled();
+      },
+      setHorizontalScrollEnabled: function (enabled) {
+        return prefs.setHorizontalScrollEnabled(enabled);
+      },
+      toggleHorizontalScroll: function () {
+        return prefs.toggleHorizontalScroll();
+      },
       openColumns: openColumns,
       applyColumns: applyColumns,
       onLayoutChange: onLayoutChange,

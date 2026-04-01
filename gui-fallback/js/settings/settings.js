@@ -521,8 +521,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Save button
   document.getElementById('setting-modal-save-btn')?.addEventListener('click', submitSetting);
-  document.getElementById('ui-refresh-assets-btn')?.addEventListener('click', forceRefreshUiAssets);
-  document.getElementById('ui-refresh-assets-header-btn')?.addEventListener('click', forceRefreshUiAssets);
   document.getElementById('settings-cols-modal-apply')?.addEventListener('click', _applySettingsColsModal);
   document.getElementById('setting-key')?.addEventListener('input', _syncSettingValueEditor);
 

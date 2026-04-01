@@ -51,21 +51,27 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'pveh-fn-refresh', label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'pveh.refresh', activeOn: ['pve-hosts'],    parent: 'settings-layout', order: 0 },
         { id: 'pveh-fn-scan',    label: 'Scan for Proxmox', icon: HIEROGLYPHS.wasScepter, fn: 'pveh.scan',    activeOn: ['pve-hosts'],    parent: 'settings-layout', order: 1 },
         { id: 'pveh-fn-cols',    label: 'Columns',          icon: HIEROGLYPHS.khaHorizon, fn: 'pveh.columns', activeOn: ['pve-hosts'],    parent: 'settings-layout', order: 2 },
+        { id: 'pveh-fn-scroll',  label: 'Horizontal Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'pveh.scroll', activeOn: ['pve-hosts'], parent: 'settings-layout', order: 3 },
 
         // ── Fleet Nodes page function items ───────────────────────────────
         { id: 'nod-fn-refresh',  label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'nod.refresh',  activeOn: ['nodes'],        parent: 'settings-layout', order: 0 },
         { id: 'nod-fn-cols',     label: 'Columns',          icon: HIEROGLYPHS.khaHorizon, fn: 'nod.columns',  activeOn: ['nodes'],        parent: 'settings-layout', order: 1 },
-        { id: 'nod-fn-update',   label: 'Fleet Update',     icon: HIEROGLYPHS.crookFlail, fn: 'nod.update',   activeOn: ['nodes'],        parent: 'settings-layout', order: 2 },
+        { id: 'nod-fn-bkpcols',  label: 'Backup Columns',   icon: HIEROGLYPHS.khaHorizon, fn: 'nod.backupColumns', activeOn: ['nodes'],   parent: 'settings-layout', order: 2 },
+        { id: 'nod-fn-update',   label: 'Fleet Update',     icon: HIEROGLYPHS.crookFlail, fn: 'nod.update',   activeOn: ['nodes'],        parent: 'settings-layout', order: 3 },
+        { id: 'nod-fn-scroll',   label: 'Horizontal Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'nod.scroll', activeOn: ['nodes'], parent: 'settings-layout', order: 4 },
 
         // ── App Config page function items ────────────────────────────────
         { id: 'cfg-fn-add',      label: 'Add setting',      icon: HIEROGLYPHS.djedPillar, fn: 'cfg.add',      activeOn: ['settings'],     parent: 'settings-layout', order: 0 },
         { id: 'cfg-fn-refresh',  label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'cfg.refresh',  activeOn: ['settings'],     parent: 'settings-layout', order: 1 },
         { id: 'cfg-fn-cols',     label: 'Columns',          icon: HIEROGLYPHS.khaHorizon, fn: 'cfg.columns',  activeOn: ['settings'],     parent: 'settings-layout', order: 2 },
         { id: 'cfg-fn-cache',    label: 'Refresh UI',       icon: HIEROGLYPHS.nefer,      fn: 'cfg.cache',    activeOn: ['settings'],     parent: 'settings-layout', order: 3 },
+        { id: 'cfg-fn-scroll',   label: 'Horizontal Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'cfg.scroll', activeOn: ['settings'], parent: 'settings-layout', order: 4 },
 
         // ── Manual ARP page function items ────────────────────────────────
         { id: 'arp-fn-add',      label: 'Add entry',        icon: HIEROGLYPHS.obelisk,    fn: 'arp.add',      activeOn: ['arp-manual'],   parent: 'settings-layout', order: 0 },
         { id: 'arp-fn-refresh',  label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'arp.refresh',  activeOn: ['arp-manual'],   parent: 'settings-layout', order: 1 },
+        { id: 'arp-fn-cols',     label: 'Columns',          icon: HIEROGLYPHS.khaHorizon, fn: 'arp.columns',  activeOn: ['arp-manual'],   parent: 'settings-layout', order: 2 },
+        { id: 'arp-fn-scroll',   label: 'Horizontal Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'arp.scroll', activeOn: ['arp-manual'], parent: 'settings-layout', order: 3 },
 
         // ── AI Providers page function items ──────────────────────────────
         { id: 'ai-fn-addprov',   label: 'Add provider',     icon: HIEROGLYPHS.falcon,     fn: 'ai.addProv',      activeOn: ['ai-providers'], parent: 'settings-layout', order: 0 },
@@ -73,6 +79,8 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'ai-fn-addassign', label: 'Add assignment',   icon: HIEROGLYPHS.falcon,     fn: 'ai.addAssign',    activeOn: ['ai-providers'], parent: 'settings-layout', order: 2 },
         { id: 'ai-fn-provcols',  label: 'Provider columns', icon: HIEROGLYPHS.khaHorizon, fn: 'ai.providerCols', activeOn: ['ai-providers'], parent: 'settings-layout', order: 3 },
         { id: 'ai-fn-assigncols',label: 'Assignment columns', icon: HIEROGLYPHS.khaHorizon, fn: 'ai.assignCols', activeOn: ['ai-providers'], parent: 'settings-layout', order: 4 },
+        { id: 'ai-fn-provscroll', label: 'Provider Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'ai.providerScroll', activeOn: ['ai-providers'], parent: 'settings-layout', order: 5 },
+        { id: 'ai-fn-assignscroll', label: 'Assignment Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'ai.assignScroll', activeOn: ['ai-providers'], parent: 'settings-layout', order: 6 },
 
         // ── Docs page function items ───────────────────────────────────────
         { id: 'doc-fn-reload',   label: 'Reload',           icon: HIEROGLYPHS.nefer,      fn: 'doc.reload',   activeOn: ['docs'],         parent: 'settings-layout', order: 0 },
@@ -96,6 +104,31 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'fc-fn-add',       label: 'Add Key',           icon: 'icons/ui/plus-blue.svg',        fn: 'fc.add',     activeOn: ['form-controls'], parent: 'settings-layout', order: 1 },
     ],
 });
+
+function _settingsToggleHorizontalScroll(getController, rerender) {
+    const controller = typeof getController === 'function' ? getController() : null;
+    if (!controller || typeof controller.toggleHorizontalScroll !== 'function') return;
+    controller.toggleHorizontalScroll();
+    if (typeof rerender === 'function') rerender();
+}
+
+function _settingsToggleHorizontalScrollMany(getControllers, rerender) {
+    const controllers = typeof getControllers === 'function' ? getControllers() : [];
+    const first = Array.isArray(controllers) ? controllers.find(controller => controller && typeof controller.toggleHorizontalScroll === 'function') : null;
+    if (!first) return;
+    const nextEnabled = !first.isHorizontalScrollEnabled();
+    controllers.forEach(controller => {
+        if (!controller || typeof controller.setHorizontalScrollEnabled !== 'function') return;
+        controller.setHorizontalScrollEnabled(nextEnabled);
+    });
+    if (typeof rerender === 'function') rerender();
+}
+
+function _settingsHorizontalScrollLabel(label, getController) {
+    const controller = typeof getController === 'function' ? getController() : null;
+    const enabled = !!(controller && typeof controller.isHorizontalScrollEnabled === 'function' && controller.isHorizontalScrollEnabled());
+    return `${label}: ${enabled ? 'On' : 'Off'}`;
+}
 
 function _fleetUpdateModalEls() {
     return {
@@ -351,21 +384,33 @@ SettingsMenuConfig.registerFunctions({
     'pveh.refresh': () => loadPveHosts(),
     'pveh.scan':    () => scanPveHosts(),
     'pveh.columns': () => _pveOpenColsModal(),
+    'pveh.scroll':  () => _settingsToggleHorizontalScroll(() => _ensurePveHostsTablePrefs(), () => renderPveHosts()),
 
     // Fleet Nodes
     'nod.refresh':  () => loadNodes(),
     'nod.columns':  () => openNodesColsModal(),
+    'nod.backupColumns': () => openBackupsColsModal(),
     'nod.update':   () => openFleetUpdateModal(),
+    'nod.scroll':   () => _settingsToggleHorizontalScrollMany(
+        () => [_ensureNodesTableView(), _ensureBackupsTableView()],
+        () => {
+            renderNodes();
+            renderBackups();
+        }
+    ),
 
     // App Config
     'cfg.add':      () => openAddSettingModal(),
     'cfg.refresh':  () => loadSettings(),
     'cfg.columns':  () => openSettingsColsModal(),
     'cfg.cache':    () => forceRefreshUiAssets(),
+    'cfg.scroll':   () => _settingsToggleHorizontalScroll(() => _ensureSettingsTableView(), () => renderSettings()),
 
     // Manual ARP
     'arp.add':      () => addArpManualEntry(),
     'arp.refresh':  () => loadArpManual(),
+    'arp.columns':  () => _openArpManualColsModal(),
+    'arp.scroll':   () => _settingsToggleHorizontalScroll(() => _ensureArpManualTableView(), () => renderArpManual()),
 
     // AI Providers
     'ai.addProv':      () => openAiProviderModal(null),
@@ -373,6 +418,8 @@ SettingsMenuConfig.registerFunctions({
     'ai.addAssign':    () => openAiAssignmentModal(null),
     'ai.providerCols': () => _openAiProviderColsModal(),
     'ai.assignCols':   () => _openAiAssignmentColsModal(),
+    'ai.providerScroll': () => _settingsToggleHorizontalScroll(() => _ensureAiProvidersTableView(), () => renderAiProviders()),
+    'ai.assignScroll':  () => _settingsToggleHorizontalScroll(() => _ensureAiAssignmentsTableView(), () => renderAiAssignments()),
 
     // Docs
     'doc.reload':   () => docsRefreshContent(),
@@ -395,4 +442,13 @@ SettingsMenuConfig.registerFunctions({
     // Form Controls
     'fc.refresh':   () => loadFormControls(),
     'fc.add':       () => _fcAddNew(),
+});
+
+SettingsMenuConfig.registerLabelGetters({
+    'pveh-fn-scroll':      () => _settingsHorizontalScrollLabel('Horizontal Scroll', () => _ensurePveHostsTablePrefs()),
+    'nod-fn-scroll':       () => _settingsHorizontalScrollLabel('Horizontal Scroll', () => _ensureNodesTableView()),
+    'cfg-fn-scroll':       () => _settingsHorizontalScrollLabel('Horizontal Scroll', () => _ensureSettingsTableView()),
+    'arp-fn-scroll':       () => _settingsHorizontalScrollLabel('Horizontal Scroll', () => _ensureArpManualTableView()),
+    'ai-fn-provscroll':    () => _settingsHorizontalScrollLabel('Provider Scroll', () => _ensureAiProvidersTableView()),
+    'ai-fn-assignscroll':  () => _settingsHorizontalScrollLabel('Assignment Scroll', () => _ensureAiAssignmentsTableView()),
 });

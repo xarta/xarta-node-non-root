@@ -40,6 +40,12 @@ document.addEventListener('DOMContentLoaded', () => {
     confirmBtn.dataset.bound = '1';
   }
 
+  const colsApplyBtn = document.getElementById('backups-cols-modal-apply');
+  if (colsApplyBtn && !colsApplyBtn.dataset.bound) {
+    colsApplyBtn.addEventListener('click', _applyBackupsColsModal);
+    colsApplyBtn.dataset.bound = '1';
+  }
+
   _ensureBackupsTableView();
   _backupTableView?.onLayoutChange(() => {
     renderBackups();
@@ -75,6 +81,23 @@ function _ensureBackupsTableView() {
 
 function _backupVisibleCols() {
   return _ensureBackupsTableView()?.getVisibleCols() || ['filename'];
+}
+
+function openBackupsColsModal() {
+  const view = _ensureBackupsTableView();
+  if (!view) return;
+  view.openColumns(
+    document.getElementById('backups-cols-modal-list'),
+    document.getElementById('backups-cols-modal'),
+    col => _BACKUP_FIELD_META[col].label
+  );
+}
+
+function _applyBackupsColsModal() {
+  const view = _ensureBackupsTableView();
+  if (!view) return;
+  view.applyColumns(document.getElementById('backups-cols-modal'), renderBackups);
+  HubModal.close(document.getElementById('backups-cols-modal'));
 }
 
 function _backupSortValue(backup, sortKey) {

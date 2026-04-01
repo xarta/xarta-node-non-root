@@ -47,6 +47,11 @@
 }
 table { width: 100%; border-collapse: collapse; min-width: 400px; }
 table.table-shared-ui { table-layout: fixed; }
+table.table-shared-ui.table-shared-ui--scroll-x {
+  width: max(100%, var(--table-scroll-width, 100%));
+  min-width: 100%;
+  table-layout: fixed;
+}
 thead th { background: var(--surface); color: var(--text-dim); font-size: 11px;
            text-transform: uppercase; letter-spacing: .6px; padding: 8px 10px;
            text-align: left; border-bottom: 1px solid var(--border);

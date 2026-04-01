@@ -112,15 +112,6 @@
           then call ResponsiveLayout.registerTabControls(tabId, groupElId) in the page JS. -->
       <div id="page-controls-slot">
 
-        <!-- App Config — visible UI refresh control in the header action row.
-            Event handler wired in settings.js via addEventListener. -->
-        <div class="page-control-group" id="pg-ctrl-settings"
-            data-for-tab="settings" hidden>
-          <button class="hub-action-btn" id="ui-refresh-assets-header-btn" type="button">
-            Refresh UI Assets
-          </button>
-        </div>
-
         <!-- Bookmarks main — search / tag filter / archived toggle.
             Formerly in a .toolbar div inside #tab-bookmarks-main.
             Event handlers wired in bookmarks.js via addEventListener. -->
@@ -329,10 +320,6 @@
         oninput="setSoundVolume(this.value)">
       <span id="sound-volume-label" style="font-size:12px;color:var(--text-dim);min-width:34px;white-space:nowrap;"></span>
       <span id="sound-enabled-status" style="font-size:12px;color:var(--text-dim)"></span>
-    </div>
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <button id="ui-refresh-assets-btn" class="secondary" type="button">Refresh UI Assets</button>
-      <span id="ui-refresh-assets-status" style="font-size:12px;color:var(--text-dim)">Also available from the Settings header row and the Settings menu. Best effort: clears app-controlled caches, then reopens this page with a fresh asset URL.</span>
     </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
@@ -720,7 +707,7 @@
     </p>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
-      <table>
+      <table id="arp-manual-table">
         <thead><tr>
           <th>IP Address</th><th>MAC Address</th><th>Notes</th><th>Updated</th><th>Actions</th>
         </tr></thead>
@@ -1785,6 +1772,24 @@
   </div>
 </dialog>
 
+<dialog class="hub-modal hub-dialog" data-tone="info" id="arp-manual-cols-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">COLS</span>
+      <span class="hub-dialog-title-text">Manual ARP Columns</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body">
+    <p style="font-size:12px;color:var(--text-dim);margin:0 0 10px">Choose which columns stay visible for this layout. Preferences are browser-local.</p>
+    <div id="arp-manual-cols-modal-list" class="hub-checkbox-list"></div>
+  </div>
+  <div class="hub-modal-footer">
+    <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
+    <button class="hub-modal-btn" id="arp-manual-cols-modal-apply" type="button">&#10003; Apply</button>
+  </div>
+</dialog>
+
 <dialog class="hub-modal hub-dialog" data-tone="info" id="pve-host-edit-modal">
   <div class="hub-modal-header">
     <h2 class="hub-modal-title">
@@ -1843,6 +1848,24 @@
   <div class="hub-modal-footer">
     <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
     <button class="hub-modal-btn" id="nodes-cols-modal-apply" type="button">&#10003; Apply</button>
+  </div>
+</dialog>
+
+<dialog class="hub-modal hub-dialog" data-tone="info" id="backups-cols-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">COLS</span>
+      <span class="hub-dialog-title-text">Backup Columns</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body">
+    <p style="font-size:12px;color:var(--text-dim);margin:0 0 10px">Choose which backup columns stay visible for this layout. Preferences are browser-local.</p>
+    <div id="backups-cols-modal-list" class="hub-checkbox-list"></div>
+  </div>
+  <div class="hub-modal-footer">
+    <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
+    <button class="hub-modal-btn" id="backups-cols-modal-apply" type="button">&#10003; Apply</button>
   </div>
 </dialog>
 

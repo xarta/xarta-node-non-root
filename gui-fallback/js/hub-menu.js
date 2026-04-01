@@ -506,6 +506,7 @@ function createHubMenu(cfg) {
                             const fn = this._fnRegistry[btn.dataset.fn];
                             if (typeof fn === 'function') fn();
                             else console.warn('[HubMenu] No function registered for:', btn.dataset.fn);
+                            window.setTimeout(() => this.updateActiveTab(this._activeId), 0);
                             this.closeMenu();
                             this.closeDropdowns();
                         });
@@ -524,6 +525,7 @@ function createHubMenu(cfg) {
                         const fn = this._fnRegistry[item.fn];
                         if (typeof fn === 'function') fn();
                         else console.warn('[HubMenu] No function registered for:', item.fn);
+                        window.setTimeout(() => this.updateActiveTab(this._activeId), 0);
                         this.closeMenu();
                     });
                     target.appendChild(btn);
