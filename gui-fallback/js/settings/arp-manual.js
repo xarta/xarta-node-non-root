@@ -9,9 +9,268 @@ const _ARP_MANUAL_FIELD_META = {
 
 const _ARP_ACTION_INLINE_WIDTH = 90;
 const _ARP_ACTION_COMPACT_WIDTH = 48;
+const _ARP_LAYOUT_USER_CODE = '00';
+const _ARP_LAYOUT_RESERVED_CODE = '00';
+const _ARP_LAYOUT_SAVE_DELAY_MS = 300;
 
 let _arpManualEditId = null;
 let _arpManualTableView = null;
+let _arpManualLayoutKey = '';
+let _arpManualLayoutAppliedSignature = '';
+let _arpManualLayoutSaveTimer = null;
+let _arpManualApplyingRemoteLayout = false;
+let _arpManualLayoutRequestSeq = 0;
+
+function _arpManualTableEl() {
+  return document.getElementById('arp-manual-table');
+}
+
+function _arpManualViewportBits() {
+  const width = window.innerWidth || document.documentElement.clientWidth || 0;
+  const portrait = window.matchMedia('(orientation: portrait)').matches;
+  return {
+    shade_up: !!document.body?.classList.contains('shade-is-up'),
+    horizontal_scroll: !!_arpManualTableView?.isHorizontalScrollEnabled(),
+    mobile: width <= 600,
+    portrait,
+    wide: !portrait && width >= 1600,
+  };
+}
+
+function _arpManualTableCode() {
+  return _arpManualTableEl()?.dataset.layoutTableCode || '0E';
+}
+
+function _arpManualTableName() {
+  return _arpManualTableEl()?.dataset.layoutTableName || 'arp-manual';
+}
+
+function _arpManualColumnType(col) {
+  switch (col) {
+    case 'ip_address': return 'TEXT';
+    case 'mac_address': return 'TEXT';
+    case 'notes': return 'TEXT';
+    case 'updated_at': return 'TEXT';
+    default: return null;
+  }
+}
+
+function _arpManualDefaultWidth(col) {
+  if (!_arpManualTableView) return col === '_actions' ? _ARP_ACTION_INLINE_WIDTH : null;
+  return col === '_actions' ? _arpActionCellWidth(_arpCompactRowActions()) : null;
+}
+
+function _arpManualColumnSeeds() {
+  return _ARP_MANUAL_COLS.map((col, index) => {
+    const meta = _ARP_MANUAL_FIELD_META[col] || { label: col };
+    const width = _arpManualTableView?.prefs?.getWidth(col) || _arpManualDefaultWidth(col);
+    return {
+      column_key: col,
+      display_name: meta.label || col,
+      sqlite_column: col.startsWith('_') ? null : col,
+      width_px: width || undefined,
+      min_width_px: col === '_actions' ? _ARP_ACTION_COMPACT_WIDTH : 40,
+      max_width_px: col === 'notes' ? 1200 : (col === '_actions' ? _ARP_ACTION_INLINE_WIDTH : 900),
+      position: index,
+      sort_direction: null,
+      sort_priority: null,
+      hidden: false,
+      data_type: _arpManualColumnType(col),
+      sample_max_length: col === 'notes' ? 48 : (col === 'ip_address' ? 15 : (col === 'mac_address' ? 17 : 16)),
+    };
+  });
+}
+
+function _arpManualBuildLayoutPayload() {
+  const view = _ensureArpManualTableView();
+  const hidden = view.getHiddenSet();
+  const sortState = view.getSortState();
+  const columns = _ARP_MANUAL_COLS.map((col, index) => {
+    const meta = _ARP_MANUAL_FIELD_META[col] || { label: col };
+    const isActiveSort = !!(meta.sortKey && sortState.key === meta.sortKey);
+    return {
+      column_key: col,
+      display_name: meta.label || col,
+      sqlite_column: col.startsWith('_') ? null : col,
+      width_px: view.prefs.getWidth(col) || _arpManualDefaultWidth(col),
+      min_width_px: col === '_actions' ? _ARP_ACTION_COMPACT_WIDTH : 40,
+      max_width_px: col === 'notes' ? 1200 : (col === '_actions' ? _ARP_ACTION_INLINE_WIDTH : 900),
+      position: index,
+      sort_direction: isActiveSort ? (sortState.dir === -1 ? 'desc' : 'asc') : null,
+      sort_priority: isActiveSort ? 0 : null,
+      hidden: hidden.has(col),
+      data_type: _arpManualColumnType(col),
+      sample_max_length: col === 'notes' ? 48 : (col === 'ip_address' ? 15 : (col === 'mac_address' ? 17 : 16)),
+    };
+  });
+  return {
+    version: 1,
+    seed_origin: 'manual',
+    algorithm_version: 'v1',
+    bucket_flags: _arpManualViewportBits(),
+    columns,
+  };
+}
+
+function _arpManualApplyRemoteLayout(layout) {
+  const view = _ensureArpManualTableView();
+  if (!view || !layout || !Array.isArray(layout.columns)) return;
+  const hidden = new Set();
+  let sortKey = null;
+  let sortDir = 1;
+  _arpManualApplyingRemoteLayout = true;
+  try {
+    layout.columns.forEach(col => {
+      if (!col || !col.column_key) return;
+      if (col.hidden) hidden.add(col.column_key);
+      if (col.width_px && view.prefs?.setWidth) {
+        view.prefs.setWidth(col.column_key, col.width_px);
+      }
+      if (col.sort_direction) {
+        const meta = _ARP_MANUAL_FIELD_META[col.column_key] || null;
+        sortKey = meta?.sortKey || col.column_key;
+        sortDir = col.sort_direction === 'desc' ? -1 : 1;
+      }
+    });
+    view.prefs.setHiddenSet(hidden);
+    view.setSortState(sortKey, sortDir);
+  } finally {
+    _arpManualApplyingRemoteLayout = false;
+  }
+}
+
+function _arpManualLayoutSignature(layoutData) {
+  try {
+    return JSON.stringify(layoutData || {});
+  } catch (_) {
+    return '';
+  }
+}
+
+async function _arpManualResolveRemoteLayout(options = {}) {
+  const view = _ensureArpManualTableView();
+  if (!view) return null;
+  const reqId = ++_arpManualLayoutRequestSeq;
+  try {
+    const response = await apiFetch('/api/v1/table-layouts/resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        reserved_code: _ARP_LAYOUT_RESERVED_CODE,
+        user_code: _ARP_LAYOUT_USER_CODE,
+        table_code: _arpManualTableCode(),
+        table_name: _arpManualTableName(),
+        bucket_bits: _arpManualViewportBits(),
+        columns: _arpManualColumnSeeds(),
+      }),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    if (reqId !== _arpManualLayoutRequestSeq) return null;
+    _arpManualLayoutKey = payload.layout_key || '';
+    const nextSig = _arpManualLayoutSignature(payload.layout_data);
+    if (nextSig && nextSig !== _arpManualLayoutAppliedSignature) {
+      _arpManualApplyRemoteLayout(payload.layout_data);
+      _arpManualLayoutAppliedSignature = nextSig;
+      if (options.rerender !== false) renderArpManual();
+    }
+    return payload;
+  } catch (error) {
+    console.warn('Manual ARP table layout resolve failed:', error);
+    return null;
+  }
+}
+
+function _arpManualScheduleLayoutSave() {
+  if (_arpManualApplyingRemoteLayout) return;
+  clearTimeout(_arpManualLayoutSaveTimer);
+  _arpManualLayoutSaveTimer = setTimeout(() => {
+    _arpManualPersistLayout().catch(error => {
+      console.warn('Manual ARP table layout save failed:', error);
+    });
+  }, _ARP_LAYOUT_SAVE_DELAY_MS);
+}
+
+async function _arpManualPersistLayout() {
+  const view = _ensureArpManualTableView();
+  if (!view) return;
+  if (!_arpManualLayoutKey) {
+    const resolved = await _arpManualResolveRemoteLayout({ rerender: false });
+    if (!resolved?.layout_key) return;
+  }
+  const layoutData = _arpManualBuildLayoutPayload();
+  const nextSig = _arpManualLayoutSignature(layoutData);
+  if (nextSig === _arpManualLayoutAppliedSignature) return;
+  const response = await apiFetch(`/api/v1/table-layouts/${encodeURIComponent(_arpManualLayoutKey)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ layout_data: layoutData }),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const payload = await response.json();
+  _arpManualLayoutKey = payload.layout_key || _arpManualLayoutKey;
+  _arpManualLayoutAppliedSignature = _arpManualLayoutSignature(payload.layout_data);
+}
+
+async function toggleArpManualHorizontalScroll() {
+  const view = _ensureArpManualTableView();
+  if (!view) return;
+  view.toggleHorizontalScroll();
+  await _arpManualResolveRemoteLayout({ rerender: true });
+}
+
+async function openArpManualLayoutContextModal() {
+  if (typeof TableLayoutInspector === 'undefined') return;
+  if (!_arpManualLayoutKey) {
+    await _arpManualResolveRemoteLayout({ rerender: false });
+  }
+  try {
+    const query = new URLSearchParams({
+      table_code: _arpManualTableCode(),
+      user_code: _ARP_LAYOUT_USER_CODE,
+    });
+    const response = await apiFetch(`/api/v1/table-layouts?${query.toString()}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const rows = await response.json();
+    TableLayoutInspector.open({
+      title: 'Manual ARP Layout Context',
+      subtitle: `${rows.length} saved bucket${rows.length === 1 ? '' : 's'} for ${_arpManualTableName()}`,
+      activeKey: _arpManualLayoutKey,
+      onSaveColumns: async (entry, nextLayoutData) => {
+        const saveResponse = await apiFetch(`/api/v1/table-layouts/${encodeURIComponent(entry.layoutKey)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ layout_data: nextLayoutData }),
+        });
+        if (!saveResponse.ok) throw new Error(`HTTP ${saveResponse.status}`);
+        const payload = await saveResponse.json();
+        const savedLayout = payload.layout_data || nextLayoutData;
+        if (payload.layout_key === _arpManualLayoutKey) {
+          _arpManualApplyRemoteLayout(savedLayout);
+          _arpManualLayoutAppliedSignature = _arpManualLayoutSignature(savedLayout);
+          renderArpManual();
+        }
+        return { layoutData: savedLayout };
+      },
+      entries: rows.map(row => ({
+        layoutKey: row.layout_key,
+        reservedCode: row.reserved_code,
+        userCode: row.user_code,
+        tableCode: row.table_code,
+        bucketCode: row.bucket_code,
+        layoutData: row.layout_data || {},
+        title: `Bucket ${row.bucket_code}`,
+        subtitle: row.layout_key,
+        hint: row.layout_key === _arpManualLayoutKey ? 'Active layout for the current Manual ARP viewport' : 'Saved sibling layout for another Manual ARP context',
+      })),
+    });
+  } catch (error) {
+    await HubDialogs.alertError({
+      title: 'Layout context unavailable',
+      message: `Failed to load Manual ARP layout context: ${error.message}`,
+    });
+  }
+}
 
 function _ensureArpManualTableView() {
   if (_arpManualTableView || typeof TableView === 'undefined') return _arpManualTableView;
@@ -25,7 +284,13 @@ function _ensureArpManualTableView() {
     sort: {
       storageKey: 'arp-manual-table-sort',
     },
-    onSortChange: () => renderArpManual(),
+    onSortChange: () => {
+      renderArpManual();
+      _arpManualScheduleLayoutSave();
+    },
+    onColumnResizeEnd: () => {
+      _arpManualScheduleLayoutSave();
+    },
   });
   return _arpManualTableView;
 }
@@ -118,6 +383,7 @@ function _applyArpManualColsModal() {
   view.applyColumns(modal, () => {
     renderArpManual();
     HubModal.close(modal);
+    _arpManualScheduleLayoutSave();
   });
 }
 
@@ -227,8 +493,9 @@ async function deleteArpManualEntry(entry_id) {
 document.addEventListener('DOMContentLoaded', () => {
   _ensureArpManualTableView();
   _arpManualTableView?.onLayoutChange(() => {
-    renderArpManual();
+    _arpManualResolveRemoteLayout({ rerender: true });
   });
+  _arpManualResolveRemoteLayout({ rerender: false });
 
   const saveBtn = document.getElementById('arp-manual-edit-save-btn');
   if (saveBtn) saveBtn.addEventListener('click', _submitArpManualEdit);

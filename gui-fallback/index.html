@@ -242,6 +242,8 @@
             <option value="ai_project_assignments">ai_project_assignments</option>
             <option value="bookmarks">bookmarks</option>
             <option value="visits">visits</option>
+            <option value="table_layout_catalog">table_layout_catalog</option>
+            <option value="table_layouts">table_layouts</option>
           </select>
           <button id="retouch-btn" class="hub-ctrl"
                   title="Re-enqueue all rows in selected table for sync to all peers">&#8635; Retouch</button>
@@ -323,7 +325,7 @@
     </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
-      <table id="settings-table">
+      <table id="settings-table" data-layout-table-name="settings" data-layout-table-code="01">
         <thead><tr>
           <th>Key</th><th>Value</th><th>Description</th><th>Updated</th><th>Actions</th>
         </tr></thead>
@@ -404,7 +406,7 @@
       <p id="doc-img-results-summary" class="doc-img-results-summary">Loading images…</p>
     </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
-    <div id="doc-images-scroll" class="table-wrap table-wrap--fill doc-img-results-shell">
+    <div id="doc-images-scroll" class="table-wrap table-wrap--fill doc-img-results-shell" data-layout-table-name="docs-images" data-layout-table-code="02">
       <div id="doc-images-list" class="doc-img-results"></div>
     </div>
     <div id="doc-img-pagination" class="table-pager doc-img-pager" hidden></div>
@@ -450,7 +452,7 @@
     <!-- TABLE VIEW -->
     <div id="ml-table-view" style="display:none">
       <div class="table-wrap">
-        <table id="ml-table">
+        <table id="ml-table" data-layout-table-name="manual-links" data-layout-table-code="03">
           <thead><tr></tr></thead>
           <tbody id="ml-tbody"></tbody>
         </table>
@@ -473,7 +475,7 @@
   <section id="tab-services" class="tab-panel tab-panel--fill">
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
-      <table id="services-table">
+      <table id="services-table" data-layout-table-name="services" data-layout-table-code="04">
         <thead>
           <tr>
             <th>ID</th>
@@ -495,7 +497,7 @@
   <section id="tab-machines" class="tab-panel tab-panel--fill">
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
-      <table id="machines-table">
+      <table id="machines-table" data-layout-table-name="machines" data-layout-table-code="05">
         <thead>
           <tr>
             <th>ID</th>
@@ -523,7 +525,7 @@
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="tab-scroll-shell">
     <div class="table-wrap">
-      <table id="nodes-table">
+      <table id="nodes-table" data-layout-table-name="fleet-nodes" data-layout-table-code="06">
         <thead>
           <tr>
             <th style="min-width:120px;white-space:nowrap">Display Name</th>
@@ -563,7 +565,7 @@
         Use <strong>Force Restore</strong> to propagate the restored state to all peers and suppress incoming overwrites (disaster recovery only).
       </div>
       <div class="table-wrap">
-        <table id="backups-table">
+        <table id="backups-table" data-layout-table-name="node-backups" data-layout-table-code="07">
           <thead><tr>
             <th>Filename</th>
             <th>Size</th>
@@ -584,7 +586,7 @@
     <p id="dns-sweep-status" style="font-size:12px;margin:2px 0 0" hidden></p>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
-      <table id="dns-table">
+      <table id="dns-table" data-layout-table-name="pfsense-dns" data-layout-table-code="08">
         <thead>
           <tr>
             <th>IP Address</th>
@@ -620,7 +622,7 @@
     <p id="pve-probe-status" style="font-size:12px;margin:4px 0 0" hidden></p>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
-      <table id="pve-config-table">
+      <table id="pve-config-table" data-layout-table-name="proxmox-config" data-layout-table-code="09">
         <thead><tr>
           <th>PVE</th><th>VMID</th><th>Type</th><th>Name</th><th>Status</th>
           <th>Cores</th><th>RAM MB</th><th>Networks</th><th>Detected</th><th>Tags</th><th>Last Probed</th><th></th>
@@ -636,7 +638,7 @@
     <p id="dockge-probe-status" style="font-size:12px;margin:4px 0 0" hidden></p>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
-      <table id="dockge-table">
+      <table id="dockge-table" data-layout-table-name="dockge-stacks" data-layout-table-code="0A">
         <thead><tr>
           <th>SVCS</th><th>PVE</th><th>VMID</th><th>TYPE</th><th>LXC</th><th>Stack</th><th>Status</th><th>.ENV</th><th>Host type</th><th>Parent</th><th>Obs</th><th>Notes</th><th>Last Probed</th>
         </tr></thead>
@@ -651,7 +653,7 @@
     <p id="caddy-probe-status" style="font-size:12px;margin:4px 0 0" hidden></p>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
-      <table id="caddy-table">
+      <table id="caddy-table" data-layout-table-name="caddy-configs" data-layout-table-code="0B">
         <thead><tr>
           <th>PVE</th><th>VMID</th><th>LXC</th><th>Path</th>
           <th>Domains</th><th>Upstreams</th><th>Last Probed</th>
@@ -671,7 +673,7 @@
     <p id="pve-scan-status" style="font-size:12px;margin:4px 0 0" hidden></p>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
-      <table id="pve-hosts-table">
+      <table id="pve-hosts-table" data-layout-table-name="pve-hosts" data-layout-table-code="0C">
         <thead><tr>
           <th>IP</th><th>Name</th><th>Tailnet IP</th><th>Version</th><th>Port</th>
           <th>SSH</th><th>Last Scanned</th><th></th>
@@ -690,7 +692,7 @@
     </p>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
-      <table id="vlans-table">
+      <table id="vlans-table" data-layout-table-name="vlans" data-layout-table-code="0D">
         <thead><tr>
           <th>VLAN</th><th>CIDR</th><th>Source</th><th>Description</th><th>Actions</th>
         </tr></thead>
@@ -709,7 +711,7 @@
     </p>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
-      <table id="arp-manual-table">
+      <table id="arp-manual-table" data-layout-table-name="arp-manual" data-layout-table-code="0E">
         <thead><tr>
           <th>IP Address</th><th>MAC Address</th><th>Notes</th><th>Updated</th><th>Actions</th>
         </tr></thead>
@@ -726,7 +728,7 @@
     <div class="tab-scroll-shell">
     <!-- Status table -->
     <div class="table-wrap" style="margin-bottom:20px;">
-      <table id="keys-status-table">
+      <table id="keys-status-table" data-layout-table-name="keys-status" data-layout-table-code="0F">
         <thead><tr>
           <th>Key</th><th>Scope</th><th>Path</th><th>Private</th><th>Public</th><th>Actions</th>
         </tr></thead>
@@ -802,7 +804,7 @@
     <div class="tab-scroll-shell">
     <!-- Status table -->
     <div class="table-wrap table-wrap--fill" style="margin-bottom:20px;">
-      <table id="certs-status-table">
+      <table id="certs-status-table" data-layout-table-name="certs-status" data-layout-table-code="10">
         <thead><tr>
           <th>Name</th><th>Env Var</th><th>Path</th><th>Status</th><th>Details</th><th>Action</th>
         </tr></thead>
@@ -820,7 +822,7 @@
     <div class="tab-scroll-shell">
     <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);margin:0 0 8px">Providers</h3>
     <div class="table-wrap" style="margin-bottom:20px">
-      <table id="ai-providers-table">
+      <table id="ai-providers-table" data-layout-table-name="ai-providers" data-layout-table-code="11">
         <thead><tr>
           <th>Type</th><th>Name</th><th>Model</th><th>Dims</th><th>Enabled</th><th>Notes</th><th style="width:80px">Actions</th>
         </tr></thead>
@@ -830,7 +832,7 @@
 
     <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);margin:0 0 8px">Project Assignments</h3>
     <div class="table-wrap">
-      <table id="ai-assignments-table">
+      <table id="ai-assignments-table" data-layout-table-name="ai-project-assignments" data-layout-table-code="12">
         <thead><tr>
           <th>Project</th><th>Role</th><th>Provider</th><th>Priority</th><th>Enabled</th><th style="width:60px">Actions</th>
         </tr></thead>
@@ -1127,7 +1129,7 @@
     <p id="ssh-targets-status" style="font-size:13px;color:var(--text-dim);margin-bottom:12px"></p>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
-      <table id="ssh-targets-table">
+      <table id="ssh-targets-table" data-layout-table-name="ssh-targets" data-layout-table-code="13">
         <thead><tr>
           <th>IP Address</th><th>Host Name</th><th>Type</th><th>Key Env Var</th><th>Source IP</th><th>Notes</th><th>Updated</th><th></th>
         </tr></thead>
@@ -1150,7 +1152,7 @@
     <!-- Bookmarks table -->
     <div id="bm-main-view">
       <div class="table-wrap table-wrap--fill">
-        <table id="bm-table">
+        <table id="bm-table" data-layout-table-name="bookmarks" data-layout-table-code="14">
           <thead><tr></tr></thead>
           <tbody id="bm-tbody"><tr class="empty-row"><td colspan="8">Loading&hellip;</td></tr></tbody>
         </table>
@@ -1172,7 +1174,7 @@
     </div>
     <p id="vis-status" style="font-size:12px;color:var(--text-dim);margin:0 0 6px" hidden></p>
     <div class="table-wrap table-wrap--fill">
-      <table id="vis-table">
+      <table id="vis-table" data-layout-table-name="visits" data-layout-table-code="15">
         <thead><tr id="vis-thead-row"></tr></thead>
         <tbody id="bm-visits-tbody"><tr class="empty-row"><td colspan="7">Loading&hellip;</td></tr></tbody>
       </table>
@@ -2546,6 +2548,54 @@
   </div>
   <div class="hub-modal-footer">
     <button class="hub-modal-btn secondary hub-modal-close" type="button">Close</button>
+  </div>
+</dialog>
+
+<dialog class="hub-modal hub-dialog" data-tone="info" id="table-layout-context-modal" style="width:min(920px,96vw);max-width:96vw">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title" style="flex:1;min-width:0;flex-direction:column;align-items:flex-start;gap:4px">
+      <span class="hub-dialog-badge">LAYOUT</span>
+      <span class="hub-dialog-title-text" id="table-layout-context-title">Table Layout Context</span>
+      <span id="table-layout-context-subtitle" style="font-size:12px;color:var(--text-dim);font-weight:400"></span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body">
+    <div id="table-layout-context-list" class="table-layout-context-list"></div>
+  </div>
+  <div class="hub-modal-footer">
+    <button class="hub-modal-btn secondary hub-modal-close" type="button">Close</button>
+  </div>
+</dialog>
+
+<dialog class="hub-modal hub-dialog" data-tone="info" id="table-layout-context-detail-modal" style="width:min(860px,94vw);max-width:94vw;border-color:var(--accent)">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title" style="flex:1;min-width:0">
+      <span class="hub-dialog-badge">DETAIL</span>
+      <span class="hub-dialog-title-text" id="table-layout-context-detail-title">Layout Detail</span>
+      <span id="table-layout-context-detail-subtitle" style="font-size:12px;color:var(--text-dim);margin-left:12px"></span>
+    </h2>
+    <button class="hub-modal-close" type="button">&#8592; Back</button>
+  </div>
+  <div class="hub-modal-body" id="table-layout-context-detail-body"></div>
+</dialog>
+
+<dialog class="hub-modal hub-dialog" data-tone="info" id="table-layout-context-columns-modal" style="width:min(720px,92vw);max-width:92vw;border-color:var(--accent)">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title" style="flex:1;min-width:0">
+      <span class="hub-dialog-badge">COLUMNS</span>
+      <span class="hub-dialog-title-text" id="table-layout-context-columns-title">Layout Columns</span>
+      <span id="table-layout-context-columns-subtitle" style="font-size:12px;color:var(--text-dim);margin-left:12px"></span>
+    </h2>
+    <button class="hub-modal-close" type="button">&#8592; Back</button>
+  </div>
+  <div class="hub-modal-body">
+    <div id="table-layout-context-columns-list" class="hub-checkbox-list"></div>
+    <p id="table-layout-context-columns-error" class="hub-modal-error"></p>
+  </div>
+  <div class="hub-modal-footer">
+    <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
+    <button class="hub-modal-btn" id="table-layout-context-columns-apply" type="button">&#10003; Apply</button>
   </div>
 </dialog>
 

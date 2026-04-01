@@ -71,7 +71,8 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'arp-fn-add',      label: 'Add entry',        icon: HIEROGLYPHS.obelisk,    fn: 'arp.add',      activeOn: ['arp-manual'],   parent: 'settings-layout', order: 0 },
         { id: 'arp-fn-refresh',  label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'arp.refresh',  activeOn: ['arp-manual'],   parent: 'settings-layout', order: 1 },
         { id: 'arp-fn-cols',     label: 'Columns',          icon: HIEROGLYPHS.khaHorizon, fn: 'arp.columns',  activeOn: ['arp-manual'],   parent: 'settings-layout', order: 2 },
-        { id: 'arp-fn-scroll',   label: 'Horizontal Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'arp.scroll', activeOn: ['arp-manual'], parent: 'settings-layout', order: 3 },
+        { id: 'arp-fn-context',  label: 'Layout Context',   icon: HIEROGLYPHS.eyeOfHorus, fn: 'arp.context',  activeOn: ['arp-manual'],   parent: 'settings-layout', order: 3 },
+        { id: 'arp-fn-scroll',   label: 'Horizontal Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'arp.scroll', activeOn: ['arp-manual'], parent: 'settings-layout', order: 4 },
 
         // ── AI Providers page function items ──────────────────────────────
         { id: 'ai-fn-addprov',   label: 'Add provider',     icon: HIEROGLYPHS.falcon,     fn: 'ai.addProv',      activeOn: ['ai-providers'], parent: 'settings-layout', order: 0 },
@@ -420,7 +421,8 @@ SettingsMenuConfig.registerFunctions({
     'arp.add':      () => addArpManualEntry(),
     'arp.refresh':  () => loadArpManual(),
     'arp.columns':  () => _openArpManualColsModal(),
-    'arp.scroll':   () => _settingsToggleHorizontalScroll(() => _ensureArpManualTableView(), () => renderArpManual()),
+    'arp.context':  () => openArpManualLayoutContextModal(),
+    'arp.scroll':   () => toggleArpManualHorizontalScroll(),
 
     // AI Providers
     'ai.addProv':      () => openAiProviderModal(null),

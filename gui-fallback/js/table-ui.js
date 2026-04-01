@@ -426,7 +426,10 @@
         clearPendingHorizontalClamp();
       }
       updateScrollWidth(tableEl);
-      bindColumnResize(tableEl, { minWidth: options.minWidth || minWidth });
+      bindColumnResize(tableEl, {
+        minWidth: options.minWidth || minWidth,
+        onResizeEnd: options.onResizeEnd,
+      });
       if (typeof options.afterBind === 'function') {
         options.afterBind(tableEl);
       }
@@ -589,6 +592,24 @@
       return getState();
     }
 
+    function setState(nextKey, nextDir) {
+      var active = getActiveState();
+      if (!nextKey) {
+        active.key = null;
+        active.dir = 0;
+      } else {
+        active.key = nextKey;
+        active.dir = nextDir === -1 ? -1 : 1;
+      }
+      if (!storageKey) {
+        sortKey = active.key;
+        sortDir = active.dir;
+      } else {
+        persist();
+      }
+      return getState();
+    }
+
     function renderLabel(label, key) {
       var activeState = getActiveState();
       var active = activeState.key === key;
@@ -645,6 +666,7 @@
     return {
       getState: getState,
       toggle: toggle,
+      setState: setState,
       bind: bind,
       syncIndicators: syncIndicators,
       renderLabel: renderLabel,
@@ -729,6 +751,7 @@
         rebuildHead: rebuildHead,
         renderBody: renderBody,
         minWidth: cfg.minWidth || 40,
+        onResizeEnd: cfg.onColumnResizeEnd,
         afterBind: function (tableEl) {
           if (sorter) {
             sorter.bind(tableEl, cfg.onSortChange);
@@ -775,6 +798,9 @@
       getVisibleCols: getVisibleCols,
       getSortState: function () {
         return sorter ? sorter.getState() : { key: null, dir: 0 };
+      },
+      setSortState: function (nextKey, nextDir) {
+        return sorter ? sorter.setState(nextKey, nextDir) : { key: null, dir: 0 };
       },
       rebuildHead: rebuildHead,
       render: render,
@@ -835,6 +861,259 @@
     return isCompactLayout();
   }
 
+  var _TABLE_LAYOUT_CONTEXT_ENTRIES = new Map();
+  var _TABLE_LAYOUT_CONTEXT_SEQ = 0;
+  var _TABLE_LAYOUT_CONTEXT_STATE = {
+    options: null,
+    activeEntryId: null,
+    saving: false,
+  };
+
+  function _escapeLayoutText(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function _layoutDetailValue(value) {
+    if (value == null || value === '') return '—';
+    if (typeof value === 'boolean') return value ? 'true' : 'false';
+    return String(value);
+  }
+
+  function _layoutFlagChips(layoutData) {
+    var flags = (layoutData && layoutData.bucket_flags) || {};
+    var chips = [];
+    Object.keys(flags).forEach(function (key) {
+      if (!flags[key]) return;
+      chips.push(key.replace(/_/g, ' '));
+    });
+    return chips;
+  }
+
+  function _renderLayoutDetail(entry) {
+    var layoutData = (entry && entry.layoutData) || {};
+    var columns = Array.isArray(layoutData.columns) ? layoutData.columns : [];
+    var chips = _layoutFlagChips(layoutData).map(function (label) {
+      return '<span class="table-layout-context-chip">' + _escapeLayoutText(label) + '</span>';
+    }).join('');
+    var overview = [
+      ['Layout key', entry.layoutKey || ''],
+      ['Reserved', entry.reservedCode || ''],
+      ['User', entry.userCode || ''],
+      ['Table', entry.tableCode || ''],
+      ['Bucket', entry.bucketCode || ''],
+      ['Columns', columns.length],
+      ['Seed origin', layoutData.seed_origin || ''],
+      ['Algorithm', layoutData.algorithm_version || ''],
+    ].map(function (pair) {
+      return '<div class="table-layout-detail-card"><dt>' + _escapeLayoutText(pair[0]) + '</dt><dd>' + _escapeLayoutText(_layoutDetailValue(pair[1])) + '</dd></div>';
+    }).join('');
+    var columnCards = columns.map(function (column) {
+      return '' +
+        '<article class="table-layout-detail-column">' +
+          '<h4 class="table-layout-detail-column__title">' + _escapeLayoutText(column.display_name || column.column_key || 'Column') + '</h4>' +
+          '<dl>' +
+            '<dt>Key</dt><dd>' + _escapeLayoutText(_layoutDetailValue(column.column_key)) + '</dd>' +
+            '<dt>SQLite</dt><dd>' + _escapeLayoutText(_layoutDetailValue(column.sqlite_column)) + '</dd>' +
+            '<dt>Width</dt><dd>' + _escapeLayoutText(_layoutDetailValue(column.width_px)) + '</dd>' +
+            '<dt>Position</dt><dd>' + _escapeLayoutText(_layoutDetailValue(column.position)) + '</dd>' +
+            '<dt>Sort</dt><dd>' + _escapeLayoutText(_layoutDetailValue(column.sort_direction)) + '</dd>' +
+            '<dt>Priority</dt><dd>' + _escapeLayoutText(_layoutDetailValue(column.sort_priority)) + '</dd>' +
+            '<dt>Hidden</dt><dd>' + _escapeLayoutText(_layoutDetailValue(column.hidden)) + '</dd>' +
+          '</dl>' +
+        '</article>';
+    }).join('');
+    return '' +
+      '<div class="table-layout-detail">' +
+        '<section class="table-layout-detail-section">' +
+          '<div class="table-layout-detail-grid">' + overview + '</div>' +
+        '</section>' +
+        '<section class="table-layout-detail-section">' +
+          '<h3>Bucket Flags</h3>' +
+          '<div class="table-layout-context-entry__meta">' + (chips || '<span class="table-layout-context-entry__hint">No active flags for this bucket.</span>') + '</div>' +
+        '</section>' +
+        '<section class="table-layout-detail-section">' +
+          '<h3>Columns</h3>' +
+          '<div class="table-layout-detail-columns">' + (columnCards || '<div class="table-layout-context-entry__hint">No column data saved.</div>') + '</div>' +
+        '</section>' +
+      '</div>';
+  }
+
+  function _openLayoutContextDetail(entry) {
+    var dialog = document.getElementById('table-layout-context-detail-modal');
+    var titleEl = document.getElementById('table-layout-context-detail-title');
+    var subtitleEl = document.getElementById('table-layout-context-detail-subtitle');
+    var bodyEl = document.getElementById('table-layout-context-detail-body');
+    if (!dialog || !titleEl || !subtitleEl || !bodyEl || !entry) return;
+    titleEl.textContent = entry.title || entry.layoutKey || 'Layout Detail';
+    subtitleEl.textContent = entry.subtitle || '';
+    subtitleEl.hidden = !subtitleEl.textContent;
+    bodyEl.innerHTML = _renderLayoutDetail(entry);
+    HubModal.open(dialog, {
+      onClose: function () {
+        bodyEl.innerHTML = '';
+      },
+    });
+  }
+
+  function _cloneLayoutData(layoutData) {
+    try {
+      return JSON.parse(JSON.stringify(layoutData || {}));
+    } catch (_) {
+      return { columns: [] };
+    }
+  }
+
+  function _openLayoutContextColumns(entryId) {
+    var entry = _TABLE_LAYOUT_CONTEXT_ENTRIES.get(entryId);
+    var dialog = document.getElementById('table-layout-context-columns-modal');
+    var titleEl = document.getElementById('table-layout-context-columns-title');
+    var subtitleEl = document.getElementById('table-layout-context-columns-subtitle');
+    var listEl = document.getElementById('table-layout-context-columns-list');
+    var errEl = document.getElementById('table-layout-context-columns-error');
+    if (!entry || !dialog || !titleEl || !subtitleEl || !listEl || !errEl) return;
+    var columns = Array.isArray((entry.layoutData || {}).columns) ? entry.layoutData.columns : [];
+    var hiddenSet = new Set(columns.filter(function (column) {
+      return !!(column && column.hidden && column.column_key);
+    }).map(function (column) {
+      return column.column_key;
+    }));
+
+    _TABLE_LAYOUT_CONTEXT_STATE.activeEntryId = entryId;
+    errEl.textContent = '';
+    titleEl.textContent = (entry.title || entry.layoutKey || 'Layout') + ' Columns';
+    subtitleEl.textContent = entry.subtitle || '';
+    subtitleEl.hidden = !subtitleEl.textContent;
+
+    renderColumnChooser(listEl, columns.map(function (column) {
+      return column.column_key;
+    }), hiddenSet, function (columnKey) {
+      var match = columns.find(function (column) { return column.column_key === columnKey; });
+      return (match && (match.display_name || match.column_key)) || columnKey;
+    });
+
+    HubModal.open(dialog, {
+      onClose: function () {
+        _TABLE_LAYOUT_CONTEXT_STATE.activeEntryId = null;
+        _TABLE_LAYOUT_CONTEXT_STATE.saving = false;
+        errEl.textContent = '';
+        listEl.innerHTML = '';
+      },
+    });
+  }
+
+  async function _applyLayoutContextColumns() {
+    var entryId = _TABLE_LAYOUT_CONTEXT_STATE.activeEntryId;
+    var entry = _TABLE_LAYOUT_CONTEXT_ENTRIES.get(entryId);
+    var options = _TABLE_LAYOUT_CONTEXT_STATE.options || {};
+    var dialog = document.getElementById('table-layout-context-columns-modal');
+    var listEl = document.getElementById('table-layout-context-columns-list');
+    var errEl = document.getElementById('table-layout-context-columns-error');
+    var applyBtn = document.getElementById('table-layout-context-columns-apply');
+    if (!entry || !dialog || !listEl || !errEl || typeof options.onSaveColumns !== 'function') return;
+    if (_TABLE_LAYOUT_CONTEXT_STATE.saving) return;
+
+    var baseLayout = _cloneLayoutData(entry.layoutData);
+    var columns = Array.isArray(baseLayout.columns) ? baseLayout.columns : [];
+    var currentHidden = new Set(columns.filter(function (column) {
+      return !!(column && column.hidden && column.column_key);
+    }).map(function (column) {
+      return column.column_key;
+    }));
+    var nextHidden = readHiddenFromChooser(listEl, currentHidden);
+    columns.forEach(function (column) {
+      if (!column || !column.column_key) return;
+      column.hidden = nextHidden.has(column.column_key);
+    });
+    baseLayout.columns = columns;
+
+    _TABLE_LAYOUT_CONTEXT_STATE.saving = true;
+    errEl.textContent = '';
+    if (applyBtn) applyBtn.disabled = true;
+    try {
+      var result = await options.onSaveColumns(entry, baseLayout);
+      if (result && typeof result === 'object') {
+        entry.layoutData = result.layoutData || result.layout_data || result;
+        if (result.title) entry.title = result.title;
+        if (result.subtitle) entry.subtitle = result.subtitle;
+        if (result.hint) entry.hint = result.hint;
+      } else {
+        entry.layoutData = baseLayout;
+      }
+      HubModal.close(dialog);
+    } catch (error) {
+      errEl.textContent = error && error.message ? error.message : 'Failed to save layout columns.';
+    } finally {
+      _TABLE_LAYOUT_CONTEXT_STATE.saving = false;
+      if (applyBtn) applyBtn.disabled = false;
+    }
+  }
+
+  function openLayoutContext(opts) {
+    var dialog = document.getElementById('table-layout-context-modal');
+    var titleEl = document.getElementById('table-layout-context-title');
+    var subtitleEl = document.getElementById('table-layout-context-subtitle');
+    var listEl = document.getElementById('table-layout-context-list');
+    if (!dialog || !titleEl || !subtitleEl || !listEl || !opts) return;
+
+    var entries = Array.isArray(opts.entries) ? opts.entries : [];
+    titleEl.textContent = opts.title || 'Table Layout Context';
+    subtitleEl.textContent = opts.subtitle || '';
+    subtitleEl.hidden = !subtitleEl.textContent;
+    listEl.innerHTML = '';
+    _TABLE_LAYOUT_CONTEXT_ENTRIES.clear();
+    _TABLE_LAYOUT_CONTEXT_STATE.options = opts;
+    _TABLE_LAYOUT_CONTEXT_STATE.activeEntryId = null;
+
+    if (!entries.length) {
+      listEl.innerHTML = '<div class="table-layout-context-entry__hint">No saved layouts were found for this table.</div>';
+    } else {
+      entries.forEach(function (entry) {
+        var id = 'table-layout-context-' + (++_TABLE_LAYOUT_CONTEXT_SEQ);
+        _TABLE_LAYOUT_CONTEXT_ENTRIES.set(id, entry);
+        var card = document.createElement('article');
+        card.className = 'table-layout-context-entry';
+        if (opts.activeKey && entry.layoutKey === opts.activeKey) card.classList.add('is-active');
+
+        var chips = _layoutFlagChips(entry.layoutData).map(function (label) {
+          return '<span class="table-layout-context-chip">' + _escapeLayoutText(label) + '</span>';
+        }).join('');
+
+        card.innerHTML = '' +
+          '<button type="button" class="table-layout-context-entry__surface" data-layout-context-open="detail" data-layout-context-id="' + _escapeLayoutText(id) + '">' +
+            '<div class="table-layout-context-entry__top">' +
+              '<span class="table-layout-context-entry__title">' + _escapeLayoutText(entry.title || entry.layoutKey || 'Layout') + '</span>' +
+              '<span class="table-layout-context-entry__badge">' + _escapeLayoutText(entry.layoutKey || '') + '</span>' +
+            '</div>' +
+            '<div class="table-layout-context-entry__meta">' +
+              '<span class="table-layout-context-chip">bucket ' + _escapeLayoutText(entry.bucketCode || '') + '</span>' +
+              '<span class="table-layout-context-chip">' + _escapeLayoutText(String(((entry.layoutData || {}).columns || []).length)) + ' columns</span>' +
+              (chips ? chips : '') +
+            '</div>' +
+            '<div class="table-layout-context-entry__hint">' + _escapeLayoutText(entry.hint || 'Open structured layout detail') + '</div>' +
+          '</button>' +
+          '<div class="table-layout-context-entry__actions">' +
+            '<button type="button" class="table-layout-context-entry__action" data-layout-context-open="detail" data-layout-context-id="' + _escapeLayoutText(id) + '">Details</button>' +
+            '<button type="button" class="table-layout-context-entry__action" data-layout-context-open="columns" data-layout-context-id="' + _escapeLayoutText(id) + '">Columns</button>' +
+          '</div>';
+        listEl.appendChild(card);
+      });
+    }
+
+    HubModal.open(dialog, {
+      onClose: function () {
+        _TABLE_LAYOUT_CONTEXT_ENTRIES.clear();
+        _TABLE_LAYOUT_CONTEXT_STATE.options = null;
+        _TABLE_LAYOUT_CONTEXT_STATE.activeEntryId = null;
+        listEl.innerHTML = '';
+      },
+    });
+  }
+
   function openRowActions(opts) {
     var dialog = document.getElementById('table-row-actions-modal');
     if (!dialog || !opts) return;
@@ -879,12 +1158,33 @@
   }
 
   document.addEventListener('click', function (e) {
+    var layoutBtn = e.target.closest('[data-layout-context-open][data-layout-context-id]');
+    if (layoutBtn) {
+      var layoutEntry = _TABLE_LAYOUT_CONTEXT_ENTRIES.get(layoutBtn.dataset.layoutContextId);
+      if (!layoutEntry) return;
+      if (layoutBtn.dataset.layoutContextOpen === 'columns') {
+        _openLayoutContextColumns(layoutBtn.dataset.layoutContextId);
+      } else {
+        _openLayoutContextDetail(layoutEntry);
+      }
+      return;
+    }
     var btn = e.target.closest('[data-action-id]');
     if (!btn) return;
     var action = _ROW_ACTIONS.get(btn.dataset.actionId);
     if (typeof action !== 'function') return;
     HubModal.close(document.getElementById('table-row-actions-modal'));
     window.setTimeout(function () { action(); }, 0);
+  });
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var applyBtn = document.getElementById('table-layout-context-columns-apply');
+    if (applyBtn && !applyBtn.dataset.boundLayoutContextColumns) {
+      applyBtn.dataset.boundLayoutContextColumns = '1';
+      applyBtn.addEventListener('click', function () {
+        _applyLayoutContextColumns();
+      });
+    }
   });
 
   window.TablePrefs = {
@@ -907,5 +1207,9 @@
     isCompact: isCompactActions,
     shouldCollapse: shouldCollapseActions,
     open: openRowActions,
+  };
+
+  window.TableLayoutInspector = {
+    open: openLayoutContext,
   };
 }());
