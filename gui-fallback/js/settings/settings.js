@@ -1,9 +1,269 @@
 /* ── Settings ─────────────────────────────────────────────────────────── */
+const _SETTING_COLS = ['key', 'value', 'description', 'updated_at', '_actions'];
+const _SETTING_FIELD_META = {
+  key: { label: 'Key', sortKey: 'key' },
+  value: { label: 'Value', sortKey: 'value' },
+  description: { label: 'Description', sortKey: 'description' },
+  updated_at: { label: 'Updated', sortKey: 'updated_at' },
+  _actions: { label: 'Actions' },
+};
+
+const _SETTING_ACTION_INLINE_WIDTH = 62;
+const _SETTING_ACTION_COMPACT_WIDTH = 48;
+const _SETTING_RICH_VALUE_KEYS = new Set([
+  'embedding_rare_domains',
+  'embedding_excluded_tags',
+]);
+
+let _settingsTableView = null;
+
 function _setUiRefreshStatus(message, tone = '') {
   document.querySelectorAll('[id="ui-refresh-assets-status"]').forEach(el => {
     el.textContent = message;
     el.style.color = tone === 'warn' ? 'var(--warn)' : 'var(--text-dim)';
   });
+}
+
+function _ensureSettingsTableView() {
+  if (_settingsTableView || typeof TableView === 'undefined') return _settingsTableView;
+  _settingsTableView = TableView.create({
+    storageKey: 'settings-table-prefs',
+    columns: _SETTING_COLS,
+    meta: _SETTING_FIELD_META,
+    getTable: () => document.getElementById('settings-table'),
+    fallbackColumn: 'key',
+    minWidth: 40,
+    getDefaultWidth: col => {
+      if (col === '_actions') return _settingsActionCellWidth();
+      if (col === 'updated_at') return 154;
+      return null;
+    },
+    sort: {
+      storageKey: 'settings-table-sort',
+      defaultKey: 'key',
+      defaultDir: 1,
+    },
+    onSortChange: renderSettings,
+  });
+  return _settingsTableView;
+}
+
+function _settingsVisibleCols() {
+  return _ensureSettingsTableView()?.getVisibleCols() || ['key'];
+}
+
+function _settingsSortValue(setting, sortKey) {
+  switch (sortKey) {
+    case 'key': return setting.key || '';
+    case 'value': return setting.value || '';
+    case 'description': return setting.description || '';
+    case 'updated_at': return setting.updated_at || '';
+    default: return '';
+  }
+}
+
+function _settingsCompactRowActions() {
+  const view = _ensureSettingsTableView();
+  return typeof TableRowActions !== 'undefined' && TableRowActions.shouldCollapse({
+    view,
+    getTable: () => document.getElementById('settings-table'),
+    columnKey: '_actions',
+    requiredWidth: _SETTING_ACTION_INLINE_WIDTH,
+    defaultWidth: _SETTING_ACTION_INLINE_WIDTH,
+  });
+}
+
+function _settingsActionCellWidth() {
+  return _settingsCompactRowActions() ? _SETTING_ACTION_COMPACT_WIDTH : _SETTING_ACTION_INLINE_WIDTH;
+}
+
+function _settingsKeyCell(setting) {
+  return `<td><span class="table-cell-clip"><span class="table-cell-clip__text"><code style="font-size:12px">${esc(setting.key || '—')}</code></span></span></td>`;
+}
+
+function _settingsValueCell(setting) {
+  const value = setting.value || '';
+  const denseClass = _settingsNeedsOverflowHint(setting.key, value) ? ' settings-cell--dense' : '';
+  const hint = _settingsNeedsOverflowHint(setting.key, value) ? ' title="Long value truncated in table; open Edit for formatted view"' : '';
+  return `<td><span class="table-cell-clamp settings-cell${denseClass}"${hint}>${esc(value) || '—'}</span></td>`;
+}
+
+function _settingsDescriptionCell(setting) {
+  const description = setting.description || '';
+  const denseClass = _settingsNeedsOverflowHint('description', description) ? ' settings-cell--dense' : '';
+  const hint = _settingsNeedsOverflowHint('description', description) ? ' title="Long description truncated in table; open Edit for full text"' : '';
+  return `<td style="color:var(--text-dim)"><span class="table-cell-clamp settings-cell${denseClass}"${hint}>${esc(description) || '—'}</span></td>`;
+}
+
+function _settingsUpdatedCell(setting) {
+  const updated = (setting.updated_at || '').replace('T', ' ').slice(0, 19) || '—';
+  return `<td style="white-space:nowrap;color:var(--text-dim)">${esc(updated)}</td>`;
+}
+
+function _settingsActionButtons(setting) {
+  const key = esc(setting.key || '');
+  return `<button class="secondary table-icon-btn table-icon-btn--edit" type="button" title="Edit setting" aria-label="Edit setting" data-setting-action="edit" data-setting-key="${key}"></button>
+    <button class="secondary table-icon-btn table-icon-btn--delete" type="button" title="Delete setting" aria-label="Delete setting" data-setting-action="delete" data-setting-key="${key}"></button>`;
+}
+
+function _settingsActionsCell(setting) {
+  const key = esc(setting.key || '');
+  if (_settingsCompactRowActions()) {
+    return `<td class="table-action-cell table-action-cell--compact" style="width:${_settingsActionCellWidth()}px">
+      <button class="table-row-action-trigger secondary" type="button" title="Setting actions" data-setting-actions="${key}">&#8942;</button>
+    </td>`;
+  }
+  return `<td class="table-action-cell" style="white-space:nowrap"><div class="table-inline-actions">${_settingsActionButtons(setting)}</div></td>`;
+}
+
+function openSettingsColsModal() {
+  const view = _ensureSettingsTableView();
+  if (!view) return;
+  view.openColumns(
+    document.getElementById('settings-cols-modal-list'),
+    document.getElementById('settings-cols-modal'),
+    col => _SETTING_FIELD_META[col].label
+  );
+}
+
+function _applySettingsColsModal() {
+  const view = _ensureSettingsTableView();
+  if (!view) return;
+  view.applyColumns(document.getElementById('settings-cols-modal'), renderSettings);
+  HubModal.close(document.getElementById('settings-cols-modal'));
+}
+
+function _openSettingRowActions(key) {
+  if (typeof TableRowActions === 'undefined') return;
+  const setting = _settings.find(item => String(item.key) === String(key));
+  if (!setting) return;
+  TableRowActions.open({
+    title: setting.key || 'Setting actions',
+    subtitle: 'App Config',
+    actions: [
+      {
+        label: 'Edit setting',
+        detail: 'Open the App Config editor modal for this key',
+        onClick: () => editSetting(setting.key || '', setting.value || '', setting.description || ''),
+      },
+      {
+        label: 'Delete setting',
+        detail: 'Remove this setting from Blueprints',
+        tone: 'danger',
+        onClick: () => deleteSetting(setting.key || ''),
+      },
+    ],
+  });
+}
+
+function _settingsNeedsOverflowHint(key, value) {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  const commaCount = (text.match(/,/g) || []).length;
+  if (_SETTING_RICH_VALUE_KEYS.has(String(key || ''))) return true;
+  return text.length > 120 || commaCount >= 5 || /\r?\n/.test(text);
+}
+
+function _settingsLooksStructuredValue(value) {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  const commaCount = (text.match(/,/g) || []).length;
+  return text.length > 120 && commaCount >= 5;
+}
+
+function _settingsUsesRichValueEditor(key, value) {
+  return _SETTING_RICH_VALUE_KEYS.has(String(key || '').trim()) || _settingsLooksStructuredValue(value);
+}
+
+function _settingsFormatStructuredValue(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  const wrappers = {
+    '[': ']',
+    '{': '}',
+    '(': ')',
+  };
+  const open = raw.charAt(0);
+  const close = wrappers[open];
+  const hasWrapper = close && raw.endsWith(close);
+  const inner = hasWrapper ? raw.slice(1, -1).trim() : raw;
+  const parts = inner
+    .split(',')
+    .map(part => part.trim())
+    .filter(Boolean);
+
+  if (!parts.length) return raw;
+  if (hasWrapper) {
+    return `${open}\n${parts.map(part => `  ${part},`).join('\n')}\n${close}`;
+  }
+  return parts.join('\n');
+}
+
+function _settingsNormalizeStructuredValue(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  const wrappers = {
+    '[': ']',
+    '{': '}',
+    '(': ')',
+  };
+  const open = raw.charAt(0);
+  const close = wrappers[open];
+  const hasWrapper = close && raw.endsWith(close);
+
+  if (hasWrapper) {
+    const inner = raw
+      .slice(1, -1)
+      .split(/\r?\n/)
+      .map(line => line.trim().replace(/,$/, ''))
+      .filter(Boolean);
+    return `${open}${inner.join(', ')}${close}`;
+  }
+
+  const parts = raw
+    .split(/\r?\n/)
+    .map(line => line.trim().replace(/,$/, ''))
+    .filter(Boolean);
+  return parts.join(', ');
+}
+
+function _settingModalEls() {
+  return {
+    key: document.getElementById('setting-key'),
+    value: document.getElementById('setting-val'),
+    valueRich: document.getElementById('setting-val-rich'),
+    helper: document.getElementById('setting-val-helper'),
+    desc: document.getElementById('setting-desc'),
+  };
+}
+
+function _syncSettingValueEditor() {
+  const { key, value, valueRich, helper } = _settingModalEls();
+  if (!key || !value || !valueRich || !helper) return;
+
+  const currentlyRich = !valueRich.hidden;
+  const richValue = currentlyRich ? _settingsNormalizeStructuredValue(valueRich.value) : '';
+  const rawValue = richValue || value.value;
+  const useRich = _settingsUsesRichValueEditor(key.value, rawValue);
+
+  value.hidden = useRich;
+  valueRich.hidden = !useRich;
+  helper.style.display = useRich ? 'block' : 'none';
+
+  if (useRich) {
+    valueRich.value = _settingsFormatStructuredValue(rawValue);
+  } else {
+    value.value = rawValue;
+  }
+}
+
+function _readSettingModalValue() {
+  const { value, valueRich } = _settingModalEls();
+  if (!value || !valueRich) return '';
+  if (!valueRich.hidden) return _settingsNormalizeStructuredValue(valueRich.value).trim();
+  return value.value.trim();
 }
 
 function _setUiRefreshButtonsDisabled(disabled) {
@@ -29,32 +289,31 @@ async function loadSettings() {
 
 function renderSettings() {
   const tbody = document.getElementById('settings-tbody');
+  const view = _ensureSettingsTableView();
+  if (!tbody || !view) return;
   if (!_settings.length) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No settings yet — add one above.</td></tr>';
+    view.render(() => {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="${Math.max(1, _settingsVisibleCols().length)}">No settings yet — add one above.</td></tr>`;
+    });
     return;
   }
-  tbody.innerHTML = _settings.map(s => {
-    const updated = (s.updated_at || '—').replace('T', ' ').slice(0, 19);
-    const keyEsc  = esc(s.key);
-    const valEsc  = esc(s.value || '');
-    const descEsc = esc(s.description || '');
-    return `<tr>
-      <td><code style="font-size:12px">${keyEsc}</code></td>
-      <td>${valEsc}</td>
-      <td style="color:var(--text-dim)">${descEsc}</td>
-      <td style="white-space:nowrap;color:var(--text-dim)">${esc(updated)}</td>
-      <td style="white-space:nowrap">
-        <button class="secondary" style="font-size:12px;padding:3px 10px"
-          data-edit-key="${keyEsc}" data-edit-val="${valEsc}" data-edit-desc="${descEsc}">Edit</button>
-        <button style="font-size:12px;padding:3px 10px;background:var(--err);border-color:var(--err);color:#fff"
-          data-del-key="${keyEsc}">&#10005;</button>
-      </td>
-    </tr>`;
-  }).join('');
+  const rows = view.sorter ? view.sorter.sortRows(_settings, _settingsSortValue) : _settings;
+  view.render(() => {
+    tbody.innerHTML = rows.map(setting => `<tr>${_settingsVisibleCols().map(col => {
+      switch (col) {
+        case 'key': return _settingsKeyCell(setting);
+        case 'value': return _settingsValueCell(setting);
+        case 'description': return _settingsDescriptionCell(setting);
+        case 'updated_at': return _settingsUpdatedCell(setting);
+        case '_actions': return _settingsActionsCell(setting);
+        default: return '<td>—</td>';
+      }
+    }).join('')}</tr>`).join('');
+  });
 }
 
 function openAddSettingModal() {
-  ['setting-key','setting-val','setting-desc'].forEach(id => {
+  ['setting-key','setting-val','setting-val-rich','setting-desc'].forEach(id => {
     document.getElementById(id).value = '';
   });
   const badge = document.getElementById('setting-modal-badge');
@@ -63,12 +322,14 @@ function openAddSettingModal() {
   document.getElementById('setting-key').readOnly = false;
   document.getElementById('setting-error').textContent = '';
   document.getElementById('setting-modal-save-btn').disabled = false;
+  _syncSettingValueEditor();
   HubModal.open(document.getElementById('setting-modal'));
 }
 
 function editSetting(key, value, description) {
   document.getElementById('setting-key').value  = key;
   document.getElementById('setting-val').value  = value;
+  document.getElementById('setting-val-rich').value = '';
   document.getElementById('setting-desc').value = description;
   const badge = document.getElementById('setting-modal-badge');
   if (badge) badge.textContent = 'EDIT';
@@ -76,12 +337,13 @@ function editSetting(key, value, description) {
   document.getElementById('setting-key').readOnly = true;
   document.getElementById('setting-error').textContent = '';
   document.getElementById('setting-modal-save-btn').disabled = false;
+  _syncSettingValueEditor();
   HubModal.open(document.getElementById('setting-modal'));
 }
 
 async function submitSetting() {
   const key  = document.getElementById('setting-key').value.trim();
-  const val  = document.getElementById('setting-val').value.trim();
+  const val  = _readSettingModalValue();
   const desc = document.getElementById('setting-desc').value.trim();
   const err  = document.getElementById('setting-error');
   const saveBtn = document.getElementById('setting-modal-save-btn');
@@ -240,16 +502,50 @@ document.addEventListener('DOMContentLoaded', () => {
     ResponsiveLayout.registerTabControls('settings', 'pg-ctrl-settings');
   }
 
+  const settingModal = document.getElementById('setting-modal');
+  if (settingModal && !settingModal.dataset.backdropCloseDisabled) {
+    // App Config's rich textarea uses the native resize handle; disable backdrop-close
+    // for this modal so resize interactions cannot accidentally dismiss it.
+    settingModal.addEventListener('click', e => {
+      if (e.target === settingModal) {
+        e.stopImmediatePropagation();
+      }
+    }, true);
+    settingModal.dataset.backdropCloseDisabled = '1';
+  }
+
+  _ensureSettingsTableView();
+  _settingsTableView?.onLayoutChange(() => {
+    renderSettings();
+  });
+
   // Save button
   document.getElementById('setting-modal-save-btn')?.addEventListener('click', submitSetting);
   document.getElementById('ui-refresh-assets-btn')?.addEventListener('click', forceRefreshUiAssets);
   document.getElementById('ui-refresh-assets-header-btn')?.addEventListener('click', forceRefreshUiAssets);
+  document.getElementById('settings-cols-modal-apply')?.addEventListener('click', _applySettingsColsModal);
+  document.getElementById('setting-key')?.addEventListener('input', _syncSettingValueEditor);
 
   // Table event delegation — Edit and Delete buttons
   document.getElementById('settings-tbody')?.addEventListener('click', e => {
-    const editBtn = e.target.closest('[data-edit-key]');
-    const delBtn  = e.target.closest('[data-del-key]');
-    if (editBtn) editSetting(editBtn.dataset.editKey, editBtn.dataset.editVal, editBtn.dataset.editDesc);
-    if (delBtn)  deleteSetting(delBtn.dataset.delKey);
+    const rowActionsBtn = e.target.closest('[data-setting-actions]');
+    if (rowActionsBtn) {
+      _openSettingRowActions(rowActionsBtn.dataset.settingActions || '');
+      return;
+    }
+
+    const actionBtn = e.target.closest('[data-setting-action]');
+    if (!actionBtn) return;
+    const key = actionBtn.dataset.settingKey || '';
+    const setting = _settings.find(item => String(item.key) === String(key));
+    if (!setting) return;
+
+    if (actionBtn.dataset.settingAction === 'edit') {
+      editSetting(setting.key || '', setting.value || '', setting.description || '');
+      return;
+    }
+    if (actionBtn.dataset.settingAction === 'delete') {
+      deleteSetting(setting.key || '');
+    }
   });
 });

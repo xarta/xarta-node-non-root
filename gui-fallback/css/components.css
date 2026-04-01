@@ -68,6 +68,28 @@ button.secondary:hover { color: var(--text); border-color: var(--text-dim); }
   background: rgba(60,210,100,.08); border: 1px solid var(--ok);
   border-radius: var(--radius); font-size: 13px; }
 
+/* ── App Config dense-cell hinting ── */
+#settings-table .settings-cell {
+  display: block;
+  max-width: 100%;
+}
+
+#settings-table .settings-cell--dense {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(230, 168, 23, 0.08);
+  box-shadow: inset 3px 0 0 rgba(230, 168, 23, 0.42);
+}
+
+#setting-val-rich {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 /* ── Bookmarks tab — toggle switch ── */
 .bm-toggle-label {
   display: flex; align-items: center; gap: 8px;

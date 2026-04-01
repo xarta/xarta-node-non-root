@@ -336,7 +336,7 @@
     </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
-      <table>
+      <table id="settings-table">
         <thead><tr>
           <th>Key</th><th>Value</th><th>Description</th><th>Updated</th><th>Actions</th>
         </tr></thead>
@@ -1918,6 +1918,24 @@
   </div>
 </dialog>
 
+<dialog class="hub-modal hub-dialog" data-tone="info" id="settings-cols-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">COLS</span>
+      <span class="hub-dialog-title-text">App Config Columns</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body">
+    <p style="font-size:12px;color:var(--text-dim);margin:0 0 10px">Choose which columns stay visible for this layout. Preferences are browser-local.</p>
+    <div id="settings-cols-modal-list" class="hub-checkbox-list"></div>
+  </div>
+  <div class="hub-modal-footer">
+    <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
+    <button class="hub-modal-btn" id="settings-cols-modal-apply" type="button">&#10003; Apply</button>
+  </div>
+</dialog>
+
 <!-- Add / Edit setting modal -->
 <dialog class="hub-modal hub-dialog" data-tone="info" id="setting-modal">
   <div class="hub-modal-header">
@@ -1935,6 +1953,8 @@
     <div class="field">
       <label for="setting-val">Value</label>
       <input type="text" id="setting-val" placeholder="Setting value" autocomplete="off" />
+      <textarea id="setting-val-rich" rows="12" placeholder="Structured setting value" autocomplete="off" hidden></textarea>
+      <p id="setting-val-helper" class="field-hint" style="display:none;margin-top:6px">Structured value mode: one item per line is easier to review and edit here. It will be compacted back to the stored single-line value when saved.</p>
     </div>
     <div class="field">
       <label for="setting-desc">Description <span class="field-hint" style="display:inline">(optional)</span></label>
