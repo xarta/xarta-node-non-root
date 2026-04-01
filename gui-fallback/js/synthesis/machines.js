@@ -66,32 +66,74 @@ const _MCH_FIELD_META = {
 };
 
 let _mchFilterTimer = null;
-let _mchTablePrefs = null;
-let _mchHiddenCols = new Set();
-let _mchTableSort = null;
+let _mchTableView = null;
+let _mchLayoutController = null;
 
-function _ensureMachinesTablePrefs() {
-  if (_mchTablePrefs || typeof TablePrefs === 'undefined') return _mchTablePrefs;
-  _mchTablePrefs = TablePrefs.create({
+function _ensureMachinesTableView() {
+  if (_mchTableView || typeof TableView === 'undefined') return _mchTableView;
+  _mchTableView = TableView.create({
     storageKey: 'machines-table-prefs',
-    defaultHidden: [],
+    columns: _MCH_COLS,
+    meta: _MCH_FIELD_META,
+    getTable: () => document.getElementById('machines-table'),
+    getDefaultWidth: col => (_MCH_FIELD_META[col] || {}).defaultWidth || null,
     minWidth: 40,
+    sort: {
+      storageKey: 'machines-table-sort',
+    },
+    onSortChange: () => {
+      renderMachines();
+      _ensureMachinesLayoutController()?.scheduleLayoutSave();
+    },
+    onColumnResizeEnd: () => {
+      _ensureMachinesLayoutController()?.scheduleLayoutSave();
+    },
   });
-  _mchTablePrefs.syncColumns(_MCH_COLS);
-  _mchHiddenCols = _mchTablePrefs.getHiddenSet(_MCH_COLS);
-  return _mchTablePrefs;
+  return _mchTableView;
 }
 
 function _mchVisibleCols() {
-  return _MCH_COLS.filter(col => !_mchHiddenCols.has(col));
+  const view = _ensureMachinesTableView();
+  return view ? view.getVisibleCols() : _MCH_COLS;
 }
 
-function _ensureMachinesTableSort() {
-  if (_mchTableSort || typeof TableSort === 'undefined') return _mchTableSort;
-  _mchTableSort = TableSort.create({
-    storageKey: 'machines-table-sort',
+function _mchColumnSeed(col) {
+  switch (col) {
+    case 'machine_id':
+      return { sqlite_column: 'machine_id', data_type: 'TEXT', sample_max_length: 32, min_width_px: 100, max_width_px: 320 };
+    case 'name':
+      return { sqlite_column: 'name', data_type: 'TEXT', sample_max_length: 28, min_width_px: 140, max_width_px: 520 };
+    case 'type':
+      return { sqlite_column: 'type', data_type: 'TEXT', sample_max_length: 16, min_width_px: 96, max_width_px: 220 };
+    case 'machine_kind':
+      return { sqlite_column: 'machine_kind', data_type: 'TEXT', sample_max_length: 16, min_width_px: 100, max_width_px: 220 };
+    case 'platform':
+      return { sqlite_column: 'platform', data_type: 'TEXT', sample_max_length: 16, min_width_px: 100, max_width_px: 240 };
+    case 'parent_machine_id':
+      return { sqlite_column: 'parent_machine_id', data_type: 'TEXT', sample_max_length: 32, min_width_px: 120, max_width_px: 360 };
+    case 'status':
+      return { sqlite_column: 'status', data_type: 'TEXT', sample_max_length: 16, min_width_px: 96, max_width_px: 220 };
+    case 'ip_addresses':
+      return { sqlite_column: 'ip_addresses', data_type: 'TEXT', sample_max_length: 48, min_width_px: 140, max_width_px: 760 };
+    default:
+      return {};
+  }
+}
+
+function _ensureMachinesLayoutController() {
+  if (_mchLayoutController || typeof TableBucketLayouts === 'undefined') return _mchLayoutController;
+  _mchLayoutController = TableBucketLayouts.create({
+    getTable: () => document.getElementById('machines-table'),
+    getView: () => _ensureMachinesTableView(),
+    getColumns: () => _MCH_COLS,
+    getMeta: col => _MCH_FIELD_META[col],
+    getDefaultWidth: col => (_MCH_FIELD_META[col] || {}).defaultWidth || null,
+    getColumnSeed: col => _mchColumnSeed(col),
+    render: () => renderMachines(),
+    surfaceLabel: 'Machines',
+    layoutContextTitle: 'Machines Layout Context',
   });
-  return _mchTableSort;
+  return _mchLayoutController;
 }
 
 function _mchSortValue(machine, sortKey) {
@@ -118,68 +160,51 @@ function _mchSortValue(machine, sortKey) {
 }
 
 function _mchRebuildThead() {
-  const table = document.getElementById('machines-table');
-  if (!table) return;
-  const tr = table.querySelector('thead tr');
-  if (!tr) return;
-  const prefs = _ensureMachinesTablePrefs();
-  const sorter = _ensureMachinesTableSort();
-  tr.innerHTML = _mchVisibleCols().map(col => {
-    const meta = _MCH_FIELD_META[col];
-    const width = prefs ? prefs.getWidth(col) : null;
-    const styleParts = [];
-    if (width) styleParts.push(`width:${width}px`);
-    else if (meta.defaultWidth) styleParts.push(`width:${meta.defaultWidth}px`);
-    const style = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
-    const sortAttrs = meta.sortKey ? ` data-sort-key="${meta.sortKey}"` : '';
-    const classAttr = meta.sortKey ? ' class="table-th-sort"' : '';
-    const labelHtml = sorter && meta.sortKey ? sorter.renderLabel(meta.label, meta.sortKey) : meta.label;
-    return `<th data-col="${col}"${sortAttrs}${classAttr}${style}>${labelHtml}</th>`;
-  }).join('');
+  const view = _ensureMachinesTableView();
+  view?.rebuildHead();
 }
 
 function _mchRenderSharedTable(renderBody) {
-  const prefs = _ensureMachinesTablePrefs();
-  if (!prefs) {
-    _mchRebuildThead();
-    renderBody();
-    return;
-  }
-  prefs.renderTable({
-    getTable: () => document.getElementById('machines-table'),
-    rebuildHead: _mchRebuildThead,
-    renderBody,
-    minWidth: 40,
-    afterBind: tableEl => {
-      const sorter = _ensureMachinesTableSort();
-      sorter?.bind(tableEl, renderMachines);
-      sorter?.syncIndicators(tableEl);
-    },
-  });
+  const view = _ensureMachinesTableView();
+  if (!view) return;
+  view.render(renderBody);
 }
 
 function mchOpenColsModal() {
-  const prefs = _ensureMachinesTablePrefs();
-  if (!prefs) return;
-  const list = document.getElementById('mch-cols-modal-list');
-  TablePrefs.renderColumnChooser(list, _MCH_COLS, _mchHiddenCols, col => _MCH_FIELD_META[col].label);
-  HubModal.open(document.getElementById('mch-cols-modal'));
+  const view = _ensureMachinesTableView();
+  if (!view) return;
+  view.openColumns(
+    document.getElementById('mch-cols-modal-list'),
+    document.getElementById('mch-cols-modal')
+  );
 }
 
 function _mchApplyColsModal() {
-  const prefs = _ensureMachinesTablePrefs();
-  if (!prefs) return;
+  const view = _ensureMachinesTableView();
+  if (!view) return;
   const modal = document.getElementById('mch-cols-modal');
-  const newHidden = TablePrefs.readHiddenFromChooser(modal, new Set(_mchHiddenCols));
-  prefs.setHiddenSet(newHidden);
-  _mchHiddenCols = prefs.getHiddenSet(_MCH_COLS);
-  _mchRebuildThead();
-  renderMachines();
-  HubModal.close(modal);
+  view.applyColumns(modal, () => {
+    renderMachines();
+    HubModal.close(modal);
+    _ensureMachinesLayoutController()?.scheduleLayoutSave();
+  });
+}
+
+async function toggleMachinesHorizontalScroll() {
+  const controller = _ensureMachinesLayoutController();
+  if (!controller) return;
+  await controller.toggleHorizontalScroll();
+}
+
+async function openMachinesLayoutContextModal() {
+  const controller = _ensureMachinesLayoutController();
+  if (!controller) return;
+  await controller.openLayoutContextModal();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  _ensureMachinesTablePrefs();
+  _ensureMachinesTableView();
+  _ensureMachinesLayoutController()?.init();
   const mchSearch = document.getElementById('machine-search');
   if (mchSearch) {
     mchSearch.addEventListener('input', () => {
@@ -188,11 +213,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   document.getElementById('mch-cols-modal-apply')?.addEventListener('click', _mchApplyColsModal);
-  _mchTablePrefs?.onLayoutChange(() => {
-    _mchHiddenCols = _mchTablePrefs.getHiddenSet(_MCH_COLS);
-    _mchRebuildThead();
-    renderMachines();
-  });
   if (typeof ResponsiveLayout !== 'undefined') {
     ResponsiveLayout.registerTabControls('machines', 'pg-ctrl-machines');
   }
@@ -212,8 +232,7 @@ async function loadMachines() {
 }
 
 function renderMachines() {
-  _ensureMachinesTablePrefs();
-  const sorter = _ensureMachinesTableSort();
+  const view = _ensureMachinesTableView();
   const q = (document.getElementById('machine-search').value || '').toLowerCase();
   const tbody = document.getElementById('machines-tbody');
   let visible = _machines.filter(m =>
@@ -224,7 +243,7 @@ function renderMachines() {
     (m.description || '').toLowerCase().includes(q) ||
     JSON.stringify(m.ip_addresses || []).toLowerCase().includes(q)
   );
-  visible = sorter ? sorter.sortRows(visible, _mchSortValue) : visible;
+  visible = view?.sorter ? view.sorter.sortRows(visible, _mchSortValue) : visible;
   if (!visible.length) {
     _mchRenderSharedTable(() => {
       tbody.innerHTML = `<tr class="empty-row"><td colspan="${Math.max(1, _mchVisibleCols().length)}">${_machines.length ? 'No matching machines.' : 'No machines registered.'}</td></tr>`;

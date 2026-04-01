@@ -50,41 +50,82 @@ const _ML_TABLE_FIELD_META = {
   },
 };
 
-let _mlTablePrefs = null;
-let _mlHiddenCols = new Set();
-let _mlColResizeDone = false;
-let _mlTableSort = null;
+let _mlTableView = null;
+let _mlLayoutController = null;
 const _ML_ACTION_INLINE_WIDTH = 96;
 const _ML_ACTION_COMPACT_WIDTH = 48;
 
-function _ensureManualLinksTablePrefs() {
-  if (_mlTablePrefs || typeof TablePrefs === 'undefined') return _mlTablePrefs;
-  _mlTablePrefs = TablePrefs.create({
+function _ensureManualLinksTableView() {
+  if (_mlTableView || typeof TableView === 'undefined') return _mlTableView;
+  _mlTableView = TableView.create({
     storageKey: 'manual-links-table-prefs',
-    defaultHidden: [],
+    columns: _ML_TABLE_COLS,
+    meta: _ML_TABLE_FIELD_META,
+    getTable: () => document.getElementById('ml-table'),
+    getDefaultWidth: col => (col === '_actions' ? _mlActionCellWidth() : ((_ML_TABLE_FIELD_META[col] || {}).defaultWidth || null)),
     minWidth: 40,
+    sort: {
+      storageKey: 'manual-links-table-sort',
+    },
+    onSortChange: () => {
+      renderManualLinksTable();
+      _ensureManualLinksLayoutController()?.scheduleLayoutSave();
+    },
+    onColumnResizeEnd: () => {
+      _ensureManualLinksLayoutController()?.scheduleLayoutSave();
+    },
   });
-  _mlTablePrefs.syncColumns(_ML_TABLE_COLS);
-  _mlHiddenCols = _mlTablePrefs.getHiddenSet(_ML_TABLE_COLS);
-  return _mlTablePrefs;
+  return _mlTableView;
 }
 
 function _mlVisibleCols() {
-  return _ML_TABLE_COLS.filter(col => !_mlHiddenCols.has(col));
+  const view = _ensureManualLinksTableView();
+  return view ? view.getVisibleCols() : _ML_TABLE_COLS;
 }
 
-function _ensureManualLinksTableSort() {
-  if (_mlTableSort || typeof TableSort === 'undefined') return _mlTableSort;
-  _mlTableSort = TableSort.create({
-    storageKey: 'manual-links-table-sort',
+function _mlColumnSeed(col) {
+  switch (col) {
+    case 'link_id':
+      return { sqlite_column: 'link_id', data_type: 'TEXT', sample_max_length: 36, min_width_px: 80, max_width_px: 240 };
+    case 'label':
+      return { sqlite_column: 'label', data_type: 'TEXT', sample_max_length: 28, min_width_px: 120, max_width_px: 520 };
+    case 'addresses':
+      return { sqlite_column: null, data_type: 'TEXT', sample_max_length: 36, min_width_px: 140, max_width_px: 720 };
+    case 'group_name':
+      return { sqlite_column: 'group_name', data_type: 'TEXT', sample_max_length: 24, min_width_px: 100, max_width_px: 360 };
+    case 'sort_order':
+      return { sqlite_column: 'sort_order', data_type: 'INTEGER', sample_max_length: 4, min_width_px: 64, max_width_px: 120 };
+    case 'host':
+      return { sqlite_column: null, data_type: 'TEXT', sample_max_length: 32, min_width_px: 120, max_width_px: 620 };
+    case 'notes':
+      return { sqlite_column: 'notes', data_type: 'TEXT', sample_max_length: 64, min_width_px: 120, max_width_px: 1200 };
+    case '_actions':
+      return { sqlite_column: null, data_type: null, sample_max_length: null, min_width_px: _ML_ACTION_COMPACT_WIDTH, max_width_px: _ML_ACTION_INLINE_WIDTH, width_px: _mlActionCellWidth() };
+    default:
+      return {};
+  }
+}
+
+function _ensureManualLinksLayoutController() {
+  if (_mlLayoutController || typeof TableBucketLayouts === 'undefined') return _mlLayoutController;
+  _mlLayoutController = TableBucketLayouts.create({
+    getTable: () => document.getElementById('ml-table'),
+    getView: () => _ensureManualLinksTableView(),
+    getColumns: () => _ML_TABLE_COLS,
+    getMeta: col => _ML_TABLE_FIELD_META[col],
+    getDefaultWidth: col => (col === '_actions' ? _mlActionCellWidth() : ((_ML_TABLE_FIELD_META[col] || {}).defaultWidth || null)),
+    getColumnSeed: col => _mlColumnSeed(col),
+    render: () => renderManualLinksTable(),
+    surfaceLabel: 'Manual Links',
+    layoutContextTitle: 'Manual Links Layout Context',
   });
-  return _mlTableSort;
+  return _mlLayoutController;
 }
 
 function _mlCompactRowActions() {
-  const prefs = _ensureManualLinksTablePrefs();
+  const view = _ensureManualLinksTableView();
   return typeof TableRowActions !== 'undefined' && TableRowActions.shouldCollapse({
-    prefs,
+    view,
     getTable: () => document.getElementById('ml-table'),
     columnKey: '_actions',
     requiredWidth: _ML_ACTION_INLINE_WIDTH,
@@ -153,66 +194,46 @@ function _mlOpenRowActions(linkId) {
 }
 
 function _mlRebuildThead() {
-  const table = document.getElementById('ml-table');
-  if (!table) return;
-  const tr = table.querySelector('thead tr');
-  if (!tr) return;
-  const prefs = _ensureManualLinksTablePrefs();
-  const sorter = _ensureManualLinksTableSort();
-  tr.innerHTML = _mlVisibleCols().map(col => {
-    const meta = _ML_TABLE_FIELD_META[col];
-    const width = prefs ? prefs.getWidth(col) : null;
-    const styleParts = [];
-    if (width) styleParts.push(`width:${width}px`);
-    else if (col === '_actions') {
-      if (_mlCompactRowActions()) styleParts.push(`width:${_mlActionCellWidth()}px`);
-    } else if (meta.defaultWidth) {
-      styleParts.push(`width:${meta.defaultWidth}px`);
-    }
-    const style = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
-    const sortAttr = meta.sortKey ? ` data-sort-key="${meta.sortKey}"` : '';
-    const classAttr = meta.sortKey ? ' class="table-th-sort"' : '';
-    const labelHtml = sorter && meta.sortKey ? sorter.renderLabel(meta.label, meta.sortKey) : (meta.headerHtml || meta.label);
-    return `<th data-col="${col}"${sortAttr}${classAttr}${style}>${labelHtml}</th>`;
-  }).join('');
-  _mlColResizeDone = false;
+  const view = _ensureManualLinksTableView();
+  view?.rebuildHead();
 }
 
 function _mlRenderSharedTable(renderBody) {
-  const prefs = _ensureManualLinksTablePrefs();
-  if (!prefs) return;
-  prefs.renderTable({
-    getTable: () => document.getElementById('ml-table'),
-    rebuildHead: _mlRebuildThead,
-    renderBody,
-    minWidth: 40,
-    afterBind: tableEl => {
-      _mlColResizeDone = true;
-      const sorter = _ensureManualLinksTableSort();
-      sorter?.bind(tableEl, renderManualLinksTable);
-      sorter?.syncIndicators(tableEl);
-    },
-  });
+  const view = _ensureManualLinksTableView();
+  if (!view) return;
+  view.render(renderBody);
 }
 
 function mlOpenColsModal() {
-  const prefs = _ensureManualLinksTablePrefs();
-  if (!prefs) return;
-  const list = document.getElementById('ml-cols-modal-list');
-  TablePrefs.renderColumnChooser(list, _ML_TABLE_COLS, _mlHiddenCols, col => _ML_TABLE_FIELD_META[col].label);
-  HubModal.open(document.getElementById('ml-cols-modal'));
+  const view = _ensureManualLinksTableView();
+  if (!view) return;
+  view.openColumns(
+    document.getElementById('ml-cols-modal-list'),
+    document.getElementById('ml-cols-modal')
+  );
 }
 
 function _mlApplyColsModal() {
-  const prefs = _ensureManualLinksTablePrefs();
-  if (!prefs) return;
+  const view = _ensureManualLinksTableView();
+  if (!view) return;
   const modal = document.getElementById('ml-cols-modal');
-  const newHidden = TablePrefs.readHiddenFromChooser(modal, new Set(_mlHiddenCols));
-  prefs.setHiddenSet(newHidden);
-  _mlHiddenCols = prefs.getHiddenSet(_ML_TABLE_COLS);
-  _mlRebuildThead();
-  renderManualLinksTable();
-  HubModal.close(modal);
+  view.applyColumns(modal, () => {
+    renderManualLinksTable();
+    HubModal.close(modal);
+    _ensureManualLinksLayoutController()?.scheduleLayoutSave();
+  });
+}
+
+async function toggleManualLinksHorizontalScroll() {
+  const controller = _ensureManualLinksLayoutController();
+  if (!controller) return;
+  await controller.toggleHorizontalScroll();
+}
+
+async function openManualLinksLayoutContextModal() {
+  const controller = _ensureManualLinksLayoutController();
+  if (!controller) return;
+  await controller.openLayoutContextModal();
 }
 
 /* ── View toggle ─────────────────────────────────────────────────────────── */
@@ -245,7 +266,7 @@ async function loadManualLinks() {
 }
 
 function renderManualLinksTable() {
-  _ensureManualLinksTablePrefs();
+  const view = _ensureManualLinksTableView();
 
   const tbody = document.getElementById('ml-tbody');
   if (!tbody) return;
@@ -260,7 +281,6 @@ function renderManualLinksTable() {
     : [..._manualLinks];
 
   if (!rows.length) {
-    _mlColResizeDone = false;
     _mlRenderSharedTable(() => {
       tbody.innerHTML = `<tr class="empty-row"><td colspan="${Math.max(1, _mlVisibleCols().length)}">${q ? 'No matches.' : 'No links yet — click + Add link'}</td></tr>`;
     });
@@ -268,8 +288,7 @@ function renderManualLinksTable() {
   }
 
   // Sort
-  const sorter = _ensureManualLinksTableSort();
-  rows = sorter ? sorter.sortRows(rows, _mlGetSortVal) : rows;
+  rows = view?.sorter ? view.sorter.sortRows(rows, _mlGetSortVal) : rows;
 
   // Row HTML builder
   function rowHtml(lnk) {
@@ -277,7 +296,6 @@ function renderManualLinksTable() {
   }
 
   if (_mlGroupBy === 'none') {
-    _mlColResizeDone = false;
     _mlRenderSharedTable(() => {
       tbody.innerHTML = rows.map(rowHtml).join('');
     });
@@ -301,7 +319,6 @@ function renderManualLinksTable() {
     </tr>`;
     if (!collapsed) html += map[k].map(rowHtml).join('');
   });
-  _mlColResizeDone = false;
   _mlRenderSharedTable(() => {
     tbody.innerHTML = html;
   });
@@ -562,7 +579,8 @@ async function deleteManualLink(linkId) {
 // from there rather than from the normal switchTab flow).
 
 document.addEventListener('DOMContentLoaded', () => {
-  _ensureManualLinksTablePrefs();
+  _ensureManualLinksTableView();
+  _ensureManualLinksLayoutController()?.init();
   document.getElementById('ml-modal-save-btn')?.addEventListener('click', submitManualLink);
   document.getElementById('ml-cols-modal-apply')?.addEventListener('click', _mlApplyColsModal);
 
@@ -597,9 +615,4 @@ document.addEventListener('DOMContentLoaded', () => {
   if (typeof ResponsiveLayout !== 'undefined') {
     ResponsiveLayout.registerTabControls('manual-links-table', 'pg-ctrl-manual-links-table');
   }
-  _mlTablePrefs?.onLayoutChange(() => {
-    _mlHiddenCols = _mlTablePrefs.getHiddenSet(_ML_TABLE_COLS);
-    _mlRebuildThead();
-    renderManualLinksTable();
-  });
 });

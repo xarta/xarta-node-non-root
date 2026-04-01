@@ -60,32 +60,72 @@ const _SVC_FIELD_META = {
 };
 
 let _svcFilterTimer = null;
-let _svcTablePrefs = null;
-let _svcHiddenCols = new Set();
-let _svcTableSort = null;
+let _svcTableView = null;
+let _svcLayoutController = null;
 
-function _ensureServicesTablePrefs() {
-  if (_svcTablePrefs || typeof TablePrefs === 'undefined') return _svcTablePrefs;
-  _svcTablePrefs = TablePrefs.create({
+function _ensureServicesTableView() {
+  if (_svcTableView || typeof TableView === 'undefined') return _svcTableView;
+  _svcTableView = TableView.create({
     storageKey: 'services-table-prefs',
-    defaultHidden: [],
+    columns: _SVC_COLS,
+    meta: _SVC_FIELD_META,
+    getTable: () => document.getElementById('services-table'),
+    getDefaultWidth: col => (_SVC_FIELD_META[col] || {}).defaultWidth || null,
     minWidth: 40,
+    sort: {
+      storageKey: 'services-table-sort',
+    },
+    onSortChange: () => {
+      renderServices();
+      _ensureServicesLayoutController()?.scheduleLayoutSave();
+    },
+    onColumnResizeEnd: () => {
+      _ensureServicesLayoutController()?.scheduleLayoutSave();
+    },
   });
-  _svcTablePrefs.syncColumns(_SVC_COLS);
-  _svcHiddenCols = _svcTablePrefs.getHiddenSet(_SVC_COLS);
-  return _svcTablePrefs;
+  return _svcTableView;
 }
 
 function _svcVisibleCols() {
-  return _SVC_COLS.filter(col => !_svcHiddenCols.has(col));
+  const view = _ensureServicesTableView();
+  return view ? view.getVisibleCols() : _SVC_COLS;
 }
 
-function _ensureServicesTableSort() {
-  if (_svcTableSort || typeof TableSort === 'undefined') return _svcTableSort;
-  _svcTableSort = TableSort.create({
-    storageKey: 'services-table-sort',
+function _svcColumnSeed(col) {
+  switch (col) {
+    case 'service_id':
+      return { sqlite_column: 'service_id', data_type: 'TEXT', sample_max_length: 32, min_width_px: 100, max_width_px: 320 };
+    case 'name':
+      return { sqlite_column: 'name', data_type: 'TEXT', sample_max_length: 32, min_width_px: 140, max_width_px: 520 };
+    case 'host_machine':
+      return { sqlite_column: 'host_machine', data_type: 'TEXT', sample_max_length: 28, min_width_px: 120, max_width_px: 420 };
+    case 'project_status':
+      return { sqlite_column: 'project_status', data_type: 'TEXT', sample_max_length: 16, min_width_px: 96, max_width_px: 220 };
+    case 'tags':
+      return { sqlite_column: 'tags', data_type: 'TEXT', sample_max_length: 32, min_width_px: 120, max_width_px: 520 };
+    case 'links':
+      return { sqlite_column: 'links', data_type: 'TEXT', sample_max_length: 48, min_width_px: 140, max_width_px: 720 };
+    case 'description':
+      return { sqlite_column: 'description', data_type: 'TEXT', sample_max_length: 80, min_width_px: 160, max_width_px: 1400 };
+    default:
+      return {};
+  }
+}
+
+function _ensureServicesLayoutController() {
+  if (_svcLayoutController || typeof TableBucketLayouts === 'undefined') return _svcLayoutController;
+  _svcLayoutController = TableBucketLayouts.create({
+    getTable: () => document.getElementById('services-table'),
+    getView: () => _ensureServicesTableView(),
+    getColumns: () => _SVC_COLS,
+    getMeta: col => _SVC_FIELD_META[col],
+    getDefaultWidth: col => (_SVC_FIELD_META[col] || {}).defaultWidth || null,
+    getColumnSeed: col => _svcColumnSeed(col),
+    render: () => renderServices(),
+    surfaceLabel: 'Services',
+    layoutContextTitle: 'Services Layout Context',
   });
-  return _svcTableSort;
+  return _svcLayoutController;
 }
 
 function _svcSortValue(service, sortKey) {
@@ -110,68 +150,51 @@ function _svcSortValue(service, sortKey) {
 }
 
 function _svcRebuildThead() {
-  const table = document.getElementById('services-table');
-  if (!table) return;
-  const tr = table.querySelector('thead tr');
-  if (!tr) return;
-  const prefs = _ensureServicesTablePrefs();
-  const sorter = _ensureServicesTableSort();
-  tr.innerHTML = _svcVisibleCols().map(col => {
-    const meta = _SVC_FIELD_META[col];
-    const width = prefs ? prefs.getWidth(col) : null;
-    const styleParts = [];
-    if (width) styleParts.push(`width:${width}px`);
-    else if (meta.defaultWidth) styleParts.push(`width:${meta.defaultWidth}px`);
-    const style = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
-    const sortAttrs = meta.sortKey ? ` data-sort-key="${meta.sortKey}"` : '';
-    const classAttr = meta.sortKey ? ' class="table-th-sort"' : '';
-    const labelHtml = sorter && meta.sortKey ? sorter.renderLabel(meta.label, meta.sortKey) : meta.label;
-    return `<th data-col="${col}"${sortAttrs}${classAttr}${style}>${labelHtml}</th>`;
-  }).join('');
+  const view = _ensureServicesTableView();
+  view?.rebuildHead();
 }
 
 function _svcRenderSharedTable(renderBody) {
-  const prefs = _ensureServicesTablePrefs();
-  if (!prefs) {
-    _svcRebuildThead();
-    renderBody();
-    return;
-  }
-  prefs.renderTable({
-    getTable: () => document.getElementById('services-table'),
-    rebuildHead: _svcRebuildThead,
-    renderBody,
-    minWidth: 40,
-    afterBind: tableEl => {
-      const sorter = _ensureServicesTableSort();
-      sorter?.bind(tableEl, renderServices);
-      sorter?.syncIndicators(tableEl);
-    },
-  });
+  const view = _ensureServicesTableView();
+  if (!view) return;
+  view.render(renderBody);
 }
 
 function svcOpenColsModal() {
-  const prefs = _ensureServicesTablePrefs();
-  if (!prefs) return;
-  const list = document.getElementById('svc-cols-modal-list');
-  TablePrefs.renderColumnChooser(list, _SVC_COLS, _svcHiddenCols, col => _SVC_FIELD_META[col].label);
-  HubModal.open(document.getElementById('svc-cols-modal'));
+  const view = _ensureServicesTableView();
+  if (!view) return;
+  view.openColumns(
+    document.getElementById('svc-cols-modal-list'),
+    document.getElementById('svc-cols-modal')
+  );
 }
 
 function _svcApplyColsModal() {
-  const prefs = _ensureServicesTablePrefs();
-  if (!prefs) return;
+  const view = _ensureServicesTableView();
+  if (!view) return;
   const modal = document.getElementById('svc-cols-modal');
-  const newHidden = TablePrefs.readHiddenFromChooser(modal, new Set(_svcHiddenCols));
-  prefs.setHiddenSet(newHidden);
-  _svcHiddenCols = prefs.getHiddenSet(_SVC_COLS);
-  _svcRebuildThead();
-  renderServices();
-  HubModal.close(modal);
+  view.applyColumns(modal, () => {
+    renderServices();
+    HubModal.close(modal);
+    _ensureServicesLayoutController()?.scheduleLayoutSave();
+  });
+}
+
+async function toggleServicesHorizontalScroll() {
+  const controller = _ensureServicesLayoutController();
+  if (!controller) return;
+  await controller.toggleHorizontalScroll();
+}
+
+async function openServicesLayoutContextModal() {
+  const controller = _ensureServicesLayoutController();
+  if (!controller) return;
+  await controller.openLayoutContextModal();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  _ensureServicesTablePrefs();
+  _ensureServicesTableView();
+  _ensureServicesLayoutController()?.init();
   document.getElementById('add-modal-save-btn')?.addEventListener('click', submitAddService);
   document.getElementById('svc-cols-modal-apply')?.addEventListener('click', _svcApplyColsModal);
 
@@ -182,11 +205,6 @@ document.addEventListener('DOMContentLoaded', () => {
       _svcFilterTimer = setTimeout(renderServices, 250);
     });
   }
-  _svcTablePrefs?.onLayoutChange(() => {
-    _svcHiddenCols = _svcTablePrefs.getHiddenSet(_SVC_COLS);
-    _svcRebuildThead();
-    renderServices();
-  });
   if (typeof ResponsiveLayout !== 'undefined') {
     ResponsiveLayout.registerTabControls('services', 'pg-ctrl-services');
   }
@@ -206,8 +224,7 @@ async function loadServices() {
 }
 
 function renderServices() {
-  _ensureServicesTablePrefs();
-  const sorter = _ensureServicesTableSort();
+  const view = _ensureServicesTableView();
   const q = (document.getElementById('search-input').value || '').toLowerCase();
   const tbody = document.getElementById('services-tbody');
   let visible = _services.filter(s =>
@@ -216,7 +233,7 @@ function renderServices() {
     (s.service_id || '').toLowerCase().includes(q) ||
     (s.vm_or_lxc || '').toLowerCase().includes(q)
   );
-  visible = sorter ? sorter.sortRows(visible, _svcSortValue) : visible;
+  visible = view?.sorter ? view.sorter.sortRows(visible, _svcSortValue) : visible;
   if (!visible.length) {
     _svcRenderSharedTable(() => {
       tbody.innerHTML = `<tr class="empty-row"><td colspan="${Math.max(1, _svcVisibleCols().length)}">${_services.length ? 'No matching services.' : 'No services — add one above.'}</td></tr>`;

@@ -848,6 +848,394 @@
     };
   }
 
+  function createBucketLayoutController(cfg) {
+    cfg = cfg || {};
+    var layoutKey = '';
+    var layoutAppliedSignature = '';
+    var layoutSaveTimer = null;
+    var applyingRemoteLayout = false;
+    var layoutRequestSeq = 0;
+    var layoutChangeUnsub = null;
+    var boundLayoutChange = false;
+    var reservedCode = cfg.reservedCode || '00';
+    var userCode = cfg.userCode || '00';
+    var saveDelayMs = Number(cfg.saveDelayMs || 300);
+
+    function getView() {
+      return typeof cfg.getView === 'function' ? cfg.getView() : null;
+    }
+
+    function getTable() {
+      return typeof cfg.getTable === 'function' ? cfg.getTable() : null;
+    }
+
+    function getColumns() {
+      var columns = typeof cfg.getColumns === 'function' ? cfg.getColumns() : [];
+      return Array.isArray(columns) ? columns.slice() : [];
+    }
+
+    function getMeta(columnKey) {
+      if (typeof cfg.getMeta === 'function') return cfg.getMeta(columnKey) || { label: columnKey };
+      return { label: columnKey };
+    }
+
+    function getTableCode() {
+      var tableEl = getTable();
+      return (tableEl && tableEl.dataset && tableEl.dataset.layoutTableCode) || cfg.tableCode || '';
+    }
+
+    function getTableName() {
+      var tableEl = getTable();
+      return (tableEl && tableEl.dataset && tableEl.dataset.layoutTableName) || cfg.tableName || '';
+    }
+
+    function getSurfaceLabel() {
+      return cfg.surfaceLabel || getTableName() || 'Table';
+    }
+
+    function getLayoutContextTitle() {
+      return cfg.layoutContextTitle || (getSurfaceLabel() + ' Layout Context');
+    }
+
+    function getViewportBits() {
+      var width = window.innerWidth || (document.documentElement && document.documentElement.clientWidth) || 0;
+      var portrait = window.matchMedia('(orientation: portrait)').matches;
+      var view = getView();
+      return {
+        shade_up: !!(document.body && document.body.classList.contains('shade-is-up')),
+        horizontal_scroll: !!(view && typeof view.isHorizontalScrollEnabled === 'function' && view.isHorizontalScrollEnabled()),
+        mobile: width <= 600,
+        portrait: portrait,
+        wide: !portrait && width >= 1600,
+      };
+    }
+
+    function getDefaultWidth(columnKey, meta) {
+      if (typeof cfg.getDefaultWidth === 'function') return cfg.getDefaultWidth(columnKey, meta);
+      return meta && meta.defaultWidth ? meta.defaultWidth : null;
+    }
+
+    function getColumnSeed(columnKey, index, sortState, hiddenSet) {
+      var meta = getMeta(columnKey) || { label: columnKey };
+      var view = getView();
+      var extra = typeof cfg.getColumnSeed === 'function'
+        ? (cfg.getColumnSeed(columnKey, meta, index, {
+            view: view,
+            table: getTable(),
+            columns: getColumns(),
+            sortState: sortState || { key: null, dir: 0 },
+            hiddenSet: hiddenSet || new Set(),
+          }) || {})
+        : {};
+      var isActions = columnKey && columnKey.charAt(0) === '_';
+      var width = view && view.prefs && typeof view.prefs.getWidth === 'function'
+        ? view.prefs.getWidth(columnKey)
+        : null;
+      if (!width && extra.width_px) width = extra.width_px;
+      if (!width) width = getDefaultWidth(columnKey, meta);
+      return {
+        column_key: columnKey,
+        display_name: extra.display_name || meta.label || columnKey,
+        sqlite_column: Object.prototype.hasOwnProperty.call(extra, 'sqlite_column') ? extra.sqlite_column : (isActions ? null : columnKey),
+        width_px: width || undefined,
+        min_width_px: extra.min_width_px || 40,
+        max_width_px: extra.max_width_px || 900,
+        position: Object.prototype.hasOwnProperty.call(extra, 'position') ? extra.position : index,
+        sort_direction: extra.sort_direction || null,
+        sort_priority: Object.prototype.hasOwnProperty.call(extra, 'sort_priority') ? extra.sort_priority : null,
+        hidden: Object.prototype.hasOwnProperty.call(extra, 'hidden') ? !!extra.hidden : !!(hiddenSet && hiddenSet.has(columnKey)),
+        data_type: extra.data_type || null,
+        sample_max_length: Object.prototype.hasOwnProperty.call(extra, 'sample_max_length') ? extra.sample_max_length : null,
+      };
+    }
+
+    function buildLayoutPayload() {
+      var view = getView();
+      if (!view) return null;
+      var hiddenSet = typeof view.getHiddenSet === 'function' ? view.getHiddenSet() : new Set();
+      var sortState = typeof view.getSortState === 'function' ? view.getSortState() : { key: null, dir: 0 };
+      var columns = getColumns().map(function (columnKey, index) {
+        var meta = getMeta(columnKey) || { label: columnKey };
+        var seed = getColumnSeed(columnKey, index, sortState, hiddenSet);
+        var isActiveSort = !!(meta.sortKey && sortState.key === meta.sortKey);
+        seed.hidden = hiddenSet.has(columnKey);
+        seed.sort_direction = isActiveSort ? (sortState.dir === -1 ? 'desc' : 'asc') : null;
+        seed.sort_priority = isActiveSort ? 0 : null;
+        seed.position = index;
+        return seed;
+      });
+      return {
+        version: 1,
+        seed_origin: 'manual',
+        algorithm_version: 'v1',
+        bucket_flags: getViewportBits(),
+        columns: columns,
+      };
+    }
+
+    function layoutSignature(layoutData) {
+      try {
+        return JSON.stringify(layoutData || {});
+      } catch (_) {
+        return '';
+      }
+    }
+
+    function applyRemoteLayout(layoutData) {
+      var view = getView();
+      if (!view || !layoutData || !Array.isArray(layoutData.columns)) return;
+      var hidden = new Set();
+      var sortMatch = null;
+      applyingRemoteLayout = true;
+      try {
+        layoutData.columns.forEach(function (column) {
+          if (!column || !column.column_key) return;
+          if (column.hidden) hidden.add(column.column_key);
+          if (column.width_px && view.prefs && typeof view.prefs.setWidth === 'function') {
+            view.prefs.setWidth(column.column_key, column.width_px);
+          }
+          if (!column.sort_direction) return;
+          var meta = getMeta(column.column_key) || null;
+          var priority = Number.isFinite(Number(column.sort_priority)) ? Number(column.sort_priority) : 0;
+          if (!sortMatch || priority < sortMatch.priority) {
+            sortMatch = {
+              key: (meta && meta.sortKey) || column.column_key,
+              dir: column.sort_direction === 'desc' ? -1 : 1,
+              priority: priority,
+            };
+          }
+        });
+        if (view.prefs && typeof view.prefs.setHiddenSet === 'function') {
+          view.prefs.setHiddenSet(hidden);
+        }
+        if (typeof view.setSortState === 'function') {
+          view.setSortState(sortMatch ? sortMatch.key : null, sortMatch ? sortMatch.dir : 1);
+        }
+      } finally {
+        applyingRemoteLayout = false;
+      }
+    }
+
+    function buildResolveBody(bucketBits) {
+      var view = getView();
+      var hiddenSet = view && typeof view.getHiddenSet === 'function' ? view.getHiddenSet() : new Set();
+      var sortState = view && typeof view.getSortState === 'function' ? view.getSortState() : { key: null, dir: 0 };
+      return {
+        reserved_code: reservedCode,
+        user_code: userCode,
+        table_code: getTableCode(),
+        table_name: getTableName(),
+        bucket_bits: bucketBits || getViewportBits(),
+        columns: getColumns().map(function (columnKey, index) {
+          var meta = getMeta(columnKey) || { label: columnKey };
+          var seed = getColumnSeed(columnKey, index, sortState, hiddenSet);
+          var isActiveSort = !!(meta.sortKey && sortState.key === meta.sortKey);
+          seed.hidden = hiddenSet.has(columnKey);
+          seed.sort_direction = isActiveSort ? (sortState.dir === -1 ? 'desc' : 'asc') : null;
+          seed.sort_priority = isActiveSort ? 0 : null;
+          return seed;
+        }),
+      };
+    }
+
+    async function resolveRemoteLayout(options) {
+      options = options || {};
+      var view = getView();
+      if (!view || typeof apiFetch !== 'function') return null;
+      var requestId = ++layoutRequestSeq;
+      try {
+        var response = await apiFetch('/api/v1/table-layouts/resolve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(buildResolveBody(options.bucketBits)),
+        });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        var payload = await response.json();
+        if (requestId !== layoutRequestSeq) return null;
+        layoutKey = payload.layout_key || '';
+        var nextSignature = layoutSignature(payload.layout_data);
+        if (nextSignature && nextSignature !== layoutAppliedSignature) {
+          applyRemoteLayout(payload.layout_data);
+          layoutAppliedSignature = nextSignature;
+          if (options.rerender !== false && typeof cfg.render === 'function') {
+            cfg.render();
+          }
+        }
+        return payload;
+      } catch (error) {
+        console.warn(getSurfaceLabel() + ' table layout resolve failed:', error);
+        return null;
+      }
+    }
+
+    function scheduleLayoutSave() {
+      if (applyingRemoteLayout) return;
+      clearTimeout(layoutSaveTimer);
+      layoutSaveTimer = window.setTimeout(function () {
+        persistLayout().catch(function (error) {
+          console.warn(getSurfaceLabel() + ' table layout save failed:', error);
+        });
+      }, saveDelayMs);
+    }
+
+    async function persistLayout() {
+      var view = getView();
+      if (!view || typeof apiFetch !== 'function') return;
+      if (!layoutKey) {
+        var resolved = await resolveRemoteLayout({ rerender: false });
+        if (!(resolved && resolved.layout_key)) return;
+      }
+      var layoutData = buildLayoutPayload();
+      if (!layoutData) return;
+      var nextSignature = layoutSignature(layoutData);
+      if (nextSignature === layoutAppliedSignature) return;
+      var response = await apiFetch('/api/v1/table-layouts/' + encodeURIComponent(layoutKey), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ layout_data: layoutData }),
+      });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      var payload = await response.json();
+      layoutKey = payload.layout_key || layoutKey;
+      layoutAppliedSignature = layoutSignature(payload.layout_data);
+    }
+
+    async function toggleHorizontalScroll() {
+      var view = getView();
+      if (!view || typeof view.toggleHorizontalScroll !== 'function') return;
+      view.toggleHorizontalScroll();
+      await resolveRemoteLayout({ rerender: true });
+    }
+
+    async function openLayoutContextModal() {
+      if (typeof TableLayoutInspector === 'undefined' || typeof apiFetch !== 'function') return;
+      if (!layoutKey) {
+        await resolveRemoteLayout({ rerender: false });
+      }
+      try {
+        var loadEntries = async function () {
+          var query = new URLSearchParams({
+            table_code: getTableCode(),
+            user_code: userCode,
+          });
+          var response = await apiFetch('/api/v1/table-layouts?' + query.toString());
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+          var rows = await response.json();
+          return {
+            activeKey: layoutKey,
+            subtitle: rows.length + ' saved bucket' + (rows.length === 1 ? '' : 's') + ' for ' + getTableName(),
+            entries: rows.map(function (row) {
+              var isActive = row.layout_key === layoutKey;
+              return {
+                layoutKey: row.layout_key,
+                reservedCode: row.reserved_code,
+                userCode: row.user_code,
+                tableCode: row.table_code,
+                bucketCode: row.bucket_code,
+                layoutData: row.layout_data || {},
+                title: 'Bucket ' + row.bucket_code,
+                subtitle: row.layout_key,
+                hint: isActive
+                  ? 'Active layout for the current ' + getSurfaceLabel() + ' viewport'
+                  : 'Saved sibling layout for another ' + getSurfaceLabel() + ' context',
+              };
+            }),
+          };
+        };
+        var initialState = await loadEntries();
+        TableLayoutInspector.open({
+          title: getLayoutContextTitle(),
+          subtitle: initialState.subtitle,
+          activeKey: initialState.activeKey,
+          reloadEntries: loadEntries,
+          onGenerate: async function (bucketFlags) {
+            var response = await apiFetch('/api/v1/table-layouts/resolve', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(buildResolveBody(bucketFlags)),
+            });
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            return response.json();
+          },
+          onDelete: async function (entry) {
+            var confirmed = await HubDialogs.confirmDelete({
+              title: 'Delete layout bucket?',
+              message: 'Delete ' + getSurfaceLabel() + ' layout bucket ' + entry.bucketCode + '?',
+              detail: 'This removes the saved layout row so it can be regenerated later if needed.',
+            });
+            if (!confirmed) return false;
+            var response = await apiFetch('/api/v1/table-layouts/' + encodeURIComponent(entry.layoutKey), {
+              method: 'DELETE',
+            });
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+          },
+          onSaveColumns: async function (entry, nextLayoutData) {
+            var response = await apiFetch('/api/v1/table-layouts/' + encodeURIComponent(entry.layoutKey), {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ layout_data: nextLayoutData }),
+            });
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            var payload = await response.json();
+            var savedLayout = payload.layout_data || nextLayoutData;
+            if (payload.layout_key === layoutKey) {
+              applyRemoteLayout(savedLayout);
+              layoutAppliedSignature = layoutSignature(savedLayout);
+              if (typeof cfg.render === 'function') cfg.render();
+            }
+            return { layoutData: savedLayout };
+          },
+          entries: initialState.entries,
+        });
+      } catch (error) {
+        if (window.HubDialogs && typeof HubDialogs.alertError === 'function') {
+          await HubDialogs.alertError({
+            title: 'Layout context unavailable',
+            message: 'Failed to load ' + getSurfaceLabel() + ' layout context: ' + error.message,
+          });
+        }
+      }
+    }
+
+    function bindLayoutChange() {
+      var view = getView();
+      if (!view || typeof view.onLayoutChange !== 'function') return function () {};
+      if (boundLayoutChange) return layoutChangeUnsub || function () {};
+      boundLayoutChange = true;
+      layoutChangeUnsub = view.onLayoutChange(function () {
+        resolveRemoteLayout({ rerender: true });
+      });
+      return layoutChangeUnsub;
+    }
+
+    function init() {
+      bindLayoutChange();
+      resolveRemoteLayout({ rerender: false });
+    }
+
+    return {
+      getLayoutKey: function () {
+        return layoutKey;
+      },
+      getTableCode: getTableCode,
+      getTableName: getTableName,
+      getSurfaceLabel: getSurfaceLabel,
+      getViewportBits: getViewportBits,
+      buildLayoutPayload: buildLayoutPayload,
+      resolveRemoteLayout: resolveRemoteLayout,
+      scheduleLayoutSave: scheduleLayoutSave,
+      persistLayout: persistLayout,
+      toggleHorizontalScroll: toggleHorizontalScroll,
+      openLayoutContextModal: openLayoutContextModal,
+      bindLayoutChange: bindLayoutChange,
+      init: init,
+      isHorizontalScrollEnabled: function () {
+        var view = getView();
+        return !!(view && typeof view.isHorizontalScrollEnabled === 'function' && view.isHorizontalScrollEnabled());
+      },
+    };
+  }
+
   function isCompactActions() {
     return isCompactLayout();
   }
@@ -1418,6 +1806,10 @@
 
   window.TableView = {
     create: createTableView,
+  };
+
+  window.TableBucketLayouts = {
+    create: createBucketLayoutController,
   };
 
   window.TableRowActions = {

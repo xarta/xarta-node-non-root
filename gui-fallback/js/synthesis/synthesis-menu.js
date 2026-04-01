@@ -39,30 +39,26 @@ const SynthesisMenuConfig = createHubMenu({
         { id: 'svc-fn-add',     label: 'Add service', icon: HIEROGLYPHS.sekhem,     fn: 'svc.add',     activeOn: ['services'], parent: 'synthesis-layout', order: 0 },
         { id: 'svc-fn-refresh', label: 'Refresh',     icon: HIEROGLYPHS.nefer,      fn: 'svc.refresh', activeOn: ['services'], parent: 'synthesis-layout', order: 1 },
         { id: 'svc-fn-cols',    label: 'Columns',     icon: HIEROGLYPHS.khaHorizon, fn: 'svc.columns', activeOn: ['services'], parent: 'synthesis-layout', order: 2 },
-        { id: 'svc-fn-scroll',  label: 'Horizontal Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'svc.scroll', activeOn: ['services'], parent: 'synthesis-layout', order: 3 },
+        { id: 'svc-fn-context', label: 'Layout Context', icon: HIEROGLYPHS.eyeOfHorus, fn: 'svc.context', activeOn: ['services'], parent: 'synthesis-layout', order: 3 },
+        { id: 'svc-fn-scroll',  label: 'Horizontal Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'svc.scroll', activeOn: ['services'], parent: 'synthesis-layout', order: 4 },
 
         // ── Machines page function items ──────────────────────────────────
         { id: 'mch-fn-refresh', label: 'Refresh',     icon: HIEROGLYPHS.nefer,      fn: 'mch.refresh', activeOn: ['machines'], parent: 'synthesis-layout', order: 0 },
         { id: 'mch-fn-cols',    label: 'Columns',     icon: HIEROGLYPHS.khaHorizon, fn: 'mch.columns', activeOn: ['machines'], parent: 'synthesis-layout', order: 1 },
-        { id: 'mch-fn-scroll',  label: 'Horizontal Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'mch.scroll', activeOn: ['machines'], parent: 'synthesis-layout', order: 2 },
+        { id: 'mch-fn-context', label: 'Layout Context', icon: HIEROGLYPHS.eyeOfHorus, fn: 'mch.context', activeOn: ['machines'], parent: 'synthesis-layout', order: 2 },
+        { id: 'mch-fn-scroll',  label: 'Horizontal Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'mch.scroll', activeOn: ['machines'], parent: 'synthesis-layout', order: 3 },
 
         // ── Manual Links (table view) function items ──────────────────────
         { id: 'ml-fn-add',      label: 'Add link',     icon: HIEROGLYPHS.ropeCoil, fn: 'ml.add',      activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 0 },
         { id: 'ml-fn-refresh',  label: 'Refresh',      icon: HIEROGLYPHS.nefer,    fn: 'ml.refresh',  activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 1 },
         { id: 'ml-fn-cols',     label: 'Columns',      icon: HIEROGLYPHS.khaHorizon, fn: 'ml.columns', activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 2 },
-        { id: 'ml-fn-scroll',   label: 'Horizontal Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'ml.scroll', activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 3 },
-        { id: 'ml-fn-grp-none', label: 'Group: None',  icon: 'icons/ui/minus-box-blue.svg',    fn: 'ml.grpNone',  activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 4 },
-        { id: 'ml-fn-grp-grp',  label: 'Group: Group', icon: 'icons/ui/group-folder-blue.svg', fn: 'ml.grpGroup', activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 5 },
-        { id: 'ml-fn-grp-host', label: 'Group: Host',  icon: 'icons/ui/monitor-blue.svg',      fn: 'ml.grpHost',  activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 6 },
+        { id: 'ml-fn-context',  label: 'Layout Context', icon: HIEROGLYPHS.eyeOfHorus, fn: 'ml.context', activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 3 },
+        { id: 'ml-fn-scroll',   label: 'Horizontal Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'ml.scroll', activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 4 },
+        { id: 'ml-fn-grp-none', label: 'Group: None',  icon: 'icons/ui/minus-box-blue.svg',    fn: 'ml.grpNone',  activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 5 },
+        { id: 'ml-fn-grp-grp',  label: 'Group: Group', icon: 'icons/ui/group-folder-blue.svg', fn: 'ml.grpGroup', activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 6 },
+        { id: 'ml-fn-grp-host', label: 'Group: Host',  icon: 'icons/ui/monitor-blue.svg',      fn: 'ml.grpHost',  activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 7 },
     ],
 });
-
-function _synthesisToggleHorizontalScroll(getController, rerender) {
-    const controller = typeof getController === 'function' ? getController() : null;
-    if (!controller || typeof controller.toggleHorizontalScroll !== 'function') return;
-    controller.toggleHorizontalScroll();
-    if (typeof rerender === 'function') rerender();
-}
 
 function _synthesisHorizontalScrollLabel(label, getController) {
     const controller = typeof getController === 'function' ? getController() : null;
@@ -78,21 +74,24 @@ SynthesisMenuConfig.registerFunctions({
     'svc.add':      () => openAddModal(),
     'svc.refresh':  () => loadServices(),
     'svc.columns':  () => svcOpenColsModal(),
-    'svc.scroll':   () => _synthesisToggleHorizontalScroll(() => _ensureServicesTablePrefs(), () => renderServices()),
+    'svc.context':  () => openServicesLayoutContextModal(),
+    'svc.scroll':   () => toggleServicesHorizontalScroll(),
     'mch.refresh':  () => loadMachines(),
     'mch.columns':  () => mchOpenColsModal(),
-    'mch.scroll':   () => _synthesisToggleHorizontalScroll(() => _ensureMachinesTablePrefs(), () => renderMachines()),
+    'mch.context':  () => openMachinesLayoutContextModal(),
+    'mch.scroll':   () => toggleMachinesHorizontalScroll(),
     'ml.add':       () => openManualLinkModal(null),
     'ml.refresh':   () => loadManualLinks(),
     'ml.columns':   () => mlOpenColsModal(),
-    'ml.scroll':    () => _synthesisToggleHorizontalScroll(() => _ensureManualLinksTablePrefs(), () => renderManualLinksTable()),
+    'ml.context':   () => openManualLinksLayoutContextModal(),
+    'ml.scroll':    () => toggleManualLinksHorizontalScroll(),
     'ml.grpNone':   () => mlSetGroupBy('none'),
     'ml.grpGroup':  () => mlSetGroupBy('group'),
     'ml.grpHost':   () => mlSetGroupBy('host'),
 });
 
 SynthesisMenuConfig.registerLabelGetters({
-    'svc-fn-scroll': () => _synthesisHorizontalScrollLabel('Horizontal Scroll', () => _ensureServicesTablePrefs()),
-    'mch-fn-scroll': () => _synthesisHorizontalScrollLabel('Horizontal Scroll', () => _ensureMachinesTablePrefs()),
-    'ml-fn-scroll':  () => _synthesisHorizontalScrollLabel('Horizontal Scroll', () => _ensureManualLinksTablePrefs()),
+    'svc-fn-scroll': () => _synthesisHorizontalScrollLabel('Horizontal Scroll', () => _ensureServicesLayoutController()),
+    'mch-fn-scroll': () => _synthesisHorizontalScrollLabel('Horizontal Scroll', () => _ensureMachinesLayoutController()),
+    'ml-fn-scroll':  () => _synthesisHorizontalScrollLabel('Horizontal Scroll', () => _ensureManualLinksLayoutController()),
 });
