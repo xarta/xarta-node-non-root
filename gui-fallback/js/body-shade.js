@@ -86,6 +86,7 @@
     shade.classList.remove('is-dragging');
     if (handle) handle.classList.remove('is-dragging');
     document.body.classList.add('shade-is-up');
+    document.dispatchEvent(new CustomEvent('bodyshadechange', { detail: { isUp: true } }));
     // Shade has settled at top — resize the fill table to the new position.
     sizeActivePane();
   }
@@ -96,6 +97,7 @@
     if (handle) handle.classList.remove('is-up');
     isUp = false;
     document.body.classList.remove('shade-is-up');
+    document.dispatchEvent(new CustomEvent('bodyshadechange', { detail: { isUp: false } }));
     // shadeY and --shade-y are already set to -maxTravel; leave them as-is
     // so when drag resumes the position is continuous.
   }

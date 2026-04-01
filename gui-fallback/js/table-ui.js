@@ -22,7 +22,48 @@
     var isPortrait = window.matchMedia('(orientation: portrait)').matches;
     if (width <= 600) return isPortrait ? 'mobile-portrait' : 'mobile-landscape';
     if (width <= 900) return isPortrait ? 'tablet-portrait' : 'tablet-landscape';
-    return 'desktop';
+    if (!isPortrait && width >= 1600) return 'desktop-widescreen';
+    return isPortrait ? 'desktop-portrait' : 'desktop-landscape';
+  }
+
+  function isShadeUp() {
+    return !!(document.body && document.body.classList.contains('shade-is-up'));
+  }
+
+  function getPrefsBaseLayoutKey() {
+    return getLayoutKey() + '|' + (isShadeUp() ? 'shade-up' : 'shade-down');
+  }
+
+  function parseBaseLayoutKey(layoutKey) {
+    var raw = String(layoutKey || '');
+    var parts = raw.split('|');
+    return {
+      viewportKey: parts[0] || getLayoutKey(),
+      shadeKey: parts[1] === 'shade-up' ? 'shade-up' : 'shade-down',
+    };
+  }
+
+  function getLegacyLayoutKeys(layoutKey) {
+    var parsed = parseBaseLayoutKey(layoutKey);
+    var viewportKey = parsed.viewportKey;
+    var legacy = [];
+    legacy.push(viewportKey);
+    if (viewportKey.indexOf('desktop-') === 0 || viewportKey === 'desktop-widescreen') {
+      legacy.push('desktop');
+    }
+    return legacy.filter(function (key, index, arr) {
+      return key && arr.indexOf(key) === index;
+    });
+  }
+
+  function cloneLayoutState(source) {
+    if (!source || typeof source !== 'object') return null;
+    return {
+      hidden: Array.isArray(source.hidden) ? source.hidden.slice() : null,
+      widths: source.widths && typeof source.widths === 'object' ? Object.assign({}, source.widths) : {},
+      allowHorizontalScroll: Object.prototype.hasOwnProperty.call(source, 'allowHorizontalScroll') ? source.allowHorizontalScroll : null,
+      pendingHorizontalClamp: !!source.pendingHorizontalClamp,
+    };
   }
 
   function isCompactLayout() {
@@ -94,10 +135,16 @@
     }
   }
 
-  function ensureLayoutState(state, layoutKey) {
+  function ensureLayoutState(state, layoutKey, fallbackKeys) {
     if (!state.layouts) state.layouts = {};
     if (!state.layouts[layoutKey]) {
-      state.layouts[layoutKey] = {
+      var seededState = null;
+      (fallbackKeys || []).some(function (fallbackKey) {
+        if (!fallbackKey || !state.layouts[fallbackKey]) return false;
+        seededState = cloneLayoutState(state.layouts[fallbackKey]);
+        return !!seededState;
+      });
+      state.layouts[layoutKey] = seededState || {
         hidden: null,
         widths: {},
         allowHorizontalScroll: null,
@@ -116,7 +163,7 @@
 
   function createTablePrefs(cfg) {
     var state = readJson(cfg.storageKey, null);
-    var currentLayout = getLayoutKey();
+    var currentLayout = getPrefsBaseLayoutKey();
     var listeners = [];
     var resizeTimer = null;
 
@@ -125,7 +172,7 @@
       if (cfg.legacyHiddenKey) {
         var legacyHidden = readJson(cfg.legacyHiddenKey, null);
         if (Array.isArray(legacyHidden)) {
-          ensureLayoutState(state, currentLayout).hidden = legacyHidden.slice();
+          ensureLayoutState(state, currentLayout, getLegacyLayoutKeys(currentLayout)).hidden = legacyHidden.slice();
         }
       }
       writeJson(cfg.storageKey, state);
@@ -136,7 +183,8 @@
     }
 
     function getActualLayoutState(layoutKey) {
-      return ensureLayoutState(state, layoutKey || currentLayout);
+      var resolvedLayout = layoutKey || currentLayout;
+      return ensureLayoutState(state, resolvedLayout, getLegacyLayoutKeys(resolvedLayout));
     }
 
     function isHorizontalScrollEnabledForLayout(layoutKey) {
@@ -148,13 +196,21 @@
 
     function getEffectiveLayoutKey(layoutKey) {
       var actualLayoutKey = layoutKey || currentLayout;
-      if (actualLayoutKey === 'desktop') return actualLayoutKey;
-      if (!isHorizontalScrollEnabledForLayout(actualLayoutKey)) return actualLayoutKey;
-      return cfg.horizontalScrollLayoutKey || 'desktop';
+      return actualLayoutKey + '|' + (isHorizontalScrollEnabledForLayout(actualLayoutKey) ? 'scroll-x' : 'fit');
     }
 
     function getLayoutState(layoutKey) {
-      return ensureLayoutState(state, getEffectiveLayoutKey(layoutKey));
+      var resolvedLayout = layoutKey || currentLayout;
+      var effectiveLayoutKey = getEffectiveLayoutKey(resolvedLayout);
+      var fallbackKeys = getLegacyLayoutKeys(resolvedLayout);
+      var siblingKey = effectiveLayoutKey.endsWith('|scroll-x')
+        ? effectiveLayoutKey.replace(/\|scroll-x$/, '|fit')
+        : effectiveLayoutKey.replace(/\|fit$/, '|scroll-x');
+      fallbackKeys.unshift(siblingKey);
+      if (isHorizontalScrollEnabledForLayout(resolvedLayout) && parseBaseLayoutKey(resolvedLayout).viewportKey.indexOf('desktop') !== 0) {
+        fallbackKeys = fallbackKeys.concat(['desktop']);
+      }
+      return ensureLayoutState(state, effectiveLayoutKey, fallbackKeys);
     }
 
     function syncColumns(columns) {
@@ -387,7 +443,7 @@
     function handleResize() {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(function () {
-        var nextLayout = getLayoutKey();
+        var nextLayout = getPrefsBaseLayoutKey();
         if (nextLayout === currentLayout) return;
         currentLayout = nextLayout;
         listeners.forEach(function (listener) { listener(nextLayout); });
@@ -396,6 +452,7 @@
 
     window.addEventListener('resize', handleResize, { passive: true });
     window.addEventListener('orientationchange', handleResize, { passive: true });
+    document.addEventListener('bodyshadechange', handleResize, { passive: true });
 
     return {
       getLayoutKey: getLayoutKey,

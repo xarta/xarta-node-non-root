@@ -102,6 +102,11 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'key-fn-cols',     label: 'Columns',           icon: HIEROGLYPHS.khaHorizon, fn: 'key.columns',  activeOn: ['keys'],         parent: 'settings-layout', order: 1 },
         { id: 'key-fn-scroll',   label: 'Horizontal Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'key.scroll', activeOn: ['keys'], parent: 'settings-layout', order: 2 },
 
+        // ── Certificates page function items ─────────────────────────────
+        { id: 'cert-fn-refresh', label: 'Refresh',           icon: HIEROGLYPHS.nefer,      fn: 'cert.refresh', activeOn: ['certs'],        parent: 'settings-layout', order: 0 },
+        { id: 'cert-fn-cols',    label: 'Columns',           icon: HIEROGLYPHS.khaHorizon, fn: 'cert.columns', activeOn: ['certs'],        parent: 'settings-layout', order: 1 },
+        { id: 'cert-fn-scroll',  label: 'Horizontal Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'cert.scroll', activeOn: ['certs'], parent: 'settings-layout', order: 2 },
+
         // ── Nav Items page function items ──────────────────────────────────
         { id: 'ni-fn-refresh',   label: 'Refresh',           icon: HIEROGLYPHS.nefer,     fn: 'ni.refresh',   activeOn: ['nav-items'],    parent: 'settings-layout', order: 0 },
         // ── Form Controls page function items ────────────────────────────────
@@ -446,6 +451,11 @@ SettingsMenuConfig.registerFunctions({
     'key.columns':  () => openKeysColsModal(),
     'key.scroll':   () => _settingsToggleHorizontalScroll(() => _ensureKeysTableView(), () => renderKeysTable()),
 
+    // Certificates
+    'cert.refresh': () => loadCerts(),
+    'cert.columns': () => openCertsColsModal(),
+    'cert.scroll':  () => _settingsToggleHorizontalScroll(() => _ensureCertsTableView(), () => renderCertsTable()),
+
     // Nav Items
     'ni.refresh':   () => loadNavItems(),
 
@@ -462,4 +472,5 @@ SettingsMenuConfig.registerLabelGetters({
     'ai-fn-provscroll':    () => _settingsHorizontalScrollLabel('Provider Scroll', () => _ensureAiProvidersTableView()),
     'ai-fn-assignscroll':  () => _settingsHorizontalScrollLabel('Assignment Scroll', () => _ensureAiAssignmentsTableView()),
     'key-fn-scroll':       () => _settingsHorizontalScrollLabel('Horizontal Scroll', () => _ensureKeysTableView()),
+    'cert-fn-scroll':      () => _settingsHorizontalScrollLabel('Horizontal Scroll', () => _ensureCertsTableView()),
 });

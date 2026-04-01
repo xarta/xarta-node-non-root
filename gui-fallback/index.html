@@ -802,7 +802,7 @@
     <div class="tab-scroll-shell">
     <!-- Status table -->
     <div class="table-wrap table-wrap--fill" style="margin-bottom:20px;">
-      <table>
+      <table id="certs-status-table">
         <thead><tr>
           <th>Name</th><th>Env Var</th><th>Path</th><th>Status</th><th>Details</th><th>Action</th>
         </tr></thead>
@@ -1865,6 +1865,21 @@
     <div class="hub-modal-footer">
       <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Cancel</button>
       <button class="hub-modal-btn" id="keys-cols-modal-apply" type="button">&#10003; Apply</button>
+    </div>
+  </dialog>
+
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="certs-cols-modal">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">Certificates Columns</h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">Choose which columns are visible in the certificates status table.</p>
+      <div id="certs-cols-modal-list" class="hub-checkbox-list"></div>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Cancel</button>
+      <button class="hub-modal-btn" id="certs-cols-modal-apply" type="button">&#10003; Apply</button>
     </div>
   </dialog>
 
