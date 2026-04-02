@@ -625,8 +625,8 @@ function _docsRenderGroupBlock(group) {
     groupHdr.innerHTML = `
       <span style="color:var(--text-dim);font-size:15px;user-select:none">≡</span>
       <span style="flex:1">${esc(groupName)}</span>
-      <button class="secondary" style="padding:2px 8px;font-size:12px" onclick="docsListEditGroup('${groupId}','${esc(groupName)}')">✎</button>
-      <button class="secondary" style="padding:2px 8px;font-size:12px;color:#f87171" onclick="docsListDeleteGroup('${groupId}','${esc(groupName)}')">🗑</button>
+      <button class="secondary table-icon-btn table-icon-btn--edit" type="button" onclick="docsListEditGroup('${groupId}','${esc(groupName)}')" title="Rename group" aria-label="Rename group ${esc(groupName)}"></button>
+      <button class="secondary table-icon-btn table-icon-btn--delete" type="button" onclick="docsListDeleteGroup('${groupId}','${esc(groupName)}')" title="Delete group" aria-label="Delete group ${esc(groupName)}"></button>
     `;
   } else {
     groupHdr.innerHTML = `<span style="color:var(--accent);margin-right:4px">📁</span><span style="color:var(--text-dim);font-style:italic">Undefined Group</span>`;
@@ -733,9 +733,9 @@ function _docsRenderDocRow(doc) {
     <span style="color:var(--text-dim);font-size:15px;user-select:none;cursor:grab">≡</span>
     <span style="flex:1;font-size:13px">${esc(doc.label)}</span>
     ${doc.description ? `<span style="font-size:11px;color:var(--text-dim);flex:2;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(doc.description)}</span>` : ''}
-    <button class="secondary" style="padding:2px 8px;font-size:12px;flex-shrink:0" onclick="docsListCopyLink('${doc.doc_id}')" title="Copy Markdown link">🔗 Copy Link</button>
-    <button class="secondary" style="padding:2px 8px;font-size:12px;flex-shrink:0;color:#f87171" onclick="docsListDeleteDoc('${doc.doc_id}')" title="Delete document">🗑</button>
-    <button class="secondary" style="padding:2px 8px;font-size:12px;flex-shrink:0" onclick="docsListOpenDoc('${doc.doc_id}')">Open</button>
+    <button class="secondary" style="padding:2px 8px;font-size:12px;flex-shrink:0" onclick="docsListCopyLink('${doc.doc_id}')" title="Copy Markdown link" aria-label="Copy Markdown link for ${esc(doc.label)}">🔗 Copy Link</button>
+    <button class="secondary table-icon-btn table-icon-btn--delete" type="button" style="flex-shrink:0" onclick="docsListDeleteDoc('${doc.doc_id}')" title="Delete document" aria-label="Delete document ${esc(doc.label)}"></button>
+    <button class="secondary" style="padding:2px 8px;font-size:12px;flex-shrink:0" onclick="docsListOpenDoc('${doc.doc_id}')" title="Open document" aria-label="Open document ${esc(doc.label)}">Open</button>
   `;
   return row;
 }

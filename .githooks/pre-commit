@@ -17,4 +17,14 @@ else
   exit 1
 fi
 
+echo "[pre-commit] Running delete icon conformance check..."
+DELETE_DETECTOR="/root/xarta-node/.xarta/.claude/skills/web-design/scripts/detect-delete-icon-nonconformance.sh"
+if [[ -x "$DELETE_DETECTOR" ]]; then
+  bash "$DELETE_DETECTOR" "$REPO_ROOT/gui-fallback"
+else
+  echo "ERROR: delete icon detector not found at $DELETE_DETECTOR" >&2
+  echo "Install/update private web-design skill before committing." >&2
+  exit 1
+fi
+
 echo "[pre-commit] OK"
