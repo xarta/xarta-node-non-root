@@ -116,13 +116,17 @@ function _bmActionCellWidth() {
 }
 
 function _visCompactRowActions() {
-  return typeof TableRowActions !== 'undefined' && TableRowActions.shouldCollapse({
-    prefs: _visTablePrefs,
+  return !!(_visTableView && typeof TableRowActions !== 'undefined' && TableRowActions.shouldCollapse({
+    view: _visTableView,
     getTable: () => document.getElementById('vis-table'),
     columnKey: '_actions',
     requiredWidth: _VIS_ACTION_INLINE_WIDTH,
     defaultWidth: _VIS_ACTION_INLINE_WIDTH,
-  });
+  }));
+}
+
+function _visActionCellWidth() {
+  return _visCompactRowActions() ? _VIS_ACTION_COMPACT_WIDTH : _VIS_ACTION_INLINE_WIDTH;
 }
 
 function _bmBookmarkActionButtons(b) {
@@ -564,7 +568,7 @@ function _bmTogglePagination() {
 // ── Visit column metadata ────────────────────────────────────────────────
 const _VIS_FIELD_META = {
   title:       { label: 'Title',       render: v => `<td><a href="${esc(v.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">${esc(v.title || v.url || '')}</a></td>` },
-  url:         { label: 'URL',         render: v => `<td style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(v.url)}"><a href="${esc(v.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--text-dim);text-decoration:none" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${_bmTruncUrl(v.url)}</a></td>` },
+  url:         { label: 'URL',         render: v => `<td style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(v.url)}"><a class="table-cell-link" href="${esc(v.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--text-dim)">${_bmTruncUrl(v.url)}</a></td>` },
   domain:      { label: 'Domain',      render: v => `<td style="font-size:11px;color:var(--text-dim)">${esc(v.domain || '')}</td>` },
   source:      { label: 'Source',      render: v => `<td style="font-size:11px;color:var(--text-dim)">${esc(v.source || '')}</td>` },
   dwell_seconds:{ label: 'Dwell',      render: v => `<td style="font-size:11px;color:var(--text-dim)">${v.dwell_seconds ? v.dwell_seconds + 's' : '—'}</td>` },
@@ -579,22 +583,50 @@ const _VIS_DEFAULT_HIDDEN = ['domain'];
 const _VIS_SORT_KEYS = { title: 'title', url: 'url', domain: 'domain', source: 'source',
   dwell_seconds: 'dwell_seconds', visit_count: 'visit_count', visited_at: 'visited_at' };
 
-const _visTablePrefs = TablePrefs.create({
-  storageKey: 'vis-table-prefs',
-  legacyHiddenKey: 'vis-hidden-cols',
-  defaultHidden: _VIS_DEFAULT_HIDDEN,
-  minWidth: 40,
-});
-_visTablePrefs.syncColumns(_VIS_ALL_COLS);
+let _visTableView = null;
+let _visLastSortKey = 'visited_at';
 
-let _visHiddenCols = _visTablePrefs.getHiddenSet(_VIS_ALL_COLS);
-let _visColResizeDone = false;
-const _visTableSort = TableSort.create({
-  defaultKey: 'visited_at',
-  defaultDir: -1,
-  storageKey: 'visit-history-table-sort',
-});
-let _visLastSortKey = _visTableSort.getState().key;
+function _visDefaultWidth(col) {
+  if (col === '_actions') return _visActionCellWidth();
+  if (col === 'visit_count') return 50;
+  return null;
+}
+
+function _ensureVisitsTableView() {
+  if (_visTableView || typeof TableView === 'undefined') return _visTableView;
+  _visTableView = TableView.create({
+    storageKey: 'vis-table-prefs',
+    legacyHiddenKey: 'vis-hidden-cols',
+    defaultHidden: _VIS_DEFAULT_HIDDEN,
+    columns: _VIS_ALL_COLS,
+    meta: Object.fromEntries(_VIS_ALL_COLS.map(col => [col, {
+      label: _VIS_FIELD_META[col]?.label ?? col,
+      sortKey: _VIS_SORT_KEYS[col] || null,
+    }])),
+    getTable: () => document.getElementById('vis-table'),
+    getDefaultWidth: col => _visDefaultWidth(col),
+    getHeaderStyle: col => (col === 'visit_count' ? 'text-align:center' : ''),
+    minWidth: 40,
+    sort: {
+      defaultKey: 'visited_at',
+      defaultDir: -1,
+      storageKey: 'visit-history-table-sort',
+    },
+    onSortChange: nextState => {
+      _visHandleSortChange(nextState);
+      _ensureVisitsLayoutController()?.scheduleLayoutSave();
+    },
+    onColumnResizeEnd: () => {
+      _ensureVisitsLayoutController()?.scheduleLayoutSave();
+    },
+  });
+  _visLastSortKey = _visTableView.sorter?.getState?.().key || 'visited_at';
+  return _visTableView;
+}
+
+function _visGetSortState() {
+  return _ensureVisitsTableView()?.sorter?.getState?.() || { key: 'visited_at', dir: -1 };
+}
 
 // Visual-only pagination for visits — same pattern as bookmarks
 const _VIS_PAGE_SIZE_OPTIONS = [25, 50, 75, 100, 250, 1000];
@@ -604,7 +636,7 @@ const _VIS_PAGER = TablePager.create({
   defaultPageSize: 100,
   storageKey: 'vis-pagination-prefs',
   stateScope: function () {
-    var state = _visTableSort.getState();
+    var state = _visGetSortState();
     return state.key === 'url' || state.key === 'domain' ? 'grouped' : 'rows';
   },
   defaultEnabled: true,
@@ -616,21 +648,8 @@ const _VIS_PAGER = TablePager.create({
 // Domain grouping — active when sorted by url or domain
 let _visExpandedDomains = new Set(); // domains currently expanded in group mode
 
-function _visVisibleCols() { _visHiddenCols = _visTablePrefs.getHiddenSet(_VIS_ALL_COLS); return _VIS_ALL_COLS.filter(k => !_visHiddenCols.has(k)); }
-function _visColCount()    { return _visVisibleCols().length; }
-
-function _visCompatView() {
-  return {
-    prefs: _visTablePrefs,
-    getHiddenSet: () => { _visHiddenCols = _visTablePrefs.getHiddenSet(_VIS_ALL_COLS); return new Set(_visHiddenCols); },
-    getVisibleCols: () => _visVisibleCols(),
-    getSortState: () => { const s = _visTableSort.getState(); return { key: s.key ?? null, dir: s.dir ?? 0 }; },
-    setSortState: (key, dir) => _visTableSort.setState?.(key, dir),
-    isHorizontalScrollEnabled: () => _visTablePrefs.isHorizontalScrollEnabled(),
-    setHorizontalScrollEnabled: enabled => _visTablePrefs.setHorizontalScrollEnabled(enabled),
-    toggleHorizontalScroll: () => _visTablePrefs.toggleHorizontalScroll(),
-    onLayoutChange: listener => _visTablePrefs.onLayoutChange(listener),
-  };
+function _visColCount() {
+  return _ensureVisitsTableView()?.getVisibleCols()?.length || 1;
 }
 
 let _visitsLayoutController = null;
@@ -644,7 +663,7 @@ function _visColumnSeed(col) {
     sample_max_length: lengths[col] || null,
     min_width_px: col === '_actions' ? _VIS_ACTION_COMPACT_WIDTH : 40,
     max_width_px: col === '_actions' ? _VIS_ACTION_INLINE_WIDTH : 900,
-    width_px: _visTablePrefs.getWidth(col) || null,
+    width_px: _ensureVisitsTableView()?.prefs?.getWidth(col) || _visDefaultWidth(col),
   };
 }
 
@@ -652,10 +671,10 @@ function _ensureVisitsLayoutController() {
   if (_visitsLayoutController || typeof TableBucketLayouts === 'undefined') return _visitsLayoutController;
   _visitsLayoutController = TableBucketLayouts.create({
     getTable: () => document.getElementById('vis-table'),
-    getView: () => _visCompatView(),
+    getView: () => _ensureVisitsTableView(),
     getColumns: () => _VIS_ALL_COLS,
-    getMeta: col => ({ label: col === '_actions' ? 'Actions' : (col.replace(/_/g, ' ')), sortKey: _VIS_SORT_KEYS[col] || null }),
-    getDefaultWidth: () => null,
+    getMeta: col => ({ label: _VIS_FIELD_META[col]?.label ?? col, sortKey: _VIS_SORT_KEYS[col] || null }),
+    getDefaultWidth: col => _visDefaultWidth(col),
     getColumnSeed: col => _visColumnSeed(col),
     render: () => renderVisits(),
     surfaceLabel: 'Visit History',
@@ -713,53 +732,25 @@ function _visFirstSlug(url) {
   } catch (_) { return '/'; }
 }
 
-function _visRebuildThead() {
-  const tr = document.getElementById('vis-thead-row');
-  if (!tr) return;
-  tr.innerHTML = _visVisibleCols().map(k => {
-    const label   = _VIS_FIELD_META[k]?.label ?? k;
-    const sortKey = _VIS_SORT_KEYS[k] ?? null;
-    const width = _visTablePrefs.getWidth(k);
-    const styleParts = [];
-    if (width) styleParts.push(`width:${width}px`);
-    else if (k === '_actions') styleParts.push(`width:${_bmCompactRowActions() ? 48 : 90}px`);
-    else if (k === 'visit_count') styleParts.push('width:50px;text-align:center');
-    const style = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
-    return sortKey
-      ? `<th class="table-th-sort" data-col="${k}" data-sort-key="${sortKey}"${style}>${_visTableSort.renderLabel(label, sortKey)}</th>`
-      : `<th data-col="${k}"${style}>${label}</th>`;
-  }).join('');
-  _visColResizeDone = false;
-}
-
-function _visRenderSharedTable(renderBody) {
-  _visTablePrefs.renderTable({
-    getTable: () => document.getElementById('vis-table'),
-    rebuildHead: _visRebuildThead,
-    renderBody,
-    minWidth: 40,
-    afterBind: tableEl => {
-      _visColResizeDone = true;
-      _visTableSort.bind(tableEl, _visHandleSortChange);
-      _visTableSort.syncIndicators(tableEl);
-    },
-  });
-}
-
 function _visOpenColsModal() {
-  const list = document.getElementById('vis-cols-modal-list');
-  TablePrefs.renderColumnChooser(list, _VIS_ALL_COLS, _visHiddenCols, k => _VIS_FIELD_META[k]?.label ?? k);
-  HubModal.open(document.getElementById('vis-cols-modal'));
+  const view = _ensureVisitsTableView();
+  if (!view) return;
+  view.openColumns(
+    document.getElementById('vis-cols-modal-list'),
+    document.getElementById('vis-cols-modal'),
+    k => _VIS_FIELD_META[k]?.label ?? k
+  );
 }
 
 function _visApplyColsModal() {
+  const view = _ensureVisitsTableView();
+  if (!view) return;
   const modal = document.getElementById('vis-cols-modal');
-  const newHidden = TablePrefs.readHiddenFromChooser(modal, new Set(_visHiddenCols));
-  _visTablePrefs.setHiddenSet(newHidden);
-  _visHiddenCols = _visTablePrefs.getHiddenSet(_VIS_ALL_COLS);
-  _visRebuildThead();
-  renderVisits({ keepPage: true }); // column toggle — stay on current page
-  HubModal.close(document.getElementById('vis-cols-modal'));
+  view.applyColumns(modal, () => {
+    renderVisits({ keepPage: true });
+    HubModal.close(modal);
+    _ensureVisitsLayoutController()?.scheduleLayoutSave();
+  });
 }
 
 async function loadVisits() {
@@ -769,7 +760,6 @@ async function loadVisits() {
     const r = await apiFetch('/api/v1/bookmarks/visits?limit=1000');
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     _bmVisits = await r.json();
-    _visRebuildThead();
     renderVisits();
   } catch (e) {
     err.textContent = `Failed to load visits: ${e.message}`;
@@ -781,6 +771,7 @@ function renderVisits(opts = {}) {
   if (!opts.keepPage) _VIS_PAGER.resetPage();
   const q = (document.getElementById('bm-visit-search')?.value || '').toLowerCase();
   const savedFilter = document.getElementById('bm-visit-saved-filter')?.value || 'all';
+  const view = _ensureVisitsTableView();
   let rows = _bmVisits;
   if (q) {
     rows = rows.filter(v =>
@@ -791,16 +782,16 @@ function renderVisits(opts = {}) {
   }
   if (savedFilter === 'saved') rows = rows.filter(v => v.bookmark_id);
   if (savedFilter === 'unsaved') rows = rows.filter(v => !v.bookmark_id);
-  rows = _visTableSort.sortRows(rows, _visSortValue);
+  rows = view?.sorter ? view.sorter.sortRows(rows, _visSortValue) : rows;
 
-  const visSortState = _visTableSort.getState();
+  const visSortState = _visGetSortState();
   const groupMode = visSortState.key === 'url' || visSortState.key === 'domain';
   const expandBtn = document.getElementById('vis-expand-all-btn');
   const collapseBtn = document.getElementById('vis-collapse-all-btn');
   if (expandBtn) expandBtn.hidden = !groupMode;
   if (collapseBtn) collapseBtn.hidden = !groupMode;
 
-  const cols = _visVisibleCols();
+  const cols = view?.getVisibleCols() || ['title'];
   const tbody = document.getElementById('bm-visits-tbody');
   const status = document.getElementById('vis-status');
 
@@ -817,14 +808,14 @@ function renderVisits(opts = {}) {
       status.hidden = false;
     }
     if (!pageRows.length) {
-      _visRenderSharedTable(() => {
+      view?.render(() => {
         tbody.innerHTML = `<tr class="empty-row"><td colspan="${cols.length}">No visit history.</td></tr>`;
       });
       _VIS_PAGER.render(total);
       return;
     }
     const expandColspan = cols.length;
-    _visRenderSharedTable(() => {
+    view?.render(() => {
       tbody.innerHTML = pageRows.map(v => {
         const expandId = `ve-${esc(v.visit_id)}`;
         const tds = cols.map(k => (_VIS_FIELD_META[k]?.render ?? (v => `<td>${esc(String(v[k] ?? ''))}</td>`))(v)).join('');
@@ -891,7 +882,7 @@ function renderVisits(opts = {}) {
   }
 
   if (!pageItems.length) {
-    _visRenderSharedTable(() => {
+    view?.render(() => {
       tbody.innerHTML = `<tr class="empty-row"><td colspan="${cols.length}">No visit history.</td></tr>`;
     });
     _VIS_PAGER.render(totalItems);
@@ -928,7 +919,7 @@ function renderVisits(opts = {}) {
       </tr>`;
     }
   }
-  _visRenderSharedTable(() => {
+  view?.render(() => {
     tbody.innerHTML = html;
   });
   _VIS_PAGER.render(totalItems);
@@ -1082,6 +1073,55 @@ function _bmToggleSetup() {
   switchTab('bookmarks-setup');
   if (typeof ProbesMenuConfig !== 'undefined') ProbesMenuConfig.updateActiveTab('bookmarks-setup');
   _bmPopulateExtUrls();
+}
+
+function _bmHandleResultsTableClick(e) {
+  const cell = e.target.closest('.bm-score-cell');
+  if (cell) {
+    _bmOpenScoreModal(cell);
+    return;
+  }
+
+  const editBtn = e.target.closest('[data-bm-edit-id]');
+  if (editBtn) {
+    openBookmarkModal(editBtn.dataset.bmEditId);
+    return;
+  }
+
+  const archiveBtn = e.target.closest('[data-bm-archive-id]');
+  if (archiveBtn) {
+    archiveBookmark(archiveBtn.dataset.bmArchiveId, archiveBtn.dataset.bmArchiveState === '1');
+    return;
+  }
+
+  const deleteBtn = e.target.closest('[data-bm-delete-id]');
+  if (deleteBtn) {
+    deleteBookmark(deleteBtn.dataset.bmDeleteId, deleteBtn.dataset.bmDeleteTitle || '');
+    return;
+  }
+
+  const bmActionsBtn = e.target.closest('[data-bm-row-actions]');
+  if (bmActionsBtn) {
+    _bmOpenBookmarkRowActions(bmActionsBtn.dataset.bmRowActions);
+    return;
+  }
+
+  const visSaveBtn = e.target.closest('[data-vis-save-url]');
+  if (visSaveBtn) {
+    promoteVisitToBookmark(visSaveBtn.dataset.visSaveUrl || '', visSaveBtn.dataset.visSaveTitle || '');
+    return;
+  }
+
+  const visExpandBtn = e.target.closest('[data-vis-expand-url]');
+  if (visExpandBtn) {
+    _bmToggleVisitEvents(visExpandBtn.dataset.visExpandUrl || '', visExpandBtn.dataset.visExpandId || '');
+    return;
+  }
+
+  const visActionsBtn = e.target.closest('[data-vis-row-actions]');
+  if (visActionsBtn) {
+    _visOpenRowActions(visActionsBtn.dataset.visRowActions);
+  }
 }
 
 let _bmReindexPollTimer = null;
@@ -1831,54 +1871,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('bm-cols-modal-apply')?.addEventListener('click', _bmApplyColsModal);
   document.getElementById('vis-cols-modal-apply')?.addEventListener('click', _visApplyColsModal);
 
-  document.getElementById('bm-tbody')?.addEventListener('click', e => {
-    const cell = e.target.closest('.bm-score-cell');
-    if (cell) {
-      _bmOpenScoreModal(cell);
-      return;
-    }
-
-    const editBtn = e.target.closest('[data-bm-edit-id]');
-    if (editBtn) {
-      openBookmarkModal(editBtn.dataset.bmEditId);
-      return;
-    }
-
-    const archiveBtn = e.target.closest('[data-bm-archive-id]');
-    if (archiveBtn) {
-      archiveBookmark(archiveBtn.dataset.bmArchiveId, archiveBtn.dataset.bmArchiveState === '1');
-      return;
-    }
-
-    const deleteBtn = e.target.closest('[data-bm-delete-id]');
-    if (deleteBtn) {
-      deleteBookmark(deleteBtn.dataset.bmDeleteId, deleteBtn.dataset.bmDeleteTitle || '');
-      return;
-    }
-
-    const bmActionsBtn = e.target.closest('[data-bm-row-actions]');
-    if (bmActionsBtn) {
-      _bmOpenBookmarkRowActions(bmActionsBtn.dataset.bmRowActions);
-      return;
-    }
-
-    const visSaveBtn = e.target.closest('[data-vis-save-url]');
-    if (visSaveBtn) {
-      promoteVisitToBookmark(visSaveBtn.dataset.visSaveUrl || '', visSaveBtn.dataset.visSaveTitle || '');
-      return;
-    }
-
-    const visExpandBtn = e.target.closest('[data-vis-expand-url]');
-    if (visExpandBtn) {
-      _bmToggleVisitEvents(visExpandBtn.dataset.visExpandUrl || '', visExpandBtn.dataset.visExpandId || '');
-      return;
-    }
-
-    const visActionsBtn = e.target.closest('[data-vis-row-actions]');
-    if (visActionsBtn) {
-      _visOpenRowActions(visActionsBtn.dataset.visRowActions);
-    }
-  });
+  document.getElementById('bm-tbody')?.addEventListener('click', _bmHandleResultsTableClick);
+  document.getElementById('bm-visits-tbody')?.addEventListener('click', _bmHandleResultsTableClick);
   document.getElementById('bm-score-modal-body')?.addEventListener('click', e => {
     const link = e.target.closest('.bm-score-drill');
     if (link) {
@@ -1904,9 +1898,8 @@ document.addEventListener('DOMContentLoaded', () => {
     ResponsiveLayout.registerTabControls('bookmarks-history', 'pg-ctrl-bookmarks-history');
   }
 
-  _visTablePrefs.onLayoutChange(() => {
-    _visHiddenCols = _visTablePrefs.getHiddenSet(_VIS_ALL_COLS);
-    _visRebuildThead();
+  _ensureVisitsTableView();
+  _visTableView?.onLayoutChange(() => {
     renderVisits({ keepPage: true });
   });
 });
