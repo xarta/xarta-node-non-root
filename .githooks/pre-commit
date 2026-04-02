@@ -27,4 +27,14 @@ else
   exit 1
 fi
 
+echo "[pre-commit] Running menu action order audit..."
+MENU_ORDER_AUDIT="/root/xarta-node/.xarta/.claude/skills/web-design/scripts/audit-menu-action-order.sh"
+if [[ -x "$MENU_ORDER_AUDIT" ]]; then
+  bash "$MENU_ORDER_AUDIT" "$REPO_ROOT/gui-fallback"
+else
+  echo "ERROR: menu action order audit not found at $MENU_ORDER_AUDIT" >&2
+  echo "Install/update private web-design skill before committing." >&2
+  exit 1
+fi
+
 echo "[pre-commit] OK"

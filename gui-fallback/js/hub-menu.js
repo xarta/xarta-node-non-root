@@ -347,6 +347,27 @@ function createHubMenu(cfg) {
             return label === '☰' ? '' : label;
         },
 
+        _menuActionOrderApi() {
+            if (typeof MenuActionOrder !== 'undefined') return MenuActionOrder;
+            if (typeof window !== 'undefined' && window.MenuActionOrder) return window.MenuActionOrder;
+            return null;
+        },
+
+        _sortFunctionItems(items) {
+            const api = this._menuActionOrderApi();
+            if (!api || typeof api.sortItems !== 'function') {
+                return (items || []).slice().sort((a, b) => a.order - b.order);
+            }
+            return api.sortItems(items || [], item => this._displayLabel(item));
+        },
+
+        getUnmappedFunctionItems() {
+            const api = this._menuActionOrderApi();
+            if (!api || typeof api.findUnmapped !== 'function') return [];
+            const fnItems = (this.currentMenu || []).filter(item => !!item.fn);
+            return api.findUnmapped(fnItems, item => this._displayLabel(item), cfg.storageKey || cfg.group || 'menu');
+        },
+
         // ── Data helpers ───────────────────────────────────────────
 
         getTopLevelItems() {
@@ -421,6 +442,7 @@ function createHubMenu(cfg) {
                 const visibleFnChildren = fnChildren.filter(c =>
                     !c.activeOn || (activeId && c.activeOn.includes(activeId))
                 );
+                const sortedFnChildren = this._sortFunctionItems(visibleFnChildren);
 
                 // Active group detection considers only tab-navigation children.
                 const allNavGroup  = [item, ...navChildren];
@@ -435,7 +457,7 @@ function createHubMenu(cfg) {
                     : [];
 
                 // Combine visible nav and fn items — fn items come after nav items.
-                const allDropdownItems = [...dropdownNavItems, ...visibleFnChildren];
+                const allDropdownItems = [...dropdownNavItems, ...sortedFnChildren];
 
                 const activeLabel = activeMember ? (activeMember.pageLabel || this._navLabel(activeMember)) : '';
                 const itemLabel = this._navLabel(item);
@@ -445,12 +467,12 @@ function createHubMenu(cfg) {
 
                 if (allDropdownItems.length > 0) {
                     // ── Split-button with dropdown ────────────────────────────
-                    const hasSeparator = dropdownNavItems.length > 0 && visibleFnChildren.length > 0;
+                    const hasSeparator = dropdownNavItems.length > 0 && sortedFnChildren.length > 0;
                     const navHtml  = dropdownNavItems.map(c =>
                         `<button class="hub-dropdown-item" data-tab="${c.id}">${this._iconHtml(c.id, c.icon)}\u00a0${this._displayLabel(c)}</button>`
                     ).join('');
                     const sepHtml  = hasSeparator ? '<hr class="hub-dropdown-separator">' : '';
-                    const fnHtml   = visibleFnChildren.map(c =>
+                    const fnHtml   = sortedFnChildren.map(c =>
                         `<button class="hub-dropdown-item hub-dropdown-fn" data-fn="${c.fn}" data-item-key="${c.id}">${this._iconHtml(c.id, c.icon)}\u00a0${this._displayLabel(c)}</button>`
                     ).join('');
 
