@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$REPO_ROOT"
+
+echo "[pre-commit] Running public leak check..."
+bash "$REPO_ROOT/check-for-leaks.sh"
+
+echo "[pre-commit] Running checkbox conformance check..."
+DETECTOR="/root/xarta-node/.xarta/.claude/skills/web-design/scripts/detect-legacy-checkboxes.sh"
+if [[ -x "$DETECTOR" ]]; then
+  bash "$DETECTOR" "$REPO_ROOT/gui-fallback"
+else
+  echo "ERROR: checkbox detector not found at $DETECTOR" >&2
+  echo "Install/update private web-design skill before committing." >&2
+  exit 1
+fi
+
+echo "[pre-commit] OK"

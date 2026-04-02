@@ -122,10 +122,10 @@
           <select id="bm-tag-filter">
             <option value="">All tags</option>
           </select>
-          <label class="hub-ctrl-toggle-label bm-toggle-label">
-            <input type="checkbox" id="bm-show-archived" />
-            <span class="bm-toggle-track"></span>
-            Archived
+          <label class="hub-checkbox" style="font-size:13px;white-space:nowrap;padding:0 6px;">
+            <input class="hub-checkbox__input" type="checkbox" id="bm-show-archived" />
+            <span class="hub-checkbox__box" aria-hidden="true"></span>
+            <span class="hub-checkbox__label">Archived</span>
           </label>
         </div>
 
@@ -137,11 +137,11 @@
               <input class="hub-ctrl" type="text" id="dns-search" data-clearable-input
                 placeholder="Filter DNS entries…"
                 data-fc-key="pfsense-dns.filter" />
-          <label class="hub-ctrl-toggle-label">
-            <input type="checkbox" id="dns-hide-inactive"
+          <label class="hub-checkbox" style="font-size:13px;white-space:nowrap;padding:0 6px;">
+            <input class="hub-checkbox__input" type="checkbox" id="dns-hide-inactive"
                    data-fc-key="pfsense-dns.hide-inactive" />
-            <span class="bm-toggle-track"></span>
-            Hide inactive
+            <span class="hub-checkbox__box" aria-hidden="true"></span>
+            <span class="hub-checkbox__label">Hide inactive</span>
           </label>
         </div>
 
@@ -161,10 +161,10 @@
             data-for-tab="dockge-stacks" hidden>
               <input class="hub-ctrl" type="text" id="dockge-search" data-clearable-input
                 placeholder="Filter stacks…" />
-          <label class="hub-ctrl-toggle-label">
-            <input type="checkbox" id="dockge-hide-obsolete" checked />
-            <span class="bm-toggle-track"></span>
-            Hide obsolete
+          <label class="hub-checkbox" style="font-size:13px;white-space:nowrap;padding:0 6px;">
+            <input class="hub-checkbox__input" type="checkbox" id="dockge-hide-obsolete" checked />
+            <span class="hub-checkbox__box" aria-hidden="true"></span>
+            <span class="hub-checkbox__label">Hide obsolete</span>
           </label>
         </div>
 

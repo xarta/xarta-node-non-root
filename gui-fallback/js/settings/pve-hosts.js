@@ -4,13 +4,21 @@ const _LS_PVE_HOSTS_TS = 'bp_pve_hosts_ts';
 const _PVE_HOSTS_TTL   = 3_600_000; // 1 hour
 
 const _PVE_HOST_COLS = ['ip_address', 'name', 'tailnet_ip', 'version', 'port', 'ssh', 'last_scanned', '_actions'];
+function _pveRenderBoolCheckboxCell(checked, label) {
+  const state = checked ? 'checked' : '';
+  return `<td style="text-align:center"><label class="hub-checkbox" style="justify-content:center;cursor:default;pointer-events:none;margin:0" aria-label="${esc(label)}">
+    <input class="hub-checkbox__input" type="checkbox" ${state} tabindex="-1" aria-hidden="true" />
+    <span class="hub-checkbox__box" aria-hidden="true"></span>
+  </label></td>`;
+}
+
 const _PVE_HOST_FIELD_META = {
   ip_address:   { label: 'IP', sortKey: 'ip_address', render: h => `<td><code>${esc(h.ip_address || '—')}</code></td>` },
   name:         { label: 'Name', sortKey: 'name', render: h => `<td>${esc(h.pve_name || h.hostname || h.pve_id || '—')}</td>` },
   tailnet_ip:   { label: 'Tailnet IP', sortKey: 'tailnet_ip', render: h => `<td><code>${esc(h.tailnet_ip || '—')}</code></td>` },
   version:      { label: 'Version', sortKey: 'version', render: h => `<td>${esc(h.version || '—')}</td>` },
   port:         { label: 'Port', sortKey: 'port', render: h => `<td>${h.port || 8006}</td>` },
-  ssh:          { label: 'SSH', sortKey: 'ssh', render: h => `<td>${h.ssh_reachable ? '✅' : '—'}</td>` },
+  ssh:          { label: 'SSH', sortKey: 'ssh', render: h => _pveRenderBoolCheckboxCell(Boolean(h.ssh_reachable), 'SSH reachable') },
   last_scanned: { label: 'Last Scanned', sortKey: 'last_scanned', render: h => `<td style="white-space:nowrap;color:var(--text-dim)">${esc(((h.last_scanned || '—').replace('T', ' ').slice(0, 19)))}</td>` },
   _actions:     { label: 'Actions', render: h => _pveRenderActionsCell(h) },
 };

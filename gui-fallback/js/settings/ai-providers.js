@@ -3,13 +3,21 @@
 const _AI_ACTION_INLINE_WIDTH = 90;
 const _AI_ACTION_COMPACT_WIDTH = 48;
 
+function _renderAiBoolCheckboxCell(enabled, label) {
+  const state = enabled ? 'checked' : '';
+  return `<td style="text-align:center"><label class="hub-checkbox" style="justify-content:center;cursor:default;pointer-events:none;margin:0" aria-label="${esc(label)}">
+    <input class="hub-checkbox__input" type="checkbox" ${state} tabindex="-1" aria-hidden="true" />
+    <span class="hub-checkbox__box" aria-hidden="true"></span>
+  </label></td>`;
+}
+
 const _AI_PROVIDER_COLS = ['model_type', 'name', 'model_name', 'dimensions', 'enabled', 'notes', '_actions'];
 const _AI_PROVIDER_FIELD_META = {
   model_type: { label: 'Type', sortKey: 'model_type', render: provider => `<td title="${esc(provider.model_type || '')}">${_typeIcon(provider.model_type)} ${esc(provider.model_type || 'unknown')}</td>` },
   name: { label: 'Name', sortKey: 'name', render: provider => `<td><strong>${esc(provider.name || '—')}</strong></td>` },
   model_name: { label: 'Model', sortKey: 'model_name', render: provider => `<td><code>${esc(provider.model_name || '—')}</code></td>` },
   dimensions: { label: 'Dims', sortKey: 'dimensions', render: provider => `<td style="text-align:right">${provider.dimensions ?? '—'}</td>` },
-  enabled: { label: 'Enabled', sortKey: 'enabled', render: provider => `<td style="text-align:center">${provider.enabled ? '&#9989;' : '&#10060;'}</td>` },
+  enabled: { label: 'Enabled', sortKey: 'enabled', render: provider => _renderAiBoolCheckboxCell(Boolean(provider.enabled), 'Provider enabled') },
   notes: { label: 'Notes', sortKey: 'notes', render: provider => `<td style="color:var(--text-dim);font-size:12px">${esc(provider.notes || '')}</td>` },
   _actions: { label: 'Actions', render: provider => _renderAiProviderActionsCell(provider) },
 };
@@ -20,7 +28,7 @@ const _AI_ASSIGNMENT_FIELD_META = {
   role: { label: 'Role', sortKey: 'role', render: assignment => `<td>${_typeIcon(assignment.role)} ${esc(assignment.role || '—')}</td>` },
   provider_id: { label: 'Provider', sortKey: 'provider', render: assignment => `<td>${_renderAiAssignmentProviderCell(assignment)}</td>` },
   priority: { label: 'Priority', sortKey: 'priority', render: assignment => `<td style="text-align:right">${assignment.priority ?? 0}</td>` },
-  enabled: { label: 'Enabled', sortKey: 'enabled', render: assignment => `<td style="text-align:center">${assignment.enabled ? '&#9989;' : '&#10060;'}</td>` },
+  enabled: { label: 'Enabled', sortKey: 'enabled', render: assignment => _renderAiBoolCheckboxCell(Boolean(assignment.enabled), 'Assignment enabled') },
   _actions: { label: 'Actions', render: assignment => _renderAiAssignmentActionsCell(assignment) },
 };
 

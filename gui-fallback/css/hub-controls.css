@@ -180,54 +180,6 @@ select.hub-ctrl option {
     color: var(--hub-text);
 }
 
-/* ── Toggle switch — hub-ctrl variant ───────────────────────── */
-/* Wraps <input type="checkbox"> + <span class="bm-toggle-track"> + label text.
-   Outer label gets .hub-ctrl-toggle-label to match the hub-ctrl box style. */
-
-.hub-ctrl-toggle-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--hub-bg);
-    border: 1px solid rgba(var(--hub-accent-rgb), 0.3);
-    border-radius: var(--hub-radius);
-    color: var(--hub-text);
-    font-family: inherit;
-    font-size: 0.9em;
-    padding: 10px 15px;
-    height: 43px;
-    box-sizing: border-box;
-    cursor: pointer;
-    user-select: none;
-    white-space: nowrap;
-    transition: border-color 0.2s ease, background 0.2s ease;
-}
-
-.hub-ctrl-toggle-label:hover {
-    border-color: rgba(var(--hub-accent-rgb), 0.5);
-}
-
-/* Hide the native checkbox — the .bm-toggle-track handles the visual */
-.hub-ctrl-toggle-label input[type="checkbox"] {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-}
-
-/* Checked state — slide the thumb and illuminate the track.
-   Uses .bm-toggle-track (defined in components.css) as the visual element.
-   NOTE: components.css only applies these rules to .bm-toggle-label — any
-   toggle using .hub-ctrl-toggle-label alone must have these rules here.
-   Colour: accent-tinted to match the hub-menu design language (var(--hub-accent)). */
-.hub-ctrl-toggle-label input[type="checkbox"]:checked + .bm-toggle-track {
-    background: rgba(var(--hub-accent-rgb), 0.45);
-}
-.hub-ctrl-toggle-label input[type="checkbox"]:checked + .bm-toggle-track::after {
-    left: 19px;
-    background: #fff;
-}
-
 /* ── Page-control group container ───────────────────────────── */
 
 /* Wraps a set of controls for a single page/tab.
