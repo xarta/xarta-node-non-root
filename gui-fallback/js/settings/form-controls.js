@@ -13,10 +13,20 @@
 
 'use strict';
 
+const _FC_COLS = ['icon', 'control_key', 'label', 'control_type', 'context', 'icon_asset', 'sound_on', 'sound_off', 'notes', '_actions'];
+const _FC_ACTION_INLINE_WIDTH = 90;
+const _FC_ACTION_COMPACT_WIDTH = 48;
+const _FC_ICON_ASSET_INLINE_WIDTH = 96;
+const _FC_SOUND_ASSET_INLINE_WIDTH = 122;
+
 let _fcItems = [];
 let _editingFcControlId = null;
 let _fcPickerAssets = [];
 let _fcDiscoveredKeys = [];
+let _FC_FIELD_META = null;
+let _fcTableView = null;
+let _fcLayoutController = null;
+let _fcOpenAssetMenu = null;
 
 const _FC_KEY_CACHE_KEY = 'blueprintsFormControlDiscoveredKeys';
 
@@ -169,204 +179,337 @@ async function loadFormControls() {
 
 // ── Table rendering ───────────────────────────────────────────────────────────
 
-function renderFormControls() {
-    const container = document.getElementById('fc-container');
-    if (!container) return;
-    container.innerHTML = '';
-
-    if (!_fcItems.length) {
-        const empty = document.createElement('p');
-        empty.style.cssText = 'font-size:13px;color:var(--text-dim);padding:12px 0;margin:0';
-        empty.textContent = 'No form controls registered yet. Use the Settings context menu to add the first key.';
-        container.appendChild(empty);
-        return;
-    }
-
-    const table = document.createElement('table');
-    table.className = 'data-table fc-table';
-    table.innerHTML = `
-        <thead>
-            <tr>
-                <th>Icon</th>
-                <th>Control Key</th>
-                <th>Label</th>
-                <th>Type</th>
-                <th>Context</th>
-                <th>Icon Asset</th>
-                <th>Sound (On / Off)</th>
-                <th>Notes</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody id="fc-tbody"></tbody>
-    `;
-    // Wrap in table-wrap to constrain horizontal overflow — prevents the wide
-    // table from spilling past the viewport width (which caused browser zoom on
-    // narrow/rotated mobile viewports).
-    const tableWrap = document.createElement('div');
-    tableWrap.className = 'table-wrap';
-    tableWrap.appendChild(table);
-    container.appendChild(tableWrap);
-
-    const tbody = table.querySelector('#fc-tbody');
-    const sorted = [..._fcItems].sort((a, b) =>
-        (a.label || a.control_key).localeCompare(b.label || b.control_key)
-    );
-    for (const item of sorted) {
-        tbody.appendChild(_fcRowEl(item));
-    }
-}
-
-// ── Icon resolution ───────────────────────────────────────────────────────────
-
-function _resolvedIconHtml(item) {
+function _fcIconHtml(item) {
     if (item.icon_asset) {
-        return `<img class="fc-icon-preview menu-icon"
-            src="${_esc(_fcAssetUrl(item.icon_asset, item.updated_at))}"
-            alt="" data-fallback="1">`;
+        return `<img class="fc-icon-preview menu-icon" src="${_esc(_fcAssetUrl(item.icon_asset, item.updated_at))}" alt="" data-icon-fallback="1">`;
     }
     return `<span class="fc-icon-placeholder" title="No icon assigned">—</span>`;
 }
 
-// ── Row builder ───────────────────────────────────────────────────────────────
+function _fcAssetCell(item, options) {
+    const path = item[options.field] || '';
+    const pathHtml = path
+        ? `<span class="fc-asset-name" title="${_esc(path)}">${_esc(path)}</span>`
+        : `<span class="fc-asset-none">—</span>`;
+    const shouldCollapse = _fcShouldCollapseAssetActions(options.columnKey, options.requiredWidth);
+    const menuKey = `${item.control_id}:${options.assetType}`;
+    const inlineActions = `${options.includeUpload ? `<button type="button" class="table-icon-btn table-icon-btn--sm table-icon-btn--upload" data-fc-upload="${_esc(options.assetType)}" data-control-id="${_esc(item.control_id)}" title="${_esc(options.uploadTitle)}" aria-label="${_esc(options.uploadTitle)}"></button>` : ''}${options.includeBrowse ? `<button type="button" class="table-icon-btn table-icon-btn--sm table-icon-btn--browse" data-fc-browse="${_esc(options.assetType)}" data-control-id="${_esc(item.control_id)}" title="${_esc(options.browseTitle)}" aria-label="${_esc(options.browseTitle)}"></button>` : ''}${options.includePlay && path ? `<button type="button" class="table-icon-btn table-icon-btn--sm table-icon-btn--play-toggle" data-fc-play="${_esc(path)}" data-updated="${_esc(item.updated_at || '')}" title="${_esc(options.playTitle)}" aria-label="${_esc(options.playTitle)}" aria-pressed="false">▶</button>` : ''}${options.includeClear && path ? `<button type="button" class="table-icon-btn table-icon-btn--sm table-icon-btn--clear-asset" data-fc-clear="${_esc(options.field)}" data-control-id="${_esc(item.control_id)}" title="${_esc(options.clearTitle)}" aria-label="${_esc(options.clearTitle)}"></button>` : ''}`;
+    const collapsedActions = `<span class="table-asset-menu-anchor"><button type="button" class="table-icon-btn table-icon-btn--sm table-icon-btn--scarab" title="${_esc(options.menuTitle)}" aria-label="${_esc(options.menuTitle)}" aria-expanded="${_fcOpenAssetMenu === menuKey ? 'true' : 'false'}" data-fc-asset-menu-trigger="${_esc(menuKey)}"></button>${_fcOpenAssetMenu === menuKey ? `<span class="table-asset-menu" data-fc-asset-menu="${_esc(menuKey)}">${inlineActions}</span>` : ''}</span>`;
+    return `<td class="${_esc(options.cellClass)}"><div class="fc-asset-cell">${pathHtml}<div class="fc-asset-btns"><input type="file" class="fc-file-input" style="display:none" data-control-id="${_esc(item.control_id)}" data-asset-type="${_esc(options.assetType)}" accept="${_esc(options.accept)}">${shouldCollapse ? collapsedActions : inlineActions}</div></div></td>`;
+}
 
-function _fcRowEl(item) {
-    const tr = document.createElement('tr');
-    tr.dataset.controlId = item.control_id;
+function _fcActionButtons(item) {
+    const controlId = _esc(item.control_id);
+    return `<button type="button" class="table-icon-btn table-icon-btn--edit" data-fc-edit="${controlId}" title="Edit form control" aria-label="Edit form control"></button><button type="button" class="table-icon-btn table-icon-btn--delete" data-fc-delete="${controlId}" title="Delete form control" aria-label="Delete form control"></button>`;
+}
 
-    const typeLabel = item.control_type || '';
+function _fcBuildFieldMeta() {
+    if (_FC_FIELD_META) return _FC_FIELD_META;
+    _FC_FIELD_META = {
+        icon: {
+            label: 'Icon',
+            render: item => `<td class="fc-col-icon">${_fcIconHtml(item)}</td>`,
+        },
+        control_key: {
+            label: 'Control Key',
+            sortKey: 'control_key',
+            render: item => `<td class="fc-col-key"><code>${_esc(item.control_key)}</code></td>`,
+        },
+        label: {
+            label: 'Label',
+            sortKey: 'label',
+            render: item => `<td class="fc-col-label">${_esc(item.label || '')}</td>`,
+        },
+        control_type: {
+            label: 'Type',
+            sortKey: 'control_type',
+            render: item => `<td class="fc-col-type">${_esc(item.control_type || '')}</td>`,
+        },
+        context: {
+            label: 'Context',
+            sortKey: 'context',
+            render: item => `<td class="fc-col-context">${_esc(item.context || '')}</td>`,
+        },
+        icon_asset: {
+            label: 'Icon Asset',
+            sortKey: 'icon_asset',
+            render: item => _fcAssetCell(item, {
+                columnKey: 'icon_asset',
+                field: 'icon_asset',
+                assetType: 'icons',
+                cellClass: 'fc-col-icon-asset',
+                accept: '.svg,.png,.ico,.jpg,.jpeg,.webp',
+                requiredWidth: _FC_ICON_ASSET_INLINE_WIDTH,
+                menuTitle: 'Icon asset actions',
+                uploadTitle: 'Upload icon',
+                browseTitle: 'Browse icons',
+                playTitle: '',
+                clearTitle: 'Clear icon',
+                includeUpload: true,
+                includeBrowse: true,
+                includePlay: false,
+                includeClear: true,
+            }),
+        },
+        sound_on: {
+            label: 'Sound On',
+            sortKey: 'sound_asset',
+            render: item => _fcAssetCell(item, {
+                columnKey: 'sound_on',
+                field: 'sound_asset',
+                assetType: 'sounds',
+                accept: '.wav,.mp3,.ogg,.flac,.webm,.m4a',
+                cellClass: 'fc-col-sound-on',
+                requiredWidth: _FC_SOUND_ASSET_INLINE_WIDTH,
+                menuTitle: 'Sound on actions',
+                uploadTitle: 'Upload on sound',
+                browseTitle: 'Browse on sounds',
+                playTitle: 'Preview on sound',
+                clearTitle: 'Clear on sound',
+                includeUpload: true,
+                includeBrowse: true,
+                includePlay: true,
+                includeClear: true,
+            }),
+        },
+        sound_off: {
+            label: 'Sound Off',
+            sortKey: 'sound_asset_off',
+            render: item => _fcAssetCell(item, {
+                columnKey: 'sound_off',
+                field: 'sound_asset_off',
+                assetType: 'sounds_off',
+                accept: '.wav,.mp3,.ogg,.flac,.webm,.m4a',
+                cellClass: 'fc-col-sound-off',
+                requiredWidth: _FC_SOUND_ASSET_INLINE_WIDTH,
+                menuTitle: 'Sound off actions',
+                uploadTitle: 'Upload off sound',
+                browseTitle: 'Browse off sounds',
+                playTitle: 'Preview off sound',
+                clearTitle: 'Clear off sound',
+                includeUpload: true,
+                includeBrowse: true,
+                includePlay: true,
+                includeClear: true,
+            }),
+        },
+        notes: {
+            label: 'Notes',
+            sortKey: 'notes',
+            render: item => `<td class="fc-col-notes"><span class="table-cell-clamp">${_esc(item.notes || '') || '—'}</span></td>`,
+        },
+        _actions: {
+            label: 'Actions',
+            render: item => {
+                if (_fcCompactRowActions()) {
+                    return `<td class="table-action-cell table-action-cell--compact" style="width:${_fcActionCellWidth()}px"><button class="table-row-action-trigger secondary" type="button" title="Form control actions" data-fc-actions="${_esc(item.control_id)}">&#8942;</button></td>`;
+                }
+                return `<td class="table-action-cell" style="white-space:nowrap"><div class="table-inline-actions">${_fcActionButtons(item)}</div></td>`;
+            },
+        },
+    };
+    return _FC_FIELD_META;
+}
 
-    tr.innerHTML = `
-        <td class="fc-col-icon">${_resolvedIconHtml(item)}</td>
-        <td class="fc-col-key"><code>${_esc(item.control_key)}</code></td>
-        <td class="fc-col-label"><span class="fc-field" data-field="label">${_esc(item.label)}</span></td>
-        <td class="fc-col-type"><span class="fc-field" data-field="control_type">${_esc(typeLabel)}</span></td>
-        <td class="fc-col-context"><span class="fc-field" data-field="context">${_esc(item.context || '')}</span></td>
-        <td class="fc-col-icon-asset">
-            <span class="fc-field fc-asset-path" data-field="icon_asset">${_esc(item.icon_asset || '')}</span>
-            <div class="fc-asset-actions">
-                <label class="btn-small secondary fc-upload-label" title="Upload new icon">
-                    ⬆ <input type="file" class="fc-file-input"
-                        data-control-id="${item.control_id}" data-asset-type="icons"
-                        accept=".svg,.png,.ico,.jpg,.jpeg,.webp" style="display:none">
-                </label>
-                <button class="btn-small secondary fc-browse-btn"
-                    data-control-id="${item.control_id}" data-asset-type="icons"
-                    title="Choose from existing icons">📋</button>
-                ${item.icon_asset
-                    ? `<button class="btn-small secondary fc-clear-asset"
-                           data-control-id="${item.control_id}" data-field="icon_asset"
-                           title="Clear icon">✕</button>`
-                    : ''}
-            </div>
-        </td>
-        <td class="fc-col-sound-asset">
-            <div class="fc-sound-slot">
-                <small style="color:var(--text-dim);font-size:10px">On:</small>
-                <span class="fc-field fc-asset-path" data-field="sound_asset">${_esc(item.sound_asset || '')}</span>
-                <div class="fc-asset-actions">
-                    <label class="btn-small secondary fc-upload-label" title="Upload on-sound">
-                        ⬆ <input type="file" class="fc-file-input"
-                            data-control-id="${item.control_id}" data-asset-type="sounds"
-                            accept=".wav,.mp3,.ogg,.flac,.webm,.m4a" style="display:none">
-                    </label>
-                    <button class="btn-small secondary fc-browse-btn"
-                        data-control-id="${item.control_id}" data-asset-type="sounds"
-                        title="Choose on-sound">📋</button>
-                    ${item.sound_asset
-                        ? `<button class="btn-small secondary fc-sound-play"
-                               data-sound-path="${_esc(item.sound_asset)}"
-                               data-updated="${_esc(item.updated_at || '')}"
-                               title="Preview on-sound">▶</button>`
-                        : ''}
-                    ${item.sound_asset
-                        ? `<button class="btn-small secondary fc-clear-asset"
-                               data-control-id="${item.control_id}" data-field="sound_asset"
-                               title="Clear on-sound">✕</button>`
-                        : ''}
-                </div>
-            </div>
-            <div class="fc-sound-slot" style="margin-top:4px">
-                <small style="color:var(--text-dim);font-size:10px">Off:</small>
-                <span class="fc-field fc-asset-path" data-field="sound_asset_off">${_esc(item.sound_asset_off || '')}</span>
-                <div class="fc-asset-actions">
-                    <label class="btn-small secondary fc-upload-label" title="Upload off-sound">
-                        ⬆ <input type="file" class="fc-file-input"
-                            data-control-id="${item.control_id}" data-asset-type="sounds_off"
-                            accept=".wav,.mp3,.ogg,.flac,.webm,.m4a" style="display:none">
-                    </label>
-                    <button class="btn-small secondary fc-browse-btn"
-                        data-control-id="${item.control_id}" data-asset-type="sounds_off"
-                        title="Choose off-sound">📋</button>
-                    ${item.sound_asset_off
-                        ? `<button class="btn-small secondary fc-sound-play"
-                               data-sound-path="${_esc(item.sound_asset_off)}"
-                               data-updated="${_esc(item.updated_at || '')}"
-                               title="Preview off-sound">▶</button>`
-                        : ''}
-                    ${item.sound_asset_off
-                        ? `<button class="btn-small secondary fc-clear-asset"
-                               data-control-id="${item.control_id}" data-field="sound_asset_off"
-                               title="Clear off-sound">✕</button>`
-                        : ''}
-                </div>
-            </div>
-        </td>
-        <td class="fc-col-notes"><span class="fc-field" data-field="notes">${_esc(item.notes || '')}</span></td>
-        <td class="fc-col-actions">
-            <button class="btn-small secondary fc-edit-btn"
-                data-control-id="${item.control_id}" title="Edit">✏️</button>
-            <button class="btn-small secondary fc-delete-btn"
-                data-control-id="${item.control_id}" title="Delete">🗑</button>
-        </td>
-    `;
+function _fcDefaultWidth(col) {
+    switch (col) {
+        case 'icon': return 44;
+        case 'control_key': return 150;
+        case 'label': return 140;
+        case 'control_type': return 100;
+        case 'context': return 130;
+        case 'icon_asset':
+        case 'sound_on':
+        case 'sound_off': return 200;
+        case 'notes': return 220;
+        case '_actions': return _fcActionCellWidth();
+        default: return null;
+    }
+}
 
-    // File upload inputs
-    tr.querySelectorAll('.fc-file-input').forEach(inp => {
-        inp.addEventListener('change', () => _fcUploadAsset(inp));
+function _fcColumnType(col) {
+    if (col === 'icon' || col === '_actions') return null;
+    return 'TEXT';
+}
+
+function _fcColumnSeed(col) {
+    return {
+        sqlite_column: col === 'sound_on' ? 'sound_asset' : (col === 'sound_off' ? 'sound_asset_off' : (col.startsWith('_') ? null : col)),
+        data_type: _fcColumnType(col),
+        sample_max_length: col === 'notes' ? 120 : (col === 'icon_asset' || col === 'sound_on' || col === 'sound_off' ? 60 : 32),
+        min_width_px: col === '_actions' ? _FC_ACTION_COMPACT_WIDTH : 40,
+        max_width_px: col === '_actions' ? _FC_ACTION_INLINE_WIDTH : (col === 'notes' ? 480 : 400),
+        width_px: _ensureFcTableView()?.prefs?.getWidth(col) || _fcDefaultWidth(col),
+    };
+}
+
+function _fcSortValue(item, sortKey) {
+    switch (sortKey) {
+        case 'control_key': return item.control_key || '';
+        case 'label': return item.label || '';
+        case 'control_type': return item.control_type || '';
+        case 'context': return item.context || '';
+        case 'icon_asset': return item.icon_asset || '';
+        case 'sound_asset': return item.sound_asset || '';
+        case 'sound_asset_off': return item.sound_asset_off || '';
+        case 'notes': return item.notes || '';
+        default: return '';
+    }
+}
+
+function _ensureFcTableView() {
+    if (_fcTableView || typeof TableView === 'undefined') return _fcTableView;
+    _fcBuildFieldMeta();
+    _fcTableView = TableView.create({
+        storageKey: 'form-controls-table-prefs',
+        columns: _FC_COLS,
+        meta: _FC_FIELD_META,
+        getTable: () => document.getElementById('fc-table'),
+        getDefaultWidth: col => _fcDefaultWidth(col),
+        minWidth: 40,
+        sort: { storageKey: 'form-controls-table-sort' },
+        onSortChange: () => { renderFormControls(); _ensureFcLayoutController()?.scheduleLayoutSave(); },
+        onColumnResizeEnd: () => _ensureFcLayoutController()?.scheduleLayoutSave(),
     });
+    return _fcTableView;
+}
 
-    // Browse existing assets
-    tr.querySelectorAll('.fc-browse-btn').forEach(btn => {
-        btn.addEventListener('click', () => _fcOpenPicker(btn.dataset.controlId, btn.dataset.assetType));
+function _ensureFcLayoutController() {
+    if (_fcLayoutController || typeof TableBucketLayouts === 'undefined') return _fcLayoutController;
+    _fcBuildFieldMeta();
+    _fcLayoutController = TableBucketLayouts.create({
+        getTable: () => document.getElementById('fc-table'),
+        getView: () => _ensureFcTableView(),
+        getColumns: () => _FC_COLS,
+        getMeta: col => (_FC_FIELD_META || _fcBuildFieldMeta())[col],
+        getDefaultWidth: col => _fcDefaultWidth(col),
+        getColumnSeed: col => _fcColumnSeed(col),
+        render: () => renderFormControls(),
+        surfaceLabel: 'Form Controls',
+        layoutContextTitle: 'Form Controls Layout Context',
     });
+    return _fcLayoutController;
+}
 
-    // Sound preview
-    tr.querySelectorAll('.fc-sound-play').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const path = btn.dataset.soundPath;
-            if (path && typeof SoundManager !== 'undefined') {
-                SoundManager.previewToggle(_fcAssetUrl(path, btn.dataset.updated), { button: btn });
-            }
+function _fcCompactRowActions() {
+    const view = _ensureFcTableView();
+    return !!(view && typeof TableRowActions !== 'undefined' && TableRowActions.shouldCollapse({
+        view,
+        getTable: () => document.getElementById('fc-table'),
+        columnKey: '_actions',
+        requiredWidth: _FC_ACTION_INLINE_WIDTH,
+        defaultWidth: _FC_ACTION_INLINE_WIDTH,
+    }));
+}
+
+function _fcActionCellWidth() {
+    return _fcCompactRowActions() ? _FC_ACTION_COMPACT_WIDTH : _FC_ACTION_INLINE_WIDTH;
+}
+
+function _fcShouldCollapseAssetActions(columnKey, requiredWidth) {
+    const view = _ensureFcTableView();
+    return !!(view && typeof TableRowActions !== 'undefined' && TableRowActions.shouldCollapse({
+        view,
+        getTable: () => document.getElementById('fc-table'),
+        columnKey,
+        requiredWidth,
+        defaultWidth: _fcDefaultWidth(columnKey),
+    }));
+}
+
+function _fcToggleAssetMenu(menuKey) {
+    _fcOpenAssetMenu = _fcOpenAssetMenu === menuKey ? null : menuKey;
+    renderFormControls();
+}
+
+function _fcCloseAssetMenu() {
+    if (!_fcOpenAssetMenu) return;
+    _fcOpenAssetMenu = null;
+    renderFormControls();
+}
+
+function _openFcRowActions(controlId) {
+    if (typeof TableRowActions === 'undefined') return;
+    const item = _fcItems.find(entry => String(entry.control_id) === String(controlId));
+    if (!item) return;
+    TableRowActions.open({
+        title: item.label || item.control_key || 'Form control actions',
+        subtitle: item.context || item.control_type || 'Form Controls',
+        actions: [
+            {
+                label: 'Edit form control',
+                detail: 'Open the form control editor',
+                onClick: () => _fcOpenEditModal(item.control_id),
+            },
+            {
+                label: 'Delete form control',
+                detail: 'Remove this form control mapping',
+                tone: 'danger',
+                onClick: () => _fcOpenDeleteModal(item.control_id),
+            },
+        ],
+    });
+}
+
+function _openFcColsModal() {
+    const view = _ensureFcTableView();
+    if (!view) return;
+    view.openColumns(
+        document.getElementById('fc-cols-modal-list'),
+        document.getElementById('fc-cols-modal')
+    );
+}
+
+function _applyFcColsModal() {
+    const view = _ensureFcTableView();
+    if (!view) return;
+    const modal = document.getElementById('fc-cols-modal');
+    view.applyColumns(modal, () => {
+        renderFormControls();
+        HubModal.close(modal);
+        _ensureFcLayoutController()?.scheduleLayoutSave();
+    });
+}
+
+async function openFcLayoutContextModal() {
+    const controller = _ensureFcLayoutController();
+    if (!controller) return;
+    await controller.openLayoutContextModal();
+}
+
+function toggleFcHorizontalScroll() {
+    const controller = _ensureFcLayoutController();
+    if (!controller) return;
+    controller.toggleHorizontalScroll();
+}
+
+function renderFormControls() {
+    const tbody = document.getElementById('fc-tbody');
+    const view = _ensureFcTableView();
+    if (!tbody || !view) return;
+
+    const visibleCols = view.getVisibleCols() || _FC_COLS;
+    const meta = _FC_FIELD_META || _fcBuildFieldMeta();
+    if (!_fcItems.length) {
+        view.render(() => {
+            tbody.innerHTML = `<tr class="empty-row"><td colspan="${Math.max(1, visibleCols.length)}">No form controls registered yet. Use the Settings context menu to add the first key.</td></tr>`;
+        });
+        return;
+    }
+
+    const baseRows = [..._fcItems].sort((a, b) => (a.label || a.control_key || '').localeCompare(b.label || b.control_key || ''));
+    const rows = view.sorter ? view.sorter.sortRows(baseRows, _fcSortValue) : baseRows;
+    view.render(() => {
+        tbody.innerHTML = rows.map(item => `<tr data-control-id="${_esc(item.control_id)}">${visibleCols.map(col => meta[col].render(item)).join('')}</tr>`).join('');
+        tbody.querySelectorAll('img[data-icon-fallback]').forEach(img => {
+            img.addEventListener('error', function() {
+                if (!this.dataset.usedFallback) {
+                    this.dataset.usedFallback = '1';
+                    this.src = '/fallback-ui/assets/icons/fallback.svg';
+                }
+            });
         });
     });
-
-    // Clear asset buttons
-    tr.querySelectorAll('.fc-clear-asset').forEach(btn => {
-        btn.addEventListener('click', () => _fcClearAsset(btn.dataset.controlId, btn.dataset.field));
-    });
-
-    // Edit button
-    tr.querySelectorAll('.fc-edit-btn').forEach(btn => {
-        btn.addEventListener('click', () => _fcOpenEditModal(btn.dataset.controlId));
-    });
-
-    // Delete button
-    tr.querySelectorAll('.fc-delete-btn').forEach(btn => {
-        btn.addEventListener('click', () => _fcOpenDeleteModal(btn.dataset.controlId));
-    });
-
-    // Icon img error fallback
-    tr.querySelectorAll('.fc-icon-preview').forEach(img => {
-        img.addEventListener('error', function () {
-            if (!this.dataset.usedFallback) {
-                this.dataset.usedFallback = '1';
-                this.src = '/fallback-ui/assets/icons/fallback.svg';
-            }
-        });
-    });
-
-    return tr;
 }
 
 // ── Add new control ───────────────────────────────────────────────────────────
@@ -667,7 +810,11 @@ function _fmtBytes(b) {
     return `${(b / 1048576).toFixed(1)} MB`;
 }
 
-(function initFormControlModalActions() {
+document.addEventListener('DOMContentLoaded', () => {
+    _fcBuildFieldMeta();
+    _ensureFcTableView();
+    _ensureFcLayoutController()?.init();
+
     const editModal = _fcEditModalEls();
     if (editModal.saveBtn && !editModal.saveBtn.dataset.fcWired) {
         editModal.saveBtn.dataset.fcWired = '1';
@@ -681,4 +828,62 @@ function _fmtBytes(b) {
         editModal.keyRefreshBtn.dataset.fcKeysWired = '1';
         editModal.keyRefreshBtn.addEventListener('click', () => { void _fcLoadDiscoveredKeys(true); });
     }
-})();
+
+    const colsApplyBtn = document.getElementById('fc-cols-modal-apply');
+    if (colsApplyBtn) colsApplyBtn.addEventListener('click', _applyFcColsModal);
+
+    const tbody = document.getElementById('fc-tbody');
+    if (tbody) {
+        tbody.addEventListener('click', e => {
+            const assetMenuTrigger = e.target.closest('[data-fc-asset-menu-trigger]');
+            if (assetMenuTrigger) {
+                e.stopPropagation();
+                _fcToggleAssetMenu(assetMenuTrigger.dataset.fcAssetMenuTrigger);
+                return;
+            }
+            const actionsBtn = e.target.closest('[data-fc-actions]');
+            if (actionsBtn) {
+                _openFcRowActions(actionsBtn.dataset.fcActions);
+                return;
+            }
+            const uploadBtn = e.target.closest('[data-fc-upload]');
+            if (uploadBtn) {
+                const tr = uploadBtn.closest('tr');
+                const inp = tr?.querySelector(`.fc-file-input[data-asset-type="${uploadBtn.dataset.fcUpload}"]`);
+                if (inp) inp.click();
+                return;
+            }
+            const browseBtn = e.target.closest('[data-fc-browse]');
+            if (browseBtn) {
+                _fcOpenPicker(browseBtn.dataset.controlId, browseBtn.dataset.fcBrowse);
+                return;
+            }
+            const playBtn = e.target.closest('[data-fc-play]');
+            if (playBtn && typeof SoundManager !== 'undefined') {
+                SoundManager.previewToggle(_fcAssetUrl(playBtn.dataset.fcPlay, playBtn.dataset.updated), { button: playBtn });
+                return;
+            }
+            const clearBtn = e.target.closest('[data-fc-clear]');
+            if (clearBtn) {
+                _fcClearAsset(clearBtn.dataset.controlId, clearBtn.dataset.fcClear);
+                return;
+            }
+            const editBtn = e.target.closest('[data-fc-edit]');
+            if (editBtn) {
+                _fcOpenEditModal(editBtn.dataset.fcEdit);
+                return;
+            }
+            const deleteBtn = e.target.closest('[data-fc-delete]');
+            if (deleteBtn) {
+                _fcOpenDeleteModal(deleteBtn.dataset.fcDelete);
+            }
+        });
+        tbody.addEventListener('change', e => {
+            const inp = e.target.closest('.fc-file-input');
+            if (inp) _fcUploadAsset(inp);
+        });
+    }
+    document.addEventListener('click', e => {
+        if (!e.target.closest('.table-asset-menu-anchor')) _fcCloseAssetMenu();
+    });
+});

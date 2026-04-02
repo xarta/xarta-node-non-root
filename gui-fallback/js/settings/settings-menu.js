@@ -118,10 +118,16 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'cert-fn-context', label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'cert.context', activeOn: ['certs'],        parent: 'settings-layout', order: 3 },
 
         // ── Nav Items page function items ──────────────────────────────────
-        { id: 'ni-fn-refresh',   label: 'Refresh',           icon: HIEROGLYPHS.nefer,     fn: 'ni.refresh',   activeOn: ['nav-items'],    parent: 'settings-layout', order: 0 },
+        { id: 'ni-fn-refresh',   label: 'Refresh',           icon: HIEROGLYPHS.nefer,      fn: 'ni.refresh',   activeOn: ['nav-items'], parent: 'settings-layout', order: 0 },
+        { id: 'ni-fn-cols',      label: 'Columns',           icon: HIEROGLYPHS.khaHorizon, fn: 'ni.columns',   activeOn: ['nav-items'], parent: 'settings-layout', order: 1 },
+        { id: 'ni-fn-scroll',    label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'ni.scroll', activeOn: ['nav-items'], parent: 'settings-layout', order: 2 },
+        { id: 'ni-fn-context',   label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'ni.context',   activeOn: ['nav-items'], parent: 'settings-layout', order: 3 },
         // ── Form Controls page function items ────────────────────────────────
-        { id: 'fc-fn-refresh',   label: 'Refresh',           icon: HIEROGLYPHS.nefer,               fn: 'fc.refresh', activeOn: ['form-controls'], parent: 'settings-layout', order: 0 },
-        { id: 'fc-fn-add',       label: 'Add Key',           icon: 'icons/ui/plus-blue.svg',        fn: 'fc.add',     activeOn: ['form-controls'], parent: 'settings-layout', order: 1 },
+        { id: 'fc-fn-refresh',   label: 'Refresh',           icon: HIEROGLYPHS.nefer,      fn: 'fc.refresh',   activeOn: ['form-controls'], parent: 'settings-layout', order: 0 },
+        { id: 'fc-fn-add',       label: 'Add Key',           icon: 'icons/ui/plus-blue.svg', fn: 'fc.add',     activeOn: ['form-controls'], parent: 'settings-layout', order: 1 },
+        { id: 'fc-fn-cols',      label: 'Columns',           icon: HIEROGLYPHS.khaHorizon, fn: 'fc.columns',   activeOn: ['form-controls'], parent: 'settings-layout', order: 2 },
+        { id: 'fc-fn-scroll',    label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'fc.scroll', activeOn: ['form-controls'], parent: 'settings-layout', order: 3 },
+        { id: 'fc-fn-context',   label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'fc.context',   activeOn: ['form-controls'], parent: 'settings-layout', order: 4 },
     ],
 });
 
@@ -488,10 +494,16 @@ SettingsMenuConfig.registerFunctions({
 
     // Nav Items
     'ni.refresh':   () => loadNavItems(),
+    'ni.columns':   () => _openNiColsModal(),
+    'ni.scroll':    () => toggleNiHorizontalScroll(),
+    'ni.context':   () => openNiLayoutContextModal(),
 
     // Form Controls
     'fc.refresh':   () => loadFormControls(),
     'fc.add':       () => _fcAddNew(),
+    'fc.columns':   () => _openFcColsModal(),
+    'fc.scroll':    () => toggleFcHorizontalScroll(),
+    'fc.context':   () => openFcLayoutContextModal(),
 });
 
 SettingsMenuConfig.registerLabelGetters({
@@ -503,4 +515,6 @@ SettingsMenuConfig.registerLabelGetters({
     'ai-fn-assignscroll':  () => _settingsHorizontalScrollLabel('Assignment Scroll', () => _ensureAiAssignmentsLayoutController()),
     'key-fn-scroll':       () => _settingsHorizontalScrollLabel('Horiz Scroll', () => _ensureKeysLayoutController()),
     'cert-fn-scroll':      () => _settingsHorizontalScrollLabel('Horiz Scroll', () => _ensureCertsLayoutController()),
+    'ni-fn-scroll':        () => _settingsHorizontalScrollLabel('Horiz Scroll', () => _ensureNiLayoutController()),
+    'fc-fn-scroll':        () => _settingsHorizontalScrollLabel('Horiz Scroll', () => _ensureFcLayoutController()),
 });

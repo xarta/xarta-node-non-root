@@ -11,8 +11,23 @@
 
 'use strict';
 
+// ── Column definitions ─────────────────────────────────────────────────────────
+
+const _NI_COLS = ['icon', 'item_key', 'label', 'page_label', 'icon_emoji', 'icon_asset', 'sound_asset', 'sort_order', 'fn_key', '_actions'];
+const _NI_ACTION_INLINE_WIDTH = 44;
+const _NI_ICON_ASSET_INLINE_WIDTH = 96;
+const _NI_SOUND_ASSET_INLINE_WIDTH = 122;
+
+// _NI_FIELD_META is populated below after _niIconHtml is defined.
+let _NI_FIELD_META = null;
+
+// ── TableView / BucketLayouts instances ────────────────────────────────────────
+
 let _navItems = [];
 let _editingNavItemId = null;
+let _niTableView = null;
+let _niLayoutController = null;
+let _niOpenAssetMenu = null;
 
 function _niAssetUrl(path, updatedAt) {
     if (!path) return '';
@@ -81,70 +96,304 @@ async function loadNavItems() {
 
 // ── Table rendering ───────────────────────────────────────────────────────────
 
-function renderNavItems() {
-    const bulkArea  = document.getElementById('nav-items-bulk-area');
-    const container = document.getElementById('nav-items-container');
-    if (!container) return;
+// ── Icon helper ────────────────────────────────────────────────────────────────
 
-    // Bulk upload panel lives ABOVE the drag handle (hidden when shade drags up)
-    if (bulkArea) {
-        bulkArea.innerHTML = '';
+function _niIconHtml(item) {
+    if (item.icon_asset) {
+        return `<img class="ni-icon-preview menu-icon" src="${_esc(_niAssetUrl(item.icon_asset, item.updated_at))}" alt="" data-icon-fallback="1">`;
+    }
+    if (item.icon_emoji) {
+        return `<span class="ni-icon-emoji">${_esc(item.icon_emoji)}</span>`;
+    }
+    return `<img class="ni-icon-preview menu-icon" src="/fallback-ui/assets/icons/fallback.svg" alt="?" data-icon-fallback="1">`;
+}
+
+function _niAssetActionCell(item, options) {
+    const path = item[options.pathField] || '';
+    const pathHtml = path
+        ? `<span class="ni-asset-name" title="${_esc(path)}">${_esc(path)}</span>`
+        : `<span class="ni-asset-none">—</span>`;
+    const shouldCollapse = _niShouldCollapseAssetActions(options.columnKey, options.requiredWidth);
+    const menuKey = `${item.item_id}:${options.assetType}`;
+    const inlineActions = `${options.includeUpload ? `<button type="button" class="table-icon-btn table-icon-btn--sm table-icon-btn--upload" data-ni-upload="${_esc(options.assetType)}" data-item-id="${_esc(item.item_id)}" title="${_esc(options.uploadTitle)}" aria-label="${_esc(options.uploadTitle)}"></button>` : ''}${options.includeBrowse ? `<button type="button" class="table-icon-btn table-icon-btn--sm table-icon-btn--browse" data-ni-browse="${_esc(options.assetType)}" data-item-id="${_esc(item.item_id)}" title="${_esc(options.browseTitle)}" aria-label="${_esc(options.browseTitle)}"></button>` : ''}${options.includePlay && path ? `<button type="button" class="table-icon-btn table-icon-btn--sm table-icon-btn--play-toggle" data-ni-play="${_esc(path)}" data-updated="${_esc(item.updated_at || '')}" title="${_esc(options.playTitle)}" aria-label="${_esc(options.playTitle)}" aria-pressed="false">▶</button>` : ''}${options.includeClear && path ? `<button type="button" class="table-icon-btn table-icon-btn--sm table-icon-btn--clear-asset" data-ni-clear="${_esc(options.pathField)}" data-item-id="${_esc(item.item_id)}" title="${_esc(options.clearTitle)}" aria-label="${_esc(options.clearTitle)}"></button>` : ''}`;
+    const collapsedActions = `<span class="table-asset-menu-anchor"><button type="button" class="table-icon-btn table-icon-btn--sm table-icon-btn--scarab" title="${_esc(options.menuTitle)}" aria-label="${_esc(options.menuTitle)}" aria-expanded="${_niOpenAssetMenu === menuKey ? 'true' : 'false'}" data-ni-asset-menu-trigger="${_esc(menuKey)}"></button>${_niOpenAssetMenu === menuKey ? `<span class="table-asset-menu" data-ni-asset-menu="${_esc(menuKey)}">${inlineActions}</span>` : ''}</span>`;
+    return `<td class="${_esc(options.cellClass)}"><div class="ni-asset-cell">${pathHtml}<div class="ni-asset-btns"><input type="file" class="ni-file-input" style="display:none" data-item-id="${_esc(item.item_id)}" data-asset-type="${_esc(options.assetType)}" accept="${_esc(options.accept)}">${shouldCollapse ? collapsedActions : inlineActions}</div></div></td>`;
+}
+
+// ── Build field meta (called once after _niIconHtml is available) ──────────────
+
+function _niBuildFieldMeta() {
+    if (_NI_FIELD_META) return _NI_FIELD_META;
+    _NI_FIELD_META = {
+        icon: {
+            label: 'Icon',
+            render: item => `<td class="ni-col-icon">${_niIconHtml(item)}</td>`,
+        },
+        item_key: {
+            label: 'Key',
+            sortKey: 'item_key',
+            render: item => `<td class="ni-col-key"><code>${_esc(item.item_key)}</code>${item.is_fn ? ' <span class="ni-fn-badge">fn</span>' : ''}</td>`,
+        },
+        label: {
+            label: 'Label',
+            sortKey: 'label',
+            render: item => `<td class="ni-col-label">${_esc(item.label)}</td>`,
+        },
+        page_label: {
+            label: 'Page Label',
+            sortKey: 'page_label',
+            render: item => `<td class="ni-col-page-label">${_esc(item.page_label || '')}</td>`,
+        },
+        icon_emoji: {
+            label: 'Emoji',
+            sortKey: 'icon_emoji',
+            render: item => `<td class="ni-col-emoji">${_esc(item.icon_emoji || '')}</td>`,
+        },
+        icon_asset: {
+            label: 'Icon Asset',
+            render: item => _niAssetActionCell(item, {
+                columnKey: 'icon_asset',
+                pathField: 'icon_asset',
+                assetType: 'icons',
+                cellClass: 'ni-col-icon-asset',
+                accept: '.svg,.png,.ico,.jpg,.jpeg,.webp',
+                requiredWidth: _NI_ICON_ASSET_INLINE_WIDTH,
+                menuTitle: 'Icon asset actions',
+                uploadTitle: 'Upload icon',
+                browseTitle: 'Browse icons',
+                clearTitle: 'Clear icon',
+                playTitle: '',
+                includeUpload: true,
+                includeBrowse: true,
+                includePlay: false,
+                includeClear: true,
+            }),
+        },
+        sound_asset: {
+            label: 'Sound Asset',
+            render: item => _niAssetActionCell(item, {
+                columnKey: 'sound_asset',
+                pathField: 'sound_asset',
+                assetType: 'sounds',
+                cellClass: 'ni-col-sound-asset',
+                accept: '.wav,.mp3,.ogg,.flac,.webm,.m4a',
+                requiredWidth: _NI_SOUND_ASSET_INLINE_WIDTH,
+                menuTitle: 'Sound asset actions',
+                uploadTitle: 'Upload sound',
+                browseTitle: 'Browse sounds',
+                clearTitle: 'Clear sound',
+                playTitle: 'Preview sound',
+                includeUpload: true,
+                includeBrowse: true,
+                includePlay: true,
+                includeClear: true,
+            }),
+        },
+        sort_order: {
+            label: 'Order',
+            sortKey: 'sort_order',
+            render: item => `<td class="ni-col-order">${item.sort_order}</td>`,
+        },
+        fn_key: {
+            label: 'Type',
+            sortKey: 'fn_key',
+            render: item => `<td class="ni-col-type">${item.fn_key ? `<small>${_esc(item.fn_key)}</small>` : 'nav'}</td>`,
+        },
+        _actions: {
+            label: 'Actions',
+            render: item => `<td class="table-action-cell"><div class="table-inline-actions"><button type="button" class="table-icon-btn table-icon-btn--edit" data-ni-edit="${_esc(item.item_id)}" title="Edit nav item" aria-label="Edit nav item"></button></div></td>`,
+        },
+    };
+    return _NI_FIELD_META;
+}
+
+// ── Column/sort helpers ────────────────────────────────────────────────────────
+
+function _niDefaultWidth(col) {
+    switch (col) {
+        case 'icon':       return 44;
+        case 'item_key':   return 120;
+        case 'label':      return 120;
+        case 'icon_asset': return 200;
+        case 'sound_asset': return 200;
+        case '_actions':   return _NI_ACTION_INLINE_WIDTH;
+        default:           return null;
+    }
+}
+
+function _niColumnType(col) {
+    if (col === '_actions' || col === 'icon') return null;
+    return 'TEXT';
+}
+
+function _niColumnSeed(col) {
+    return {
+        sqlite_column: col.startsWith('_') ? null : col,
+        data_type: _niColumnType(col),
+        sample_max_length: col === 'icon_asset' || col === 'sound_asset' ? 60 : 32,
+        min_width_px: col === '_actions' ? _NI_ACTION_INLINE_WIDTH : 40,
+        max_width_px: col === 'icon_asset' || col === 'sound_asset' ? 400 : (col === '_actions' ? _NI_ACTION_INLINE_WIDTH : 900),
+        width_px: _ensureNiTableView()?.prefs?.getWidth(col) || _niDefaultWidth(col),
+    };
+}
+
+function _niShouldCollapseAssetActions(columnKey, requiredWidth) {
+    const view = _ensureNiTableView();
+    return !!(view && typeof TableRowActions !== 'undefined' && TableRowActions.shouldCollapse({
+        view,
+        getTable: () => document.getElementById('ni-table'),
+        columnKey,
+        requiredWidth,
+        defaultWidth: _niDefaultWidth(columnKey),
+    }));
+}
+
+function _niToggleAssetMenu(menuKey) {
+    _niOpenAssetMenu = _niOpenAssetMenu === menuKey ? null : menuKey;
+    renderNavItems();
+}
+
+function _niCloseAssetMenu() {
+    if (!_niOpenAssetMenu) return;
+    _niOpenAssetMenu = null;
+    renderNavItems();
+}
+
+function _niSortValue(item, sortKey) {
+    switch (sortKey) {
+        case 'item_key':   return item.item_key || '';
+        case 'label':      return item.label || '';
+        case 'page_label': return item.page_label || '';
+        case 'icon_emoji': return item.icon_emoji || '';
+        case 'sort_order': return item.sort_order ?? 0;
+        case 'fn_key':     return item.fn_key || '';
+        default:           return '';
+    }
+}
+
+// ── TableView + BucketLayouts factories ────────────────────────────────────────
+
+function _ensureNiTableView() {
+    if (_niTableView || typeof TableView === 'undefined') return _niTableView;
+    _niBuildFieldMeta();
+    _niTableView = TableView.create({
+        storageKey: 'nav-items-table-prefs',
+        columns: _NI_COLS,
+        meta: _NI_FIELD_META,
+        getTable: () => document.getElementById('ni-table'),
+        getDefaultWidth: col => _niDefaultWidth(col),
+        minWidth: 40,
+        sort: { storageKey: 'nav-items-table-sort' },
+        onSortChange: () => { renderNavItems(); _ensureNiLayoutController()?.scheduleLayoutSave(); },
+        onColumnResizeEnd: () => _ensureNiLayoutController()?.scheduleLayoutSave(),
+    });
+    return _niTableView;
+}
+
+function _ensureNiLayoutController() {
+    if (_niLayoutController || typeof TableBucketLayouts === 'undefined') return _niLayoutController;
+    _niBuildFieldMeta();
+    _niLayoutController = TableBucketLayouts.create({
+        getTable: () => document.getElementById('ni-table'),
+        getView: () => _ensureNiTableView(),
+        getColumns: () => _NI_COLS,
+        getMeta: col => (_NI_FIELD_META || _niBuildFieldMeta())[col],
+        getDefaultWidth: col => _niDefaultWidth(col),
+        getColumnSeed: col => _niColumnSeed(col),
+        render: () => renderNavItems(),
+        surfaceLabel: 'Nav Items',
+        layoutContextTitle: 'Nav Items Layout Context',
+    });
+    return _niLayoutController;
+}
+
+// ── Column chooser + layout context ───────────────────────────────────────────
+
+function _openNiColsModal() {
+    const view = _ensureNiTableView();
+    if (!view) return;
+    view.openColumns(
+        document.getElementById('ni-cols-modal-list'),
+        document.getElementById('ni-cols-modal')
+    );
+}
+
+function _applyNiColsModal() {
+    const view = _ensureNiTableView();
+    if (!view) return;
+    const modal = document.getElementById('ni-cols-modal');
+    view.applyColumns(modal, () => {
+        renderNavItems();
+        HubModal.close(modal);
+        _ensureNiLayoutController()?.scheduleLayoutSave();
+    });
+}
+
+async function openNiLayoutContextModal() {
+    const controller = _ensureNiLayoutController();
+    if (!controller) return;
+    await controller.openLayoutContextModal();
+}
+
+function toggleNiHorizontalScroll() {
+    const controller = _ensureNiLayoutController();
+    if (!controller) return;
+    controller.toggleHorizontalScroll();
+}
+
+// ── Table rendering ────────────────────────────────────────────────────────────
+
+function renderNavItems() {
+    const bulkArea = document.getElementById('nav-items-bulk-area');
+    if (bulkArea && !bulkArea.firstChild) {
         bulkArea.appendChild(_niBulkUploadPanelEl());
     }
 
-    // Group tables live BELOW the drag handle (remain visible when shade drags up)
-    container.innerHTML = '';
+    const meta = _NI_FIELD_META || _niBuildFieldMeta();
+    const view = _ensureNiTableView();
+    const visibleCols = view ? view.getVisibleCols() : _NI_COLS;
 
-    const groups = ['probes', 'synthesis', 'settings'];
-    for (const group of groups) {
-        const groupItems = _navItems
-            .filter(i => i.menu_group === group)
-            .sort((a, b) => a.sort_order - b.sort_order || a.item_key.localeCompare(b.item_key));
+    view?.render(() => {
+        const tbody = document.getElementById('ni-tbody');
+        if (!tbody) return;
 
-        const section = document.createElement('div');
-        section.className = 'ni-group-section';
+        const groups = ['probes', 'synthesis', 'settings'];
+        let html = '';
+        let hasAny = false;
 
-        const h = document.createElement('h3');
-        h.className = 'ni-group-header';
-        h.textContent = group.charAt(0).toUpperCase() + group.slice(1);
-        section.appendChild(h);
+        for (const group of groups) {
+            const rawGroup = _navItems
+                .filter(i => i.menu_group === group)
+                .sort((a, b) => (a.sort_order - b.sort_order) || a.item_key.localeCompare(b.item_key));
+            if (!rawGroup.length) continue;
+            hasAny = true;
 
-        if (!groupItems.length) {
-            const msg = document.createElement('p');
-            msg.style.cssText = 'font-size:12px;color:var(--text-dim);padding:6px 0;margin:0';
-            msg.textContent = 'No items seeded yet.';
-            section.appendChild(msg);
-            container.appendChild(section);
-            continue;
+            const sorted = (view?.sorter?.getState()?.dir !== 0)
+                ? view.sorter.sortRows(rawGroup, _niSortValue)
+                : rawGroup;
+
+            html += `<tr class="table-group-row"><td class="table-group-cell" colspan="${visibleCols.length}">${_esc(group.charAt(0).toUpperCase() + group.slice(1))}</td></tr>`;
+            html += sorted.map(item =>
+                `<tr data-item-id="${_esc(item.item_id)}">${visibleCols.map(col => meta[col].render(item)).join('')}</tr>`
+            ).join('');
         }
 
-        const table = document.createElement('table');
-        table.className = 'data-table ni-table';
-        table.innerHTML = `
-            <thead>
-                <tr>
-                    <th title="Resolved icon">Icon</th>
-                    <th>Key</th>
-                    <th>Label</th>
-                    <th>Page Label</th>
-                    <th>Emoji</th>
-                    <th>Icon Asset</th>
-                    <th>Sound Asset</th>
-                    <th>Order</th>
-                    <th>Type</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody id="ni-tbody-${group}"></tbody>
-        `;
-        section.appendChild(table);
-        container.appendChild(section);
-
-        const tbody = table.querySelector(`#ni-tbody-${group}`);
-        for (const item of groupItems) {
-            tbody.appendChild(_niRowEl(item));
+        if (!hasAny) {
+            html = `<tr class="empty-row"><td colspan="${visibleCols.length}">No nav items found.</td></tr>`;
         }
-    }
+
+        tbody.innerHTML = html;
+
+        // img error fallback — error events don't bubble so must bind directly
+        tbody.querySelectorAll('img[data-icon-fallback]').forEach(img => {
+            img.addEventListener('error', function () {
+                if (!this.dataset.usedFallback) {
+                    this.dataset.usedFallback = '1';
+                    this.src = '/fallback-ui/assets/icons/fallback.svg';
+                }
+            });
+        });
+    });
 }
 
 // ── Bulk upload panel ─────────────────────────────────────────────────────────
@@ -223,100 +472,6 @@ function _niBulkUploadPanelEl() {
 }
 
 // ── Row builder ───────────────────────────────────────────────────────────────
-
-function _resolvedIconHtml(item) {
-    if (item.icon_asset) {
-        return `<img class="ni-icon-preview menu-icon" src="${_esc(_niAssetUrl(item.icon_asset, item.updated_at))}" alt=""
-            data-fallback="1">`;
-    }
-    if (item.icon_emoji) {
-        return `<span class="ni-icon-emoji">${item.icon_emoji}</span>`;
-    }
-    return `<img class="ni-icon-preview menu-icon" src="/fallback-ui/assets/icons/fallback.svg" alt="?">`;
-}
-
-function _niRowEl(item) {
-    const tr = document.createElement('tr');
-    tr.dataset.itemId = item.item_id;
-    tr.innerHTML = `
-        <td class="ni-col-icon">${_resolvedIconHtml(item)}</td>
-        <td class="ni-col-key"><code>${_esc(item.item_key)}</code>${item.is_fn ? ' <span class="ni-fn-badge">fn</span>' : ''}</td>
-        <td class="ni-col-label"><span class="ni-field" data-field="label">${_esc(item.label)}</span></td>
-        <td class="ni-col-page-label"><span class="ni-field" data-field="page_label">${_esc(item.page_label || '')}</span></td>
-        <td class="ni-col-emoji"><span class="ni-field" data-field="icon_emoji">${_esc(item.icon_emoji || '')}</span></td>
-        <td class="ni-col-icon-asset">
-            <span class="ni-field ni-asset-path" data-field="icon_asset">${_esc(item.icon_asset || '')}</span>
-            <div class="ni-asset-actions">
-                <label class="btn-small secondary ni-upload-label" title="Upload new icon file">
-                    ⬆ <input type="file" class="ni-file-input" data-item-id="${item.item_id}" data-asset-type="icons"
-                        accept=".svg,.png,.ico,.jpg,.jpeg,.webp" style="display:none">
-                </label>
-                <button class="btn-small secondary ni-browse-btn" data-item-id="${item.item_id}" data-asset-type="icons" title="Choose from existing icons">📋</button>
-                ${item.icon_asset ? `<button class="btn-small secondary ni-clear-asset" data-item-id="${item.item_id}" data-field="icon_asset" title="Clear icon asset">✕</button>` : ''}
-            </div>
-        </td>
-        <td class="ni-col-sound-asset">
-            <span class="ni-field ni-asset-path" data-field="sound_asset">${_esc(item.sound_asset || '')}</span>
-            <div class="ni-asset-actions">
-                <label class="btn-small secondary ni-upload-label" title="Upload new sound file">
-                    ⬆ <input type="file" class="ni-file-input" data-item-id="${item.item_id}" data-asset-type="sounds"
-                        accept=".wav,.mp3,.ogg,.flac,.webm,.m4a" style="display:none">
-                </label>
-                <button class="btn-small secondary ni-browse-btn" data-item-id="${item.item_id}" data-asset-type="sounds" title="Choose from existing sounds">📋</button>
-                ${item.sound_asset ? `<button class="btn-small secondary ni-sound-play" data-sound-path="${item.sound_asset}" data-updated="${item.updated_at || ''}" title="Preview sound">▶</button>` : ''}
-                ${item.sound_asset ? `<button class="btn-small secondary ni-clear-asset" data-item-id="${item.item_id}" data-field="sound_asset" title="Clear sound asset">✕</button>` : ''}
-            </div>
-        </td>
-        <td class="ni-col-order"><span class="ni-field" data-field="sort_order">${item.sort_order}</span></td>
-        <td class="ni-col-type">${item.fn_key ? `<small>${_esc(item.fn_key)}</small>` : 'nav'}</td>
-        <td class="ni-col-actions">
-            <button class="btn-small secondary ni-edit-btn" data-item-id="${item.item_id}" title="Edit">✏️</button>
-        </td>
-    `;
-
-    // Wire upload inputs
-    tr.querySelectorAll('.ni-file-input').forEach(inp => {
-        inp.addEventListener('change', () => _niUploadAsset(inp));
-    });
-
-    // Wire "browse existing" buttons
-    tr.querySelectorAll('.ni-browse-btn').forEach(btn => {
-        btn.addEventListener('click', () => _niOpenPicker(btn.dataset.itemId, btn.dataset.assetType));
-    });
-
-    // Wire sound preview
-    tr.querySelectorAll('.ni-sound-play').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const path = btn.dataset.soundPath;
-            if (path && typeof SoundManager !== 'undefined') {
-                SoundManager.previewToggle(_niAssetUrl(path, btn.dataset.updated), { button: btn });
-            }
-        });
-    });
-
-    // Wire clear buttons
-    tr.querySelectorAll('.ni-clear-asset').forEach(btn => {
-        btn.addEventListener('click', () => _niClearAsset(btn.dataset.itemId, btn.dataset.field));
-    });
-
-    // Wire edit button
-    tr.querySelectorAll('.ni-edit-btn').forEach(btn => {
-        btn.addEventListener('click', () => _niOpenEditModal(btn.dataset.itemId));
-    });
-
-    // Icon img fallback
-    tr.querySelectorAll('.ni-icon-preview').forEach(img => {
-        img.addEventListener('error', function() {
-            if (!this.dataset.usedFallback) {
-                this.dataset.usedFallback = '1';
-                this.src = '/fallback-ui/assets/icons/fallback.svg';
-            }
-        });
-    });
-
-    return tr;
-}
-
 // ── Asset picker modal ────────────────────────────────────────────────────────
 
 async function _niOpenPicker(itemId, assetType) {
@@ -494,13 +649,54 @@ function _fmtBytes(n) {
     return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-(function initNavItemModalActions() {
-    const editModal = _niEditModalEls();
-    if (editModal.saveBtn && !editModal.saveBtn.dataset.navItemsWired) {
-        editModal.saveBtn.dataset.navItemsWired = '1';
-        editModal.saveBtn.addEventListener('click', _niSubmitEditModal);
+document.addEventListener('DOMContentLoaded', () => {
+    _niBuildFieldMeta();
+    _ensureNiTableView();
+    _ensureNiLayoutController()?.init();
+
+    const saveBtn = document.getElementById('nav-item-edit-save-btn');
+    if (saveBtn) saveBtn.addEventListener('click', _niSubmitEditModal);
+
+    const colsApplyBtn = document.getElementById('ni-cols-modal-apply');
+    if (colsApplyBtn) colsApplyBtn.addEventListener('click', _applyNiColsModal);
+
+    const tbody = document.getElementById('ni-tbody');
+    if (tbody) {
+        tbody.addEventListener('click', e => {
+            const assetMenuTrigger = e.target.closest('[data-ni-asset-menu-trigger]');
+            if (assetMenuTrigger) {
+                e.stopPropagation();
+                _niToggleAssetMenu(assetMenuTrigger.dataset.niAssetMenuTrigger);
+                return;
+            }
+            const uploadBtn = e.target.closest('[data-ni-upload]');
+            if (uploadBtn) {
+                const tr = uploadBtn.closest('tr');
+                const inp = tr?.querySelector(`.ni-file-input[data-asset-type="${uploadBtn.dataset.niUpload}"]`);
+                if (inp) inp.click();
+                return;
+            }
+            const browseBtn = e.target.closest('[data-ni-browse]');
+            if (browseBtn) { _niOpenPicker(browseBtn.dataset.itemId, browseBtn.dataset.niBrowse); return; }
+            const playBtn = e.target.closest('[data-ni-play]');
+            if (playBtn && typeof SoundManager !== 'undefined') {
+                SoundManager.previewToggle(_niAssetUrl(playBtn.dataset.niPlay, playBtn.dataset.updated), { button: playBtn });
+                return;
+            }
+            const clearBtn = e.target.closest('[data-ni-clear]');
+            if (clearBtn) { _niClearAsset(clearBtn.dataset.itemId, clearBtn.dataset.niClear); return; }
+            const editBtn = e.target.closest('[data-ni-edit]');
+            if (editBtn) { _niOpenEditModal(editBtn.dataset.niEdit); return; }
+        });
+        tbody.addEventListener('change', e => {
+            const inp = e.target.closest('.ni-file-input');
+            if (inp) _niUploadAsset(inp);
+        });
     }
-})();
+    document.addEventListener('click', e => {
+        if (!e.target.closest('.table-asset-menu-anchor')) _niCloseAssetMenu();
+    });
+});
 
 // Reload the navbar for the group that owns itemId so icon/label changes
 // are visible immediately without a full page refresh.

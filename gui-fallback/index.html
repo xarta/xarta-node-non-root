@@ -989,10 +989,30 @@
     <p id="nav-items-status" style="font-size:13px;margin-bottom:8px"></p>
     <div id="nav-items-bulk-area"></div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
-    <div class="tab-scroll-shell">
-      <div id="nav-items-container"></div>
+    <div class="table-wrap table-wrap--fill">
+      <table id="ni-table" data-layout-table-name="nav-items" data-layout-table-code="16">
+        <thead><tr></tr></thead>
+        <tbody id="ni-tbody"></tbody>
+      </table>
     </div>
   </section>
+
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="ni-cols-modal">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">COLS</span>
+        <span class="hub-dialog-title-text">Nav Items Columns</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body">
+      <div id="ni-cols-modal-list" class="hub-checkbox-list"></div>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Cancel</button>
+      <button class="hub-modal-btn" id="ni-cols-modal-apply" type="button">&#10003; Apply</button>
+    </div>
+  </dialog>
 
   <dialog class="hub-modal hub-dialog" data-tone="info" id="nav-item-edit-modal" style="width:min(560px,96vw);max-width:96vw">
     <div class="hub-modal-header">
@@ -1066,10 +1086,30 @@
     <p style="font-size:12px;color:var(--text-dim);margin:0 0 12px">This page uses the shared Blueprints asset library, so individual uploads here and bulk icon or sound uploads elsewhere in the GUI all become available to Form Controls automatically.</p>
     <p id="fc-status" style="font-size:13px;margin-bottom:8px"></p>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
-    <div class="tab-scroll-shell">
-      <div id="fc-container"></div>
+    <div class="table-wrap table-wrap--fill">
+      <table id="fc-table" data-layout-table-name="form-controls" data-layout-table-code="17">
+        <thead><tr></tr></thead>
+        <tbody id="fc-tbody"></tbody>
+      </table>
     </div>
   </section>
+
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="fc-cols-modal">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">COLS</span>
+        <span class="hub-dialog-title-text">Form Controls Columns</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body">
+      <div id="fc-cols-modal-list" class="hub-checkbox-list"></div>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Cancel</button>
+      <button class="hub-modal-btn" id="fc-cols-modal-apply" type="button">&#10003; Apply</button>
+    </div>
+  </dialog>
 
   <dialog class="hub-modal hub-dialog" data-tone="info" id="fc-edit-modal" style="width:min(620px,96vw);max-width:96vw">
     <div class="hub-modal-header">
