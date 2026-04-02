@@ -15,29 +15,55 @@ const _PVE_HOST_FIELD_META = {
   _actions:     { label: 'Actions', render: h => _pveRenderActionsCell(h) },
 };
 
-let _pveHostsTablePrefs = null;
-let _pveHiddenCols = new Set();
-let _pveColResizeDone = false;
-let _pveTableSort = null;
+let _pveHostsTableView = null;
 const _PVE_ACTION_INLINE_WIDTH = 90;
 const _PVE_ACTION_COMPACT_WIDTH = 48;
 
-function _ensurePveHostsTablePrefs() {
-  if (_pveHostsTablePrefs || typeof TablePrefs === 'undefined') return _pveHostsTablePrefs;
-  _pveHostsTablePrefs = TablePrefs.create({
+function _pveDefaultWidth(col) {
+  if (!_pveHostsTableView) return col === '_actions' ? _PVE_ACTION_INLINE_WIDTH : null;
+  return col === '_actions' ? _pveActionCellWidth() : null;
+}
+
+function _pveColumnType(col) {
+  const types = {
+    ip_address: 'TEXT',
+    name: 'TEXT',
+    tailnet_ip: 'TEXT',
+    version: 'TEXT',
+    port: 'INTEGER',
+    ssh: 'INTEGER',
+    last_scanned: 'TEXT',
+  };
+  return types[col] || null;
+}
+
+function _ensurePveHostsTableView() {
+  if (_pveHostsTableView || typeof TableView === 'undefined') return _pveHostsTableView;
+  _pveHostsTableView = TableView.create({
     storageKey: 'pve-hosts-table-prefs',
-    defaultHidden: [],
+    columns: _PVE_HOST_COLS,
+    meta: _PVE_HOST_FIELD_META,
+    getTable: () => document.getElementById('pve-hosts-table'),
+    getDefaultWidth: col => _pveDefaultWidth(col),
     minWidth: 40,
+    sort: {
+      storageKey: 'pve-hosts-table-sort',
+    },
+    onSortChange: () => {
+      renderPveHosts();
+      _ensurePveHostsLayoutController()?.scheduleLayoutSave();
+    },
+    onColumnResizeEnd: () => {
+      _ensurePveHostsLayoutController()?.scheduleLayoutSave();
+    },
   });
-  _pveHostsTablePrefs.syncColumns(_PVE_HOST_COLS);
-  _pveHiddenCols = _pveHostsTablePrefs.getHiddenSet(_PVE_HOST_COLS);
-  return _pveHostsTablePrefs;
+  return _pveHostsTableView;
 }
 
 function _pveCompactRowActions() {
-  const prefs = _ensurePveHostsTablePrefs();
-  return typeof TableRowActions !== 'undefined' && TableRowActions.shouldCollapse({
-    prefs,
+  if (!_pveHostsTableView || typeof TableRowActions === 'undefined') return false;
+  return TableRowActions.shouldCollapse({
+    view: _pveHostsTableView,
     getTable: () => document.getElementById('pve-hosts-table'),
     columnKey: '_actions',
     requiredWidth: _PVE_ACTION_INLINE_WIDTH,
@@ -49,49 +75,17 @@ function _pveActionCellWidth() {
   return _pveCompactRowActions() ? _PVE_ACTION_COMPACT_WIDTH : _PVE_ACTION_INLINE_WIDTH;
 }
 
-function _pveVisibleCols() {
-  const prefs = _ensurePveHostsTablePrefs();
-  if (prefs) _pveHiddenCols = prefs.getHiddenSet(_PVE_HOST_COLS);
-  return _PVE_HOST_COLS.filter(col => !_pveHiddenCols.has(col));
-}
-
-function _ensurePveHostsTableSort() {
-  if (_pveTableSort || typeof TableSort === 'undefined') return _pveTableSort;
-  _pveTableSort = TableSort.create({
-    storageKey: 'pve-hosts-table-sort',
-  });
-  return _pveTableSort;
-}
-
-function _pveCompatView() {
-  const prefs = _ensurePveHostsTablePrefs();
-  const sorter = _ensurePveHostsTableSort();
-  if (!prefs) return null;
-  return {
-    prefs,
-    getHiddenSet: () => { _pveHiddenCols = prefs.getHiddenSet(_PVE_HOST_COLS); return new Set(_pveHiddenCols); },
-    getVisibleCols: () => _pveVisibleCols(),
-    getSortState: () => sorter ? { key: sorter.getState?.()?.key ?? null, dir: sorter.getState?.()?.dir ?? 0 } : { key: null, dir: 0 },
-    setSortState: (key, dir) => sorter?.setState?.(key, dir),
-    isHorizontalScrollEnabled: () => prefs.isHorizontalScrollEnabled(),
-    setHorizontalScrollEnabled: enabled => prefs.setHorizontalScrollEnabled(enabled),
-    toggleHorizontalScroll: () => prefs.toggleHorizontalScroll(),
-    onLayoutChange: listener => prefs.onLayoutChange(listener),
-  };
-}
-
 let _pveHostsLayoutController = null;
 
 function _pveHostsColumnSeed(col) {
-  const types = { ip_address: 'TEXT', name: 'TEXT', tailnet_ip: 'TEXT', version: 'TEXT', port: 'INTEGER', ssh: 'INTEGER', last_scanned: 'TEXT' };
   const lengths = { ip_address: 15, name: 32, tailnet_ip: 15, version: 12, port: 4, ssh: 3, last_scanned: 19 };
   return {
     sqlite_column: col === 'name' ? 'pve_name' : col.startsWith('_') ? null : col,
-    data_type: types[col] || null,
+    data_type: _pveColumnType(col),
     sample_max_length: lengths[col] || null,
     min_width_px: col === '_actions' ? _PVE_ACTION_COMPACT_WIDTH : 40,
     max_width_px: col === '_actions' ? _PVE_ACTION_INLINE_WIDTH : 900,
-    width_px: _ensurePveHostsTablePrefs()?.getWidth?.(col) || null,
+    width_px: _ensurePveHostsTableView()?.prefs?.getWidth(col) || _pveDefaultWidth(col),
   };
 }
 
@@ -99,10 +93,10 @@ function _ensurePveHostsLayoutController() {
   if (_pveHostsLayoutController || typeof TableBucketLayouts === 'undefined') return _pveHostsLayoutController;
   _pveHostsLayoutController = TableBucketLayouts.create({
     getTable: () => document.getElementById('pve-hosts-table'),
-    getView: () => _pveCompatView(),
+    getView: () => _ensurePveHostsTableView(),
     getColumns: () => _PVE_HOST_COLS,
     getMeta: col => _PVE_HOST_FIELD_META[col],
-    getDefaultWidth: col => (col === '_actions' ? _pveActionCellWidth() : null),
+    getDefaultWidth: col => _pveDefaultWidth(col),
     getColumnSeed: col => _pveHostsColumnSeed(col),
     render: () => renderPveHosts(),
     surfaceLabel: 'PVE Hosts',
@@ -158,65 +152,25 @@ function _pveRenderActionsCell(h) {
   return `<td class="table-action-cell" style="white-space:nowrap"><div class="table-inline-actions">${_pveActionButtons(h)}</div></td>`;
 }
 
-function _pveRebuildThead() {
-  const table = document.getElementById('pve-hosts-table');
-  if (!table) return;
-  const tr = table.querySelector('thead tr');
-  if (!tr) return;
-  const prefs = _ensurePveHostsTablePrefs();
-  const sorter = _ensurePveHostsTableSort();
-  tr.innerHTML = _pveVisibleCols().map(col => {
-    const meta = _PVE_HOST_FIELD_META[col];
-    const width = prefs ? prefs.getWidth(col) : null;
-    const styleParts = [];
-    if (width) styleParts.push(`width:${width}px`);
-    else if (col === '_actions') {
-      if (_pveCompactRowActions()) styleParts.push(`width:${_pveActionCellWidth()}px`);
-    }
-    const style = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
-    const sortAttrs = meta.sortKey ? ` data-sort-key="${meta.sortKey}"` : '';
-    const classAttr = meta.sortKey ? ' class="table-th-sort"' : '';
-    const labelHtml = sorter && meta.sortKey ? sorter.renderLabel(meta.label, meta.sortKey) : meta.label;
-    return `<th data-col="${col}"${sortAttrs}${classAttr}${style}>${labelHtml}</th>`;
-  }).join('');
-  _pveColResizeDone = false;
-}
-
-function _pveRenderSharedTable(renderBody) {
-  const prefs = _ensurePveHostsTablePrefs();
-  if (!prefs) return;
-  prefs.renderTable({
-    getTable: () => document.getElementById('pve-hosts-table'),
-    rebuildHead: _pveRebuildThead,
-    renderBody,
-    minWidth: 40,
-    afterBind: tableEl => {
-      _pveColResizeDone = true;
-      const sorter = _ensurePveHostsTableSort();
-      sorter?.bind(tableEl, renderPveHosts);
-      sorter?.syncIndicators(tableEl);
-    },
-  });
-}
-
 function _pveOpenColsModal() {
-  const prefs = _ensurePveHostsTablePrefs();
-  if (!prefs) return;
-  const list = document.getElementById('pve-hosts-cols-modal-list');
-  TablePrefs.renderColumnChooser(list, _PVE_HOST_COLS, _pveHiddenCols, col => _PVE_HOST_FIELD_META[col].label);
-  HubModal.open(document.getElementById('pve-hosts-cols-modal'));
+  const view = _ensurePveHostsTableView();
+  if (!view) return;
+  view.openColumns(
+    document.getElementById('pve-hosts-cols-modal-list'),
+    document.getElementById('pve-hosts-cols-modal'),
+    col => _PVE_HOST_FIELD_META[col].label
+  );
 }
 
 function _pveApplyColsModal() {
-  const prefs = _ensurePveHostsTablePrefs();
-  if (!prefs) return;
+  const view = _ensurePveHostsTableView();
+  if (!view) return;
   const modal = document.getElementById('pve-hosts-cols-modal');
-  const newHidden = TablePrefs.readHiddenFromChooser(modal, new Set(_pveHiddenCols));
-  prefs.setHiddenSet(newHidden);
-  _pveHiddenCols = prefs.getHiddenSet(_PVE_HOST_COLS);
-  _pveRebuildThead();
-  renderPveHosts();
-  HubModal.close(modal);
+  view.applyColumns(modal, () => {
+    renderPveHosts();
+    HubModal.close(modal);
+    _ensurePveHostsLayoutController()?.scheduleLayoutSave();
+  });
 }
 
 function _savePveHostsCache(hosts) {
@@ -243,18 +197,18 @@ async function loadPveHosts() {
 
 function renderPveHosts() {
   const tbody = document.getElementById('pve-hosts-tbody');
-  _ensurePveHostsTablePrefs();
-  const sorter = _ensurePveHostsTableSort();
-  _pveColResizeDone = false;
+  const view = _ensurePveHostsTableView();
+  const visibleCols = view?.getVisibleCols() || ['ip_address'];
   if (!_pveHosts.length) {
-    _pveRenderSharedTable(() => {
-      tbody.innerHTML = `<tr class="empty-row"><td colspan="${Math.max(1, _pveVisibleCols().length)}">No PVE hosts found — run the scan first.</td></tr>`;
+    view?.render(() => {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="${Math.max(1, visibleCols.length)}">No PVE hosts found — run the scan first.</td></tr>`;
     });
     return;
   }
-  const rows = sorter ? sorter.sortRows(_pveHosts, _pveSortValue) : _pveHosts;
-  _pveRenderSharedTable(() => {
-    tbody.innerHTML = rows.map(h => `<tr>${_pveVisibleCols().map(col => _PVE_HOST_FIELD_META[col].render(h)).join('')}</tr>`).join('');
+  const rows = view?.sorter ? view.sorter.sortRows(_pveHosts, _pveSortValue) : _pveHosts;
+  view?.render(() => {
+    const cols = view.getVisibleCols();
+    tbody.innerHTML = rows.map(h => `<tr>${cols.map(col => _PVE_HOST_FIELD_META[col].render(h)).join('')}</tr>`).join('');
   });
 }
 
@@ -375,11 +329,9 @@ async function scanPveHosts() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  _ensurePveHostsTablePrefs();
+  _ensurePveHostsTableView();
 
-  _pveHostsTablePrefs?.onLayoutChange(() => {
-    _pveHiddenCols = _pveHostsTablePrefs.getHiddenSet(_PVE_HOST_COLS);
-    _pveRebuildThead();
+  _pveHostsTableView?.onLayoutChange(() => {
     renderPveHosts();
   });
 
