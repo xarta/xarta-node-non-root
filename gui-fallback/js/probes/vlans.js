@@ -132,8 +132,11 @@ function openVlansColsModal() {
 function _applyVlansColsModal() {
   const view = _ensureVlansTableView();
   if (!view) return;
-  view.applyColumns(document.getElementById('vlans-cols-modal'), renderVlans);
-  HubModal.close(document.getElementById('vlans-cols-modal'));
+  view.applyColumns(document.getElementById('vlans-cols-modal'), () => {
+    renderVlans();
+    HubModal.close(document.getElementById('vlans-cols-modal'));
+    _ensureVlansLayoutController()?.scheduleLayoutSave();
+  });
 }
 
 async function loadVlans() {

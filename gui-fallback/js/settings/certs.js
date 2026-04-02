@@ -188,6 +188,7 @@ function _applyCertsColsModal() {
   view.applyColumns(modal, () => {
     renderCertsTable();
     HubModal.close(modal);
+    _ensureCertsLayoutController()?.scheduleLayoutSave();
   });
 }
 

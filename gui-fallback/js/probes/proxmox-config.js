@@ -278,8 +278,11 @@ function _pveApplyConfigColsModal() {
   const view = _ensurePveConfigTableView();
   if (!view) return;
   const modal = document.getElementById('pve-config-cols-modal');
-  view.applyColumns(modal, renderProxmoxConfig);
-  HubModal.close(modal);
+  view.applyColumns(modal, () => {
+    renderProxmoxConfig();
+    HubModal.close(modal);
+    _ensurePveConfigLayoutController()?.scheduleLayoutSave();
+  });
 }
 
 document.addEventListener('DOMContentLoaded', () => {

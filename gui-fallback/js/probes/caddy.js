@@ -115,8 +115,11 @@ function openCaddyColsModal() {
 function _applyCaddyColsModal() {
   const view = _ensureCaddyTableView();
   if (!view) return;
-  view.applyColumns(document.getElementById('caddy-cols-modal'), renderCaddyConfigs);
-  HubModal.close(document.getElementById('caddy-cols-modal'));
+  view.applyColumns(document.getElementById('caddy-cols-modal'), () => {
+    renderCaddyConfigs();
+    HubModal.close(document.getElementById('caddy-cols-modal'));
+    _ensureCaddyLayoutController()?.scheduleLayoutSave();
+  });
 }
 
 async function loadCaddyConfigs() {

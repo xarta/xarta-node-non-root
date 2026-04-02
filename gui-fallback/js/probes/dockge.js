@@ -150,8 +150,11 @@ function openDockgeColsModal() {
 function _applyDockgeColsModal() {
   const view = _ensureDockgeTableView();
   if (!view) return;
-  view.applyColumns(document.getElementById('dockge-cols-modal'), renderDockgeStacks);
-  HubModal.close(document.getElementById('dockge-cols-modal'));
+  view.applyColumns(document.getElementById('dockge-cols-modal'), () => {
+    renderDockgeStacks();
+    HubModal.close(document.getElementById('dockge-cols-modal'));
+    _ensureDockgeLayoutController()?.scheduleLayoutSave();
+  });
 }
 
 async function loadDockgeStacks() {

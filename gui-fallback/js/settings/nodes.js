@@ -180,8 +180,11 @@ function openNodesColsModal() {
 function _applyNodesColsModal() {
   const view = _ensureNodesTableView();
   if (!view) return;
-  view.applyColumns(document.getElementById('nodes-cols-modal'), renderNodes);
-  HubModal.close(document.getElementById('nodes-cols-modal'));
+  view.applyColumns(document.getElementById('nodes-cols-modal'), () => {
+    renderNodes();
+    HubModal.close(document.getElementById('nodes-cols-modal'));
+    _ensureNodesLayoutController()?.scheduleLayoutSave();
+  });
 }
 
 function _nodeVisibleCols() {

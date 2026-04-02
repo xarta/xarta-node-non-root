@@ -186,6 +186,7 @@ function _applyKeysColsModal() {
   view.applyColumns(modal, () => {
     renderKeysTable();
     HubModal.close(modal);
+    _ensureKeysLayoutController()?.scheduleLayoutSave();
   });
 }
 

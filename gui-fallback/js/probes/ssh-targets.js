@@ -154,8 +154,11 @@ function openSshTargetsColsModal() {
 function _applySshTargetsColsModal() {
   const view = _ensureSshTargetsTableView();
   if (!view) return;
-  view.applyColumns(document.getElementById('ssh-targets-cols-modal'), renderSshTargets);
-  HubModal.close(document.getElementById('ssh-targets-cols-modal'));
+  view.applyColumns(document.getElementById('ssh-targets-cols-modal'), () => {
+    renderSshTargets();
+    HubModal.close(document.getElementById('ssh-targets-cols-modal'));
+    _ensureSshTargetsLayoutController()?.scheduleLayoutSave();
+  });
 }
 
 async function loadSshTargets() {

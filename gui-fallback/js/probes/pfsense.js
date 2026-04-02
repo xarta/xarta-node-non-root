@@ -306,8 +306,11 @@ function _dnsApplyColsModal() {
   const view = _ensureDnsTableView();
   if (!view) return;
   const modal = document.getElementById('dns-cols-modal');
-  view.applyColumns(modal, renderPfSenseDns);
-  HubModal.close(modal);
+  view.applyColumns(modal, () => {
+    renderPfSenseDns();
+    HubModal.close(modal);
+    _ensureDnsLayoutController()?.scheduleLayoutSave();
+  });
 }
 
 document.addEventListener('DOMContentLoaded', () => {

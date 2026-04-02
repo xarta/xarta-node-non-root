@@ -1104,7 +1104,12 @@
       var view = getView();
       if (!view || typeof view.toggleHorizontalScroll !== 'function') return;
       view.toggleHorizontalScroll();
-      await resolveRemoteLayout({ rerender: true });
+      // resolveRemoteLayout only calls cfg.render() when the returned layout
+      // signature differs from the last applied one.  After a scroll toggle the
+      // CSS class (table-shared-ui--scroll-x) must always be updated, so we
+      // suppress the conditional render inside resolve and call it ourselves.
+      await resolveRemoteLayout({ rerender: false });
+      if (typeof cfg.render === 'function') cfg.render();
     }
 
     async function openLayoutContextModal() {

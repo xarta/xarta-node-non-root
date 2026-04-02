@@ -348,6 +348,7 @@ function _applyAiProviderColsModal() {
   view.applyColumns(modal, () => {
     renderAiProviders();
     HubModal.close(modal);
+    _ensureAiProvidersLayoutController()?.scheduleLayoutSave();
   });
 }
 
@@ -367,6 +368,7 @@ function _applyAiAssignmentColsModal() {
   view.applyColumns(modal, () => {
     renderAiAssignments();
     HubModal.close(modal);
+    _ensureAiAssignmentsLayoutController()?.scheduleLayoutSave();
   });
 }
 

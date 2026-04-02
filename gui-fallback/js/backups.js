@@ -150,8 +150,11 @@ function openBackupsColsModal() {
 function _applyBackupsColsModal() {
   const view = _ensureBackupsTableView();
   if (!view) return;
-  view.applyColumns(document.getElementById('backups-cols-modal'), renderBackups);
-  HubModal.close(document.getElementById('backups-cols-modal'));
+  view.applyColumns(document.getElementById('backups-cols-modal'), () => {
+    renderBackups();
+    HubModal.close(document.getElementById('backups-cols-modal'));
+    _ensureBackupsLayoutController()?.scheduleLayoutSave();
+  });
 }
 
 function _backupSortValue(backup, sortKey) {

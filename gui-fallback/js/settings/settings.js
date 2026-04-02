@@ -182,8 +182,11 @@ function openSettingsColsModal() {
 function _applySettingsColsModal() {
   const view = _ensureSettingsTableView();
   if (!view) return;
-  view.applyColumns(document.getElementById('settings-cols-modal'), renderSettings);
-  HubModal.close(document.getElementById('settings-cols-modal'));
+  view.applyColumns(document.getElementById('settings-cols-modal'), () => {
+    renderSettings();
+    HubModal.close(document.getElementById('settings-cols-modal'));
+    _ensureSettingsLayoutController()?.scheduleLayoutSave();
+  });
 }
 
 function _openSettingRowActions(key) {
