@@ -42,6 +42,9 @@ const _DIAG_ENDPOINTS = [
   { path: '/api/v1/bookmarks/visits',              label: 'Bookmark visits',           group: 'Browser Links' },
 ];
 
+const _BUCKET_TEST_DEFAULT_USER_CODE = 'FE';
+const _BUCKET_TEST_QUICK_TABLE_CODES = ['06', '08', '0E', '15'];
+
 async function runSelfDiag() {
   const btn     = document.getElementById('self-diag-run-btn');
   const results = document.getElementById('self-diag-results');
@@ -438,6 +441,20 @@ async function runSelfDiag() {
     <span style="font-size:12px;color:var(--text-dim)">Tests all enabled providers from the DB. Inference triggers GPU.</span>
   </div>`;
 
+  // ── Table Buckets — API probe (on-demand) ───────────────────────────────
+  html += _diagSection('Table Buckets — API Probe (isolated test user)');
+  html += `<div id="bp-bucket-probe-section" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:5px 2px">
+    <button id="bp-bucket-probe-quick-btn"
+      style="padding:3px 10px;background:var(--accent-dim);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:12px;flex-shrink:0">
+      &#x25b6; Bucket probe (quick)
+    </button>
+    <button id="bp-bucket-probe-full-btn"
+      style="padding:3px 10px;background:var(--accent-dim);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:12px;flex-shrink:0">
+      &#x25b6; Bucket probe (full)
+    </button>
+    <span style="font-size:12px;color:var(--text-dim)">Runs table-layout endpoint checks under test user ${_BUCKET_TEST_DEFAULT_USER_CODE}; rows are wiped before and after.</span>
+  </div>`;
+
   results.innerHTML = html;
 
   // Bind the propagation round-trip test button
@@ -615,6 +632,224 @@ async function runSelfDiag() {
   }
   const _bmSearchProbeBtn = document.getElementById('bp-search-probe-btn');
   if (_bmSearchProbeBtn) _bmSearchProbeBtn.addEventListener('click', _runBmSearchProbe);
+
+  async function _bucketApiProbe(mode) {
+    const section = document.getElementById('bp-bucket-probe-section');
+    const quickBtn = document.getElementById('bp-bucket-probe-quick-btn');
+    const fullBtn = document.getElementById('bp-bucket-probe-full-btn');
+    if (!section) return;
+    if (quickBtn) { quickBtn.disabled = true; quickBtn.textContent = '⧘ Running…'; }
+    if (fullBtn) { fullBtn.disabled = true; fullBtn.textContent = '⧘ Running…'; }
+
+    const userCode = _BUCKET_TEST_DEFAULT_USER_CODE;
+
+    async function _listLayouts(filterTableCode) {
+      const query = new URLSearchParams({ user_code: userCode });
+      if (filterTableCode) query.set('table_code', filterTableCode);
+      const r = await apiFetch('/api/v1/table-layouts?' + query.toString(), { signal: AbortSignal.timeout(10000) });
+      if (!r.ok) throw new Error(`list layouts HTTP ${r.status}`);
+      return await r.json();
+    }
+
+    async function _wipeLayouts(filterTableCodes) {
+      let rows = await _listLayouts();
+      if (Array.isArray(filterTableCodes) && filterTableCodes.length) {
+        const allow = new Set(filterTableCodes.map(c => String(c || '').toUpperCase()));
+        rows = rows.filter(row => allow.has(String(row.table_code || '').toUpperCase()));
+      }
+      let removed = 0;
+      for (const row of rows) {
+        if (!row || !row.layout_key) continue;
+        const dr = await apiFetch('/api/v1/table-layouts/' + encodeURIComponent(row.layout_key), {
+          method: 'DELETE',
+          signal: AbortSignal.timeout(10000),
+        });
+        if (dr.ok) removed++;
+      }
+      return removed;
+    }
+
+    function _chooseSeedColumns(tableCode, baseRowsByCode) {
+      const seed = baseRowsByCode.get(tableCode);
+      if (seed && seed.layout_data && Array.isArray(seed.layout_data.columns) && seed.layout_data.columns.length) {
+        return seed.layout_data.columns.map((col, idx) => ({
+          column_key: col.column_key,
+          display_name: col.display_name || col.column_key,
+          sqlite_column: Object.prototype.hasOwnProperty.call(col, 'sqlite_column') ? col.sqlite_column : col.column_key,
+          width_px: Number(col.width_px || 160),
+          min_width_px: Number(col.min_width_px || 40),
+          max_width_px: Number(col.max_width_px || 900),
+          position: Number.isFinite(Number(col.position)) ? Number(col.position) : idx,
+          sort_direction: null,
+          sort_priority: null,
+          hidden: !!col.hidden,
+          data_type: col.data_type || null,
+          sample_max_length: Number.isFinite(Number(col.sample_max_length)) ? Number(col.sample_max_length) : null,
+        }));
+      }
+      return [
+        {
+          column_key: 'diag_probe_col',
+          display_name: 'Diag Probe',
+          sqlite_column: null,
+          width_px: 180,
+          min_width_px: 40,
+          max_width_px: 900,
+          position: 0,
+          sort_direction: null,
+          sort_priority: null,
+          hidden: false,
+          data_type: 'TEXT',
+          sample_max_length: 32,
+        },
+      ];
+    }
+
+    async function _resolve(tableCode, tableName, columns, shadeUp, horizontalScroll) {
+      const body = {
+        reserved_code: '00',
+        user_code: userCode,
+        table_code: tableCode,
+        table_name: tableName,
+        bucket_bits: {
+          shade_up: !!shadeUp,
+          horizontal_scroll: !!horizontalScroll,
+          mobile: false,
+          portrait: false,
+          wide: false,
+        },
+        columns,
+      };
+      const r = await apiFetch('/api/v1/table-layouts/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!r.ok) throw new Error(`resolve ${tableCode} HTTP ${r.status}`);
+      return await r.json();
+    }
+
+    async function _upsert(layoutKey, layoutData) {
+      const r = await apiFetch('/api/v1/table-layouts/' + encodeURIComponent(layoutKey), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ layout_data: layoutData }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!r.ok) throw new Error(`upsert ${layoutKey} HTTP ${r.status}`);
+      return await r.json();
+    }
+
+    try {
+      const [catalogResp, baseRows] = await Promise.all([
+        apiFetch('/api/v1/table-layouts/catalog', { signal: AbortSignal.timeout(10000) }),
+        apiFetch('/api/v1/table-layouts?user_code=00', { signal: AbortSignal.timeout(10000) }),
+      ]);
+      if (!catalogResp.ok) throw new Error(`catalog HTTP ${catalogResp.status}`);
+      if (!baseRows.ok) throw new Error(`user 00 layouts HTTP ${baseRows.status}`);
+
+      const catalog = await catalogResp.json();
+      const user00Rows = await baseRows.json();
+      const baseRowsByCode = new Map();
+      user00Rows.forEach(row => {
+        const code = String(row.table_code || '').toUpperCase();
+        if (!code || baseRowsByCode.has(code)) return;
+        baseRowsByCode.set(code, row);
+      });
+
+      const allEntries = (catalog || []).map(row => ({
+        table_code: String(row.table_code || '').toUpperCase(),
+        table_name: row.table_name || row.table_code,
+      })).filter(row => row.table_code && row.table_code !== '14');
+
+      const selectedEntries = mode === 'quick'
+        ? allEntries.filter(entry => _BUCKET_TEST_QUICK_TABLE_CODES.includes(entry.table_code))
+        : allEntries;
+
+      if (!selectedEntries.length) {
+        section.outerHTML = _selfDiagRow('⚠', 'bucket API probe', 'no table catalog entries selected', mode);
+        return;
+      }
+
+      const selectedCodes = selectedEntries.map(entry => entry.table_code);
+      const deletedBefore = await _wipeLayouts(selectedCodes);
+
+      const resultsRows = [];
+      for (const entry of selectedEntries) {
+        const seedColumns = _chooseSeedColumns(entry.table_code, baseRowsByCode);
+        const fit = await _resolve(entry.table_code, entry.table_name, seedColumns, false, false);
+        const scroll = await _resolve(entry.table_code, entry.table_name, seedColumns, false, true);
+        const targetKey = (seedColumns[0] && seedColumns[0].column_key) || 'diag_probe_col';
+
+        const fitLayout = fit.layout_data;
+        const scrollLayout = scroll.layout_data;
+        const fitTarget = (fitLayout.columns || []).find(col => col.column_key === targetKey) || (fitLayout.columns || [])[0];
+        const scrollTarget = (scrollLayout.columns || []).find(col => col.column_key === targetKey) || (scrollLayout.columns || [])[0];
+        if (!fitTarget || !scrollTarget) throw new Error(`missing target column in ${entry.table_code}`);
+
+        fitTarget.hidden = true;
+        fitTarget.width_px = Number(fitTarget.width_px || 160) + 31;
+        fitTarget.sort_direction = 'desc';
+        fitTarget.sort_priority = 0;
+
+        scrollTarget.hidden = false;
+        scrollTarget.width_px = Number(scrollTarget.width_px || 160) + 79;
+        scrollTarget.sort_direction = null;
+        scrollTarget.sort_priority = null;
+
+        await _upsert(fit.layout_key, fitLayout);
+        await _upsert(scroll.layout_key, scrollLayout);
+
+        const fitVerify = await _resolve(entry.table_code, entry.table_name, seedColumns, false, false);
+        const scrollVerify = await _resolve(entry.table_code, entry.table_name, seedColumns, false, true);
+        const shadeVerify = await _resolve(entry.table_code, entry.table_name, seedColumns, true, true);
+
+        const fitSaved = (fitVerify.layout_data.columns || []).find(col => col.column_key === targetKey) || (fitVerify.layout_data.columns || [])[0];
+        const scrollSaved = (scrollVerify.layout_data.columns || []).find(col => col.column_key === targetKey) || (scrollVerify.layout_data.columns || [])[0];
+        const shadeSaved = (shadeVerify.layout_data.columns || []).find(col => col.column_key === targetKey) || (shadeVerify.layout_data.columns || [])[0];
+
+        const fitOk = !!fitSaved && fitSaved.hidden === true && String(fitSaved.sort_direction || '') === 'desc';
+        const scrollOk = !!scrollSaved && scrollSaved.hidden === false && !scrollSaved.sort_direction;
+        const shadeOk = !!shadeSaved && Number(shadeSaved.width_px || 0) > 0;
+
+        const pass = fitOk && scrollOk && shadeOk;
+        resultsRows.push(_selfDiagRow(
+          pass ? '✅' : '❌',
+          `${entry.table_code} ${entry.table_name}`,
+          pass ? 'fit/scroll isolation + shade-up resolve ok' : 'verification failed',
+          mode
+        ));
+      }
+
+      const deletedAfter = await _wipeLayouts(selectedCodes);
+      const remaining = await _listLayouts();
+      const remainingForSelection = remaining.filter(row => selectedCodes.includes(String(row.table_code || '').toUpperCase()));
+      const remainingOk = remainingForSelection.length === 0;
+
+      resultsRows.push(_selfDiagRow(
+        remainingOk ? '✅' : '⚠',
+        'cleanup',
+        `deleted before: ${deletedBefore}, deleted after: ${deletedAfter}`,
+        remainingOk ? 'remaining: 0' : `remaining: ${remainingForSelection.length}`
+      ));
+
+      section.outerHTML = resultsRows.join('');
+    } catch (e) {
+      const cleanupSection = document.getElementById('bp-bucket-probe-section');
+      try {
+        await _wipeLayouts();
+      } catch (_) {}
+      if (cleanupSection) {
+        cleanupSection.outerHTML = _selfDiagRow('❌', 'bucket API probe', e.message || String(e), mode);
+      }
+    }
+  }
+
+  const _bucketQuickBtn = document.getElementById('bp-bucket-probe-quick-btn');
+  const _bucketFullBtn = document.getElementById('bp-bucket-probe-full-btn');
+  if (_bucketQuickBtn) _bucketQuickBtn.addEventListener('click', () => _bucketApiProbe('quick'));
+  if (_bucketFullBtn) _bucketFullBtn.addEventListener('click', () => _bucketApiProbe('full'));
 
   const total   = endpointResults.length;
   const passed  = endpointResults.filter(r => r.ok).length;

@@ -103,6 +103,7 @@ const SettingsMenuConfig = createHubMenu({
 
         // ── Self Diagnostic page function items ────────────────────────────
         { id: 'diag-fn-run',     label: 'Run Diagnostics',  icon: HIEROGLYPHS.wasScepter, fn: 'diag.run',     activeOn: ['self-diag'],    parent: 'settings-layout', order: 0 },
+        { id: 'diag-fn-buckets', label: 'Bucket Probe (quick)', icon: 'icons/ui/table-columns-blue.svg', fn: 'diag.bucketQuick', activeOn: ['self-diag'], parent: 'settings-layout', order: 1 },
 
         // ── SSH Keys page function items ─────────────────────────────────
         { id: 'key-fn-refresh',  label: 'Refresh',           icon: HIEROGLYPHS.nefer,      fn: 'key.refresh',  activeOn: ['keys'],         parent: 'settings-layout', order: 0 },
@@ -467,6 +468,11 @@ SettingsMenuConfig.registerFunctions({
 
     // Self Diagnostic
     'diag.run':     () => runSelfDiag(),
+    'diag.bucketQuick': async () => {
+        await runSelfDiag();
+        const quickBtn = document.getElementById('bp-bucket-probe-quick-btn');
+        if (quickBtn) quickBtn.click();
+    },
 
     // SSH Keys
     'key.refresh':  () => loadKeys(),
