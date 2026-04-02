@@ -201,6 +201,7 @@ async function submitVlanEdit() {
 
 document.addEventListener('DOMContentLoaded', () => {
   _ensureVlansTableView();
+  _ensureVlansLayoutController()?.init();
   document.getElementById('vlan-modal-save-btn')?.addEventListener('click', submitVlanEdit);
   document.getElementById('vlans-cols-modal-apply')?.addEventListener('click', _applyVlansColsModal);
   document.getElementById('vlans-tbody')?.addEventListener('click', e => {

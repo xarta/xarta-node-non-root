@@ -35,6 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
     HubSelect.init('retouch-table-select');
   }
   _ensureNodesTableView();
+  _ensureNodesLayoutController()?.init();
   document.getElementById('nodes-cols-modal-apply')?.addEventListener('click', _applyNodesColsModal);
   document.getElementById('nodes-tbody')?.addEventListener('click', e => {
     const restartBtn = e.target.closest('[data-node-restart]');

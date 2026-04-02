@@ -637,6 +637,8 @@ async function deleteAiAssignment(assignment_id) {
 document.addEventListener('DOMContentLoaded', () => {
   _ensureAiProvidersTableView();
   _ensureAiAssignmentsTableView();
+  _ensureAiProvidersLayoutController()?.init();
+  _ensureAiAssignmentsLayoutController()?.init();
 
   _aiProvidersTableView?.onLayoutChange(() => {
     renderAiProviders();

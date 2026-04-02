@@ -1830,6 +1830,7 @@ async function _bmFetchScoreExplain(query, result, focus, bodyEl) {
 
 // Event delegation: score cells in results table + drill-down links in overview modal
 document.addEventListener('DOMContentLoaded', () => {
+  _ensureVisitsLayoutController()?.init();
   // Wire the search/filter controls that now live in #pg-ctrl-bookmarks-main
   // (moved from the tab-panel toolbar into the menu-zone page-controls slot).
   const bmSearch   = document.getElementById('bm-search');

@@ -16,6 +16,8 @@ let _backupEmptyMessage = 'Loading…';
 let _backupTableView = null;
 
 document.addEventListener('DOMContentLoaded', () => {
+  _ensureBackupsTableView();
+  _ensureBackupsLayoutController()?.init();
   const createBtn = document.getElementById('backup-create-btn');
   if (createBtn && !createBtn.dataset.bound) {
     createBtn.addEventListener('click', () => createBackup(createBtn));

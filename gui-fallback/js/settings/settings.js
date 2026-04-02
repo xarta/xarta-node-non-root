@@ -571,6 +571,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   _ensureSettingsTableView();
+  _ensureSettingsLayoutController()?.init();
   _settingsTableView?.onLayoutChange(() => {
     renderSettings();
   });

@@ -852,11 +852,15 @@
     cfg = cfg || {};
     var layoutKey = '';
     var layoutAppliedSignature = '';
+    var layoutAppliedKey = '';
     var layoutSaveTimer = null;
     var applyingRemoteLayout = false;
     var layoutRequestSeq = 0;
     var layoutChangeUnsub = null;
     var boundLayoutChange = false;
+    var quickActionsEl = null;
+    var quickShowTimer = null;
+    var quickFadeTimer = null;
     var reservedCode = cfg.reservedCode || '00';
     var userCode = cfg.userCode || '00';
     var saveDelayMs = Number(cfg.saveDelayMs || 300);
@@ -895,6 +899,104 @@
 
     function getLayoutContextTitle() {
       return cfg.layoutContextTitle || (getSurfaceLabel() + ' Layout Context');
+    }
+
+    function _currentBucketCode() {
+      return String(layoutKey || '').slice(-2).toUpperCase() || '--';
+    }
+
+    function _ensureQuickActions() {
+      if (cfg.quickLayoutAccess === false) return null;
+      if (quickActionsEl && quickActionsEl.isConnected) return quickActionsEl;
+      var tableEl = getTable();
+      if (!tableEl) return null;
+      var wrap = tableEl.closest('.table-wrap') || tableEl.parentElement;
+      if (!wrap || !wrap.parentElement) return null;
+      var panel = tableEl.closest('.tab-panel');
+      var handle = panel ? panel.querySelector('.body-shade-handle') : null;
+      var tableCode = getTableCode() || 'unknown';
+      var hostEl = (handle && handle.parentElement) ? handle.parentElement : wrap.parentElement;
+      hostEl.classList.add('table-layout-quick-host');
+      quickActionsEl = hostEl.querySelector('.table-layout-quick-actions[data-layout-quick-table-code="' + tableCode + '"]');
+      if (quickActionsEl) return quickActionsEl;
+
+      quickActionsEl = document.createElement('div');
+      quickActionsEl.className = 'table-layout-quick-actions';
+      quickActionsEl.dataset.layoutQuickTableCode = tableCode;
+      quickActionsEl.innerHTML = ''
+        + '<button type="button" class="table-layout-quick-actions__pill" data-layout-quick-open="1">LAYOUT BUCKET --</button>';
+      quickActionsEl.querySelector('[data-layout-quick-open="1"]').addEventListener('click', function () {
+        openLayoutContextModal();
+      });
+      if (handle && handle.parentElement) {
+        if (handle.nextSibling) handle.parentElement.insertBefore(quickActionsEl, handle.nextSibling);
+        else handle.parentElement.appendChild(quickActionsEl);
+      } else {
+        wrap.parentElement.insertBefore(quickActionsEl, wrap);
+      }
+
+      if (handle && !handle.dataset.layoutQuickPulseBound) {
+        handle.dataset.layoutQuickPulseBound = '1';
+        handle.addEventListener('pointerdown', function () {
+          _pulseQuickActions();
+        }, { passive: true });
+      }
+      return quickActionsEl;
+    }
+
+    function _positionQuickActions(el) {
+      if (!el) return;
+      var tableEl = getTable();
+      if (!tableEl) return;
+      var panel = tableEl.closest('.tab-panel');
+      var handle = panel ? panel.querySelector('.body-shade-handle') : null;
+      var topPx = 8;
+      if (handle) {
+        topPx = Math.max(0, Math.round(handle.offsetTop + handle.offsetHeight + 4));
+      }
+      el.style.top = topPx + 'px';
+    }
+
+    function _clearQuickActionTimers() {
+      if (quickShowTimer) {
+        clearTimeout(quickShowTimer);
+        quickShowTimer = null;
+      }
+      if (quickFadeTimer) {
+        clearTimeout(quickFadeTimer);
+        quickFadeTimer = null;
+      }
+    }
+
+    function _pulseQuickActions() {
+      var el = _ensureQuickActions();
+      if (!el) return;
+      _clearQuickActionTimers();
+      el.classList.add('is-visible');
+      el.classList.remove('is-fading-out');
+      quickShowTimer = window.setTimeout(function () {
+        el.classList.add('is-fading-out');
+        quickFadeTimer = window.setTimeout(function () {
+          el.classList.remove('is-visible');
+          el.classList.remove('is-fading-out');
+          quickFadeTimer = null;
+        }, 1000);
+        quickShowTimer = null;
+      }, 1000);
+    }
+
+    function _setQuickActionsShadeState(el, isShadeUp) {
+      if (!el) return;
+      el.classList.toggle('is-shade-up', !!isShadeUp);
+    }
+
+    function _syncQuickActionsState() {
+      var el = _ensureQuickActions();
+      if (!el) return;
+      _positionQuickActions(el);
+      var pill = el.querySelector('[data-layout-quick-open="1"]');
+      if (pill) pill.textContent = 'LAYOUT BUCKET ' + _currentBucketCode();
+      _setQuickActionsShadeState(el, !!(document.body && document.body.classList.contains('shade-is-up')));
     }
 
     function getViewportBits() {
@@ -1052,18 +1154,23 @@
         if (!response.ok) throw new Error('HTTP ' + response.status);
         var payload = await response.json();
         if (requestId !== layoutRequestSeq) return null;
+        var previousLayoutKey = layoutKey;
         layoutKey = payload.layout_key || '';
+        var keyChanged = layoutKey !== previousLayoutKey;
         var nextSignature = layoutSignature(payload.layout_data);
-        if (nextSignature && nextSignature !== layoutAppliedSignature) {
+        if (nextSignature && (nextSignature !== layoutAppliedSignature || keyChanged || options.forceApply)) {
           applyRemoteLayout(payload.layout_data);
           layoutAppliedSignature = nextSignature;
+          layoutAppliedKey = layoutKey;
           if (options.rerender !== false && typeof cfg.render === 'function') {
             cfg.render();
           }
         }
+        _syncQuickActionsState();
         return payload;
       } catch (error) {
         console.warn(getSurfaceLabel() + ' table layout resolve failed:', error);
+        _syncQuickActionsState();
         return null;
       }
     }
@@ -1098,6 +1205,8 @@
       var payload = await response.json();
       layoutKey = payload.layout_key || layoutKey;
       layoutAppliedSignature = layoutSignature(payload.layout_data);
+      layoutAppliedKey = layoutKey;
+      _syncQuickActionsState();
     }
 
     async function toggleHorizontalScroll() {
@@ -1186,9 +1295,43 @@
             if (payload.layout_key === layoutKey) {
               applyRemoteLayout(savedLayout);
               layoutAppliedSignature = layoutSignature(savedLayout);
+              layoutAppliedKey = layoutKey;
               if (typeof cfg.render === 'function') cfg.render();
             }
             return { layoutData: savedLayout };
+          },
+          onApplySibling: async function (entry, siblingEntry) {
+            var siblingBucket = siblingEntry && siblingEntry.bucketCode ? String(siblingEntry.bucketCode) : 'sibling';
+            var confirmed = await HubDialogs.confirm({
+              title: 'Reapply from sibling bucket?',
+              message: 'Overwrite bucket ' + entry.bucketCode + ' with settings from bucket ' + siblingBucket + '?',
+              detail: 'This keeps the target bucket identity and copies widths, hidden columns, and sort data from the sibling.',
+              confirmLabel: 'Apply',
+            });
+            if (!confirmed) return false;
+
+            var nextLayoutData = _cloneLayoutData((siblingEntry && siblingEntry.layoutData) || {});
+            nextLayoutData.bucket_flags = _normalizeLayoutFlags(entry && entry.layoutData && entry.layoutData.bucket_flags);
+            nextLayoutData.seed_origin = 'sibling-reapply';
+
+            var response = await apiFetch('/api/v1/table-layouts/' + encodeURIComponent(entry.layoutKey), {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ layout_data: nextLayoutData }),
+            });
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            var payload = await response.json();
+            var savedLayout = payload.layout_data || nextLayoutData;
+            if (payload.layout_key === layoutKey) {
+              applyRemoteLayout(savedLayout);
+              layoutAppliedSignature = layoutSignature(savedLayout);
+              layoutAppliedKey = layoutKey;
+              if (typeof cfg.render === 'function') cfg.render();
+            }
+            return {
+              layoutData: savedLayout,
+              hint: 'Reapplied from sibling bucket ' + siblingBucket,
+            };
           },
           entries: initialState.entries,
         });
@@ -1208,13 +1351,25 @@
       if (boundLayoutChange) return layoutChangeUnsub || function () {};
       boundLayoutChange = true;
       layoutChangeUnsub = view.onLayoutChange(function () {
-        resolveRemoteLayout({ rerender: true });
+        var shadeNow = !!(document.body && document.body.classList.contains('shade-is-up'));
+        var activeFlags = _flagsFromBucketCode(String(layoutKey || '').slice(-2));
+        if (activeFlags && activeFlags.shade_up !== shadeNow) {
+          activeFlags.shade_up = shadeNow;
+          resolveRemoteLayout({ rerender: true, bucketBits: activeFlags, forceApply: true });
+          return;
+        }
+        resolveRemoteLayout({ rerender: true, forceApply: true });
       });
       return layoutChangeUnsub;
     }
 
     function init() {
       bindLayoutChange();
+      _syncQuickActionsState();
+      document.addEventListener('bodyshadechange', function () {
+        _syncQuickActionsState();
+        _pulseQuickActions();
+      }, { passive: true });
       resolveRemoteLayout({ rerender: false });
     }
 
@@ -1294,6 +1449,8 @@
   var _TABLE_LAYOUT_CONTEXT_STATE = {
     options: null,
     entries: [],
+    filteredEntries: [],
+    shadeSiblingByLayoutKey: new Map(),
     activeEntryId: null,
     saving: false,
     filters: {},
@@ -1325,6 +1482,47 @@
     return chips;
   }
 
+  function _layoutBaseSignature(flags) {
+    var normalized = _normalizeLayoutFlags(flags);
+    return _TABLE_LAYOUT_FLAG_DEFS.filter(function (def) {
+      return def.key !== 'shade_up';
+    }).map(function (def) {
+      return def.key + ':' + (normalized[def.key] ? '1' : '0');
+    }).join('|');
+  }
+
+  function _buildShadeSiblingMap(entries) {
+    var grouped = new Map();
+    (entries || []).forEach(function (entry) {
+      if (!entry || !entry.layoutKey) return;
+      var flags = _normalizeLayoutFlags(entry.layoutData && entry.layoutData.bucket_flags);
+      var signature = _layoutBaseSignature(flags);
+      var bucket = grouped.get(signature);
+      if (!bucket) {
+        bucket = { up: [], down: [] };
+        grouped.set(signature, bucket);
+      }
+      if (flags.shade_up) bucket.up.push(entry);
+      else bucket.down.push(entry);
+    });
+
+    var siblingByLayoutKey = new Map();
+    grouped.forEach(function (bucket) {
+      if (!bucket.up.length || !bucket.down.length) return;
+      bucket.up.sort(function (left, right) {
+        return String(left.layoutKey || '').localeCompare(String(right.layoutKey || ''));
+      });
+      bucket.down.sort(function (left, right) {
+        return String(left.layoutKey || '').localeCompare(String(right.layoutKey || ''));
+      });
+      bucket.up.forEach(function (upEntry, index) {
+        var source = bucket.down[Math.min(index, bucket.down.length - 1)] || null;
+        if (source) siblingByLayoutKey.set(String(upEntry.layoutKey || ''), source);
+      });
+    });
+    return siblingByLayoutKey;
+  }
+
   function _normalizeLayoutFlags(flags) {
     var normalized = {};
     _TABLE_LAYOUT_FLAG_DEFS.forEach(function (def) {
@@ -1345,6 +1543,18 @@
       if (filters && filters[def.key]) value |= (1 << def.bit);
     });
     return value.toString(16).toUpperCase().padStart(2, '0');
+  }
+
+  function _flagsFromBucketCode(bucketCode) {
+    var raw = String(bucketCode || '').replace(/^0x/i, '').toUpperCase();
+    if (raw.length === 1) raw = '0' + raw;
+    if (!/^[0-9A-F]{2}$/.test(raw)) return null;
+    var value = parseInt(raw, 16);
+    var flags = {};
+    _TABLE_LAYOUT_FLAG_DEFS.forEach(function (def) {
+      flags[def.key] = !!(value & (1 << def.bit));
+    });
+    return flags;
   }
 
   function _entryMatchesLayoutFilters(entry, filters) {
@@ -1595,6 +1805,30 @@
     }
   }
 
+  async function _applyLayoutContextSibling(entryId) {
+    var entry = _TABLE_LAYOUT_CONTEXT_ENTRIES.get(entryId);
+    var options = _TABLE_LAYOUT_CONTEXT_STATE.options || {};
+    if (!entry || _TABLE_LAYOUT_CONTEXT_STATE.busy || typeof options.onApplySibling !== 'function') return;
+    var sibling = _TABLE_LAYOUT_CONTEXT_STATE.shadeSiblingByLayoutKey.get(String(entry.layoutKey || ''));
+    if (!sibling) return;
+    _TABLE_LAYOUT_CONTEXT_STATE.busy = true;
+    try {
+      var result = await options.onApplySibling(entry, sibling);
+      if (result !== false) {
+        await _refreshLayoutContextEntries();
+      }
+    } catch (error) {
+      if (window.HubDialogs && typeof HubDialogs.alertError === 'function') {
+        await HubDialogs.alertError({
+          title: 'Sibling apply failed',
+          message: error && error.message ? error.message : 'Failed to reapply from sibling bucket.',
+        });
+      }
+    } finally {
+      _TABLE_LAYOUT_CONTEXT_STATE.busy = false;
+    }
+  }
+
   function _renderLayoutContext() {
     var options = _TABLE_LAYOUT_CONTEXT_STATE.options || {};
     var titleEl = document.getElementById('table-layout-context-title');
@@ -1613,6 +1847,7 @@
     var filteredEntries = entries.filter(function (entry) {
       return _entryMatchesLayoutFilters(entry, filters);
     });
+    var shadeSiblingByLayoutKey = _buildShadeSiblingMap(filteredEntries);
     var exactEntry = _findExactLayoutEntry(entries, filters);
 
     titleEl.textContent = options.title || 'Table Layout Context';
@@ -1637,6 +1872,9 @@
       ? 'No saved buckets match the selected flags.'
       : (entries.length ? '' : 'No saved layouts were found for this table.');
 
+    _TABLE_LAYOUT_CONTEXT_STATE.filteredEntries = filteredEntries;
+    _TABLE_LAYOUT_CONTEXT_STATE.shadeSiblingByLayoutKey = shadeSiblingByLayoutKey;
+
     listEl.innerHTML = '';
     _TABLE_LAYOUT_CONTEXT_ENTRIES.clear();
 
@@ -1654,6 +1892,18 @@
       if (typeof options.onDelete === 'function' && (!options.activeKey || entry.layoutKey !== options.activeKey)) {
         deleteHtml = '<button type="button" class="secondary table-icon-btn table-icon-btn--delete table-layout-context-entry__delete" title="Delete layout bucket" aria-label="Delete layout bucket" data-layout-context-open="delete" data-layout-context-id="' + _escapeLayoutText(id) + '"></button>';
       }
+      var siblingHtml = '';
+      var siblingEntry = shadeSiblingByLayoutKey.get(String(entry.layoutKey || ''));
+      if (siblingEntry && typeof options.onApplySibling === 'function') {
+        siblingHtml = ''
+          + '<button type="button" class="table-layout-context-entry__action table-layout-context-entry__action--sibling" '
+          + 'title="Reapply from sibling bucket ' + _escapeLayoutText(siblingEntry.bucketCode || '') + '" '
+          + 'aria-label="Reapply from sibling bucket" '
+          + 'data-layout-context-open="sibling" data-layout-context-id="' + _escapeLayoutText(id) + '">'
+          + '<span class="table-layout-context-entry__action-long">FROM SIBLING</span>'
+          + '<span class="table-layout-context-entry__action-short">SIBLING</span>'
+          + '</button>';
+      }
 
       card.innerHTML = '' +
         '<div class="table-layout-context-entry__surface" role="button" tabindex="0" data-layout-context-open="detail" data-layout-context-id="' + _escapeLayoutText(id) + '">' +
@@ -1661,6 +1911,7 @@
             '<span class="table-layout-context-entry__title">' + _escapeLayoutText(entry.title || entry.layoutKey || 'Layout') + '</span>' +
             '<div class="table-layout-context-entry__top-actions">' +
               '<div class="table-layout-context-entry__actions">' +
+                siblingHtml +
                 '<button type="button" class="table-layout-context-entry__action" data-layout-context-open="detail" data-layout-context-id="' + _escapeLayoutText(id) + '">Details</button>' +
                 '<button type="button" class="table-layout-context-entry__action" data-layout-context-open="columns" data-layout-context-id="' + _escapeLayoutText(id) + '">Columns</button>' +
                 deleteHtml +
@@ -1685,6 +1936,8 @@
 
     _TABLE_LAYOUT_CONTEXT_STATE.options = opts;
     _TABLE_LAYOUT_CONTEXT_STATE.entries = Array.isArray(opts.entries) ? opts.entries : [];
+    _TABLE_LAYOUT_CONTEXT_STATE.filteredEntries = [];
+    _TABLE_LAYOUT_CONTEXT_STATE.shadeSiblingByLayoutKey = new Map();
     _TABLE_LAYOUT_CONTEXT_STATE.activeEntryId = null;
     _TABLE_LAYOUT_CONTEXT_STATE.filters = _normalizeLayoutFlags(opts.initialFilters);
     _TABLE_LAYOUT_CONTEXT_STATE.busy = false;
@@ -1695,6 +1948,8 @@
         _TABLE_LAYOUT_CONTEXT_ENTRIES.clear();
         _TABLE_LAYOUT_CONTEXT_STATE.options = null;
         _TABLE_LAYOUT_CONTEXT_STATE.entries = [];
+        _TABLE_LAYOUT_CONTEXT_STATE.filteredEntries = [];
+        _TABLE_LAYOUT_CONTEXT_STATE.shadeSiblingByLayoutKey = new Map();
         _TABLE_LAYOUT_CONTEXT_STATE.activeEntryId = null;
         _TABLE_LAYOUT_CONTEXT_STATE.filters = {};
         _TABLE_LAYOUT_CONTEXT_STATE.busy = false;
@@ -1765,6 +2020,8 @@
       if (!layoutEntry) return;
       if (layoutBtn.dataset.layoutContextOpen === 'delete') {
         _deleteLayoutContextEntry(layoutBtn.dataset.layoutContextId);
+      } else if (layoutBtn.dataset.layoutContextOpen === 'sibling') {
+        _applyLayoutContextSibling(layoutBtn.dataset.layoutContextId);
       } else if (layoutBtn.dataset.layoutContextOpen === 'columns') {
         _openLayoutContextColumns(layoutBtn.dataset.layoutContextId);
       } else {

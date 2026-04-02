@@ -338,6 +338,7 @@ async function scanPveHosts() {
 
 document.addEventListener('DOMContentLoaded', () => {
   _ensurePveHostsTableView();
+  _ensurePveHostsLayoutController()?.init();
 
   _pveHostsTableView?.onLayoutChange(() => {
     renderPveHosts();

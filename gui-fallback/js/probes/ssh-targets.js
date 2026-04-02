@@ -231,6 +231,7 @@ async function deleteSshTarget(ip) {
 
 document.addEventListener('DOMContentLoaded', () => {
   _ensureSshTargetsTableView();
+  _ensureSshTargetsLayoutController()?.init();
   document.getElementById('ssh-targets-cols-modal-apply')?.addEventListener('click', _applySshTargetsColsModal);
   document.getElementById('ssh-targets-tbody')?.addEventListener('click', e => {
     const delBtn = e.target.closest('[data-ssh-del]');

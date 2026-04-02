@@ -776,6 +776,7 @@ async function importFromStore() {
 }
 document.addEventListener('DOMContentLoaded', () => {
   _ensureKeysTableView();
+  _ensureKeysLayoutController()?.init();
   document.getElementById('keys-cols-modal-apply')?.addEventListener('click', _applyKeysColsModal);
   document.getElementById('keys-status-tbody')?.addEventListener('click', e => {
     const infoBtn = e.target.closest('[data-key-info]');

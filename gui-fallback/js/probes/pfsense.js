@@ -318,6 +318,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const dnsHideInact = document.getElementById('dns-hide-inactive');
 
   _ensureDnsTableView();
+  _ensureDnsLayoutController()?.init();
 
   if (dnsSearch) {
     dnsSearch.addEventListener('input', () => {

@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let _caddyFilterTimer = null;
   const searchEl = document.getElementById('caddy-search');
   _ensureCaddyTableView();
+  _ensureCaddyLayoutController()?.init();
   if (searchEl) searchEl.addEventListener('input', () => {
     clearTimeout(_caddyFilterTimer);
     _caddyFilterTimer = setTimeout(renderCaddyConfigs, 250);

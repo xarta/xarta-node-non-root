@@ -287,6 +287,7 @@ function _pveApplyConfigColsModal() {
 
 document.addEventListener('DOMContentLoaded', () => {
   _ensurePveConfigTableView();
+  _ensurePveConfigLayoutController()?.init();
 
   const pveSearch = document.getElementById('pve-search');
   if (pveSearch) {

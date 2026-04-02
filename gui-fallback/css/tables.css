@@ -510,6 +510,55 @@ button.table-icon-btn--history::before {
   color: var(--text-dim);
 }
 
+.table-layout-quick-host {
+  position: relative;
+}
+
+.table-layout-quick-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin: 0;
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  transform: translateX(-50%);
+  z-index: 1200;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 1s ease;
+}
+
+.table-layout-quick-actions.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.table-layout-quick-actions__pill {
+  min-width: 86px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: var(--bg);
+  color: var(--accent);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.table-layout-quick-actions__pill:hover {
+  border-color: var(--accent);
+  background: rgba(var(--hub-accent-rgb, 0, 212, 255), 0.12);
+}
+
+.table-layout-quick-actions.is-fading-out {
+  opacity: 0;
+  pointer-events: none;
+}
+
 #table-layout-context-generate.is-safe {
   border-color: rgba(61, 220, 151, 0.45);
   background: rgba(61, 220, 151, 0.15);
@@ -607,6 +656,15 @@ button.table-icon-btn--history::before {
   border-color: rgba(var(--hub-accent-rgb, 0, 212, 255), 0.48);
   background: rgba(var(--hub-accent-rgb, 0, 212, 255), 0.12);
 }
+
+.table-layout-context-entry__action--sibling {
+  min-width: 118px;
+}
+
+.table-layout-context-entry__action-short {
+  display: none;
+}
+
 .table-layout-context-entry__title {
   font-size: 13px;
   font-weight: 700;
@@ -739,6 +797,23 @@ button.table-icon-btn--history::before {
 @media (max-width: 900px) {
   /* fallback only — JS sets --table-wrap-max-h precisely */
   .table-wrap { max-height: var(--table-wrap-max-h, calc(100vh - 200px)); }
+
+  .table-layout-quick-actions__pill {
+    min-width: 74px;
+    padding: 6px 10px;
+  }
+
+  .table-layout-context-entry__action--sibling {
+    min-width: 92px;
+  }
+
+  .table-layout-context-entry__action--sibling .table-layout-context-entry__action-long {
+    display: none;
+  }
+
+  .table-layout-context-entry__action--sibling .table-layout-context-entry__action-short {
+    display: inline;
+  }
 }
 @media (max-width: 600px) {
   .table-wrap { max-height: var(--table-wrap-max-h, calc(100vh - 160px)); }

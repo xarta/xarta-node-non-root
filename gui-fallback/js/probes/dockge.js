@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const searchEl = document.getElementById('dockge-search');
   const toggleEl = document.getElementById('dockge-hide-obsolete');
   _ensureDockgeTableView();
+  _ensureDockgeLayoutController()?.init();
   if (searchEl) searchEl.addEventListener('input', () => {
     clearTimeout(_dockgeFilterTimer);
     _dockgeFilterTimer = setTimeout(renderDockgeStacks, 250);

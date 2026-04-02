@@ -364,6 +364,7 @@ async function submitCertUpload() {
 
 document.addEventListener('DOMContentLoaded', () => {
   _ensureCertsTableView();
+  _ensureCertsLayoutController()?.init();
   document.getElementById('certs-cols-modal-apply')?.addEventListener('click', _applyCertsColsModal);
   // Table event delegation — Upload buttons
   document.getElementById('certs-status-tbody')?.addEventListener('click', e => {
