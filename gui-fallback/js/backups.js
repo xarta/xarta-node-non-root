@@ -121,10 +121,6 @@ function _ensureBackupsLayoutController() {
   return _backupsLayoutController;
 }
 
-function _ensureBackupsTableView() {
-  return _backupTableView;
-}
-
 async function toggleBackupsHorizontalScroll() {
   const controller = _ensureBackupsLayoutController();
   if (!controller) return;
