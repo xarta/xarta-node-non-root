@@ -51,7 +51,7 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'pveh-fn-refresh', label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'pveh.refresh', activeOn: ['pve-hosts'],    parent: 'settings-layout', order: 0 },
         { id: 'pveh-fn-scan',    label: 'Scan for Proxmox', icon: HIEROGLYPHS.wasScepter, fn: 'pveh.scan',    activeOn: ['pve-hosts'],    parent: 'settings-layout', order: 1 },
         { id: 'pveh-fn-cols',    label: 'Columns',          icon: HIEROGLYPHS.khaHorizon, fn: 'pveh.columns', activeOn: ['pve-hosts'],    parent: 'settings-layout', order: 2 },
-        { id: 'pveh-fn-scroll',  label: 'Horizontal Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'pveh.scroll', activeOn: ['pve-hosts'], parent: 'settings-layout', order: 3 },
+        { id: 'pveh-fn-scroll',  label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'pveh.scroll', activeOn: ['pve-hosts'], parent: 'settings-layout', order: 3 },
         { id: 'pveh-fn-context', label: 'Layout Context',   icon: HIEROGLYPHS.eyeOfHorus, fn: 'pveh.context', activeOn: ['pve-hosts'],    parent: 'settings-layout', order: 4 },
 
         // ── Fleet Nodes page function items ───────────────────────────────
@@ -59,7 +59,7 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'nod-fn-cols',     label: 'Columns',          icon: HIEROGLYPHS.khaHorizon, fn: 'nod.columns',  activeOn: ['nodes'],        parent: 'settings-layout', order: 1 },
         { id: 'nod-fn-bkpcols',  label: 'Backup Columns',   icon: HIEROGLYPHS.khaHorizon, fn: 'nod.backupColumns', activeOn: ['nodes'],   parent: 'settings-layout', order: 2 },
         { id: 'nod-fn-update',   label: 'Fleet Update',     icon: HIEROGLYPHS.crookFlail, fn: 'nod.update',   activeOn: ['nodes'],        parent: 'settings-layout', order: 3 },
-        { id: 'nod-fn-scroll',   label: 'Horizontal Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'nod.scroll', activeOn: ['nodes'], parent: 'settings-layout', order: 4 },
+        { id: 'nod-fn-scroll',   label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'nod.scroll', activeOn: ['nodes'], parent: 'settings-layout', order: 4 },
         { id: 'nod-fn-context',  label: 'Layout Context',   icon: HIEROGLYPHS.eyeOfHorus, fn: 'nod.context',  activeOn: ['nodes'],        parent: 'settings-layout', order: 5 },
         { id: 'bkp-fn-context',  label: 'Backup Layout Context', icon: HIEROGLYPHS.eyeOfHorus, fn: 'bkp.context', activeOn: ['nodes'],   parent: 'settings-layout', order: 6 },
 
@@ -68,7 +68,7 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'cfg-fn-refresh',  label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'cfg.refresh',  activeOn: ['settings'],     parent: 'settings-layout', order: 1 },
         { id: 'cfg-fn-cols',     label: 'Columns',          icon: HIEROGLYPHS.khaHorizon, fn: 'cfg.columns',  activeOn: ['settings'],     parent: 'settings-layout', order: 2 },
         { id: 'cfg-fn-cache',    label: 'Refresh UI',       icon: HIEROGLYPHS.nefer,      fn: 'cfg.cache',    activeOn: ['settings'],     parent: 'settings-layout', order: 3 },
-        { id: 'cfg-fn-scroll',   label: 'Horizontal Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'cfg.scroll', activeOn: ['settings'], parent: 'settings-layout', order: 4 },
+        { id: 'cfg-fn-scroll',   label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'cfg.scroll', activeOn: ['settings'], parent: 'settings-layout', order: 4 },
         { id: 'cfg-fn-context',  label: 'Layout Context',   icon: HIEROGLYPHS.eyeOfHorus, fn: 'cfg.context',  activeOn: ['settings'],     parent: 'settings-layout', order: 5 },
 
         // ── Manual ARP page function items ────────────────────────────────
@@ -76,7 +76,7 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'arp-fn-refresh',  label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'arp.refresh',  activeOn: ['arp-manual'],   parent: 'settings-layout', order: 1 },
         { id: 'arp-fn-cols',     label: 'Columns',          icon: HIEROGLYPHS.khaHorizon, fn: 'arp.columns',  activeOn: ['arp-manual'],   parent: 'settings-layout', order: 2 },
         { id: 'arp-fn-context',  label: 'Layout Context',   icon: HIEROGLYPHS.eyeOfHorus, fn: 'arp.context',  activeOn: ['arp-manual'],   parent: 'settings-layout', order: 3 },
-        { id: 'arp-fn-scroll',   label: 'Horizontal Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'arp.scroll', activeOn: ['arp-manual'], parent: 'settings-layout', order: 4 },
+        { id: 'arp-fn-scroll',   label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'arp.scroll', activeOn: ['arp-manual'], parent: 'settings-layout', order: 4 },
 
         // ── AI Providers page function items ──────────────────────────────
         { id: 'ai-fn-addprov',   label: 'Add provider',     icon: HIEROGLYPHS.falcon,     fn: 'ai.addProv',      activeOn: ['ai-providers'], parent: 'settings-layout', order: 0 },
@@ -84,8 +84,8 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'ai-fn-addassign', label: 'Add assignment',   icon: HIEROGLYPHS.falcon,     fn: 'ai.addAssign',    activeOn: ['ai-providers'], parent: 'settings-layout', order: 2 },
         { id: 'ai-fn-provcols',  label: 'Provider columns', icon: HIEROGLYPHS.khaHorizon, fn: 'ai.providerCols', activeOn: ['ai-providers'], parent: 'settings-layout', order: 3 },
         { id: 'ai-fn-assigncols',label: 'Assignment columns', icon: HIEROGLYPHS.khaHorizon, fn: 'ai.assignCols', activeOn: ['ai-providers'], parent: 'settings-layout', order: 4 },
-        { id: 'ai-fn-provscroll', label: 'Provider Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'ai.providerScroll', activeOn: ['ai-providers'], parent: 'settings-layout', order: 5 },
-        { id: 'ai-fn-assignscroll', label: 'Assignment Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'ai.assignScroll', activeOn: ['ai-providers'], parent: 'settings-layout', order: 6 },
+        { id: 'ai-fn-provscroll', label: 'Provider Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'ai.providerScroll', activeOn: ['ai-providers'], parent: 'settings-layout', order: 5 },
+        { id: 'ai-fn-assignscroll', label: 'Assignment Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'ai.assignScroll', activeOn: ['ai-providers'], parent: 'settings-layout', order: 6 },
         { id: 'ai-fn-provcontext',  label: 'Provider Context',  icon: HIEROGLYPHS.eyeOfHorus, fn: 'ai.providerContext',  activeOn: ['ai-providers'], parent: 'settings-layout', order: 7 },
         { id: 'ai-fn-assigncontext', label: 'Assignment Context', icon: HIEROGLYPHS.eyeOfHorus, fn: 'ai.assignContext',  activeOn: ['ai-providers'], parent: 'settings-layout', order: 8 },
 
@@ -107,13 +107,13 @@ const SettingsMenuConfig = createHubMenu({
         // ── SSH Keys page function items ─────────────────────────────────
         { id: 'key-fn-refresh',  label: 'Refresh',           icon: HIEROGLYPHS.nefer,      fn: 'key.refresh',  activeOn: ['keys'],         parent: 'settings-layout', order: 0 },
         { id: 'key-fn-cols',     label: 'Columns',           icon: HIEROGLYPHS.khaHorizon, fn: 'key.columns',  activeOn: ['keys'],         parent: 'settings-layout', order: 1 },
-        { id: 'key-fn-scroll',   label: 'Horizontal Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'key.scroll', activeOn: ['keys'], parent: 'settings-layout', order: 2 },
+        { id: 'key-fn-scroll',   label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'key.scroll', activeOn: ['keys'], parent: 'settings-layout', order: 2 },
         { id: 'key-fn-context',  label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'key.context',  activeOn: ['keys'],         parent: 'settings-layout', order: 3 },
 
         // ── Certificates page function items ─────────────────────────────
         { id: 'cert-fn-refresh', label: 'Refresh',           icon: HIEROGLYPHS.nefer,      fn: 'cert.refresh', activeOn: ['certs'],        parent: 'settings-layout', order: 0 },
         { id: 'cert-fn-cols',    label: 'Columns',           icon: HIEROGLYPHS.khaHorizon, fn: 'cert.columns', activeOn: ['certs'],        parent: 'settings-layout', order: 1 },
-        { id: 'cert-fn-scroll',  label: 'Horizontal Scroll', icon: 'icons/ui/table-columns-blue.svg', fn: 'cert.scroll', activeOn: ['certs'], parent: 'settings-layout', order: 2 },
+        { id: 'cert-fn-scroll',  label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'cert.scroll', activeOn: ['certs'], parent: 'settings-layout', order: 2 },
         { id: 'cert-fn-context', label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'cert.context', activeOn: ['certs'],        parent: 'settings-layout', order: 3 },
 
         // ── Nav Items page function items ──────────────────────────────────
@@ -146,7 +146,7 @@ function _settingsToggleHorizontalScrollMany(getControllers, rerender) {
 function _settingsHorizontalScrollLabel(label, getController) {
     const controller = typeof getController === 'function' ? getController() : null;
     const enabled = !!(controller && typeof controller.isHorizontalScrollEnabled === 'function' && controller.isHorizontalScrollEnabled());
-    return `${label}: ${enabled ? 'On' : 'Off'}`;
+    return `${label}: ${enabled ? 'Is On' : 'Is Off'}`;
 }
 
 function _fleetUpdateModalEls() {
@@ -489,12 +489,12 @@ SettingsMenuConfig.registerFunctions({
 });
 
 SettingsMenuConfig.registerLabelGetters({
-    'pveh-fn-scroll':      () => _settingsHorizontalScrollLabel('Horizontal Scroll', () => _ensurePveHostsLayoutController()),
-    'nod-fn-scroll':       () => _settingsHorizontalScrollLabel('Horizontal Scroll', () => _ensureNodesLayoutController()),
-    'cfg-fn-scroll':       () => _settingsHorizontalScrollLabel('Horizontal Scroll', () => _ensureSettingsLayoutController()),
-    'arp-fn-scroll':       () => _settingsHorizontalScrollLabel('Horizontal Scroll', () => _ensureArpManualLayoutController()),
+    'pveh-fn-scroll':      () => _settingsHorizontalScrollLabel('Horiz Scroll', () => _ensurePveHostsLayoutController()),
+    'nod-fn-scroll':       () => _settingsHorizontalScrollLabel('Horiz Scroll', () => _ensureNodesLayoutController()),
+    'cfg-fn-scroll':       () => _settingsHorizontalScrollLabel('Horiz Scroll', () => _ensureSettingsLayoutController()),
+    'arp-fn-scroll':       () => _settingsHorizontalScrollLabel('Horiz Scroll', () => _ensureArpManualLayoutController()),
     'ai-fn-provscroll':    () => _settingsHorizontalScrollLabel('Provider Scroll', () => _ensureAiProvidersLayoutController()),
     'ai-fn-assignscroll':  () => _settingsHorizontalScrollLabel('Assignment Scroll', () => _ensureAiAssignmentsLayoutController()),
-    'key-fn-scroll':       () => _settingsHorizontalScrollLabel('Horizontal Scroll', () => _ensureKeysLayoutController()),
-    'cert-fn-scroll':      () => _settingsHorizontalScrollLabel('Horizontal Scroll', () => _ensureCertsLayoutController()),
+    'key-fn-scroll':       () => _settingsHorizontalScrollLabel('Horiz Scroll', () => _ensureKeysLayoutController()),
+    'cert-fn-scroll':      () => _settingsHorizontalScrollLabel('Horiz Scroll', () => _ensureCertsLayoutController()),
 });
