@@ -50,9 +50,65 @@ function _ensurePveConfigTableView() {
       defaultKey: 'pve_name',
       defaultDir: 1,
     },
-    onSortChange: renderProxmoxConfig,
+    onSortChange: () => {
+      renderProxmoxConfig();
+      _ensurePveConfigLayoutController()?.scheduleLayoutSave();
+    },
+    onColumnResizeEnd: () => {
+      _ensurePveConfigLayoutController()?.scheduleLayoutSave();
+    },
   });
   return _pveConfigTableView;
+}
+
+let _pveConfigLayoutController = null;
+
+function _pveConfigColumnSeed(col) {
+  const types = {
+    pve_name: 'TEXT', vmid: 'INTEGER', vm_type: 'TEXT', name: 'TEXT', status: 'TEXT',
+    cores: 'INTEGER', memory_mb: 'INTEGER', networks: 'TEXT', detected: 'TEXT',
+    tags: 'TEXT', last_probed: 'TEXT',
+  };
+  const lengths = {
+    pve_name: 24, vmid: 5, vm_type: 8, name: 36, status: 12,
+    cores: 4, memory_mb: 8, networks: 64, detected: 32, tags: 48, last_probed: 19,
+  };
+  return {
+    sqlite_column: col.startsWith('_') ? null : col,
+    data_type: types[col] || null,
+    sample_max_length: lengths[col] || null,
+    min_width_px: col === '_actions' ? 40 : 40,
+    max_width_px: col === '_actions' ? 46 : 900,
+    width_px: _ensurePveConfigTableView()?.prefs?.getWidth(col) || (col === '_actions' ? 46 : null),
+  };
+}
+
+function _ensurePveConfigLayoutController() {
+  if (_pveConfigLayoutController || typeof TableBucketLayouts === 'undefined') return _pveConfigLayoutController;
+  _pveConfigLayoutController = TableBucketLayouts.create({
+    getTable: _pveConfigTableEl,
+    getView: () => _ensurePveConfigTableView(),
+    getColumns: () => _PVE_CFG_COLS,
+    getMeta: col => _PVE_CFG_FIELD_META[col],
+    getDefaultWidth: col => col === '_actions' ? _pveConfigActionCellWidth() : null,
+    getColumnSeed: col => _pveConfigColumnSeed(col),
+    render: () => renderProxmoxConfig(),
+    surfaceLabel: 'Proxmox Config',
+    layoutContextTitle: 'Proxmox Config Layout Context',
+  });
+  return _pveConfigLayoutController;
+}
+
+async function toggleProxmoxConfigHorizontalScroll() {
+  const controller = _ensurePveConfigLayoutController();
+  if (!controller) return;
+  await controller.toggleHorizontalScroll();
+}
+
+async function openProxmoxConfigLayoutContextModal() {
+  const controller = _ensurePveConfigLayoutController();
+  if (!controller) return;
+  await controller.openLayoutContextModal();
 }
 
 function _pveConfigVisibleCols() {

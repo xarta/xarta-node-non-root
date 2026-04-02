@@ -98,9 +98,58 @@ function _ensureNodesTableView() {
       defaultKey: 'display_name',
       defaultDir: 1,
     },
-    onSortChange: renderNodes,
+    onSortChange: () => {
+      renderNodes();
+      _ensureNodesLayoutController()?.scheduleLayoutSave();
+    },
+    onColumnResizeEnd: () => {
+      _ensureNodesLayoutController()?.scheduleLayoutSave();
+    },
   });
   return _nodesTableView;
+}
+
+let _nodesLayoutController = null;
+
+function _nodesColumnSeed(col) {
+  const types = { display_name: 'TEXT', addresses: 'TEXT', hostnames: 'TEXT', gen: 'TEXT', commit: 'TEXT', pending: 'INTEGER' };
+  const lengths = { display_name: 32, addresses: 24, hostnames: 32, gen: 8, commit: 12, pending: 4 };
+  return {
+    sqlite_column: col.startsWith('_') ? null : col,
+    data_type: types[col] || null,
+    sample_max_length: lengths[col] || null,
+    min_width_px: col === '_actions' ? _NODE_ACTION_COMPACT_WIDTH : 40,
+    max_width_px: col === '_actions' ? _NODE_ACTION_INLINE_WIDTH : 900,
+    width_px: _ensureNodesTableView()?.prefs?.getWidth(col) || null,
+  };
+}
+
+function _ensureNodesLayoutController() {
+  if (_nodesLayoutController || typeof TableBucketLayouts === 'undefined') return _nodesLayoutController;
+  _nodesLayoutController = TableBucketLayouts.create({
+    getTable: () => document.getElementById('nodes-table'),
+    getView: () => _ensureNodesTableView(),
+    getColumns: () => _NODE_COLS,
+    getMeta: col => _NODE_FIELD_META[col],
+    getDefaultWidth: col => col === '_actions' && _nodeCompactRowActions() ? _nodeActionCellWidth() : null,
+    getColumnSeed: col => _nodesColumnSeed(col),
+    render: () => renderNodes(),
+    surfaceLabel: 'Fleet Nodes',
+    layoutContextTitle: 'Fleet Nodes Layout Context',
+  });
+  return _nodesLayoutController;
+}
+
+async function toggleNodesHorizontalScroll() {
+  const controller = _ensureNodesLayoutController();
+  if (!controller) return;
+  await controller.toggleHorizontalScroll();
+}
+
+async function openNodesLayoutContextModal() {
+  const controller = _ensureNodesLayoutController();
+  if (!controller) return;
+  await controller.openLayoutContextModal();
 }
 
 function _nodeCompactRowActions() {

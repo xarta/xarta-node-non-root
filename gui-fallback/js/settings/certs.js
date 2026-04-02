@@ -34,9 +34,64 @@ function _ensureCertsTableView() {
       defaultKey: 'label',
       defaultDir: 1,
     },
-    onSortChange: renderCertsTable,
+    onSortChange: () => {
+      renderCertsTable();
+      _ensureCertsLayoutController()?.scheduleLayoutSave();
+    },
+    onColumnResizeEnd: () => {
+      _ensureCertsLayoutController()?.scheduleLayoutSave();
+    },
   });
   return _certsTableView;
+}
+
+let _certsLayoutController = null;
+
+function _certsColumnSeed(col) {
+  const types = { label: 'TEXT', env_var: 'TEXT', path: 'TEXT', present: 'INTEGER', details: 'TEXT' };
+  const lengths = { label: 36, env_var: 32, path: 60, present: 6, details: 80 };
+  return {
+    sqlite_column: (col === 'details' || col.startsWith('_')) ? null : col,
+    data_type: types[col] || null,
+    sample_max_length: lengths[col] || null,
+    min_width_px: col === '_actions' ? 40 : 40,
+    max_width_px: col === '_actions' ? 62 : 900,
+    width_px: _ensureCertsTableView()?.prefs?.getWidth(col) || null,
+  };
+}
+
+function _ensureCertsLayoutController() {
+  if (_certsLayoutController || typeof TableBucketLayouts === 'undefined') return _certsLayoutController;
+  _certsLayoutController = TableBucketLayouts.create({
+    getTable: () => document.getElementById('certs-status-table'),
+    getView: () => _ensureCertsTableView(),
+    getColumns: () => _CERT_COLS,
+    getMeta: col => _CERT_FIELD_META[col],
+    getDefaultWidth: col => {
+      if (col === 'path') return 280;
+      if (col === 'env_var') return 150;
+      if (col === 'present') return 110;
+      if (col === '_actions') return 62;
+      return null;
+    },
+    getColumnSeed: col => _certsColumnSeed(col),
+    render: () => renderCertsTable(),
+    surfaceLabel: 'Certificates',
+    layoutContextTitle: 'Certificates Layout Context',
+  });
+  return _certsLayoutController;
+}
+
+async function toggleCertsHorizontalScroll() {
+  const controller = _ensureCertsLayoutController();
+  if (!controller) return;
+  await controller.toggleHorizontalScroll();
+}
+
+async function openCertsLayoutContextModal() {
+  const controller = _ensureCertsLayoutController();
+  if (!controller) return;
+  await controller.openLayoutContextModal();
 }
 
 function _certsVisibleCols() {

@@ -50,6 +50,8 @@ function _pveActionCellWidth() {
 }
 
 function _pveVisibleCols() {
+  const prefs = _ensurePveHostsTablePrefs();
+  if (prefs) _pveHiddenCols = prefs.getHiddenSet(_PVE_HOST_COLS);
   return _PVE_HOST_COLS.filter(col => !_pveHiddenCols.has(col));
 }
 
@@ -59,6 +61,66 @@ function _ensurePveHostsTableSort() {
     storageKey: 'pve-hosts-table-sort',
   });
   return _pveTableSort;
+}
+
+function _pveCompatView() {
+  const prefs = _ensurePveHostsTablePrefs();
+  const sorter = _ensurePveHostsTableSort();
+  if (!prefs) return null;
+  return {
+    prefs,
+    getHiddenSet: () => { _pveHiddenCols = prefs.getHiddenSet(_PVE_HOST_COLS); return new Set(_pveHiddenCols); },
+    getVisibleCols: () => _pveVisibleCols(),
+    getSortState: () => sorter ? { key: sorter.getState?.()?.key ?? null, dir: sorter.getState?.()?.dir ?? 0 } : { key: null, dir: 0 },
+    setSortState: (key, dir) => sorter?.setState?.(key, dir),
+    isHorizontalScrollEnabled: () => prefs.isHorizontalScrollEnabled(),
+    setHorizontalScrollEnabled: enabled => prefs.setHorizontalScrollEnabled(enabled),
+    toggleHorizontalScroll: () => prefs.toggleHorizontalScroll(),
+    onLayoutChange: listener => prefs.onLayoutChange(listener),
+  };
+}
+
+let _pveHostsLayoutController = null;
+
+function _pveHostsColumnSeed(col) {
+  const types = { ip_address: 'TEXT', name: 'TEXT', tailnet_ip: 'TEXT', version: 'TEXT', port: 'INTEGER', ssh: 'INTEGER', last_scanned: 'TEXT' };
+  const lengths = { ip_address: 15, name: 32, tailnet_ip: 15, version: 12, port: 4, ssh: 3, last_scanned: 19 };
+  return {
+    sqlite_column: col === 'name' ? 'pve_name' : col.startsWith('_') ? null : col,
+    data_type: types[col] || null,
+    sample_max_length: lengths[col] || null,
+    min_width_px: col === '_actions' ? _PVE_ACTION_COMPACT_WIDTH : 40,
+    max_width_px: col === '_actions' ? _PVE_ACTION_INLINE_WIDTH : 900,
+    width_px: _ensurePveHostsTablePrefs()?.getWidth?.(col) || null,
+  };
+}
+
+function _ensurePveHostsLayoutController() {
+  if (_pveHostsLayoutController || typeof TableBucketLayouts === 'undefined') return _pveHostsLayoutController;
+  _pveHostsLayoutController = TableBucketLayouts.create({
+    getTable: () => document.getElementById('pve-hosts-table'),
+    getView: () => _pveCompatView(),
+    getColumns: () => _PVE_HOST_COLS,
+    getMeta: col => _PVE_HOST_FIELD_META[col],
+    getDefaultWidth: col => (col === '_actions' ? _pveActionCellWidth() : null),
+    getColumnSeed: col => _pveHostsColumnSeed(col),
+    render: () => renderPveHosts(),
+    surfaceLabel: 'PVE Hosts',
+    layoutContextTitle: 'PVE Hosts Layout Context',
+  });
+  return _pveHostsLayoutController;
+}
+
+async function togglePveHostsHorizontalScroll() {
+  const controller = _ensurePveHostsLayoutController();
+  if (!controller) return;
+  await controller.toggleHorizontalScroll();
+}
+
+async function openPveHostsLayoutContextModal() {
+  const controller = _ensurePveHostsLayoutController();
+  if (!controller) return;
+  await controller.openLayoutContextModal();
 }
 
 function _pveSortValue(host, sortKey) {

@@ -616,8 +616,65 @@ const _VIS_PAGER = TablePager.create({
 // Domain grouping — active when sorted by url or domain
 let _visExpandedDomains = new Set(); // domains currently expanded in group mode
 
-function _visVisibleCols() { return _VIS_ALL_COLS.filter(k => !_visHiddenCols.has(k)); }
+function _visVisibleCols() { _visHiddenCols = _visTablePrefs.getHiddenSet(_VIS_ALL_COLS); return _VIS_ALL_COLS.filter(k => !_visHiddenCols.has(k)); }
 function _visColCount()    { return _visVisibleCols().length; }
+
+function _visCompatView() {
+  return {
+    prefs: _visTablePrefs,
+    getHiddenSet: () => { _visHiddenCols = _visTablePrefs.getHiddenSet(_VIS_ALL_COLS); return new Set(_visHiddenCols); },
+    getVisibleCols: () => _visVisibleCols(),
+    getSortState: () => { const s = _visTableSort.getState(); return { key: s.key ?? null, dir: s.dir ?? 0 }; },
+    setSortState: (key, dir) => _visTableSort.setState?.(key, dir),
+    isHorizontalScrollEnabled: () => _visTablePrefs.isHorizontalScrollEnabled(),
+    setHorizontalScrollEnabled: enabled => _visTablePrefs.setHorizontalScrollEnabled(enabled),
+    toggleHorizontalScroll: () => _visTablePrefs.toggleHorizontalScroll(),
+    onLayoutChange: listener => _visTablePrefs.onLayoutChange(listener),
+  };
+}
+
+let _visitsLayoutController = null;
+
+function _visColumnSeed(col) {
+  const types = { title: 'TEXT', url: 'TEXT', domain: 'TEXT', source: 'TEXT', dwell_seconds: 'REAL', visit_count: 'INTEGER', visited_at: 'TEXT' };
+  const lengths = { title: 80, url: 120, domain: 48, source: 16, dwell_seconds: 8, visit_count: 8, visited_at: 19 };
+  return {
+    sqlite_column: col.startsWith('_') ? null : col,
+    data_type: types[col] || null,
+    sample_max_length: lengths[col] || null,
+    min_width_px: col === '_actions' ? _VIS_ACTION_COMPACT_WIDTH : 40,
+    max_width_px: col === '_actions' ? _VIS_ACTION_INLINE_WIDTH : 900,
+    width_px: _visTablePrefs.getWidth(col) || null,
+  };
+}
+
+function _ensureVisitsLayoutController() {
+  if (_visitsLayoutController || typeof TableBucketLayouts === 'undefined') return _visitsLayoutController;
+  _visitsLayoutController = TableBucketLayouts.create({
+    getTable: () => document.getElementById('vis-table'),
+    getView: () => _visCompatView(),
+    getColumns: () => _VIS_ALL_COLS,
+    getMeta: col => ({ label: col === '_actions' ? 'Actions' : (col.replace(/_/g, ' ')), sortKey: _VIS_SORT_KEYS[col] || null }),
+    getDefaultWidth: () => null,
+    getColumnSeed: col => _visColumnSeed(col),
+    render: () => renderVisits(),
+    surfaceLabel: 'Visit History',
+    layoutContextTitle: 'Visit History Layout Context',
+  });
+  return _visitsLayoutController;
+}
+
+async function toggleVisitsHorizontalScroll() {
+  const controller = _ensureVisitsLayoutController();
+  if (!controller) return;
+  await controller.toggleHorizontalScroll();
+}
+
+async function openVisitsLayoutContextModal() {
+  const controller = _ensureVisitsLayoutController();
+  if (!controller) return;
+  await controller.openLayoutContextModal();
+}
 
 function _visSortValue(visit, sortKey) {
   switch (sortKey) {

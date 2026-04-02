@@ -43,9 +43,62 @@ function _ensureSettingsTableView() {
       defaultKey: 'key',
       defaultDir: 1,
     },
-    onSortChange: renderSettings,
+    onSortChange: () => {
+      renderSettings();
+      _ensureSettingsLayoutController()?.scheduleLayoutSave();
+    },
+    onColumnResizeEnd: () => {
+      _ensureSettingsLayoutController()?.scheduleLayoutSave();
+    },
   });
   return _settingsTableView;
+}
+
+let _settingsLayoutController = null;
+
+function _settingsColumnSeed(col) {
+  const types = { key: 'TEXT', value: 'TEXT', description: 'TEXT', updated_at: 'TEXT' };
+  const lengths = { key: 48, value: 120, description: 120, updated_at: 19 };
+  return {
+    sqlite_column: col.startsWith('_') ? null : col,
+    data_type: types[col] || null,
+    sample_max_length: lengths[col] || null,
+    min_width_px: col === '_actions' ? _SETTING_ACTION_COMPACT_WIDTH : 40,
+    max_width_px: col === '_actions' ? _SETTING_ACTION_INLINE_WIDTH : 900,
+    width_px: _ensureSettingsTableView()?.prefs?.getWidth(col) || null,
+  };
+}
+
+function _ensureSettingsLayoutController() {
+  if (_settingsLayoutController || typeof TableBucketLayouts === 'undefined') return _settingsLayoutController;
+  _settingsLayoutController = TableBucketLayouts.create({
+    getTable: () => document.getElementById('settings-table'),
+    getView: () => _ensureSettingsTableView(),
+    getColumns: () => _SETTING_COLS,
+    getMeta: col => _SETTING_FIELD_META[col],
+    getDefaultWidth: col => {
+      if (col === '_actions') return _settingsActionCellWidth();
+      if (col === 'updated_at') return 154;
+      return null;
+    },
+    getColumnSeed: col => _settingsColumnSeed(col),
+    render: () => renderSettings(),
+    surfaceLabel: 'App Config',
+    layoutContextTitle: 'App Config Layout Context',
+  });
+  return _settingsLayoutController;
+}
+
+async function toggleSettingsHorizontalScroll() {
+  const controller = _ensureSettingsLayoutController();
+  if (!controller) return;
+  await controller.toggleHorizontalScroll();
+}
+
+async function openSettingsLayoutContextModal() {
+  const controller = _ensureSettingsLayoutController();
+  if (!controller) return;
+  await controller.openLayoutContextModal();
 }
 
 function _settingsVisibleCols() {

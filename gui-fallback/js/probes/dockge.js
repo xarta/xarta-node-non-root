@@ -70,9 +70,67 @@ function _ensureDockgeTableView() {
       defaultKey: 'stack_name',
       defaultDir: 1,
     },
-    onSortChange: renderDockgeStacks,
+    onSortChange: () => {
+      renderDockgeStacks();
+      _ensureDockgeLayoutController()?.scheduleLayoutSave();
+    },
+    onColumnResizeEnd: () => {
+      _ensureDockgeLayoutController()?.scheduleLayoutSave();
+    },
   });
   return _dockgeTableView;
+}
+
+let _dockgeLayoutController = null;
+
+function _dockgeColumnSeed(col) {
+  const types = {
+    services: 'INTEGER', pve_host: 'TEXT', source_vmid: 'INTEGER', vm_type_badge: 'TEXT',
+    source_lxc_name: 'TEXT', stack_name: 'TEXT', status: 'TEXT', env_file_exists: 'INTEGER',
+    host_type: 'TEXT', parent: 'TEXT', obsolete: 'INTEGER', notes: 'TEXT', last_probed: 'TEXT',
+  };
+  const sqliteCol = { vm_type_badge: 'vm_type' };
+  const lengths = {
+    services: 4, pve_host: 16, source_vmid: 5, vm_type_badge: 8,
+    source_lxc_name: 24, stack_name: 36, status: 12, env_file_exists: 4,
+    host_type: 16, parent: 32, obsolete: 4, notes: 60, last_probed: 19,
+  };
+  return {
+    sqlite_column: sqliteCol[col] !== undefined ? sqliteCol[col] : col,
+    data_type: types[col] || null,
+    sample_max_length: lengths[col] || null,
+    min_width_px: 40,
+    max_width_px: 900,
+    width_px: _ensureDockgeTableView()?.prefs?.getWidth(col) || null,
+  };
+}
+
+function _ensureDockgeLayoutController() {
+  if (_dockgeLayoutController || typeof TableBucketLayouts === 'undefined') return _dockgeLayoutController;
+  _dockgeLayoutController = TableBucketLayouts.create({
+    getTable: () => document.getElementById('dockge-table'),
+    getView: () => _ensureDockgeTableView(),
+    getColumns: () => _DOCKGE_COLS,
+    getMeta: col => _DOCKGE_FIELD_META[col],
+    getDefaultWidth: () => null,
+    getColumnSeed: col => _dockgeColumnSeed(col),
+    render: () => renderDockgeStacks(),
+    surfaceLabel: 'Dockge Stacks',
+    layoutContextTitle: 'Dockge Stacks Layout Context',
+  });
+  return _dockgeLayoutController;
+}
+
+async function toggleDockgeHorizontalScroll() {
+  const controller = _ensureDockgeLayoutController();
+  if (!controller) return;
+  await controller.toggleHorizontalScroll();
+}
+
+async function openDockgeLayoutContextModal() {
+  const controller = _ensureDockgeLayoutController();
+  if (!controller) return;
+  await controller.openLayoutContextModal();
 }
 
 function _dockgeVisibleCols() {

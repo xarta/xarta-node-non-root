@@ -35,9 +35,64 @@ function _ensureKeysTableView() {
       defaultKey: 'label',
       defaultDir: 1,
     },
-    onSortChange: renderKeysTable,
+    onSortChange: () => {
+      renderKeysTable();
+      _ensureKeysLayoutController()?.scheduleLayoutSave();
+    },
+    onColumnResizeEnd: () => {
+      _ensureKeysLayoutController()?.scheduleLayoutSave();
+    },
   });
   return _keysTableView;
+}
+
+let _keysLayoutController = null;
+
+function _keysColumnSeed(col) {
+  const types = { label: 'TEXT', env_var: 'TEXT', path: 'TEXT', present: 'INTEGER', pub_present: 'INTEGER' };
+  const lengths = { label: 32, env_var: 28, path: 60, present: 3, pub_present: 3 };
+  return {
+    sqlite_column: col.startsWith('_') ? null : col,
+    data_type: types[col] || null,
+    sample_max_length: lengths[col] || null,
+    min_width_px: col === '_actions' ? _KEYS_ACTION_COMPACT_WIDTH : 40,
+    max_width_px: col === '_actions' ? _KEYS_ACTION_INLINE_WIDTH : 900,
+    width_px: _ensureKeysTableView()?.prefs?.getWidth(col) || null,
+  };
+}
+
+function _ensureKeysLayoutController() {
+  if (_keysLayoutController || typeof TableBucketLayouts === 'undefined') return _keysLayoutController;
+  _keysLayoutController = TableBucketLayouts.create({
+    getTable: () => document.getElementById('keys-status-table'),
+    getView: () => _ensureKeysTableView(),
+    getColumns: () => _KEYS_COLS,
+    getMeta: col => _KEYS_FIELD_META[col],
+    getDefaultWidth: col => {
+      if (col === '_actions') return _keysActionCellWidth();
+      if (col === 'path') return 260;
+      if (col === 'env_var') return 170;
+      if (col === 'present' || col === 'pub_present') return 92;
+      return null;
+    },
+    getColumnSeed: col => _keysColumnSeed(col),
+    render: () => renderKeysTable(),
+    surfaceLabel: 'SSH Keys',
+    layoutContextTitle: 'SSH Keys Layout Context',
+  });
+  return _keysLayoutController;
+}
+
+async function toggleKeysHorizontalScroll() {
+  const controller = _ensureKeysLayoutController();
+  if (!controller) return;
+  await controller.toggleHorizontalScroll();
+}
+
+async function openKeysLayoutContextModal() {
+  const controller = _ensureKeysLayoutController();
+  if (!controller) return;
+  await controller.openLayoutContextModal();
 }
 
 function _keysVisibleCols() {

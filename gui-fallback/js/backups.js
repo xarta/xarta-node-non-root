@@ -74,9 +74,67 @@ function _ensureBackupsTableView() {
       defaultKey: 'created_at',
       defaultDir: -1,
     },
-    onSortChange: renderBackups,
+    onSortChange: () => {
+      renderBackups();
+      _ensureBackupsLayoutController()?.scheduleLayoutSave();
+    },
+    onColumnResizeEnd: () => {
+      _ensureBackupsLayoutController()?.scheduleLayoutSave();
+    },
   });
   return _backupTableView;
+}
+
+let _backupsLayoutController = null;
+
+function _backupsColumnSeed(col) {
+  const types = { filename: 'TEXT', size_bytes: 'INTEGER', created_at: 'TEXT' };
+  const lengths = { filename: 64, size_bytes: 12, created_at: 19 };
+  return {
+    sqlite_column: col.startsWith('_') ? null : col,
+    data_type: types[col] || null,
+    sample_max_length: lengths[col] || null,
+    min_width_px: col === '_actions' ? _BACKUP_ACTION_COMPACT_WIDTH : 40,
+    max_width_px: col === '_actions' ? _BACKUP_ACTION_INLINE_WIDTH : 900,
+    width_px: _ensureBackupsTableView()?.prefs?.getWidth(col) || null,
+  };
+}
+
+function _ensureBackupsLayoutController() {
+  if (_backupsLayoutController || typeof TableBucketLayouts === 'undefined') return _backupsLayoutController;
+  _backupsLayoutController = TableBucketLayouts.create({
+    getTable: () => document.getElementById('backups-table'),
+    getView: () => _ensureBackupsTableView(),
+    getColumns: () => _BACKUP_COLS,
+    getMeta: col => _BACKUP_FIELD_META[col],
+    getDefaultWidth: col => {
+      if (col === '_actions') return _backupActionCellWidth();
+      if (col === 'size_bytes') return 90;
+      if (col === 'created_at') return 170;
+      return null;
+    },
+    getColumnSeed: col => _backupsColumnSeed(col),
+    render: () => renderBackups(),
+    surfaceLabel: 'Node Backups',
+    layoutContextTitle: 'Node Backups Layout Context',
+  });
+  return _backupsLayoutController;
+}
+
+function _ensureBackupsTableView() {
+  return _backupTableView;
+}
+
+async function toggleBackupsHorizontalScroll() {
+  const controller = _ensureBackupsLayoutController();
+  if (!controller) return;
+  await controller.toggleHorizontalScroll();
+}
+
+async function openBackupsLayoutContextModal() {
+  const controller = _ensureBackupsLayoutController();
+  if (!controller) return;
+  await controller.openLayoutContextModal();
 }
 
 function _backupVisibleCols() {

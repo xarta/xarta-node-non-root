@@ -24,9 +24,58 @@ function _ensureVlansTableView() {
       defaultKey: 'vlan_id',
       defaultDir: 1,
     },
-    onSortChange: renderVlans,
+    onSortChange: () => {
+      renderVlans();
+      _ensureVlansLayoutController()?.scheduleLayoutSave();
+    },
+    onColumnResizeEnd: () => {
+      _ensureVlansLayoutController()?.scheduleLayoutSave();
+    },
   });
   return _vlanTableView;
+}
+
+let _vlansLayoutController = null;
+
+function _vlansColumnSeed(col) {
+  const types = { vlan_id: 'INTEGER', cidr: 'TEXT', description: 'TEXT' };
+  const lengths = { vlan_id: 4, cidr: 18, source: 9, description: 60 };
+  return {
+    sqlite_column: col === 'source' ? null : (col.startsWith('_') ? null : col),
+    data_type: types[col] || null,
+    sample_max_length: lengths[col] || null,
+    min_width_px: col === '_actions' ? 40 : 40,
+    max_width_px: col === '_actions' ? 46 : 900,
+    width_px: _ensureVlansTableView()?.prefs?.getWidth(col) || (col === '_actions' ? 46 : null),
+  };
+}
+
+function _ensureVlansLayoutController() {
+  if (_vlansLayoutController || typeof TableBucketLayouts === 'undefined') return _vlansLayoutController;
+  _vlansLayoutController = TableBucketLayouts.create({
+    getTable: () => document.getElementById('vlans-table'),
+    getView: () => _ensureVlansTableView(),
+    getColumns: () => _VLAN_COLS,
+    getMeta: col => _VLAN_FIELD_META[col],
+    getDefaultWidth: col => col === '_actions' ? 46 : null,
+    getColumnSeed: col => _vlansColumnSeed(col),
+    render: () => renderVlans(),
+    surfaceLabel: 'VLANs',
+    layoutContextTitle: 'VLANs Layout Context',
+  });
+  return _vlansLayoutController;
+}
+
+async function toggleVlansHorizontalScroll() {
+  const controller = _ensureVlansLayoutController();
+  if (!controller) return;
+  await controller.toggleHorizontalScroll();
+}
+
+async function openVlansLayoutContextModal() {
+  const controller = _ensureVlansLayoutController();
+  if (!controller) return;
+  await controller.openLayoutContextModal();
 }
 
 function _vlanVisibleCols() {

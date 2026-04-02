@@ -42,9 +42,64 @@ function _ensureCaddyTableView() {
       defaultKey: 'pve_host',
       defaultDir: 1,
     },
-    onSortChange: renderCaddyConfigs,
+    onSortChange: () => {
+      renderCaddyConfigs();
+      _ensureCaddyLayoutController()?.scheduleLayoutSave();
+    },
+    onColumnResizeEnd: () => {
+      _ensureCaddyLayoutController()?.scheduleLayoutSave();
+    },
   });
   return _caddyTableView;
+}
+
+let _caddyLayoutController = null;
+
+function _caddyColumnSeed(col) {
+  const types = {
+    pve_host: 'TEXT', source_vmid: 'INTEGER', source_lxc_name: 'TEXT',
+    caddyfile_path: 'TEXT', domains_json: 'TEXT', upstreams_json: 'TEXT', last_probed: 'TEXT',
+  };
+  const lengths = {
+    pve_host: 16, source_vmid: 5, source_lxc_name: 24,
+    caddyfile_path: 48, domains_json: 64, upstreams_json: 64, last_probed: 19,
+  };
+  return {
+    sqlite_column: col,
+    data_type: types[col] || null,
+    sample_max_length: lengths[col] || null,
+    min_width_px: 40,
+    max_width_px: 900,
+    width_px: _ensureCaddyTableView()?.prefs?.getWidth(col) || null,
+  };
+}
+
+function _ensureCaddyLayoutController() {
+  if (_caddyLayoutController || typeof TableBucketLayouts === 'undefined') return _caddyLayoutController;
+  _caddyLayoutController = TableBucketLayouts.create({
+    getTable: () => document.getElementById('caddy-table'),
+    getView: () => _ensureCaddyTableView(),
+    getColumns: () => _CADDY_COLS,
+    getMeta: col => _CADDY_FIELD_META[col],
+    getDefaultWidth: () => null,
+    getColumnSeed: col => _caddyColumnSeed(col),
+    render: () => renderCaddyConfigs(),
+    surfaceLabel: 'Caddy Configs',
+    layoutContextTitle: 'Caddy Configs Layout Context',
+  });
+  return _caddyLayoutController;
+}
+
+async function toggleCaddyHorizontalScroll() {
+  const controller = _ensureCaddyLayoutController();
+  if (!controller) return;
+  await controller.toggleHorizontalScroll();
+}
+
+async function openCaddyLayoutContextModal() {
+  const controller = _ensureCaddyLayoutController();
+  if (!controller) return;
+  await controller.openLayoutContextModal();
 }
 
 function openCaddyColsModal() {

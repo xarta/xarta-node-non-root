@@ -28,9 +28,64 @@ function _ensureSshTargetsTableView() {
       defaultKey: 'ip_address',
       defaultDir: 1,
     },
-    onSortChange: renderSshTargets,
+    onSortChange: () => {
+      renderSshTargets();
+      _ensureSshTargetsLayoutController()?.scheduleLayoutSave();
+    },
+    onColumnResizeEnd: () => {
+      _ensureSshTargetsLayoutController()?.scheduleLayoutSave();
+    },
   });
   return _sshTargetsTableView;
+}
+
+let _sshTargetsLayoutController = null;
+
+function _sshTargetsColumnSeed(col) {
+  const types = {
+    ip_address: 'TEXT', host_name: 'TEXT', host_type: 'TEXT', key_env_var: 'TEXT',
+    source_ip: 'TEXT', notes: 'TEXT', updated_at: 'TEXT',
+  };
+  const lengths = {
+    ip_address: 15, host_name: 32, host_type: 16, key_env_var: 28,
+    source_ip: 15, notes: 60, updated_at: 19,
+  };
+  return {
+    sqlite_column: col.startsWith('_') ? null : col,
+    data_type: types[col] || null,
+    sample_max_length: lengths[col] || null,
+    min_width_px: col === '_actions' ? 40 : 40,
+    max_width_px: col === '_actions' ? 46 : 900,
+    width_px: _ensureSshTargetsTableView()?.prefs?.getWidth(col) || (col === '_actions' ? 46 : null),
+  };
+}
+
+function _ensureSshTargetsLayoutController() {
+  if (_sshTargetsLayoutController || typeof TableBucketLayouts === 'undefined') return _sshTargetsLayoutController;
+  _sshTargetsLayoutController = TableBucketLayouts.create({
+    getTable: () => document.getElementById('ssh-targets-table'),
+    getView: () => _ensureSshTargetsTableView(),
+    getColumns: () => _SSH_TARGET_COLS,
+    getMeta: col => _SSH_TARGET_FIELD_META[col],
+    getDefaultWidth: col => col === '_actions' ? 46 : null,
+    getColumnSeed: col => _sshTargetsColumnSeed(col),
+    render: () => renderSshTargets(),
+    surfaceLabel: 'SSH Targets',
+    layoutContextTitle: 'SSH Targets Layout Context',
+  });
+  return _sshTargetsLayoutController;
+}
+
+async function toggleSshTargetsHorizontalScroll() {
+  const controller = _ensureSshTargetsLayoutController();
+  if (!controller) return;
+  await controller.toggleHorizontalScroll();
+}
+
+async function openSshTargetsLayoutContextModal() {
+  const controller = _ensureSshTargetsLayoutController();
+  if (!controller) return;
+  await controller.openLayoutContextModal();
 }
 
 function _sshTargetsVisibleCols() {

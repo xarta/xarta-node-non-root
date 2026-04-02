@@ -44,9 +44,65 @@ function _ensureDnsTableView() {
       defaultKey: 'ip_address',
       defaultDir: 1,
     },
-    onSortChange: renderPfSenseDns,
+    onSortChange: () => {
+      renderPfSenseDns();
+      _ensureDnsLayoutController()?.scheduleLayoutSave();
+    },
+    onColumnResizeEnd: () => {
+      _ensureDnsLayoutController()?.scheduleLayoutSave();
+    },
   });
   return _dnsTableView;
+}
+
+let _dnsLayoutController = null;
+
+function _dnsColumnSeed(col) {
+  const types = {
+    ip_address: 'TEXT', fqdn: 'TEXT', record_type: 'TEXT', source: 'TEXT',
+    mac_address: 'TEXT', active: 'INTEGER', last_seen: 'TEXT', last_probed: 'TEXT',
+    ping_ms: 'REAL', last_ping_check: 'TEXT',
+  };
+  const lengths = {
+    ip_address: 15, fqdn: 64, record_type: 8, source: 16, mac_address: 17,
+    active: 3, last_seen: 19, last_probed: 19, ping_ms: 8, last_ping_check: 19,
+  };
+  return {
+    sqlite_column: col,
+    data_type: types[col] || null,
+    sample_max_length: lengths[col] || null,
+    min_width_px: 40,
+    max_width_px: 900,
+    width_px: _ensureDnsTableView()?.prefs?.getWidth(col) || null,
+  };
+}
+
+function _ensureDnsLayoutController() {
+  if (_dnsLayoutController || typeof TableBucketLayouts === 'undefined') return _dnsLayoutController;
+  _dnsLayoutController = TableBucketLayouts.create({
+    getTable: _dnsTableEl,
+    getView: () => _ensureDnsTableView(),
+    getColumns: () => _DNS_COLS,
+    getMeta: col => _DNS_FIELD_META[col],
+    getDefaultWidth: () => null,
+    getColumnSeed: col => _dnsColumnSeed(col),
+    render: () => renderPfSenseDns(),
+    surfaceLabel: 'pfSense DNS',
+    layoutContextTitle: 'pfSense DNS Layout Context',
+  });
+  return _dnsLayoutController;
+}
+
+async function togglePfSenseDnsHorizontalScroll() {
+  const controller = _ensureDnsLayoutController();
+  if (!controller) return;
+  await controller.toggleHorizontalScroll();
+}
+
+async function openPfSenseDnsLayoutContextModal() {
+  const controller = _ensureDnsLayoutController();
+  if (!controller) return;
+  await controller.openLayoutContextModal();
 }
 
 function _dnsVisibleCols() {

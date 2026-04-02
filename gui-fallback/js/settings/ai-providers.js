@@ -213,7 +213,13 @@ function _ensureAiProvidersTableView() {
     sort: {
       storageKey: 'ai-providers-table-sort',
     },
-    onSortChange: () => renderAiProviders(),
+    onSortChange: () => {
+      renderAiProviders();
+      _ensureAiProvidersLayoutController()?.scheduleLayoutSave();
+    },
+    onColumnResizeEnd: () => {
+      _ensureAiProvidersLayoutController()?.scheduleLayoutSave();
+    },
   });
   return _aiProvidersTableView;
 }
@@ -230,9 +236,100 @@ function _ensureAiAssignmentsTableView() {
     sort: {
       storageKey: 'ai-assignments-table-sort',
     },
-    onSortChange: () => renderAiAssignments(),
+    onSortChange: () => {
+      renderAiAssignments();
+      _ensureAiAssignmentsLayoutController()?.scheduleLayoutSave();
+    },
+    onColumnResizeEnd: () => {
+      _ensureAiAssignmentsLayoutController()?.scheduleLayoutSave();
+    },
   });
   return _aiAssignmentsTableView;
+}
+
+let _aiProvidersLayoutController = null;
+let _aiAssignmentsLayoutController = null;
+
+function _aiProvidersColumnSeed(col) {
+  const types = { model_type: 'TEXT', name: 'TEXT', model_name: 'TEXT', dimensions: 'INTEGER', enabled: 'INTEGER', notes: 'TEXT' };
+  const lengths = { model_type: 16, name: 40, model_name: 48, dimensions: 6, enabled: 3, notes: 80 };
+  return {
+    sqlite_column: col.startsWith('_') ? null : col,
+    data_type: types[col] || null,
+    sample_max_length: lengths[col] || null,
+    min_width_px: col === '_actions' ? _AI_ACTION_COMPACT_WIDTH : 40,
+    max_width_px: col === '_actions' ? _AI_ACTION_INLINE_WIDTH : 900,
+    width_px: _ensureAiProvidersTableView()?.prefs?.getWidth(col) || null,
+  };
+}
+
+function _aiAssignmentsColumnSeed(col) {
+  const types = { project_name: 'TEXT', role: 'TEXT', provider_id: 'INTEGER', priority: 'INTEGER', enabled: 'INTEGER' };
+  const lengths = { project_name: 40, role: 16, provider_id: 6, priority: 4, enabled: 3 };
+  return {
+    sqlite_column: col.startsWith('_') ? null : col,
+    data_type: types[col] || null,
+    sample_max_length: lengths[col] || null,
+    min_width_px: col === '_actions' ? _AI_ACTION_COMPACT_WIDTH : 40,
+    max_width_px: col === '_actions' ? _AI_ACTION_INLINE_WIDTH : 900,
+    width_px: _ensureAiAssignmentsTableView()?.prefs?.getWidth(col) || null,
+  };
+}
+
+function _ensureAiProvidersLayoutController() {
+  if (_aiProvidersLayoutController || typeof TableBucketLayouts === 'undefined') return _aiProvidersLayoutController;
+  _aiProvidersLayoutController = TableBucketLayouts.create({
+    getTable: () => document.getElementById('ai-providers-table'),
+    getView: () => _ensureAiProvidersTableView(),
+    getColumns: () => _AI_PROVIDER_COLS,
+    getMeta: col => _AI_PROVIDER_FIELD_META[col],
+    getDefaultWidth: col => (col === '_actions' ? _aiActionCellWidth(_aiProviderCompactActions()) : null),
+    getColumnSeed: col => _aiProvidersColumnSeed(col),
+    render: () => renderAiProviders(),
+    surfaceLabel: 'AI Providers',
+    layoutContextTitle: 'AI Providers Layout Context',
+  });
+  return _aiProvidersLayoutController;
+}
+
+function _ensureAiAssignmentsLayoutController() {
+  if (_aiAssignmentsLayoutController || typeof TableBucketLayouts === 'undefined') return _aiAssignmentsLayoutController;
+  _aiAssignmentsLayoutController = TableBucketLayouts.create({
+    getTable: () => document.getElementById('ai-assignments-table'),
+    getView: () => _ensureAiAssignmentsTableView(),
+    getColumns: () => _AI_ASSIGNMENT_COLS,
+    getMeta: col => _AI_ASSIGNMENT_FIELD_META[col],
+    getDefaultWidth: col => (col === '_actions' ? _aiActionCellWidth(_aiAssignmentCompactActions()) : null),
+    getColumnSeed: col => _aiAssignmentsColumnSeed(col),
+    render: () => renderAiAssignments(),
+    surfaceLabel: 'AI Assignments',
+    layoutContextTitle: 'AI Assignments Layout Context',
+  });
+  return _aiAssignmentsLayoutController;
+}
+
+async function toggleAiProvidersHorizontalScroll() {
+  const controller = _ensureAiProvidersLayoutController();
+  if (!controller) return;
+  await controller.toggleHorizontalScroll();
+}
+
+async function toggleAiAssignmentsHorizontalScroll() {
+  const controller = _ensureAiAssignmentsLayoutController();
+  if (!controller) return;
+  await controller.toggleHorizontalScroll();
+}
+
+async function openAiProvidersLayoutContextModal() {
+  const controller = _ensureAiProvidersLayoutController();
+  if (!controller) return;
+  await controller.openLayoutContextModal();
+}
+
+async function openAiAssignmentsLayoutContextModal() {
+  const controller = _ensureAiAssignmentsLayoutController();
+  if (!controller) return;
+  await controller.openLayoutContextModal();
 }
 
 function _openAiProviderColsModal() {
