@@ -226,16 +226,70 @@
       return actualLayoutKey + '|' + (isHorizontalScrollEnabledForLayout(actualLayoutKey) ? 'scroll-x' : 'fit');
     }
 
+    function uniqueKeys(keys) {
+      var seen = new Set();
+      return (keys || []).filter(function (key) {
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    function getDesktopSeedKeys(layoutKey) {
+      var parsed = parseBaseLayoutKey(layoutKey || currentLayout);
+      var shadeKey = parsed.shadeKey === 'shade-up' ? 'shade-up' : 'shade-down';
+      var desktopViewports = ['desktop-landscape', 'desktop-portrait', 'desktop-widescreen', 'desktop'];
+      var keys = [];
+      desktopViewports.forEach(function (viewport) {
+        keys.push(viewport + '|' + shadeKey + '|scroll-x');
+        keys.push(viewport + '|' + shadeKey + '|fit');
+      });
+      desktopViewports.forEach(function (viewport) {
+        keys.push(viewport + '|scroll-x');
+        keys.push(viewport + '|fit');
+        keys.push(viewport);
+      });
+      return uniqueKeys(keys);
+    }
+
+    function copyDesktopSeedIntoHorizontalLayout(layoutKey) {
+      var resolvedLayout = layoutKey || currentLayout;
+      var parsed = parseBaseLayoutKey(resolvedLayout);
+      if (parsed.viewportKey.indexOf('desktop') === 0) return false;
+
+      var targetKey = resolvedLayout + '|scroll-x';
+      var targetLayout = ensureLayoutState(state, targetKey, []);
+      var sourceLayout = null;
+      getDesktopSeedKeys(resolvedLayout).some(function (candidateKey) {
+        if (!state.layouts || !state.layouts[candidateKey]) return false;
+        sourceLayout = cloneLayoutState(state.layouts[candidateKey]);
+        return !!sourceLayout;
+      });
+      if (!sourceLayout) return false;
+
+      targetLayout.hidden = Array.isArray(sourceLayout.hidden) ? sourceLayout.hidden.slice() : null;
+      targetLayout.widths = sourceLayout.widths && typeof sourceLayout.widths === 'object'
+        ? Object.assign({}, sourceLayout.widths)
+        : {};
+      targetLayout.pendingHorizontalClamp = false;
+      return true;
+    }
+
     function getLayoutState(layoutKey) {
       var resolvedLayout = layoutKey || currentLayout;
       var effectiveLayoutKey = getEffectiveLayoutKey(resolvedLayout);
+      var horizontalScroll = isHorizontalScrollEnabledForLayout(resolvedLayout);
+      var parsedLayout = parseBaseLayoutKey(resolvedLayout);
       var fallbackKeys = getLegacyLayoutKeys(resolvedLayout);
       var siblingKey = effectiveLayoutKey.endsWith('|scroll-x')
         ? effectiveLayoutKey.replace(/\|scroll-x$/, '|fit')
         : effectiveLayoutKey.replace(/\|fit$/, '|scroll-x');
-      fallbackKeys.unshift(siblingKey);
-      if (isHorizontalScrollEnabledForLayout(resolvedLayout) && parseBaseLayoutKey(resolvedLayout).viewportKey.indexOf('desktop') !== 0) {
-        fallbackKeys = fallbackKeys.concat(['desktop']);
+      if (horizontalScroll && parsedLayout.viewportKey.indexOf('desktop') !== 0) {
+        // Horizontal mode on non-desktop should emulate desktop wide-table behavior,
+        // not clone the same viewport's fit bucket that constrains to screen width.
+        fallbackKeys = uniqueKeys(getDesktopSeedKeys(resolvedLayout).concat([siblingKey], fallbackKeys));
+      } else {
+        fallbackKeys.unshift(siblingKey);
       }
       return ensureLayoutState(state, effectiveLayoutKey, fallbackKeys);
     }
@@ -336,6 +390,9 @@
       var layout = getActualLayoutState();
       layout.allowHorizontalScroll = !!enabled;
       layout.pendingHorizontalClamp = !!enabled;
+      if (layout.allowHorizontalScroll) {
+        copyDesktopSeedIntoHorizontalLayout(currentLayout);
+      }
       persist();
       return isHorizontalScrollEnabled();
     }
