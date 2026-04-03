@@ -4,8 +4,16 @@
   {{$assetVersion := placeholder "http.vars.bp_asset_version"}}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0f1117" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Blueprints" />
+  <meta name="format-detection" content="telephone=no" />
   <title>Blueprints</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg?v={{$assetVersion}}">
+  <link rel="apple-touch-icon" href="favicon.svg?v=fab1" />
+  <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="css/tokens.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/layout-nav.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/tables.css?v={{$assetVersion}}" />
@@ -24,6 +32,9 @@
   <link rel="stylesheet" href="css/hub-dialogs.css?v={{$assetVersion}}" />
 </head>
 <body>
+
+<div id="safe-top-strip" class="safe-top-strip" aria-hidden="true"></div>
+<div id="app-mode-diag" class="app-mode-diag" aria-live="polite"></div>
 
 <header>
   <div class="header-inner">
@@ -2313,7 +2324,15 @@
 <script src="js/body-shade.js?v={{$assetVersion}}"></script>
 <script src="js/ultrawide-sidecar.js?v={{$assetVersion}}"></script>
 <script src="js/ultrawide-debug-panels.js?v={{$assetVersion}}"></script>
+<script src="js/app-mode-diag.js?v={{$assetVersion}}"></script>
 <script src="js/app.js?v={{$assetVersion}}"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => {});
+    });
+  }
+</script>
 
 <!-- Backup action modal -->
 <dialog class="hub-modal hub-dialog" data-tone="info" id="backup-action-modal" style="width:min(560px,95vw)">
@@ -2426,7 +2445,7 @@
     pages: [
       ['ui', 'synthesis', 'probes', 'settings'],
       ['database-tables', 'database-diagram'],
-      ['api-key', 'api-key-test', 'cache-mode'],
+      ['api-key', 'api-key-test', 'diag-chip', 'cache-mode'],
     ],
     showPagingButton: true,
     side: 'left',
@@ -2491,6 +2510,19 @@
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23c8a84b'%3E%3Ccircle cx='12' cy='12' r='3.5'/%3E%3Crect x='11' y='1.5' width='2' height='5.5' rx='1'/%3E%3Crect x='11' y='1.5' width='2' height='5.5' rx='1' transform='rotate(45 12 12)'/%3E%3Crect x='11' y='1.5' width='2' height='5.5' rx='1' transform='rotate(90 12 12)'/%3E%3Crect x='11' y='1.5' width='2' height='5.5' rx='1' transform='rotate(135 12 12)'/%3E%3Crect x='11' y='1.5' width='2' height='5.5' rx='1' transform='rotate(180 12 12)'/%3E%3Crect x='11' y='1.5' width='2' height='5.5' rx='1' transform='rotate(225 12 12)'/%3E%3Crect x='11' y='1.5' width='2' height='5.5' rx='1' transform='rotate(270 12 12)'/%3E%3Crect x='11' y='1.5' width='2' height='5.5' rx='1' transform='rotate(315 12 12)'/%3E%3C/svg%3E");
     background-size: contain; background-repeat: no-repeat; background-position: center;
     position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  }
+  /* diag-chip → Shen ring 𓍶 — protection boundary; used here as diagnostics boundary/overlay toggle.
+     Not reused by existing menu action icons. */
+  .bp-ns-action-btn[data-action="diag-chip"] { font-size: 0; position: relative; }
+  .bp-ns-action-btn[data-action="diag-chip"]::before {
+    content: ''; display: block; width: 22px; height: 22px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='11.5' r='6.2' fill='none' stroke='%23c8a84b' stroke-width='2'/%3E%3Ccircle cx='12' cy='11.5' r='2.1' fill='%23c8a84b'/%3E%3Crect x='10.6' y='16.8' width='2.8' height='5.3' rx='1.1' fill='%23c8a84b'/%3E%3C/svg%3E");
+    background-size: contain; background-repeat: no-repeat; background-position: center;
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  }
+  .bp-ns-action-btn[data-action="diag-chip"][data-chip-visible="false"]::before {
+    opacity: .45;
+    filter: grayscale(.3);
   }
   /* paging-button → Kheper 𓆣 (Scarab Beetle) — renewal, cyclic transformation; rolls the sun forward as we page through */
   .bp-ns-action-btn[data-action="paging-button"] { font-size: 0; position: relative; }

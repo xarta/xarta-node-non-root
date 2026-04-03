@@ -1,0 +1,42 @@
+{
+  "id": "./?source=pwa",
+  "name": "Blueprints GUI",
+  "short_name": "Blueprints",
+  "description": "Blueprints fallback dashboard",
+  "start_url": "./?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": [
+    "fullscreen",
+    "standalone",
+    "minimal-ui"
+  ],
+  "background_color": "#0f1117",
+  "theme_color": "#0f1117",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "favicon.svg?v=fab1",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Synthesis",
+      "short_name": "Synthesis",
+      "url": "./?tab=synthesis"
+    },
+    {
+      "name": "Probes",
+      "short_name": "Probes",
+      "url": "./?tab=probes"
+    },
+    {
+      "name": "Settings",
+      "short_name": "Settings",
+      "url": "./?tab=settings"
+    }
+  ]
+}

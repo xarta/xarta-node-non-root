@@ -281,6 +281,7 @@
   }
 
   const FALLBACK_CACHE_PATH = '/api/v1/ui-cache/fallback';
+  const LS_APP_MODE_DIAG_VISIBLE = 'bp_app_mode_diag_visible';
 
   let SELECTOR_CFG = {
     enabledButtons: [],
@@ -293,6 +294,46 @@
 
   let _fallbackCacheState = null;
   let _fallbackCacheBusy = false;
+
+  function isAppModeDiagVisible() {
+    try {
+      return localStorage.getItem(LS_APP_MODE_DIAG_VISIBLE) !== '0';
+    } catch {
+      return true;
+    }
+  }
+
+  function setAppModeDiagVisible(visible) {
+    try {
+      localStorage.setItem(LS_APP_MODE_DIAG_VISIBLE, visible ? '1' : '0');
+    } catch {}
+    window.dispatchEvent(new CustomEvent('bp:app-mode-diag-visibility', {
+      detail: { visible: !!visible }
+    }));
+  }
+
+  function updateDiagChipButtons() {
+    if (typeof document === 'undefined') return;
+    const buttons = document.querySelectorAll('.bp-ns-action-btn[data-action="diag-chip"]');
+    if (!buttons.length) return;
+    const visible = isAppModeDiagVisible();
+    const title = visible
+      ? 'Hide app diagnostics chip'
+      : 'Show app diagnostics chip';
+
+    buttons.forEach(btn => {
+      btn.dataset.chipVisible = visible ? 'true' : 'false';
+      btn.title = title;
+      btn.setAttribute('aria-label', title);
+      btn.classList.toggle('is-off', !visible);
+    });
+  }
+
+  function toggleAppModeDiagVisibility() {
+    const next = !isAppModeDiagVisible();
+    setAppModeDiagVisible(next);
+    updateDiagChipButtons();
+  }
 
   function updateCacheModeButtons() {
     if (typeof document === 'undefined') return;
@@ -417,6 +458,12 @@
       icon: '♺', label: 'Toggle Fallback Cache Mode',
       doAction() {
         toggleFallbackCacheMode();
+      },
+    },
+    'diag-chip': {
+      icon: '⟐', label: 'Toggle App Diagnostics Chip',
+      doAction() {
+        toggleAppModeDiagVisibility();
       },
     },
   };
@@ -1024,6 +1071,7 @@
     });
 
     updateCacheModeButtons();
+    updateDiagChipButtons();
   }
 
   function renderPanel() {
