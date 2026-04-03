@@ -106,6 +106,7 @@ function createHubMenu(cfg) {
         // Values are zero-argument functions — never serialised to localStorage.
         _fnRegistry: {},
         _labelGetters: {},
+        _visibilityGetters: {},
 
         registerFunctions(map) {
             Object.assign(this._fnRegistry, map);
@@ -113,6 +114,10 @@ function createHubMenu(cfg) {
 
         registerLabelGetters(map) {
             Object.assign(this._labelGetters, map);
+        },
+
+        registerVisibilityGetters(map) {
+            Object.assign(this._visibilityGetters, map);
         },
 
         defaultMenu: cfg.defaultMenu,
@@ -347,6 +352,17 @@ function createHubMenu(cfg) {
             return label === '☰' ? '' : label;
         },
 
+        _isItemVisible(item, activeId) {
+            const getter = this._visibilityGetters[item.id];
+            if (typeof getter !== 'function') return true;
+            try {
+                return getter({ item, activeId, menu: this }) !== false;
+            } catch (e) {
+                console.warn('[HubMenu] visibility getter failed for', item.id, e);
+                return true;
+            }
+        },
+
         _menuActionOrderApi() {
             if (typeof MenuActionOrder !== 'undefined') return MenuActionOrder;
             if (typeof window !== 'undefined' && window.MenuActionOrder) return window.MenuActionOrder;
@@ -440,7 +456,8 @@ function createHubMenu(cfg) {
                 // Function children filtered by activeOn context — only appear
                 // in the dropdown when the specified tab is currently active.
                 const visibleFnChildren = fnChildren.filter(c =>
-                    !c.activeOn || (activeId && c.activeOn.includes(activeId))
+                    (!c.activeOn || (activeId && c.activeOn.includes(activeId)))
+                    && this._isItemVisible(c, activeId)
                 );
                 const sortedFnChildren = this._sortFunctionItems(visibleFnChildren);
 
@@ -547,7 +564,7 @@ function createHubMenu(cfg) {
 
                     target.appendChild(dropdown);
 
-                } else if (item.fn) {
+                } else if (item.fn && this._isItemVisible(item, activeId)) {
                     // ── Top-level function button (promoted fn item) ──────────
                     const btn = document.createElement('button');
                     btn.className = 'hub-tab';

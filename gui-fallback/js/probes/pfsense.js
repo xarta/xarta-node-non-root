@@ -29,6 +29,33 @@ const _DNS_FIELD_META = {
 let _dnsFilterTimer = null;
 let _dnsTableView = null;
 let _dnsOpenGroups = new Set();
+const _DNS_HIDE_INACTIVE_KEY = 'pfsense-dns.hide-inactive';
+let _dnsHideInactive = false;
+
+function _dnsReadHideInactive() {
+  try {
+    return localStorage.getItem(_DNS_HIDE_INACTIVE_KEY) === '1';
+  } catch (_) {
+    return false;
+  }
+}
+
+function _dnsWriteHideInactive(next) {
+  try {
+    localStorage.setItem(_DNS_HIDE_INACTIVE_KEY, next ? '1' : '0');
+  } catch (_) {}
+}
+
+function isPfSenseDnsHideInactive() {
+  return !!_dnsHideInactive;
+}
+
+function togglePfSenseDnsHideInactive() {
+  _dnsHideInactive = !_dnsHideInactive;
+  _dnsWriteHideInactive(_dnsHideInactive);
+  renderPfSenseDns();
+  if (typeof ProbesMenuConfig !== 'undefined') ProbesMenuConfig.updateActiveTab('pfsense-dns');
+}
 
 function _ensureDnsTableView() {
   if (_dnsTableView || typeof TableView === 'undefined') return _dnsTableView;
@@ -119,6 +146,40 @@ function _dnsTbodyEl() {
 
 function _dnsFormatDate(value) {
   return ((value || '—').replace('T', ' ').slice(0, 19)) || '—';
+}
+
+function _dnsSearchQuery() {
+  return (document.getElementById('dns-search')?.value || '').toLowerCase();
+}
+
+function _dnsFilteredRows() {
+  const q = _dnsSearchQuery();
+  return _pfsenseDns.filter(d =>
+    (!_dnsHideInactive || d.active) && (
+      (d.ip_address || '').toLowerCase().includes(q) ||
+      (d.fqdn || '').toLowerCase().includes(q) ||
+      (d.record_type || '').toLowerCase().includes(q) ||
+      (d.source || '').toLowerCase().includes(q) ||
+      (d.mac_address || '').toLowerCase().includes(q)
+    )
+  );
+}
+
+function getPfSenseDnsExpansionState() {
+  const view = _ensureDnsTableView();
+  const sortState = view?.getSortState() || { key: 'ip_address', dir: 1 };
+  const groups = _dnsBuildGroups(_dnsFilteredRows(), sortState);
+  if (!groups.length) {
+    return { hasExpandable: false, anyExpanded: false, anyCollapsed: false };
+  }
+  const q = _dnsSearchQuery();
+  const anyExpanded = groups.some(group => q.length > 0 || _dnsOpenGroups.has(group.safeip));
+  const anyCollapsed = groups.some(group => !(q.length > 0 || _dnsOpenGroups.has(group.safeip)));
+  return {
+    hasExpandable: true,
+    anyExpanded: anyExpanded,
+    anyCollapsed: anyCollapsed,
+  };
 }
 
 function _dnsIpToken(ip) {
@@ -315,7 +376,7 @@ function _dnsApplyColsModal() {
 
 document.addEventListener('DOMContentLoaded', () => {
   const dnsSearch = document.getElementById('dns-search');
-  const dnsHideInact = document.getElementById('dns-hide-inactive');
+  _dnsHideInactive = _dnsReadHideInactive();
 
   _ensureDnsTableView();
   _ensureDnsLayoutController()?.init();
@@ -325,9 +386,6 @@ document.addEventListener('DOMContentLoaded', () => {
       clearTimeout(_dnsFilterTimer);
       _dnsFilterTimer = setTimeout(renderPfSenseDns, 250);
     });
-  }
-  if (dnsHideInact) {
-    dnsHideInact.addEventListener('change', renderPfSenseDns);
   }
 
   _dnsTableView?.onLayoutChange(() => {
@@ -356,6 +414,9 @@ async function loadPfSenseDns() {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     _pfsenseDns = await r.json();
     renderPfSenseDns();
+    // Initial async data load happens after the menu is first painted; force
+    // one menu-state refresh so Expand/Collapse visibility reflects live rows.
+    if (typeof ProbesMenuConfig !== 'undefined') ProbesMenuConfig.updateActiveTab('pfsense-dns');
   } catch (e) {
     err.textContent = `Failed to load DNS entries: ${e.message}`;
     err.hidden = false;
@@ -386,17 +447,9 @@ async function checkProbeStatus() {
 }
 
 function renderPfSenseDns() {
-  const q = (document.getElementById('dns-search').value || '').toLowerCase();
-  const hideInactive = document.getElementById('dns-hide-inactive').checked;
-  const rows = _pfsenseDns.filter(d =>
-    (!hideInactive || d.active) && (
-      (d.ip_address || '').toLowerCase().includes(q) ||
-      (d.fqdn || '').toLowerCase().includes(q) ||
-      (d.record_type || '').toLowerCase().includes(q) ||
-      (d.source || '').toLowerCase().includes(q) ||
-      (d.mac_address || '').toLowerCase().includes(q)
-    )
-  );
+  const q = _dnsSearchQuery();
+  const hideInactive = _dnsHideInactive;
+  const rows = _dnsFilteredRows();
   const tbody = _dnsTbodyEl();
   const view = _ensureDnsTableView();
   const sortState = view?.getSortState() || { key: 'ip_address', dir: 1 };
@@ -430,6 +483,7 @@ function setAllDnsGroups(open) {
     else _dnsOpenGroups.delete(safeip);
   });
   renderPfSenseDns();
+  if (typeof ProbesMenuConfig !== 'undefined') ProbesMenuConfig.updateActiveTab('pfsense-dns');
 }
 
 function toggleDnsGroup(safeip) {
@@ -438,6 +492,7 @@ function toggleDnsGroup(safeip) {
   if (isOpen) _dnsOpenGroups.delete(safeip);
   else _dnsOpenGroups.add(safeip);
   renderPfSenseDns();
+  if (typeof ProbesMenuConfig !== 'undefined') ProbesMenuConfig.updateActiveTab('pfsense-dns');
 }
 
 async function probePfSense() {

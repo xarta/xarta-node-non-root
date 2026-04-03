@@ -522,6 +522,9 @@ async function loadProxmoxConfig() {
     _proxmoxConfig = await r.json();
     await loadProxmoxNets();
     renderProxmoxConfig();
+    // Async table data lands after initial menu paint on hard refresh.
+    // Recompute fn-item visibility once real rows are available.
+    if (typeof ProbesMenuConfig !== 'undefined') ProbesMenuConfig.updateActiveTab('proxmox-config');
     loadVlans(); // refresh VLAN tab whenever proxmox config is loaded
   } catch (e) {
     err.textContent = `Failed to load Proxmox config: ${e.message}`;
@@ -551,13 +554,7 @@ async function checkProxmoxProbeStatus() {
 
 function renderProxmoxConfig() {
   const q = (document.getElementById('pve-search').value || '').toLowerCase();
-  const rows = _proxmoxConfig.filter(d =>
-    (d.pve_name || '').toLowerCase().includes(q) ||
-    String(d.vmid || '').toLowerCase().includes(q) ||
-    (d.name     || '').toLowerCase().includes(q) ||
-    (d.ip_address || '').toLowerCase().includes(q) ||
-    (d.tags     || '').toLowerCase().includes(q)
-  );
+  const rows = _pveFilteredRows();
   const tbody = _pveConfigTbodyEl();
   const view = _ensurePveConfigTableView();
   const sortState = view?.getSortState() || { key: 'pve_name', dir: 1 };
@@ -601,27 +598,63 @@ function renderProxmoxConfig() {
   });
 }
 
+function _pveFilteredRows() {
+  const q = (document.getElementById('pve-search').value || '').toLowerCase();
+  return _proxmoxConfig.filter(d =>
+    (d.pve_name || '').toLowerCase().includes(q) ||
+    String(d.vmid || '').toLowerCase().includes(q) ||
+    (d.name || '').toLowerCase().includes(q) ||
+    (d.ip_address || '').toLowerCase().includes(q) ||
+    (d.tags || '').toLowerCase().includes(q)
+  );
+}
+
+function getProxmoxConfigExpansionState() {
+  const q = (document.getElementById('pve-search')?.value || '').toLowerCase();
+  const rows = _pveFilteredRows();
+  const expandableRows = rows.filter(row => (_proxmoxNetsMap[row.config_id] || []).length > 0);
+  if (!expandableRows.length) {
+    return { hasExpandable: false, anyExpanded: false, anyCollapsed: false };
+  }
+
+  let anyExpanded = false;
+  let anyCollapsed = false;
+  expandableRows.forEach(row => {
+    const safePve = 'pg' + String(row.pve_name || '').replace(/[^a-zA-Z0-9]/g, '_');
+    const safeid = String(row.config_id).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const groupOpen = q.length > 0 || _pveOpenGroups.has(safePve);
+    const detailOpen = _pveOpenNetDetails.has(safeid);
+    const fullyExpanded = groupOpen && detailOpen;
+
+    // Manual group opens count as expanded from a user perspective.
+    // Expand-all target state for a row is groupOpen + detailOpen.
+    if (groupOpen || fullyExpanded) anyExpanded = true;
+    if (!fullyExpanded) anyCollapsed = true;
+  });
+
+  return {
+    hasExpandable: true,
+    anyExpanded: anyExpanded,
+    anyCollapsed: anyCollapsed,
+  };
+}
+
 function toggleNets(safeid) {
   if (_pveOpenNetDetails.has(safeid)) _pveOpenNetDetails.delete(safeid);
   else _pveOpenNetDetails.add(safeid);
   renderProxmoxConfig();
+  if (typeof ProbesMenuConfig !== 'undefined') ProbesMenuConfig.updateActiveTab('proxmox-config');
 }
 
 function togglePveGroup(safePve) {
   if (_pveOpenGroups.has(safePve)) _pveOpenGroups.delete(safePve);
   else _pveOpenGroups.add(safePve);
   renderProxmoxConfig();
+  if (typeof ProbesMenuConfig !== 'undefined') ProbesMenuConfig.updateActiveTab('proxmox-config');
 }
 
 function setAllNets(open) {
-  const filteredRows = _proxmoxConfig.filter(d => {
-    const q = (document.getElementById('pve-search').value || '').toLowerCase();
-    return (d.pve_name || '').toLowerCase().includes(q)
-      || String(d.vmid || '').toLowerCase().includes(q)
-      || (d.name || '').toLowerCase().includes(q)
-      || (d.ip_address || '').toLowerCase().includes(q)
-      || (d.tags || '').toLowerCase().includes(q);
-  });
+  const filteredRows = _pveFilteredRows();
   if (open) {
     filteredRows.forEach(row => {
       const safePve = 'pg' + String(row.pve_name || '').replace(/[^a-zA-Z0-9]/g, '_');
@@ -635,6 +668,7 @@ function setAllNets(open) {
     _pveOpenNetDetails.clear();
   }
   renderProxmoxConfig();
+  if (typeof ProbesMenuConfig !== 'undefined') ProbesMenuConfig.updateActiveTab('proxmox-config');
 }
 
 async function loadProxmoxNets() {

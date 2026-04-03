@@ -53,9 +53,10 @@ const ProbesMenuConfig = createHubMenu({
         { id: 'dns-fn-sweep',    label: 'Ping Sweep',    icon: HIEROGLYPHS.wasScepter, fn: 'dns.sweep',      activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 2 },
         { id: 'dns-fn-cols',     label: 'Columns',       icon: 'icons/ui/table-columns-blue.svg', fn: 'dns.cols', activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 3 },
         { id: 'dns-fn-scroll',   label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'dns.scroll', activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 4 },
-        { id: 'dns-fn-expand',   label: 'Expand all',    icon: 'icons/ui/chevron-down-blue.svg', fn: 'dns.expandAll',  activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 5 },
-        { id: 'dns-fn-collapse', label: 'Collapse all',  icon: 'icons/ui/chevron-up-blue.svg',   fn: 'dns.collapseAll',activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 6 },
-        { id: 'dns-fn-context',  label: 'Layout Context', icon: HIEROGLYPHS.eyeOfHorus, fn: 'dns.context',  activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 7 },
+        { id: 'dns-fn-inactive', label: 'Hide inactive', icon: 'icons/ui/arrow-up-blue.svg', fn: 'dns.inactive', activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 5 },
+        { id: 'dns-fn-expand',   label: 'Expand all',    icon: 'icons/ui/chevron-down-blue.svg', fn: 'dns.expandAll',  activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 6 },
+        { id: 'dns-fn-collapse', label: 'Collapse all',  icon: 'icons/ui/chevron-up-blue.svg',   fn: 'dns.collapseAll',activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 7 },
+        { id: 'dns-fn-context',  label: 'Layout Context', icon: HIEROGLYPHS.eyeOfHorus, fn: 'dns.context',  activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 8 },
 
         // ── Proxmox Config page function items ────────────────────────────
         { id: 'pve-fn-refresh',   label: 'Refresh',     icon: HIEROGLYPHS.nefer,      fn: 'pve.refresh',    activeOn: ['proxmox-config'], parent: 'probes-settings', order: 0 },
@@ -121,6 +122,17 @@ function _probesHorizontalScrollLabel(label, getController) {
     return `${label}: ${enabled ? 'Is On' : 'Is Off'}`;
 }
 
+function _probesExpandCollapseVisible(getState, mode) {
+    const state = typeof getState === 'function' ? getState() : null;
+    const hasExpandable = !!(state && state.hasExpandable);
+    if (!hasExpandable) return false;
+    const anyExpanded = !!state.anyExpanded;
+    const anyCollapsed = !!state.anyCollapsed;
+    if (mode === 'expand') return anyCollapsed;
+    if (mode === 'collapse') return anyExpanded;
+    return true;
+}
+
 // ── Function registrations ───────────────────────────────────────────────────
 // probes-menu.js loads after bookmarks.js so all referenced globals are in scope.
 // To register functions for an additional page, call:
@@ -156,6 +168,7 @@ ProbesMenuConfig.registerFunctions({
     'dns.sweep':      () => pingSweep(),
     'dns.cols':       () => _dnsOpenColsModal(),
     'dns.scroll':     () => togglePfSenseDnsHorizontalScroll(),
+    'dns.inactive':   () => togglePfSenseDnsHideInactive(),
     'dns.context':   () => openPfSenseDnsLayoutContextModal(),
     'dns.expandAll':  () => setAllDnsGroups(true),
     'dns.collapseAll':() => setAllDnsGroups(false),
@@ -214,6 +227,7 @@ ProbesMenuConfig.registerLabelGetters({
     'bm-fn-scroll':      () => _probesHorizontalScrollLabel('Horiz Scroll', () => _bmCurrentTablePrefs()),
     'bm-fn-pagination': () => _bmIsPaginationEnabled() ? 'Pagination: On' : 'Pagination: Off',
     'dns-fn-scroll':     () => _probesHorizontalScrollLabel('Horiz Scroll', () => _ensureDnsLayoutController()),
+    'dns-fn-inactive':   () => (typeof isPfSenseDnsHideInactive === 'function' && isPfSenseDnsHideInactive()) ? 'Show inactive' : 'Hide inactive',
     'pve-fn-scroll':     () => _probesHorizontalScrollLabel('Horiz Scroll', () => _ensurePveConfigLayoutController()),
     'vlan-fn-scroll':    () => _probesHorizontalScrollLabel('Horiz Scroll', () => _ensureVlansLayoutController()),
     'ssh-fn-scroll':     () => _probesHorizontalScrollLabel('Horiz Scroll', () => _ensureSshTargetsLayoutController()),
@@ -221,4 +235,13 @@ ProbesMenuConfig.registerLabelGetters({
     'caddy-fn-scroll':   () => _probesHorizontalScrollLabel('Horiz Scroll', () => _ensureCaddyLayoutController()),
     'vis-fn-scroll':     () => _probesHorizontalScrollLabel('Horiz Scroll', () => _ensureVisitsLayoutController()),
     'vis-fn-pagination': () => _visIsPaginationEnabled() ? 'Pagination: On' : 'Pagination: Off',
+});
+
+ProbesMenuConfig.registerVisibilityGetters({
+    'dns-fn-expand': () => _probesExpandCollapseVisible(() => (typeof getPfSenseDnsExpansionState === 'function' ? getPfSenseDnsExpansionState() : null), 'expand'),
+    'dns-fn-collapse': () => _probesExpandCollapseVisible(() => (typeof getPfSenseDnsExpansionState === 'function' ? getPfSenseDnsExpansionState() : null), 'collapse'),
+    'pve-fn-expand': () => _probesExpandCollapseVisible(() => (typeof getProxmoxConfigExpansionState === 'function' ? getProxmoxConfigExpansionState() : null), 'expand'),
+    'pve-fn-collapse': () => _probesExpandCollapseVisible(() => (typeof getProxmoxConfigExpansionState === 'function' ? getProxmoxConfigExpansionState() : null), 'collapse'),
+    'dockge-fn-expand': () => _probesExpandCollapseVisible(() => (typeof getDockgeExpansionState === 'function' ? getDockgeExpansionState() : null), 'expand'),
+    'dockge-fn-collapse': () => _probesExpandCollapseVisible(() => (typeof getDockgeExpansionState === 'function' ? getDockgeExpansionState() : null), 'collapse'),
 });

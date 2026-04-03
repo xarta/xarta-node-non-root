@@ -183,6 +183,9 @@ async function loadDockgeStacks() {
     if (expandAllBtn)   expandAllBtn.hidden   = !hasStacks;
     if (collapseAllBtn) collapseAllBtn.hidden = !hasStacks;
     renderDockgeStacks();
+    // Async table data lands after initial menu paint on hard refresh.
+    // Recompute fn-item visibility once real rows are available.
+    if (typeof ProbesMenuConfig !== 'undefined') ProbesMenuConfig.updateActiveTab('dockge-stacks');
   } catch (e) {
     err.textContent = `Failed to load Dockge stacks: ${e.message}`;
     err.hidden = false;
@@ -212,23 +215,14 @@ function toggleDockgeServices(safeid) {
   if (_dockgeOpenServices.has(safeid)) _dockgeOpenServices.delete(safeid);
   else _dockgeOpenServices.add(safeid);
   renderDockgeStacks();
+  if (typeof ProbesMenuConfig !== 'undefined') ProbesMenuConfig.updateActiveTab('dockge-stacks');
 }
 
 function setAllDockgeServices(open) {
-  const q = (document.getElementById('dockge-search').value || '').toLowerCase();
-  const hideObs = document.getElementById('dockge-hide-obsolete').checked;
+  const rows = _dockgeFilteredRows();
   if (open) {
-    _dockgeStacks.forEach(row => {
-      const matches = (!hideObs || !row.obsolete) && (
-        (row.source_vmid || '').toString().includes(q) ||
-        (row.source_lxc_name || '').toLowerCase().includes(q) ||
-        (row.stack_name || '').toLowerCase().includes(q) ||
-        (row.status || '').toLowerCase().includes(q) ||
-        (row.parent_context || '').toLowerCase().includes(q) ||
-        (row.ip_address || '').toLowerCase().includes(q) ||
-        (row.notes || '').toLowerCase().includes(q)
-      );
-      if (matches && (_dockgeServicesMap[row.stack_id] || []).length > 0) {
+    rows.forEach(row => {
+      if ((_dockgeServicesMap[row.stack_id] || []).length > 0) {
         _dockgeOpenServices.add((row.stack_id || '').replace(/[^a-zA-Z0-9_-]/g,'_'));
       }
     });
@@ -236,6 +230,7 @@ function setAllDockgeServices(open) {
     _dockgeOpenServices.clear();
   }
   renderDockgeStacks();
+  if (typeof ProbesMenuConfig !== 'undefined') ProbesMenuConfig.updateActiveTab('dockge-stacks');
 }
 
 function _parentBadge(ctx, stackName) {
@@ -259,20 +254,7 @@ function _vmTypeBadge(vmType) {
 }
 
 function renderDockgeStacks() {
-  const q = (document.getElementById('dockge-search').value || '').toLowerCase();
-  const hideObs = document.getElementById('dockge-hide-obsolete').checked;
-  const rows = _dockgeStacks.filter(d =>
-    (!hideObs || !d.obsolete) &&
-    (
-      (d.source_vmid      || '').toString().includes(q) ||
-      (d.source_lxc_name  || '').toLowerCase().includes(q) ||
-      (d.stack_name       || '').toLowerCase().includes(q) ||
-      (d.status           || '').toLowerCase().includes(q) ||
-      (d.parent_context   || '').toLowerCase().includes(q) ||
-      (d.ip_address       || '').toLowerCase().includes(q) ||
-      (d.notes            || '').toLowerCase().includes(q)
-    )
-  );
+  const rows = _dockgeFilteredRows();
   const tbody = document.getElementById('dockge-tbody');
   const view = _ensureDockgeTableView();
   const visibleCols = _dockgeVisibleCols();
@@ -357,6 +339,44 @@ function renderDockgeStacks() {
     return `<tr>${visibleCols.map(col => cellMap[col] || '<td></td>').join('')}</tr>${svcSubRow}`;
   }).join('');
   });
+}
+
+function _dockgeFilteredRows() {
+  const q = (document.getElementById('dockge-search')?.value || '').toLowerCase();
+  const hideObs = !!document.getElementById('dockge-hide-obsolete')?.checked;
+  return _dockgeStacks.filter(d =>
+    (!hideObs || !d.obsolete) &&
+    (
+      (d.source_vmid || '').toString().includes(q) ||
+      (d.source_lxc_name || '').toLowerCase().includes(q) ||
+      (d.stack_name || '').toLowerCase().includes(q) ||
+      (d.status || '').toLowerCase().includes(q) ||
+      (d.parent_context || '').toLowerCase().includes(q) ||
+      (d.ip_address || '').toLowerCase().includes(q) ||
+      (d.notes || '').toLowerCase().includes(q)
+    )
+  );
+}
+
+function getDockgeExpansionState() {
+  const rows = _dockgeFilteredRows();
+  const expandableRows = rows.filter(row => (_dockgeServicesMap[row.stack_id] || []).length > 0);
+  if (!expandableRows.length) {
+    return { hasExpandable: false, anyExpanded: false, anyCollapsed: false };
+  }
+  let anyExpanded = false;
+  let anyCollapsed = false;
+  expandableRows.forEach(row => {
+    const safeid = (row.stack_id || '').replace(/[^a-zA-Z0-9_-]/g,'_');
+    const expanded = _dockgeOpenServices.has(safeid);
+    if (expanded) anyExpanded = true;
+    else anyCollapsed = true;
+  });
+  return {
+    hasExpandable: true,
+    anyExpanded: anyExpanded,
+    anyCollapsed: anyCollapsed,
+  };
 }
 
 function _dockgeSortValue(row, sortKey) {
