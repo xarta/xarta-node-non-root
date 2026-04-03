@@ -193,7 +193,7 @@
         var prevBtn = document.createElement('button');
         prevBtn.className = 'secondary';
         prevBtn.style.cssText = 'padding:2px 10px;font-size:12px';
-        prevBtn.innerHTML = '&#8592; Prev';
+        prevBtn.innerHTML = '&#8249;';
         prevBtn.disabled = state.page <= 1;
         prevBtn.addEventListener('click', function () {
           state.page -= 1;
@@ -206,7 +206,7 @@
         var nextBtn = document.createElement('button');
         nextBtn.className = 'secondary';
         nextBtn.style.cssText = 'padding:2px 10px;font-size:12px';
-        nextBtn.innerHTML = 'Next &#8594;';
+        nextBtn.innerHTML = '&#8250;';
         nextBtn.disabled = state.page >= totalPages;
         nextBtn.addEventListener('click', function () {
           state.page += 1;
