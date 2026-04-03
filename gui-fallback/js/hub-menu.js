@@ -431,6 +431,123 @@ function createHubMenu(cfg) {
             if (tabs)   tabs.classList.remove('open');
         },
 
+        _activeTabId() {
+            if (this._activeId) return this._activeId;
+            const activePanel = document.querySelector('.tab-panel.active');
+            return activePanel ? activePanel.id.replace('tab-', '') : null;
+        },
+
+        _contextMenuFunctionItems(activeId) {
+            const parentId = cfg.mobilePinnedId;
+            if (!parentId) return [];
+            const children = this.getChildren(parentId);
+            const fnChildren = children.filter(item => !!item.fn);
+            const visibleFnChildren = fnChildren.filter(item =>
+                (!item.activeOn || (activeId && item.activeOn.includes(activeId)))
+                && this._isItemVisible(item, activeId)
+            );
+            return this._sortFunctionItems(visibleFnChildren);
+        },
+
+        _removeFloatingContextMenu() {
+            if (this._floatingContextPointerHandler) {
+                document.removeEventListener('pointerdown', this._floatingContextPointerHandler, true);
+                this._floatingContextPointerHandler = null;
+            }
+            if (this._floatingContextKeyHandler) {
+                document.removeEventListener('keydown', this._floatingContextKeyHandler, true);
+                this._floatingContextKeyHandler = null;
+            }
+            if (this._floatingContextMenuEl && this._floatingContextMenuEl.parentNode) {
+                this._floatingContextMenuEl.parentNode.removeChild(this._floatingContextMenuEl);
+            }
+            this._floatingContextMenuEl = null;
+        },
+
+        openContextMenuAt(anchorEl) {
+            if (!anchorEl || typeof anchorEl.getBoundingClientRect !== 'function') return false;
+            const activeId = this._activeTabId();
+            const fnItems = this._contextMenuFunctionItems(activeId);
+            if (!fnItems.length) {
+                this._removeFloatingContextMenu();
+                return false;
+            }
+
+            this.closeDropdowns();
+
+            const host = document.createElement('div');
+            host.className = 'hub-tab-dropdown open hub-context-menu-floating';
+            host.dataset.hubContextMenu = '1';
+            host.style.position = 'fixed';
+            host.style.zIndex = '12000';
+
+            const menu = document.createElement('div');
+            menu.className = 'hub-dropdown-menu hub-context-menu-floating__menu';
+            menu.style.position = 'absolute';
+            menu.style.top = '0';
+            menu.style.left = '0';
+            menu.style.marginTop = '0';
+
+            fnItems.forEach(item => {
+                const btn = document.createElement('button');
+                btn.className = 'hub-dropdown-item hub-dropdown-fn';
+                btn.type = 'button';
+                btn.dataset.fn = item.fn;
+                btn.dataset.itemKey = item.id;
+                btn.innerHTML = this._iconHtml(item.id, item.icon) + '\u00a0' + this._displayLabel(item);
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this._playItemSound(item.id);
+                    const fn = this._fnRegistry[item.fn];
+                    if (typeof fn === 'function') fn();
+                    else console.warn('[HubMenu] No function registered for:', item.fn);
+                    this._removeFloatingContextMenu();
+                    window.setTimeout(() => this.updateActiveTab(this._activeId), 0);
+                });
+                menu.appendChild(btn);
+            });
+
+            host.appendChild(menu);
+            document.body.appendChild(host);
+            this._floatingContextMenuEl = host;
+
+            const anchorRect = anchorEl.getBoundingClientRect();
+            const viewportW = window.innerWidth || document.documentElement.clientWidth || 0;
+            const viewportH = this._getViewportHeight();
+            const top = Math.max(8, Math.round(anchorRect.bottom + 6));
+            host.style.left = '8px';
+            host.style.top = top + 'px';
+
+            const menuRect = menu.getBoundingClientRect();
+            if (viewportW > 0 && menuRect.width > 0) {
+                const anchorCenter = anchorRect.left + (anchorRect.width / 2);
+                const desiredLeft = Math.round(anchorCenter - (menuRect.width / 2));
+                const maxLeft = Math.max(8, Math.floor(viewportW - menuRect.width - 8));
+                host.style.left = Math.min(Math.max(8, desiredLeft), maxLeft) + 'px';
+            }
+            if (viewportH > 0 && menuRect.height > 0) {
+                const maxTop = Math.max(8, Math.floor(viewportH - menuRect.height - 8));
+                host.style.top = Math.min(top, maxTop) + 'px';
+            }
+            this._fitDropdownMenu(menu);
+
+            this._floatingContextPointerHandler = (event) => {
+                if (!this._floatingContextMenuEl) return;
+                if (this._floatingContextMenuEl.contains(event.target)) return;
+                this._removeFloatingContextMenu();
+            };
+            this._floatingContextKeyHandler = (event) => {
+                if (event.key === 'Escape') this._removeFloatingContextMenu();
+            };
+            window.setTimeout(() => {
+                if (!this._floatingContextMenuEl) return;
+                document.addEventListener('pointerdown', this._floatingContextPointerHandler, true);
+                document.addEventListener('keydown', this._floatingContextKeyHandler, true);
+            }, 0);
+
+            return true;
+        },
+
         // ── Navbar rendering ───────────────────────────────────────
 
         renderNavbar(activeId) {
@@ -605,6 +722,7 @@ function createHubMenu(cfg) {
         },
 
         closeDropdowns() {
+            this._removeFloatingContextMenu();
             const sel = `#${cfg.tabsId} .hub-tab-dropdown.open`;
             const pinnedSel = cfg.pinnedTabsId ? `, #${cfg.pinnedTabsId} .hub-tab-dropdown.open` : '';
             document.querySelectorAll(sel + pinnedSel)

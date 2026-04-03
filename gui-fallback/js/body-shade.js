@@ -24,6 +24,9 @@
 
   var SNAP_VELO  = 250;  // px/s — velocity threshold for fast-flick snap
   var TRANSITION = 300;  // ms — must match CSS transition duration
+  var LONG_PRESS_MS = 200;
+  var DRAG_ACTIVATE_PX = 3;
+  var LONG_PRESS_MOVE_PX = 12;
 
   var shade;
   var handle    = null;  // active handle (inside currently visible tab panel)
@@ -34,11 +37,69 @@
   var _fillSettleTimers = [];
 
   var dragging      = false;
+  var dragMoved     = false;
+  var dragStartedUp = false;
+  var pendingUpRelease = false;
+  var suppressEndDrag = false;
   var startPointerY = 0;
   var startShadeY   = 0;
   var lastPointerY  = 0;
   var lastPointerT  = 0;
   var vel           = 0;   // px/s, EMA (negative = moving up)
+  var longPressTimer = null;
+
+  function clearLongPressTimer() {
+    if (!longPressTimer) return;
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+
+  function getActiveMenuConfig() {
+    var wrappers = [
+      { id: 'synthesisMenuWrapper', cfg: function () { return (typeof SynthesisMenuConfig !== 'undefined') ? SynthesisMenuConfig : null; } },
+      { id: 'probesMenuWrapper', cfg: function () { return (typeof ProbesMenuConfig !== 'undefined') ? ProbesMenuConfig : null; } },
+      { id: 'settingsMenuWrapper', cfg: function () { return (typeof SettingsMenuConfig !== 'undefined') ? SettingsMenuConfig : null; } },
+    ];
+    for (var i = 0; i < wrappers.length; i += 1) {
+      var ref = wrappers[i];
+      var el = document.getElementById(ref.id);
+      if (!el) continue;
+      if (window.getComputedStyle(el).display === 'none') continue;
+      var cfg = ref.cfg();
+      if (cfg && typeof cfg.openContextMenuAt === 'function') return cfg;
+    }
+    return null;
+  }
+
+  function openContextMenuFromHandle() {
+    if (!handle) return false;
+    var menu = getActiveMenuConfig();
+    if (!menu) return false;
+    return !!menu.openContextMenuAt(handle);
+  }
+
+  function armLongPress() {
+    clearLongPressTimer();
+    longPressTimer = setTimeout(function () {
+      longPressTimer = null;
+      if (!dragging) return;
+      var opened = openContextMenuFromHandle();
+      if (!opened) return;
+
+      suppressEndDrag = true;
+      dragging = false;
+      if (handle) handle.classList.remove('is-grabbing');
+      shade.classList.remove('is-dragging');
+
+      if (dragStartedUp && !dragMoved) {
+        applyTranslate(-maxTravel, true);
+        enterUp();
+      } else {
+        applyTranslate(0, false);
+        document.body.classList.remove('shade-is-up');
+      }
+    }, LONG_PRESS_MS);
+  }
   function getShadeBottomClearance() {
     if (window.matchMedia && (window.matchMedia('(pointer: coarse)').matches || window.innerWidth <= 768)) {
       return 8;
@@ -105,9 +166,15 @@
   /* ── Shared drag start (touch and mouse) ───────────────────────────────── */
   function startDrag(clientY) {
     if (!handle) return false;
+    dragMoved = false;
+    dragStartedUp = isUp;
+    pendingUpRelease = false;
+    suppressEndDrag = false;
     if (isUp) {
-      exitUp();
-      // maxTravel is still valid from when we entered up — keep it
+      // Keep shade-up visuals on initial contact; only release when movement
+      // indicates an intentional drag.
+      pendingUpRelease = true;
+      if (maxTravel <= 0) maxTravel = computeMaxTravel();
       startShadeY = shadeY;   // shadeY == -maxTravel
     } else {
       // Hide header and menu zone immediately on drag-start so fixed/stacked
@@ -128,11 +195,32 @@
     lastPointerT  = Date.now();
     vel           = 0;
     handle.classList.add('is-grabbing');
+    armLongPress();
     return true;
   }
 
   /* ── Shared drag move ───────────────────────────────────────────────────── */
   function moveDrag(clientY) {
+    var delta = clientY - startPointerY;
+    var absDelta = Math.abs(delta);
+    if (absDelta > LONG_PRESS_MOVE_PX) clearLongPressTimer();
+    if (absDelta >= DRAG_ACTIVATE_PX) {
+      dragMoved = true;
+      clearLongPressTimer();
+    }
+
+    if (pendingUpRelease) {
+      if (absDelta < DRAG_ACTIVATE_PX) return;
+      exitUp();
+      pendingUpRelease = false;
+      // Re-anchor movement after releasing shade-up so drag starts smoothly.
+      startPointerY = clientY;
+      lastPointerY = clientY;
+      lastPointerT = Date.now();
+      startShadeY = shadeY;
+      delta = 0;
+    }
+
     var now = Date.now();
     var dt  = now - lastPointerT;
     if (dt > 0) {
@@ -141,15 +229,27 @@
     }
     lastPointerY = clientY;
     lastPointerT = now;
-    var newY = Math.min(0, Math.max(-maxTravel, startShadeY + (clientY - startPointerY)));
+    var newY = Math.min(0, Math.max(-maxTravel, startShadeY + delta));
     applyTranslate(newY, true);
   }
 
   /* ── Shared drag end ────────────────────────────────────────────────────── */
   function endDrag() {
+    clearLongPressTimer();
+    if (suppressEndDrag) {
+      suppressEndDrag = false;
+      return;
+    }
     if (!dragging) return;
     dragging = false;
     if (handle) handle.classList.remove('is-grabbing');
+
+    // No real drag happened while shade was up — keep current state unchanged.
+    if (pendingUpRelease && !dragMoved) {
+      pendingUpRelease = false;
+      return;
+    }
+    pendingUpRelease = false;
 
     if (maxTravel <= 0) {
       applyTranslate(0, false);
