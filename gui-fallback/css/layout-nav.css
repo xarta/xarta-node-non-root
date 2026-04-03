@@ -1,17 +1,93 @@
 /* ── Layout ── */
 /* header: full-bleed background; .header-inner: constrained to match main width */
+:root {
+  --app-max-width: 2560px;
+  --ultrawide-main-width: 1920px;
+  --ultrawide-right-gutter: 16px;
+  --menu-zone-h: 56px;
+  --ultrawide-gap: 10px;
+  --ultrawide-main-pad-x: 16px;
+  --ultrawide-shade-up-top: 0px;
+}
+
 header { background: var(--surface); border-bottom: 1px solid var(--border);
          position: sticky; top: 0; z-index: 400; }
-.header-inner { max-width: 1400px; margin: 0 auto; padding: 10px 16px;
+.header-inner { max-width: var(--app-max-width); margin: 0 auto; padding: 10px 16px;
                 display: flex; align-items: center; gap: 0; flex-wrap: wrap; width: 100%; }
 header .brand { font-size: 15px; font-weight: 700; letter-spacing: .3px; white-space: nowrap;
                 color: var(--text); flex-shrink: 0; margin-right: 14px; }
 .header-left  { display: flex; align-items: center; gap: 0; flex: 1; min-width: 180px; }
 .header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: auto; padding-left: 8px; }
-main { max-width: 1400px; margin: 0 auto; padding: 16px; width: 100%; }
+main { max-width: var(--app-max-width); margin: 0 auto; padding: 16px; width: 100%; }
 section { margin-bottom: 32px; }
 h2 { font-size: 13px; font-weight: 600; text-transform: uppercase;
      letter-spacing: .8px; color: var(--text-dim); margin-bottom: 12px; }
+
+.ultrawide-sidecar {
+  display: none;
+}
+
+.ultrawide-sidecar__panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(26, 29, 39, 0.92), rgba(15, 17, 23, 0.92));
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ultrawide-sidecar__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(45, 49, 72, 0.24);
+}
+
+.ultrawide-sidecar__title {
+  font-size: 12px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  font-weight: 700;
+}
+
+.ultrawide-sidecar__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  color: var(--text-dim);
+}
+
+/* Ultrawide-short desktop: lock app workspace to 1920 on the left and
+   reserve the right side for flexible utility output panels. */
+@media (min-width: 2400px) and (max-height: 1280px) {
+  .header-inner,
+  main {
+    max-width: var(--ultrawide-main-width);
+    margin-left: 0;
+    margin-right: auto;
+  }
+
+  .ultrawide-sidecar {
+    position: fixed;
+    top: calc(var(--header-h, 50px) + var(--ultrawide-gap));
+    left: calc(var(--ultrawide-main-width) - var(--ultrawide-main-pad-x) + var(--ultrawide-gap));
+    right: var(--ultrawide-gap);
+    bottom: var(--ultrawide-gap);
+    display: block;
+    z-index: 220;
+  }
+
+  body.shade-is-up .ultrawide-sidecar {
+    top: var(--ultrawide-gap);
+  }
+}
 
 /* ── Group tabs (top-level nav in header) ── */
 .group-tabs { display: flex; gap: 2px; flex-shrink: 0; }

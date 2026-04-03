@@ -717,12 +717,12 @@ function createHubMenu(cfg) {
 
             // Close dropdowns on outside click
             document.removeEventListener('click', this._closeHandler);
-            this._closeHandler = () => this.closeDropdowns();
+            this._closeHandler = () => this.closeDropdowns(false);
             document.addEventListener('click', this._closeHandler);
         },
 
-        closeDropdowns() {
-            this._removeFloatingContextMenu();
+        closeDropdowns(includeFloating) {
+            if (includeFloating !== false) this._removeFloatingContextMenu();
             const sel = `#${cfg.tabsId} .hub-tab-dropdown.open`;
             const pinnedSel = cfg.pinnedTabsId ? `, #${cfg.pinnedTabsId} .hub-tab-dropdown.open` : '';
             document.querySelectorAll(sel + pinnedSel)
