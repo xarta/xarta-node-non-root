@@ -112,7 +112,7 @@
           then call ResponsiveLayout.registerTabControls(tabId, groupElId) in the page JS. -->
       <div id="page-controls-slot">
 
-        <!-- Bookmarks main — search / tag filter / archived toggle.
+        <!-- Bookmarks main — search / tag filter controls.
             Formerly in a .toolbar div inside #tab-bookmarks-main.
             Event handlers wired in bookmarks.js via addEventListener. -->
         <div class="page-control-group" id="pg-ctrl-bookmarks-main"
@@ -122,11 +122,6 @@
           <select id="bm-tag-filter">
             <option value="">All tags</option>
           </select>
-          <label class="hub-checkbox" style="font-size:13px;white-space:nowrap;padding:0 6px;">
-            <input class="hub-checkbox__input" type="checkbox" id="bm-show-archived" />
-            <span class="hub-checkbox__box" aria-hidden="true"></span>
-            <span class="hub-checkbox__label">Archived</span>
-          </label>
         </div>
 
         <!-- pfSense DNS — search filter + hide-inactive toggle.

@@ -44,8 +44,9 @@ const ProbesMenuConfig = createHubMenu({
         { id: 'bm-fn-cols',   label: 'Columns',      icon: 'icons/ui/table-columns-blue.svg',  fn: 'bm.cols',        activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 3 },
         { id: 'bm-fn-scroll', label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'bm.scroll', activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 4 },
         { id: 'bm-fn-pagination', label: 'Pagination', icon: 'icons/ui/table-columns-blue.svg', fn: 'bm.pagination', activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 5 },
-        { id: 'bm-fn-expl',   label: 'Explain Sort',    icon: HIEROGLYPHS.eyeOfHorus,  fn: 'bm.explainSort', activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 6 },
-        { id: 'bm-fn-dead',   label: 'Dead links',      icon: HIEROGLYPHS.shen,        fn: 'bm.deadLinks',   activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 7 },
+        { id: 'bm-fn-archived', label: 'Show archived', icon: 'icons/ui/arrow-up-blue.svg', fn: 'bm.archived', activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 6 },
+        { id: 'bm-fn-expl',   label: 'Explain Sort',    icon: HIEROGLYPHS.eyeOfHorus,  fn: 'bm.explainSort', activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 7 },
+        { id: 'bm-fn-dead',   label: 'Dead links',      icon: HIEROGLYPHS.shen,        fn: 'bm.deadLinks',   activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 8 },
 
         // ── pfSense DNS page function items ───────────────────────────────
         { id: 'dns-fn-refresh',  label: 'Refresh',       icon: HIEROGLYPHS.nefer,      fn: 'dns.refresh',    activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 0 },
@@ -149,6 +150,7 @@ ProbesMenuConfig.registerFunctions({
     'bm.cols':        () => _bmOpenColsModal(),
     'bm.scroll':      () => _probesToggleHorizontalScroll(() => _bmCurrentTablePrefs(), () => renderBookmarks({ keepPage: true })),
     'bm.pagination':  () => _bmTogglePagination(),
+    'bm.archived':    () => toggleBookmarksShowArchived(),
     'bm.explainSort': () => {
         if (!_bmSearchActive) {
             const st = document.getElementById('bm-search-status');
@@ -228,6 +230,7 @@ ProbesMenuConfig.registerFunctions({
 ProbesMenuConfig.registerLabelGetters({
     'bm-fn-scroll':      () => _probesHorizontalScrollLabel('Horiz Scroll', () => _bmCurrentTablePrefs()),
     'bm-fn-pagination': () => _bmIsPaginationEnabled() ? 'Pagination: On' : 'Pagination: Off',
+    'bm-fn-archived': () => (typeof isBookmarksShowArchived === 'function' && isBookmarksShowArchived()) ? 'Show active' : 'Show archived',
     'dns-fn-scroll':     () => _probesHorizontalScrollLabel('Horiz Scroll', () => _ensureDnsLayoutController()),
     'dns-fn-inactive':   () => (typeof isPfSenseDnsHideInactive === 'function' && isPfSenseDnsHideInactive()) ? 'Show inactive' : 'Hide inactive',
     'pve-fn-scroll':     () => _probesHorizontalScrollLabel('Horiz Scroll', () => _ensurePveConfigLayoutController()),

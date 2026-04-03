@@ -159,6 +159,34 @@ let _bmTagCounts = {};       // {tag -> {active, archived}}
 let _bmCurrentExclTags = []; // source of truth; kept in sync with server
 let _bmLastSearchResults = []; // cached for re-render on column toggle
 let _bmDisplayedSearchRows = []; // current filtered/sorted search rows shown in the table
+const _BM_SHOW_ARCHIVED_KEY = 'bookmarks.show-archived';
+
+function _bmReadShowArchived() {
+  try {
+    return localStorage.getItem(_BM_SHOW_ARCHIVED_KEY) === '1';
+  } catch (_) {
+    return false;
+  }
+}
+
+function _bmWriteShowArchived(next) {
+  try {
+    localStorage.setItem(_BM_SHOW_ARCHIVED_KEY, next ? '1' : '0');
+  } catch (_) {}
+}
+
+let _bmShowArchived = _bmReadShowArchived();
+
+function isBookmarksShowArchived() {
+  return !!_bmShowArchived;
+}
+
+function toggleBookmarksShowArchived() {
+  _bmShowArchived = !_bmShowArchived;
+  _bmWriteShowArchived(_bmShowArchived);
+  loadBookmarks();
+  if (typeof ProbesMenuConfig !== 'undefined') ProbesMenuConfig.updateActiveTab('bookmarks-main');
+}
 
 // ── Pagination state ─────────────────────────────────────────────────────
 // Visual-only pagination: full _bookmarks array is always loaded; only the
@@ -395,7 +423,7 @@ async function _bmDownloadExtension(btn) {
 async function loadBookmarks() {
   const err = document.getElementById('bm-error');
   err.hidden = true;
-  const archived = document.getElementById('bm-show-archived')?.checked ? 1 : 0;
+  const archived = _bmShowArchived ? 1 : 0;
   try {
     const limit = parseInt(getFrontendSetting('bm_fetch_limit', 50000), 10);
     const r = await apiFetch(`/api/v1/bookmarks?archived=${archived}&limit=${limit}`);
@@ -1831,16 +1859,15 @@ async function _bmFetchScoreExplain(query, result, focus, bodyEl) {
 // Event delegation: score cells in results table + drill-down links in overview modal
 document.addEventListener('DOMContentLoaded', () => {
   _ensureVisitsLayoutController()?.init();
+  _bmShowArchived = _bmReadShowArchived();
   // Wire the search/filter controls that now live in #pg-ctrl-bookmarks-main
   // (moved from the tab-panel toolbar into the menu-zone page-controls slot).
   const bmSearch   = document.getElementById('bm-search');
   const bmTagFilt  = document.getElementById('bm-tag-filter');
-  const bmArchived = document.getElementById('bm-show-archived');
   if (bmSearch)   bmSearch.addEventListener('input', _bmSearchDebounce);
   if (bmTagFilt)  bmTagFilt.addEventListener('change', () => {
     _bmSearchActive ? _renderBmSearchResults(_bmLastSearchResults) : renderBookmarks();
   });
-  if (bmArchived) bmArchived.addEventListener('change', loadBookmarks);
 
   // Replace native tag-filter select with custom fixed-popup dropdown.
   // Must come AFTER the change listener above so the listener is already
