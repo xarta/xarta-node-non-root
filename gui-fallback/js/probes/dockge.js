@@ -19,18 +19,45 @@ const _DOCKGE_FIELD_META = {
 
 let _dockgeTableView = null;
 let _dockgeOpenServices = new Set();
+const _DOCKGE_HIDE_OBSOLETE_KEY = 'dockge.hide-obsolete';
+let _dockgeHideObsolete = true;
+
+function _dockgeReadHideObsolete() {
+  try {
+    const raw = localStorage.getItem(_DOCKGE_HIDE_OBSOLETE_KEY);
+    return raw == null ? true : raw === '1';
+  } catch (_) {
+    return true;
+  }
+}
+
+function _dockgeWriteHideObsolete(next) {
+  try {
+    localStorage.setItem(_DOCKGE_HIDE_OBSOLETE_KEY, next ? '1' : '0');
+  } catch (_) {}
+}
+
+function isDockgeHideObsolete() {
+  return !!_dockgeHideObsolete;
+}
+
+function toggleDockgeHideObsolete() {
+  _dockgeHideObsolete = !_dockgeHideObsolete;
+  _dockgeWriteHideObsolete(_dockgeHideObsolete);
+  renderDockgeStacks();
+  if (typeof ProbesMenuConfig !== 'undefined') ProbesMenuConfig.updateActiveTab('dockge-stacks');
+}
 
 document.addEventListener('DOMContentLoaded', () => {
   let _dockgeFilterTimer = null;
   const searchEl = document.getElementById('dockge-search');
-  const toggleEl = document.getElementById('dockge-hide-obsolete');
+  _dockgeHideObsolete = _dockgeReadHideObsolete();
   _ensureDockgeTableView();
   _ensureDockgeLayoutController()?.init();
   if (searchEl) searchEl.addEventListener('input', () => {
     clearTimeout(_dockgeFilterTimer);
     _dockgeFilterTimer = setTimeout(renderDockgeStacks, 250);
   });
-  if (toggleEl) toggleEl.addEventListener('change', renderDockgeStacks);
   document.getElementById('dockge-cols-modal-apply')?.addEventListener('click', _applyDockgeColsModal);
   document.getElementById('dockge-tbody')?.addEventListener('click', e => {
     const svcToggle = e.target.closest('[data-dockge-svc-toggle]');
@@ -343,7 +370,7 @@ function renderDockgeStacks() {
 
 function _dockgeFilteredRows() {
   const q = (document.getElementById('dockge-search')?.value || '').toLowerCase();
-  const hideObs = !!document.getElementById('dockge-hide-obsolete')?.checked;
+  const hideObs = _dockgeHideObsolete;
   return _dockgeStacks.filter(d =>
     (!hideObs || !d.obsolete) &&
     (
