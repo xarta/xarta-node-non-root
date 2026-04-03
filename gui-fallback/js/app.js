@@ -107,8 +107,14 @@ document.addEventListener('DOMContentLoaded', () => {
   SynthesisMenuConfig.showGroup();
   SynthesisMenuConfig.updateActiveTab('manual-links-' + _manualLinksView);
   loadSyncStatus();
-  setInterval(loadHealth, 15_000);
-  setInterval(loadSyncStatus, 30_000);
+  setInterval(() => {
+    if (typeof window.isColumnResizeActive === 'function' && window.isColumnResizeActive()) return;
+    loadHealth();
+  }, 15_000);
+  setInterval(() => {
+    if (typeof window.isColumnResizeActive === 'function' && window.isColumnResizeActive()) return;
+    loadSyncStatus();
+  }, 30_000);
   ResponsiveLayout.init();
   window.addEventListener('beforeunload', () => ResponsiveLayout.destroy());
   _bmInitEmbedPanel();

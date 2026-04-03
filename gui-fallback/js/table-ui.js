@@ -278,19 +278,11 @@
     function getLayoutState(layoutKey) {
       var resolvedLayout = layoutKey || currentLayout;
       var effectiveLayoutKey = getEffectiveLayoutKey(resolvedLayout);
-      var horizontalScroll = isHorizontalScrollEnabledForLayout(resolvedLayout);
-      var parsedLayout = parseBaseLayoutKey(resolvedLayout);
       var fallbackKeys = getLegacyLayoutKeys(resolvedLayout);
       var siblingKey = effectiveLayoutKey.endsWith('|scroll-x')
         ? effectiveLayoutKey.replace(/\|scroll-x$/, '|fit')
         : effectiveLayoutKey.replace(/\|fit$/, '|scroll-x');
-      if (horizontalScroll && parsedLayout.viewportKey.indexOf('desktop') !== 0) {
-        // Horizontal mode on non-desktop should emulate desktop wide-table behavior,
-        // not clone the same viewport's fit bucket that constrains to screen width.
-        fallbackKeys = uniqueKeys(getDesktopSeedKeys(resolvedLayout).concat([siblingKey], fallbackKeys));
-      } else {
-        fallbackKeys.unshift(siblingKey);
-      }
+      fallbackKeys.unshift(siblingKey);
       return ensureLayoutState(state, effectiveLayoutKey, fallbackKeys);
     }
 
@@ -352,10 +344,6 @@
 
     function updateScrollWidth(tableEl) {
       if (!tableEl) return;
-      if (!isHorizontalScrollEnabled()) {
-        tableEl.style.removeProperty('--table-scroll-width');
-        return;
-      }
       var totalWidth = 0;
       tableEl.querySelectorAll('thead th[data-col]').forEach(function (th) {
         var explicit = parseFloat(th.style.width || '0');
@@ -363,7 +351,12 @@
         totalWidth += explicit > 0 ? explicit : measured;
       });
       if (totalWidth > 0) {
-        tableEl.style.setProperty('--table-scroll-width', Math.ceil(totalWidth) + 'px');
+        var px = Math.ceil(totalWidth) + 'px';
+        tableEl.style.setProperty('--table-fit-width', px);
+        tableEl.style.setProperty('--table-scroll-width', px);
+      } else {
+        tableEl.style.removeProperty('--table-fit-width');
+        tableEl.style.removeProperty('--table-scroll-width');
       }
     }
 
@@ -389,10 +382,7 @@
     function setHorizontalScrollEnabled(enabled) {
       var layout = getActualLayoutState();
       layout.allowHorizontalScroll = !!enabled;
-      layout.pendingHorizontalClamp = !!enabled;
-      if (layout.allowHorizontalScroll) {
-        copyDesktopSeedIntoHorizontalLayout(currentLayout);
-      }
+      layout.pendingHorizontalClamp = false;
       persist();
       return isHorizontalScrollEnabled();
     }
@@ -413,6 +403,25 @@
     function bindColumnResize(tableEl, options) {
       if (!tableEl) return;
       var minWidth = (options && options.minWidth) || cfg.minWidth || 40;
+      var tableCode = (tableEl.dataset && tableEl.dataset.layoutTableCode) || '';
+
+      function emitResizeDebug(stage, payload) {
+        if (tableCode !== '08') return;
+        if (!payload || payload.columnKey !== 'ip_address') return;
+        try {
+          window.dispatchEvent(new CustomEvent('bp:column-resize-debug', {
+            detail: Object.assign({
+              stage: stage,
+              tableCode: tableCode,
+              shadeUp: !!(document.body && document.body.classList.contains('shade-is-up')),
+              ts: Date.now(),
+            }, payload),
+          }));
+        } catch (_) {
+          // Debug events are best-effort only.
+        }
+      }
+
       enableResizeHandlePeek(tableEl);
       tableEl.querySelectorAll('thead th[data-col]').forEach(function (th) {
         if (th.querySelector('.table-col-resize')) return;
@@ -429,29 +438,55 @@
           e.stopPropagation();
 
           var startX = e.clientX;
-          var startW = th.getBoundingClientRect().width;
+          var startWidth = th.getBoundingClientRect().width || 0;
+          var anchorLeft = th.getBoundingClientRect().left || 0;
+          var lastAppliedWidth = startWidth;
           var pointerId = e.pointerId;
           var didDrag = false;
-          tableEl.classList.add('table-resize-handles-visible');
-          tableEl.dataset.colResizeDragging = '1';
-          resizer.classList.add('dragging');
-          document.body.classList.add('table-col-resizing');
-          if (typeof resizer.setPointerCapture === 'function') {
-            try { resizer.setPointerCapture(e.pointerId); } catch (_) {}
+          var dragActivated = false;
+          var finished = false;
+          var prevInlineTableWidth = tableEl.style.width;
+          var dragTableBaseWidth = 0;
+
+          emitResizeDebug('pointerdown', {
+            columnKey: th.dataset.col,
+            pointerId: pointerId,
+            pointerX: e.clientX,
+            startX: startX,
+            startWidth: Math.round(startWidth),
+            minWidth: minWidth,
+            maxWidth: null,
+          });
+
+          function activateDrag() {
+            if (dragActivated) return;
+            dragActivated = true;
+            var frozenTotal = 0;
+            // Freeze every column to its current rendered width so neighbours
+            // don't shift while we drag.
+            tableEl.querySelectorAll('thead th[data-col]').forEach(function (cell) {
+              var cellWidth = cell.getBoundingClientRect().width || 0;
+              if (cellWidth > 0) cell.style.width = cellWidth + 'px';
+              frozenTotal += cellWidth;
+            });
+            // Keep an explicit table width while dragging. This prevents the
+            // browser from shrinking sibling columns as one column grows.
+            dragTableBaseWidth = Math.round(frozenTotal > 0 ? frozenTotal : (tableEl.getBoundingClientRect().width || 0));
+            if (dragTableBaseWidth > 0) {
+              tableEl.style.width = dragTableBaseWidth + 'px';
+            }
+            tableEl.classList.add('table-resize-handles-visible');
+            tableEl.dataset.colResizeDragging = '1';
+            resizer.classList.add('dragging');
+            document.body.classList.add('table-col-resizing');
           }
 
-          function onMove(ev) {
-            if (ev.isPrimary === false) return;
-            if (typeof ev.preventDefault === 'function') ev.preventDefault();
-            var nextW = Math.max(minWidth, Math.round(startW + (ev.clientX - startX)));
-            if (Math.abs(ev.clientX - startX) > 2) didDrag = true;
-            th.style.width = nextW + 'px';
-          }
-
-          function onUp() {
+          function finishDragSession() {
+            if (finished) return;
+            finished = true;
             delete tableEl.dataset.colResizeDragging;
-            if (didDrag) {
-              tableEl.dataset.colResizeSuppressUntil = String(Date.now() + 700);
+            if (dragActivated) {
+              tableEl.style.width = prevInlineTableWidth;
             }
             resizer.classList.remove('dragging');
             document.body.classList.remove('table-col-resizing');
@@ -467,7 +502,85 @@
                 tableEl.classList.remove('table-resize-handles-visible');
               }, 3000);
             }
-            setWidth(th.dataset.col, th.getBoundingClientRect().width);
+          }
+
+          if (typeof resizer.setPointerCapture === 'function') {
+            try { resizer.setPointerCapture(e.pointerId); } catch (_) {}
+          }
+
+          function onMove(ev) {
+            if (ev.isPrimary === false) return;
+            if (ev.pointerId !== pointerId) return;
+            if (typeof ev.preventDefault === 'function') ev.preventDefault();
+            var deltaX = ev.clientX - startX;
+            if (!didDrag && Math.abs(deltaX) <= 2) return;
+            if (!dragActivated) {
+              activateDrag();
+              // Re-anchor after freeze/width-mode changes to avoid first-move
+              // offset jumps (especially on coarse/mobile pointers).
+              anchorLeft = th.getBoundingClientRect().left || anchorLeft;
+            }
+            didDrag = true;
+            // Anchor to the column's left edge so the divider stays under the pointer.
+            var nextW = Math.max(minWidth, Math.round(ev.clientX - anchorLeft));
+            if (nextW === lastAppliedWidth) return;
+            lastAppliedWidth = nextW;
+            th.style.width = nextW + 'px';
+            if (dragTableBaseWidth > 0) {
+              var nextTableWidth = Math.max(1, Math.round(dragTableBaseWidth + (nextW - startWidth)));
+              tableEl.style.width = nextTableWidth + 'px';
+            }
+
+            var rect = th.getBoundingClientRect();
+            emitResizeDebug('move', {
+              columnKey: th.dataset.col,
+              pointerId: pointerId,
+              pointerX: ev.clientX,
+              startX: startX,
+              deltaX: Math.round(deltaX),
+              nextWidth: nextW,
+              renderedWidth: Math.round(rect.width || 0),
+              thLeft: Math.round(rect.left || 0),
+              thRight: Math.round(rect.right || 0),
+              minWidth: minWidth,
+              maxWidth: null,
+            });
+          }
+
+          function onUp(ev) {
+            var upX = ev && Number.isFinite(Number(ev.clientX)) ? Number(ev.clientX) : null;
+            if (!didDrag) {
+              emitResizeDebug('pointerup-no-drag', {
+                columnKey: th.dataset.col,
+                pointerId: pointerId,
+                pointerX: upX,
+                finalWidth: Math.round(th.getBoundingClientRect().width || 0),
+                minWidth: minWidth,
+                maxWidth: null,
+              });
+              finishDragSession();
+              return;
+            }
+            tableEl.dataset.colResizeSuppressUntil = String(Date.now() + 700);
+            // Measure rendered width before restoring table width.
+            var finalRect = th.getBoundingClientRect();
+            var finalWidth = Math.round(finalRect.width || 0);
+            if (finalWidth > 0) {
+              setWidth(th.dataset.col, finalWidth);
+            }
+
+            emitResizeDebug('pointerup-drag', {
+              columnKey: th.dataset.col,
+              pointerId: pointerId,
+              pointerX: upX,
+              finalWidth: finalWidth,
+              thLeft: Math.round(finalRect.left || 0),
+              thRight: Math.round(finalRect.right || 0),
+              minWidth: minWidth,
+              maxWidth: null,
+            });
+
+            finishDragSession();
             updateScrollWidth(tableEl);
             if (options && typeof options.onResizeEnd === 'function') {
               options.onResizeEnd(th.dataset.col, getWidth(th.dataset.col));
@@ -505,10 +618,6 @@
       tableEl.classList.add('table-shared-ui');
       tableEl.classList.toggle('table-shared-ui--scroll-x', isHorizontalScrollEnabled());
       applyWidths(tableEl);
-      if (isHorizontalScrollEnabled() && hasPendingHorizontalClamp()) {
-        clampOverwideColumns(tableEl);
-        clearPendingHorizontalClamp();
-      }
       updateScrollWidth(tableEl);
       bindColumnResize(tableEl, {
         minWidth: options.minWidth || minWidth,
@@ -910,6 +1019,7 @@
     var layoutKey = '';
     var layoutAppliedSignature = '';
     var layoutAppliedKey = '';
+    var layoutSignaturesByKey = Object.create(null);
     var layoutSaveTimer = null;
     var applyingRemoteLayout = false;
     var layoutRequestSeq = 0;
@@ -1140,6 +1250,18 @@
       }
     }
 
+    function _rememberSignature(key, signature) {
+      if (!key || !signature) return;
+      layoutSignaturesByKey[key] = signature;
+      layoutAppliedKey = key;
+      layoutAppliedSignature = signature;
+    }
+
+    function _signatureForKey(key) {
+      if (!key) return '';
+      return layoutSignaturesByKey[key] || '';
+    }
+
     function applyRemoteLayout(layoutData) {
       var view = getView();
       if (!view || !layoutData || !Array.isArray(layoutData.columns)) return;
@@ -1217,8 +1339,7 @@
         var nextSignature = layoutSignature(payload.layout_data);
         if (nextSignature && (nextSignature !== layoutAppliedSignature || keyChanged || options.forceApply)) {
           applyRemoteLayout(payload.layout_data);
-          layoutAppliedSignature = nextSignature;
-          layoutAppliedKey = layoutKey;
+          _rememberSignature(layoutKey, nextSignature);
           if (options.rerender !== false && typeof cfg.render === 'function') {
             cfg.render();
           }
@@ -1232,37 +1353,59 @@
       }
     }
 
-    function scheduleLayoutSave() {
-      if (applyingRemoteLayout) return;
+    function scheduleLayoutSave(options) {
+      options = options || {};
       clearTimeout(layoutSaveTimer);
+      var requestedLayoutKey = options.layoutKey || layoutKey;
+      var requestedLayoutData = options.layoutData || buildLayoutPayload();
       layoutSaveTimer = window.setTimeout(function () {
-        persistLayout().catch(function (error) {
+        if (applyingRemoteLayout) {
+          // User edits during a remote apply must be queued, not dropped.
+          scheduleLayoutSave({
+            layoutKey: requestedLayoutKey,
+            layoutData: requestedLayoutData,
+          });
+          return;
+        }
+        persistLayout({
+          layoutKey: requestedLayoutKey,
+          layoutData: requestedLayoutData,
+        }).catch(function (error) {
           console.warn(getSurfaceLabel() + ' table layout save failed:', error);
         });
       }, saveDelayMs);
     }
 
-    async function persistLayout() {
+    async function persistLayout(options) {
+      options = options || {};
       var view = getView();
       if (!view || typeof apiFetch !== 'function') return;
-      if (!layoutKey) {
+      var targetLayoutKey = options.layoutKey || layoutKey;
+      var layoutData = options.layoutData || null;
+      if (!targetLayoutKey) {
         var resolved = await resolveRemoteLayout({ rerender: false });
         if (!(resolved && resolved.layout_key)) return;
+        targetLayoutKey = resolved.layout_key;
       }
-      var layoutData = buildLayoutPayload();
+      if (!layoutData) {
+        layoutData = buildLayoutPayload();
+      }
       if (!layoutData) return;
       var nextSignature = layoutSignature(layoutData);
-      if (nextSignature === layoutAppliedSignature) return;
-      var response = await apiFetch('/api/v1/table-layouts/' + encodeURIComponent(layoutKey), {
+      if (nextSignature && nextSignature === _signatureForKey(targetLayoutKey)) return;
+      var response = await apiFetch('/api/v1/table-layouts/' + encodeURIComponent(targetLayoutKey), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ layout_data: layoutData }),
       });
       if (!response.ok) throw new Error('HTTP ' + response.status);
       var payload = await response.json();
-      layoutKey = payload.layout_key || layoutKey;
-      layoutAppliedSignature = layoutSignature(payload.layout_data);
-      layoutAppliedKey = layoutKey;
+      var savedLayoutKey = payload.layout_key || targetLayoutKey;
+      var savedSignature = layoutSignature(payload.layout_data);
+      _rememberSignature(savedLayoutKey, savedSignature);
+      if (!layoutKey || layoutKey === targetLayoutKey) {
+        layoutKey = savedLayoutKey;
+      }
       _syncQuickActionsState();
     }
 
@@ -1351,8 +1494,7 @@
             var savedLayout = payload.layout_data || nextLayoutData;
             if (payload.layout_key === layoutKey) {
               applyRemoteLayout(savedLayout);
-              layoutAppliedSignature = layoutSignature(savedLayout);
-              layoutAppliedKey = layoutKey;
+              _rememberSignature(layoutKey, layoutSignature(savedLayout));
               if (typeof cfg.render === 'function') cfg.render();
             }
             return { layoutData: savedLayout };
@@ -1381,8 +1523,7 @@
             var savedLayout = payload.layout_data || nextLayoutData;
             if (payload.layout_key === layoutKey) {
               applyRemoteLayout(savedLayout);
-              layoutAppliedSignature = layoutSignature(savedLayout);
-              layoutAppliedKey = layoutKey;
+              _rememberSignature(layoutKey, layoutSignature(savedLayout));
               if (typeof cfg.render === 'function') cfg.render();
             }
             return {

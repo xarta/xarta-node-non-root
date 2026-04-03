@@ -46,10 +46,13 @@
   display: flex;
 }
 table { width: 100%; border-collapse: collapse; min-width: 400px; }
-table.table-shared-ui { table-layout: fixed; }
+table.table-shared-ui {
+  table-layout: fixed;
+  width: var(--table-fit-width, 100%);
+}
 table.table-shared-ui.table-shared-ui--scroll-x {
-  width: max(100%, var(--table-scroll-width, 100%));
-  min-width: 100%;
+  width: var(--table-fit-width, 100%);
+  min-width: 0;
   table-layout: fixed;
 }
 thead th { background: var(--surface); color: var(--text-dim); font-size: 11px;

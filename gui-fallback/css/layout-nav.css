@@ -8,6 +8,7 @@
   --ultrawide-gap: 10px;
   --ultrawide-main-pad-x: 16px;
   --ultrawide-shade-up-top: 0px;
+  --ultrawide-divider-left: calc(var(--ultrawide-main-width) - var(--ultrawide-main-pad-x));
 }
 
 header { background: var(--surface); border-bottom: 1px solid var(--border);
@@ -24,6 +25,10 @@ h2 { font-size: 13px; font-weight: 600; text-transform: uppercase;
      letter-spacing: .8px; color: var(--text-dim); margin-bottom: 12px; }
 
 .ultrawide-sidecar {
+  display: none;
+}
+
+.ultrawide-splitter {
   display: none;
 }
 
@@ -77,16 +82,54 @@ h2 { font-size: 13px; font-weight: 600; text-transform: uppercase;
   .ultrawide-sidecar {
     position: fixed;
     top: calc(var(--header-h, 50px) + var(--ultrawide-gap));
-    left: calc(var(--ultrawide-main-width) - var(--ultrawide-main-pad-x) + var(--ultrawide-gap));
+    left: calc(var(--ultrawide-divider-left) + var(--ultrawide-gap));
     right: var(--ultrawide-gap);
     bottom: var(--ultrawide-gap);
     display: block;
     z-index: 220;
   }
 
+  .ultrawide-splitter {
+    position: fixed;
+    top: calc(var(--header-h, 50px) + var(--ultrawide-gap));
+    left: calc(var(--ultrawide-divider-left) - 5px);
+    bottom: var(--ultrawide-gap);
+    width: 10px;
+    display: block;
+    cursor: col-resize;
+    z-index: 230;
+    touch-action: none;
+  }
+
+  .ultrawide-splitter::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    border-left: 1px solid rgba(123, 130, 160, 0.42);
+  }
+
+  .ultrawide-splitter:hover::before,
+  .is-dragging-ultrawide-splitter .ultrawide-splitter::before {
+    border-left-color: var(--accent);
+    box-shadow: 0 0 0 1px rgba(91, 156, 246, 0.16);
+  }
+
   body.shade-is-up .ultrawide-sidecar {
     top: var(--ultrawide-gap);
   }
+
+  body.shade-is-up .ultrawide-splitter {
+    top: var(--ultrawide-gap);
+  }
+}
+
+.is-dragging-ultrawide-splitter,
+.is-dragging-ultrawide-splitter * {
+  user-select: none !important;
+  cursor: col-resize !important;
 }
 
 /* ── Group tabs (top-level nav in header) ── */

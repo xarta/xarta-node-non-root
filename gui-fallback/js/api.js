@@ -18,12 +18,37 @@ async function _computeApiToken(secretHex) {
   }
 }
 
+function _isColumnResizeActive() {
+  return !!(document.body && document.body.classList.contains('table-col-resizing'));
+}
+
+async function _waitForColumnResizeToEnd(maxWaitMs = 2500) {
+  if (!_isColumnResizeActive()) return;
+  await new Promise((resolve) => {
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      if (!_isColumnResizeActive() || (Date.now() - startedAt) >= maxWaitMs) {
+        clearInterval(timer);
+        resolve();
+      }
+    }, 16);
+  });
+}
+
+window.isColumnResizeActive = _isColumnResizeActive;
+
 async function apiFetch(url, options = {}) {
+  const deferDuringColumnResize = options.deferDuringColumnResize !== false;
+  if (deferDuringColumnResize) {
+    await _waitForColumnResizeToEnd();
+  }
   const secret = localStorage.getItem(_LS_SECRET_KEY) || '';
   const token  = await _computeApiToken(secret);
+  const fetchOptions = { ...options };
+  delete fetchOptions.deferDuringColumnResize;
   const merged = {
-    ...options,
-    headers: { ...(options.headers || {}), ...(token ? { 'X-API-Token': token } : {}) },
+    ...fetchOptions,
+    headers: { ...(fetchOptions.headers || {}), ...(token ? { 'X-API-Token': token } : {}) },
   };
   const r = await fetch(url, merged);
   if (r.status === 401) { openApiKeyModal(true); }

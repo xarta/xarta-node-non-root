@@ -532,7 +532,17 @@
     await window.__bpSelectorConfigPromise;
   }
 
+  function shouldPauseForColumnResize() {
+    if (typeof document === 'undefined' || !document.body) return false;
+    if (document.body.classList.contains('table-col-resizing')) return true;
+    if (typeof window !== 'undefined' && typeof window.isColumnResizeActive === 'function') {
+      return !!window.isColumnResizeActive();
+    }
+    return false;
+  }
+
   async function refreshNodeList() {
+    if (shouldPauseForColumnResize()) return;
     const origin = API_BASE || window.location.origin;
 
     let selfNode = null;
@@ -779,6 +789,10 @@
 
   async function pollNodes() {
     if (_polling || !_nodes.length) return;
+    if (shouldPauseForColumnResize()) {
+      _lastPollTick = Date.now();
+      return;
+    }
     _polling = true;
     _lastPollTick = Date.now();
     pulseHeart();
