@@ -256,6 +256,24 @@ html.header-compact .header-inner {
         width: 100%;
         flex: 1 1 100%;
         min-width: 0;
+        order: 0;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 .s25-lift-block {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        min-width: 0;
+        order: 10;
+        align-self: start;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 .s25-lift-block[hidden] {
+        display: none !important;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 .s25-lift-block > :first-child {
+        margin-top: 0 !important;
     }
 
     html[data-special-ui-mode='s25-stargate-touch-nav'] .page-control-group:not([hidden]) .hub-clear-input {

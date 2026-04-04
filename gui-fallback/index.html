@@ -357,26 +357,28 @@
   <!-- Docs -->
   <section id="tab-docs" class="tab-panel">
     <div style="display:flex;flex-direction:column">
-      <!-- Row 1: doc nav + action buttons all in one line -->
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-        <!-- Horizontal doc navbar -->
-        <div id="docs-sidebar" style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;flex:1;min-width:0"></div>
-      </div>
-      <!-- Row 2: docs history navigation -->
-      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 8px 0">
-        <button id="docs-back-btn" class="secondary" onclick="docsHistoryBack()" disabled>&larr; Back</button>
-        <button id="docs-forward-btn" class="secondary" onclick="docsHistoryForward()" disabled>Forward &rarr;</button>
-        <span id="docs-history-hint" style="font-size:12px;color:var(--text-dim)">History idle</span>
-      </div>
-      <!-- Status / error row -->
-      <p id="docs-status" style="font-size:12px;margin:0 0 4px" hidden></p>
-      <p id="docs-error"  class="error-msg" hidden></p>
-      <!-- Active doc header (label + description) -->
-      <div id="docs-editor-pane" style="display:flex;flex-direction:column">
+      <div id="s25-lift-docs" class="s25-lift-block" data-for-tab="docs">
+        <!-- Row 1: doc nav + action buttons all in one line -->
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <!-- Horizontal doc navbar -->
+          <div id="docs-sidebar" style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;flex:1;min-width:0"></div>
+        </div>
+        <!-- Row 2: docs history navigation -->
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 8px 0">
+          <button id="docs-back-btn" class="secondary" onclick="docsHistoryBack()" disabled>&larr; Back</button>
+          <button id="docs-forward-btn" class="secondary" onclick="docsHistoryForward()" disabled>Forward &rarr;</button>
+          <span id="docs-history-hint" style="font-size:12px;color:var(--text-dim)">History idle</span>
+        </div>
+        <!-- Status / error row -->
+        <p id="docs-status" style="font-size:12px;margin:0 0 4px" hidden></p>
+        <p id="docs-error"  class="error-msg" hidden></p>
+        <!-- Active doc header (label + description) -->
         <div style="margin-bottom:6px">
           <div id="docs-active-label" style="font-size:15px;font-weight:700;color:var(--text)"></div>
           <div id="docs-active-desc"  style="font-size:12px;color:var(--text-dim);margin-top:1px"></div>
         </div>
+      </div>
+      <div id="docs-editor-pane" style="display:flex;flex-direction:column">
         <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
         <!-- Editor / preview fills remaining vertical space -->
         <textarea id="docs-editor"
@@ -397,7 +399,9 @@
 
   <!-- Docs — Doc List -->
   <section id="tab-docs-list" class="tab-panel">
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">All documents — drag to reorder or move between groups. Drag group headings to reorder groups.</p>
+    <div id="s25-lift-docs-list" class="s25-lift-block" data-for-tab="docs-list">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">All documents — drag to reorder or move between groups. Drag group headings to reorder groups.</p>
+    </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="tab-scroll-shell">
       <div id="docs-list-pane" style="display:flex;flex-direction:column;padding:4px 0"></div>
@@ -433,8 +437,10 @@
 
   <!-- Self Diagnostic -->
   <section id="tab-self-diag" class="tab-panel">
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Runs connectivity and API diagnostics on this node. Most checks are read-only; optional on-demand bucket tests write only to isolated test user FE rows and clean up afterward.</p>
-    <p id="self-diag-status" style="font-size:12px;margin:0 0 10px" hidden></p>
+    <div id="s25-lift-self-diag" class="s25-lift-block" data-for-tab="self-diag">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Runs connectivity and API diagnostics on this node. Most checks are read-only; optional on-demand bucket tests write only to isolated test user FE rows and clean up afterward.</p>
+      <p id="self-diag-status" style="font-size:12px;margin:0 0 10px" hidden></p>
+    </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="tab-scroll-shell">
       <div id="self-diag-results"></div>
@@ -443,7 +449,9 @@
 
   <!-- Synthesis — Layout editor -->
   <section id="tab-synthesis-layout" class="tab-panel">
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:16px">Customise the Synthesis navigation menu. Drag items to reorder on desktop, or use the arrow and nest buttons on touch devices. Layout is saved to this browser only.</p>
+    <div id="s25-lift-synthesis-layout" class="s25-lift-block" data-for-tab="synthesis-layout">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:16px">Customise the Synthesis navigation menu. Drag items to reorder on desktop, or use the arrow and nest buttons on touch devices. Layout is saved to this browser only.</p>
+    </div>
     <div class="menu-editor-container">
       <div class="menu-editor-header">
         <h3>Synthesis Navigation</h3>
@@ -463,7 +471,9 @@
 
   <!-- Manual Links -->
   <section id="tab-manual-links" class="tab-panel active">
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Curated fallback links — VLAN and tailnet addresses for important services. Syncs across fleet.</p>
+    <div id="s25-lift-manual-links" class="s25-lift-block" data-for-tab="manual-links">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Curated fallback links — VLAN and tailnet addresses for important services. Syncs across fleet.</p>
+    </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
 
     <div class="tab-scroll-shell">
@@ -685,11 +695,13 @@
 
   <!-- PVE Hosts -->
   <section id="tab-pve-hosts" class="tab-panel tab-panel--fill">
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:10px;">
-      Discovered via port-8006 CIDR scan. Set <strong>Management CIDR</strong> in the Settings tab (&#9881; group),
-      then click <em>Scan for Proxmox</em>.
-    </p>
-    <p id="pve-scan-status" style="font-size:12px;margin:4px 0 0" hidden></p>
+    <div id="s25-lift-pve-hosts" class="s25-lift-block" data-for-tab="pve-hosts">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:10px;">
+        Discovered via port-8006 CIDR scan. Set <strong>Management CIDR</strong> in the Settings tab (&#9881; group),
+        then click <em>Scan for Proxmox</em>.
+      </p>
+      <p id="pve-scan-status" style="font-size:12px;margin:4px 0 0" hidden></p>
+    </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
       <table id="pve-hosts-table" data-layout-table-name="pve-hosts" data-layout-table-code="0C">
@@ -705,10 +717,12 @@
 
   <!-- VLANs -->
   <section id="tab-vlans" class="tab-panel tab-panel--fill">
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:10px;">
-      Inferred from Proxmox Config probe. CIDRs marked <em>inferred</em> are guessed as /24 from IP data
-      — correct them here if needed. These are also used as scan ranges by <em>Find IPs by ARP</em>.
-    </p>
+    <div id="s25-lift-vlans" class="s25-lift-block" data-for-tab="vlans">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:10px;">
+        Inferred from Proxmox Config probe. CIDRs marked <em>inferred</em> are guessed as /24 from IP data
+        — correct them here if needed. These are also used as scan ranges by <em>Find IPs by ARP</em>.
+      </p>
+    </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
       <table id="vlans-table" data-layout-table-name="vlans" data-layout-table-code="0D">
@@ -723,11 +737,13 @@
 
   <!-- Manual ARP -->
   <section id="tab-arp-manual" class="tab-panel tab-panel--fill">
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:10px;">
-      Hand-entered IP ↔ MAC records for hosts that automated discovery can't reach
-      (e.g. CARP backup appliances, offline machines, odd devices).
-      Entries sync automatically to all fleet nodes.
-    </p>
+    <div id="s25-lift-arp-manual" class="s25-lift-block" data-for-tab="arp-manual">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:10px;">
+        Hand-entered IP ↔ MAC records for hosts that automated discovery can't reach
+        (e.g. CARP backup appliances, offline machines, odd devices).
+        Entries sync automatically to all fleet nodes.
+      </p>
+    </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
       <table id="arp-manual-table" data-layout-table-name="arp-manual" data-layout-table-code="0E">
@@ -742,7 +758,9 @@
 
   <!-- Keys -->
   <section id="tab-keys" class="tab-panel">
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:14px;">Manage probe SSH keys on this node. Keys are stored at paths configured by env vars — paths are never supplied by the browser.</p>
+    <div id="s25-lift-keys" class="s25-lift-block" data-for-tab="keys">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:14px;">Manage probe SSH keys on this node. Keys are stored at paths configured by env vars — paths are never supplied by the browser.</p>
+    </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="tab-scroll-shell">
     <!-- Status table -->
@@ -817,8 +835,10 @@
 
   <!-- Certs -->
   <section id="tab-certs" class="tab-panel tab-panel--fill">
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:4px">Manage TLS certificates on this node. Certificates are stored in <strong><span id="certs-dir-hint"></span></strong> and are never committed to any git repository.</p>
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:14px">Upload only &mdash; no download. CA certificates are installed into the system trust store automatically on upload.</p>
+    <div id="s25-lift-certs" class="s25-lift-block" data-for-tab="certs">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:4px">Manage TLS certificates on this node. Certificates are stored in <strong><span id="certs-dir-hint"></span></strong> and are never committed to any git repository.</p>
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:14px">Upload only &mdash; no download. CA certificates are installed into the system trust store automatically on upload.</p>
+    </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="tab-scroll-shell">
     <!-- Status table -->
@@ -836,7 +856,9 @@
 
   <!-- AI Providers -->
   <section id="tab-ai-providers" class="tab-panel">
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Fleet-synced AI endpoint configuration. Providers store connection details; assignments link providers to named projects and roles.</p>
+    <div id="s25-lift-ai-providers" class="s25-lift-block" data-for-tab="ai-providers">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Fleet-synced AI endpoint configuration. Providers store connection details; assignments link providers to named projects and roles.</p>
+    </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="tab-scroll-shell">
     <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);margin:0 0 8px">Providers</h3>
@@ -1184,8 +1206,10 @@
 
   <!-- SSH Targets -->
   <section id="tab-ssh-targets" class="tab-panel tab-panel--fill">
-    <p style="color:var(--text-dim);font-size:13px">Deterministic SSH key lookup by IP. Run <strong>Rebuild</strong> after any Proxmox Config probe to keep this table current. All probe scripts look up this table — no guessing.</p>
-    <p id="ssh-targets-status" style="font-size:13px;color:var(--text-dim);margin-bottom:12px"></p>
+    <div id="s25-lift-ssh-targets" class="s25-lift-block" data-for-tab="ssh-targets">
+      <p style="color:var(--text-dim);font-size:13px">Deterministic SSH key lookup by IP. Run <strong>Rebuild</strong> after any Proxmox Config probe to keep this table current. All probe scripts look up this table — no guessing.</p>
+      <p id="ssh-targets-status" style="font-size:13px;color:var(--text-dim);margin-bottom:12px"></p>
+    </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
       <table id="ssh-targets-table" data-layout-table-name="ssh-targets" data-layout-table-code="13">
@@ -1200,7 +1224,9 @@
 
   <!-- Bookmarks -->
   <section id="tab-bookmarks-main" class="tab-panel tab-panel--fill">
-    <p style="font-size:12px;color:var(--text-dim);margin:0 0 12px">Personal link manager. Fleet-synced via SQLite; hybrid keyword+vector search via local SeekDB index.</p>
+    <div id="s25-lift-bookmarks-main" class="s25-lift-block" data-for-tab="bookmarks-main">
+      <p style="font-size:12px;color:var(--text-dim);margin:0 0 12px">Personal link manager. Fleet-synced via SQLite; hybrid keyword+vector search via local SeekDB index.</p>
+    </div>
     <!-- Hidden file input for Import HTML (triggered via menu or Setup tab) -->
     <input type="file" id="bm-import-file" accept=".html,.htm" style="display:none" onchange="importBookmarksFile(this)" />
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
@@ -1225,7 +1251,9 @@
 
   <!-- Bookmarks — Visit History -->
   <section id="tab-bookmarks-history" class="tab-panel tab-panel--fill">
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Pages visited via the browser extension visit recorder. Click a row to see per-visit timestamps.</p>
+    <div id="s25-lift-bookmarks-history" class="s25-lift-block" data-for-tab="bookmarks-history">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Pages visited via the browser extension visit recorder. Click a row to see per-visit timestamps.</p>
+    </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div style="display:flex;gap:6px;margin-bottom:8px">
       <button id="vis-expand-all-btn" class="hub-action-btn" hidden>&#9660; Expand all</button>
@@ -1243,7 +1271,9 @@
 
   <!-- Bookmarks — Embeddings -->
   <section id="tab-bookmarks-embeddings" class="tab-panel">
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Configure tag exclusions, rare domain weighting, and re-embed all bookmarks.</p>
+    <div id="s25-lift-bookmarks-embeddings" class="s25-lift-block" data-for-tab="bookmarks-embeddings">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Configure tag exclusions, rare domain weighting, and re-embed all bookmarks.</p>
+    </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div id="bm-embed-panel">
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
@@ -1290,7 +1320,9 @@
 
   <!-- Bookmarks — Setup -->
   <section id="tab-bookmarks-setup" class="tab-panel">
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Import guide for Edge Favourites and step-by-step browser extension install.</p>
+    <div id="s25-lift-bookmarks-setup" class="s25-lift-block" data-for-tab="bookmarks-setup">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Import guide for Edge Favourites and step-by-step browser extension install.</p>
+    </div>
     <input type="file" id="bm-import-file2" accept=".html,.htm" style="display:none" onchange="importBookmarksFile(this)" />
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="tab-scroll-shell">
@@ -1345,7 +1377,9 @@
 
   <!-- Settings — Layout editor -->
   <section id="tab-settings-layout" class="tab-panel">
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:16px">Customise the Settings navigation menu. Drag items to reorder on desktop, or use the arrow and nest buttons on touch devices. Layout is saved to this browser only.</p>
+    <div id="s25-lift-settings-layout" class="s25-lift-block" data-for-tab="settings-layout">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:16px">Customise the Settings navigation menu. Drag items to reorder on desktop, or use the arrow and nest buttons on touch devices. Layout is saved to this browser only.</p>
+    </div>
     <div class="menu-editor-container">
       <div class="menu-editor-header">
         <h3>Settings Navigation</h3>
@@ -1365,7 +1399,9 @@
 
   <!-- Probes — Layout editor -->
   <section id="tab-probes-settings" class="tab-panel">
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:16px">Customise the Probes navigation menu. Drag items to reorder on desktop, or use the arrow and nest buttons on touch devices. Layout is saved to this browser only.</p>
+    <div id="s25-lift-probes-settings" class="s25-lift-block" data-for-tab="probes-settings">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:16px">Customise the Probes navigation menu. Drag items to reorder on desktop, or use the arrow and nest buttons on touch devices. Layout is saved to this browser only.</p>
+    </div>
     <div class="menu-editor-container">
       <div class="menu-editor-header">
         <h3>Probes Navigation</h3>

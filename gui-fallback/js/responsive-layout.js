@@ -38,6 +38,8 @@ const ResponsiveLayout = (() => {
     let _storedMetaWidth = 0;       // width of .node-meta when compact mode was triggered
     let _storedBrandWidth = 0;      // width of .brand when compact mode was triggered
     const _tabMap = new Map();      // tabId → groupElementId
+    const _liftMap = new Map();     // tabId → liftElementId
+    const _liftRestore = new Map(); // liftElementId → { parent, nextSibling }
     let _activeTabId = null;        // currently active tab for page controls
 
     /* ── Hysteresis buffer (px) ───────────────────────────────── */
@@ -57,6 +59,29 @@ const ResponsiveLayout = (() => {
         return document.getElementById(hostId);
     }
 
+    function _restoreLiftBlock(liftElId) {
+        const el = document.getElementById(liftElId);
+        const restore = _liftRestore.get(liftElId);
+        if (!el || !restore || !restore.parent) return;
+        if (el.parentElement === restore.parent) return;
+        restore.parent.insertBefore(el, restore.nextSibling);
+    }
+
+    function _initLiftBlocks() {
+        document.querySelectorAll('.s25-lift-block[data-for-tab]').forEach((el) => {
+            if (!el.id) return;
+            const tabId = el.getAttribute('data-for-tab');
+            if (!tabId) return;
+            _liftMap.set(tabId, el.id);
+            if (!_liftRestore.has(el.id)) {
+                _liftRestore.set(el.id, {
+                    parent: el.parentElement,
+                    nextSibling: el.nextSibling,
+                });
+            }
+        });
+    }
+
     function syncControlHost() {
         const host = _controlsHostForCurrentMode();
         if (!host) return;
@@ -64,6 +89,15 @@ const ResponsiveLayout = (() => {
             const el = document.getElementById(groupElId);
             if (!el || el.parentElement === host) return;
             host.appendChild(el);
+        });
+        _liftMap.forEach((liftElId, tid) => {
+            const el = document.getElementById(liftElId);
+            if (!el) return;
+            if (_isS25SpecialModeActive() && _activeTabId && tid === _activeTabId) {
+                if (el.parentElement !== host) host.appendChild(el);
+                return;
+            }
+            _restoreLiftBlock(liftElId);
         });
     }
 
@@ -161,6 +195,11 @@ const ResponsiveLayout = (() => {
                 el.hidden = true;
             }
         });
+        _liftMap.forEach((liftElId, tid) => {
+            const el = document.getElementById(liftElId);
+            if (!el) return;
+            el.hidden = tid !== tabId;
+        });
     }
 
     /* ── Lifecycle ────────────────────────────────────────────── */
@@ -173,6 +212,10 @@ const ResponsiveLayout = (() => {
         const headerInner = document.querySelector('.header-inner');
         if (!header || !headerInner) return;
 
+        const activePanel = document.querySelector('.tab-panel.active[id^="tab-"]');
+        if (activePanel) _activeTabId = activePanel.id.replace(/^tab-/, '');
+
+        _initLiftBlocks();
         syncControlHost();
 
         _ro = new ResizeObserver(_scheduleCheck);
