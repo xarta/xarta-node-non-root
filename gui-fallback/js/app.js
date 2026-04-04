@@ -1,5 +1,81 @@
+let _selectorOriginMenuGroup = 'synthesis';
+
+function _isS25StargateOriginMenuMode() {
+  const root = document.documentElement;
+  if (!root || root.getAttribute('data-device-profile') !== 's25-ultra-oneui-webapk') return false;
+  if (root.getAttribute('data-origin-variant') !== 'stargate') return false;
+  if (!window.matchMedia) return false;
+  if (!window.matchMedia('(max-width: 600px)').matches) return false;
+  if (!window.matchMedia('(orientation: portrait)').matches) return false;
+  return window.matchMedia('(display-mode: standalone)').matches
+    || window.matchMedia('(display-mode: fullscreen)').matches;
+}
+
+function _getActiveGroupMenuConfig() {
+  if (_selectorOriginMenuGroup === 'probes' && typeof ProbesMenuConfig !== 'undefined') return ProbesMenuConfig;
+  if (_selectorOriginMenuGroup === 'settings' && typeof SettingsMenuConfig !== 'undefined') return SettingsMenuConfig;
+  if (typeof SynthesisMenuConfig !== 'undefined') return SynthesisMenuConfig;
+  return null;
+}
+
+function _getActiveGroupLayoutTabId() {
+  const menu = _getActiveGroupMenuConfig();
+  return menu && menu._cfg ? menu._cfg.mobilePinnedId : null;
+}
+
+function _closeActiveOriginMenus() {
+  const menu = _getActiveGroupMenuConfig();
+  if (menu && typeof menu.closeAnchoredMenus === 'function') menu.closeAnchoredMenus();
+}
+
+function _handleOriginPrimaryMenu(payload) {
+  const menu = _getActiveGroupMenuConfig();
+  if (!menu || typeof menu.togglePrimaryMenuAt !== 'function' || !payload || !payload.button) return;
+  menu.togglePrimaryMenuAt(payload.button);
+}
+
+function _handleOriginLayoutPage() {
+  const menu = _getActiveGroupMenuConfig();
+  const layoutTabId = _getActiveGroupLayoutTabId();
+  if (!menu || !layoutTabId) return;
+  _closeActiveOriginMenus();
+  switchTab(layoutTabId);
+  menu.updateActiveTab(layoutTabId);
+}
+
+function _handleOriginContextMenu(payload) {
+  const menu = _getActiveGroupMenuConfig();
+  if (!menu || typeof menu.openContextMenuAt !== 'function' || !payload || !payload.button) return;
+  menu.openContextMenuAt(payload.button);
+}
+
+function _installSelectorOriginMenuBridge() {
+  if (typeof window === 'undefined' || !window.BlueprintsSelectorOriginButton || typeof window.BlueprintsSelectorOriginButton.setHandlers !== 'function') return;
+  window.BlueprintsSelectorOriginButton.setHandlers({
+    click: _handleOriginPrimaryMenu,
+    doubleClick: _handleOriginLayoutPage,
+    longPress: _handleOriginContextMenu,
+  });
+  window.BlueprintsSelectorOriginButton.setOptions({
+    title: 'Origin menu controls',
+    ariaLabel: 'Open current menu, layout, or context actions',
+  });
+}
+
+window.BlueprintsHubMenuBridge = {
+  get activeGroup() {
+    return _selectorOriginMenuGroup;
+  },
+  getActiveMenuConfig: _getActiveGroupMenuConfig,
+  getActiveGroupLayoutTabId: _getActiveGroupLayoutTabId,
+  isS25StargateOriginMenuMode: _isS25StargateOriginMenuMode,
+  closeAnchoredMenus: _closeActiveOriginMenus,
+};
+
 /* ── Group + tab switching ───────────────────────────────────────────── */
 function switchGroup(group) {
+  _selectorOriginMenuGroup = group;
+  _closeActiveOriginMenus();
   _activeGroup = group;
   document.querySelectorAll('.group-tab').forEach(b =>
     b.classList.toggle('active', b.getAttribute('onclick').includes(`'${group}'`)));
@@ -106,6 +182,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadManualLinks();
   SynthesisMenuConfig.showGroup();
   SynthesisMenuConfig.updateActiveTab('manual-links-' + _manualLinksView);
+  _installSelectorOriginMenuBridge();
   loadSyncStatus();
   setInterval(() => {
     if (typeof window.isColumnResizeActive === 'function' && window.isColumnResizeActive()) return;

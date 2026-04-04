@@ -197,3 +197,15 @@ html.header-compact .header-inner {
         padding-right: 10px;
     }  
 }
+
+@media (max-width: 600px) and (orientation: portrait) and (display-mode: standalone),
+       (max-width: 600px) and (orientation: portrait) and (display-mode: fullscreen) {
+    html[data-device-profile='s25-ultra-oneui-webapk'][data-origin-variant='stargate'] #synthesisMenuWrapper,
+    html[data-device-profile='s25-ultra-oneui-webapk'][data-origin-variant='stargate'] #probesMenuWrapper,
+    html[data-device-profile='s25-ultra-oneui-webapk'][data-origin-variant='stargate'] #settingsMenuWrapper,
+    html[data-device-profile='s25-ultra-oneui-webapk'][data-origin-variant='stargate'] #synthesisMenuSaveNotification,
+    html[data-device-profile='s25-ultra-oneui-webapk'][data-origin-variant='stargate'] #probesMenuSaveNotification,
+    html[data-device-profile='s25-ultra-oneui-webapk'][data-origin-variant='stargate'] #settingsMenuSaveNotification {
+        display: none !important;
+    }
+}

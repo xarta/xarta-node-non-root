@@ -61,6 +61,10 @@
   }
 
   function getActiveMenuConfig() {
+    if (typeof window !== 'undefined' && window.BlueprintsHubMenuBridge && typeof window.BlueprintsHubMenuBridge.getActiveMenuConfig === 'function') {
+      var bridged = window.BlueprintsHubMenuBridge.getActiveMenuConfig();
+      if (bridged && typeof bridged.openContextMenuAt === 'function') return bridged;
+    }
     var wrappers = [
       { id: 'synthesisMenuWrapper', cfg: function () { return (typeof SynthesisMenuConfig !== 'undefined') ? SynthesisMenuConfig : null; } },
       { id: 'probesMenuWrapper', cfg: function () { return (typeof ProbesMenuConfig !== 'undefined') ? ProbesMenuConfig : null; } },

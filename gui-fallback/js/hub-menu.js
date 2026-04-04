@@ -464,6 +464,210 @@ function createHubMenu(cfg) {
             this._floatingContextMenuEl = null;
         },
 
+        _removeFloatingPrimaryMenu() {
+            if (this._floatingPrimaryPointerHandler) {
+                document.removeEventListener('pointerdown', this._floatingPrimaryPointerHandler, true);
+                this._floatingPrimaryPointerHandler = null;
+            }
+            if (this._floatingPrimaryKeyHandler) {
+                document.removeEventListener('keydown', this._floatingPrimaryKeyHandler, true);
+                this._floatingPrimaryKeyHandler = null;
+            }
+            if (this._floatingPrimaryMenuEl && this._floatingPrimaryMenuEl.parentNode) {
+                this._floatingPrimaryMenuEl.parentNode.removeChild(this._floatingPrimaryMenuEl);
+            }
+            this._floatingPrimaryMenuEl = null;
+            this._floatingPrimaryAnchorEl = null;
+        },
+
+        closeAnchoredMenus() {
+            this._removeFloatingContextMenu();
+            this._removeFloatingPrimaryMenu();
+        },
+
+        _positionFloatingMenuHost(host, menu, anchorEl) {
+            const anchorRect = anchorEl.getBoundingClientRect();
+            const viewportW = window.innerWidth || document.documentElement.clientWidth || 0;
+            const viewportH = this._getViewportHeight();
+            const top = Math.max(8, Math.round(anchorRect.bottom + 6));
+            host.style.left = '8px';
+            host.style.top = top + 'px';
+
+            const menuRect = menu.getBoundingClientRect();
+            if (viewportW > 0 && menuRect.width > 0) {
+                const anchorCenter = anchorRect.left + (anchorRect.width / 2);
+                const desiredLeft = Math.round(anchorCenter - (menuRect.width / 2));
+                const maxLeft = Math.max(8, Math.floor(viewportW - menuRect.width - 8));
+                host.style.left = Math.min(Math.max(8, desiredLeft), maxLeft) + 'px';
+            }
+            if (viewportH > 0 && menuRect.height > 0) {
+                const maxTop = Math.max(8, Math.floor(viewportH - menuRect.height - 8));
+                host.style.top = Math.min(top, maxTop) + 'px';
+            }
+            this._fitDropdownMenu(menu);
+        },
+
+        _primaryMenuTargetId(item, activeMember, navChildren) {
+            if (activeMember) return activeMember.id;
+            if (document.getElementById('tab-' + item.id)) return item.id;
+            return navChildren[0]?.id || item.id;
+        },
+
+        _navigatePrimaryMenuTarget(targetId) {
+            if (!targetId) return;
+            this._playItemSound(targetId);
+            switchTab(targetId);
+            this.updateActiveTab(targetId);
+            this.closeMenu();
+            this.closeAnchoredMenus();
+        },
+
+        openPrimaryMenuAt(anchorEl) {
+            if (!anchorEl || typeof anchorEl.getBoundingClientRect !== 'function') return false;
+            const topItems = this.getTopLevelItems().filter(item => item.id !== cfg.mobilePinnedId);
+            if (!topItems.length) {
+                this._removeFloatingPrimaryMenu();
+                return false;
+            }
+
+            this.closeDropdowns();
+            this._removeFloatingContextMenu();
+            this._removeFloatingPrimaryMenu();
+
+            const activeId = this._activeTabId();
+            const host = document.createElement('div');
+            host.className = 'hub-primary-menu-floating';
+            host.dataset.hubPrimaryMenu = '1';
+            host.style.position = 'fixed';
+            host.style.zIndex = '12000';
+
+            const menu = document.createElement('div');
+            menu.className = 'hub-primary-menu-floating__menu';
+
+            topItems.forEach(item => {
+                const navChildren = this.getChildren(item.id).filter(child => !child.fn);
+                const allNavGroup = [item, ...navChildren];
+                const activeMember = activeId ? allNavGroup.find(member => member.id === activeId) : null;
+                const dropdownNavItems = navChildren.length > 0
+                    ? (activeMember ? allNavGroup.filter(member => member.id !== activeMember.id) : navChildren)
+                    : [];
+                const isActive = !!activeMember || activeId === item.id;
+                const labelSource = activeMember || item;
+                const row = document.createElement('div');
+                row.className = 'hub-primary-menu-row';
+
+                if (dropdownNavItems.length > 0) {
+                    const split = document.createElement('div');
+                    split.className = 'hub-primary-menu-split';
+
+                    const labelBtn = document.createElement('button');
+                    labelBtn.className = 'hub-dropdown-item hub-primary-menu-label' + (isActive ? ' active' : '');
+                    labelBtn.type = 'button';
+                    labelBtn.innerHTML = this._iconHtml(labelSource.id, labelSource.icon) + '\u00a0' + (labelSource.pageLabel || this._displayLabel(labelSource));
+                    labelBtn.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                        this._navigatePrimaryMenuTarget(this._primaryMenuTargetId(item, activeMember, navChildren));
+                    });
+
+                    const caretBtn = document.createElement('button');
+                    caretBtn.className = 'hub-primary-menu-caret';
+                    caretBtn.type = 'button';
+                    caretBtn.setAttribute('aria-label', 'Toggle submenu');
+                    caretBtn.textContent = '▼';
+
+                    const submenu = document.createElement('div');
+                    submenu.className = 'hub-primary-menu-submenu';
+                    dropdownNavItems.forEach(child => {
+                        const childBtn = document.createElement('button');
+                        childBtn.className = 'hub-dropdown-item';
+                        childBtn.type = 'button';
+                        childBtn.innerHTML = this._iconHtml(child.id, child.icon) + '\u00a0' + this._displayLabel(child);
+                        childBtn.addEventListener('click', (event) => {
+                            event.stopPropagation();
+                            const childPanel = document.getElementById('tab-' + child.id);
+                            const childChildren = this.getChildren(child.id);
+                            const targetId = childPanel ? child.id : (childChildren[0]?.id || child.id);
+                            this._navigatePrimaryMenuTarget(targetId);
+                        });
+                        submenu.appendChild(childBtn);
+                    });
+
+                    caretBtn.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                        const willOpen = !row.classList.contains('open');
+                        menu.querySelectorAll('.hub-primary-menu-row.open').forEach(other => {
+                            if (other !== row) other.classList.remove('open');
+                        });
+                        row.classList.toggle('open', willOpen);
+                        requestAnimationFrame(() => this._positionFloatingMenuHost(host, menu, anchorEl));
+                    });
+
+                    split.appendChild(labelBtn);
+                    split.appendChild(caretBtn);
+                    row.appendChild(split);
+                    row.appendChild(submenu);
+                } else if (item.fn && this._isItemVisible(item, activeId)) {
+                    const fnBtn = document.createElement('button');
+                    fnBtn.className = 'hub-dropdown-item hub-primary-menu-label' + (isActive ? ' active' : '');
+                    fnBtn.type = 'button';
+                    fnBtn.innerHTML = this._iconHtml(item.id, item.icon) + '\u00a0' + this._displayLabel(item);
+                    fnBtn.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                        this._playItemSound(item.id);
+                        const fn = this._fnRegistry[item.fn];
+                        if (typeof fn === 'function') fn();
+                        else console.warn('[HubMenu] No function registered for:', item.fn);
+                        window.setTimeout(() => this.updateActiveTab(this._activeId), 0);
+                        this.closeAnchoredMenus();
+                    });
+                    row.appendChild(fnBtn);
+                } else {
+                    const btn = document.createElement('button');
+                    btn.className = 'hub-dropdown-item hub-primary-menu-label' + (isActive ? ' active' : '');
+                    btn.type = 'button';
+                    btn.innerHTML = this._iconHtml(item.id, item.icon) + '\u00a0' + (item.pageLabel || this._displayLabel(item));
+                    btn.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                        this._navigatePrimaryMenuTarget(item.id);
+                    });
+                    row.appendChild(btn);
+                }
+
+                menu.appendChild(row);
+            });
+
+            host.appendChild(menu);
+            document.body.appendChild(host);
+            this._floatingPrimaryMenuEl = host;
+            this._floatingPrimaryAnchorEl = anchorEl;
+            this._positionFloatingMenuHost(host, menu, anchorEl);
+
+            this._floatingPrimaryPointerHandler = (event) => {
+                if (!this._floatingPrimaryMenuEl) return;
+                if (this._floatingPrimaryMenuEl.contains(event.target)) return;
+                if (anchorEl.contains && anchorEl.contains(event.target)) return;
+                this._removeFloatingPrimaryMenu();
+            };
+            this._floatingPrimaryKeyHandler = (event) => {
+                if (event.key === 'Escape') this._removeFloatingPrimaryMenu();
+            };
+            window.setTimeout(() => {
+                if (!this._floatingPrimaryMenuEl) return;
+                document.addEventListener('pointerdown', this._floatingPrimaryPointerHandler, true);
+                document.addEventListener('keydown', this._floatingPrimaryKeyHandler, true);
+            }, 0);
+
+            return true;
+        },
+
+        togglePrimaryMenuAt(anchorEl) {
+            if (this._floatingPrimaryMenuEl && this._floatingPrimaryAnchorEl === anchorEl) {
+                this._removeFloatingPrimaryMenu();
+                return false;
+            }
+            return this.openPrimaryMenuAt(anchorEl);
+        },
+
         openContextMenuAt(anchorEl) {
             if (!anchorEl || typeof anchorEl.getBoundingClientRect !== 'function') return false;
             const activeId = this._activeTabId();
@@ -474,6 +678,7 @@ function createHubMenu(cfg) {
             }
 
             this.closeDropdowns();
+            this._removeFloatingPrimaryMenu();
 
             const host = document.createElement('div');
             host.className = 'hub-tab-dropdown open hub-context-menu-floating';
@@ -511,25 +716,7 @@ function createHubMenu(cfg) {
             document.body.appendChild(host);
             this._floatingContextMenuEl = host;
 
-            const anchorRect = anchorEl.getBoundingClientRect();
-            const viewportW = window.innerWidth || document.documentElement.clientWidth || 0;
-            const viewportH = this._getViewportHeight();
-            const top = Math.max(8, Math.round(anchorRect.bottom + 6));
-            host.style.left = '8px';
-            host.style.top = top + 'px';
-
-            const menuRect = menu.getBoundingClientRect();
-            if (viewportW > 0 && menuRect.width > 0) {
-                const anchorCenter = anchorRect.left + (anchorRect.width / 2);
-                const desiredLeft = Math.round(anchorCenter - (menuRect.width / 2));
-                const maxLeft = Math.max(8, Math.floor(viewportW - menuRect.width - 8));
-                host.style.left = Math.min(Math.max(8, desiredLeft), maxLeft) + 'px';
-            }
-            if (viewportH > 0 && menuRect.height > 0) {
-                const maxTop = Math.max(8, Math.floor(viewportH - menuRect.height - 8));
-                host.style.top = Math.min(top, maxTop) + 'px';
-            }
-            this._fitDropdownMenu(menu);
+            this._positionFloatingMenuHost(host, menu, anchorEl);
 
             this._floatingContextPointerHandler = (event) => {
                 if (!this._floatingContextMenuEl) return;
