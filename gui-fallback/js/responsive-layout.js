@@ -38,11 +38,34 @@ const ResponsiveLayout = (() => {
     let _storedMetaWidth = 0;       // width of .node-meta when compact mode was triggered
     let _storedBrandWidth = 0;      // width of .brand when compact mode was triggered
     const _tabMap = new Map();      // tabId → groupElementId
+    let _activeTabId = null;        // currently active tab for page controls
 
     /* ── Hysteresis buffer (px) ───────────────────────────────── */
     // Enter compact if gap < ENTER_BUFFER; exit compact if free space > EXIT_BUFFER
     const ENTER_BUFFER = 8;
     const EXIT_BUFFER  = 60;
+
+    const DEFAULT_CONTROLS_SLOT_ID = 'page-controls-slot';
+    const SPECIAL_CONTROLS_SLOT_ID = 'page-controls-slot-s25';
+
+    function _isS25SpecialModeActive() {
+        return document.documentElement.getAttribute('data-special-ui-mode') === 's25-stargate-touch-nav';
+    }
+
+    function _controlsHostForCurrentMode() {
+        const hostId = _isS25SpecialModeActive() ? SPECIAL_CONTROLS_SLOT_ID : DEFAULT_CONTROLS_SLOT_ID;
+        return document.getElementById(hostId);
+    }
+
+    function syncControlHost() {
+        const host = _controlsHostForCurrentMode();
+        if (!host) return;
+        _tabMap.forEach((groupElId) => {
+            const el = document.getElementById(groupElId);
+            if (!el || el.parentElement === host) return;
+            host.appendChild(el);
+        });
+    }
 
     /* ── Debounce ─────────────────────────────────────────────── */
 
@@ -127,6 +150,8 @@ const ResponsiveLayout = (() => {
      * @param {string} tabId - The newly active tab ID
      */
     function updateControlsForTab(tabId) {
+        _activeTabId = tabId;
+        syncControlHost();
         _tabMap.forEach((groupElId, tid) => {
             const el = document.getElementById(groupElId);
             if (!el) return;
@@ -147,6 +172,8 @@ const ResponsiveLayout = (() => {
         const header      = document.querySelector('header');
         const headerInner = document.querySelector('.header-inner');
         if (!header || !headerInner) return;
+
+        syncControlHost();
 
         _ro = new ResizeObserver(_scheduleCheck);
         _ro.observe(headerInner);  // observe inner (constrained) row, not the full-bleed shell
@@ -174,6 +201,6 @@ const ResponsiveLayout = (() => {
 
     /* ── Public API ───────────────────────────────────────────── */
 
-    return { init, destroy, registerTabControls, updateControlsForTab };
+    return { init, destroy, registerTabControls, updateControlsForTab, syncControlHost };
 
 })();

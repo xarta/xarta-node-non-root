@@ -67,6 +67,11 @@
     min-width: 0;
 }
 
+/* Dedicated alternate host used only by the S25 special UI mode. */
+#page-controls-slot-s25 {
+    display: none;
+}
+
 /* ── Compact node-meta ───────────────────────────────────────── */
 
 /* Shown only in compact mode (html.header-compact).
@@ -222,12 +227,18 @@ html.header-compact .header-inner {
     }
 
     html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot {
+        display: none !important;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
         width: 100%;
-        flex: none;
         min-width: 0;
         grid-column: 1;
         margin-right: 0;
-        order: 0;
     }
 
     html[data-special-ui-mode='s25-stargate-touch-nav'] #node-meta-compact {

@@ -24,6 +24,9 @@ function _applySpecialUiModeAttributes() {
     if (mode) body.setAttribute('data-special-ui-mode', mode);
     else body.removeAttribute('data-special-ui-mode');
   }
+  if (typeof ResponsiveLayout !== 'undefined' && typeof ResponsiveLayout.syncControlHost === 'function') {
+    ResponsiveLayout.syncControlHost();
+  }
 }
 
 function _installSpecialUiModeTracking() {
