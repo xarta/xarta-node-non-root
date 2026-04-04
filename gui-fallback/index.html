@@ -3,7 +3,7 @@
 <head>
   {{$assetVersion := placeholder "http.vars.bp_asset_version"}}
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0f1117" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -2443,10 +2443,13 @@
 <script>
   window.BLUEPRINTS_SELECTOR_BUTTONS = {
     pages: [
-      ['ui', 'synthesis', 'probes', 'settings'],
-      ['database-tables', 'database-diagram'],
-      ['api-key', 'api-key-test', 'diag-chip', 'cache-mode'],
+      ['synthesis', 'probes', 'settings'],
+      ['database-tables', 'database-diagram', 'diag-chip'],
+      ['api-key-test', 'cache-mode', 'hard-refresh'],
+      ['ui'],
+      ['api-key'],
     ],
+    pageSize: 3,
     showPagingButton: true,
     side: 'left',
     nodeSwitchPath: '/ui/',
@@ -2523,6 +2526,14 @@
   .bp-ns-action-btn[data-action="diag-chip"][data-chip-visible="false"]::before {
     opacity: .45;
     filter: grayscale(.3);
+  }
+  /* hard-refresh → Adze 𓌃 style mark — dedicated action to clear SW/cache and reload assets */
+  .bp-ns-action-btn[data-action="hard-refresh"] { font-size: 0; position: relative; }
+  .bp-ns-action-btn[data-action="hard-refresh"]::before {
+    content: ''; display: block; width: 22px; height: 22px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c8a84b' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7.2 7.8l6.3-3.2 3.8 3.7-6.4 3.2z' fill='%23c8a84b' stroke='none'/%3E%3Cpath d='M10.8 10.2l6.1 6.1' stroke-width='2.1'/%3E%3Cpath d='M8.2 15.8l4-4' stroke-width='1.8'/%3E%3Cpath d='M4.2 19.8h7.3' stroke-width='1.8'/%3E%3C/svg%3E");
+    background-size: contain; background-repeat: no-repeat; background-position: center;
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   }
   /* paging-button → Kheper 𓆣 (Scarab Beetle) — renewal, cyclic transformation; rolls the sun forward as we page through */
   .bp-ns-action-btn[data-action="paging-button"] { font-size: 0; position: relative; }

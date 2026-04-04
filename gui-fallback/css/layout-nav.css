@@ -24,6 +24,18 @@ section { margin-bottom: 32px; }
 h2 { font-size: 13px; font-weight: 600; text-transform: uppercase;
      letter-spacing: .8px; color: var(--text-dim); margin-bottom: 12px; }
 
+@media (max-width: 600px) and (orientation: portrait) and (display-mode: standalone),
+       (max-width: 600px) and (orientation: portrait) and (display-mode: fullscreen) {
+  header {
+    margin-top: 0;
+    padding-top: 0;
+  }
+
+  .header-inner {
+    padding-top: 0;
+  }
+}
+
 .ultrawide-sidecar {
   display: none;
 }

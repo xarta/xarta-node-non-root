@@ -288,7 +288,7 @@
     pages: null,
     showPagingButton: true,
     side: 'right',
-    pageSize: 4,
+    pageSize: 3,
     nodeSwitchPath: '/ui/',
   };
 
@@ -423,6 +423,27 @@
     }
   }
 
+  async function hardRefreshClientAssets() {
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(reg => reg.unregister().catch(() => false)));
+      }
+
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(key => caches.delete(key).catch(() => false)));
+      }
+
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set('_fresh', String(Date.now()));
+      window.location.replace(nextUrl.toString());
+    } catch (error) {
+      const message = error && error.message ? error.message : 'Client refresh failed.';
+      window.alert(message);
+    }
+  }
+
   const BUTTON_DEFS = {
     'fallback-ui':      { icon: '🧰', label: 'Fallback UI',      buildPath: () => '/fallback-ui/' },
     'ui':               { icon: '🏠', label: 'UI',               buildPath: () => '/' },
@@ -458,6 +479,12 @@
       icon: '♺', label: 'Toggle Fallback Cache Mode',
       doAction() {
         toggleFallbackCacheMode();
+      },
+    },
+    'hard-refresh': {
+      icon: '⟳', label: 'Hard Refresh App Assets',
+      doAction() {
+        hardRefreshClientAssets();
       },
     },
     'diag-chip': {
@@ -531,12 +558,13 @@
 
   function applySelectorConfigFromWindow() {
     const raw = (typeof window !== 'undefined' && window.BLUEPRINTS_SELECTOR_BUTTONS) || {};
+    const configuredPageSize = Number.isInteger(raw.pageSize) && raw.pageSize > 0 ? raw.pageSize : 3;
     SELECTOR_CFG = {
       enabledButtons: Array.isArray(raw.enabledButtons) ? raw.enabledButtons : [],
       pages: Array.isArray(raw.pages) ? raw.pages : null,
       showPagingButton: raw.showPagingButton !== false,
       side: raw.side === 'left' ? 'left' : 'right',
-      pageSize: Number.isInteger(raw.pageSize) && raw.pageSize > 0 ? raw.pageSize : 4,
+      pageSize: Math.min(3, configuredPageSize),
       nodeSwitchPath: raw.nodeSwitchPath || '/ui/',
     };
   }
@@ -996,9 +1024,13 @@
   }
 
   function getButtonPages() {
+    const maxPerPage = Math.max(1, Number(SELECTOR_CFG.pageSize) || 3);
+
     if (Array.isArray(SELECTOR_CFG.pages) && SELECTOR_CFG.pages.length) {
       const pages = SELECTOR_CFG.pages
-        .map(page => Array.isArray(page) ? page.filter(key => BUTTON_DEFS[key]) : [])
+        .map(page => Array.isArray(page)
+          ? page.filter(key => BUTTON_DEFS[key]).slice(0, maxPerPage)
+          : [])
         .filter(page => page.length > 0);
       if (!pages.length) return { pages: [], hasPaging: false };
       const hasPaging = SELECTOR_CFG.showPagingButton && pages.length > 1;
@@ -1010,8 +1042,8 @@
     if (!actions.length) return { pages: [], hasPaging: false };
 
     const pages = [];
-    for (let i = 0; i < actions.length; i += SELECTOR_CFG.pageSize) {
-      pages.push(actions.slice(i, i + SELECTOR_CFG.pageSize));
+    for (let i = 0; i < actions.length; i += maxPerPage) {
+      pages.push(actions.slice(i, i + maxPerPage));
     }
     const hasPaging = enabled.includes('paging-button') && pages.length > 1 && SELECTOR_CFG.showPagingButton;
     return { pages, hasPaging };

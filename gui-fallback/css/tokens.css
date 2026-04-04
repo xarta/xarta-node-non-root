@@ -49,6 +49,16 @@ body { background: var(--bg); color: var(--text); font-family: var(--font);
   }
 }
 
+/* On phone landscape standalone/fullscreen, use full width and avoid a
+   reserved left notch gutter creating a visual page gap. */
+@media (max-width: 900px) and (orientation: landscape) and (display-mode: standalone),
+       (max-width: 900px) and (orientation: landscape) and (display-mode: fullscreen) {
+  body {
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+
 .app-mode-diag {
   position: fixed;
   right: 10px;
@@ -89,5 +99,12 @@ body { background: var(--bg); color: var(--text); font-family: var(--font);
     border-bottom: 1px solid rgba(45, 49, 72, 0.5);
     pointer-events: none;
     z-index: 390;
+  }
+}
+
+@media (max-width: 600px) and (orientation: portrait) and (display-mode: standalone),
+       (max-width: 600px) and (orientation: portrait) and (display-mode: fullscreen) {
+  .safe-top-strip {
+    display: none;
   }
 }

@@ -168,3 +168,9 @@ body.shade-is-up .tab-scroll-shell .table-wrap {
     margin-right: -10px;
   }
 }
+
+@media (max-width: 600px) and (orientation: portrait) {
+  .body-shade-grip {
+    transform: translateX(-40px);
+  }
+}

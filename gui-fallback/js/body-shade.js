@@ -27,6 +27,8 @@
   var LONG_PRESS_MS = 200;
   var DRAG_ACTIVATE_PX = 3;
   var LONG_PRESS_MOVE_PX = 12;
+  var DOUBLE_TAP_MS = 320;
+  var DOUBLE_TAP_MOVE_PX = 24;
 
   var shade;
   var handle    = null;  // active handle (inside currently visible tab panel)
@@ -47,6 +49,10 @@
   var lastPointerT  = 0;
   var vel           = 0;   // px/s, EMA (negative = moving up)
   var longPressTimer = null;
+  var longPressTriggered = false;
+  var lastTapAt = 0;
+  var lastTapX = 0;
+  var lastTapY = 0;
 
   function clearLongPressTimer() {
     if (!longPressTimer) return;
@@ -85,6 +91,8 @@
       if (!dragging) return;
       var opened = openContextMenuFromHandle();
       if (!opened) return;
+
+      longPressTriggered = true;
 
       suppressEndDrag = true;
       dragging = false;
@@ -190,6 +198,7 @@
       }
     }
     dragging      = true;
+    longPressTriggered = false;
     startPointerY = clientY;
     lastPointerY  = clientY;
     lastPointerT  = Date.now();
@@ -197,6 +206,28 @@
     handle.classList.add('is-grabbing');
     armLongPress();
     return true;
+  }
+
+  function handleTapForDoubleToggle(clientX, clientY) {
+    var now = Date.now();
+    var dt = now - lastTapAt;
+    var dx = clientX - lastTapX;
+    var dy = clientY - lastTapY;
+    var moved = Math.sqrt(dx * dx + dy * dy);
+
+    if (lastTapAt && dt <= DOUBLE_TAP_MS && moved <= DOUBLE_TAP_MOVE_PX) {
+      lastTapAt = 0;
+      if (isUp) {
+        snapDown();
+      } else {
+        snapUp();
+      }
+      return;
+    }
+
+    lastTapAt = now;
+    lastTapX = clientX;
+    lastTapY = clientY;
   }
 
   /* ── Shared drag move ───────────────────────────────────────────────────── */
@@ -286,7 +317,21 @@
     moveDrag(e.touches[0].clientY);
   }
 
-  function onTouchEnd() { endDrag(); }
+  function onTouchEnd(e) {
+    var touch = (e && e.changedTouches && e.changedTouches.length) ? e.changedTouches[0] : null;
+    var tapX = touch ? touch.clientX : 0;
+    var tapY = touch ? touch.clientY : 0;
+    var wasDragMove = dragMoved;
+
+    endDrag();
+
+    // Double-tap only on quick, stationary taps. Never fire after long-press.
+    if (longPressTriggered || wasDragMove) {
+      lastTapAt = 0;
+      return;
+    }
+    handleTapForDoubleToggle(tapX, tapY);
+  }
 
   /* ── Mouse handlers (desktop drag) ─────────────────────────────────────── */
   function onMouseDown(e) {
