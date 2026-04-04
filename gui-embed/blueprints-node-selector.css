@@ -284,15 +284,22 @@ blueprints-node-selector,
     max-width: 88px;
   }
 
-  /* S25 profile-specific origin glyph override for camera-cutout tuning.
-     Keep this scoped to the same standalone/fullscreen portrait gate as the
-     header width cap so desktop emulation does not pick it up accidentally. */
+    /* Retained fallback path: the tuned static gold origin glyph used before the
+      Stargate ring became the current stable S25 treatment. Keep this branch so
+      future sessions can revive or compare the original cutout-wrapping glyph
+      without needing to reconstruct its geometry from scratch.
+
+      Scope stays identical to the Stargate branch so desktop emulation does not
+      accidentally pick it up. */
   html[data-device-profile='s25-ultra-oneui-webapk'][data-origin-variant='static'] .bp-ns-action-btn[data-action="origin"]::before {
     width: 28px;
     height: 28px;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Ccircle cx='23' cy='17' r='21' fill='%23c8a84b'/%3E%3Cg transform='translate(-1 0)'%3E%3Cpath fill='%23c8a84b' d='M24.091255 16.26616L44.374182 43s-9.886091.011495-9.886091.011495 1.15484-1.081096 1.760007-1.761495c1.437029-1.613011 1.038193-2.471339-5.095013-10.964895C27.493338 25.216912 24.275 21.070209 24 21.070209s-3.494338 4.146703-7.154085 9.214896c-6.133206 8.493556-6.532042 9.351884-5.095013 10.964895.591753.66422 1.508549 1.743021 1.508549 1.743021L3.6258176 43 24.091255 16.26616z'/%3E%3Ccircle cx='24.063491' cy='8.781942' r='4.5079365' fill='none' stroke='%23c8a84b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/g%3E%3C/svg%3E");
   }
 
+    /* Current stable S25 treatment: larger Stargate ring artwork that can
+      overflow the normal origin-button box while keeping the same click,
+      double-click, and long-press interactions on the underlying button. */
   html[data-device-profile='s25-ultra-oneui-webapk'][data-origin-variant='stargate'] .bp-ns-action-btn[data-action="origin"] {
     overflow: visible;
     z-index: 8;

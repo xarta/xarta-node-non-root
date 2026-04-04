@@ -284,9 +284,17 @@
   const LS_APP_MODE_DIAG_VISIBLE = 'bp_app_mode_diag_visible';
   const LS_ORIGIN_VARIANT = 'bp_origin_variant';
   const ORIGIN_BUTTON_ACTION = 'origin';
+  // Retained for future reuse: this is the tuned gold S25 cutout glyph path
+  // that pre-dates the Stargate experiment. It is not the current stable
+  // default, but it remains a valid visual variant on purpose.
   const ORIGIN_VARIANT_STATIC = 'static';
+  // Current stable experiment/default: Stargate ring around the cutout.
   const ORIGIN_VARIANT_STARGATE = 'stargate';
   const DEFAULT_ORIGIN_VARIANT = ORIGIN_VARIANT_STARGATE;
+  // Temporary deployment override: force the Stargate variant on-device even
+  // if localStorage contains an older explicit choice. Keep this comment in
+  // place so future sessions understand why resolveOriginVariant() ignores
+  // stored state while the experiment is considered the current stable path.
   const FORCED_ORIGIN_VARIANT = ORIGIN_VARIANT_STARGATE;
   const PLACEHOLDER_BUTTON_ACTION = 'placeholder-circle';
   const ORIGIN_BUTTON_TITLE = 'Origin';
@@ -524,6 +532,10 @@
   }
 
   function resolveOriginVariant() {
+    // Precedence is intentionally unusual right now:
+    // forced experiment default > stored choice > normal default.
+    // This is to keep the S25 path testable from the phone itself without
+    // requiring console access to flip localStorage state.
     if (FORCED_ORIGIN_VARIANT === ORIGIN_VARIANT_STATIC || FORCED_ORIGIN_VARIANT === ORIGIN_VARIANT_STARGATE) {
       return FORCED_ORIGIN_VARIANT;
     }
