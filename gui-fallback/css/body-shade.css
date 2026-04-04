@@ -106,10 +106,15 @@ body.has-fill-tab {
   opacity: 1 !important;
 }
 
-/* When shade is locked up, hide the header and menu zone — their fixed/stacked
-   elements can't be painted over by a translateY element in normal flow. */
-body.shade-is-up header,
+/* When shade is locked up, hide the menu zone so its stacked controls do not
+   compete with the raised content area. Most profiles also hide the header;
+   the S25 portrait installed-app path keeps the header visible so the shade
+   stops against the header row instead of the top edge of the screen. */
 body.shade-is-up .menu-zone {
+  visibility: hidden;
+}
+
+body.shade-is-up header {
   visibility: hidden;
 }
 
@@ -175,5 +180,12 @@ body.shade-is-up .tab-scroll-shell .table-wrap {
      own tuned offsets rather than inheriting S25 assumptions. */
   html[data-device-profile='s25-ultra-oneui-webapk'] .body-shade-grip {
     transform: translateX(-60px);
+  }
+}
+
+@media (max-width: 600px) and (orientation: portrait) and (display-mode: standalone),
+       (max-width: 600px) and (orientation: portrait) and (display-mode: fullscreen) {
+  html[data-device-profile='s25-ultra-oneui-webapk'][data-origin-variant='stargate'] body.shade-is-up header {
+    visibility: visible;
   }
 }

@@ -122,6 +122,24 @@
     return window.innerHeight || document.documentElement.clientHeight || 0;
   }
 
+  function isS25StargateSnapMode() {
+    var root = document.documentElement;
+    if (!root || root.getAttribute('data-device-profile') !== 's25-ultra-oneui-webapk') return false;
+    if (root.getAttribute('data-origin-variant') !== 'stargate') return false;
+    if (!window.matchMedia) return false;
+    if (!window.matchMedia('(max-width: 600px)').matches) return false;
+    if (!window.matchMedia('(orientation: portrait)').matches) return false;
+    return window.matchMedia('(display-mode: standalone)').matches
+      || window.matchMedia('(display-mode: fullscreen)').matches;
+  }
+
+  function getShadeSnapTop() {
+    if (!isS25StargateSnapMode()) return 0;
+    var siteHeader = document.querySelector('header');
+    if (!siteHeader) return 0;
+    return Math.max(0, Math.round(siteHeader.getBoundingClientRect().bottom));
+  }
+
   function updateViewportVars() {
     var viewportH = getViewportHeight();
     var bottomClearance = getShadeBottomClearance();
@@ -132,12 +150,31 @@
 
     /* ── Compute maxTravel for the current handle ───────────────────────────── */
     /* maxTravel = pixels the shade must slide up so the handle reaches the
-      top of the viewport (y=0). Measured at scrollY=0 so fill-table sizing and
-      handle travel use stable natural-state coordinates. */
+      current snap target. Normally that target is viewport top (y=0); the
+      S25 portrait installed-app Stargate variant intentionally stops at the
+      bottom of the header row instead.
+
+      Important: when the shade is already raised, getBoundingClientRect().top
+      reflects the translated position, not the natural page position. Recover
+      the natural top by subtracting the current shadeY before resolving the
+      travel distance, otherwise a resync pass would wrongly collapse maxTravel
+      toward zero and cause visible bounce. */
   function computeMaxTravel() {
     if (!handle) return 0;
     if (window.scrollY !== 0) window.scrollTo(0, 0);
-    return Math.max(0, handle.getBoundingClientRect().top);
+    var rect = handle.getBoundingClientRect();
+    var naturalTop = rect.top - shadeY;
+    return Math.max(0, naturalTop - getShadeSnapTop());
+  }
+
+  function resyncShadeUpPosition() {
+    if (!shade || !handle || !isUp) return;
+    maxTravel = computeMaxTravel();
+    applyTranslate(-maxTravel, true);
+    shade.classList.add('is-up');
+    handle.classList.add('is-up');
+    document.body.classList.add('shade-is-up');
+    sizeActivePane();
   }
 
   /* ── Apply translateY to shade only (handle rides along as a child) ────── */
@@ -494,14 +531,26 @@
     _fillSettleTimers = [];
     clearTimeout(_fillTimer);
     // First pass: near-immediate for normal tab switches.
-    _fillTimer = setTimeout(sizeActivePane, 50);
+    _fillTimer = setTimeout(function () {
+      if (isUp && isS25StargateSnapMode()) {
+        resyncShadeUpPosition();
+        return;
+      }
+      sizeActivePane();
+    }, 50);
 
     // Follow-up passes: mobile emulation/orientation changes can settle the
     // visual viewport, menu-zone height, and browser chrome slightly later.
     // Re-measure a few times with short delays so the active fill tab lands on
     // the correct final height without requiring a manual shade drag.
     [180, 360, 700].forEach(function (delay) {
-      _fillSettleTimers.push(setTimeout(sizeActivePane, delay));
+      _fillSettleTimers.push(setTimeout(function () {
+        if (isUp && isS25StargateSnapMode()) {
+          resyncShadeUpPosition();
+          return;
+        }
+        sizeActivePane();
+      }, delay));
     });
   }
 
