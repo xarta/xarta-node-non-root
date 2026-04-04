@@ -28,6 +28,11 @@ header {
   align-items: center;
   gap: 12px;
 }
+
+header blueprints-node-selector {
+  margin-left: auto;
+}
+
 h1 {
   margin: 0;
   font-size: 18px;
@@ -108,4 +113,22 @@ tbody tr:hover {
 code {
   color: var(--accent);
   font-size: 12px;
+}
+
+@media (orientation: portrait) and (hover: none) and (pointer: coarse) {
+  header {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    row-gap: 10px;
+  }
+
+  header blueprints-node-selector {
+    order: 1;
+    margin-left: auto;
+  }
+
+  h1 {
+    order: 2;
+    flex: 1 1 100%;
+  }
 }

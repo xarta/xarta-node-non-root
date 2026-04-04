@@ -282,15 +282,38 @@
 
   const FALLBACK_CACHE_PATH = '/api/v1/ui-cache/fallback';
   const LS_APP_MODE_DIAG_VISIBLE = 'bp_app_mode_diag_visible';
+  const ORIGIN_BUTTON_ACTION = 'origin';
+  const PLACEHOLDER_BUTTON_ACTION = 'placeholder-circle';
+  const ORIGIN_BUTTON_TITLE = 'Origin';
+  const ORIGIN_LONG_PRESS_MS = 250;
+  const ORIGIN_DOUBLE_CLICK_MS = 260;
+  const NOOP = () => {};
 
   let SELECTOR_CFG = {
     enabledButtons: [],
     pages: null,
     showPagingButton: true,
+    showOriginButton: true,
     side: 'right',
     pageSize: 3,
     nodeSwitchPath: '/ui/',
   };
+
+  let _originButtonState = {
+    title: ORIGIN_BUTTON_TITLE,
+    ariaLabel: ORIGIN_BUTTON_TITLE,
+    longPressMs: ORIGIN_LONG_PRESS_MS,
+    handlers: {
+      click: NOOP,
+      doubleClick: NOOP,
+      longPress: NOOP,
+    },
+  };
+
+  let _originPressTimer = null;
+  let _originClickTimer = null;
+  let _originLastClickAt = 0;
+  let _originLongPressTriggered = false;
 
   let _fallbackCacheState = null;
   let _fallbackCacheBusy = false;
@@ -444,6 +467,155 @@
     }
   }
 
+  function clearOriginPressTimer() {
+    if (_originPressTimer) {
+      clearTimeout(_originPressTimer);
+      _originPressTimer = null;
+    }
+  }
+
+  function clearOriginClickTimer() {
+    if (_originClickTimer) {
+      clearTimeout(_originClickTimer);
+      _originClickTimer = null;
+    }
+  }
+
+  function requestSelectorActionRender() {
+    if (typeof document === 'undefined') return;
+    requestAnimationFrame(() => renderActionButtons());
+  }
+
+  function normalizeOriginHandlers(handlers = {}) {
+    return {
+      click: typeof handlers.click === 'function' ? handlers.click : NOOP,
+      doubleClick: typeof handlers.doubleClick === 'function' ? handlers.doubleClick : NOOP,
+      longPress: typeof handlers.longPress === 'function' ? handlers.longPress : NOOP,
+    };
+  }
+
+  function invokeOriginHandler(kind, payload) {
+    const handler = _originButtonState.handlers[kind] || NOOP;
+    try {
+      handler({
+        type: kind,
+        currentNode: getCurrentNode(),
+        button: payload.button || null,
+        originalEvent: payload.originalEvent || null,
+      });
+    } catch (error) {
+      console.error('Blueprints origin button handler failed:', error);
+    }
+  }
+
+  function setOriginButtonHandlers(handlers = {}) {
+    _originButtonState.handlers = normalizeOriginHandlers(handlers);
+    requestSelectorActionRender();
+  }
+
+  function clearOriginButtonHandlers() {
+    _originButtonState.handlers = normalizeOriginHandlers();
+    requestSelectorActionRender();
+  }
+
+  function setOriginButtonOptions(options = {}) {
+    if (typeof options.title === 'string' && options.title.trim()) {
+      _originButtonState.title = options.title.trim();
+    }
+    if (typeof options.ariaLabel === 'string' && options.ariaLabel.trim()) {
+      _originButtonState.ariaLabel = options.ariaLabel.trim();
+    }
+    if (Number.isFinite(options.longPressMs) && options.longPressMs >= 0) {
+      _originButtonState.longPressMs = options.longPressMs;
+    }
+    requestSelectorActionRender();
+  }
+
+  function resetOriginButton() {
+    _originButtonState = {
+      title: ORIGIN_BUTTON_TITLE,
+      ariaLabel: ORIGIN_BUTTON_TITLE,
+      longPressMs: ORIGIN_LONG_PRESS_MS,
+      handlers: normalizeOriginHandlers(),
+    };
+    clearOriginPressTimer();
+    clearOriginClickTimer();
+    _originLastClickAt = 0;
+    _originLongPressTriggered = false;
+    requestSelectorActionRender();
+  }
+
+  function installOriginButtonApi() {
+    if (typeof window === 'undefined') return;
+    window.BlueprintsSelectorOriginButton = {
+      setHandlers: setOriginButtonHandlers,
+      clearHandlers: clearOriginButtonHandlers,
+      setOptions: setOriginButtonOptions,
+      reset: resetOriginButton,
+      refresh: requestSelectorActionRender,
+    };
+  }
+
+  function createOriginActionButton() {
+    const btn = document.createElement('button');
+    btn.className = 'bp-ns-action-btn';
+    btn.dataset.action = ORIGIN_BUTTON_ACTION;
+    btn.title = _originButtonState.title;
+    btn.setAttribute('aria-label', _originButtonState.ariaLabel || _originButtonState.title);
+    btn.textContent = '◎';
+    return btn;
+  }
+
+  function bindOriginButtonInteractions(btn) {
+    btn.addEventListener('pointerdown', (event) => {
+      if (event.button && event.button !== 0) return;
+      clearOriginPressTimer();
+      _originLongPressTriggered = false;
+      _originPressTimer = setTimeout(() => {
+        _originPressTimer = null;
+        _originLongPressTriggered = true;
+        clearOriginClickTimer();
+        _originLastClickAt = 0;
+        invokeOriginHandler('longPress', { button: btn, originalEvent: event });
+      }, Math.max(0, Number(_originButtonState.longPressMs) || ORIGIN_LONG_PRESS_MS));
+    });
+
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach((type) => {
+      btn.addEventListener(type, clearOriginPressTimer);
+    });
+
+    btn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      clearOriginPressTimer();
+
+      if (_originLongPressTriggered) {
+        _originLongPressTriggered = false;
+        clearOriginClickTimer();
+        _originLastClickAt = 0;
+        return;
+      }
+
+      const now = Date.now();
+      if (_originClickTimer && (now - _originLastClickAt) <= ORIGIN_DOUBLE_CLICK_MS) {
+        clearOriginClickTimer();
+        _originLastClickAt = 0;
+        invokeOriginHandler('doubleClick', { button: btn, originalEvent: event });
+        return;
+      }
+
+      _originLastClickAt = now;
+      clearOriginClickTimer();
+      _originClickTimer = setTimeout(() => {
+        _originClickTimer = null;
+        _originLastClickAt = 0;
+        invokeOriginHandler('click', { button: btn, originalEvent: event });
+      }, ORIGIN_DOUBLE_CLICK_MS);
+    });
+  }
+
+  installOriginButtonApi();
+
   const BUTTON_DEFS = {
     'fallback-ui':      { icon: '🧰', label: 'Fallback UI',      buildPath: () => '/fallback-ui/' },
     'ui':               { icon: '🏠', label: 'UI',               buildPath: () => '/' },
@@ -563,10 +735,17 @@
       enabledButtons: Array.isArray(raw.enabledButtons) ? raw.enabledButtons : [],
       pages: Array.isArray(raw.pages) ? raw.pages : null,
       showPagingButton: raw.showPagingButton !== false,
+      showOriginButton: raw.showOriginButton !== false,
       side: raw.side === 'left' ? 'left' : 'right',
-      pageSize: Math.min(3, configuredPageSize),
+      pageSize: configuredPageSize,
       nodeSwitchPath: raw.nodeSwitchPath || '/ui/',
     };
+    if (typeof raw.originButtonTitle === 'string' && raw.originButtonTitle.trim()) {
+      _originButtonState.title = raw.originButtonTitle.trim();
+    }
+    if (typeof raw.originButtonAriaLabel === 'string' && raw.originButtonAriaLabel.trim()) {
+      _originButtonState.ariaLabel = raw.originButtonAriaLabel.trim();
+    }
   }
 
   function tryLoadScript(url) {
@@ -1059,23 +1238,39 @@
     left.classList.remove('show');
     right.classList.remove('show');
 
-    const { pages, hasPaging } = getButtonPages();
-    if (!pages.length) return;
+    const { pages } = getButtonPages();
+    const showOriginButton = SELECTOR_CFG.showOriginButton !== false;
+    const showPagingButton = SELECTOR_CFG.showPagingButton !== false;
+    const pageSlotCount = Math.max(1, Number(SELECTOR_CFG.pageSize) || 3);
+    if (!pages.length && !showOriginButton && !showPagingButton) return;
 
-    const pageCount = pages.length;
-    _buttonPage = ((_buttonPage % pageCount) + pageCount) % pageCount;
-    saveButtonPage();
-    const currentPageButtons = pages[_buttonPage];
+    const pageCount = pages.length || 1;
+    const currentPageButtons = pages.length
+      ? pages[((_buttonPage % pageCount) + pageCount) % pageCount]
+      : [];
+    if (pages.length) {
+      _buttonPage = ((_buttonPage % pageCount) + pageCount) % pageCount;
+      saveButtonPage();
+    }
 
     const target = SELECTOR_CFG.side === 'left' ? left : right;
     target.classList.add('show');
 
-    target.innerHTML = currentPageButtons.map(key => {
-      const def = BUTTON_DEFS[key];
-      return `<button class="bp-ns-action-btn" data-action="${esc(key)}" title="${esc(def.label)}" aria-label="${esc(def.label)}">${esc(def.icon)}</button>`;
+    const placeholderCount = Math.max(0, pageSlotCount - currentPageButtons.length);
+    const slotButtons = [
+      ...Array.from({ length: placeholderCount }, (_, index) => ({ key: PLACEHOLDER_BUTTON_ACTION, placeholderIndex: index })),
+      ...currentPageButtons.map(key => ({ key })),
+    ];
+
+    target.innerHTML = slotButtons.map(entry => {
+      if (entry.key === PLACEHOLDER_BUTTON_ACTION) {
+        return `<button class="bp-ns-action-btn bp-ns-action-btn--placeholder" data-action="${PLACEHOLDER_BUTTON_ACTION}" data-placeholder-index="${entry.placeholderIndex}" title="Empty slot" aria-label="Empty slot" aria-hidden="true" disabled tabindex="-1">•</button>`;
+      }
+      const def = BUTTON_DEFS[entry.key];
+      return `<button class="bp-ns-action-btn" data-action="${esc(entry.key)}" title="${esc(def.label)}" aria-label="${esc(def.label)}">${esc(def.icon)}</button>`;
     }).join('');
 
-    if (hasPaging) {
+    if (showPagingButton) {
       const nextBtn = document.createElement('button');
       nextBtn.className = 'bp-ns-action-btn';
       nextBtn.dataset.action = 'paging-button';
@@ -1085,7 +1280,18 @@
       target.appendChild(nextBtn);
     }
 
+    if (showOriginButton) {
+      target.appendChild(createOriginActionButton());
+    }
+
     target.querySelectorAll('.bp-ns-action-btn').forEach(btn => {
+      if (btn.dataset.action === PLACEHOLDER_BUTTON_ACTION) {
+        return;
+      }
+      if (btn.dataset.action === ORIGIN_BUTTON_ACTION) {
+        bindOriginButtonInteractions(btn);
+        return;
+      }
       btn.addEventListener('click', e => {
         e.preventDefault();
         e.stopPropagation();
