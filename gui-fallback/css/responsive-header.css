@@ -200,12 +200,60 @@ html.header-compact .header-inner {
 
 @media (max-width: 600px) and (orientation: portrait) and (display-mode: standalone),
        (max-width: 600px) and (orientation: portrait) and (display-mode: fullscreen) {
-    html[data-device-profile='s25-ultra-oneui-webapk'][data-origin-variant='stargate'] #synthesisMenuWrapper,
-    html[data-device-profile='s25-ultra-oneui-webapk'][data-origin-variant='stargate'] #probesMenuWrapper,
-    html[data-device-profile='s25-ultra-oneui-webapk'][data-origin-variant='stargate'] #settingsMenuWrapper,
-    html[data-device-profile='s25-ultra-oneui-webapk'][data-origin-variant='stargate'] #synthesisMenuSaveNotification,
-    html[data-device-profile='s25-ultra-oneui-webapk'][data-origin-variant='stargate'] #probesMenuSaveNotification,
-    html[data-device-profile='s25-ultra-oneui-webapk'][data-origin-variant='stargate'] #settingsMenuSaveNotification {
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #synthesisMenuWrapper,
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #probesMenuWrapper,
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #settingsMenuWrapper,
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #synthesisMenuSaveNotification,
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #probesMenuSaveNotification,
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #settingsMenuSaveNotification {
         display: none !important;
+    }
+
+    /* Named special mode: S25 Stargate Touch Nav.
+       Keep the shared outer menu-zone behavior intact and only rearrange the
+       inner menu-zone-nav contents after the old menu wrappers are hidden. */
+    html[data-special-ui-mode='s25-stargate-touch-nav'] .menu-zone-nav {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        column-gap: 8px;
+        row-gap: 6px;
+        width: 100%;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot {
+        width: 100%;
+        flex: none;
+        min-width: 0;
+        grid-column: 1;
+        margin-right: 0;
+        order: 0;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #node-meta-compact {
+        grid-column: 2;
+        margin-left: 0;
+        justify-self: end;
+        justify-content: flex-end;
+        flex: none;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] .page-control-group:not([hidden]) {
+        width: 100%;
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] .page-control-group:not([hidden]) .hub-clear-input {
+        width: 100%;
+        flex: 1 1 auto;
+        min-width: 0;
+        max-width: none;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] .page-control-group:not([hidden]) input[type="text"].hub-ctrl {
+        min-width: 0;
+        max-width: none;
+        flex: 1 1 auto;
     }
 }

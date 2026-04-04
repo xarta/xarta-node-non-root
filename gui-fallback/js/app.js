@@ -1,4 +1,5 @@
 let _selectorOriginMenuGroup = 'synthesis';
+const SPECIAL_UI_MODE_S25_STARGATE_TOUCH_NAV = 's25-stargate-touch-nav';
 
 function _isS25StargateOriginMenuMode() {
   const root = document.documentElement;
@@ -9,6 +10,37 @@ function _isS25StargateOriginMenuMode() {
   if (!window.matchMedia('(orientation: portrait)').matches) return false;
   return window.matchMedia('(display-mode: standalone)').matches
     || window.matchMedia('(display-mode: fullscreen)').matches;
+}
+
+function _applySpecialUiModeAttributes() {
+  const root = document.documentElement;
+  const body = document.body;
+  const mode = _isS25StargateOriginMenuMode() ? SPECIAL_UI_MODE_S25_STARGATE_TOUCH_NAV : '';
+  if (root) {
+    if (mode) root.setAttribute('data-special-ui-mode', mode);
+    else root.removeAttribute('data-special-ui-mode');
+  }
+  if (body) {
+    if (mode) body.setAttribute('data-special-ui-mode', mode);
+    else body.removeAttribute('data-special-ui-mode');
+  }
+}
+
+function _installSpecialUiModeTracking() {
+  const root = document.documentElement;
+  _applySpecialUiModeAttributes();
+  window.addEventListener('resize', _applySpecialUiModeAttributes, { passive: true });
+  window.addEventListener('orientationchange', _applySpecialUiModeAttributes, { passive: true });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', _applySpecialUiModeAttributes, { passive: true });
+  }
+  if (root && typeof MutationObserver !== 'undefined') {
+    const observer = new MutationObserver(_applySpecialUiModeAttributes);
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ['data-device-profile', 'data-origin-variant'],
+    });
+  }
 }
 
 function _getActiveGroupMenuConfig() {
@@ -183,6 +215,7 @@ document.addEventListener('DOMContentLoaded', () => {
   SynthesisMenuConfig.showGroup();
   SynthesisMenuConfig.updateActiveTab('manual-links-' + _manualLinksView);
   _installSelectorOriginMenuBridge();
+  _installSpecialUiModeTracking();
   loadSyncStatus();
   setInterval(() => {
     if (typeof window.isColumnResizeActive === 'function' && window.isColumnResizeActive()) return;
