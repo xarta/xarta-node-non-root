@@ -27,10 +27,16 @@
   function refresh() {
     var chip = document.getElementById('app-mode-diag');
     if (!chip) return;
+    var profileApi = window.BlueprintsDeviceProfile || null;
+    var profileId = profileApi && profileApi.profileId ? profileApi.profileId : 'none';
+    var profileSource = profileApi && profileApi.source ? profileApi.source : 'none';
     var vv = window.visualViewport;
     var vw = vv ? Math.round(vv.width) : window.innerWidth;
     var vh = vv ? Math.round(vv.height) : window.innerHeight;
     chip.textContent =
+      'profile=' + profileId +
+      ' (' + profileSource + ')' +
+      ' | ' +
       'mode=' + displayMode() +
       ' | orient=' + orientationText() +
       ' | viewport=' + vw + 'x' + vh +

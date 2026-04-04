@@ -170,7 +170,10 @@ body.shade-is-up .tab-scroll-shell .table-wrap {
 }
 
 @media (max-width: 600px) and (orientation: portrait) {
-  .body-shade-grip {
-    transform: translateX(-40px);
+  /* S25 profile-specific portrait notch ergonomics.
+     Keep this profile scoped so future phone profiles can opt in with their
+     own tuned offsets rather than inheriting S25 assumptions. */
+  html[data-device-profile='s25-ultra-oneui-webapk'] .body-shade-grip {
+    transform: translateX(-60px);
   }
 }

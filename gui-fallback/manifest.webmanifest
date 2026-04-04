@@ -5,7 +5,7 @@
   "description": "Blueprints fallback dashboard",
   "start_url": "./?source=pwa",
   "scope": "./",
-  "display": "standalone",
+  "display": "fullscreen",
   "display_override": [
     "fullscreen",
     "standalone",

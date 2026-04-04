@@ -104,7 +104,10 @@ body { background: var(--bg); color: var(--text); font-family: var(--font);
 
 @media (max-width: 600px) and (orientation: portrait) and (display-mode: standalone),
        (max-width: 600px) and (orientation: portrait) and (display-mode: fullscreen) {
-  .safe-top-strip {
+  /* S25 profile-specific portrait notch tuning: keep strip disabled to avoid
+     visual seam while using fullscreen cutout. Future profiles should add
+     their own profile-scoped rules rather than editing this selector. */
+  html[data-device-profile='s25-ultra-oneui-webapk'] .safe-top-strip {
     display: none;
   }
 }

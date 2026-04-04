@@ -239,18 +239,20 @@ blueprints-node-selector,
 
 @media (max-width: 600px) and (orientation: portrait) and (display-mode: standalone),
        (max-width: 600px) and (orientation: portrait) and (display-mode: fullscreen) {
-  .header-right .bp-node-selector {
+  /* S25 profile-specific portrait notch/camera-hole layout.
+     Future device profiles should provide their own scoped selectors. */
+  html[data-device-profile='s25-ultra-oneui-webapk'] .header-right .bp-node-selector {
     justify-content: flex-end;
   }
 
-  .header-right .bp-ns-btn {
+  html[data-device-profile='s25-ultra-oneui-webapk'] .header-right .bp-ns-btn {
     flex: 0 0 auto !important;
     width: 100%;
     max-width: 156px !important;
     margin-left: auto;
   }
 
-  .header-right .bp-ns-name {
+  html[data-device-profile='s25-ultra-oneui-webapk'] .header-right .bp-ns-name {
     max-width: 88px;
   }
 }
