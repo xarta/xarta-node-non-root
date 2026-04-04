@@ -282,7 +282,12 @@
 
   const FALLBACK_CACHE_PATH = '/api/v1/ui-cache/fallback';
   const LS_APP_MODE_DIAG_VISIBLE = 'bp_app_mode_diag_visible';
+  const LS_ORIGIN_VARIANT = 'bp_origin_variant';
   const ORIGIN_BUTTON_ACTION = 'origin';
+  const ORIGIN_VARIANT_STATIC = 'static';
+  const ORIGIN_VARIANT_STARGATE = 'stargate';
+  const DEFAULT_ORIGIN_VARIANT = ORIGIN_VARIANT_STARGATE;
+  const FORCED_ORIGIN_VARIANT = ORIGIN_VARIANT_STARGATE;
   const PLACEHOLDER_BUTTON_ACTION = 'placeholder-circle';
   const ORIGIN_BUTTON_TITLE = 'Origin';
   const ORIGIN_LONG_PRESS_MS = 250;
@@ -314,6 +319,7 @@
   let _originClickTimer = null;
   let _originLastClickAt = 0;
   let _originLongPressTriggered = false;
+  let _originVariant = DEFAULT_ORIGIN_VARIANT;
 
   let _fallbackCacheState = null;
   let _fallbackCacheBusy = false;
@@ -486,6 +492,66 @@
     requestAnimationFrame(() => renderActionButtons());
   }
 
+  function normalizeOriginVariant(variant) {
+    return variant === ORIGIN_VARIANT_STARGATE
+      ? ORIGIN_VARIANT_STARGATE
+      : ORIGIN_VARIANT_STATIC;
+  }
+
+  function applyOriginVariantAttributes(variant) {
+    if (typeof document === 'undefined') return normalizeOriginVariant(variant);
+    const nextVariant = normalizeOriginVariant(variant);
+    const root = document.documentElement;
+    if (root) {
+      root.setAttribute('data-origin-variant', nextVariant);
+    }
+    if (document.body) {
+      document.body.setAttribute('data-origin-variant', nextVariant);
+    }
+    return nextVariant;
+  }
+
+  function readStoredOriginVariant() {
+    try {
+      const stored = localStorage.getItem(LS_ORIGIN_VARIANT);
+      if (stored === ORIGIN_VARIANT_STATIC || stored === ORIGIN_VARIANT_STARGATE) {
+        return stored;
+      }
+      return DEFAULT_ORIGIN_VARIANT;
+    } catch {
+      return DEFAULT_ORIGIN_VARIANT;
+    }
+  }
+
+  function resolveOriginVariant() {
+    if (FORCED_ORIGIN_VARIANT === ORIGIN_VARIANT_STATIC || FORCED_ORIGIN_VARIANT === ORIGIN_VARIANT_STARGATE) {
+      return FORCED_ORIGIN_VARIANT;
+    }
+    return readStoredOriginVariant();
+  }
+
+  function setOriginVariant(variant) {
+    const nextVariant = normalizeOriginVariant(variant);
+    try {
+      localStorage.setItem(LS_ORIGIN_VARIANT, nextVariant);
+    } catch {}
+    _originVariant = applyOriginVariantAttributes(nextVariant);
+    return _originVariant;
+  }
+
+  function clearOriginVariant() {
+    try {
+      localStorage.removeItem(LS_ORIGIN_VARIANT);
+    } catch {}
+    _originVariant = applyOriginVariantAttributes(DEFAULT_ORIGIN_VARIANT);
+    return _originVariant;
+  }
+
+  function refreshOriginVariant() {
+    _originVariant = applyOriginVariantAttributes(resolveOriginVariant());
+    return _originVariant;
+  }
+
   function normalizeOriginHandlers(handlers = {}) {
     return {
       click: typeof handlers.click === 'function' ? handlers.click : NOOP,
@@ -556,6 +622,21 @@
     };
   }
 
+  function installOriginVariantApi() {
+    if (typeof window === 'undefined') return;
+    window.BlueprintsSelectorOriginVariant = {
+      VARIANT_STATIC: ORIGIN_VARIANT_STATIC,
+      VARIANT_STARGATE: ORIGIN_VARIANT_STARGATE,
+      LS_KEY: LS_ORIGIN_VARIANT,
+      get variant() {
+        return _originVariant;
+      },
+      setVariant: setOriginVariant,
+      clearVariant: clearOriginVariant,
+      refresh: refreshOriginVariant,
+    };
+  }
+
   function createOriginActionButton() {
     const btn = document.createElement('button');
     btn.className = 'bp-ns-action-btn';
@@ -614,7 +695,15 @@
     });
   }
 
+  _originVariant = applyOriginVariantAttributes(resolveOriginVariant());
+  if (typeof document !== 'undefined' && !document.body) {
+    document.addEventListener('DOMContentLoaded', () => {
+      applyOriginVariantAttributes(_originVariant);
+    }, { once: true });
+  }
+
   installOriginButtonApi();
+  installOriginVariantApi();
 
   const BUTTON_DEFS = {
     'fallback-ui':      { icon: '🧰', label: 'Fallback UI',      buildPath: () => '/fallback-ui/' },

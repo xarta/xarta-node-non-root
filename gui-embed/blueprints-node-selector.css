@@ -73,6 +73,16 @@ blueprints-node-selector,
   transform: translate(-50%, -50%);
 }
 
+@keyframes bp-s25-stargate-spin {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
 .bp-ns-action-btn[data-action="paging-button"]::before {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cellipse cx='12' cy='14' rx='5' ry='6.5' fill='%23c8a84b'/%3E%3Ccircle cx='12' cy='6.5' r='2.8' fill='%23c8a84b'/%3E%3Cpath d='M10.2 4.2 Q8.5 2.5 7.5 3' stroke='%23c8a84b' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3Cpath d='M13.8 4.2 Q15.5 2.5 16.5 3' stroke='%23c8a84b' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3Cline x1='7' y1='10' x2='2.5' y2='9' stroke='%23c8a84b' stroke-width='1.3' stroke-linecap='round'/%3E%3Cline x1='7' y1='13.5' x2='2' y2='13.5' stroke='%23c8a84b' stroke-width='1.3' stroke-linecap='round'/%3E%3Cline x1='7' y1='17' x2='2.5' y2='18.5' stroke='%23c8a84b' stroke-width='1.3' stroke-linecap='round'/%3E%3Cline x1='17' y1='10' x2='21.5' y2='9' stroke='%23c8a84b' stroke-width='1.3' stroke-linecap='round'/%3E%3Cline x1='17' y1='13.5' x2='22' y2='13.5' stroke='%23c8a84b' stroke-width='1.3' stroke-linecap='round'/%3E%3Cline x1='17' y1='17' x2='21.5' y2='18.5' stroke='%23c8a84b' stroke-width='1.3' stroke-linecap='round'/%3E%3C/svg%3E");
 }
@@ -264,9 +274,9 @@ blueprints-node-selector,
   }
 
   html[data-device-profile='s25-ultra-oneui-webapk'] .header-right .bp-ns-btn {
-    flex: 0 0 auto !important;
-    width: 100%;
-    max-width: 156px !important;
+    flex: 1 1 auto !important;
+    min-width: 0;
+    width: auto;
     margin-left: auto;
   }
 
@@ -277,9 +287,31 @@ blueprints-node-selector,
   /* S25 profile-specific origin glyph override for camera-cutout tuning.
      Keep this scoped to the same standalone/fullscreen portrait gate as the
      header width cap so desktop emulation does not pick it up accidentally. */
-  html[data-device-profile='s25-ultra-oneui-webapk'] .bp-ns-action-btn[data-action="origin"]::before {
+  html[data-device-profile='s25-ultra-oneui-webapk'][data-origin-variant='static'] .bp-ns-action-btn[data-action="origin"]::before {
     width: 28px;
     height: 28px;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Ccircle cx='23' cy='17' r='21' fill='%23c8a84b'/%3E%3Cg transform='translate(-1 0)'%3E%3Cpath fill='%23c8a84b' d='M24.091255 16.26616L44.374182 43s-9.886091.011495-9.886091.011495 1.15484-1.081096 1.760007-1.761495c1.437029-1.613011 1.038193-2.471339-5.095013-10.964895C27.493338 25.216912 24.275 21.070209 24 21.070209s-3.494338 4.146703-7.154085 9.214896c-6.133206 8.493556-6.532042 9.351884-5.095013 10.964895.591753.66422 1.508549 1.743021 1.508549 1.743021L3.6258176 43 24.091255 16.26616z'/%3E%3Ccircle cx='24.063491' cy='8.781942' r='4.5079365' fill='none' stroke='%23c8a84b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/g%3E%3C/svg%3E");
+  }
+
+  html[data-device-profile='s25-ultra-oneui-webapk'][data-origin-variant='stargate'] .bp-ns-action-btn[data-action="origin"] {
+    overflow: visible;
+    z-index: 8;
+    background: transparent;
+    border-color: transparent;
+  }
+
+  html[data-device-profile='s25-ultra-oneui-webapk'][data-origin-variant='stargate'] .bp-ns-action-btn[data-action="origin"]:hover {
+    background: transparent;
+    border-color: transparent;
+  }
+
+  html[data-device-profile='s25-ultra-oneui-webapk'][data-origin-variant='stargate'] .bp-ns-action-btn[data-action="origin"]::before {
+    width: 39px;
+    height: 39px;
+    top: calc(50% - 4px);
+    z-index: 9;
+    background-image: url('/fallback-ui/assets/icons/ui/stargate-s25-ultra-ring.svg');
+    background-position: center;
+    animation: bp-s25-stargate-spin 14s linear infinite;
   }
 }
