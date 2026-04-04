@@ -220,7 +220,7 @@ html.header-compact .header-inner {
     html[data-special-ui-mode='s25-stargate-touch-nav'] .menu-zone-nav {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
-        align-items: center;
+        align-items: start;
         column-gap: 8px;
         row-gap: 6px;
         width: 100%;
@@ -233,18 +233,21 @@ html.header-compact .header-inner {
     html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 {
         display: flex;
         flex-wrap: wrap;
-        align-items: center;
+        align-items: flex-start;
+        align-content: flex-start;
         gap: 6px;
         width: 100%;
         min-width: 0;
         grid-column: 1;
         margin-right: 0;
+        align-self: start;
     }
 
     html[data-special-ui-mode='s25-stargate-touch-nav'] #node-meta-compact {
         grid-column: 2;
         margin-left: 0;
         justify-self: end;
+        align-self: start;
         justify-content: flex-end;
         flex: none;
     }
