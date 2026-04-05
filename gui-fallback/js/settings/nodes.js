@@ -226,6 +226,61 @@ function _nodeSortValue(node, sortKey) {
   }
 }
 
+function _normalizeCommitValue(value) {
+  const v = String(value || '').trim();
+  if (!v || v === '—' || v === '?') return '';
+  return v;
+}
+
+function _mostCommonValue(values) {
+  const counts = new Map();
+  let best = '';
+  let bestCount = 0;
+  values.forEach(v => {
+    const next = (counts.get(v) || 0) + 1;
+    counts.set(v, next);
+    if (next > bestCount) {
+      best = v;
+      bestCount = next;
+    }
+  });
+  return best;
+}
+
+function _commitBaseline(key) {
+  const selfNode = _nodes.find(n => n.node_id === _selfNodeId);
+  const selfVal = _normalizeCommitValue(selfNode ? selfNode[key] : '');
+  if (selfVal) return selfVal;
+  const values = _nodes
+    .map(n => _normalizeCommitValue(n[key]))
+    .filter(Boolean);
+  return values.length ? _mostCommonValue(values) : '';
+}
+
+function _updateCommitMismatchFlags() {
+  const outerBase = _commitBaseline('_commit');
+  const nonRootBase = _commitBaseline('_commit_non_root');
+  const innerBase = _commitBaseline('_commit_inner');
+
+  _nodes.forEach(n => {
+    const outerVal = _normalizeCommitValue(n._commit);
+    const nonRootVal = _normalizeCommitValue(n._commit_non_root);
+    const innerVal = _normalizeCommitValue(n._commit_inner);
+    n._commit_mismatch_outer = !!(outerBase && outerVal && outerVal !== outerBase);
+    n._commit_mismatch_non_root = !!(nonRootBase && nonRootVal && nonRootVal !== nonRootBase);
+    n._commit_mismatch_inner = !!(innerBase && innerVal && innerVal !== innerBase);
+  });
+}
+
+function _commitCellStyle(value, mismatch) {
+  const isLoading = value == null;
+  const color = isLoading ? 'var(--text-dim)' : 'inherit';
+  const bg = mismatch
+    ? 'background:color-mix(in srgb, var(--warn,#e6a817) 28%, transparent);'
+    : '';
+  return `font-size:12px;color:${color};${bg}`;
+}
+
 function _nodePctMeta(status, info) {
   const vmid = info && info.vmid ? ` ${info.vmid}` : '';
   const pveHost = info && info.pve_host ? ` on ${info.pve_host}` : '';
@@ -605,9 +660,9 @@ function renderNodes() {
       addresses: `<td>${addrs || '<span style="color:var(--text-dim)">—</span>'}</td>`,
       hostnames: `<td>${hostnamesHtml}</td>`,
       gen: `<td id="node-gen-${safeid}" style="font-size:12px;color:${n._gen == null ? 'var(--text-dim)' : 'inherit'}">${n._gen == null ? '…' : esc(String(n._gen))}</td>`,
-      commit: `<td id="node-ver-outer-${safeid}" style="font-size:12px;color:${n._commit == null ? 'var(--text-dim)' : 'inherit'}" title="${esc(n._commit || '')}">${n._commit == null ? '…' : esc(n._commit)}</td>`,
-      commit_non_root: `<td id="node-ver-non-root-${safeid}" style="font-size:12px;color:${n._commit_non_root == null ? 'var(--text-dim)' : 'inherit'}" title="${esc(n._commit_non_root || '')}">${n._commit_non_root == null ? '…' : esc(n._commit_non_root)}</td>`,
-      commit_inner: `<td id="node-ver-inner-${safeid}" style="font-size:12px;color:${n._commit_inner == null ? 'var(--text-dim)' : 'inherit'}" title="${esc(n._commit_inner || '')}">${n._commit_inner == null ? '…' : esc(n._commit_inner)}</td>`,
+      commit: `<td id="node-ver-outer-${safeid}" style="${_commitCellStyle(n._commit, n._commit_mismatch_outer)}" title="${esc(n._commit || '')}">${n._commit == null ? '…' : esc(n._commit)}</td>`,
+      commit_non_root: `<td id="node-ver-non-root-${safeid}" style="${_commitCellStyle(n._commit_non_root, n._commit_mismatch_non_root)}" title="${esc(n._commit_non_root || '')}">${n._commit_non_root == null ? '…' : esc(n._commit_non_root)}</td>`,
+      commit_inner: `<td id="node-ver-inner-${safeid}" style="${_commitCellStyle(n._commit_inner, n._commit_mismatch_inner)}" title="${esc(n._commit_inner || '')}">${n._commit_inner == null ? '…' : esc(n._commit_inner)}</td>`,
       pending: `<td>${pendingBadge}</td>`,
       _actions: _renderNodeActionsCell(n),
     };
@@ -687,6 +742,8 @@ async function enrichNodeVersions() {
       if (verInnerCell) { verInnerCell.textContent = '?'; verInnerCell.style.color = 'var(--text-dim)'; }
     }
   }
+  _updateCommitMismatchFlags();
+  renderNodes();
   const sortKey = _nodesTableView?.getSortState().key;
   if (sortKey === 'gen' || sortKey === 'commit' || sortKey === 'commit_non_root' || sortKey === 'commit_inner') renderNodes();
 }
