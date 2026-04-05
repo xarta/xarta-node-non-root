@@ -1415,6 +1415,24 @@
     return `<button class="bp-ns-action-btn" data-action="${esc(key)}" title="${esc(def.label)}" aria-label="${esc(def.label)}">${esc(def.icon)}</button>`;
   }
 
+  function measureRibbonViewportWidth(target, slotCount) {
+    if (!target || !slotCount || slotCount < 1 || typeof document === 'undefined') {
+      return null;
+    }
+
+    const probe = document.createElement('div');
+    probe.className = 'bp-ns-ribbon-measure';
+    probe.setAttribute('aria-hidden', 'true');
+    probe.innerHTML = Array.from({ length: slotCount }, () => '<button class="bp-ns-action-btn" type="button" tabindex="-1" aria-hidden="true"></button>').join('');
+
+    target.appendChild(probe);
+    const width = probe.getBoundingClientRect().width;
+    probe.remove();
+
+    if (!Number.isFinite(width) || width <= 0) return null;
+    return width;
+  }
+
   function createInternalRibbonFsm(cfg) {
     const dragStartPx = Math.max(2, Number(cfg && cfg.dragStartPx) || 4);
     const onDragStart = (cfg && cfg.onDragStart) || NOOP;
@@ -1607,7 +1625,9 @@
     left.classList.remove('bp-ns-actions-ribbon');
     right.classList.remove('bp-ns-actions-ribbon');
     left.style.removeProperty('--bp-ns-ribbon-slots');
+    left.style.removeProperty('--bp-ns-ribbon-width');
     right.style.removeProperty('--bp-ns-ribbon-slots');
+    right.style.removeProperty('--bp-ns-ribbon-width');
 
     const { pages } = getButtonPages();
     const showOriginButton = SELECTOR_CFG.showOriginButton !== false;
@@ -1632,8 +1652,12 @@
       const ribbonButtons = getFlatRibbonButtons();
       if (ribbonButtons.length) {
         target.classList.add('bp-ns-actions-ribbon');
-        const ribbonSlots = pageSlotCount + (showPagingButton ? 1 : 0);
+        const ribbonSlots = pageSlotCount + 1;
         target.style.setProperty('--bp-ns-ribbon-slots', String(Math.max(1, ribbonSlots)));
+        const measuredWidth = measureRibbonViewportWidth(target, ribbonSlots);
+        if (measuredWidth) {
+          target.style.setProperty('--bp-ns-ribbon-width', `${measuredWidth}px`);
+        }
         const viewport = document.createElement('div');
         viewport.className = 'bp-ns-ribbon-viewport';
 

@@ -27,15 +27,25 @@ blueprints-node-selector,
 
 .bp-ns-actions.bp-ns-actions-ribbon {
   --bp-ns-ribbon-visible-slots: var(--bp-ns-ribbon-slots, 4);
-  width: calc((var(--bp-ns-action-size) * var(--bp-ns-ribbon-visible-slots)) + (var(--bp-ns-action-gap) * (var(--bp-ns-ribbon-visible-slots) - 1)));
-  min-width: calc((var(--bp-ns-action-size) * var(--bp-ns-ribbon-visible-slots)) + (var(--bp-ns-action-gap) * (var(--bp-ns-ribbon-visible-slots) - 1)));
-  max-width: calc((var(--bp-ns-action-size) * var(--bp-ns-ribbon-visible-slots)) + (var(--bp-ns-action-gap) * (var(--bp-ns-ribbon-visible-slots) - 1)));
+  --bp-ns-ribbon-fallback-width: calc((var(--bp-ns-action-size) * var(--bp-ns-ribbon-visible-slots)) + (var(--bp-ns-action-gap) * (var(--bp-ns-ribbon-visible-slots) - 1)));
+}
+
+.bp-ns-ribbon-measure {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--bp-ns-action-gap);
 }
 
 .bp-ns-ribbon-viewport {
+  flex: 0 0 var(--bp-ns-ribbon-width, var(--bp-ns-ribbon-fallback-width));
+  width: var(--bp-ns-ribbon-width, var(--bp-ns-ribbon-fallback-width));
+  min-width: var(--bp-ns-ribbon-width, var(--bp-ns-ribbon-fallback-width));
+  max-width: var(--bp-ns-ribbon-width, var(--bp-ns-ribbon-fallback-width));
   overflow-x: auto;
   overflow-y: hidden;
-  max-width: 100%;
   scrollbar-width: none;
   -ms-overflow-style: none;
   touch-action: pan-x;
