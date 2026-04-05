@@ -107,7 +107,8 @@ body { background: var(--bg); color: var(--text); font-family: var(--font);
   /* S25 profile-specific portrait notch tuning: keep strip disabled to avoid
      visual seam while using fullscreen cutout. Future profiles should add
      their own profile-scoped rules rather than editing this selector. */
-  html[data-device-profile='s25-ultra-oneui-webapk'] .safe-top-strip {
+  html[data-device-profile='s25-ultra-oneui-webapk'][data-origin-variant='stargate'] .safe-top-strip {
     display: none;
+    border: none;
   }
 }
