@@ -229,6 +229,14 @@ async function _checkFleetUpdatePreflight(nodes) {
                 if (repo.dirty) {
                     findings.push(`${node.node_id}: ${_repoLabel(repoKey)} dirty at ${repo.commit || 'unknown'}${repo.branch ? ` (${repo.branch})` : ''}`);
                 }
+                if (repo.upstream_tracked === false) {
+                    findings.push(`${node.node_id}: ${_repoLabel(repoKey)} has no upstream tracking branch${repo.branch ? ` (${repo.branch})` : ''}`);
+                }
+                if (typeof repo.ahead === 'number' && repo.ahead > 0) {
+                    findings.push(
+                        `${node.node_id}: ${_repoLabel(repoKey)} has ${repo.ahead} unpushed commit${repo.ahead === 1 ? '' : 's'} ahead of ${repo.upstream || 'upstream'}${repo.branch ? ` (${repo.branch})` : ''}`
+                    );
+                }
             }
         } catch (e) {
             findings.push(`${node.node_id}: unable to inspect repo state (${e.message})`);
@@ -358,13 +366,13 @@ async function submitFleetUpdate() {
         ]);
 
         if (status) status.textContent = 'Running preflight repo checks...';
-        _fleetUpdateAppendLog('Running preflight dirty-repo check across all fleet nodes.', '');
+        _fleetUpdateAppendLog('Running preflight repo checks (dirty + upstream divergence) across all fleet nodes.', '');
         const preflightFindings = await _checkFleetUpdatePreflight(nodes);
         if (preflightFindings.length) {
             preflightFindings.forEach(line => _fleetUpdateAppendLog(`  ${line}`, 'err'));
-            throw new Error(`preflight blocked by dirty or unreadable repos:\n${preflightFindings.join('\n')}`);
+            throw new Error(`preflight blocked by dirty, unpushed, or unreadable repos:\n${preflightFindings.join('\n')}`);
         }
-        _fleetUpdateAppendLog('Preflight passed: no dirty repos detected across the fleet.', 'ok');
+        _fleetUpdateAppendLog('Preflight passed: repos are clean and no unpushed commits were detected.', 'ok');
 
         for (const stage of stages) {
             await _runFleetUpdateStage(nodes, expectedVersions, stage);
