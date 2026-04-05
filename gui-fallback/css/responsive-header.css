@@ -203,8 +203,7 @@ html.header-compact .header-inner {
     }  
 }
 
-@media (max-width: 600px) and (orientation: portrait) and (display-mode: standalone),
-       (max-width: 600px) and (orientation: portrait) and (display-mode: fullscreen) {
+@media (max-width: 600px) and (orientation: portrait) {
     html[data-special-ui-mode='s25-stargate-touch-nav'] #synthesisMenuWrapper,
     html[data-special-ui-mode='s25-stargate-touch-nav'] #probesMenuWrapper,
     html[data-special-ui-mode='s25-stargate-touch-nav'] #settingsMenuWrapper,

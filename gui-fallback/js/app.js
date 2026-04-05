@@ -2,14 +2,14 @@ let _selectorOriginMenuGroup = 'synthesis';
 const SPECIAL_UI_MODE_S25_STARGATE_TOUCH_NAV = 's25-stargate-touch-nav';
 
 function _isS25StargateOriginMenuMode() {
-  const root = document.documentElement;
-  if (!root || root.getAttribute('data-device-profile') !== 's25-ultra-oneui-webapk') return false;
-  if (root.getAttribute('data-origin-variant') !== 'stargate') return false;
   if (!window.matchMedia) return false;
   if (!window.matchMedia('(max-width: 600px)').matches) return false;
   if (!window.matchMedia('(orientation: portrait)').matches) return false;
-  return window.matchMedia('(display-mode: standalone)').matches
-    || window.matchMedia('(display-mode: fullscreen)').matches;
+  const coarsePointer = window.matchMedia('(pointer: coarse)').matches
+    || window.matchMedia('(any-pointer: coarse)').matches;
+  const hasTouch = (typeof navigator !== 'undefined' && Number(navigator.maxTouchPoints) > 0)
+    || ('ontouchstart' in window);
+  return coarsePointer || hasTouch;
 }
 
 function _applySpecialUiModeAttributes() {
