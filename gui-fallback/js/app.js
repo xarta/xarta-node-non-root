@@ -64,58 +64,40 @@ function _closeActiveOriginMenus() {
 }
 
 function _handleOriginPrimaryMenu(payload) {
-  const menu = _getActiveGroupMenuConfig();
-  if (!menu || typeof menu.togglePrimaryMenuAt !== 'function' || !payload || !payload.button) return;
-
-  // Always drain BOTH suppress flags — if checked sequentially with ||, the second
-  // flag never gets consumed when the first fires, leaving a stale flag that blocks
-  // the next legitimate tap.
-  const wasSuppressed = (
-    (typeof menu.consumeOriginPrimarySuppression === 'function' && menu.consumeOriginPrimarySuppression()) |
-    (typeof menu.consumeNextOriginTap === 'function' && menu.consumeNextOriginTap())
-  );
-  if (wasSuppressed) return;
-
-  if (typeof menu.isContextMenuOpen === 'function' && menu.isContextMenuOpen()) {
-    if (typeof menu.closeContextMenu === 'function') menu.closeContextMenu();
-    else if (typeof menu.closeAnchoredMenus === 'function') menu.closeAnchoredMenus();
-    return;
+  if (typeof OriginMenuStateMachine !== 'undefined') {
+    OriginMenuStateMachine.dispatch('tap', payload && payload.button);
   }
-
-  // If primary menu is already open, close it regardless of which button element is
-  // current.  The selector may re-render the origin button between taps, making the
-  // element reference stored inside togglePrimaryMenuAt stale.  Checking open state
-  // separately avoids the identity mismatch that caused "menu stays open" loops.
-  if (typeof menu.isPrimaryMenuOpen === 'function' && menu.isPrimaryMenuOpen()) {
-    if (typeof menu.closeAnchoredMenus === 'function') menu.closeAnchoredMenus();
-    return;
-  }
-
-  menu.togglePrimaryMenuAt(payload.button);
 }
 
-function _handleOriginLayoutPage() {
-  const menu = _getActiveGroupMenuConfig();
-  const layoutTabId = _getActiveGroupLayoutTabId();
-  if (!menu || !layoutTabId) return;
-  _closeActiveOriginMenus();
-  switchTab(layoutTabId);
-  menu.updateActiveTab(layoutTabId);
+function _handleOriginLayoutPage(payload) {
+  if (typeof OriginMenuStateMachine !== 'undefined') {
+    OriginMenuStateMachine.dispatch('doubleTap', payload && payload.button);
+  }
 }
 
 function _handleOriginContextMenu(payload) {
-  const menu = _getActiveGroupMenuConfig();
-  if (!menu || typeof menu.openContextMenuAt !== 'function' || !payload || !payload.button) return;
-
-  if (typeof menu.consumeNextOriginLongPress === 'function' && menu.consumeNextOriginLongPress()) {
-    return;
+  if (typeof OriginMenuStateMachine !== 'undefined') {
+    OriginMenuStateMachine.dispatch('longPress', payload && payload.button);
   }
-
-  menu.openContextMenuAt(payload.button);
 }
 
 function _installSelectorOriginMenuBridge() {
   if (typeof window === 'undefined' || !window.BlueprintsSelectorOriginButton || typeof window.BlueprintsSelectorOriginButton.setHandlers !== 'function') return;
+
+  if (typeof OriginMenuStateMachine !== 'undefined') {
+    OriginMenuStateMachine.configure({
+      getMenu: _getActiveGroupMenuConfig,
+      onGoToLayout() {
+        const menu = _getActiveGroupMenuConfig();
+        const layoutTabId = _getActiveGroupLayoutTabId();
+        if (!menu || !layoutTabId) return;
+        _closeActiveOriginMenus();
+        switchTab(layoutTabId);
+        menu.updateActiveTab(layoutTabId);
+      },
+    });
+  }
+
   window.BlueprintsSelectorOriginButton.setHandlers({
     click: _handleOriginPrimaryMenu,
     doubleClick: _handleOriginLayoutPage,

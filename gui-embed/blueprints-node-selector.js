@@ -698,14 +698,19 @@
         return;
       }
 
-      // Touch and pen events don't meaningfully support double-tap on the origin button
-      // (double-tap on mobile = browser zoom). Skip the 260 ms double-click window so
-      // the click handler fires immediately — this eliminates the timing race between
-      // the context-menu close (pointerdown) and the delayed click dispatch.
+      // Touch and pen: fire immediately (no 260 ms delay) to eliminate the race
+      // between context-menu close on pointerdown and the delayed click dispatch.
+      // Double-tap is detected by timestamp comparison instead of the timer approach.
       if (_lastOriginPointerType === 'touch' || _lastOriginPointerType === 'pen') {
         clearOriginClickTimer();
-        _originLastClickAt = 0;
-        invokeOriginHandler('click', { button: btn, originalEvent: event });
+        const now = Date.now();
+        if (_originLastClickAt && (now - _originLastClickAt) <= ORIGIN_DOUBLE_CLICK_MS) {
+          _originLastClickAt = 0;
+          invokeOriginHandler('doubleClick', { button: btn, originalEvent: event });
+        } else {
+          _originLastClickAt = now;
+          invokeOriginHandler('click', { button: btn, originalEvent: event });
+        }
         return;
       }
 
