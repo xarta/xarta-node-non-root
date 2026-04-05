@@ -7,9 +7,11 @@
 
 blueprints-node-selector,
 .bp-node-selector {
+  --bp-ns-action-size: 40px;
+  --bp-ns-action-gap: 4px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--bp-ns-action-gap);
   position: relative;
   font-family: 'Segoe UI', system-ui, sans-serif;
   font-size: 13px;
@@ -19,13 +21,45 @@ blueprints-node-selector,
 .bp-ns-actions {
   display: none;
   align-items: center;
-  gap: 4px;
+  gap: var(--bp-ns-action-gap);
 }
 .bp-ns-actions.show { display: inline-flex; }
 
+.bp-ns-actions.bp-ns-actions-ribbon {
+  --bp-ns-ribbon-visible-slots: var(--bp-ns-ribbon-slots, 4);
+  width: calc((var(--bp-ns-action-size) * var(--bp-ns-ribbon-visible-slots)) + (var(--bp-ns-action-gap) * (var(--bp-ns-ribbon-visible-slots) - 1)));
+  min-width: calc((var(--bp-ns-action-size) * var(--bp-ns-ribbon-visible-slots)) + (var(--bp-ns-action-gap) * (var(--bp-ns-ribbon-visible-slots) - 1)));
+  max-width: calc((var(--bp-ns-action-size) * var(--bp-ns-ribbon-visible-slots)) + (var(--bp-ns-action-gap) * (var(--bp-ns-ribbon-visible-slots) - 1)));
+}
+
+.bp-ns-ribbon-viewport {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  touch-action: pan-x;
+  cursor: grab;
+}
+
+.bp-ns-ribbon-viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.bp-ns-ribbon-viewport.is-dragging {
+  cursor: grabbing;
+}
+
+.bp-ns-ribbon-track {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
 .bp-ns-action-btn {
-  width: 40px;
-  height: 40px;
+  width: var(--bp-ns-action-size);
+  height: var(--bp-ns-action-size);
   border: 1px solid rgba(var(--hub-accent-rgb, 0, 212, 255), 0.3);
   border-radius: var(--hub-radius, 8px);
   background: var(--hub-bg, var(--hub-bg, rgba(0, 0, 0, 0.3)));

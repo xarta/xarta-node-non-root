@@ -307,6 +307,8 @@
     pages: null,
     showPagingButton: true,
     showOriginButton: true,
+    touchRibbonMode: 'auto',
+    touchRibbonMaxShortEdge: 920,
     side: 'right',
     pageSize: 3,
     nodeSwitchPath: '/ui/',
@@ -332,6 +334,7 @@
 
   let _fallbackCacheState = null;
   let _fallbackCacheBusy = false;
+  let _ribbonScrollLeft = 0;
 
   function isAppModeDiagVisible() {
     try {
@@ -857,11 +860,20 @@
   function applySelectorConfigFromWindow() {
     const raw = (typeof window !== 'undefined' && window.BLUEPRINTS_SELECTOR_BUTTONS) || {};
     const configuredPageSize = Number.isInteger(raw.pageSize) && raw.pageSize > 0 ? raw.pageSize : 3;
+    const rawRibbonMode = typeof raw.touchRibbonMode === 'string' ? raw.touchRibbonMode.trim().toLowerCase() : 'auto';
+    const touchRibbonMode = (rawRibbonMode === 'on' || rawRibbonMode === 'off' || rawRibbonMode === 'auto')
+      ? rawRibbonMode
+      : 'auto';
+    const configuredRibbonMaxShortEdge = Number(raw.touchRibbonMaxShortEdge);
     SELECTOR_CFG = {
       enabledButtons: Array.isArray(raw.enabledButtons) ? raw.enabledButtons : [],
       pages: Array.isArray(raw.pages) ? raw.pages : null,
       showPagingButton: raw.showPagingButton !== false,
       showOriginButton: raw.showOriginButton !== false,
+      touchRibbonMode,
+      touchRibbonMaxShortEdge: Number.isFinite(configuredRibbonMaxShortEdge) && configuredRibbonMaxShortEdge > 0
+        ? configuredRibbonMaxShortEdge
+        : 920,
       side: raw.side === 'left' ? 'left' : 'right',
       pageSize: configuredPageSize,
       nodeSwitchPath: raw.nodeSwitchPath || '/ui/',
@@ -883,6 +895,13 @@
       s.onerror = () => resolve(false);
       document.head.appendChild(s);
     });
+  }
+
+  async function ensureRibbonFsm() {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    if (window.BlueprintsRibbonFSM && typeof window.BlueprintsRibbonFSM.create === 'function') return;
+    if (!SCRIPT_DIR) return;
+    await tryLoadScript(`${SCRIPT_DIR}blueprints-ribbon-fsm.js`);
   }
 
   async function ensureSelectorConfig() {
@@ -1275,7 +1294,7 @@
         togglePanel();
       });
       document.addEventListener('click', closePanel);
-      ensureSelectorConfig().finally(() => {
+      Promise.all([ensureRibbonFsm(), ensureSelectorConfig()]).finally(() => {
         applySelectorConfigFromWindow();
         init();
       });
@@ -1354,6 +1373,228 @@
     return { pages, hasPaging };
   }
 
+  function getFlatRibbonButtons() {
+    const { pages } = getButtonPages();
+    if (!pages.length) return [];
+    return pages.flatMap(page => page.filter(key => BUTTON_DEFS[key]));
+  }
+
+  function shouldUseTouchRibbonMode() {
+    if (typeof window === 'undefined') return false;
+
+    const mode = SELECTOR_CFG.touchRibbonMode || 'auto';
+    if (mode === 'off') return false;
+    if (mode === 'on') return true;
+
+    const matches = (query) => !!(window.matchMedia && window.matchMedia(query).matches);
+    const coarsePointer = matches('(pointer: coarse)') || matches('(any-pointer: coarse)');
+    const noHover = matches('(hover: none)') || matches('(any-hover: none)');
+    const hasTouch =
+      (typeof navigator !== 'undefined' && Number(navigator.maxTouchPoints) > 0) ||
+      ('ontouchstart' in window) ||
+      coarsePointer;
+    if (!hasTouch) return false;
+
+    const width = Number(window.innerWidth) || 0;
+    const height = Number(window.innerHeight) || 0;
+    const shortEdge = Math.min(width || height, height || width);
+    const maxShortEdge = Math.max(320, Number(SELECTOR_CFG.touchRibbonMaxShortEdge) || 920);
+    const root = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement : null;
+    const isS25SpecialMode = !!(root && root.dataset && root.dataset.specialUiMode === 's25-stargate-touch-nav');
+
+    if (isS25SpecialMode && shortEdge > 0 && shortEdge <= maxShortEdge) {
+      return true;
+    }
+
+    return !!(shortEdge > 0 && shortEdge <= maxShortEdge && (coarsePointer || noHover));
+  }
+
+  function renderActionButtonHtml(key) {
+    const def = BUTTON_DEFS[key];
+    if (!def) return '';
+    return `<button class="bp-ns-action-btn" data-action="${esc(key)}" title="${esc(def.label)}" aria-label="${esc(def.label)}">${esc(def.icon)}</button>`;
+  }
+
+  function createInternalRibbonFsm(cfg) {
+    const dragStartPx = Math.max(2, Number(cfg && cfg.dragStartPx) || 4);
+    const onDragStart = (cfg && cfg.onDragStart) || NOOP;
+    const onDragMove = (cfg && cfg.onDragMove) || NOOP;
+    const onDragEnd = (cfg && cfg.onDragEnd) || NOOP;
+
+    const state = {
+      mode: 'IDLE',
+      startX: 0,
+      movedPx: 0,
+    };
+
+    return {
+      pointerDown(event) {
+        state.mode = 'PRESSING';
+        state.startX = Number(event && event.clientX) || 0;
+        state.movedPx = 0;
+        return { suppressClick: false };
+      },
+
+      pointerMove(event) {
+        if (state.mode === 'IDLE') return { suppressClick: false };
+        const x = Number(event && event.clientX) || 0;
+        const deltaX = x - state.startX;
+        state.movedPx = Math.max(state.movedPx, Math.abs(deltaX));
+
+        if (state.mode === 'PRESSING' && state.movedPx >= dragStartPx) {
+          state.mode = 'DRAGGING';
+          onDragStart();
+        }
+
+        if (state.mode === 'DRAGGING') {
+          onDragMove(deltaX);
+          return { suppressClick: true };
+        }
+
+        return { suppressClick: false };
+      },
+
+      pointerUp() {
+        if (state.mode === 'DRAGGING') {
+          onDragEnd();
+          state.mode = 'IDLE';
+          return { suppressClick: true };
+        }
+        state.mode = 'IDLE';
+        return { suppressClick: false };
+      },
+
+      pointerCancel() {
+        if (state.mode === 'DRAGGING') {
+          onDragEnd();
+        }
+        state.mode = 'IDLE';
+        return { suppressClick: true };
+      },
+    };
+  }
+
+  function createRibbonFsm(cfg) {
+    if (typeof window !== 'undefined' && window.BlueprintsRibbonFSM && typeof window.BlueprintsRibbonFSM.create === 'function') {
+      try {
+        return window.BlueprintsRibbonFSM.create(cfg);
+      } catch (error) {
+        console.warn('BlueprintsRibbonFSM.create failed, using internal fallback:', error);
+      }
+    }
+    return createInternalRibbonFsm(cfg);
+  }
+
+  function bindRibbonDragInteractions(viewport) {
+    if (!viewport) return;
+
+    const drag = {
+      active: false,
+      startX: 0,
+      startScrollLeft: 0,
+      movedPx: 0,
+      pointerId: null,
+      suppressClick: false,
+    };
+
+    const fsm = createRibbonFsm({
+      dragStartPx: 4,
+      onDragStart: () => {
+        viewport.classList.add('is-dragging');
+      },
+      onDragMove: (deltaX) => {
+        viewport.scrollLeft = drag.startScrollLeft - deltaX;
+        _ribbonScrollLeft = viewport.scrollLeft;
+      },
+      onDragEnd: () => {
+        viewport.classList.remove('is-dragging');
+      },
+    });
+
+    viewport.addEventListener('scroll', () => {
+      _ribbonScrollLeft = viewport.scrollLeft;
+    }, { passive: true });
+
+    function onPointerDown(event) {
+      if (event.button !== 0 && event.pointerType === 'mouse') return;
+      drag.active = true;
+      drag.pointerId = event.pointerId;
+      drag.startX = event.clientX;
+      drag.startScrollLeft = viewport.scrollLeft;
+      drag.movedPx = 0;
+      drag.suppressClick = false;
+      fsm.pointerDown(event);
+      if (typeof viewport.setPointerCapture === 'function') {
+        try { viewport.setPointerCapture(event.pointerId); } catch {}
+      }
+    }
+
+    function onPointerMove(event) {
+      if (!drag.active) return;
+      const result = fsm.pointerMove(event);
+      if (result && result.suppressClick) {
+        drag.suppressClick = true;
+        event.preventDefault();
+      }
+    }
+
+    function finishDrag(event) {
+      if (!drag.active) return;
+      if (event && typeof viewport.releasePointerCapture === 'function' && drag.pointerId !== null) {
+        try { viewport.releasePointerCapture(drag.pointerId); } catch {}
+      }
+      drag.active = false;
+      drag.pointerId = null;
+      if (event && event.type === 'pointercancel') {
+        fsm.pointerCancel(event);
+      } else {
+        const result = fsm.pointerUp(event);
+        if (result && result.suppressClick) {
+          drag.suppressClick = true;
+        }
+      }
+    }
+
+    viewport.addEventListener('pointerdown', onPointerDown);
+    viewport.addEventListener('pointermove', onPointerMove);
+    viewport.addEventListener('pointerup', finishDrag);
+    viewport.addEventListener('pointercancel', finishDrag);
+    viewport.addEventListener('pointerleave', finishDrag);
+    viewport.addEventListener('click', (event) => {
+      if (!drag.suppressClick) return;
+      event.preventDefault();
+      event.stopPropagation();
+      drag.suppressClick = false;
+    }, true);
+  }
+
+  function bindActionButtonInteractions(container, pageCount) {
+    if (!container) return;
+    container.querySelectorAll('.bp-ns-action-btn').forEach(btn => {
+      if (btn.dataset.action === PLACEHOLDER_BUTTON_ACTION) {
+        return;
+      }
+      if (btn.dataset.action === ORIGIN_BUTTON_ACTION) {
+        bindOriginButtonInteractions(btn);
+        return;
+      }
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const action = btn.dataset.action;
+        if (action === 'paging-button') {
+          _buttonPage = (_buttonPage + 1) % pageCount;
+          renderActionButtons();
+          return;
+        }
+        const def = BUTTON_DEFS[action];
+        if (!def) return;
+        if (typeof def.doAction === 'function') { def.doAction(); return; }
+        navigateToNodePath(def.buildPath());
+      });
+    });
+  }
+
   function renderActionButtons() {
     const left = document.getElementById('bp-ns-actions-left');
     const right = document.getElementById('bp-ns-actions-right');
@@ -1363,10 +1604,15 @@
     right.innerHTML = '';
     left.classList.remove('show');
     right.classList.remove('show');
+    left.classList.remove('bp-ns-actions-ribbon');
+    right.classList.remove('bp-ns-actions-ribbon');
+    left.style.removeProperty('--bp-ns-ribbon-slots');
+    right.style.removeProperty('--bp-ns-ribbon-slots');
 
     const { pages } = getButtonPages();
     const showOriginButton = SELECTOR_CFG.showOriginButton !== false;
     const showPagingButton = SELECTOR_CFG.showPagingButton !== false;
+    const useTouchRibbon = shouldUseTouchRibbonMode();
     const pageSlotCount = Math.max(1, Number(SELECTOR_CFG.pageSize) || 3);
     if (!pages.length && !showOriginButton && !showPagingButton) return;
 
@@ -1381,6 +1627,37 @@
 
     const target = SELECTOR_CFG.side === 'left' ? left : right;
     target.classList.add('show');
+
+    if (useTouchRibbon) {
+      const ribbonButtons = getFlatRibbonButtons();
+      if (ribbonButtons.length) {
+        target.classList.add('bp-ns-actions-ribbon');
+        const ribbonSlots = pageSlotCount + (showPagingButton ? 1 : 0);
+        target.style.setProperty('--bp-ns-ribbon-slots', String(Math.max(1, ribbonSlots)));
+        const viewport = document.createElement('div');
+        viewport.className = 'bp-ns-ribbon-viewport';
+
+        const track = document.createElement('div');
+        track.className = 'bp-ns-ribbon-track';
+        track.innerHTML = ribbonButtons.map(renderActionButtonHtml).join('');
+        viewport.appendChild(track);
+        target.appendChild(viewport);
+        requestAnimationFrame(() => {
+          const max = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+          viewport.scrollLeft = Math.min(Math.max(0, _ribbonScrollLeft), max);
+        });
+        bindRibbonDragInteractions(viewport);
+      }
+
+      if (showOriginButton) {
+        target.appendChild(createOriginActionButton());
+      }
+
+      bindActionButtonInteractions(target, pageCount);
+      updateCacheModeButtons();
+      updateDiagChipButtons();
+      return;
+    }
 
     const placeholderCount = Math.max(0, pageSlotCount - currentPageButtons.length);
     const slotButtons = [
@@ -1410,29 +1687,7 @@
       target.appendChild(createOriginActionButton());
     }
 
-    target.querySelectorAll('.bp-ns-action-btn').forEach(btn => {
-      if (btn.dataset.action === PLACEHOLDER_BUTTON_ACTION) {
-        return;
-      }
-      if (btn.dataset.action === ORIGIN_BUTTON_ACTION) {
-        bindOriginButtonInteractions(btn);
-        return;
-      }
-      btn.addEventListener('click', e => {
-        e.preventDefault();
-        e.stopPropagation();
-        const action = btn.dataset.action;
-        if (action === 'paging-button') {
-          _buttonPage = (_buttonPage + 1) % pageCount;
-          renderActionButtons();
-          return;
-        }
-        const def = BUTTON_DEFS[action];
-        if (!def) return;
-        if (typeof def.doAction === 'function') { def.doAction(); return; }
-        navigateToNodePath(def.buildPath());
-      });
-    });
+    bindActionButtonInteractions(target, pageCount);
 
     updateCacheModeButtons();
     updateDiagChipButtons();

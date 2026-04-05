@@ -35,6 +35,15 @@ window.BLUEPRINTS_SELECTOR_BUTTONS = {
   ],
   showPagingButton: true,
 
+  // Optional touch ribbon mode for mobile form factors.
+  // 'auto' (default): use draggable ribbon on coarse-pointer mobile; keep page/scarab on desktop.
+  // 'on': always use ribbon; 'off': always use page/scarab model.
+  touchRibbonMode: 'auto',
+
+  // Optional short-edge threshold (px) used by auto mode.
+  // Portrait + landscape mobile both qualify while short-edge is <= this value.
+  touchRibbonMaxShortEdge: 920,
+
   // Back-compat alternative (auto-chunked pages):
   // enabledButtons: ['ui', 'synthesis', 'probes', 'settings', 'api-key', 'cache-mode', 'database-tables', 'database-diagram', 'paging-button'],
   // pageSize: 2,
