@@ -1,12 +1,14 @@
 /* ── Nodes ────────────────────────────────────────────────────────────── */
 
-const _NODE_COLS = ['display_name', 'addresses', 'hostnames', 'gen', 'commit', 'pending', '_actions'];
+const _NODE_COLS = ['display_name', 'addresses', 'hostnames', 'gen', 'commit', 'commit_non_root', 'commit_inner', 'pending', '_actions'];
 const _NODE_FIELD_META = {
   display_name: { label: 'Display Name', sortKey: 'display_name' },
   addresses: { label: 'Addresses', sortKey: 'addresses' },
   hostnames: { label: 'Hostnames', sortKey: 'hostnames' },
   gen: { label: 'Gen', sortKey: 'gen' },
-  commit: { label: 'Commit', sortKey: 'commit' },
+  commit: { label: 'Commit (Outer)', sortKey: 'commit' },
+  commit_non_root: { label: 'Commit (Non-root)', sortKey: 'commit_non_root' },
+  commit_inner: { label: 'Commit (Inner)', sortKey: 'commit_inner' },
   pending: { label: 'Pending', sortKey: 'pending' },
   _actions: { label: 'Actions' },
 };
@@ -113,8 +115,26 @@ function _ensureNodesTableView() {
 let _nodesLayoutController = null;
 
 function _nodesColumnSeed(col) {
-  const types = { display_name: 'TEXT', addresses: 'TEXT', hostnames: 'TEXT', gen: 'TEXT', commit: 'TEXT', pending: 'INTEGER' };
-  const lengths = { display_name: 32, addresses: 24, hostnames: 32, gen: 8, commit: 12, pending: 4 };
+  const types = {
+    display_name: 'TEXT',
+    addresses: 'TEXT',
+    hostnames: 'TEXT',
+    gen: 'TEXT',
+    commit: 'TEXT',
+    commit_non_root: 'TEXT',
+    commit_inner: 'TEXT',
+    pending: 'INTEGER',
+  };
+  const lengths = {
+    display_name: 32,
+    addresses: 24,
+    hostnames: 32,
+    gen: 8,
+    commit: 12,
+    commit_non_root: 12,
+    commit_inner: 12,
+    pending: 4,
+  };
   return {
     sqlite_column: col.startsWith('_') ? null : col,
     data_type: types[col] || null,
@@ -199,6 +219,8 @@ function _nodeSortValue(node, sortKey) {
     case 'hostnames': return [node.primary_hostname || '', node.tailnet_hostname || ''].join(' ');
     case 'gen': return node._gen == null ? Number.NEGATIVE_INFINITY : Number(node._gen);
     case 'commit': return node._commit || '';
+    case 'commit_non_root': return node._commit_non_root || '';
+    case 'commit_inner': return node._commit_inner || '';
     case 'pending': return Number(node.pending_count || 0);
     default: return '';
   }
@@ -583,7 +605,9 @@ function renderNodes() {
       addresses: `<td>${addrs || '<span style="color:var(--text-dim)">—</span>'}</td>`,
       hostnames: `<td>${hostnamesHtml}</td>`,
       gen: `<td id="node-gen-${safeid}" style="font-size:12px;color:${n._gen == null ? 'var(--text-dim)' : 'inherit'}">${n._gen == null ? '…' : esc(String(n._gen))}</td>`,
-      commit: `<td id="node-ver-${safeid}" style="font-size:12px;color:${n._commit == null ? 'var(--text-dim)' : 'inherit'}" title="${esc(n._commit || '')}">${n._commit == null ? '…' : esc(n._commit)}</td>`,
+      commit: `<td id="node-ver-outer-${safeid}" style="font-size:12px;color:${n._commit == null ? 'var(--text-dim)' : 'inherit'}" title="${esc(n._commit || '')}">${n._commit == null ? '…' : esc(n._commit)}</td>`,
+      commit_non_root: `<td id="node-ver-non-root-${safeid}" style="font-size:12px;color:${n._commit_non_root == null ? 'var(--text-dim)' : 'inherit'}" title="${esc(n._commit_non_root || '')}">${n._commit_non_root == null ? '…' : esc(n._commit_non_root)}</td>`,
+      commit_inner: `<td id="node-ver-inner-${safeid}" style="font-size:12px;color:${n._commit_inner == null ? 'var(--text-dim)' : 'inherit'}" title="${esc(n._commit_inner || '')}">${n._commit_inner == null ? '…' : esc(n._commit_inner)}</td>`,
       pending: `<td>${pendingBadge}</td>`,
       _actions: _renderNodeActionsCell(n),
     };
@@ -599,7 +623,9 @@ async function enrichNodeVersions() {
   for (const n of _nodes) {
     const safeid = n.node_id.replace(/[^a-zA-Z0-9_-]/g, '_');
     const genCell = document.getElementById(`node-gen-${safeid}`);
-    const verCell = document.getElementById(`node-ver-${safeid}`);
+    const verOuterCell = document.getElementById(`node-ver-outer-${safeid}`);
+    const verNonRootCell = document.getElementById(`node-ver-non-root-${safeid}`);
+    const verInnerCell = document.getElementById(`node-ver-inner-${safeid}`);
     // Self: use a relative URL (same origin, through Caddy).
     // Peers: use ui_url (Caddy HTTPS) — port 8080 is firewalled from the browser.
     // Fall back to addresses[0] only if ui_url absent (pre-firewall nodes).
@@ -611,7 +637,9 @@ async function enrichNodeVersions() {
         : (n.addresses && n.addresses[0] ? `${n.addresses[0].replace(/\/$/, '')}/health` : null);
     if (!healthUrl) {
       if (genCell) genCell.textContent = '—';
-      if (verCell) verCell.textContent = '—';
+      if (verOuterCell) verOuterCell.textContent = '—';
+      if (verNonRootCell) verNonRootCell.textContent = '—';
+      if (verInnerCell) verInnerCell.textContent = '—';
       continue;
     }
     try {
@@ -619,18 +647,48 @@ async function enrichNodeVersions() {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const d = await r.json();
       n._gen = d.gen ?? '—';
-      n._commit = d.commit || '—';
       if (genCell) { genCell.textContent = d.gen ?? '—'; genCell.style.color = ''; }
-      if (verCell) { verCell.textContent = d.commit || '—'; verCell.style.color = ''; verCell.title = ''; }
+
+      // Use the nodes proxy endpoint to obtain all repo commits (outer/non-root/inner)
+      // for both self and peer nodes through one consistent API contract.
+      const vr = await apiFetch(`/api/v1/nodes/${encodeURIComponent(n.node_id)}/repo-versions`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!vr.ok) throw new Error(`HTTP ${vr.status}`);
+      const v = await vr.json();
+
+      n._commit = (v.outer && v.outer.commit) || '—';
+      n._commit_non_root = (v.non_root && v.non_root.commit) || '—';
+      n._commit_inner = (v.inner && v.inner.commit) || '—';
+
+      if (verOuterCell) {
+        verOuterCell.textContent = n._commit;
+        verOuterCell.style.color = '';
+        verOuterCell.title = '';
+      }
+      if (verNonRootCell) {
+        verNonRootCell.textContent = n._commit_non_root;
+        verNonRootCell.style.color = '';
+        verNonRootCell.title = '';
+      }
+      if (verInnerCell) {
+        verInnerCell.textContent = n._commit_inner;
+        verInnerCell.style.color = '';
+        verInnerCell.title = '';
+      }
     } catch {
       n._gen = '?';
       n._commit = '?';
+      n._commit_non_root = '?';
+      n._commit_inner = '?';
       if (genCell) { genCell.textContent = '?'; genCell.style.color = 'var(--text-dim)'; }
-      if (verCell) { verCell.textContent = '?'; verCell.style.color = 'var(--text-dim)'; }
+      if (verOuterCell) { verOuterCell.textContent = '?'; verOuterCell.style.color = 'var(--text-dim)'; }
+      if (verNonRootCell) { verNonRootCell.textContent = '?'; verNonRootCell.style.color = 'var(--text-dim)'; }
+      if (verInnerCell) { verInnerCell.textContent = '?'; verInnerCell.style.color = 'var(--text-dim)'; }
     }
   }
   const sortKey = _nodesTableView?.getSortState().key;
-  if (sortKey === 'gen' || sortKey === 'commit') renderNodes();
+  if (sortKey === 'gen' || sortKey === 'commit' || sortKey === 'commit_non_root' || sortKey === 'commit_inner') renderNodes();
 }
 
 async function fleetUpdate(btn) {

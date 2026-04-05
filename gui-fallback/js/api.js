@@ -51,7 +51,12 @@ async function apiFetch(url, options = {}) {
     headers: { ...(fetchOptions.headers || {}), ...(token ? { 'X-API-Token': token } : {}) },
   };
   const r = await fetch(url, merged);
-  if (r.status === 401) { openApiKeyModal(true); }
+  if (r.status === 401) {
+    // Distinguish missing-key prompt from true auth failure:
+    // - no token sent   -> likely no key on this origin yet
+    // - token sent      -> key/token rejected by server
+    openApiKeyModal(!!token);
+  }
   return r;
 }
 
