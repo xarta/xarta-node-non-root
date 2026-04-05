@@ -464,6 +464,20 @@ function createHubMenu(cfg) {
             this._floatingContextMenuEl = null;
         },
 
+        _markConsumeNextOriginTap() {
+            this._consumeNextOriginTap = true;
+        },
+
+        _markSuppressNextOriginLongPress() {
+            // Time-based (500 ms) so a deliberate second long-press is never permanently blocked.
+            this._suppressNextOriginLongPressUntil = Date.now() + 500;
+        },
+
+        _markSuppressOriginPrimaryUntil(ms) {
+            const delayMs = Number.isFinite(ms) ? Math.max(0, ms) : 500;
+            this._suppressOriginPrimaryUntil = Date.now() + delayMs;
+        },
+
         _removeFloatingPrimaryMenu() {
             if (this._floatingPrimaryPointerHandler) {
                 document.removeEventListener('pointerdown', this._floatingPrimaryPointerHandler, true);
@@ -483,6 +497,40 @@ function createHubMenu(cfg) {
         closeAnchoredMenus() {
             this._removeFloatingContextMenu();
             this._removeFloatingPrimaryMenu();
+        },
+
+        isContextMenuOpen() {
+            return !!this._floatingContextMenuEl;
+        },
+
+        closeContextMenu() {
+            this._removeFloatingContextMenu();
+        },
+
+        consumeNextOriginTap() {
+            if (!this._consumeNextOriginTap) return false;
+            this._consumeNextOriginTap = false;
+            return true;
+        },
+
+        consumeNextOriginLongPress() {
+            const until = Number(this._suppressNextOriginLongPressUntil) || 0;
+            if (!until) return false;
+            const active = Date.now() <= until;
+            this._suppressNextOriginLongPressUntil = 0;
+            return active;
+        },
+
+        isPrimaryMenuOpen() {
+            return !!this._floatingPrimaryMenuEl;
+        },
+
+        consumeOriginPrimarySuppression() {
+            const until = Number(this._suppressOriginPrimaryUntil) || 0;
+            if (!until) return false;
+            const active = Date.now() <= until;
+            this._suppressOriginPrimaryUntil = 0;
+            return active;
         },
 
         _positionFloatingMenuHost(host, menu, anchorEl) {
@@ -645,7 +693,10 @@ function createHubMenu(cfg) {
             this._floatingPrimaryPointerHandler = (event) => {
                 if (!this._floatingPrimaryMenuEl) return;
                 if (this._floatingPrimaryMenuEl.contains(event.target)) return;
-                if (anchorEl.contains && anchorEl.contains(event.target)) return;
+                // Use closest() rather than anchorEl.contains() so a re-rendered origin
+                // button (new DOM element) is still recognised as the same anchor.
+                if (event.target && event.target.closest &&
+                        event.target.closest('[data-action="origin"]')) return;
                 this._removeFloatingPrimaryMenu();
             };
             this._floatingPrimaryKeyHandler = (event) => {
@@ -721,6 +772,15 @@ function createHubMenu(cfg) {
             this._floatingContextPointerHandler = (event) => {
                 if (!this._floatingContextMenuEl) return;
                 if (this._floatingContextMenuEl.contains(event.target)) return;
+                // Use closest() rather than anchorEl.contains() so a re-rendered origin
+                // button (new DOM element) still triggers the suppress flags.
+                const isOriginTap = !!(event.target && event.target.closest &&
+                    event.target.closest('[data-action="origin"]'));
+                if (isOriginTap) {
+                    this._markConsumeNextOriginTap();
+                    this._markSuppressNextOriginLongPress();
+                    this._markSuppressOriginPrimaryUntil(600);
+                }
                 this._removeFloatingContextMenu();
             };
             this._floatingContextKeyHandler = (event) => {

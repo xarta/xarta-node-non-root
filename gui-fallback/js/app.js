@@ -66,6 +66,31 @@ function _closeActiveOriginMenus() {
 function _handleOriginPrimaryMenu(payload) {
   const menu = _getActiveGroupMenuConfig();
   if (!menu || typeof menu.togglePrimaryMenuAt !== 'function' || !payload || !payload.button) return;
+
+  // Always drain BOTH suppress flags — if checked sequentially with ||, the second
+  // flag never gets consumed when the first fires, leaving a stale flag that blocks
+  // the next legitimate tap.
+  const wasSuppressed = (
+    (typeof menu.consumeOriginPrimarySuppression === 'function' && menu.consumeOriginPrimarySuppression()) |
+    (typeof menu.consumeNextOriginTap === 'function' && menu.consumeNextOriginTap())
+  );
+  if (wasSuppressed) return;
+
+  if (typeof menu.isContextMenuOpen === 'function' && menu.isContextMenuOpen()) {
+    if (typeof menu.closeContextMenu === 'function') menu.closeContextMenu();
+    else if (typeof menu.closeAnchoredMenus === 'function') menu.closeAnchoredMenus();
+    return;
+  }
+
+  // If primary menu is already open, close it regardless of which button element is
+  // current.  The selector may re-render the origin button between taps, making the
+  // element reference stored inside togglePrimaryMenuAt stale.  Checking open state
+  // separately avoids the identity mismatch that caused "menu stays open" loops.
+  if (typeof menu.isPrimaryMenuOpen === 'function' && menu.isPrimaryMenuOpen()) {
+    if (typeof menu.closeAnchoredMenus === 'function') menu.closeAnchoredMenus();
+    return;
+  }
+
   menu.togglePrimaryMenuAt(payload.button);
 }
 
@@ -81,6 +106,11 @@ function _handleOriginLayoutPage() {
 function _handleOriginContextMenu(payload) {
   const menu = _getActiveGroupMenuConfig();
   if (!menu || typeof menu.openContextMenuAt !== 'function' || !payload || !payload.button) return;
+
+  if (typeof menu.consumeNextOriginLongPress === 'function' && menu.consumeNextOriginLongPress()) {
+    return;
+  }
+
   menu.openContextMenuAt(payload.button);
 }
 

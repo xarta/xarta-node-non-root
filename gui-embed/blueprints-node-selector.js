@@ -327,6 +327,7 @@
   let _originClickTimer = null;
   let _originLastClickAt = 0;
   let _originLongPressTriggered = false;
+  let _lastOriginPointerType = null;
   let _originVariant = DEFAULT_ORIGIN_VARIANT;
 
   let _fallbackCacheState = null;
@@ -620,6 +621,7 @@
     clearOriginClickTimer();
     _originLastClickAt = 0;
     _originLongPressTriggered = false;
+    _lastOriginPointerType = null;
     requestSelectorActionRender();
   }
 
@@ -660,8 +662,15 @@
   }
 
   function bindOriginButtonInteractions(btn) {
+    // Suppress the native browser context menu (long-press on mobile, right-click on
+    // desktop) so it never competes with the Blueprints context-menu handler.
+    btn.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+    });
+
     btn.addEventListener('pointerdown', (event) => {
       if (event.button && event.button !== 0) return;
+      _lastOriginPointerType = event.pointerType || null;
       clearOriginPressTimer();
       _originLongPressTriggered = false;
       _originPressTimer = setTimeout(() => {
@@ -686,6 +695,17 @@
         _originLongPressTriggered = false;
         clearOriginClickTimer();
         _originLastClickAt = 0;
+        return;
+      }
+
+      // Touch and pen events don't meaningfully support double-tap on the origin button
+      // (double-tap on mobile = browser zoom). Skip the 260 ms double-click window so
+      // the click handler fires immediately — this eliminates the timing race between
+      // the context-menu close (pointerdown) and the delayed click dispatch.
+      if (_lastOriginPointerType === 'touch' || _lastOriginPointerType === 'pen') {
+        clearOriginClickTimer();
+        _originLastClickAt = 0;
+        invokeOriginHandler('click', { button: btn, originalEvent: event });
         return;
       }
 
