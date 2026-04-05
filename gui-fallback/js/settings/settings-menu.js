@@ -282,14 +282,22 @@ async function _runFleetUpdateStage(nodes, expectedVersions, stage) {
     });
     if (!queueResp.ok) throw new Error(`${stage.label}: HTTP ${queueResp.status}`);
 
-    _fleetUpdateAppendLog(`${stage.label}: queued. Waiting ${Math.round(_FLEET_UPDATE_DELAY_MS / 1000)}s for fleet to settle.`, '');
-    await _sleep(_FLEET_UPDATE_DELAY_MS);
+    // Fast path: if all nodes already match expected commit, skip settle delay.
+    const immediateFailures = await _verifyFleetRepoStage(nodes, expectedVersions, stage.repoKey, stage.label);
+    if (!immediateFailures.length) {
+        _fleetUpdateAppendLog(`${stage.label}: already converged; no settle wait needed.`, 'ok');
+        return;
+    }
+
+    _fleetUpdateAppendLog(`${stage.label}: ${immediateFailures.length} node check(s) still pending commit convergence.`, 'warn');
+    _fleetUpdateAppendLog(`${stage.label}: changes still propagating, waiting ${Math.round(_FLEET_UPDATE_DELAY_MS / 1000)}s for fleet to settle.`, '');
 
     for (let attempt = 1; attempt <= _FLEET_UPDATE_MAX_ATTEMPTS; attempt += 1) {
+        await _sleep(_FLEET_UPDATE_DELAY_MS);
         const failures = await _verifyFleetRepoStage(nodes, expectedVersions, stage.repoKey, stage.label);
         if (!failures.length) {
             if (attempt === 1) {
-                _fleetUpdateAppendLog(`${stage.label}: all nodes verified at ${expectedVersions[stage.repoKey]?.commit || 'unknown'}.`, 'ok');
+                _fleetUpdateAppendLog(`${stage.label}: converged after one settle window at ${expectedVersions[stage.repoKey]?.commit || 'unknown'}.`, 'ok');
             } else {
                 _fleetUpdateAppendLog(`${stage.label}: verified after attempt ${attempt} at ${expectedVersions[stage.repoKey]?.commit || 'unknown'}.`, 'ok');
             }
