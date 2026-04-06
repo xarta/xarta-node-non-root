@@ -1,0 +1,305 @@
+/*
+ * blueprints-font-registry.css
+ * fonts from: https://www.thescifiworld.net/fonts.htm
+ * Central registry for specialist/theme fonts used by the Blueprints selector.
+ *
+ * Keep @font-face declarations and reusable font classes here so themed usage
+ * can be tracked and changed in one place.
+ */
+
+@font-face {
+  font-family: 'BP Ancient Hand';
+  src: url('/fallback-ui/assets/fonts/ancient_hand.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Ancient Virtual';
+  src: url('/fallback-ui/assets/fonts/ancient_virtual.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Anquietas';
+  src: url('/fallback-ui/assets/fonts/anquietas.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Babylon5';
+  src: url('/fallback-ui/assets/fonts/babylon5.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Battlestar';
+  src: url('/fallback-ui/assets/fonts/battlestar.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Farscape';
+  src: url('/fallback-ui/assets/fonts/farscape.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Harry Potter';
+  src: url('/fallback-ui/assets/fonts/harry_potter.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Matrix Code NFI';
+  src: url('/fallback-ui/assets/fonts/matrix_code_nfi.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Miltown';
+  src: url('/fallback-ui/assets/fonts/miltown.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Neferchichi';
+  src: url('/fallback-ui/assets/fonts/neferchichi.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Ringbearer Medium';
+  src: url('/fallback-ui/assets/fonts/ringbearer_medium.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Roswell';
+  src: url('/fallback-ui/assets/fonts/roswell.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Seaquest';
+  src: url('/fallback-ui/assets/fonts/seaquest.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Shadow';
+  src: url('/fallback-ui/assets/fonts/shadow.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Stargate';
+  src: url('/fallback-ui/assets/fonts/stargate.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Stargate Goauld';
+  src: url('/fallback-ui/assets/fonts/stargate%20_sg1_goauld.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Stargate Address Glyphs';
+  src: url('/fallback-ui/assets/fonts/stargate_sg1_adress_glyphs.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Stargate Universe';
+  src: url('/fallback-ui/assets/fonts/StargateUniverse.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Tengwar Cursive';
+  src: url('/fallback-ui/assets/fonts/tengwar_cursive.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Times New Ancient';
+  src: url('/fallback-ui/assets/fonts/times_new_ancient.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Twinkie Display SSI';
+  src: url('/fallback-ui/assets/fonts/twinkie_display_ssi.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Viper Squadron';
+  src: url('/fallback-ui/assets/fonts/viper_squadron.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Viper Squadron Italic';
+  src: url('/fallback-ui/assets/fonts/viper_squadron_italic.ttf') format('truetype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Viper Squadron Solid';
+  src: url('/fallback-ui/assets/fonts/viper_squadron_solid.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Viper Squadron Solid Italic';
+  src: url('/fallback-ui/assets/fonts/viper_squadron_solid_Italic.ttf') format('truetype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Visitor';
+  src: url('/fallback-ui/assets/fonts/visitor.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Vorlon';
+  src: url('/fallback-ui/assets/fonts/vorlon.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'BP Xcast';
+  src: url('/fallback-ui/assets/fonts/xcast.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --bp-font-fallback-ui: 'Segoe UI', system-ui, sans-serif;
+
+  --bp-font-fancy-ancient-hand: 'BP Ancient Hand', var(--bp-font-fallback-ui);
+  --bp-font-fancy-ancient-virtual: 'BP Ancient Virtual', var(--bp-font-fallback-ui);
+  --bp-font-fancy-anquietas: 'BP Anquietas', var(--bp-font-fallback-ui);
+  --bp-font-fancy-babylon5: 'BP Babylon5', var(--bp-font-fallback-ui);
+  --bp-font-fancy-battlestar: 'BP Battlestar', var(--bp-font-fallback-ui);
+  --bp-font-fancy-farscape: 'BP Farscape', var(--bp-font-fallback-ui);
+  --bp-font-fancy-harry-potter: 'BP Harry Potter', var(--bp-font-fallback-ui);
+  --bp-font-fancy-matrix-code-nfi: 'BP Matrix Code NFI', var(--bp-font-fallback-ui);
+  --bp-font-fancy-miltown: 'BP Miltown', var(--bp-font-fallback-ui);
+  --bp-font-fancy-neferchichi: 'BP Neferchichi', var(--bp-font-fallback-ui);
+  --bp-font-fancy-ringbearer-medium: 'BP Ringbearer Medium', var(--bp-font-fallback-ui);
+  --bp-font-fancy-roswell: 'BP Roswell', var(--bp-font-fallback-ui);
+  --bp-font-fancy-seaquest: 'BP Seaquest', var(--bp-font-fallback-ui);
+  --bp-font-fancy-shadow: 'BP Shadow', var(--bp-font-fallback-ui);
+  --bp-font-fancy-stargate: 'BP Stargate', var(--bp-font-fallback-ui);
+  --bp-font-fancy-stargate-goauld: 'BP Stargate Goauld', var(--bp-font-fallback-ui);
+  --bp-font-fancy-stargate-address-glyphs: 'BP Stargate Address Glyphs', var(--bp-font-fallback-ui);
+  --bp-font-fancy-stargate-universe: 'BP Stargate Universe', var(--bp-font-fallback-ui);
+  --bp-font-fancy-tengwar-cursive: 'BP Tengwar Cursive', var(--bp-font-fallback-ui);
+  --bp-font-fancy-times-new-ancient: 'BP Times New Ancient', var(--bp-font-fallback-ui);
+  --bp-font-fancy-twinkie-display-ssi: 'BP Twinkie Display SSI', var(--bp-font-fallback-ui);
+  --bp-font-fancy-viper-squadron: 'BP Viper Squadron', var(--bp-font-fallback-ui);
+  --bp-font-fancy-viper-squadron-italic: 'BP Viper Squadron Italic', var(--bp-font-fallback-ui);
+  --bp-font-fancy-viper-squadron-solid: 'BP Viper Squadron Solid', var(--bp-font-fallback-ui);
+  --bp-font-fancy-viper-squadron-solid-italic: 'BP Viper Squadron Solid Italic', var(--bp-font-fallback-ui);
+  --bp-font-fancy-visitor: 'BP Visitor', var(--bp-font-fallback-ui);
+  --bp-font-fancy-vorlon: 'BP Vorlon', var(--bp-font-fallback-ui);
+  --bp-font-fancy-xcast: 'BP Xcast', var(--bp-font-fallback-ui);
+
+  /* Selector choice */
+  --bp-selector-node-name-font: var(--bp-font-fancy-battlestar);
+  --bp-selector-selected-node-font: var(--bp-font-fancy-ancient-virtual);
+
+
+
+  /* Selector typography controls (single place to tune themed labels). */
+  --bp-selector-selected-node-size: 15px;
+  --bp-selector-node-name-size: 12px;
+  --bp-selector-selected-node-max-width: 170px;
+}
+
+.bp-font-fancy-ancient-hand { font-family: var(--bp-font-fancy-ancient-hand); }
+.bp-font-fancy-ancient-virtual { font-family: var(--bp-font-fancy-ancient-virtual); }
+.bp-font-fancy-anquietas { font-family: var(--bp-font-fancy-anquietas); }
+.bp-font-fancy-babylon5 { font-family: var(--bp-font-fancy-babylon5); }
+.bp-font-fancy-battlestar { font-family: var(--bp-font-fancy-battlestar); }
+.bp-font-fancy-farscape { font-family: var(--bp-font-fancy-farscape); }
+.bp-font-fancy-harry-potter { font-family: var(--bp-font-fancy-harry-potter); }
+.bp-font-fancy-matrix-code-nfi { font-family: var(--bp-font-fancy-matrix-code-nfi); }
+.bp-font-fancy-miltown { font-family: var(--bp-font-fancy-miltown); }
+.bp-font-fancy-neferchichi { font-family: var(--bp-font-fancy-neferchichi); }
+.bp-font-fancy-ringbearer-medium { font-family: var(--bp-font-fancy-ringbearer-medium); }
+.bp-font-fancy-roswell { font-family: var(--bp-font-fancy-roswell); }
+.bp-font-fancy-seaquest { font-family: var(--bp-font-fancy-seaquest); }
+.bp-font-fancy-shadow { font-family: var(--bp-font-fancy-shadow); }
+.bp-font-fancy-stargate { font-family: var(--bp-font-fancy-stargate); }
+.bp-font-fancy-stargate-goauld { font-family: var(--bp-font-fancy-stargate-goauld); }
+.bp-font-fancy-stargate-address-glyphs { font-family: var(--bp-font-fancy-stargate-address-glyphs); }
+.bp-font-fancy-stargate-universe { font-family: var(--bp-font-fancy-stargate-universe); }
+.bp-font-fancy-tengwar-cursive { font-family: var(--bp-font-fancy-tengwar-cursive); }
+.bp-font-fancy-times-new-ancient { font-family: var(--bp-font-fancy-times-new-ancient); }
+.bp-font-fancy-twinkie-display-ssi { font-family: var(--bp-font-fancy-twinkie-display-ssi); }
+.bp-font-fancy-viper-squadron { font-family: var(--bp-font-fancy-viper-squadron); }
+.bp-font-fancy-viper-squadron-italic { font-family: var(--bp-font-fancy-viper-squadron-italic); }
+.bp-font-fancy-viper-squadron-solid { font-family: var(--bp-font-fancy-viper-squadron-solid); }
+.bp-font-fancy-viper-squadron-solid-italic { font-family: var(--bp-font-fancy-viper-squadron-solid-italic); }
+.bp-font-fancy-visitor { font-family: var(--bp-font-fancy-visitor); }
+.bp-font-fancy-vorlon { font-family: var(--bp-font-fancy-vorlon); }
+.bp-font-fancy-xcast { font-family: var(--bp-font-fancy-xcast); }
