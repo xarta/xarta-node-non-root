@@ -9,7 +9,7 @@ This repo holds the public-facing GUI components that the Blueprints
 application serves to users:
 
 - `gui-fallback/` — the primary Blueprints dashboard (HTML/CSS/JS)
-- `gui/db/` — shared database schema pages (interactive table and ER diagram views)
+- `gui-db/` — shared database schema pages (interactive table and ER diagram views)
 - `gui-embed/` — the node-selector embed widget used across the fleet
 
 It complements the main [xarta-node](https://github.com/xarta/xarta-node) repo,

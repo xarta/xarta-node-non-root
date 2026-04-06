@@ -10,11 +10,14 @@
 </head>
 <body>
   <header>
-    <h1>Blueprints Database Tables</h1>
-    <blueprints-node-selector></blueprints-node-selector>
+    <div class="header-inner">
+      <blueprints-node-selector></blueprints-node-selector>
+    </div>
   </header>
 
   <main>
+    <h1 class="page-title">Blueprints Database Tables</h1>
+
     <section class="panel">
       <div id="status" class="status">Loading schema…</div>
       <p class="helper">Live data from <code>/api/v1/schema</code>.</p>
@@ -31,6 +34,7 @@
   </main>
 
   <script src="../embed/blueprints-auth.js?v={{$assetVersion}}"></script>
+  <script src="database-pages.config.js?v={{$assetVersion}}"></script>
   <script src="../embed/blueprints-node-selector.js?v={{$assetVersion}}"></script>
   <script src="database-tables.js?v={{$assetVersion}}"></script>
 </body>
