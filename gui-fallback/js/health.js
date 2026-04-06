@@ -13,8 +13,8 @@ async function loadHealth() {
     document.getElementById('nn-gen').textContent = d.gen ?? '—';
     const ok = d.integrity_ok;
     const integBadge = ok
-      ? `<button class="badge badge-ok badge-btn">OK</button>`
-      : `<button class="badge badge-err badge-btn">FAILED</button>`;
+      ? `<button class="badge badge-ok badge-btn bp-font-role-status-ok">OK</button>`
+      : `<button class="badge badge-err badge-btn bp-font-role-status-fail">FAILED</button>`;
     document.getElementById('nn-integrity').innerHTML = integBadge;
     // Wire integrity badge click via addEventListener (avoids inline onclick)
     const integBtn = document.querySelector('#nn-integrity .badge-btn');
@@ -84,6 +84,10 @@ async function openIntegrityModal(isOk = false) {
   // Adapt modal to OK vs FAILED state
   modal.dataset.tone = isOk ? 'success' : 'warning';
   if (badge) badge.textContent = isOk ? 'OK' : 'WARN';
+  if (badge) {
+    badge.classList.remove('bp-font-role-status-ok', 'bp-font-role-status-fail');
+    badge.classList.add(isOk ? 'bp-font-role-status-ok' : 'bp-font-role-status-fail');
+  }
   if (title) title.textContent = isOk ? 'Integrity OK' : 'Integrity Failed';
   if (closeBtn) {
     closeBtn.classList.remove('ok', 'warning');

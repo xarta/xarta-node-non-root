@@ -29,10 +29,11 @@
   <link rel="stylesheet" href="css/body-shade.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/ultrawide-debug-panels.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/docs-images.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/font-roles.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/hub-modal.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/hub-dialogs.css?v={{$assetVersion}}" />
 </head>
-<body>
+<body class="bp-font-role-root">
 
 <div id="safe-top-strip" class="safe-top-strip" aria-hidden="true"></div>
 <div id="app-mode-diag" class="app-mode-diag" aria-live="polite"></div>
@@ -40,7 +41,7 @@
 <header>
   <div class="header-inner">
     <div class="header-left">
-      <span id="header-host" class="brand">&#9670; —</span>
+      <span id="header-host" class="brand bp-font-role-host-label">&#9670; —</span>
       <div class="node-meta">
         <span class="nm-item"><span class="nm-label">Gen</span>&thinsp;<span class="nm-val" id="nn-gen">—</span></span>
         <span class="nm-item" id="nn-integrity"><span class="badge">—</span></span>
@@ -137,8 +138,8 @@
       <!-- Compact node meta — shown instead of full header-left when header is narrow.
       Values mirrored from full header elements by health.js. -->
       <div id="node-meta-compact" hidden>
-        <span id="nn-host-compact" class="nm-compact-host brand">&#9670; —</span>
-        <span id="nn-integrity-compact"></span>
+        <span id="nn-host-compact" class="nm-compact-host brand bp-font-role-host-label">&#9670; —</span>
+        <span id="nn-integrity-compact" class="bp-font-role-status-fail"></span>
         <span id="nn-keys-compact"></span>
       </div>
 
@@ -374,8 +375,8 @@
         <p id="docs-error"  class="error-msg" hidden></p>
         <!-- Active doc header (label + description) -->
         <div style="margin-bottom:6px">
-          <div id="docs-active-label" style="font-size:15px;font-weight:700;color:var(--text)"></div>
-          <div id="docs-active-desc"  style="font-size:12px;color:var(--text-dim);margin-top:1px"></div>
+          <div id="docs-active-label" class="bp-font-role-docs-markdown" style="font-size:15px;font-weight:700;color:var(--text)"></div>
+          <div id="docs-active-desc" class="bp-font-role-docs-markdown" style="font-size:12px;color:var(--text-dim);margin-top:1px"></div>
         </div>
       </div>
       <div id="docs-editor-pane" style="display:flex;flex-direction:column">
@@ -388,7 +389,7 @@
                  background:var(--surface);color:var(--text);
                  border:1px solid var(--border);border-radius:var(--radius);
                    padding:14px 16px;outline:none"></textarea>
-        <div id="docs-preview"
+        <div id="docs-preview" class="bp-font-role-docs-markdown"
           style="display:none;overflow:auto;
                  background:var(--surface);border:1px solid var(--border);
                  border-radius:var(--radius);padding:18px 24px;
@@ -404,7 +405,7 @@
     </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="tab-scroll-shell">
-      <div id="docs-list-pane" style="display:flex;flex-direction:column;padding:4px 0"></div>
+      <div id="docs-list-pane" class="bp-font-role-docs-markdown" style="display:flex;flex-direction:column;padding:4px 0"></div>
     </div>
   </section>
 
@@ -1747,7 +1748,7 @@
 <dialog class="hub-modal hub-dialog" data-tone="warning" id="integrity-modal">
   <div class="hub-modal-header">
     <h2 class="hub-modal-title">
-      <span class="hub-dialog-badge" id="integrity-modal-badge">WARN</span>
+      <span class="hub-dialog-badge bp-font-role-status-fail" id="integrity-modal-badge">WARN</span>
       <span class="hub-dialog-title-text" id="integrity-modal-title">Integrity Check</span>
     </h2>
     <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>

@@ -273,6 +273,16 @@
   --bp-selector-selected-node-size: 15px;
   --bp-selector-node-name-size: 12px;
   --bp-selector-selected-node-max-width: 170px;
+
+  /* Content role fonts: assign these by semantic class on page elements. */
+  --bp-font-role-root: var(--bp-font-fallback-ui);
+  --bp-font-role-table-header: var(--bp-font-fancy-battlestar);
+  --bp-font-role-table-content: var(--bp-font-fallback-ui);
+  --bp-font-role-host-label: var(--bp-font-fancy-ancient-virtual);
+  --bp-font-role-status-meta: var(--bp-font-fallback-ui);
+  --bp-font-role-status-ok: var(--bp-font-fancy-battlestar);
+  --bp-font-role-status-fail: var(--bp-font-fancy-battlestar);
+  --bp-font-role-docs-markdown: var(--bp-font-fallback-ui);
 }
 
 .bp-font-fancy-ancient-hand { font-family: var(--bp-font-fancy-ancient-hand); }

@@ -1,0 +1,77 @@
+/*
+ * font-roles.css
+ * Semantic font role bindings for the Blueprints GUI.
+ *
+ * Source of truth for role-to-font assignment lives in:
+ *   /xarta-node/gui-embed/blueprints-font-registry.css
+ */
+
+@import url('../embed/blueprints-font-registry.css');
+
+/* Root/default typography role for the page unless overridden below. */
+body.bp-font-role-root {
+  font-family: var(--bp-font-role-root);
+}
+
+/* Keep explicit monospace zones intact. */
+body.bp-font-role-root code,
+body.bp-font-role-root pre,
+body.bp-font-role-root textarea,
+body.bp-font-role-root .table-cell-clip__text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* Table role bindings: headers vs cell content. */
+table thead th,
+.table-group-row td,
+.table-group-cell {
+  font-family: var(--bp-font-role-table-header);
+}
+
+.bp-font-role-table-header {
+  font-family: var(--bp-font-role-table-header);
+}
+
+table tbody td,
+.table-cell-clamp,
+.table-cell-clip {
+  font-family: var(--bp-font-role-table-content);
+}
+
+.bp-font-role-table-content {
+  font-family: var(--bp-font-role-table-content);
+}
+
+/* Header host labels (full + compact). */
+#header-host,
+#nn-host-compact {
+  font-family: var(--bp-font-role-host-label);
+}
+
+/* Status role bindings for integrity badges and modal badge chip. */
+.badge.bp-font-role-status-ok,
+#integrity-modal-badge.bp-font-role-status-ok {
+  font-family: var(--bp-font-role-status-ok);
+}
+
+.badge.bp-font-role-status-fail,
+#integrity-modal-badge.bp-font-role-status-fail {
+  font-family: var(--bp-font-role-status-fail);
+}
+
+.bp-font-role-status-meta {
+  font-family: var(--bp-font-role-status-meta);
+}
+
+/* Docs-related rendered content surfaces. */
+#docs-preview.bp-font-role-docs-markdown,
+#docs-list-pane.bp-font-role-docs-markdown,
+#docs-active-label.bp-font-role-docs-markdown,
+#docs-active-desc.bp-font-role-docs-markdown,
+.doc-img-snippet-code.bp-font-role-docs-markdown {
+  font-family: var(--bp-font-role-docs-markdown);
+}
+
+.bp-font-role-docs-markdown {
+  font-family: var(--bp-font-role-docs-markdown);
+}

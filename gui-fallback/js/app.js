@@ -216,8 +216,23 @@ function switchTab(tab) {
   }
 }
 
+function _applySemanticFontRoleClasses() {
+  if (typeof document === 'undefined') return;
+
+  // Most live status labels follow the *-status id convention.
+  document.querySelectorAll('[id$="-status"]').forEach((el) => {
+    el.classList.add('bp-font-role-status-meta');
+  });
+
+  // Error surfaces commonly use .error-msg or *-error ids.
+  document.querySelectorAll('.error-msg, [id$="-error"]').forEach((el) => {
+    el.classList.add('bp-font-role-status-fail');
+  });
+}
+
 /* ── Bootstrap ────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
+  _applySemanticFontRoleClasses();
   if (!localStorage.getItem(_LS_SECRET_KEY)) { openApiKeyModal(); }
   if (typeof SoundManager !== 'undefined') SoundManager.init();
   if (typeof FormControlManager !== 'undefined') { FormControlManager.init(); FormControlManager.load(); }

@@ -697,6 +697,7 @@ function _docsRenderDocRow(doc) {
   const row = document.createElement('div');
   row.dataset.docId = doc.doc_id;
   row.draggable = true;
+  row.className = 'docs-doc-dropline bp-font-role-docs-markdown';
   row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.04);cursor:default;transition:background .1s';
 
   row.addEventListener('mouseenter', () => { row.style.background = 'rgba(255,255,255,.03)'; });
@@ -727,12 +728,10 @@ function _docsRenderDocRow(doc) {
     row.style.borderTop = '';
     if (_docsDragId && _docsDragId !== doc.doc_id) _docsDropDocBeforeDoc(_docsDragId, doc.doc_id);
   };
-  row.className = 'docs-doc-dropline';
-
   row.innerHTML = `
     <span style="color:var(--text-dim);font-size:15px;user-select:none;cursor:grab">≡</span>
-    <span style="flex:1;font-size:13px">${esc(doc.label)}</span>
-    ${doc.description ? `<span style="font-size:11px;color:var(--text-dim);flex:2;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(doc.description)}</span>` : ''}
+    <span class="bp-font-role-docs-markdown" style="flex:1;font-size:13px">${esc(doc.label)}</span>
+    ${doc.description ? `<span class="bp-font-role-docs-markdown" style="font-size:11px;color:var(--text-dim);flex:2;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(doc.description)}</span>` : ''}
     <button class="secondary" style="padding:2px 8px;font-size:12px;flex-shrink:0" onclick="docsListCopyLink('${doc.doc_id}')" title="Copy Markdown link" aria-label="Copy Markdown link for ${esc(doc.label)}">🔗 Copy Link</button>
     <button class="secondary table-icon-btn table-icon-btn--delete" type="button" style="flex-shrink:0" onclick="docsListDeleteDoc('${doc.doc_id}')" title="Delete document" aria-label="Delete document ${esc(doc.label)}"></button>
     <button class="secondary" style="padding:2px 8px;font-size:12px;flex-shrink:0" onclick="docsListOpenDoc('${doc.doc_id}')" title="Open document" aria-label="Open document ${esc(doc.label)}">Open</button>
@@ -1022,16 +1021,16 @@ function _mdToHtml(md) {
         bodyRows.push(_tableCells(lines[i]));
       }
 
-      let tableHtml = '<div style="overflow-x:auto;margin:10px 0"><table style="width:100%;border-collapse:collapse;font-size:13px">';
+      let tableHtml = '<div style="overflow-x:auto;margin:10px 0"><table class="bp-font-role-docs-markdown" style="width:100%;border-collapse:collapse;font-size:13px">';
       tableHtml += '<thead><tr>';
       for (const cell of headerCells) {
-        tableHtml += `<th style="text-align:left;padding:7px 9px;border:1px solid var(--border);background:var(--bg)">${_inlineMd(cell)}</th>`;
+        tableHtml += `<th class="bp-font-role-table-header bp-font-role-docs-markdown" style="text-align:left;padding:7px 9px;border:1px solid var(--border);background:var(--bg)">${_inlineMd(cell)}</th>`;
       }
       tableHtml += '</tr></thead><tbody>';
       for (const row of bodyRows) {
         tableHtml += '<tr>';
         for (let c = 0; c < headerCells.length; c++) {
-          tableHtml += `<td style="padding:7px 9px;border:1px solid var(--border)">${_inlineMd(row[c] || '')}</td>`;
+          tableHtml += `<td class="bp-font-role-table-content bp-font-role-docs-markdown" style="padding:7px 9px;border:1px solid var(--border)">${_inlineMd(row[c] || '')}</td>`;
         }
         tableHtml += '</tr>';
       }

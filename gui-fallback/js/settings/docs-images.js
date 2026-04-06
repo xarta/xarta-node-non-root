@@ -426,7 +426,7 @@ function _buildImgCard(img) {
   const snippetWrap = document.createElement('div');
   snippetWrap.className = 'doc-img-snippet';
   const snippetCode = document.createElement('code');
-  snippetCode.className = 'doc-img-snippet-code';
+  snippetCode.className = 'doc-img-snippet-code bp-font-role-docs-markdown';
   const markdownSnippet = _docImgMarkdownSnippet(img);
   snippetCode.textContent = markdownSnippet;
   snippetCode.title = markdownSnippet;
