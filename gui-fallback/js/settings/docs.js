@@ -102,13 +102,13 @@ function _docsRenderSidebar() {
     .sort((a, b) => (a.sort_order - b.sort_order) || a.label.localeCompare(b.label));
   sidebar.innerHTML = '';
   if (!menuDocs.length) {
-    sidebar.innerHTML = '<span style="font-size:12px;color:var(--text-dim)">No docs tagged "menu".</span>';
+    sidebar.innerHTML = '<span class="bp-font-role-docs-markdown" style="font-size:12px;color:var(--text-dim)">No docs tagged "menu".</span>';
     return;
   }
   menuDocs.forEach(doc => {
     const btn = document.createElement('button');
     const isActive = doc.doc_id === _docsActiveId;
-    btn.className = 'secondary' + (isActive ? ' active' : '');
+    btn.className = 'secondary bp-font-role-docs-markdown' + (isActive ? ' active' : '');
     btn.style.cssText = 'padding:4px 12px;font-size:13px;white-space:nowrap';
     if (isActive) {
       btn.style.background = 'var(--accent)';
@@ -583,10 +583,12 @@ async function submitDeleteDoc() {
 function _docsRenderList() {
   const pane = document.getElementById('docs-list-pane');
   if (!pane) return;
+  pane.classList.add('bp-font-role-docs-markdown');
   pane.innerHTML = '';
 
   const container = document.createElement('div');
   container.id = 'docs-list-container';
+  container.className = 'bp-font-role-docs-markdown';
   container.style.cssText = 'display:flex;flex-direction:column;gap:10px;flex:1';
   pane.appendChild(container);
 
@@ -601,12 +603,13 @@ function _docsRenderGroupBlock(group) {
   const groupName   = group ? group.name : 'Undefined Group';
 
   const block = document.createElement('div');
-  block.className = 'docs-group-block';
+  block.className = 'docs-group-block bp-font-role-docs-markdown';
   block.dataset.groupId = groupId || '__undefined__';
   block.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden';
 
   // ── Group header ──
   const groupHdr = document.createElement('div');
+  groupHdr.className = 'bp-font-role-docs-markdown';
   groupHdr.style.cssText = 'display:flex;align-items:center;gap:6px;padding:7px 10px;background:var(--bg2,#16161e);border-bottom:1px solid var(--border);font-weight:600;font-size:13px;min-height:34px';
 
   if (!isUndefined) {
@@ -666,6 +669,7 @@ function _docsRenderGroupBlock(group) {
 
   if (groupDocs.length === 0) {
     const empty = document.createElement('div');
+    empty.className = 'bp-font-role-docs-markdown';
     empty.style.cssText = 'padding:8px 14px;font-size:12px;color:var(--text-dim);font-style:italic';
     empty.textContent = 'No documents — drop one here';
     docsList.appendChild(empty);
@@ -972,7 +976,7 @@ function _mdToHtml(md) {
     if (inCode) {
       if (/^```/.test(line)) {
         const langAttr = codeLang ? ` class="language-${esc2(codeLang)}"` : '';
-        html += `<pre style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;overflow-x:auto;font-size:12.5px;line-height:1.5"><code${langAttr}>${esc2(codeBuf)}</code></pre>`;
+        html += `<pre class="bp-font-role-docs-markdown" style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;overflow-x:auto;font-size:12.5px;line-height:1.5"><code class="bp-font-role-docs-markdown"${langAttr}>${esc2(codeBuf)}</code></pre>`;
         inCode = false; codeBuf = '';
       } else { codeBuf += line + '\n'; }
       continue;
@@ -983,7 +987,7 @@ function _mdToHtml(md) {
       const lvl = hm[1].length;
       const sizes   = ['1.6em','1.35em','1.15em','1em','0.95em','0.9em'];
       const margins = ['24px 0 10px','20px 0 8px','16px 0 6px','14px 0 4px','12px 0 4px','10px 0 4px'];
-      html += `<h${lvl} style="font-size:${sizes[lvl-1]};font-weight:700;margin:${margins[lvl-1]};color:var(--text);border-bottom:${lvl<=2?'1px solid var(--border)':'none'};padding-bottom:${lvl<=2?'6px':'0'}">${_inlineMd(hm[2])}</h${lvl}>`;
+      html += `<h${lvl} class="bp-font-role-docs-markdown" style="font-size:${sizes[lvl-1]};font-weight:700;margin:${margins[lvl-1]};color:var(--text);border-bottom:${lvl<=2?'1px solid var(--border)':'none'};padding-bottom:${lvl<=2?'6px':'0'}">${_inlineMd(hm[2])}</h${lvl}>`;
       continue;
     }
     if (/^(\*{3,}|-{3,}|_{3,})$/.test(line.trim())) {
@@ -993,20 +997,20 @@ function _mdToHtml(md) {
     }
     const ulm = line.match(/^(\s*)[-*+]\s+(.*)/);
     if (ulm) {
-      if (!inUl) { closeList(); html += '<ul style="margin:6px 0 6px 20px;padding:0">'; inUl = true; }
-      html += `<li style="margin:3px 0">${_inlineMd(ulm[2])}</li>`;
+      if (!inUl) { closeList(); html += '<ul class="bp-font-role-docs-markdown" style="margin:6px 0 6px 20px;padding:0">'; inUl = true; }
+      html += `<li class="bp-font-role-docs-markdown" style="margin:3px 0">${_inlineMd(ulm[2])}</li>`;
       continue;
     }
     const olm = line.match(/^(\s*)\d+\.\s+(.*)/);
     if (olm) {
-      if (!inOl) { closeList(); html += '<ol style="margin:6px 0 6px 20px;padding:0">'; inOl = true; }
-      html += `<li style="margin:3px 0">${_inlineMd(olm[2])}</li>`;
+      if (!inOl) { closeList(); html += '<ol class="bp-font-role-docs-markdown" style="margin:6px 0 6px 20px;padding:0">'; inOl = true; }
+      html += `<li class="bp-font-role-docs-markdown" style="margin:3px 0">${_inlineMd(olm[2])}</li>`;
       continue;
     }
     const bqm = line.match(/^>\s*(.*)/);
     if (bqm) {
       closeList();
-      html += `<blockquote style="margin:8px 0;padding:8px 14px;border-left:3px solid var(--accent);background:var(--surface);color:var(--text-dim);font-style:italic">${_inlineMd(bqm[1])}</blockquote>`;
+      html += `<blockquote class="bp-font-role-docs-markdown" style="margin:8px 0;padding:8px 14px;border-left:3px solid var(--accent);background:var(--surface);color:var(--text-dim);font-style:italic">${_inlineMd(bqm[1])}</blockquote>`;
       continue;
     }
 
@@ -1041,9 +1045,9 @@ function _mdToHtml(md) {
 
     closeList();
     if (!line.trim()) { html += '<div style="height:8px"></div>'; continue; }
-    html += `<p style="margin:4px 0">${_inlineMd(line)}</p>`;
+    html += `<p class="bp-font-role-docs-markdown" style="margin:4px 0">${_inlineMd(line)}</p>`;
   }
-  if (inCode) html += `<pre style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;overflow-x:auto"><code>${esc2(codeBuf)}</code></pre>`;
+  if (inCode) html += `<pre class="bp-font-role-docs-markdown" style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;overflow-x:auto"><code class="bp-font-role-docs-markdown">${esc2(codeBuf)}</code></pre>`;
   closeList();
   return html;
 }
@@ -1055,39 +1059,39 @@ function _inlineMd(s) {
   const stash = [];
   s = s.replace(/`([^`]+)`/g, (_, c) => {
     const idx = stash.length;
-    stash.push(`<code style="background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:1px 5px;font-size:0.88em">${c.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</code>`);
+    stash.push(`<code class="bp-font-role-docs-markdown" style="background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:1px 5px;font-size:0.88em">${c.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</code>`);
     return `\x00${idx}\x00`;
   });
   // HTML-escape the remaining (non-code) text
   s = s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   s = s
-    .replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*\*\*([^*]+)\*\*\*/g, '<strong class="bp-font-role-docs-markdown"><em class="bp-font-role-docs-markdown">$1</em></strong>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong class="bp-font-role-docs-markdown">$1</strong>')
     // __ bold: only match when not adjacent to a word character (avoids snake__case)
-    .replace(/(?<![a-zA-Z0-9])__([^_]+)__(?![a-zA-Z0-9])/g, '<strong>$1</strong>')
-    .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
+    .replace(/(?<![a-zA-Z0-9])__([^_]+)__(?![a-zA-Z0-9])/g, '<strong class="bp-font-role-docs-markdown">$1</strong>')
+    .replace(/\*([^*\n]+)\*/g, '<em class="bp-font-role-docs-markdown">$1</em>')
     // _ italic: only match when not adjacent to a word character (avoids snake_case)
-    .replace(/(?<![a-zA-Z0-9])_([^_\n]+)_(?![a-zA-Z0-9])/g, '<em>$1</em>')
-    .replace(/~~([^~]+)~~/g, '<del>$1</del>')
+    .replace(/(?<![a-zA-Z0-9])_([^_\n]+)_(?![a-zA-Z0-9])/g, '<em class="bp-font-role-docs-markdown">$1</em>')
+    .replace(/~~([^~]+)~~/g, '<del class="bp-font-role-docs-markdown">$1</del>')
     .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, src) => {
       const m = src.match(/\/api\/v1\/doc-images\/([a-f0-9-]+)\/file/);
-      return `<img${m ? ` data-doc-img="${m[1]}"` : ''} src="${src}" alt="${alt}" style="max-width:100%;border-radius:4px;margin:8px 0;display:block" />`;
+      return `<img class="bp-font-role-docs-markdown"${m ? ` data-doc-img="${m[1]}"` : ''} src="${src}" alt="${alt}" style="max-width:100%;border-radius:4px;margin:8px 0;display:block" />`;
     })
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, href) => {
       // Internal doc link: relative .md path that isn't an absolute URL
       const isDocLink = href && !href.match(/^https?:\/\/|^\/\//) && /\.md$/i.test(href);
       if (isDocLink) {
         const safeHref = href.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        return `<a href="#" onclick="docsOpenByPath('${safeHref}'); return false;" style="color:var(--accent);text-decoration:underline;text-decoration-style:dashed" title="Open: ${href}">${text}</a>`;
+        return `<a class="bp-font-role-docs-markdown" href="#" onclick="docsOpenByPath('${safeHref}'); return false;" style="color:var(--accent);text-decoration:underline;text-decoration-style:dashed" title="Open: ${href}">${text}</a>`;
       }
-      return `<a href="${href}" style="color:var(--accent);text-decoration:underline" target="_blank" rel="noopener noreferrer">${text}</a>`;
+      return `<a class="bp-font-role-docs-markdown" href="${href}" style="color:var(--accent);text-decoration:underline" target="_blank" rel="noopener noreferrer">${text}</a>`;
     })
     // Auto-link bare https:// URLs not already inside an HTML attribute value
     .replace(/(?<![="'])https?:\/\/[^\s<>")\]]+/g, url => {
       const m = url.match(/^(.+?)([.,;:!?)]+)$/);
       const href  = m ? m[1] : url;
       const trail = m ? m[2] : '';
-      return `<a href="${href}" style="color:var(--accent);text-decoration:underline" target="_blank" rel="noopener noreferrer">${href}</a>${trail}`;
+      return `<a class="bp-font-role-docs-markdown" href="${href}" style="color:var(--accent);text-decoration:underline" target="_blank" rel="noopener noreferrer">${href}</a>${trail}`;
     });
   // Restore stashed code spans
   s = s.replace(/\x00(\d+)\x00/g, (_, i) => stash[Number(i)]);
