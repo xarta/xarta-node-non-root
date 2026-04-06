@@ -1,5 +1,9 @@
 /.lone-wolf/
 /gui-fallback/assets/
+.env.bak*
+.env.backup*
+.env.*.bak*
+.env.*.backup*
 
 # Editor / OS noise
 .DS_Store
