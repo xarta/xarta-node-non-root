@@ -88,7 +88,7 @@ function _emSortValue(item, sortKey) {
         case 'label': return item.label || '';
         case 'page_index': return Number(item.page_index || 0);
         case 'sort_order': return Number(item.sort_order || 0);
-        case 'menu_context': return `${item.menu_context || 'embed'}__${String(item.sort_order || 0).padStart(6, '0')}`;
+        case 'menu_context': return `${item.menu_context || 'embed'}__${String(item.page_index || 0).padStart(6, '0')}__${String(item.sort_order || 0).padStart(6, '0')}`;
         case 'icon_asset': return item.icon_asset || '';
         case 'sound_asset': return item.sound_asset || '';
         case 'enabled': return Number(item.enabled ? 1 : 0);
