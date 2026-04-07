@@ -306,7 +306,10 @@ function _fcBuildFieldMeta() {
             label: 'Actions',
             render: item => {
                 if (_fcCompactRowActions()) {
-                    return `<td class="table-action-cell table-action-cell--compact" style="width:${_fcActionCellWidth()}px"><button class="table-row-action-trigger secondary" type="button" title="Form control actions" data-fc-actions="${_esc(item.control_id)}">&#8942;</button></td>`;
+                    const menuKey = `actions:${item.control_id}`;
+                    const open = _fcOpenAssetMenu === menuKey;
+                    const compactActions = `<span class="table-asset-menu-anchor"><button type="button" class="table-icon-btn table-icon-btn--scarab" title="Form control actions" aria-label="Form control actions" aria-expanded="${open ? 'true' : 'false'}" data-fc-action-menu-trigger="${_esc(item.control_id)}"></button>${open ? `<span class="table-asset-menu" data-fc-action-menu="${_esc(menuKey)}"><span class="table-asset-menu-actions">${_fcActionButtons(item)}</span></span>` : ''}</span>`;
+                    return `<td class="table-action-cell table-action-cell--compact table-action-cell--menu${open ? ' table-action-cell--menu-open' : ''}" style="width:${_fcActionCellWidth()}px">${compactActions}</td>`;
                 }
                 return `<td class="table-action-cell" style="white-space:nowrap"><div class="table-inline-actions">${_fcActionButtons(item)}</div></td>`;
             },
@@ -432,26 +435,24 @@ function _fcCloseAssetMenu() {
     renderFormControls();
 }
 
-function _openFcRowActions(controlId) {
-    if (typeof TableRowActions === 'undefined') return;
-    const item = _fcItems.find(entry => String(entry.control_id) === String(controlId));
-    if (!item) return;
-    TableRowActions.open({
-        title: item.label || item.control_key || 'Form control actions',
-        subtitle: item.context || item.control_type || 'Form Controls',
-        actions: [
-            {
-                label: 'Edit form control',
-                detail: 'Open the form control editor',
-                onClick: () => _fcOpenEditModal(item.control_id),
-            },
-            {
-                label: 'Delete form control',
-                detail: 'Remove this form control mapping',
-                tone: 'danger',
-                onClick: () => _fcOpenDeleteModal(item.control_id),
-            },
-        ],
+function _fcAdjustOpenMenuPlacement(rootEl) {
+    const root = rootEl || document;
+    root.querySelectorAll('.table-asset-menu').forEach(menu => {
+        menu.classList.remove('table-asset-menu--above');
+        const anchor = menu.closest('.table-asset-menu-anchor');
+        if (!anchor) return;
+        const scrollHost = anchor.closest('.table-wrap, .table-wrap--fill');
+        if (!scrollHost) return;
+
+        const hostRect = scrollHost.getBoundingClientRect();
+        const anchorRect = anchor.getBoundingClientRect();
+        const menuHeight = menu.getBoundingClientRect().height;
+        const belowSpace = hostRect.bottom - anchorRect.bottom;
+        const aboveSpace = anchorRect.top - hostRect.top;
+
+        if (menuHeight + 8 > belowSpace) {
+            menu.classList.add('table-asset-menu--above');
+        }
     });
 }
 
@@ -513,6 +514,8 @@ function renderFormControls() {
                 }
             });
         });
+        _fcAdjustOpenMenuPlacement(tbody);
+        requestAnimationFrame(() => _fcAdjustOpenMenuPlacement(tbody));
     });
 }
 
@@ -869,15 +872,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const tbody = document.getElementById('fc-tbody');
     if (tbody) {
         tbody.addEventListener('click', e => {
+            const actionMenuTrigger = e.target.closest('[data-fc-action-menu-trigger]');
+            if (actionMenuTrigger) {
+                e.stopPropagation();
+                _fcToggleAssetMenu(`actions:${actionMenuTrigger.dataset.fcActionMenuTrigger}`);
+                return;
+            }
             const assetMenuTrigger = e.target.closest('[data-fc-asset-menu-trigger]');
             if (assetMenuTrigger) {
                 e.stopPropagation();
                 _fcToggleAssetMenu(assetMenuTrigger.dataset.fcAssetMenuTrigger);
-                return;
-            }
-            const actionsBtn = e.target.closest('[data-fc-actions]');
-            if (actionsBtn) {
-                _openFcRowActions(actionsBtn.dataset.fcActions);
                 return;
             }
             const uploadBtn = e.target.closest('[data-fc-upload]');
@@ -904,11 +908,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const editBtn = e.target.closest('[data-fc-edit]');
             if (editBtn) {
+                _fcCloseAssetMenu();
                 _fcOpenEditModal(editBtn.dataset.fcEdit);
                 return;
             }
             const deleteBtn = e.target.closest('[data-fc-delete]');
             if (deleteBtn) {
+                _fcCloseAssetMenu();
                 _fcOpenDeleteModal(deleteBtn.dataset.fcDelete);
             }
         });

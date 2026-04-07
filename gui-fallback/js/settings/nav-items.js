@@ -263,6 +263,27 @@ function _niCloseAssetMenu() {
     renderNavItems();
 }
 
+function _niAdjustOpenMenuPlacement(rootEl) {
+    const root = rootEl || document;
+    root.querySelectorAll('.table-asset-menu').forEach(menu => {
+        menu.classList.remove('table-asset-menu--above');
+        const anchor = menu.closest('.table-asset-menu-anchor');
+        if (!anchor) return;
+        const scrollHost = anchor.closest('.table-wrap, .table-wrap--fill');
+        if (!scrollHost) return;
+
+        const hostRect = scrollHost.getBoundingClientRect();
+        const anchorRect = anchor.getBoundingClientRect();
+        const menuHeight = menu.getBoundingClientRect().height;
+        const belowSpace = hostRect.bottom - anchorRect.bottom;
+        const aboveSpace = anchorRect.top - hostRect.top;
+
+        if (menuHeight + 8 > belowSpace) {
+            menu.classList.add('table-asset-menu--above');
+        }
+    });
+}
+
 function _niSortValue(item, sortKey) {
     switch (sortKey) {
         case 'item_key':   return item.item_key || '';
@@ -397,6 +418,8 @@ function renderNavItems() {
                 }
             });
         });
+        _niAdjustOpenMenuPlacement(tbody);
+        requestAnimationFrame(() => _niAdjustOpenMenuPlacement(tbody));
     });
 }
 

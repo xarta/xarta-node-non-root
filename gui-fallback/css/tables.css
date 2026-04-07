@@ -87,8 +87,10 @@ table.table-shared-ui tbody td.ni-col-icon-asset:has(.table-asset-menu),
 table.table-shared-ui tbody td.ni-col-sound-asset:has(.table-asset-menu),
 table.table-shared-ui tbody td.fc-col-icon-asset:has(.table-asset-menu),
 table.table-shared-ui tbody td.fc-col-sound-on:has(.table-asset-menu),
-table.table-shared-ui tbody td.fc-col-sound-off:has(.table-asset-menu) {
+table.table-shared-ui tbody td.fc-col-sound-off:has(.table-asset-menu),
+table.table-shared-ui tbody td.table-action-cell:has(.table-asset-menu) {
   z-index: 32;
+  overflow: visible;
 }
 
 .table-cell-clip {
@@ -985,6 +987,11 @@ tr.table-group-row td.table-group-cell {
   white-space: nowrap;
   overflow: hidden;
   isolation: isolate;
+}
+
+.table-asset-menu.table-asset-menu--above {
+  top: auto;
+  bottom: calc(100% + 6px);
 }
 
 .table-asset-menu-actions {
