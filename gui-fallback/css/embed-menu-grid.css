@@ -96,16 +96,21 @@
 
 /* Palette tile (source for new empty slots) */
 .em-grid-cell--palette {
+    width: 36px;
+    height: 36px;
+    aspect-ratio: 1 / 1;
     min-height: unset;
-    padding: 6px 10px;
-    flex-direction: row;
-    gap: 5px;
+    padding: 0;
     border-style: dashed;
-    font-size: 11px;
-    color: var(--text-dim);
     background: var(--surface);
     cursor: grab;
-    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.em-grid-cell__placeholder-icon--palette {
+    width: 60%;
+    height: 60%;
+    opacity: .6;
 }
 
 .em-grid-cell--drag-over {
