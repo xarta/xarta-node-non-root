@@ -147,19 +147,19 @@ blueprints-node-selector,
 }
 
 .bp-ns-action-btn[data-action="fallback-ui"]::before {
-  background-image: var(--bp-ns-icon-asset, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c8a84b' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 10.5L12 3.5L20.5 10.5'/%3E%3Cpath d='M6.5 9.8V20.5H17.5V9.8'/%3E%3Cpath d='M10 20.5V14.5H14V20.5'/%3E%3C/svg%3E"));
+  background-image: var(--bp-ns-icon-asset, url('/fallback-ui/assets/icons/fallback.svg'));
 }
 
 .bp-ns-action-btn[data-action="ui"]::before {
-  background-image: var(--bp-ns-icon-asset, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 1.5L22.5 8.5L18.5 22L12 17L5.5 22L1.5 8.5Z' fill='%23c8a84b'/%3E%3Cpath d='M12 5L19.5 10.5L16.5 20.5L12 16L7.5 20.5L4.5 10.5Z' fill='%23030612' opacity='.9'/%3E%3Ccircle cx='12' cy='12.5' r='2' fill='%23c8a84b' opacity='.7'/%3E%3C/svg%3E"));
+  background-image: var(--bp-ns-icon-asset, url('/fallback-ui/assets/icons/fallback.svg'));
 }
 
 .bp-ns-action-btn[data-action="database-tables"]::before {
-  background-image: var(--bp-ns-icon-asset, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c8a84b' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='5' width='16' height='14' rx='1.8'/%3E%3Cline x1='4' y1='9.5' x2='20' y2='9.5'/%3E%3Cline x1='10' y1='5' x2='10' y2='19'/%3E%3Cline x1='4' y1='14.2' x2='20' y2='14.2'/%3E%3C/svg%3E"));
+  background-image: var(--bp-ns-icon-asset, url('/fallback-ui/assets/icons/fallback.svg'));
 }
 
 .bp-ns-action-btn[data-action="database-diagram"]::before {
-  background-image: var(--bp-ns-icon-asset, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c8a84b' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='2'/%3E%3Ccircle cx='18' cy='6' r='2'/%3E%3Ccircle cx='12' cy='18' r='2'/%3E%3Cpath d='M7.8 7.2L10.6 15'/%3E%3Cpath d='M16.2 7.2L13.4 15'/%3E%3Cpath d='M8.3 6H15.7'/%3E%3C/svg%3E"));
+  background-image: var(--bp-ns-icon-asset, url('/fallback-ui/assets/icons/fallback.svg'));
 }
 
 /* ── DB-only context buttons (fallback-ui / db) — icon only via DB asset ── */
