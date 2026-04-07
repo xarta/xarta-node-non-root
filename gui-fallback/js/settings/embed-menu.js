@@ -309,9 +309,11 @@ function _emGetPageSize() {
 }
 
 function _emGridItemsByGroup(group) {
-    return group === 'embed'
-        ? _embedMenuItems.filter(item => (item.menu_context || 'embed') === 'embed')
-        : _embedMenuItems.filter(item => (item.menu_context || 'embed') !== 'embed');
+    return _embedMenuItems.filter(item => (item.menu_context || 'embed') === group);
+}
+
+function _emPrettifyContext(ctx) {
+    return ctx.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
 /** Build sparse Map<flatIdx, item>.  flatIdx = page_index * pageSize + sort_order. */
@@ -343,40 +345,60 @@ function _emGridCellHtml(item, flatIdx, group, pageSize) {
     return `<div class="em-grid-cell em-grid-cell--item${embedClass}${disabledClass}" draggable="true" data-em-grid-id="${_esc(item.item_id)}" data-em-grid-group="${group}" data-em-flat-idx="${flatIdx}" title="${_esc(item.label || item.item_key)}">${pageBadge}${iconHtml}<span class="em-grid-cell__label">${_esc(item.label || item.item_key)}</span></div>`;
 }
 
-function _emRenderGroupGrid(group, containerId, pageSize) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-    const sectionEl = container.closest('.em-grid-section');
-    const items = _emGridItemsByGroup(group);
-    if (!items.length) {
-        if (sectionEl) sectionEl.hidden = (group !== 'embed');
-        container.innerHTML = '';
-        return;
-    }
-    if (sectionEl) sectionEl.hidden = false;
-    container.style.setProperty('--em-grid-cols', String(pageSize));
-
-    const flatMap = _emBuildFlatMap(items, pageSize);
-    const maxFlat = Math.max(...flatMap.keys());
-    const totalCells = (Math.floor(maxFlat / pageSize) + 2) * pageSize; // one extra page row
-    const parts = [];
-    for (let i = 0; i < totalCells; i++) {
-        parts.push(_emGridCellHtml(flatMap.get(i) ?? null, i, group, pageSize));
-    }
-    container.innerHTML = parts.join('');
-
-    container.querySelectorAll('img[data-icon-fallback="1"]').forEach(img => {
-        img.addEventListener('error', function onErr() {
-            this.removeEventListener('error', onErr);
-            this.src = '/fallback-ui/assets/icons/fallback.svg';
-        });
-    });
-}
-
 function renderEmGrid() {
+    const sections = document.getElementById('em-grid-sections');
+    if (!sections) return;
     const pageSize = _emGetPageSize();
-    _emRenderGroupGrid('fallback-ui', 'em-grid-app', pageSize);
-    _emRenderGroupGrid('embed', 'em-grid-embed', pageSize);
+
+    // Group items by context; non-embed contexts first (alpha), embed last.
+    const ctxMap = new Map();
+    for (const item of _embedMenuItems) {
+        const ctx = item.menu_context || 'embed';
+        if (!ctxMap.has(ctx)) ctxMap.set(ctx, []);
+        ctxMap.get(ctx).push(item);
+    }
+    const contexts = [...ctxMap.keys()].sort((a, b) => {
+        if (a === 'embed') return 1;
+        if (b === 'embed') return -1;
+        return a.localeCompare(b);
+    });
+
+    sections.innerHTML = '';
+    for (const ctx of contexts) {
+        const items = ctxMap.get(ctx);
+        if (!items || !items.length) continue;
+
+        const section = document.createElement('div');
+        section.className = 'em-grid-section';
+        section.dataset.emGridCtx = ctx;
+
+        const label = document.createElement('p');
+        label.className = 'em-grid-section__label';
+        label.textContent = _emPrettifyContext(ctx);
+        section.appendChild(label);
+
+        const grid = document.createElement('div');
+        grid.className = 'em-grid';
+        grid.style.setProperty('--em-grid-cols', String(pageSize));
+
+        const flatMap = _emBuildFlatMap(items, pageSize);
+        const maxFlat = Math.max(...flatMap.keys());
+        const totalCells = (Math.floor(maxFlat / pageSize) + 2) * pageSize;
+        const parts = [];
+        for (let i = 0; i < totalCells; i++) {
+            parts.push(_emGridCellHtml(flatMap.get(i) ?? null, i, ctx, pageSize));
+        }
+        grid.innerHTML = parts.join('');
+        grid.querySelectorAll('img[data-icon-fallback="1"]').forEach(img => {
+            img.addEventListener('error', function onErr() {
+                this.removeEventListener('error', onErr);
+                this.src = '/fallback-ui/assets/icons/fallback.svg';
+            });
+        });
+
+        section.appendChild(grid);
+        sections.appendChild(section);
+    }
 }
 
 function _emGridResetDrag(editor) {
@@ -618,19 +640,145 @@ function _wireEmGrid() {
         if (item) _emShowGridItemModal(item);
     });
 
-    // Long-press (touch) → info modal
-    let _lp = null;
+    // Touch drag + double-tap (mobile)
+    let _touchDrag = null;
+    let _touchLastTapTime = 0;
+    let _touchLastTapCell = null;
+
+    function _touchDragCleanup() {
+        if (!_touchDrag) return;
+        if (_touchDrag.ghost) _touchDrag.ghost.remove();
+        if (_touchDrag.sourceCell) _touchDrag.sourceCell.classList.remove('is-dragging');
+        if (_touchDrag.lastTarget) _touchDrag.lastTarget.classList.remove('em-grid-cell--drag-over');
+        const trash = document.getElementById('em-grid-trash');
+        if (trash) trash.classList.remove('drag-target-active');
+        _touchDrag = null;
+    }
+
+    function _touchDragPaletteStart(e) {
+        const touch = e.touches[0];
+        _touchDrag = {
+            isPalette: true, isEmptySlot: false, sourceCell: null,
+            group: null, flatIdx: null, itemId: 'placeholder',
+            startX: touch.clientX, startY: touch.clientY,
+            dragging: false, ghost: null, lastTarget: null,
+        };
+    }
+
+    if (palette) {
+        palette.addEventListener('touchstart', _touchDragPaletteStart, { passive: true });
+    }
+
     editor.addEventListener('touchstart', (e) => {
-        const cell = e.target instanceof Element ? e.target.closest('.em-grid-cell--item') : null;
-        if (!cell) return;
-        _lp = setTimeout(() => {
+        const cell = e.target instanceof Element ? e.target.closest('.em-grid-cell[data-em-flat-idx]') : null;
+        if (!cell || cell.id === 'em-grid-palette-placeholder') return;
+        const now = Date.now();
+        // Double-tap detection
+        if (_touchLastTapCell === cell && now - _touchLastTapTime < 350) {
+            _touchLastTapTime = 0; _touchLastTapCell = null;
             const itemId = cell.getAttribute('data-em-grid-id');
             const item = _embedMenuItems.find(r => r.item_id === itemId);
             if (item) _emShowGridItemModal(item);
-        }, 500);
+            return;
+        }
+        _touchLastTapTime = now;
+        _touchLastTapCell = cell;
+        const touch = e.touches[0];
+        _touchDrag = {
+            isPalette: false,
+            isEmptySlot: cell.classList.contains('em-grid-cell--empty'),
+            sourceCell: cell,
+            group: cell.getAttribute('data-em-grid-group'),
+            flatIdx: Number.parseInt(cell.getAttribute('data-em-flat-idx') || '0', 10),
+            itemId: cell.classList.contains('em-grid-cell--empty') ? 'placeholder' : cell.getAttribute('data-em-grid-id'),
+            startX: touch.clientX, startY: touch.clientY,
+            dragging: false, ghost: null, lastTarget: null,
+        };
     }, { passive: true });
-    editor.addEventListener('touchmove', () => { if (_lp) { clearTimeout(_lp); _lp = null; } }, { passive: true });
-    editor.addEventListener('touchend', () => { if (_lp) { clearTimeout(_lp); _lp = null; } });
+
+    editor.addEventListener('touchmove', (e) => {
+        if (!_touchDrag) return;
+        const touch = e.touches[0];
+        const dx = touch.clientX - _touchDrag.startX;
+        const dy = touch.clientY - _touchDrag.startY;
+        if (!_touchDrag.dragging && Math.sqrt(dx * dx + dy * dy) > 8) {
+            _touchDrag.dragging = true;
+            // Create ghost
+            const src = _touchDrag.sourceCell || document.getElementById('em-grid-palette-placeholder');
+            if (src) {
+                const ghost = src.cloneNode(true);
+                ghost.removeAttribute('id');
+                ghost.style.cssText = 'position:fixed;pointer-events:none;opacity:.7;z-index:9999;width:80px;height:80px;box-sizing:border-box;';
+                document.body.appendChild(ghost);
+                _touchDrag.ghost = ghost;
+                if (_touchDrag.sourceCell) _touchDrag.sourceCell.classList.add('is-dragging');
+            }
+        }
+        if (!_touchDrag.dragging) return;
+        e.preventDefault();
+        const ghost = _touchDrag.ghost;
+        if (ghost) { ghost.style.left = (touch.clientX - 40) + 'px'; ghost.style.top = (touch.clientY - 40) + 'px'; }
+        // Highlight target
+        if (_touchDrag.lastTarget) { _touchDrag.lastTarget.classList.remove('em-grid-cell--drag-over'); _touchDrag.lastTarget = null; }
+        const trash = document.getElementById('em-grid-trash');
+        if (trash) trash.classList.remove('drag-target-active');
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        const trashHit = el && trash && (el === trash || trash.contains(el));
+        if (trashHit && _touchDrag.isEmptySlot && !_touchDrag.isPalette) {
+            trash.classList.add('drag-target-active');
+        } else {
+            const cell = el instanceof Element ? el.closest('.em-grid-cell[data-em-flat-idx]') : null;
+            if (cell && cell !== _touchDrag.sourceCell) { cell.classList.add('em-grid-cell--drag-over'); _touchDrag.lastTarget = cell; }
+        }
+    }, { passive: false });
+
+    async function _touchDragCommit(touch) {
+        if (!_touchDrag || !_touchDrag.dragging) { _touchDragCleanup(); return; }
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        const trash = document.getElementById('em-grid-trash');
+        const trashHit = el && trash && (el === trash || trash.contains(el));
+        const dragId = _touchDrag.itemId;
+        const dragGroup = _touchDrag.group;
+        const sourceFlatIdx = _touchDrag.flatIdx;
+        const isEmptySlot = _touchDrag.isEmptySlot;
+        const isPalette = _touchDrag.isPalette;
+        _touchDragCleanup();
+
+        if (trashHit && isEmptySlot && !isPalette) {
+            await _emGridRemovePlaceholder(dragGroup, sourceFlatIdx);
+            return;
+        }
+        const cell = el instanceof Element ? el.closest('.em-grid-cell[data-em-flat-idx]') : null;
+        if (!cell) return;
+        const targetGroup = cell.getAttribute('data-em-grid-group');
+        const targetFlatIdx = Number.parseInt(cell.getAttribute('data-em-flat-idx') || '0', 10);
+        if (dragId === 'placeholder') {
+            if (isPalette) {
+                await _emGridInsertPlaceholder(targetGroup, targetFlatIdx);
+            } else {
+                if (targetGroup !== dragGroup) return;
+                await _emGridMoveEmptySlot(dragGroup, sourceFlatIdx, targetFlatIdx);
+            }
+        } else {
+            if (targetGroup !== dragGroup) return;
+            await _emGridMoveItem(dragId, dragGroup, targetFlatIdx, !cell.classList.contains('em-grid-cell--empty'));
+        }
+    }
+
+    editor.addEventListener('touchend', (e) => {
+        if (!_touchDrag) return;
+        const touch = e.changedTouches[0];
+        void _touchDragCommit(touch);
+    });
+    editor.addEventListener('touchcancel', () => _touchDragCleanup());
+    if (palette) {
+        palette.addEventListener('touchend', (e) => {
+            if (!_touchDrag) return;
+            const touch = e.changedTouches[0];
+            void _touchDragCommit(touch);
+        });
+        palette.addEventListener('touchcancel', () => _touchDragCleanup());
+    }
 }
 
 function _emOpenEdit(itemId) {
