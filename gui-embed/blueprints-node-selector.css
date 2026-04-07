@@ -206,6 +206,11 @@ blueprints-node-selector,
   background-image: var(--bp-ns-icon-asset, url('/fallback-ui/assets/icons/fallback.svg'));
 }
 
+.bp-ns-action-btn[data-action="diag-chip"][data-chip-visible="false"]::before {
+  opacity: .45;
+  filter: grayscale(.3);
+}
+
 .bp-ns-action-btn[data-action="hard-refresh"]::before {
   background-image: var(--bp-ns-icon-asset, url('/fallback-ui/assets/icons/fallback.svg'));
 }
