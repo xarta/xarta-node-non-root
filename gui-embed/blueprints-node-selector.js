@@ -915,7 +915,8 @@
         if (!Array.isArray(page)) return [];
         return page.map(item => {
           const key = typeof item === 'string' ? item : (item && item.key);
-          if (!key || !BUTTON_DEFS[key]) return null;
+          if (!key) return null;
+          if (key !== PLACEHOLDER_BUTTON_ACTION && !BUTTON_DEFS[key]) return null;
           if (item && typeof item === 'object' && (item.icon_asset || item.label)) {
             meta[key] = { icon_asset: item.icon_asset || null, label: item.label || null };
           }
@@ -1424,7 +1425,7 @@
     if (!Array.isArray(rawPages)) return [];
     return rawPages
       .map(page => Array.isArray(page)
-        ? page.filter(key => BUTTON_DEFS[key]).slice(0, maxPerPage)
+        ? page.filter(key => key === PLACEHOLDER_BUTTON_ACTION || BUTTON_DEFS[key]).slice(0, maxPerPage)
         : [])
       .filter(page => page.length > 0);
   }
@@ -1437,6 +1438,11 @@
       if (!Array.isArray(page) || !page.length) return;
       const out = [];
       for (const key of page) {
+        if (key === PLACEHOLDER_BUTTON_ACTION) {
+          out.push(key);
+          if (out.length >= maxPerPage) break;
+          continue;
+        }
         if (!BUTTON_DEFS[key] || seen.has(key)) continue;
         seen.add(key);
         out.push(key);
