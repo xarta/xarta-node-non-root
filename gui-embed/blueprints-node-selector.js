@@ -1453,7 +1453,9 @@
   function getButtonPages() {
     const maxPerPage = Math.max(1, Number(SELECTOR_CFG.pageSize) || 3);
     const currentAppKey = getCurrentAppActionKey();
-    const appPages = sanitizeSelectorPages(SELECTOR_CFG.pages, maxPerPage);
+    const appPages = _detectMenuContext() === 'embed'
+      ? sanitizeSelectorPages(SELECTOR_CFG.pages, maxPerPage)
+      : [];
     const embedPages = sanitizeSelectorPages(_dbSelectorPages, maxPerPage);
     const mergedPages = mergeSelectorPages(appPages, embedPages, maxPerPage);
     const visiblePages = mergedPages
