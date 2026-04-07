@@ -191,23 +191,23 @@ blueprints-node-selector,
 }
 
 .bp-ns-action-btn[data-action="synthesis"]::before {
-  background-image: var(--bp-ns-icon-asset, none);
+  background-image: var(--bp-ns-icon-asset, url('/fallback-ui/assets/icons/fallback.svg'));
 }
 
 .bp-ns-action-btn[data-action="probes"]::before {
-  background-image: var(--bp-ns-icon-asset, none);
+  background-image: var(--bp-ns-icon-asset, url('/fallback-ui/assets/icons/fallback.svg'));
 }
 
 .bp-ns-action-btn[data-action="settings"]::before {
-  background-image: var(--bp-ns-icon-asset, none);
+  background-image: var(--bp-ns-icon-asset, url('/fallback-ui/assets/icons/fallback.svg'));
 }
 
 .bp-ns-action-btn[data-action="diag-chip"]::before {
-  background-image: var(--bp-ns-icon-asset, none);
+  background-image: var(--bp-ns-icon-asset, url('/fallback-ui/assets/icons/fallback.svg'));
 }
 
 .bp-ns-action-btn[data-action="hard-refresh"]::before {
-  background-image: var(--bp-ns-icon-asset, none);
+  background-image: var(--bp-ns-icon-asset, url('/fallback-ui/assets/icons/fallback.svg'));
 }
 
 @keyframes bp-s25-stargate-spin {
