@@ -330,7 +330,7 @@ function _emGridCellHtml(item, flatIdx, group, pageSize) {
     const pageBadge = col === 0 ? `<span class="em-grid-cell__page-badge">P${Math.floor(flatIdx / pageSize)}</span>` : '';
 
     if (!item) {
-        return `<div class="em-grid-cell em-grid-cell--empty${embedClass}" draggable="true" data-em-grid-group="${group}" data-em-flat-idx="${flatIdx}" title="Empty slot">${pageBadge}<span class="em-grid-cell__slot-hint">&middot;</span></div>`;
+        return `<div class="em-grid-cell em-grid-cell--empty${embedClass}" draggable="true" data-em-grid-group="${group}" data-em-flat-idx="${flatIdx}" title="Empty slot">${pageBadge}<img class="em-grid-cell__placeholder-icon" src="/fallback-ui/assets/icons/ui/placeholder-circle-gold.svg" alt=""></div>`;
     }
 
     const iconHtml = item.icon_asset
@@ -608,6 +608,15 @@ function _wireEmGrid() {
             await _emGridRemovePlaceholder(group, flatIdx);
         });
     }
+
+    // Double-click → info modal (desktop)
+    editor.addEventListener('dblclick', (e) => {
+        const cell = e.target instanceof Element ? e.target.closest('.em-grid-cell--item') : null;
+        if (!cell) return;
+        const itemId = cell.getAttribute('data-em-grid-id');
+        const item = _embedMenuItems.find(r => r.item_id === itemId);
+        if (item) _emShowGridItemModal(item);
+    });
 
     // Long-press (touch) → info modal
     let _lp = null;
