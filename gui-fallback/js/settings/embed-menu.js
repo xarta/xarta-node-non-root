@@ -3,7 +3,7 @@
 
 'use strict';
 
-const _EM_COLS = ['icon', 'item_key', 'label', 'page_index', 'sort_order', 'icon_asset', 'sound_asset', 'enabled', '_move', '_edit'];
+const _EM_COLS = ['icon', 'item_key', 'label', 'menu_context', 'page_index', 'sort_order', 'icon_asset', 'sound_asset', 'enabled', '_move', '_edit'];
 
 let _EM_FIELD_META = null;
 let _emTableView = null;
@@ -49,6 +49,7 @@ function _emDefaultWidth(col) {
         case 'icon': return 44;
         case 'item_key': return 150;
         case 'label': return 160;
+        case 'menu_context': return 100;
         case 'page_index': return 72;
         case 'sort_order': return 72;
         case 'icon_asset': return 180;
@@ -63,6 +64,7 @@ function _emDefaultWidth(col) {
 function _emColumnType(col) {
     if (col.startsWith('_') || col === 'icon') return null;
     if (col === 'page_index' || col === 'sort_order' || col === 'enabled') return 'INTEGER';
+    if (col === 'menu_context') return 'TEXT';
     return 'TEXT';
 }
 
@@ -86,6 +88,7 @@ function _emSortValue(item, sortKey) {
         case 'label': return item.label || '';
         case 'page_index': return Number(item.page_index || 0);
         case 'sort_order': return Number(item.sort_order || 0);
+        case 'menu_context': return item.menu_context || 'embed';
         case 'icon_asset': return item.icon_asset || '';
         case 'sound_asset': return item.sound_asset || '';
         case 'enabled': return Number(item.enabled ? 1 : 0);
@@ -119,6 +122,11 @@ function _emBuildFieldMeta() {
             label: 'Label',
             sortKey: 'label',
             render: item => `<td>${_esc(item.label || '')}</td>`,
+        },
+        menu_context: {
+            label: 'Context',
+            sortKey: 'menu_context',
+            render: item => `<td><code>${_esc(item.menu_context || 'embed')}</code></td>`,
         },
         page_index: {
             label: 'Page',
