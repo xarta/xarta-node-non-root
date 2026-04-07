@@ -162,6 +162,54 @@ blueprints-node-selector,
   background-image: var(--bp-ns-icon-asset, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c8a84b' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='2'/%3E%3Ccircle cx='18' cy='6' r='2'/%3E%3Ccircle cx='12' cy='18' r='2'/%3E%3Cpath d='M7.8 7.2L10.6 15'/%3E%3Cpath d='M16.2 7.2L13.4 15'/%3E%3Cpath d='M8.3 6H15.7'/%3E%3C/svg%3E"));
 }
 
+/* ── DB-only context buttons (fallback-ui / db) — icon only via DB asset ── */
+.bp-ns-action-btn[data-action="synthesis"],
+.bp-ns-action-btn[data-action="probes"],
+.bp-ns-action-btn[data-action="settings"],
+.bp-ns-action-btn[data-action="diag-chip"],
+.bp-ns-action-btn[data-action="hard-refresh"] {
+  font-size: 0;
+  position: relative;
+}
+
+.bp-ns-action-btn[data-action="synthesis"]::before,
+.bp-ns-action-btn[data-action="probes"]::before,
+.bp-ns-action-btn[data-action="settings"]::before,
+.bp-ns-action-btn[data-action="diag-chip"]::before,
+.bp-ns-action-btn[data-action="hard-refresh"]::before {
+  content: '';
+  display: block;
+  width: 22px;
+  height: 22px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.bp-ns-action-btn[data-action="synthesis"]::before {
+  background-image: var(--bp-ns-icon-asset, none);
+}
+
+.bp-ns-action-btn[data-action="probes"]::before {
+  background-image: var(--bp-ns-icon-asset, none);
+}
+
+.bp-ns-action-btn[data-action="settings"]::before {
+  background-image: var(--bp-ns-icon-asset, none);
+}
+
+.bp-ns-action-btn[data-action="diag-chip"]::before {
+  background-image: var(--bp-ns-icon-asset, none);
+}
+
+.bp-ns-action-btn[data-action="hard-refresh"]::before {
+  background-image: var(--bp-ns-icon-asset, none);
+}
+
 @keyframes bp-s25-stargate-spin {
   from {
     transform: translate(-50%, -50%) rotate(0deg);
