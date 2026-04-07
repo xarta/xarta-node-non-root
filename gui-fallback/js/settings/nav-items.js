@@ -402,20 +402,20 @@ function _niBulkUploadPanelEl() {
     const panel = document.createElement('div');
     panel.className = 'ni-bulk-panel';
     panel.innerHTML = `
-        <div class="ni-bulk-header">Bulk asset upload</div>
-        <p class="ni-bulk-desc">Upload a <strong>.zip</strong>, <strong>.7z</strong>, or <strong>.tar.gz</strong> archive.
-        Files with matching extensions are extracted into the icons or sounds folder automatically.</p>
+        <div class="ni-bulk-header">Asset upload</div>
+        <p class="ni-bulk-desc">Upload a <strong>single file</strong> or an <strong>archive</strong> (<strong>.zip</strong>, <strong>.7z</strong>, <strong>.tar.gz</strong>).
+        Single files are copied directly to the selected folder. Archives are extracted with matching file extensions automatically.</p>
         <div class="ni-bulk-row">
             <select id="ni-bulk-type" style="padding:4px 8px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px">
                 <option value="icons">Icons (.svg .png .ico .jpg .webp)</option>
                 <option value="sounds">Sounds (.wav .mp3 .ogg .flac .webm .m4a)</option>
             </select>
             <label class="btn-small secondary ni-upload-label" style="cursor:pointer">
-                📦 Choose archive
-                <input type="file" id="ni-bulk-file" accept=".zip,.7z,.tar,.gz,.bz2,.tgz,.txz,.tar.gz,.tar.bz2,.tar.xz" style="display:none">
+                📦 Choose file or archive
+                <input type="file" id="ni-bulk-file" accept=".zip,.7z,.tar,.gz,.bz2,.tgz,.txz,.tar.gz,.tar.bz2,.tar.xz,.svg,.png,.ico,.jpg,.jpeg,.webp,.wav,.mp3,.ogg,.flac,.webm,.m4a" style="display:none">
             </label>
             <span id="ni-bulk-filename" style="font-size:12px;color:var(--text-dim)">No file chosen</span>
-            <button id="ni-bulk-upload-btn" class="btn-small" disabled>Upload &amp; extract</button>
+            <button id="ni-bulk-upload-btn" class="btn-small" disabled>Upload</button>
         </div>
         <p id="ni-bulk-status" style="font-size:12px;margin:4px 0 0"></p>
     `;
@@ -437,7 +437,7 @@ function _niBulkUploadPanelEl() {
         if (!file) return;
 
         uploadBtn.disabled = true;
-        statusEl.textContent = '⏳ Uploading and extracting…';
+        statusEl.textContent = '⏳ Uploading…';
         statusEl.style.color = '';
 
         const form = new FormData();
@@ -451,7 +451,11 @@ function _niBulkUploadPanelEl() {
             }
             const result = await resp.json();
             const names = result.extracted.join(', ') || '(none)';
-            if (result.count === 0) {
+            const mode = result.mode || 'archive';
+            if (mode === 'single') {
+                statusEl.textContent = `✓ Uploaded 1 file: ${names}`;
+                statusEl.style.color = 'var(--ok,#3fb950)';
+            } else if (result.count === 0) {
                 statusEl.textContent = `⚠ No matching files found in archive. Check the type dropdown matches your archive contents.`;
                 statusEl.style.color = 'var(--warn,#d29922)';
             } else {
@@ -484,6 +488,37 @@ async function _niOpenPicker(itemId, assetType) {
             await _niPickerSelect(itemId, assetType, assetPath);
         },
     });
+}
+
+async function _niOpenExplorePicker(assetType) {
+    AssetPicker.open({
+        title: `Explore ${assetType === 'icons' ? 'icons' : 'sounds'}`,
+        mode: 'explore',
+        kind: assetType === 'icons' ? 'icon' : 'sound',
+        browseUrl: `/api/v1/nav-items/assets?type=${assetType}`,
+        emptyMessage: 'No assets uploaded yet.',
+        onDelete: async (assetPath) => {
+            const type = assetType;
+            const resp = await apiFetch(`/api/v1/nav-items/assets?type=${encodeURIComponent(type)}&asset_path=${encodeURIComponent(assetPath)}`, {
+                method: 'DELETE',
+            });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
+                const detail = typeof err.detail === 'string'
+                    ? err.detail
+                    : (err.detail?.message || err.message || `HTTP ${resp.status}`);
+                throw new Error(detail);
+            }
+        },
+    });
+}
+
+function openNiExploreIcons() {
+    void _niOpenExplorePicker('icons');
+}
+
+function openNiExploreSounds() {
+    void _niOpenExplorePicker('sounds');
 }
 
 async function _niPickerSelect(itemId, assetType, assetPath) {

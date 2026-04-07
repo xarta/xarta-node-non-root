@@ -15,6 +15,7 @@
     { key: 'meta', rank: 55, patterns: [/\bmeta\b/] },
     { key: 'columns', rank: 60, patterns: [/\bcolumns\b/] },
     { key: 'pagination', rank: 62, patterns: [/\bpagination\b/] },
+    { key: 'explore-browse', rank: 63, patterns: [/\bexplore\b/, /\bbrowse\b/] },
     { key: 'grouping', rank: 64, patterns: [/\bgroup:\b/, /\bgroup\b/] },
     { key: 'horiz-scroll', rank: 66, patterns: [/horiz\s*scroll/, /scroll:\s*is\s*(on|off)/, /\bscroll\b/] },
     { key: 'visibility-filter', rank: 68, patterns: [/\bhide inactive\b/, /\bshow inactive\b/, /\binactive\b/, /\bhide obsolete\b/, /\bshow obsolete\b/, /\bobsolete\b/, /\bshow archived\b/, /\bshow active\b/, /\barchived\b/] },

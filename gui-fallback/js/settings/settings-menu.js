@@ -120,14 +120,18 @@ const SettingsMenuConfig = createHubMenu({
         // ── Nav Items page function items ──────────────────────────────────
         { id: 'ni-fn-refresh',   label: 'Refresh',           icon: HIEROGLYPHS.nefer,      fn: 'ni.refresh',   activeOn: ['nav-items'], parent: 'settings-layout', order: 0 },
         { id: 'ni-fn-cols',      label: 'Columns',           icon: HIEROGLYPHS.khaHorizon, fn: 'ni.columns',   activeOn: ['nav-items'], parent: 'settings-layout', order: 1 },
-        { id: 'ni-fn-scroll',    label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'ni.scroll', activeOn: ['nav-items'], parent: 'settings-layout', order: 2 },
-        { id: 'ni-fn-context',   label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'ni.context',   activeOn: ['nav-items'], parent: 'settings-layout', order: 3 },
+        { id: 'ni-fn-explore-icons', label: 'Explore Icons', icon: 'icons/ui/group-folder-blue.svg', fn: 'ni.exploreIcons', activeOn: ['nav-items'], parent: 'settings-layout', order: 2 },
+        { id: 'ni-fn-explore-sounds', label: 'Explore Sounds', icon: 'icons/ui/group-folder-blue.svg', fn: 'ni.exploreSounds', activeOn: ['nav-items'], parent: 'settings-layout', order: 3 },
+        { id: 'ni-fn-scroll',    label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'ni.scroll', activeOn: ['nav-items'], parent: 'settings-layout', order: 4 },
+        { id: 'ni-fn-context',   label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'ni.context',   activeOn: ['nav-items'], parent: 'settings-layout', order: 5 },
         // ── Form Controls page function items ────────────────────────────────
         { id: 'fc-fn-refresh',   label: 'Refresh',           icon: HIEROGLYPHS.nefer,      fn: 'fc.refresh',   activeOn: ['form-controls'], parent: 'settings-layout', order: 0 },
         { id: 'fc-fn-add',       label: 'Add Key',           icon: 'icons/ui/plus-blue.svg', fn: 'fc.add',     activeOn: ['form-controls'], parent: 'settings-layout', order: 1 },
         { id: 'fc-fn-cols',      label: 'Columns',           icon: HIEROGLYPHS.khaHorizon, fn: 'fc.columns',   activeOn: ['form-controls'], parent: 'settings-layout', order: 2 },
-        { id: 'fc-fn-scroll',    label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'fc.scroll', activeOn: ['form-controls'], parent: 'settings-layout', order: 3 },
-        { id: 'fc-fn-context',   label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'fc.context',   activeOn: ['form-controls'], parent: 'settings-layout', order: 4 },
+        { id: 'fc-fn-explore-icons', label: 'Explore Icons', icon: 'icons/ui/group-folder-blue.svg', fn: 'fc.exploreIcons', activeOn: ['form-controls'], parent: 'settings-layout', order: 3 },
+        { id: 'fc-fn-explore-sounds', label: 'Explore Sounds', icon: 'icons/ui/group-folder-blue.svg', fn: 'fc.exploreSounds', activeOn: ['form-controls'], parent: 'settings-layout', order: 4 },
+        { id: 'fc-fn-scroll',    label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'fc.scroll', activeOn: ['form-controls'], parent: 'settings-layout', order: 5 },
+        { id: 'fc-fn-context',   label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'fc.context',   activeOn: ['form-controls'], parent: 'settings-layout', order: 6 },
     ],
 });
 
@@ -511,6 +515,8 @@ SettingsMenuConfig.registerFunctions({
     // Nav Items
     'ni.refresh':   () => loadNavItems(),
     'ni.columns':   () => _openNiColsModal(),
+    'ni.exploreIcons': () => openNiExploreIcons(),
+    'ni.exploreSounds': () => openNiExploreSounds(),
     'ni.scroll':    () => toggleNiHorizontalScroll(),
     'ni.context':   () => openNiLayoutContextModal(),
 
@@ -518,6 +524,8 @@ SettingsMenuConfig.registerFunctions({
     'fc.refresh':   () => loadFormControls(),
     'fc.add':       () => _fcAddNew(),
     'fc.columns':   () => _openFcColsModal(),
+    'fc.exploreIcons': () => openFcExploreIcons(),
+    'fc.exploreSounds': () => openFcExploreSounds(),
     'fc.scroll':    () => toggleFcHorizontalScroll(),
     'fc.context':   () => openFcLayoutContextModal(),
 });

@@ -45,6 +45,7 @@ const AssetPicker = (() => {
         const filter = (els.filter.value || '').trim().toLowerCase();
         const sort = els.sort.value || 'name-asc';
         const isIcon = _cfg.kind === 'icon';
+        const isExploreMode = _cfg.mode === 'explore';
 
         const items = _assets
             .filter(asset => !filter || asset.filename.toLowerCase().includes(filter) || asset.path.toLowerCase().includes(filter))
@@ -74,7 +75,9 @@ const AssetPicker = (() => {
                         <small class="asset-picker-size">${_fmtBytes(asset.size || 0)}</small>
                     </div>
                     <div class="asset-picker-actions">
-                        <button class="btn-small asset-picker-select" type="button">Select</button>
+                        ${isExploreMode
+                            ? '<button class="btn-small secondary asset-picker-delete" type="button">Delete</button>'
+                            : '<button class="btn-small asset-picker-select" type="button">Select</button>'}
                     </div>
                 `;
             } else {
@@ -85,7 +88,9 @@ const AssetPicker = (() => {
                     </div>
                     <div class="asset-picker-actions">
                         <button class="asset-picker-play btn-small secondary" type="button" data-url="${_esc(asset.url)}" title="Preview">▶</button>
-                        <button class="btn-small asset-picker-select" type="button">Select</button>
+                        ${isExploreMode
+                            ? '<button class="btn-small secondary asset-picker-delete" type="button">Delete</button>'
+                            : '<button class="btn-small asset-picker-select" type="button">Select</button>'}
                     </div>
                 `;
                 card.querySelector('.asset-picker-play').addEventListener('click', (e) => {
@@ -97,11 +102,18 @@ const AssetPicker = (() => {
                 });
             }
 
-            card.querySelector('.asset-picker-select').addEventListener('click', (e) => {
-                e.stopPropagation();
-                void _select(asset.path);
-            });
-            card.addEventListener('click', () => { void _select(asset.path); });
+            if (isExploreMode) {
+                card.querySelector('.asset-picker-delete').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    void _deleteAsset(asset.path);
+                });
+            } else {
+                card.querySelector('.asset-picker-select').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    void _select(asset.path);
+                });
+                card.addEventListener('click', () => { void _select(asset.path); });
+            }
             els.grid.appendChild(card);
         }
     }
@@ -112,6 +124,32 @@ const AssetPicker = (() => {
         try {
             await _cfg.onSelect(assetPath);
             HubModal.close(_els().dialog);
+        } catch (e) {
+            _setStatus(`✗ ${e.message || e}`, 'var(--danger,#f85149)');
+        }
+    }
+
+    async function _deleteAsset(assetPath) {
+        if (!_cfg || typeof _cfg.onDelete !== 'function') return;
+
+        const confirmed = await HubDialogs.confirmDelete({
+            title: 'Delete Asset',
+            message: `Delete ${assetPath}?`,
+            detail: 'This removes the uploaded file from the shared asset folder. Assigned assets cannot be deleted until they are unassigned.',
+            confirmLabel: 'Delete',
+        });
+        if (!confirmed) return;
+
+        _setStatus('Deleting...', '');
+        try {
+            await _cfg.onDelete(assetPath);
+            _assets = _assets.filter(a => a.path !== assetPath);
+            _setStatus(`✓ Deleted ${assetPath}`, 'var(--ok,#3fb950)');
+            _render();
+            if (!_assets.length) {
+                const els = _els();
+                els.grid.innerHTML = `<p style="color:var(--text-dim);font-size:12px">${_cfg.emptyMessage || 'No assets uploaded yet.'}</p>`;
+            }
         } catch (e) {
             _setStatus(`✗ ${e.message || e}`, 'var(--danger,#f85149)');
         }
@@ -139,10 +177,10 @@ const AssetPicker = (() => {
         const els = _els();
         _cfg = cfg;
         _assets = [];
-        els.title.textContent = cfg.title || 'Choose asset';
+        els.title.textContent = cfg.title || (cfg.mode === 'explore' ? 'Explore assets' : 'Choose asset');
         els.filter.value = '';
         els.sort.value = 'name-asc';
-        _setStatus('');
+        _setStatus(cfg.mode === 'explore' ? 'Browse and preview assets. Use Delete to remove files.' : '');
         HubModal.open(els.dialog, {
             onOpen: () => {
                 els.filter.focus();

@@ -769,6 +769,36 @@ async function _fcOpenPicker(controlId, assetType) {
     });
 }
 
+async function _fcOpenExplorePicker(assetType) {
+    AssetPicker.open({
+        title: `Explore ${assetType === 'icons' ? 'icons' : 'sounds'}`,
+        mode: 'explore',
+        kind: assetType === 'icons' ? 'icon' : 'sound',
+        browseUrl: `/api/v1/form-controls/assets?type=${assetType}`,
+        emptyMessage: 'No assets uploaded yet.',
+        onDelete: async (assetPath) => {
+            const resp = await apiFetch(`/api/v1/form-controls/assets?type=${encodeURIComponent(assetType)}&asset_path=${encodeURIComponent(assetPath)}`, {
+                method: 'DELETE',
+            });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
+                const detail = typeof err.detail === 'string'
+                    ? err.detail
+                    : (err.detail?.message || err.message || `HTTP ${resp.status}`);
+                throw new Error(detail);
+            }
+        },
+    });
+}
+
+function openFcExploreIcons() {
+    void _fcOpenExplorePicker('icons');
+}
+
+function openFcExploreSounds() {
+    void _fcOpenExplorePicker('sounds');
+}
+
 async function _fcPickerSelect(controlId, assetType, assetPath) {
     const form = new FormData();
     form.append('control_id', controlId);
