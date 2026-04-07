@@ -931,15 +931,28 @@ tr.table-group-row td.table-group-cell {
 /* Asset cell layout (nav-items / form-controls) */
 .ni-asset-cell, .fc-asset-cell {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
   min-width: 0;
 }
 .ni-asset-btns, .fc-asset-btns {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 3px;
   flex-wrap: wrap;
+  flex: 0 0 auto;
+}
+
+.ni-asset-cell.is-collapsed .ni-asset-name,
+.ni-asset-cell.is-collapsed .ni-asset-none,
+.fc-asset-cell.is-collapsed .fc-asset-name,
+.fc-asset-cell.is-collapsed .fc-asset-none,
+.ni-asset-name.is-hidden,
+.ni-asset-none.is-hidden,
+.fc-asset-name.is-hidden,
+.fc-asset-none.is-hidden {
+  display: none;
 }
 
 .table-asset-menu-anchor {
@@ -959,8 +972,9 @@ tr.table-group-row td.table-group-cell {
   right: 0;
   z-index: 48;
   display: flex;
-  align-items: center;
-  gap: 4px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   padding: 6px;
   border-radius: 10px;
   border: 1px solid rgba(91, 156, 246, 0.34);
@@ -971,6 +985,21 @@ tr.table-group-row td.table-group-cell {
   white-space: nowrap;
   overflow: hidden;
   isolation: isolate;
+}
+
+.table-asset-menu-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.table-asset-menu-path {
+  font-size: 11px;
+  color: var(--text-dim);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
