@@ -341,7 +341,7 @@
 
   function isAppModeDiagVisible() {
     try {
-      return localStorage.getItem(LS_APP_MODE_DIAG_VISIBLE) !== '0';
+      return localStorage.getItem(LS_APP_MODE_DIAG_VISIBLE) === '1';
     } catch {
       return true;
     }
