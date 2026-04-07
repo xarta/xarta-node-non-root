@@ -1406,8 +1406,9 @@
 
   function getCurrentAppActionKey() {
     const pathname = window.location.pathname || '';
-    if (pathname === '/fallback-ui' || pathname.startsWith('/fallback-ui/')) return 'fallback-ui';
-    if (pathname === '/ui' || pathname.startsWith('/ui/')) return 'ui';
+    // DB sub-pages are a distinct context — don't suppress the app navigation button there
+    if ((pathname === '/fallback-ui' || pathname.startsWith('/fallback-ui/')) && !pathname.startsWith('/fallback-ui/db/')) return 'fallback-ui';
+    if ((pathname === '/ui' || pathname.startsWith('/ui/')) && !pathname.startsWith('/ui/db/')) return 'ui';
     return null;
   }
 
