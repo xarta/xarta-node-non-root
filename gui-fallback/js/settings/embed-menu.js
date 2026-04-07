@@ -511,7 +511,7 @@ function _wireEmGrid() {
             _emGridDragItemId = 'placeholder';
             _emGridDragGroup = null; // palette has no source group
             _emGridDragPlaceholderFlatIdx = null;
-            if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'copy'; e.dataTransfer.setData('text/plain', 'placeholder'); }
+            if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'all'; e.dataTransfer.setData('text/plain', 'placeholder'); }
         });
         palette.addEventListener('dragend', () => _emGridResetDrag(editor));
     }
