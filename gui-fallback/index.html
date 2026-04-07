@@ -32,6 +32,7 @@
   <link rel="stylesheet" href="css/font-roles.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/hub-modal.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/hub-dialogs.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/embed-menu-grid.css?v={{$assetVersion}}" />
 </head>
 <body class="bp-font-role-root">
 
@@ -1233,6 +1234,29 @@
         <tbody id="em-tbody"></tbody>
       </table>
     </div>
+    <!-- Embed Menu Grid Editor -->
+    <div id="em-grid-editor">
+      <div class="em-grid-hdr">
+        <h3 class="em-grid-hdr__title">Page Grid</h3>
+        <div class="em-grid-toolbar">
+          <div class="em-grid-cell em-grid-cell--palette" draggable="true" id="em-grid-palette-placeholder" title="Drag into the grid to insert an empty slot">
+            <span>&#xff0b;</span><span class="em-grid-cell__label">empty slot</span>
+          </div>
+          <div class="em-grid-trash" id="em-grid-trash" title="Drop an empty slot here to remove it">
+            <img src="/fallback-ui/assets/icons/ui/trash-gold.svg" alt="Remove slot" />
+          </div>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--text-dim);margin:0 0 14px">Drag tiles to reorder. Drop <strong>&#xff0b; empty slot</strong> onto a tile to insert a gap. Drag an empty tile to <img src="/fallback-ui/assets/icons/ui/trash-gold.svg" alt="trash" style="width:12px;height:12px;vertical-align:middle;opacity:.5"> to close it.</p>
+      <div id="em-grid-app-section" class="em-grid-section" hidden>
+        <p class="em-grid-section__label">App Pages</p>
+        <div id="em-grid-app" class="em-grid"></div>
+      </div>
+      <div id="em-grid-embed-section" class="em-grid-section">
+        <p class="em-grid-section__label">Embed Pages</p>
+        <div id="em-grid-embed" class="em-grid"></div>
+      </div>
+    </div>
   </section>
 
   <dialog class="hub-modal hub-dialog" data-tone="info" id="em-cols-modal">
@@ -1303,6 +1327,20 @@
     <div class="hub-modal-footer">
       <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Cancel</button>
       <button class="hub-modal-btn" type="button" id="em-edit-save-btn">Save</button>
+    </div>
+  </dialog>
+
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="em-grid-info-modal">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">INFO</span>
+        <span class="hub-dialog-title-text" id="em-grid-info-title"></span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body" id="em-grid-info-body"></div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button">Close</button>
     </div>
   </dialog>
 

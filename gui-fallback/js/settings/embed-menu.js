@@ -240,6 +240,7 @@ async function loadEmbedMenuItems() {
         }
 
         renderEmbedMenuItems();
+        renderEmGrid();
         _emSetStatus('');
     } catch (e) {
         _emSetStatus(`✗ ${e.message}`, 'var(--danger,#f85149)');
@@ -296,6 +297,332 @@ function _emEditEls() {
 
 let _editingEmbedMenuItemId = null;
 let _emDragItemId = null;
+
+// ── Grid editor state ───────────────────────────────────────────────────────
+let _emGridDragItemId = null;           // item_id | 'placeholder' | null
+let _emGridDragGroup = null;            // 'embed' | 'fallback-ui' | null
+let _emGridDragPlaceholderFlatIdx = null; // flat index of dragged empty slot, or null
+
+function _emGetPageSize() {
+    const ps = window.BLUEPRINTS_SELECTOR_BUTTONS && window.BLUEPRINTS_SELECTOR_BUTTONS.pageSize;
+    return (ps && Number.isFinite(ps) && ps > 0) ? Math.round(ps) : 3;
+}
+
+function _emGridItemsByGroup(group) {
+    return group === 'embed'
+        ? _embedMenuItems.filter(item => (item.menu_context || 'embed') === 'embed')
+        : _embedMenuItems.filter(item => (item.menu_context || 'embed') !== 'embed');
+}
+
+/** Build sparse Map<flatIdx, item>.  flatIdx = page_index * pageSize + sort_order. */
+function _emBuildFlatMap(items, pageSize) {
+    const map = new Map();
+    for (const item of _emSortItems(items)) {
+        const flatIdx = (item.page_index || 0) * pageSize + (item.sort_order || 0);
+        if (!map.has(flatIdx)) map.set(flatIdx, item); // first wins on collision
+    }
+    return map;
+}
+
+function _emGridCellHtml(item, flatIdx, group, pageSize) {
+    const col = flatIdx % pageSize;
+    const embedClass = group === 'embed' ? ' em-grid-cell--embed' : '';
+    const pageBadge = col === 0 ? `<span class="em-grid-cell__page-badge">P${Math.floor(flatIdx / pageSize)}</span>` : '';
+
+    if (!item) {
+        return `<div class="em-grid-cell em-grid-cell--empty${embedClass}" draggable="true" data-em-grid-group="${group}" data-em-flat-idx="${flatIdx}" title="Empty slot">${pageBadge}<span class="em-grid-cell__slot-hint">&middot;</span></div>`;
+    }
+
+    const iconHtml = item.icon_asset
+        ? `<img class="em-grid-cell__icon" src="${_esc(_emAssetUrl(item.icon_asset, item.updated_at))}" alt="" data-icon-fallback="1">`
+        : item.icon_emoji
+            ? `<span class="em-grid-cell__emoji">${_esc(item.icon_emoji)}</span>`
+            : `<span class="em-grid-cell__icon em-grid-cell__icon--blank"></span>`;
+
+    const disabledClass = item.enabled ? '' : ' em-grid-cell--disabled';
+    return `<div class="em-grid-cell em-grid-cell--item${embedClass}${disabledClass}" draggable="true" data-em-grid-id="${_esc(item.item_id)}" data-em-grid-group="${group}" data-em-flat-idx="${flatIdx}" title="${_esc(item.label || item.item_key)}">${pageBadge}${iconHtml}<span class="em-grid-cell__label">${_esc(item.label || item.item_key)}</span></div>`;
+}
+
+function _emRenderGroupGrid(group, containerId, pageSize) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const sectionEl = container.closest('.em-grid-section');
+    const items = _emGridItemsByGroup(group);
+    if (!items.length) {
+        if (sectionEl) sectionEl.hidden = (group !== 'embed');
+        container.innerHTML = '';
+        return;
+    }
+    if (sectionEl) sectionEl.hidden = false;
+    container.style.setProperty('--em-grid-cols', String(pageSize));
+
+    const flatMap = _emBuildFlatMap(items, pageSize);
+    const maxFlat = Math.max(...flatMap.keys());
+    const totalCells = (Math.floor(maxFlat / pageSize) + 2) * pageSize; // one extra page row
+    const parts = [];
+    for (let i = 0; i < totalCells; i++) {
+        parts.push(_emGridCellHtml(flatMap.get(i) ?? null, i, group, pageSize));
+    }
+    container.innerHTML = parts.join('');
+
+    container.querySelectorAll('img[data-icon-fallback="1"]').forEach(img => {
+        img.addEventListener('error', function onErr() {
+            this.removeEventListener('error', onErr);
+            this.src = '/fallback-ui/assets/icons/fallback.svg';
+        });
+    });
+}
+
+function renderEmGrid() {
+    const pageSize = _emGetPageSize();
+    _emRenderGroupGrid('fallback-ui', 'em-grid-app', pageSize);
+    _emRenderGroupGrid('embed', 'em-grid-embed', pageSize);
+}
+
+function _emGridResetDrag(editor) {
+    _emGridDragItemId = null;
+    _emGridDragGroup = null;
+    _emGridDragPlaceholderFlatIdx = null;
+    if (editor) {
+        editor.querySelectorAll('.is-dragging, .em-grid-cell--drag-over').forEach(el => {
+            el.classList.remove('is-dragging', 'em-grid-cell--drag-over');
+        });
+    }
+}
+
+async function _emGridSaveChanges(items, newFlatMap, pageSize) {
+    const updates = [];
+    for (const [flatIdx, item] of newFlatMap) {
+        const newPage = Math.floor(flatIdx / pageSize);
+        const newSort = flatIdx % pageSize;
+        if (newPage !== (item.page_index || 0) || newSort !== (item.sort_order || 0)) {
+            updates.push({ item_id: item.item_id, page_index: newPage, sort_order: newSort });
+        }
+    }
+    if (!updates.length) return;
+
+    _emSetStatus('Saving…');
+    try {
+        for (const upd of updates) {
+            const resp = await apiFetch(`/api/v1/embed-menu-items/${encodeURIComponent(upd.item_id)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ page_index: upd.page_index, sort_order: upd.sort_order }),
+            });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        }
+        await loadEmbedMenuItems();
+        _emNotifySelectorRefresh();
+        _emSetStatus('Saved.', 'var(--success,#2ea043)');
+    } catch (e) {
+        _emSetStatus(`✗ ${e.message}`, 'var(--danger,#f85149)');
+    }
+}
+
+/** Move item to targetFlatIdx. If insertShift=true and slot is occupied, shift >= target right. */
+async function _emGridMoveItem(dragItemId, group, targetFlatIdx, insertShift) {
+    const pageSize = _emGetPageSize();
+    const items = _emGridItemsByGroup(group);
+    const flatMap = _emBuildFlatMap(items, pageSize);
+    const dragItem = items.find(item => item.item_id === dragItemId);
+    if (!dragItem) return;
+    const sourceFlatIdx = (dragItem.page_index || 0) * pageSize + (dragItem.sort_order || 0);
+    if (sourceFlatIdx === targetFlatIdx) return;
+
+    flatMap.delete(sourceFlatIdx);
+    if (insertShift && flatMap.has(targetFlatIdx)) {
+        const toShift = [...flatMap.entries()].filter(([idx]) => idx >= targetFlatIdx).sort((a, b) => b[0] - a[0]);
+        for (const [idx, itm] of toShift) { flatMap.delete(idx); flatMap.set(idx + 1, itm); }
+    }
+    flatMap.set(targetFlatIdx, dragItem);
+    await _emGridSaveChanges(items, flatMap, pageSize);
+}
+
+/** Insert gap at targetFlatIdx, shifting all items >= targetFlatIdx right by one. */
+async function _emGridInsertPlaceholder(group, targetFlatIdx) {
+    const pageSize = _emGetPageSize();
+    const items = _emGridItemsByGroup(group);
+    const flatMap = _emBuildFlatMap(items, pageSize);
+    const toShift = [...flatMap.entries()].filter(([idx]) => idx >= targetFlatIdx).sort((a, b) => b[0] - a[0]);
+    for (const [idx, itm] of toShift) { flatMap.delete(idx); flatMap.set(idx + 1, itm); }
+    // targetFlatIdx is now vacant — the gap
+    await _emGridSaveChanges(items, flatMap, pageSize);
+}
+
+/** Move an existing empty slot from fromFlatIdx to toFlatIdx (close old gap, open new one). */
+async function _emGridMoveEmptySlot(group, fromFlatIdx, toFlatIdx) {
+    if (fromFlatIdx === toFlatIdx) return;
+    const pageSize = _emGetPageSize();
+    const items = _emGridItemsByGroup(group);
+    const flatMap = _emBuildFlatMap(items, pageSize);
+    if (flatMap.has(fromFlatIdx)) return; // not actually empty
+
+    // Close old gap (shift items after it left)
+    const step1 = [...flatMap.entries()].filter(([idx]) => idx > fromFlatIdx).sort((a, b) => a[0] - b[0]);
+    for (const [idx, itm] of step1) { flatMap.delete(idx); flatMap.set(idx - 1, itm); }
+    // Adjust target for the shift
+    const adjTarget = toFlatIdx > fromFlatIdx ? toFlatIdx - 1 : toFlatIdx;
+    // Open new gap (shift items at/after adjTarget right)
+    const step2 = [...flatMap.entries()].filter(([idx]) => idx >= adjTarget).sort((a, b) => b[0] - a[0]);
+    for (const [idx, itm] of step2) { flatMap.delete(idx); flatMap.set(idx + 1, itm); }
+    await _emGridSaveChanges(items, flatMap, pageSize);
+}
+
+/** Remove empty slot at flatIdx, closing the gap by shifting items after it left. */
+async function _emGridRemovePlaceholder(group, flatIdx) {
+    const pageSize = _emGetPageSize();
+    const items = _emGridItemsByGroup(group);
+    const flatMap = _emBuildFlatMap(items, pageSize);
+    if (flatMap.has(flatIdx)) return; // not actually empty
+
+    const toShift = [...flatMap.entries()].filter(([idx]) => idx > flatIdx).sort((a, b) => a[0] - b[0]);
+    for (const [idx, itm] of toShift) { flatMap.delete(idx); flatMap.set(idx - 1, itm); }
+    await _emGridSaveChanges(items, flatMap, pageSize);
+}
+
+function _emShowGridItemModal(item) {
+    const modal = document.getElementById('em-grid-info-modal');
+    if (!modal) return;
+    const titleEl = document.getElementById('em-grid-info-title');
+    const bodyEl = document.getElementById('em-grid-info-body');
+    if (titleEl) titleEl.textContent = item.label || item.item_key;
+    if (bodyEl) {
+        bodyEl.innerHTML = `<dl class="em-grid-info-dl">`
+            + `<dt>Key</dt><dd><code>${_esc(item.item_key)}</code></dd>`
+            + `<dt>Context</dt><dd><code>${_esc(item.menu_context || 'embed')}</code></dd>`
+            + `<dt>Page</dt><dd>${item.page_index || 0}</dd>`
+            + `<dt>Order</dt><dd>${item.sort_order || 0}</dd>`
+            + (item.icon_asset ? `<dt>Icon</dt><dd><code>${_esc(item.icon_asset)}</code></dd>` : '')
+            + (!item.enabled ? `<dt>Status</dt><dd style="color:var(--danger,#f85149)">Disabled</dd>` : '')
+            + `</dl>`;
+    }
+    HubModal.open(modal);
+}
+
+function _wireEmGrid() {
+    const editor = document.getElementById('em-grid-editor');
+    if (!editor || editor.dataset.gridBound) return;
+    editor.dataset.gridBound = '1';
+
+    // Palette placeholder dragstart
+    const palette = document.getElementById('em-grid-palette-placeholder');
+    if (palette) {
+        palette.addEventListener('dragstart', (e) => {
+            _emGridDragItemId = 'placeholder';
+            _emGridDragGroup = null; // palette has no source group
+            _emGridDragPlaceholderFlatIdx = null;
+            if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'copy'; e.dataTransfer.setData('text/plain', 'placeholder'); }
+        });
+        palette.addEventListener('dragend', () => _emGridResetDrag(editor));
+    }
+
+    // Cell dragstart (items and empty slots)
+    editor.addEventListener('dragstart', (e) => {
+        const cell = e.target instanceof Element ? e.target.closest('.em-grid-cell[data-em-flat-idx]') : null;
+        if (!cell || cell.id === 'em-grid-palette-placeholder') return;
+        const group = cell.getAttribute('data-em-grid-group');
+        if (!group) return;
+        if (cell.classList.contains('em-grid-cell--empty')) {
+            _emGridDragItemId = 'placeholder';
+            _emGridDragPlaceholderFlatIdx = Number.parseInt(cell.getAttribute('data-em-flat-idx') || '-1', 10);
+        } else {
+            _emGridDragItemId = cell.getAttribute('data-em-grid-id');
+            _emGridDragPlaceholderFlatIdx = null;
+        }
+        _emGridDragGroup = group;
+        cell.classList.add('is-dragging');
+        if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', _emGridDragItemId || ''); }
+    });
+
+    // Dragover cells
+    editor.addEventListener('dragover', (e) => {
+        const cell = e.target instanceof Element ? e.target.closest('.em-grid-cell[data-em-flat-idx]') : null;
+        if (!cell || cell.id === 'em-grid-palette-placeholder' || !_emGridDragItemId) return;
+        const group = cell.getAttribute('data-em-grid-group');
+        if (!group) return;
+        // Item drag: same group only. Empty-cell drag: same group only. Palette placeholder: any group.
+        if (_emGridDragItemId !== 'placeholder' && group !== _emGridDragGroup) return;
+        if (_emGridDragItemId === 'placeholder' && _emGridDragPlaceholderFlatIdx !== null && group !== _emGridDragGroup) return;
+        // Don't drag item over itself
+        const targetId = cell.getAttribute('data-em-grid-id');
+        if (targetId && targetId === _emGridDragItemId) return;
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+        cell.classList.add('em-grid-cell--drag-over');
+    });
+
+    editor.addEventListener('dragleave', (e) => {
+        const cell = e.target instanceof Element ? e.target.closest('.em-grid-cell') : null;
+        if (cell) cell.classList.remove('em-grid-cell--drag-over');
+    });
+
+    editor.addEventListener('drop', async (e) => {
+        const cell = e.target instanceof Element ? e.target.closest('.em-grid-cell[data-em-flat-idx]') : null;
+        if (!cell || !_emGridDragItemId) return;
+        const group = cell.getAttribute('data-em-grid-group');
+        if (!group) return;
+        const targetFlatIdx = Number.parseInt(cell.getAttribute('data-em-flat-idx') || '0', 10);
+        e.preventDefault();
+        cell.classList.remove('em-grid-cell--drag-over');
+
+        const dragId = _emGridDragItemId;
+        const dragGroup = _emGridDragGroup;
+        const placeholderFlatIdx = _emGridDragPlaceholderFlatIdx;
+        _emGridResetDrag(editor);
+
+        if (dragId === 'placeholder') {
+            if (placeholderFlatIdx !== null) {
+                // Moving an existing empty slot
+                if (dragGroup !== group) return;
+                await _emGridMoveEmptySlot(group, placeholderFlatIdx, targetFlatIdx);
+            } else {
+                // From palette — insert new gap
+                await _emGridInsertPlaceholder(group, targetFlatIdx);
+            }
+        } else {
+            if (group !== dragGroup) return;
+            const isTargetEmpty = cell.classList.contains('em-grid-cell--empty');
+            await _emGridMoveItem(dragId, group, targetFlatIdx, !isTargetEmpty);
+        }
+    });
+
+    editor.addEventListener('dragend', () => _emGridResetDrag(editor));
+
+    // Trash drop zone — only accepts empty slot drag
+    const trash = document.getElementById('em-grid-trash');
+    if (trash) {
+        trash.addEventListener('dragover', (e) => {
+            if (_emGridDragItemId !== 'placeholder' || _emGridDragPlaceholderFlatIdx === null) return;
+            e.preventDefault();
+            trash.classList.add('drag-target-active');
+            if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+        });
+        trash.addEventListener('dragleave', () => trash.classList.remove('drag-target-active'));
+        trash.addEventListener('drop', async (e) => {
+            trash.classList.remove('drag-target-active');
+            const group = _emGridDragGroup;
+            const flatIdx = _emGridDragPlaceholderFlatIdx;
+            _emGridResetDrag(editor);
+            if (!group || flatIdx === null) return;
+            e.preventDefault();
+            await _emGridRemovePlaceholder(group, flatIdx);
+        });
+    }
+
+    // Long-press (touch) → info modal
+    let _lp = null;
+    editor.addEventListener('touchstart', (e) => {
+        const cell = e.target instanceof Element ? e.target.closest('.em-grid-cell--item') : null;
+        if (!cell) return;
+        _lp = setTimeout(() => {
+            const itemId = cell.getAttribute('data-em-grid-id');
+            const item = _embedMenuItems.find(r => r.item_id === itemId);
+            if (item) _emShowGridItemModal(item);
+        }, 500);
+    }, { passive: true });
+    editor.addEventListener('touchmove', () => { if (_lp) { clearTimeout(_lp); _lp = null; } }, { passive: true });
+    editor.addEventListener('touchend', () => { if (_lp) { clearTimeout(_lp); _lp = null; } });
+}
 
 function _emOpenEdit(itemId) {
     const item = _embedMenuItems.find(row => row.item_id === itemId);
@@ -631,4 +958,5 @@ async function openEmExploreSounds() {
     _emBuildFieldMeta();
     _ensureEmTableView();
     _ensureEmLayoutController()?.init();
+    _wireEmGrid();
 })();
