@@ -1798,8 +1798,8 @@
 
     const placeholderCount = Math.max(0, pageSlotCount - currentPageButtons.length);
     const slotButtons = [
-      ...Array.from({ length: placeholderCount }, (_, index) => ({ key: PLACEHOLDER_BUTTON_ACTION, placeholderIndex: index })),
       ...currentPageButtons.map(key => ({ key })),
+      ...Array.from({ length: placeholderCount }, (_, index) => ({ key: PLACEHOLDER_BUTTON_ACTION, placeholderIndex: index })),
     ];
 
     target.innerHTML = slotButtons.map(entry => {
