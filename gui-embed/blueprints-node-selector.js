@@ -337,6 +337,7 @@
   let _fallbackCacheBusy = false;
   let _ribbonScrollLeft = 0;
   let _dbSelectorPages = null;
+  let _dbItemMeta = {};
 
   function isAppModeDiagVisible() {
     try {
@@ -901,17 +902,35 @@
     });
   }
 
+  function _dbAssetBase() {
+    const base = (API_BASE || window.location.origin).replace(/\/$/, '');
+    return `${base}/fallback-ui/assets/`;
+  }
+
   function _sanitizeDbPages(payload) {
     if (!payload || !Array.isArray(payload.pages)) return null;
+    const meta = {};
     const pages = payload.pages
-      .map(page => Array.isArray(page) ? page.filter(key => BUTTON_DEFS[key]) : [])
+      .map(page => {
+        if (!Array.isArray(page)) return [];
+        return page.map(item => {
+          const key = typeof item === 'string' ? item : (item && item.key);
+          if (!key || !BUTTON_DEFS[key]) return null;
+          if (item && typeof item === 'object' && (item.icon_asset || item.label)) {
+            meta[key] = { icon_asset: item.icon_asset || null, label: item.label || null };
+          }
+          return key;
+        }).filter(Boolean);
+      })
       .filter(page => page.length > 0);
+    _dbItemMeta = meta;
     return pages.length ? pages : null;
   }
 
   async function refreshDbSelectorPages() {
     if (!SELECTOR_CFG.enableDbMenuConfig) {
       _dbSelectorPages = null;
+      _dbItemMeta = {};
       return;
     }
     try {
@@ -1488,7 +1507,14 @@
   function renderActionButtonHtml(key) {
     const def = BUTTON_DEFS[key];
     if (!def) return '';
-    return `<button class="bp-ns-action-btn" data-action="${esc(key)}" title="${esc(def.label)}" aria-label="${esc(def.label)}">${esc(def.icon)}</button>`;
+    const meta = _dbItemMeta[key] || {};
+    const label = meta.label || def.label;
+    let styleAttr = '';
+    if (meta.icon_asset) {
+      const url = `${_dbAssetBase()}${meta.icon_asset}`;
+      styleAttr = ` style="--bp-ns-icon-asset:url('${url}');--bp-ns-icon-filter:none"`;
+    }
+    return `<button class="bp-ns-action-btn" data-action="${esc(key)}" title="${esc(label)}" aria-label="${esc(label)}"${styleAttr}>${esc(def.icon)}</button>`;
   }
 
   function measureRibbonViewportWidth(target, slotCount) {
@@ -1770,7 +1796,14 @@
         return `<button class="bp-ns-action-btn bp-ns-action-btn--placeholder" data-action="${PLACEHOLDER_BUTTON_ACTION}" data-placeholder-index="${entry.placeholderIndex}" title="Empty slot" aria-label="Empty slot" aria-hidden="true" disabled tabindex="-1">•</button>`;
       }
       const def = BUTTON_DEFS[entry.key];
-      return `<button class="bp-ns-action-btn" data-action="${esc(entry.key)}" title="${esc(def.label)}" aria-label="${esc(def.label)}">${esc(def.icon)}</button>`;
+      const meta = _dbItemMeta[entry.key] || {};
+      const label = meta.label || def.label;
+      let styleAttr = '';
+      if (meta.icon_asset) {
+        const url = `${_dbAssetBase()}${meta.icon_asset}`;
+        styleAttr = ` style="--bp-ns-icon-asset:url('${url}');--bp-ns-icon-filter:none"`;
+      }
+      return `<button class="bp-ns-action-btn" data-action="${esc(entry.key)}" title="${esc(label)}" aria-label="${esc(label)}"${styleAttr}>${esc(def.icon)}</button>`;
     }).join('');
 
     if (showPagingButton) {
