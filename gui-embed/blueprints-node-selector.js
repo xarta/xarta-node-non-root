@@ -927,6 +927,13 @@
     return pages.length ? pages : null;
   }
 
+  function _detectMenuContext() {
+    const path = (typeof window !== 'undefined' && window.location && window.location.pathname) || '';
+    if (/\/(fallback-ui|ui)\/db(\/|$)/.test(path)) return 'db';
+    if (/\/(fallback-ui|ui)(\/|$)/.test(path)) return 'fallback-ui';
+    return 'embed';
+  }
+
   async function refreshDbSelectorPages() {
     if (!SELECTOR_CFG.enableDbMenuConfig) {
       _dbSelectorPages = null;
@@ -934,7 +941,8 @@
       return;
     }
     try {
-      const resp = await _authFetch('/api/v1/embed-menu-items/config', {
+      const ctx = _detectMenuContext();
+      const resp = await _authFetch(`/api/v1/embed-menu-items/config?context=${encodeURIComponent(ctx)}`, {
         method: 'GET',
         signal: AbortSignal.timeout(6000),
       });
