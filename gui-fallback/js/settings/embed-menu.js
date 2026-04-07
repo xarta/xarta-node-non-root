@@ -637,7 +637,7 @@ function _wireEmGrid() {
         if (!cell) return;
         const itemId = cell.getAttribute('data-em-grid-id');
         const item = _embedMenuItems.find(r => r.item_id === itemId);
-        if (item) _emShowGridItemModal(item);
+        if (item) requestAnimationFrame(() => _emShowGridItemModal(item));
     });
 
     // Touch drag + double-tap (mobile)
@@ -678,7 +678,7 @@ function _wireEmGrid() {
             _touchLastTapTime = 0; _touchLastTapCell = null;
             const itemId = cell.getAttribute('data-em-grid-id');
             const item = _embedMenuItems.find(r => r.item_id === itemId);
-            if (item) _emShowGridItemModal(item);
+            if (item) setTimeout(() => _emShowGridItemModal(item), 0);
             return;
         }
         _touchLastTapTime = now;
