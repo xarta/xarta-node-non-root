@@ -96,8 +96,8 @@
 
 /* Palette tile (source for new empty slots) */
 .em-grid-cell--palette {
-    width: 36px;
-    height: 36px;
+    width: 80px;
+    height: 80px;
     aspect-ratio: 1 / 1;
     min-height: unset;
     padding: 0;
@@ -180,8 +180,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 34px;
-    height: 34px;
+    width: 80px;
+    height: 80px;
     border: 1px dashed var(--border);
     border-radius: var(--radius);
     opacity: .35;
@@ -198,8 +198,8 @@
 }
 
 .em-grid-trash img {
-    width: 18px;
-    height: 18px;
+    width: 48px;
+    height: 48px;
     pointer-events: none;
 }
 
