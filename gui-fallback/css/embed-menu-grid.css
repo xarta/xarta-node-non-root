@@ -44,6 +44,7 @@
     display: grid;
     grid-template-columns: repeat(var(--em-grid-cols, 3), minmax(0, 80px));
     gap: 5px;
+    justify-content: center;
 }
 
 .em-grid-cell {
