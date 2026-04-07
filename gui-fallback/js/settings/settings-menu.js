@@ -39,6 +39,7 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'ai-providers',    label: 'AI Providers',   icon: HIEROGLYPHS.falcon,     pageLabel: 'AI Providers',    parent: 'settings',  order: 1 },
         { id: 'nav-items',       label: 'Nav Items',      icon: HIEROGLYPHS.naosShrine, pageLabel: 'Nav Items',       parent: 'settings',  order: 2 },
         { id: 'form-controls',   label: 'Form Controls',  icon: HIEROGLYPHS.adze,       pageLabel: 'Form Controls',   parent: 'settings',  order: 3 },
+        { id: 'embed-menu',      label: 'Embed Menu',     icon: HIEROGLYPHS.kheper,     pageLabel: 'Embed Menu',      parent: 'settings',  order: 4 },
         { id: 'keys',            label: 'Keys',           icon: HIEROGLYPHS.ankh,       pageLabel: 'SSH Keys',        parent: null,        order: 2 },
         { id: 'certs',           label: 'Certs',          icon: HIEROGLYPHS.shen,       pageLabel: 'Certificates',    parent: 'keys',      order: 0 },
         { id: 'docs',            label: 'Docs',           icon: HIEROGLYPHS.papyrus,    pageLabel: 'Docs',            parent: null,        order: 3 },
@@ -132,6 +133,13 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'fc-fn-explore-sounds', label: 'Explore Sounds', icon: 'icons/ui/group-folder-blue.svg', fn: 'fc.exploreSounds', activeOn: ['form-controls'], parent: 'settings-layout', order: 4 },
         { id: 'fc-fn-scroll',    label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'fc.scroll', activeOn: ['form-controls'], parent: 'settings-layout', order: 5 },
         { id: 'fc-fn-context',   label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'fc.context',   activeOn: ['form-controls'], parent: 'settings-layout', order: 6 },
+
+        // ── Embed Menu page function items ─────────────────────────────────
+        { id: 'em-fn-refresh',   label: 'Refresh',           icon: HIEROGLYPHS.nefer,      fn: 'em.refresh',      activeOn: ['embed-menu'], parent: 'settings-layout', order: 0 },
+        { id: 'em-fn-cols',      label: 'Columns',           icon: HIEROGLYPHS.khaHorizon, fn: 'em.columns',      activeOn: ['embed-menu'], parent: 'settings-layout', order: 1 },
+        { id: 'em-fn-explore-icons', label: 'Explore Icons', icon: 'icons/ui/group-folder-blue.svg', fn: 'em.exploreIcons', activeOn: ['embed-menu'], parent: 'settings-layout', order: 2 },
+        { id: 'em-fn-explore-sounds', label: 'Explore Sounds', icon: 'icons/ui/group-folder-blue.svg', fn: 'em.exploreSounds', activeOn: ['embed-menu'], parent: 'settings-layout', order: 3 },
+        { id: 'em-fn-context',   label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'em.context',      activeOn: ['embed-menu'], parent: 'settings-layout', order: 4 },
     ],
 });
 
@@ -528,6 +536,13 @@ SettingsMenuConfig.registerFunctions({
     'fc.exploreSounds': () => openFcExploreSounds(),
     'fc.scroll':    () => toggleFcHorizontalScroll(),
     'fc.context':   () => openFcLayoutContextModal(),
+
+    // Embed Menu
+    'em.refresh':   () => loadEmbedMenuItems(),
+    'em.columns':   () => _openEmColsModal(),
+    'em.exploreIcons': () => openEmExploreIcons(),
+    'em.exploreSounds': () => openEmExploreSounds(),
+    'em.context':   () => openEmLayoutContextModal(),
 });
 
 SettingsMenuConfig.registerLabelGetters({

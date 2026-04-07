@@ -18,6 +18,7 @@ let _sshTargets = [];
 let _manualLinks = [];
 let _aiProviders = [];
 let _aiAssignments = [];
+let _embedMenuItems = [];
 let _bookmarks = [];
 let _bmVisits  = [];
 let _keys = [];

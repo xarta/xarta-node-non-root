@@ -197,6 +197,7 @@ function switchTab(tab) {
   if (tab === 'ai-providers' && !_aiProviders.length)      loadAiProviders();
   if (tab === 'nav-items'    && !_navItems.length)         loadNavItems();
   if (tab === 'form-controls' && !_fcItems.length)         loadFormControls();
+  if (tab === 'embed-menu'   && !_embedMenuItems.length)   loadEmbedMenuItems();
   if (tab === 'bookmarks-main'  && !_bookmarks.length)  loadBookmarks();
   if (tab === 'bookmarks-history')                       loadVisits();
   if (tab === 'bookmarks-embeddings')                    _bmLoadEmbedCfg();
@@ -238,7 +239,14 @@ document.addEventListener('DOMContentLoaded', () => {
   if (typeof FormControlManager !== 'undefined') { FormControlManager.init(); FormControlManager.load(); }
   if (typeof HubModal !== 'undefined') HubModal.init();
   const _urlGroup = new URLSearchParams(window.location.search).get('group');
+  const _urlTab = new URLSearchParams(window.location.search).get('tab');
   if (_urlGroup && ['synthesis', 'probes', 'settings'].includes(_urlGroup)) switchGroup(_urlGroup);
+  if (_urlTab) {
+    switchTab(_urlTab);
+    if (_urlGroup === 'synthesis' && typeof SynthesisMenuConfig !== 'undefined') SynthesisMenuConfig.updateActiveTab(_urlTab);
+    if (_urlGroup === 'probes' && typeof ProbesMenuConfig !== 'undefined') ProbesMenuConfig.updateActiveTab(_urlTab);
+    if (_urlGroup === 'settings' && typeof SettingsMenuConfig !== 'undefined') SettingsMenuConfig.updateActiveTab(_urlTab);
+  }
   loadFrontendSettings();
   loadHealth();
   loadManualLinks();

@@ -305,6 +305,7 @@
   let SELECTOR_CFG = {
     enabledButtons: [],
     pages: null,
+    enableDbMenuConfig: false,
     showPagingButton: true,
     showOriginButton: true,
     touchRibbonMode: 'auto',
@@ -335,6 +336,7 @@
   let _fallbackCacheState = null;
   let _fallbackCacheBusy = false;
   let _ribbonScrollLeft = 0;
+  let _dbSelectorPages = null;
 
   function isAppModeDiagVisible() {
     try {
@@ -753,6 +755,7 @@
     'settings':         { icon: '⚙️',  label: 'Settings',         buildPath: () => '/fallback-ui/?group=settings' },
     'database-tables':  { icon: '🗂️', label: 'Database Tables',  buildPath: () => `${getDbBasePath()}/database-tables.html` },
     'database-diagram': { icon: '🕸️', label: 'Database Diagram', buildPath: () => `${getDbBasePath()}/database-diagram.html` },
+    'embed-menu':       { icon: '🪲', label: 'Embed Menu',        buildPath: () => '/fallback-ui/?group=settings&tab=embed-menu' },
     'api-key': {
       icon: '🔑', label: 'API Key',
       doAction() {
@@ -868,6 +871,7 @@
     SELECTOR_CFG = {
       enabledButtons: Array.isArray(raw.enabledButtons) ? raw.enabledButtons : [],
       pages: Array.isArray(raw.pages) ? raw.pages : null,
+      enableDbMenuConfig: raw.enableDbMenuConfig === true,
       showPagingButton: raw.showPagingButton !== false,
       showOriginButton: raw.showOriginButton !== false,
       touchRibbonMode,
@@ -895,6 +899,36 @@
       s.onerror = () => resolve(false);
       document.head.appendChild(s);
     });
+  }
+
+  function _sanitizeDbPages(payload) {
+    if (!payload || !Array.isArray(payload.pages)) return null;
+    const pages = payload.pages
+      .map(page => Array.isArray(page) ? page.filter(key => BUTTON_DEFS[key]) : [])
+      .filter(page => page.length > 0);
+    return pages.length ? pages : null;
+  }
+
+  async function refreshDbSelectorPages() {
+    if (!SELECTOR_CFG.enableDbMenuConfig) {
+      _dbSelectorPages = null;
+      return;
+    }
+    try {
+      const resp = await _authFetch('/api/v1/embed-menu-items/config', {
+        method: 'GET',
+        signal: AbortSignal.timeout(6000),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const payload = await resp.json();
+      const pages = _sanitizeDbPages(payload);
+      if (pages) {
+        _dbSelectorPages = pages;
+        renderActionButtons();
+      }
+    } catch {
+      // Hard fallback by design: keep local/default selector pages.
+    }
   }
 
   async function ensureRibbonFsm() {
@@ -1263,7 +1297,11 @@
     renderBtn();
     renderActionButtons();
     renderPanel();
+    window.addEventListener('bp:embed-menu-config-changed', () => {
+      void refreshDbSelectorPages();
+    });
     void refreshFallbackCacheStatus().catch(() => {});
+    void refreshDbSelectorPages();
 
     refreshNodeList().then(() => pollNodes());
 
@@ -1337,7 +1375,7 @@
 
   function getDbBasePath() {
     const pathname = window.location.pathname || '';
-    if (pathname.startsWith('/fallback-ui/')) return '/fallback-ui/db';
+    if (pathname === '/fallback-ui' || pathname.startsWith('/fallback-ui/')) return '/fallback-ui/db';
     return '/ui/db';
   }
 
@@ -1347,22 +1385,60 @@
     window.location.href = toAbsoluteUrl(baseUrl, path);
   }
 
+  function getCurrentAppActionKey() {
+    const pathname = window.location.pathname || '';
+    if (pathname === '/fallback-ui' || pathname.startsWith('/fallback-ui/')) return 'fallback-ui';
+    if (pathname === '/ui' || pathname.startsWith('/ui/')) return 'ui';
+    return null;
+  }
+
+  function sanitizeSelectorPages(rawPages, maxPerPage) {
+    if (!Array.isArray(rawPages)) return [];
+    return rawPages
+      .map(page => Array.isArray(page)
+        ? page.filter(key => BUTTON_DEFS[key]).slice(0, maxPerPage)
+        : [])
+      .filter(page => page.length > 0);
+  }
+
+  function mergeSelectorPages(frontPages, backPages, maxPerPage) {
+    const merged = [];
+    const seen = new Set();
+
+    function appendPage(page) {
+      if (!Array.isArray(page) || !page.length) return;
+      const out = [];
+      for (const key of page) {
+        if (!BUTTON_DEFS[key] || seen.has(key)) continue;
+        seen.add(key);
+        out.push(key);
+        if (out.length >= maxPerPage) break;
+      }
+      if (out.length) merged.push(out);
+    }
+
+    frontPages.forEach(appendPage);
+    backPages.forEach(appendPage);
+    return merged;
+  }
+
   function getButtonPages() {
     const maxPerPage = Math.max(1, Number(SELECTOR_CFG.pageSize) || 3);
+    const currentAppKey = getCurrentAppActionKey();
+    const appPages = sanitizeSelectorPages(SELECTOR_CFG.pages, maxPerPage);
+    const embedPages = sanitizeSelectorPages(_dbSelectorPages, maxPerPage);
+    const mergedPages = mergeSelectorPages(appPages, embedPages, maxPerPage);
+    const visiblePages = mergedPages
+      .map(page => page.filter(key => key !== currentAppKey))
+      .filter(page => page.length > 0);
 
-    if (Array.isArray(SELECTOR_CFG.pages) && SELECTOR_CFG.pages.length) {
-      const pages = SELECTOR_CFG.pages
-        .map(page => Array.isArray(page)
-          ? page.filter(key => BUTTON_DEFS[key]).slice(0, maxPerPage)
-          : [])
-        .filter(page => page.length > 0);
-      if (!pages.length) return { pages: [], hasPaging: false };
-      const hasPaging = SELECTOR_CFG.showPagingButton && pages.length > 1;
-      return { pages, hasPaging };
+    if (visiblePages.length) {
+      const hasPaging = SELECTOR_CFG.showPagingButton && visiblePages.length > 1;
+      return { pages: visiblePages, hasPaging };
     }
 
     const enabled = SELECTOR_CFG.enabledButtons || [];
-    const actions = enabled.filter(key => key !== 'paging-button' && BUTTON_DEFS[key]);
+    const actions = enabled.filter(key => key !== 'paging-button' && BUTTON_DEFS[key] && key !== currentAppKey);
     if (!actions.length) return { pages: [], hasPaging: false };
 
     const pages = [];

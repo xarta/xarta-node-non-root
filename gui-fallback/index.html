@@ -1205,6 +1205,106 @@
     </div>
   </dialog>
 
+  <!-- Embedded Menu -->
+  <section id="tab-embed-menu" class="tab-panel">
+    <div id="s25-lift-embed-menu" class="s25-lift-block" data-for-tab="embed-menu">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:8px">Configure embedded selector action pages, order, icons, and sounds. Paging scarab and origin controls remain system-fixed and are not editable here.</p>
+    </div>
+    <p style="font-size:12px;color:var(--text-dim);margin:0 0 12px">If database reads fail, the selector falls back to its built-in defaults so node switch and navigation continue to work.</p>
+    <p id="em-status" style="font-size:13px;margin-bottom:8px"></p>
+    <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
+    <div class="table-wrap table-wrap--fill">
+      <table id="em-table" data-layout-table-name="embed-menu" data-layout-table-code="18">
+        <thead>
+          <tr>
+            <th>Icon</th>
+            <th>Key</th>
+            <th>Label</th>
+            <th>Page</th>
+            <th>Order</th>
+            <th>Icon Asset</th>
+            <th>Sound Asset</th>
+            <th>Enabled</th>
+            <th>Move</th>
+            <th>Edit</th>
+          </tr>
+        </thead>
+        <tbody id="em-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="em-cols-modal">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">COLS</span>
+        <span class="hub-dialog-title-text">Embed Menu Columns</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body">
+      <div id="em-cols-modal-list" class="hub-checkbox-list"></div>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Cancel</button>
+      <button class="hub-modal-btn" id="em-cols-modal-apply" type="button">&#10003; Apply</button>
+    </div>
+  </dialog>
+
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="em-edit-modal" style="width:min(640px,96vw);max-width:96vw">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">EMBED</span>
+        <span class="hub-dialog-title-text" id="em-edit-title">Edit Embedded Menu Item</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body">
+      <p id="em-edit-context" style="margin:0 0 10px;font-size:12px;color:var(--text-dim)"></p>
+      <div class="field">
+        <label for="em-edit-label">Label</label>
+        <input type="text" id="em-edit-label" placeholder="Visible label" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="em-edit-page-index">Page index</label>
+        <input type="number" min="0" id="em-edit-page-index" />
+      </div>
+      <div class="field">
+        <label for="em-edit-sort-order">Sort order</label>
+        <input type="number" min="0" id="em-edit-sort-order" />
+      </div>
+      <div class="field">
+        <label for="em-edit-icon-emoji">Emoji fallback <span class="field-hint" style="display:inline">(optional)</span></label>
+        <input type="text" id="em-edit-icon-emoji" placeholder="e.g. 🪲" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="em-edit-icon-asset">Icon asset <span class="field-hint" style="display:inline">(optional)</span></label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="text" id="em-edit-icon-asset" placeholder="icons/..." autocomplete="off" />
+          <button class="btn-small secondary" type="button" id="em-edit-browse-icon-btn">Browse</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="em-edit-sound-asset">Sound asset <span class="field-hint" style="display:inline">(optional)</span></label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="text" id="em-edit-sound-asset" placeholder="sounds/..." autocomplete="off" />
+          <button class="btn-small secondary" type="button" id="em-edit-browse-sound-btn">Browse</button>
+          <button class="btn-small secondary" type="button" id="em-edit-preview-sound-btn">Preview</button>
+        </div>
+      </div>
+      <label class="hub-checkbox" style="margin-top:4px;display:inline-flex;align-items:center;gap:8px;">
+        <input class="hub-checkbox__input" type="checkbox" id="em-edit-enabled" />
+        <span class="hub-checkbox__box" aria-hidden="true"></span>
+        <span class="hub-checkbox__label">Enabled</span>
+      </label>
+      <p class="hub-modal-error" id="em-edit-error"></p>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Cancel</button>
+      <button class="hub-modal-btn" type="button" id="em-edit-save-btn">Save</button>
+    </div>
+  </dialog>
+
   <!-- SSH Targets -->
   <section id="tab-ssh-targets" class="tab-panel tab-panel--fill">
     <div id="s25-lift-ssh-targets" class="s25-lift-block" data-for-tab="ssh-targets">
@@ -2350,6 +2450,7 @@
 <script src="js/settings/ai-providers.js?v={{$assetVersion}}"></script>
 <script src="js/settings/nav-items.js?v={{$assetVersion}}"></script>
 <script src="js/settings/form-controls.js?v={{$assetVersion}}"></script>
+<script src="js/settings/embed-menu.js?v={{$assetVersion}}"></script>
 <script src="js/probes/pfsense.js?v={{$assetVersion}}"></script>
 <script src="js/probes/proxmox-config.js?v={{$assetVersion}}"></script>
 <script src="js/probes/vlans.js?v={{$assetVersion}}"></script>
@@ -2493,13 +2594,14 @@
       ['ui'],
       ['api-key'],
     ],
+    enableDbMenuConfig: true,
     pageSize: 3,
     showPagingButton: true,
     side: 'left',
     nodeSwitchPath: '/ui/',
   };
 </script>
-<link rel="stylesheet" href="embed/blueprints-node-selector.css?v={{$assetVersion}}" />
+<link rel="stylesheet" href="embed/blueprints-node-selector.css?v={{$assetVersion}}-emfix20260407f" />
 <style>
   /* Replace the 🏠 home emoji on the /ui/ button with a Starfleet combadge SVG icon. */
   .bp-ns-action-btn[data-action="ui"] { font-size: 0; position: relative; }
@@ -2588,7 +2690,7 @@
     position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   }
 </style>
-<script src="embed/blueprints-node-selector.js?v={{$assetVersion}}"></script>
+<script src="embed/blueprints-node-selector.js?v={{$assetVersion}}-emfix20260407f"></script>
 
 <!-- Tag exclusion multi-select modal -->
 <style>
