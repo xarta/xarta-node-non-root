@@ -1209,10 +1209,17 @@
   <!-- Embedded Menu -->
   <section id="tab-embed-menu" class="tab-panel">
     <div id="s25-lift-embed-menu" class="s25-lift-block" data-for-tab="embed-menu">
-      <p style="font-size:12px;color:var(--text-dim);margin-bottom:8px">View and assign icons, sounds, and labels for embedded selector buttons. Use the Edit (pencil) to update an item. To reorder buttons or change pages, use the <strong>Embed Menu Grid</strong> tab. Paging scarab and origin controls remain system-fixed and are not editable here.</p>
+      <div class="em-fallback-composite">
+        <div class="em-fallback-copy">
+          <p style="font-size:12px;color:var(--text-dim);margin-bottom:8px">View and assign icons, sounds, and labels for embedded selector buttons. Use the Edit (pencil) to update an item. To reorder buttons or change pages, use the <strong>Embed Menu Grid</strong> tab. Paging scarab and origin controls remain system-fixed and are not editable here.</p>
+          <p class="em-fallback-inline-text">If database reads fail, the selector falls back to its built-in defaults so node switch and navigation continue to work.</p>
+        </div>
+        <button type="button" id="em-open-grid-btn" class="em-nav-icon-btn em-nav-icon-btn--xl em-nav-icon-btn--mobile-only" title="Open Embed Menu Grid" aria-label="Open Embed Menu Grid">
+          <img src="/fallback-ui/assets/icons/hieroglyphs/cartouche-gold.svg" alt="" />
+        </button>
+      </div>
     </div>
-    <p style="font-size:12px;color:var(--text-dim);margin:0 0 12px">If database reads fail, the selector falls back to its built-in defaults so node switch and navigation continue to work.</p>
-    <p id="em-status" style="font-size:13px;margin-bottom:8px"></p>
+    <p id="em-status" style="font-size:13px;margin:0 0 8px"></p>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
       <table id="em-table" data-layout-table-name="embed-menu" data-layout-table-code="18">
@@ -1250,6 +1257,9 @@
           <div class="em-grid-trash" id="em-grid-trash" title="Drop an empty slot here to remove it">
             <img src="/fallback-ui/assets/icons/ui/trash-gold.svg" alt="Remove slot" />
           </div>
+          <button type="button" class="em-grid-tool-btn" id="em-grid-open-table-btn" title="Open Embed Menu table" aria-label="Open Embed Menu table">
+            <img src="/fallback-ui/assets/icons/hieroglyphs/kheper-gold-inverted.svg" alt="Open Embed Menu table" />
+          </button>
         </div>
       </div>
       <p style="font-size:11px;color:var(--text-dim);margin:0 0 14px">Drag tiles to reorder. Drop <strong>&#xff0b; empty slot</strong> onto a tile to insert a gap. Drag an empty tile to <img src="/fallback-ui/assets/icons/ui/trash-gold.svg" alt="trash" style="width:12px;height:12px;vertical-align:middle;opacity:.5"> to close it.</p>
@@ -2624,12 +2634,15 @@
      Served here via a symlink created by setup-blueprints.sh. -->
 <script>
   window.BLUEPRINTS_SELECTOR_BUTTONS = {
-    pages: [
-      ['synthesis', 'probes', 'settings'],
-      ['database-tables', 'database-diagram', 'diag-chip'],
-      ['api-key-test', 'cache-mode', 'hard-refresh'],
-      ['ui'],
-      ['api-key'],
+    enabledButtons: [
+      'ui',
+      'database-tables',
+      'database-diagram',
+      'cache-mode',
+      'api-key',
+      'api-key-test',
+      'embed-menu',
+      'fallback-ui',
     ],
     enableDbMenuConfig: true,
     pageSize: 3,
@@ -2638,8 +2651,8 @@
     nodeSwitchPath: '/ui/',
   };
 </script>
-<link rel="stylesheet" href="embed/blueprints-node-selector.css?v={{$assetVersion}}-emfix20260407f" />
-<script src="embed/blueprints-node-selector.js?v={{$assetVersion}}-emfix20260407f"></script>
+<link rel="stylesheet" href="embed/blueprints-node-selector.css?v={{$assetVersion}}-emfix20260408dbauth2" />
+<script src="embed/blueprints-node-selector.js?v={{$assetVersion}}-emfix20260408dbauth2"></script>
 
 <!-- Tag exclusion multi-select modal -->
 <style>

@@ -6,7 +6,8 @@
  *   window.BLUEPRINTS_API_BASE
  *   window.BLUEPRINTS_SEED_NODES
  *   window.BLUEPRINTS_SELECTOR_BUTTONS = {
- *     enabledButtons: ['ui', 'synthesis', 'probes', 'settings', 'api-key', 'cache-mode', 'database-tables', 'database-diagram', 'paging-button'],
+ *     enabledButtons: ['ui', 'database-tables', 'database-diagram', 'cache-mode', 'api-key', 'api-key-test', 'embed-menu', 'fallback-ui'],
+ *     enableDbMenuConfig: true,
  *     side: 'left' | 'right',
  *     pageSize: 4,
  *     nodeSwitchPath: '/ui/' | 'current'
@@ -301,10 +302,19 @@
   const ORIGIN_LONG_PRESS_MS = 250;
   const ORIGIN_DOUBLE_CLICK_MS = 260;
   const NOOP = () => {};
+  const EMBED_FALLBACK_BUTTON_KEYS = [
+    'ui',
+    'database-tables',
+    'database-diagram',
+    'cache-mode',
+    'api-key',
+    'api-key-test',
+    'embed-menu',
+    'fallback-ui',
+  ];
 
   let SELECTOR_CFG = {
-    enabledButtons: [],
-    pages: null,
+    enabledButtons: EMBED_FALLBACK_BUTTON_KEYS.slice(),
     enableDbMenuConfig: false,
     showPagingButton: true,
     showOriginButton: true,
@@ -870,8 +880,9 @@
       : 'auto';
     const configuredRibbonMaxShortEdge = Number(raw.touchRibbonMaxShortEdge);
     SELECTOR_CFG = {
-      enabledButtons: Array.isArray(raw.enabledButtons) ? raw.enabledButtons : [],
-      pages: Array.isArray(raw.pages) ? raw.pages : null,
+      enabledButtons: Array.isArray(raw.enabledButtons)
+        ? raw.enabledButtons
+        : EMBED_FALLBACK_BUTTON_KEYS.slice(),
       enableDbMenuConfig: raw.enableDbMenuConfig === true,
       showPagingButton: raw.showPagingButton !== false,
       showOriginButton: raw.showOriginButton !== false,
@@ -925,13 +936,14 @@
       })
       .filter(page => page.length > 0);
     _dbItemMeta = meta;
-    return pages.length ? pages : null;
+    return pages;
   }
 
   function _detectMenuContext() {
     const path = (typeof window !== 'undefined' && window.location && window.location.pathname) || '';
     if (/\/(fallback-ui|ui)\/db(\/|$)/.test(path)) return 'db';
-    if (/\/(fallback-ui|ui)(\/|$)/.test(path)) return 'fallback-ui';
+    if (/\/fallback-ui(\/|$)/.test(path)) return 'fallback-ui';
+    if (/\/ui(\/|$)/.test(path)) return 'embed';
     return 'embed';
   }
 
@@ -950,12 +962,15 @@
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const payload = await resp.json();
       const pages = _sanitizeDbPages(payload);
-      if (pages) {
-        _dbSelectorPages = pages;
-        renderActionButtons();
-      }
+      if (!pages) throw new Error('invalid embed menu payload');
+      _dbSelectorPages = pages;
+      renderActionButtons();
     } catch {
-      // Hard fallback by design: keep local/default selector pages.
+      // Hard fallback by design: local/default selector pages are used only
+      // when DB config fetch fails.
+      _dbSelectorPages = null;
+      _dbItemMeta = {};
+      renderActionButtons();
     }
   }
 
@@ -1430,47 +1445,24 @@
       .filter(page => page.length > 0);
   }
 
-  function mergeSelectorPages(frontPages, backPages, maxPerPage) {
-    const merged = [];
-    const seen = new Set();
-
-    function appendPage(page) {
-      if (!Array.isArray(page) || !page.length) return;
-      const out = [];
-      for (const key of page) {
-        if (key === PLACEHOLDER_BUTTON_ACTION) {
-          out.push(key);
-          if (out.length >= maxPerPage) break;
-          continue;
-        }
-        if (!BUTTON_DEFS[key] || seen.has(key)) continue;
-        seen.add(key);
-        out.push(key);
-        if (out.length >= maxPerPage) break;
-      }
-      if (out.length) merged.push(out);
-    }
-
-    frontPages.forEach(appendPage);
-    backPages.forEach(appendPage);
-    return merged;
-  }
-
   function getButtonPages() {
     const maxPerPage = Math.max(1, Number(SELECTOR_CFG.pageSize) || 3);
     const currentAppKey = getCurrentAppActionKey();
-    const appPages = _detectMenuContext() === 'embed'
-      ? sanitizeSelectorPages(SELECTOR_CFG.pages, maxPerPage)
+    const dbAuthoritative = SELECTOR_CFG.enableDbMenuConfig && Array.isArray(_dbSelectorPages);
+    const dbPages = dbAuthoritative
+      ? sanitizeSelectorPages(_dbSelectorPages, maxPerPage)
       : [];
-    const embedPages = sanitizeSelectorPages(_dbSelectorPages, maxPerPage);
-    const mergedPages = mergeSelectorPages(appPages, embedPages, maxPerPage);
-    const visiblePages = mergedPages
-      .map(page => page.filter(key => key !== currentAppKey))
+    const visibleDbPages = dbPages
+      .map(page => page.map(key => (key === currentAppKey ? PLACEHOLDER_BUTTON_ACTION : key)))
       .filter(page => page.length > 0);
 
-    if (visiblePages.length) {
-      const hasPaging = SELECTOR_CFG.showPagingButton && visiblePages.length > 1;
-      return { pages: visiblePages, hasPaging };
+    if (visibleDbPages.length) {
+      const hasPaging = visibleDbPages.length > 1;
+      return { pages: visibleDbPages, hasPaging };
+    }
+
+    if (dbAuthoritative) {
+      return { pages: [], hasPaging: false };
     }
 
     const enabled = SELECTOR_CFG.enabledButtons || [];
@@ -1481,7 +1473,7 @@
     for (let i = 0; i < actions.length; i += maxPerPage) {
       pages.push(actions.slice(i, i + maxPerPage));
     }
-    const hasPaging = enabled.includes('paging-button') && pages.length > 1 && SELECTOR_CFG.showPagingButton;
+    const hasPaging = SELECTOR_CFG.showPagingButton && pages.length > 1;
     return { pages, hasPaging };
   }
 
@@ -1748,9 +1740,9 @@
     right.style.removeProperty('--bp-ns-ribbon-slots');
     right.style.removeProperty('--bp-ns-ribbon-width');
 
-    const { pages } = getButtonPages();
+    const { pages, hasPaging } = getButtonPages();
     const showOriginButton = SELECTOR_CFG.showOriginButton !== false;
-    const showPagingButton = SELECTOR_CFG.showPagingButton !== false;
+    const showPagingButton = hasPaging;
     const useTouchRibbon = shouldUseTouchRibbonMode();
     const pageSlotCount = Math.max(1, Number(SELECTOR_CFG.pageSize) || 3);
     if (!pages.length && !showOriginButton && !showPagingButton) return;

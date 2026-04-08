@@ -38,6 +38,15 @@ function _emNotifySelectorRefresh() {
     window.dispatchEvent(new CustomEvent('bp:embed-menu-config-changed'));
 }
 
+function _emSwitchToTab(tabId) {
+    if (typeof switchTab === 'function') {
+        switchTab(tabId);
+        return;
+    }
+    const btn = document.querySelector(`.table-nav button[onclick*="'${tabId}'"]`);
+    if (btn) btn.click();
+}
+
 function _emDefaultWidth(col) {
     switch (col) {
         case 'icon': return 44;
@@ -978,6 +987,18 @@ async function openEmExploreSounds() {
     if (colsApplyBtn && !colsApplyBtn.dataset.bound) {
         colsApplyBtn.dataset.bound = '1';
         colsApplyBtn.addEventListener('click', _applyEmColsModal);
+    }
+
+    const openGridBtn = document.getElementById('em-open-grid-btn');
+    if (openGridBtn && !openGridBtn.dataset.bound) {
+        openGridBtn.dataset.bound = '1';
+        openGridBtn.addEventListener('click', () => _emSwitchToTab('embed-menu-grid'));
+    }
+
+    const openTableBtn = document.getElementById('em-grid-open-table-btn');
+    if (openTableBtn && !openTableBtn.dataset.bound) {
+        openTableBtn.dataset.bound = '1';
+        openTableBtn.addEventListener('click', () => _emSwitchToTab('embed-menu'));
     }
 
     const tbody = document.getElementById('em-tbody');

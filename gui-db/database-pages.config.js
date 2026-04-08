@@ -1,9 +1,5 @@
 window.BLUEPRINTS_SELECTOR_BUTTONS = {
-  pages: [
-    ['fallback-ui', 'ui', 'embed-menu'],
-    ['database-tables', 'database-diagram'],
-    ['api-key', 'api-key-test', 'cache-mode'],
-  ],
+  enabledButtons: ['ui', 'database-tables', 'database-diagram', 'cache-mode', 'api-key', 'api-key-test', 'embed-menu', 'fallback-ui'],
   enableDbMenuConfig: true,
   showPagingButton: true,
   side: 'left',

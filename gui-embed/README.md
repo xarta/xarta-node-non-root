@@ -73,11 +73,9 @@ appear on, which buttons show, and how paging works.
 ```html
 <script>
   window.BLUEPRINTS_SELECTOR_BUTTONS = {
-    pages: [
-      ['ui', 'fallback-ui'],
-      ['database-tables', 'database-diagram'],
-      ['api-key', 'api-key-test']
-    ],
+    enabledButtons: ['ui', 'database-tables', 'database-diagram', 'cache-mode', 'api-key', 'api-key-test', 'embed-menu', 'fallback-ui'],
+    enableDbMenuConfig: true,
+    pageSize: 3,
     side: 'left',
     showPagingButton: true,
     nodeSwitchPath: 'current'
@@ -93,9 +91,13 @@ Supported button keys:
 - `settings`
 - `api-key`
 - `api-key-test`
+- `cache-mode`
 - `database-tables`
 - `database-diagram`
-- `paging-button` (cycles to next button page)
+- `embed-menu`
+
+When `enableDbMenuConfig` is true, DB config defines page and slot order.
+The key list above is used only as fallback if DB config fetch fails.
 
 ---
 
