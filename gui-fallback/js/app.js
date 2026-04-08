@@ -197,7 +197,8 @@ function switchTab(tab) {
   if (tab === 'ai-providers' && !_aiProviders.length)      loadAiProviders();
   if (tab === 'nav-items'    && !_navItems.length)         loadNavItems();
   if (tab === 'form-controls' && !_fcItems.length)         loadFormControls();
-  if (tab === 'embed-menu'   && !_embedMenuItems.length)   loadEmbedMenuItems();
+  if (tab === 'embed-menu'      && !_embedMenuItems.length)   loadEmbedMenuItems();
+  if (tab === 'embed-menu-grid') { if (!_embedMenuItems.length) loadEmbedMenuItems(); else renderEmGrid(); }
   if (tab === 'bookmarks-main'  && !_bookmarks.length)  loadBookmarks();
   if (tab === 'bookmarks-history')                       loadVisits();
   if (tab === 'bookmarks-embeddings')                    _bmLoadEmbedCfg();

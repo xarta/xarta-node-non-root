@@ -40,6 +40,7 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'nav-items',       label: 'Nav Items',      icon: HIEROGLYPHS.naosShrine, pageLabel: 'Nav Items',       parent: 'settings',  order: 2 },
         { id: 'form-controls',   label: 'Form Controls',  icon: HIEROGLYPHS.adze,       pageLabel: 'Form Controls',   parent: 'settings',  order: 3 },
         { id: 'embed-menu',      label: 'Embed Menu',     icon: HIEROGLYPHS.kheper,     pageLabel: 'Embed Menu',      parent: 'settings',  order: 4 },
+        { id: 'embed-menu-grid', label: 'Embed Menu Grid', icon: HIEROGLYPHS.cartouche,  pageLabel: 'Embed Menu Grid', parent: 'settings',  order: 5 },
         { id: 'keys',            label: 'Keys',           icon: HIEROGLYPHS.ankh,       pageLabel: 'SSH Keys',        parent: null,        order: 2 },
         { id: 'certs',           label: 'Certs',          icon: HIEROGLYPHS.shen,       pageLabel: 'Certificates',    parent: 'keys',      order: 0 },
         { id: 'docs',            label: 'Docs',           icon: HIEROGLYPHS.papyrus,    pageLabel: 'Docs',            parent: null,        order: 3 },
@@ -140,6 +141,11 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'em-fn-explore-icons', label: 'Explore Icons', icon: 'icons/ui/group-folder-blue.svg', fn: 'em.exploreIcons', activeOn: ['embed-menu'], parent: 'settings-layout', order: 2 },
         { id: 'em-fn-explore-sounds', label: 'Explore Sounds', icon: 'icons/ui/group-folder-blue.svg', fn: 'em.exploreSounds', activeOn: ['embed-menu'], parent: 'settings-layout', order: 3 },
         { id: 'em-fn-context',   label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'em.context',      activeOn: ['embed-menu'], parent: 'settings-layout', order: 4 },
+
+        // ── Embed Menu Grid page function items ───────────────────────────
+        { id: 'emg-fn-refresh',  label: 'Refresh',           icon: HIEROGLYPHS.nefer,      fn: 'em.refresh',      activeOn: ['embed-menu-grid'], parent: 'settings-layout', order: 0 },
+        { id: 'emg-fn-explore-icons',  label: 'Explore Icons',  icon: 'icons/ui/group-folder-blue.svg', fn: 'em.exploreIcons',  activeOn: ['embed-menu-grid'], parent: 'settings-layout', order: 1 },
+        { id: 'emg-fn-explore-sounds', label: 'Explore Sounds', icon: 'icons/ui/group-folder-blue.svg', fn: 'em.exploreSounds', activeOn: ['embed-menu-grid'], parent: 'settings-layout', order: 2 },
     ],
 });
 

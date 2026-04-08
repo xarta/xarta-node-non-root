@@ -3,7 +3,7 @@
 
 'use strict';
 
-const _EM_COLS = ['icon', 'item_key', 'label', 'menu_context', 'page_index', 'sort_order', 'icon_asset', 'sound_asset', 'enabled', '_move', '_edit'];
+const _EM_COLS = ['icon', 'item_key', 'label', 'menu_context', 'page_index', 'sort_order', 'icon_asset', 'sound_asset', 'enabled', '_edit'];
 
 let _EM_FIELD_META = null;
 let _emTableView = null;
@@ -34,12 +34,6 @@ function _emSortItems(items) {
     });
 }
 
-function _emNextSortForPage(pageIndex) {
-    const pageItems = _embedMenuItems.filter(item => item.page_index === pageIndex);
-    if (!pageItems.length) return 0;
-    return Math.max(...pageItems.map(item => item.sort_order || 0)) + 1;
-}
-
 function _emNotifySelectorRefresh() {
     window.dispatchEvent(new CustomEvent('bp:embed-menu-config-changed'));
 }
@@ -55,7 +49,6 @@ function _emDefaultWidth(col) {
         case 'icon_asset': return 180;
         case 'sound_asset': return 180;
         case 'enabled': return 72;
-        case '_move': return 120;
         case '_edit': return 64;
         default: return null;
     }
@@ -152,10 +145,6 @@ function _emBuildFieldMeta() {
             label: 'Enabled',
             sortKey: 'enabled',
             render: item => `<td>${item.enabled ? 'yes' : 'no'}</td>`,
-        },
-        _move: {
-            label: 'Move',
-            render: item => `<td class="table-action-cell"><div class="table-inline-actions"><button type="button" class="table-icon-btn table-icon-btn--sm" data-em-page-prev="${_esc(item.item_id)}" title="Move to previous page" aria-label="Move to previous page">←</button><button type="button" class="table-icon-btn table-icon-btn--sm" data-em-page-next="${_esc(item.item_id)}" title="Move to next page" aria-label="Move to next page">→</button><button type="button" class="table-icon-btn table-icon-btn--sm" data-em-up="${_esc(item.item_id)}" title="Move up" aria-label="Move up">↑</button><button type="button" class="table-icon-btn table-icon-btn--sm" data-em-down="${_esc(item.item_id)}" title="Move down" aria-label="Move down">↓</button></div></td>`,
         },
         _edit: {
             label: 'Edit',
@@ -843,61 +832,6 @@ async function _emSaveEdit() {
     }
 }
 
-async function _emSwapSort(itemId, direction) {
-    const sorted = _emSortItems(_embedMenuItems);
-    const idx = sorted.findIndex(item => item.item_id === itemId);
-    if (idx < 0) return;
-    const current = sorted[idx];
-
-    const samePage = sorted.filter(item => item.page_index === current.page_index);
-    const pageIdx = samePage.findIndex(item => item.item_id === itemId);
-    if (pageIdx < 0) return;
-    const targetPageIdx = pageIdx + direction;
-    if (targetPageIdx < 0 || targetPageIdx >= samePage.length) return;
-    const target = samePage[targetPageIdx];
-
-    try {
-        const a = await apiFetch(`/api/v1/embed-menu-items/${encodeURIComponent(current.item_id)}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sort_order: target.sort_order }),
-        });
-        if (!a.ok) throw new Error(`HTTP ${a.status}`);
-
-        const b = await apiFetch(`/api/v1/embed-menu-items/${encodeURIComponent(target.item_id)}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sort_order: current.sort_order }),
-        });
-        if (!b.ok) throw new Error(`HTTP ${b.status}`);
-
-        await loadEmbedMenuItems();
-        _emNotifySelectorRefresh();
-    } catch (e) {
-        _emSetStatus(`✗ ${e.message}`, 'var(--danger,#f85149)');
-    }
-}
-
-async function _emMovePage(itemId, delta) {
-    const item = _embedMenuItems.find(row => row.item_id === itemId);
-    if (!item) return;
-    const nextPage = Math.max(0, (item.page_index || 0) + delta);
-    const nextSort = _emNextSortForPage(nextPage);
-
-    try {
-        const resp = await apiFetch(`/api/v1/embed-menu-items/${encodeURIComponent(itemId)}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ page_index: nextPage, sort_order: nextSort }),
-        });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        await loadEmbedMenuItems();
-        _emNotifySelectorRefresh();
-    } catch (e) {
-        _emSetStatus(`✗ ${e.message}`, 'var(--danger,#f85149)');
-    }
-}
-
 async function _emPersistPageOrder(pageIndex, orderedIds) {
     const pageItems = _emSortItems(_embedMenuItems).filter(item => item.page_index === pageIndex);
     if (!pageItems.length) return;
@@ -1012,26 +946,6 @@ async function openEmExploreSounds() {
         const editId = t.getAttribute('data-em-edit');
         if (editId) {
             _emOpenEdit(editId);
-            return;
-        }
-        const upId = t.getAttribute('data-em-up');
-        if (upId) {
-            void _emSwapSort(upId, -1);
-            return;
-        }
-        const downId = t.getAttribute('data-em-down');
-        if (downId) {
-            void _emSwapSort(downId, 1);
-            return;
-        }
-        const prevId = t.getAttribute('data-em-page-prev');
-        if (prevId) {
-            void _emMovePage(prevId, -1);
-            return;
-        }
-        const nextId = t.getAttribute('data-em-page-next');
-        if (nextId) {
-            void _emMovePage(nextId, 1);
             return;
         }
     });

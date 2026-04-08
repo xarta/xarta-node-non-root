@@ -1209,7 +1209,7 @@
   <!-- Embedded Menu -->
   <section id="tab-embed-menu" class="tab-panel">
     <div id="s25-lift-embed-menu" class="s25-lift-block" data-for-tab="embed-menu">
-      <p style="font-size:12px;color:var(--text-dim);margin-bottom:8px">Configure embedded selector action pages, order, icons, and sounds. Paging scarab and origin controls remain system-fixed and are not editable here.</p>
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:8px">View and assign icons, sounds, and labels for embedded selector buttons. Use the Edit (pencil) to update an item. To reorder buttons or change pages, use the <strong>Embed Menu Grid</strong> tab. Paging scarab and origin controls remain system-fixed and are not editable here.</p>
     </div>
     <p style="font-size:12px;color:var(--text-dim);margin:0 0 12px">If database reads fail, the selector falls back to its built-in defaults so node switch and navigation continue to work.</p>
     <p id="em-status" style="font-size:13px;margin-bottom:8px"></p>
@@ -1227,14 +1227,19 @@
             <th>Icon Asset</th>
             <th>Sound Asset</th>
             <th>Enabled</th>
-            <th>Move</th>
             <th>Edit</th>
           </tr>
         </thead>
         <tbody id="em-tbody"></tbody>
       </table>
     </div>
-    <!-- Embed Menu Grid Editor -->
+  </section>
+
+  <section id="tab-embed-menu-grid" class="tab-panel">
+    <div id="s25-lift-embed-menu-grid" class="s25-lift-block" data-for-tab="embed-menu-grid">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:8px">Visual drag-and-drop layout editor for embedded selector pages. Drag tiles to reorder, drop an empty slot onto a tile to insert a gap.</p>
+    </div>
+    <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div id="em-grid-editor">
       <div class="em-grid-hdr">
         <h3 class="em-grid-hdr__title">Page Grid</h3>
