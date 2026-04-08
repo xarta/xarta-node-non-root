@@ -759,6 +759,19 @@
   installOriginButtonApi();
   installOriginVariantApi();
 
+  function buildPocketttsTabPath(tabName) {
+    const tab = String(tabName || '').trim().toLowerCase();
+    if (!tab) return '/tts/pockettts/';
+    return `/tts/pockettts/?tab=${encodeURIComponent(tab)}`;
+  }
+
+  function openPocketttsTab(tabName) {
+    if (typeof window === 'undefined' || !window.PocketTtsNav || typeof window.PocketTtsNav.goToTab !== 'function') {
+      return false;
+    }
+    return !!window.PocketTtsNav.goToTab(tabName);
+  }
+
   const BUTTON_DEFS = {
     'fallback-ui':      { icon: '🧰', label: 'Fallback UI',      buildPath: () => '/fallback-ui/' },
     'ui':               { icon: '🏠', label: 'UI',               buildPath: () => '/' },
@@ -807,6 +820,69 @@
       icon: '⟐', label: 'Toggle App Diagnostics Chip',
       doAction() {
         toggleAppModeDiagVisibility();
+      },
+    },
+    'pockettts-dashboard': {
+      icon: '', label: 'Dashboard',
+      doAction() {
+        if (openPocketttsTab('dashboard')) return;
+        navigateToNodePath(buildPocketttsTabPath('dashboard'));
+      },
+    },
+    'pockettts-config': {
+      icon: '', label: 'Config',
+      doAction() {
+        if (openPocketttsTab('config')) return;
+        navigateToNodePath(buildPocketttsTabPath('config'));
+      },
+    },
+    'pockettts-voices': {
+      icon: '', label: 'Voices',
+      doAction() {
+        if (openPocketttsTab('voices')) return;
+        navigateToNodePath(buildPocketttsTabPath('voices'));
+      },
+    },
+    'pockettts-cloning': {
+      icon: '', label: 'Cloning',
+      doAction() {
+        if (openPocketttsTab('cloning')) return;
+        navigateToNodePath(buildPocketttsTabPath('cloning'));
+      },
+    },
+    'pockettts-tags': {
+      icon: '', label: 'Tags',
+      doAction() {
+        if (openPocketttsTab('tags')) return;
+        navigateToNodePath(buildPocketttsTabPath('tags'));
+      },
+    },
+    'pockettts-texts': {
+      icon: '', label: 'Texts',
+      doAction() {
+        if (openPocketttsTab('texts')) return;
+        navigateToNodePath(buildPocketttsTabPath('texts'));
+      },
+    },
+    'pockettts-matrix': {
+      icon: '', label: 'Matrix',
+      doAction() {
+        if (openPocketttsTab('matrix')) return;
+        navigateToNodePath(buildPocketttsTabPath('matrix'));
+      },
+    },
+    'pockettts-monitor': {
+      icon: '', label: 'Monitor',
+      doAction() {
+        if (openPocketttsTab('monitor')) return;
+        navigateToNodePath(buildPocketttsTabPath('monitor'));
+      },
+    },
+    'pockettts-test': {
+      icon: '', label: 'Test Page',
+      doAction() {
+        if (openPocketttsTab('test')) return;
+        navigateToNodePath(buildPocketttsTabPath('test'));
       },
     },
   };
@@ -947,6 +1023,7 @@
 
   function _detectMenuContext() {
     const path = (typeof window !== 'undefined' && window.location && window.location.pathname) || '';
+    if (/\/tts\/pockettts(\/|$)/.test(path)) return 'pockettts';
     if (/\/(fallback-ui|ui)\/db(\/|$)/.test(path)) return 'db';
     if (/\/fallback-ui(\/|$)/.test(path)) return 'fallback-ui';
     if (/\/ui(\/|$)/.test(path)) return 'embed';

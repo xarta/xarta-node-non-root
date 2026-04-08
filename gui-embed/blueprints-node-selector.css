@@ -206,6 +206,54 @@ blueprints-node-selector,
   background-image: var(--bp-ns-icon-asset, url('/fallback-ui/assets/icons/fallback.svg'));
 }
 
+/* ── PocketTTS context buttons — icon only via DB asset ── */
+.bp-ns-action-btn[data-action="pockettts-dashboard"],
+.bp-ns-action-btn[data-action="pockettts-config"],
+.bp-ns-action-btn[data-action="pockettts-voices"],
+.bp-ns-action-btn[data-action="pockettts-cloning"],
+.bp-ns-action-btn[data-action="pockettts-tags"],
+.bp-ns-action-btn[data-action="pockettts-texts"],
+.bp-ns-action-btn[data-action="pockettts-matrix"],
+.bp-ns-action-btn[data-action="pockettts-monitor"],
+.bp-ns-action-btn[data-action="pockettts-test"] {
+  font-size: 0;
+  position: relative;
+}
+
+.bp-ns-action-btn[data-action="pockettts-dashboard"]::before,
+.bp-ns-action-btn[data-action="pockettts-config"]::before,
+.bp-ns-action-btn[data-action="pockettts-voices"]::before,
+.bp-ns-action-btn[data-action="pockettts-cloning"]::before,
+.bp-ns-action-btn[data-action="pockettts-tags"]::before,
+.bp-ns-action-btn[data-action="pockettts-texts"]::before,
+.bp-ns-action-btn[data-action="pockettts-matrix"]::before,
+.bp-ns-action-btn[data-action="pockettts-monitor"]::before,
+.bp-ns-action-btn[data-action="pockettts-test"]::before {
+  content: '';
+  display: block;
+  width: 22px;
+  height: 22px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.bp-ns-action-btn[data-action="pockettts-dashboard"]::before,
+.bp-ns-action-btn[data-action="pockettts-config"]::before,
+.bp-ns-action-btn[data-action="pockettts-voices"]::before,
+.bp-ns-action-btn[data-action="pockettts-cloning"]::before,
+.bp-ns-action-btn[data-action="pockettts-tags"]::before,
+.bp-ns-action-btn[data-action="pockettts-texts"]::before,
+.bp-ns-action-btn[data-action="pockettts-matrix"]::before,
+.bp-ns-action-btn[data-action="pockettts-monitor"]::before,
+.bp-ns-action-btn[data-action="pockettts-test"]::before {
+  background-image: var(--bp-ns-icon-asset, url('/fallback-ui/assets/icons/fallback.svg'));
+}
+
 .bp-ns-action-btn[data-action="diag-chip"][data-chip-visible="false"]::before {
   opacity: .45;
   filter: grayscale(.3);
