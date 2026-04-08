@@ -348,6 +348,7 @@
   let _ribbonScrollLeft = 0;
   let _dbSelectorPages = null;
   let _dbItemMeta = {};
+  let _selectorActionAudio = null;
 
   function isAppModeDiagVisible() {
     try {
@@ -928,8 +929,13 @@
           const key = typeof item === 'string' ? item : (item && item.key);
           if (!key) return null;
           if (key !== PLACEHOLDER_BUTTON_ACTION && !BUTTON_DEFS[key]) return null;
-          if (item && typeof item === 'object' && (item.icon_asset || item.label)) {
-            meta[key] = { icon_asset: item.icon_asset || null, label: item.label || null };
+          if (item && typeof item === 'object' && (item.icon_asset || item.label || item.sound_asset || item.updated_at)) {
+            meta[key] = {
+              icon_asset: item.icon_asset || null,
+              label: item.label || null,
+              sound_asset: item.sound_asset || null,
+              updated_at: item.updated_at || null,
+            };
           }
           return key;
         }).filter(Boolean);
@@ -1711,15 +1717,26 @@
         e.preventDefault();
         e.stopPropagation();
         const action = btn.dataset.action;
-        if (action === 'paging-button') {
-          _buttonPage = (_buttonPage + 1) % pageCount;
-          renderActionButtons();
+        const meta = _dbItemMeta[action] || null;
+        const delayMs = playDbActionSound(meta);
+
+        const runAction = () => {
+          if (action === 'paging-button') {
+            _buttonPage = (_buttonPage + 1) % pageCount;
+            renderActionButtons();
+            return;
+          }
+          const def = BUTTON_DEFS[action];
+          if (!def) return;
+          if (typeof def.doAction === 'function') { def.doAction(); return; }
+          navigateToNodePath(def.buildPath());
+        };
+
+        if (delayMs > 0 && action !== 'paging-button') {
+          window.setTimeout(runAction, delayMs);
           return;
         }
-        const def = BUTTON_DEFS[action];
-        if (!def) return;
-        if (typeof def.doAction === 'function') { def.doAction(); return; }
-        navigateToNodePath(def.buildPath());
+        runAction();
       });
     });
   }
@@ -1789,6 +1806,7 @@
       }
 
       bindActionButtonInteractions(target, pageCount);
+      preloadDbActionSounds();
       updateCacheModeButtons();
       updateDiagChipButtons();
       return;
@@ -1830,9 +1848,51 @@
     }
 
     bindActionButtonInteractions(target, pageCount);
+    preloadDbActionSounds();
 
     updateCacheModeButtons();
     updateDiagChipButtons();
+  }
+
+  function preloadDbActionSounds() {
+    if (typeof SoundManager === 'undefined') return;
+    Object.values(_dbItemMeta).forEach(meta => {
+      const url = dbActionSoundUrl(meta);
+      if (!url) return;
+      SoundManager.preload(url);
+    });
+  }
+
+  function dbActionSoundUrl(meta) {
+    if (!meta || !meta.sound_asset) return '';
+    const ts = meta.updated_at ? Math.floor(Date.parse(meta.updated_at) / 1000) : 0;
+    return `${_dbAssetBase()}${meta.sound_asset}${ts ? `?v=${ts}` : ''}`;
+  }
+
+  function playDbActionSound(meta) {
+    const url = dbActionSoundUrl(meta);
+    if (!url) return 0;
+    if (typeof SoundManager !== 'undefined') {
+      SoundManager.play(url);
+      return 120;
+    }
+    try {
+      if (_selectorActionAudio) {
+        try {
+          _selectorActionAudio.pause();
+          _selectorActionAudio.currentTime = 0;
+        } catch {}
+      }
+      _selectorActionAudio = new Audio(url);
+      _selectorActionAudio.preload = 'auto';
+      const playPromise = _selectorActionAudio.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => {});
+      }
+      return 140;
+    } catch {
+      return 0;
+    }
   }
 
   function renderPanel() {
