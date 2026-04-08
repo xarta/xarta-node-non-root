@@ -38,6 +38,18 @@
     text-transform: uppercase;
     color: var(--text-dim);
     margin: 0 0 6px;
+    text-align: center;
+}
+
+.em-grid-ghost {
+    position: fixed;
+    pointer-events: none;
+    opacity: .7;
+    z-index: 9999;
+    width: 80px;
+    height: 80px;
+    box-sizing: border-box;
+    border-radius: 8px;
 }
 
 .em-grid {
