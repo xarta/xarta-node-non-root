@@ -885,6 +885,12 @@
         navigateToNodePath(buildPocketttsTabPath('test'));
       },
     },
+    'pockettts-hard-refresh': {
+      icon: '', label: 'Hard Refresh',
+      doAction() {
+        hardRefreshClientAssets();
+      },
+    },
   };
 
   const LS_NODES = 'bp_nodes_v2';

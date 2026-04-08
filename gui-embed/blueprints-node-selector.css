@@ -215,7 +215,8 @@ blueprints-node-selector,
 .bp-ns-action-btn[data-action="pockettts-texts"],
 .bp-ns-action-btn[data-action="pockettts-matrix"],
 .bp-ns-action-btn[data-action="pockettts-monitor"],
-.bp-ns-action-btn[data-action="pockettts-test"] {
+.bp-ns-action-btn[data-action="pockettts-test"],
+.bp-ns-action-btn[data-action="pockettts-hard-refresh"] {
   font-size: 0;
   position: relative;
 }
@@ -228,7 +229,8 @@ blueprints-node-selector,
 .bp-ns-action-btn[data-action="pockettts-texts"]::before,
 .bp-ns-action-btn[data-action="pockettts-matrix"]::before,
 .bp-ns-action-btn[data-action="pockettts-monitor"]::before,
-.bp-ns-action-btn[data-action="pockettts-test"]::before {
+.bp-ns-action-btn[data-action="pockettts-test"]::before,
+.bp-ns-action-btn[data-action="pockettts-hard-refresh"]::before {
   content: '';
   display: block;
   width: 22px;
@@ -250,7 +252,8 @@ blueprints-node-selector,
 .bp-ns-action-btn[data-action="pockettts-texts"]::before,
 .bp-ns-action-btn[data-action="pockettts-matrix"]::before,
 .bp-ns-action-btn[data-action="pockettts-monitor"]::before,
-.bp-ns-action-btn[data-action="pockettts-test"]::before {
+.bp-ns-action-btn[data-action="pockettts-test"]::before,
+.bp-ns-action-btn[data-action="pockettts-hard-refresh"]::before {
   background-image: var(--bp-ns-icon-asset, url('/fallback-ui/assets/icons/fallback.svg'));
 }
 
