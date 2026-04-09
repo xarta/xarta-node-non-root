@@ -8,4 +8,9 @@
 # Editor / OS noise
 .DS_Store
 *.swp
+
+# SQLite runtime data should never be versioned
+*.db
+*.db-shm
+*.db-wal
 *.swo
