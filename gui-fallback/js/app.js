@@ -63,19 +63,72 @@ function _closeActiveOriginMenus() {
   if (menu && typeof menu.closeAnchoredMenus === 'function') menu.closeAnchoredMenus();
 }
 
+const _originDefaultTtsMessages = {
+  tap: '',
+  double_tap: 'Origin double tap has no assigned action. Awaiting assignment.',
+  long_press: 'Origin long press has no assigned action. Awaiting assignment.',
+};
+
+function _originEventHasAssignedAction(eventKind) {
+  const menu = _getActiveGroupMenuConfig();
+  if (!menu) return false;
+
+  if (eventKind === 'double_tap') {
+    return !!_getActiveGroupLayoutTabId();
+  }
+
+  if (eventKind === 'tap') {
+    return typeof menu.openPrimaryMenuAt === 'function';
+  }
+
+  if (eventKind === 'long_press') {
+    return typeof menu.openContextMenuAt === 'function';
+  }
+
+  return false;
+}
+
+async function _runOriginDefaultTts(eventKind) {
+  if (typeof BlueprintsTtsClient === 'undefined') return;
+  const messageOverride = _originDefaultTtsMessages[eventKind] || '';
+  try {
+    await BlueprintsTtsClient.speak({
+      text: messageOverride || undefined,
+      interrupt: true,
+      mode: 'stream',
+      eventKind,
+      fallbackKind: 'negative',
+    });
+  } catch (_) {
+    // UI fallback should stay silent if wrapper call fails.
+  }
+}
+
 function _handleOriginPrimaryMenu(payload) {
+  if (!_originEventHasAssignedAction('tap')) {
+    _runOriginDefaultTts('tap');
+    return;
+  }
   if (typeof OriginMenuStateMachine !== 'undefined') {
     OriginMenuStateMachine.dispatch('tap', payload && payload.button);
   }
 }
 
 function _handleOriginLayoutPage(payload) {
+  if (!_originEventHasAssignedAction('double_tap')) {
+    _runOriginDefaultTts('double_tap');
+    return;
+  }
   if (typeof OriginMenuStateMachine !== 'undefined') {
     OriginMenuStateMachine.dispatch('doubleTap', payload && payload.button);
   }
 }
 
 function _handleOriginContextMenu(payload) {
+  if (!_originEventHasAssignedAction('long_press')) {
+    _runOriginDefaultTts('long_press');
+    return;
+  }
   if (typeof OriginMenuStateMachine !== 'undefined') {
     OriginMenuStateMachine.dispatch('longPress', payload && payload.button);
   }
@@ -188,7 +241,7 @@ function switchTab(tab) {
   if (tab === 'manual-links-table')    { switchTab('manual-links'); manualLinksShowView('table');    return; }
   if (tab === 'manual-links-rendered') { switchTab('manual-links'); manualLinksShowView('rendered'); return; }
   if (tab === 'settings'       && !_settings.length)      loadSettings();
-  if (tab === 'settings')                                  { initSoundToggle(); initVolumeSlider(); }
+  if (tab === 'settings')                                  { initSoundToggle(); initVolumeSlider(); initTtsSettingsPanel(); }
   if (tab === 'keys')                                      loadKeys();
   if (tab === 'certs')                                     loadCerts();
   if (tab === 'docs' && !_docsAll.length)                  loadDocs();

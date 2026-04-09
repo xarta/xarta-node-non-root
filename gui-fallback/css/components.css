@@ -107,6 +107,32 @@ button.secondary:hover { color: var(--text); border-color: var(--text-dim); }
   background: rgba(60,210,100,.08); border: 1px solid var(--ok);
   border-radius: var(--radius); font-size: 13px; }
 
+/* ── TTS wrapper controls in App Config ── */
+.tts-wrapper-panel label {
+  font-size: 11px !important;
+  line-height: 1.35;
+  letter-spacing: .02em;
+}
+
+.tts-wrapper-panel input[type=text] {
+  max-width: none;
+  min-width: 0;
+  width: 100%;
+  flex: 0 0 auto;
+  height: auto;
+  padding: 5px 9px;
+  font-size: 12px;
+}
+
+.tts-wrapper-panel input[type=range] {
+  accent-color: var(--accent);
+}
+
+.tts-wrapper-panel button {
+  padding: 5px 11px;
+  font-size: 12px;
+}
+
 /* ── App Config dense-cell hinting ── */
 #settings-table .settings-cell {
   display: block;

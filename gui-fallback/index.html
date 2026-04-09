@@ -321,7 +321,9 @@
 
   <!-- Settings -->
   <section id="tab-settings" class="tab-panel tab-panel--fill">
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:14px;">Key-value configuration store. Changes sync automatically to all fleet nodes.</p>
+    <div id="s25-lift-settings" class="s25-lift-block" data-for-tab="settings">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:14px;">Key-value configuration store. Changes sync automatically to all fleet nodes.</p>
+    </div>
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <label style="font-size:13px;font-weight:600;white-space:nowrap;">Management CIDR</label>
@@ -343,6 +345,50 @@
         oninput="setSoundVolume(this.value)">
       <span id="sound-volume-label" style="font-size:12px;color:var(--text-dim);min-width:34px;white-space:nowrap;"></span>
       <span id="sound-enabled-status" style="font-size:12px;color:var(--text-dim)"></span>
+    </div>
+    <div class="tts-wrapper-panel" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <strong style="font-size:13px;letter-spacing:0.04em;text-transform:uppercase;">Computer Voice Wrapper</strong>
+        <span id="tts-settings-status" style="font-size:12px;color:var(--text-dim);"></span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
+        <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--text-dim);">
+          <span>Default Voice</span>
+          <input id="tts-default-voice" type="text" placeholder="e.g. majel_1" style="flex:0 0 auto;height:auto;min-height:0;" />
+        </label>
+        <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--text-dim);">
+          <span>Default Message</span>
+          <input id="tts-default-message" type="text" placeholder="Computer, standing by." style="flex:0 0 auto;height:auto;min-height:0;" />
+        </label>
+        <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--text-dim);">
+          <span>Positive Fallback Sound Path</span>
+          <input id="tts-fallback-positive-path" type="text" placeholder="sounds/chime-ops-positive.wav" style="flex:0 0 auto;height:auto;min-height:0;" />
+        </label>
+        <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--text-dim);">
+          <span>Negative Fallback Sound Path</span>
+          <input id="tts-fallback-negative-path" type="text" placeholder="sounds/chime-ops-negative.wav" style="flex:0 0 auto;height:auto;min-height:0;" />
+        </label>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px;">
+        <span style="font-size:12px;color:var(--text-dim);min-width:120px;">TTS Volume</span>
+        <input type="range" id="tts-volume-slider" min="0" max="100" step="1" value="85"
+          style="width:140px;cursor:pointer;accent-color:var(--accent);"
+          oninput="setTtsVolume(this.value)">
+        <span id="tts-volume-label" style="font-size:12px;color:var(--text-dim);min-width:34px;"></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:8px;">
+        <span style="font-size:12px;color:var(--text-dim);min-width:120px;">Fallback SFX Volume</span>
+        <input type="range" id="tts-fallback-volume-slider" min="0" max="100" step="1" value="70"
+          style="width:140px;cursor:pointer;accent-color:var(--accent);"
+          oninput="setTtsFallbackVolume(this.value)">
+        <span id="tts-fallback-volume-label" style="font-size:12px;color:var(--text-dim);min-width:34px;"></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;">
+        <button type="button" onclick="saveTtsSettings()">Save Voice Settings</button>
+        <button type="button" class="secondary" onclick="testTtsWrapperSpeak()">Test Wrapper</button>
+        <button type="button" class="secondary" onclick="stopTtsWrapperSpeak()">Stop</button>
+      </div>
+      <p style="font-size:11px;color:var(--text-dim);margin-top:8px;">These controls are database-driven via Blueprints settings. Event handlers can still provide explicit override text when needed.</p>
     </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
@@ -2476,6 +2522,7 @@
 <script src="js/synthesis/services.js?v={{$assetVersion}}"></script>
 <script src="js/synthesis/machines.js?v={{$assetVersion}}"></script>
 <script src="js/sound-manager.js?v={{$assetVersion}}"></script>
+<script src="js/tts-wrapper-client.js?v={{$assetVersion}}"></script>
 <script src="js/form-control-manager.js?v={{$assetVersion}}"></script>
 <script src="js/hub-modal.js?v={{$assetVersion}}"></script>
 <script src="js/hub-dialogs.js?v={{$assetVersion}}"></script>

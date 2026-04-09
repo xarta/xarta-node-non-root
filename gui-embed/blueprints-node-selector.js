@@ -885,6 +885,13 @@
         navigateToNodePath(buildPocketttsTabPath('test'));
       },
     },
+    'pockettts-test2': {
+      icon: '', label: 'Test2 Page',
+      doAction() {
+        if (openPocketttsTab('test2')) return;
+        navigateToNodePath(buildPocketttsTabPath('test2'));
+      },
+    },
     'pockettts-hard-refresh': {
       icon: '', label: 'Hard Refresh',
       doAction() {
@@ -1233,32 +1240,49 @@
   }
 
   async function pingNode(node) {
-    const start = performance.now();
-    try {
-      const r = await fetch(node.healthUrl, {
-        method: 'GET',
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT),
-      });
-      if (r.ok) {
-        node.localMode = false;
-        node.activeHealthUrl = null;
-        return { ok: true, latencyMs: Math.round(performance.now() - start) };
+    const currentOrigin = (typeof window !== 'undefined' && window.location)
+      ? window.location.origin
+      : '';
+
+    function isSameOriginHealth(url) {
+      if (!url || !currentOrigin) return false;
+      try {
+        return new URL(url, currentOrigin).origin === currentOrigin;
+      } catch {
+        return false;
       }
-    } catch {}
+    }
+
+    const start = performance.now();
+    if (isSameOriginHealth(node.healthUrl)) {
+      try {
+        const r = await fetch(node.healthUrl, {
+          method: 'GET',
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+        });
+        if (r.ok) {
+          node.localMode = false;
+          node.activeHealthUrl = null;
+          return { ok: true, latencyMs: Math.round(performance.now() - start) };
+        }
+      } catch {}
+    }
 
     // Primary unreachable — try LAN/fallback addresses
     for (const alt of (node.altAddresses || [])) {
+      const altHealthUrl = `${alt}/health`;
+      if (!isSameOriginHealth(altHealthUrl)) continue;
       // Skip http:// alts when the page is HTTPS — browser blocks these as mixed content
       if (window.location.protocol === 'https:' && alt.startsWith('http:')) continue;
       const t = performance.now();
       try {
-        const r = await fetch(`${alt}/health`, {
+        const r = await fetch(altHealthUrl, {
           method: 'GET',
           signal: AbortSignal.timeout(REQUEST_TIMEOUT),
         });
         if (r.ok) {
           node.localMode = true;
-          node.activeHealthUrl = `${alt}/health`;
+          node.activeHealthUrl = altHealthUrl;
           return { ok: true, latencyMs: Math.round(performance.now() - t) };
         }
       } catch {}
