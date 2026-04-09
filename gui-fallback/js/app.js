@@ -82,7 +82,15 @@ function _originEventHasAssignedAction(eventKind) {
   }
 
   if (eventKind === 'long_press') {
-    return typeof menu.openContextMenuAt === 'function';
+    // Long-press is only "assigned" when context fn items exist for the
+    // currently active tab context. openContextMenuAt() may exist even when
+    // it would render no actions.
+    if (typeof menu._contextMenuFunctionItems === 'function') {
+      const activeId = typeof menu._activeTabId === 'function' ? menu._activeTabId() : null;
+      const items = menu._contextMenuFunctionItems(activeId);
+      return Array.isArray(items) && items.length > 0;
+    }
+    return false;
   }
 
   return false;
