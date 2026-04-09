@@ -18,6 +18,31 @@ async function _computeApiToken(secretHex) {
   }
 }
 
+async function _extractAuthDetail(resp) {
+  try {
+    const cloned = resp.clone();
+    const data = await cloned.json().catch(() => null);
+    if (typeof data === 'string') return data;
+    if (data && typeof data.detail === 'string') return data.detail;
+    if (data && typeof data.error === 'string') return data.error;
+    if (data && typeof data.message === 'string') return data.message;
+    const text = await cloned.text().catch(() => '');
+    return typeof text === 'string' ? text : '';
+  } catch {
+    return '';
+  }
+}
+
+async function _isLikelyTotpAuthFailure(resp, hadToken) {
+  if (!resp || resp.status !== 401 || !hadToken) return false;
+  const detail = (await _extractAuthDetail(resp)).toLowerCase();
+  if (!detail) return false;
+  return detail.includes('unauthorized')
+    || detail.includes('authentication failed')
+    || detail.includes('invalid token')
+    || detail.includes('token');
+}
+
 function _isColumnResizeActive() {
   return !!(document.body && document.body.classList.contains('table-col-resizing'));
 }
@@ -44,6 +69,7 @@ async function apiFetch(url, options = {}) {
   }
   const secret = localStorage.getItem(_LS_SECRET_KEY) || '';
   const token  = await _computeApiToken(secret);
+  const hadToken = !!token;
   const fetchOptions = { ...options };
   delete fetchOptions.deferDuringColumnResize;
   const merged = {
@@ -52,10 +78,31 @@ async function apiFetch(url, options = {}) {
   };
   const r = await fetch(url, merged);
   if (r.status === 401) {
-    // Distinguish missing-key prompt from true auth failure:
-    // - no token sent   -> likely no key on this origin yet
-    // - token sent      -> key/token rejected by server
-    openApiKeyModal(!!token);
+    if (!hadToken) {
+      openApiKeyModal(false);
+      return r;
+    }
+
+    const likelyAuthFailure = await _isLikelyTotpAuthFailure(r, true);
+    if (!likelyAuthFailure) {
+      return r;
+    }
+
+    // Retry once before showing auth-failed UI to avoid false alarms on
+    // occasional boundary timing and transient 401 responses.
+    const retryToken = await _computeApiToken(secret);
+    if (retryToken) {
+      const retryResp = await fetch(url, {
+        ...fetchOptions,
+        headers: { ...(fetchOptions.headers || {}), 'X-API-Token': retryToken },
+      });
+      if (retryResp.status !== 401) return retryResp;
+      const retryLikelyAuthFailure = await _isLikelyTotpAuthFailure(retryResp, true);
+      if (retryLikelyAuthFailure) openApiKeyModal(true);
+      return retryResp;
+    }
+
+    openApiKeyModal(true);
   }
   return r;
 }
@@ -65,6 +112,15 @@ function openApiKeyModal(authFailed = false) {
   const input = document.getElementById('api-key-input');
   const errEl = document.getElementById('api-key-modal-error');
   if (!modal || !input || !errEl) return;
+
+  // If already open, do not reset the input value while the user is typing.
+  // Only update the error hint and keep focus stable.
+  if (modal.open) {
+    if (authFailed) errEl.textContent = 'Authentication failed. Check your API secret.';
+    requestAnimationFrame(() => input.focus());
+    return;
+  }
+
   errEl.textContent = authFailed ? 'Authentication failed. Check your API secret.' : '';
   input.value = localStorage.getItem(_LS_SECRET_KEY) || '';
   if (typeof HubModal !== 'undefined') {

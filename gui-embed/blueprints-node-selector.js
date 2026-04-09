@@ -225,6 +225,7 @@
         const result = Object.prototype.hasOwnProperty.call(dialog, '_bpResult') ? dialog._bpResult : null;
         delete dialog._bpResult;
         finish(result);
+        dialog._bpPromise = null;
       });
 
       return dialog;
@@ -237,13 +238,22 @@
       const error = dialog.querySelector('#bp-embed-api-key-error');
       if (!input || !error) return Promise.resolve(null);
 
-      if (dialog.open) dialog.close();
+      // Reuse an already-open modal so repeated triggers do not erase
+      // in-progress input while the user is typing.
+      if (dialog.open && dialog._bpPromise) {
+        if (opts.authFailed) {
+          error.textContent = 'Authentication failed. Check your API secret.';
+        }
+        requestAnimationFrame(() => input.focus());
+        return dialog._bpPromise;
+      }
+
       error.textContent = opts.authFailed ? 'Authentication failed. Check your API secret.' : '';
       input.value = typeof opts.currentValue === 'string'
         ? opts.currentValue
         : (localStorage.getItem(LS_SECRET) || '');
 
-      return new Promise((resolve) => {
+      dialog._bpPromise = new Promise((resolve) => {
         dialog._bpResolve = resolve;
         dialog.showModal();
         requestAnimationFrame(() => {
@@ -251,6 +261,7 @@
           input.select();
         });
       });
+      return dialog._bpPromise;
     };
   }
 
@@ -446,7 +457,7 @@
       if (!current) {
         if (typeof window.openBlueprintsEmbedApiKeyModal === 'function') {
           window.openBlueprintsEmbedApiKeyModal({
-            authFailed: true,
+            authFailed: !!(localStorage.getItem('blueprints_api_secret') || '').trim(),
             currentValue: localStorage.getItem('blueprints_api_secret') || ''
           });
         } else {

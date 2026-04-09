@@ -210,6 +210,7 @@
         const result = Object.prototype.hasOwnProperty.call(dialog, '_bpResult') ? dialog._bpResult : null;
         delete dialog._bpResult;
         finish(result);
+        dialog._bpPromise = null;
       });
 
       return dialog;
@@ -222,13 +223,22 @@
       const error = dialog.querySelector('#bp-embed-api-key-error');
       if (!input || !error) return Promise.resolve(null);
 
-      if (dialog.open) dialog.close();
+      // Reuse an already-open modal so repeated 401 triggers do not clear
+      // the user's in-progress input.
+      if (dialog.open && dialog._bpPromise) {
+        if (opts.authFailed) {
+          error.textContent = 'Authentication failed. Check your API secret.';
+        }
+        requestAnimationFrame(() => input.focus());
+        return dialog._bpPromise;
+      }
+
       error.textContent = opts.authFailed ? 'Authentication failed. Check your API secret.' : '';
       input.value = typeof opts.currentValue === 'string'
         ? opts.currentValue
         : (localStorage.getItem(LS_SECRET) || '');
 
-      return new Promise((resolve) => {
+      dialog._bpPromise = new Promise((resolve) => {
         dialog._bpResolve = resolve;
         dialog.showModal();
         requestAnimationFrame(() => {
@@ -236,6 +246,7 @@
           input.select();
         });
       });
+      return dialog._bpPromise;
     };
   }
 
@@ -253,15 +264,71 @@
     } catch { return ''; }
   }
 
+  async function _extractAuthDetail(resp) {
+    try {
+      const cloned = resp.clone();
+      const data = await cloned.json().catch(() => null);
+      if (typeof data === 'string') return data;
+      if (data && typeof data.detail === 'string') return data.detail;
+      if (data && typeof data.error === 'string') return data.error;
+      if (data && typeof data.message === 'string') return data.message;
+      const text = await cloned.text().catch(() => '');
+      return typeof text === 'string' ? text : '';
+    } catch {
+      return '';
+    }
+  }
+
+  async function _isLikelyTotpAuthFailure(resp, hadToken) {
+    if (!resp || resp.status !== 401 || !hadToken) return false;
+    const detail = (await _extractAuthDetail(resp)).toLowerCase();
+    if (!detail) return false;
+    return detail.includes('unauthorized')
+      || detail.includes('authentication failed')
+      || detail.includes('invalid token')
+      || detail.includes('token');
+  }
+
   async function apiFetch(url, options = {}) {
     const secret = localStorage.getItem(LS_SECRET) || '';
     const token  = await _computeApiToken(secret);
+    const hadToken = !!token;
     const merged = {
       ...options,
       headers: { ...(options.headers || {}), ...(token ? { 'X-API-Token': token } : {}) },
     };
     const r = await fetch(url, merged);
     if (r.status === 401) {
+      if (!hadToken) {
+        const enteredNoToken = await window.openBlueprintsEmbedApiKeyModal({ authFailed: false });
+        if (enteredNoToken && enteredNoToken.trim()) {
+          localStorage.setItem(LS_SECRET, enteredNoToken.trim());
+          const token2 = await _computeApiToken(enteredNoToken.trim());
+          return fetch(url, {
+            ...options,
+            headers: { ...(options.headers || {}), ...(token2 ? { 'X-API-Token': token2 } : {}) },
+          });
+        }
+        return r;
+      }
+
+      const likelyAuthFailure = await _isLikelyTotpAuthFailure(r, true);
+      if (!likelyAuthFailure) return r;
+
+      // Retry once before prompting to avoid false auth-failure alarms.
+      const retryToken = await _computeApiToken(secret);
+      let promptSourceResp = r;
+      if (retryToken) {
+        const retryResp = await fetch(url, {
+          ...options,
+          headers: { ...(options.headers || {}), 'X-API-Token': retryToken },
+        });
+        if (retryResp.status !== 401) return retryResp;
+        const retryLikelyAuthFailure = await _isLikelyTotpAuthFailure(retryResp, true);
+        if (!retryLikelyAuthFailure) return retryResp;
+        promptSourceResp = retryResp;
+      }
+
       const entered = await window.openBlueprintsEmbedApiKeyModal({ authFailed: true });
       if (entered && entered.trim()) {
         localStorage.setItem(LS_SECRET, entered.trim());
@@ -272,6 +339,7 @@
         };
         return fetch(url, merged2);
       }
+      return promptSourceResp;
     }
     return r;
   }
