@@ -1117,6 +1117,14 @@
     if (shouldPauseForColumnResize()) return;
     const origin = API_BASE || window.location.origin;
 
+    function parseDbLastSeen(value) {
+      const raw = String(value || '').trim();
+      if (!raw) return 0;
+      const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T');
+      const ts = Date.parse(normalized);
+      return Number.isFinite(ts) ? ts : 0;
+    }
+
     let selfNode = null;
     try {
       const r = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(5000) });
@@ -1133,6 +1141,7 @@
           uiUrl,
           healthUrl: `${origin}/health`,
           altAddresses,
+          apiLastSeenAt: Date.now(),
         };
       }
     } catch {}
@@ -1180,6 +1189,7 @@
         healthUrl: `${uiUrl}/health`,
         fleetPeer: p.fleet_peer ?? true,
         altAddresses,
+        apiLastSeenAt: parseDbLastSeen(p.last_seen),
       });
     }
 
@@ -1211,7 +1221,7 @@
     _nodes = fresh.map(n => Object.assign(
       {
         latencyMs: null,
-        lastSeenAt: 0,
+        lastSeenAt: Number(n.apiLastSeenAt) || 0,
         lastPolledAt: 0,
         discoveredAt: Date.now(),
       },
@@ -1219,7 +1229,7 @@
       byId[n.id]
         ? {
             latencyMs: byId[n.id].latencyMs,
-            lastSeenAt: byId[n.id].lastSeenAt,
+            lastSeenAt: Math.max(byId[n.id].lastSeenAt || 0, Number(n.apiLastSeenAt) || 0),
             lastPolledAt: byId[n.id].lastPolledAt,
             discoveredAt: byId[n.id].discoveredAt || Date.now(),
             localMode: byId[n.id].localMode,
@@ -1240,38 +1250,22 @@
   }
 
   async function pingNode(node) {
-    const currentOrigin = (typeof window !== 'undefined' && window.location)
-      ? window.location.origin
-      : '';
-
-    function isSameOriginHealth(url) {
-      if (!url || !currentOrigin) return false;
-      try {
-        return new URL(url, currentOrigin).origin === currentOrigin;
-      } catch {
-        return false;
-      }
-    }
-
     const start = performance.now();
-    if (isSameOriginHealth(node.healthUrl)) {
-      try {
-        const r = await fetch(node.healthUrl, {
-          method: 'GET',
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT),
-        });
-        if (r.ok) {
-          node.localMode = false;
-          node.activeHealthUrl = null;
-          return { ok: true, latencyMs: Math.round(performance.now() - start) };
-        }
-      } catch {}
-    }
+    try {
+      const r = await fetch(node.healthUrl, {
+        method: 'GET',
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+      });
+      if (r.ok) {
+        node.localMode = false;
+        node.activeHealthUrl = null;
+        return { ok: true, latencyMs: Math.round(performance.now() - start) };
+      }
+    } catch {}
 
     // Primary unreachable — try LAN/fallback addresses
     for (const alt of (node.altAddresses || [])) {
       const altHealthUrl = `${alt}/health`;
-      if (!isSameOriginHealth(altHealthUrl)) continue;
       // Skip http:// alts when the page is HTTPS — browser blocks these as mixed content
       if (window.location.protocol === 'https:' && alt.startsWith('http:')) continue;
       const t = performance.now();
