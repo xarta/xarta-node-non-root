@@ -1260,6 +1260,12 @@
       if (r.ok) peers = await r.json();
     } catch {}
 
+    const selfTailnet = (() => {
+      if (!selfNode || !Array.isArray(peers)) return '';
+      const selfPeer = peers.find(p => p && p.node_id === selfNode.id);
+      return selfPeer && selfPeer.tailnet ? String(selfPeer.tailnet).trim() : '';
+    })();
+
     const fresh = [];
     if (selfNode) fresh.push(selfNode);
 
@@ -1268,7 +1274,9 @@
       if (!syncAddr) continue;
       if (fresh.find(n => n.id === p.node_id)) continue;
 
-      let uiUrl = p.ui_url ? p.ui_url.replace(/\/$/, '') : null;
+      const primaryUiUrl = p.primary_hostname ? `https://${String(p.primary_hostname).trim()}` : null;
+      const dbUiUrl = p.ui_url ? p.ui_url.replace(/\/$/, '') : null;
+      let uiUrl = primaryUiUrl || dbUiUrl;
       if (!uiUrl) {
         const isSameScheme = syncAddr.startsWith(window.location.protocol);
         if (isSameScheme) {
@@ -1285,9 +1293,20 @@
 
       // Alt address: use tailnet_hostname from DB (populated from .nodes.json).
       // Both URLs are HTTPS via Caddy — no raw ports involved.
-      const altAddresses = (p.tailnet_hostname && `https://${p.tailnet_hostname}` !== uiUrl)
-        ? [`https://${p.tailnet_hostname}`]
-        : [];
+      const altAddresses = [];
+      if (dbUiUrl && normalizeOrigin(dbUiUrl) !== normalizeOrigin(uiUrl)) {
+        altAddresses.push(dbUiUrl);
+      }
+      if (p.tailnet_hostname) {
+        const peerTailnet = p.tailnet ? String(p.tailnet).trim() : '';
+        const sameTailnetContext = !!(selfTailnet && peerTailnet && selfTailnet === peerTailnet);
+        if (sameTailnetContext) {
+          const tailnetUrl = `https://${p.tailnet_hostname}`;
+          if (normalizeOrigin(tailnetUrl) !== normalizeOrigin(uiUrl)) {
+            altAddresses.push(tailnetUrl);
+          }
+        }
+      }
 
       fresh.push({
         id: p.node_id,
