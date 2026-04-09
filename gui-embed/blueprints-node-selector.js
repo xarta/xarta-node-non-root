@@ -918,6 +918,9 @@
   const POLL_INTERVAL = 2_000;
   const REQUEST_TIMEOUT = Math.max(400, POLL_INTERVAL - 250);
   const NO_RESPONSE_WINDOW = 10_000;
+  const OFFLINE_REPORT_WINDOW = 30_000;
+  const REPORT_FLUSH_INTERVAL = 6_000;
+  const REPORT_TRIGGER_DELAY = 1_200;
   const PRUNE_UNSEEN_MS = 48 * 60 * 60 * 1000;
   const HEART_WINDOW_RATIO = 0.95;
   const HEART_STEPS = 20;
@@ -931,6 +934,100 @@
   let _lastPollTick = 0;
   let _heartTimer = null;
   let _heartToken = 0;
+
+  const FleetNodeVoiceStateMachine = (() => {
+    const STATE_ALL_ONLINE = 'all-online';
+    const STATE_DEGRADED = 'degraded';
+
+    const ctx = {
+      state: STATE_ALL_ONLINE,
+      announcedOffline: new Set(),
+      pendingOffline: new Set(),
+      pendingRecovered: new Set(),
+      lastFlushAt: 0,
+      triggerFlushAt: 0,
+      speaking: false,
+    };
+
+    function _setDiff(sourceSet, minusSet) {
+      const out = new Set();
+      sourceSet.forEach((value) => {
+        if (!minusSet.has(value)) out.add(value);
+      });
+      return out;
+    }
+
+    function _queueSet(target, values) {
+      values.forEach((value) => target.add(value));
+    }
+
+    function dispatch(snapshot) {
+      if (!snapshot || !snapshot.hasPrimaryConnection) return;
+
+      const now = Date.now();
+      const offlineNow = snapshot.offlineSet || new Set();
+      const newlyOffline = _setDiff(offlineNow, ctx.announcedOffline);
+      const recovered = _setDiff(ctx.announcedOffline, offlineNow);
+
+      if (ctx.state === STATE_ALL_ONLINE && offlineNow.size > 0) {
+        ctx.state = STATE_DEGRADED;
+      } else if (ctx.state === STATE_DEGRADED && offlineNow.size === 0) {
+        ctx.state = STATE_ALL_ONLINE;
+      }
+
+      if (newlyOffline.size > 0) {
+        _queueSet(ctx.pendingOffline, newlyOffline);
+      }
+      if (recovered.size > 0) {
+        _queueSet(ctx.pendingRecovered, recovered);
+        ctx.triggerFlushAt = now + REPORT_TRIGGER_DELAY;
+      }
+    }
+
+    function hasPending() {
+      return ctx.pendingOffline.size > 0 || ctx.pendingRecovered.size > 0;
+    }
+
+    function shouldFlush(now) {
+      if (!hasPending()) return false;
+      if (ctx.speaking) return false;
+      if ((now - ctx.lastFlushAt) >= REPORT_FLUSH_INTERVAL) return true;
+      return !!ctx.triggerFlushAt && now >= ctx.triggerFlushAt;
+    }
+
+    function nextBatch() {
+      const offline = Array.from(ctx.pendingOffline);
+      const recovered = Array.from(ctx.pendingRecovered);
+      ctx.pendingOffline.clear();
+      ctx.pendingRecovered.clear();
+      ctx.triggerFlushAt = 0;
+      return { offline, recovered };
+    }
+
+    function markFlushed(offlineIds, recoveredIds) {
+      (offlineIds || []).forEach((id) => ctx.announcedOffline.add(id));
+      (recoveredIds || []).forEach((id) => ctx.announcedOffline.delete(id));
+      ctx.lastFlushAt = Date.now();
+    }
+
+    function restoreBatch(offlineIds, recoveredIds) {
+      (offlineIds || []).forEach((id) => ctx.pendingOffline.add(id));
+      (recoveredIds || []).forEach((id) => ctx.pendingRecovered.add(id));
+    }
+
+    function setSpeaking(isSpeaking) {
+      ctx.speaking = !!isSpeaking;
+    }
+
+    return {
+      dispatch,
+      shouldFlush,
+      nextBatch,
+      markFlushed,
+      restoreBatch,
+      setSpeaking,
+    };
+  })();
 
   function lsGet(key) { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } }
   function lsSet(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }
@@ -1388,31 +1485,35 @@
       return;
     }
     _polling = true;
-    _lastPollTick = Date.now();
-    pulseHeart();
+    try {
+      _lastPollTick = Date.now();
+      pulseHeart();
 
-    await Promise.all(_nodes.map(async node => {
-      const result = await pingNode(node);
-      const now = Date.now();
-      node.lastPolledAt = now;
-      if (result.ok) {
-        node.latencyMs = result.latencyMs;
-        node.lastSeenAt = now;
-      } else {
-        node.latencyMs = null;
-      }
-    }));
+      await Promise.all(_nodes.map(async node => {
+        const result = await pingNode(node);
+        const now = Date.now();
+        node.lastPolledAt = now;
+        if (result.ok) {
+          node.latencyMs = result.latencyMs;
+          node.lastSeenAt = now;
+        } else {
+          node.latencyMs = null;
+        }
+      }));
 
-    pruneUnseenNodes();
-    pickBestCurrent();
+      pruneUnseenNodes();
+      pickBestCurrent();
 
-    updateSelectedDot();
+      updateSelectedDot();
 
-    lsSet(LS_NODES, { ts: Date.now(), nodes: _nodes });
-    renderBtn();
-    renderActionButtons();
-    renderPanel();
-    _polling = false;
+      lsSet(LS_NODES, { ts: Date.now(), nodes: _nodes });
+      renderBtn();
+      renderActionButtons();
+      renderPanel();
+      await maybeAnnounceFleetNodeStatus();
+    } finally {
+      _polling = false;
+    }
   }
 
   function updateSelectedDot() {
@@ -2079,6 +2180,159 @@
     if (totalHours < 24) return `${totalHours}h`;
     const totalDays = Math.floor(totalHours / 24);
     return `${totalDays}d`;
+  }
+
+  function _formatNodeNamesForSpeech(names) {
+    const cleaned = (names || []).map((name) => String(name || '').trim()).filter(Boolean);
+    if (!cleaned.length) return '';
+    if (cleaned.length === 1) return cleaned[0];
+    if (cleaned.length === 2) return `${cleaned[0]} and ${cleaned[1]}`;
+    return `${cleaned.slice(0, -1).join(', ')}, and ${cleaned[cleaned.length - 1]}`;
+  }
+
+  function _collectFleetVoiceSnapshot(now) {
+    const current = getCurrentNode();
+    const hasPrimaryConnection = !!(current && Number.isFinite(current.latencyMs));
+
+    const offlineNodes = _nodes.filter((node) => {
+      if (!node || !node.id) return false;
+      if (node.fleetPeer === false) return false;
+      if (current && node.id === current.id) return false;
+      if (!node.lastSeenAt) return false;
+      if (Number.isFinite(node.latencyMs)) return false;
+      return (now - node.lastSeenAt) > OFFLINE_REPORT_WINDOW;
+    });
+
+    const offlineSet = new Set(offlineNodes.map((node) => node.id));
+    const idToName = new Map(_nodes.map((node) => [node.id, node.name || node.id]));
+
+    return {
+      hasPrimaryConnection,
+      current,
+      offlineSet,
+      idToName,
+    };
+  }
+
+  async function _canSpeakViaPrimary(currentNode) {
+    if (!currentNode) return false;
+    const base = getPreferredBaseUrl(currentNode);
+    if (!base) return false;
+    try {
+      const r = await _authFetch(`${base}/api/v1/tts/status`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(2500),
+      });
+      return r.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async function _speakFleetStatusMessage(currentNode, message) {
+    if (!currentNode || !message) return false;
+    const base = getPreferredBaseUrl(currentNode);
+    if (!base) return false;
+
+    const baseOrigin = normalizeOrigin(base);
+    const hereOrigin = (typeof window !== 'undefined' && window.location) ? window.location.origin : '';
+    const sameOriginPrimary = !!(baseOrigin && hereOrigin && baseOrigin === hereOrigin);
+
+    if (sameOriginPrimary && typeof window !== 'undefined' && window.BlueprintsTtsClient && typeof window.BlueprintsTtsClient.speak === 'function') {
+      try {
+        await window.BlueprintsTtsClient.speak({
+          text: message,
+          interrupt: true,
+          mode: 'stream',
+          eventKind: 'fleet_nodes_status',
+          fallbackKind: 'negative',
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    try {
+      const r = await _authFetch(`${base}/api/v1/tts/speak`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: message,
+          interrupt: true,
+          mode: 'stream',
+          event_kind: 'fleet_nodes_status',
+          fallback_kind: 'negative',
+        }),
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!r.ok) return false;
+
+      const contentType = (r.headers.get('content-type') || '').toLowerCase();
+      if (contentType.startsWith('audio/')) {
+        const blob = await r.blob();
+        if (!blob || !blob.size) return false;
+        const blobUrl = URL.createObjectURL(blob);
+        try {
+          const audio = new Audio(blobUrl);
+          await audio.play();
+          return true;
+        } finally {
+          window.setTimeout(() => URL.revokeObjectURL(blobUrl), 30_000);
+        }
+      }
+
+      const payload = await r.json().catch(() => null);
+      return !!(payload && payload.ok !== false);
+    } catch {
+      return false;
+    }
+  }
+
+  async function maybeAnnounceFleetNodeStatus() {
+    const now = Date.now();
+    const snapshot = _collectFleetVoiceSnapshot(now);
+    FleetNodeVoiceStateMachine.dispatch(snapshot);
+    if (!snapshot.hasPrimaryConnection) return;
+    if (!FleetNodeVoiceStateMachine.shouldFlush(now)) return;
+
+    FleetNodeVoiceStateMachine.setSpeaking(true);
+    try {
+      const canSpeak = await _canSpeakViaPrimary(snapshot.current);
+      if (!canSpeak) return;
+
+      const batch = FleetNodeVoiceStateMachine.nextBatch();
+      const offlineNames = batch.offline
+        .map((id) => snapshot.idToName.get(id) || id)
+        .sort((a, b) => a.localeCompare(b));
+      const recoveredNames = batch.recovered
+        .map((id) => snapshot.idToName.get(id) || id)
+        .sort((a, b) => a.localeCompare(b));
+
+      const segments = [];
+      if (offlineNames.length) {
+        const names = _formatNodeNamesForSpeech(offlineNames);
+        segments.push(`Warning. Nodes currently offline: ${names}.`);
+      }
+      if (recoveredNames.length) {
+        const names = _formatNodeNamesForSpeech(recoveredNames);
+        segments.push(`Information: Nodes back online: ${names}.`);
+      }
+      if (!segments.length) {
+        FleetNodeVoiceStateMachine.markFlushed([], []);
+        return;
+      }
+
+      const message = segments.join(' ');
+      const spoke = await _speakFleetStatusMessage(snapshot.current, message);
+      if (spoke) {
+        FleetNodeVoiceStateMachine.markFlushed(batch.offline, batch.recovered);
+      } else {
+        FleetNodeVoiceStateMachine.restoreBatch(batch.offline, batch.recovered);
+      }
+    } finally {
+      FleetNodeVoiceStateMachine.setSpeaking(false);
+    }
   }
 
   function esc(s) {
