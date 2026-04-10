@@ -503,6 +503,23 @@
 
       const nextUrl = new URL(window.location.href);
       nextUrl.searchParams.set('_fresh', String(Date.now()));
+
+      // Preserve the current group/tab so the page reloads on the same view.
+      // BlueprintsHubMenuBridge is only present on pages that load app.js (e.g. fallback UI).
+      try {
+        const bridge = window.BlueprintsHubMenuBridge;
+        if (bridge) {
+          const group = bridge.activeGroup;
+          if (group && group !== 'synthesis') {
+            // synthesis is the default — no need to encode it
+            nextUrl.searchParams.set('group', group);
+          }
+          const menuConfig = typeof bridge.getActiveMenuConfig === 'function' && bridge.getActiveMenuConfig();
+          const tab = menuConfig && typeof menuConfig._activeTabId === 'function' && menuConfig._activeTabId();
+          if (tab) nextUrl.searchParams.set('tab', tab);
+        }
+      } catch (_e) { /* non-fallback-UI context — skip silently */ }
+
       window.location.replace(nextUrl.toString());
     } catch (error) {
       const message = error && error.message ? error.message : 'Client refresh failed.';
