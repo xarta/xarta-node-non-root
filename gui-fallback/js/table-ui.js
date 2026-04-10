@@ -827,21 +827,38 @@
     }
 
     function bind(tableEl, onChange) {
-      if (!tableEl || tableEl.dataset.tableSortBound === '1') {
+      if (!tableEl) return;
+      if (tableEl.dataset.tableSortBound === '1') {
+        // Already bound — swap delegate to this sorter so the existing
+        // click handler routes to the correct sorter instance.
+        if (tableEl._tableSortDelegate) {
+          tableEl._tableSortDelegate.toggle = toggle;
+          tableEl._tableSortDelegate.onChange = onChange;
+          tableEl._tableSortDelegate.getState = getState;
+          tableEl._tableSortDelegate.syncInd = function () { syncIndicators(tableEl); };
+        }
         syncIndicators(tableEl);
         return;
       }
       tableEl.dataset.tableSortBound = '1';
+      var delegate = {
+        toggle: toggle,
+        onChange: onChange,
+        getState: getState,
+        syncInd: function () { syncIndicators(tableEl); },
+      };
+      tableEl._tableSortDelegate = delegate;
       tableEl.addEventListener('click', function (e) {
         if (tableEl.dataset.colResizeDragging === '1') return;
         var suppressUntil = Number(tableEl.dataset.colResizeSuppressUntil || 0);
         if (suppressUntil && Date.now() < suppressUntil) return;
         var th = e.target.closest('thead th[data-sort-key]');
         if (!th || !tableEl.contains(th)) return;
-        toggle(th.dataset.sortKey);
-        syncIndicators(tableEl);
-        if (typeof onChange === 'function') {
-          onChange(getState());
+        var d = tableEl._tableSortDelegate;
+        d.toggle(th.dataset.sortKey);
+        d.syncInd();
+        if (typeof d.onChange === 'function') {
+          d.onChange(d.getState());
         }
       });
       syncIndicators(tableEl);
@@ -934,8 +951,9 @@
         var style = styleParts.length ? ' style="' + styleParts.join(';') + '"' : '';
         var sortAttrs = meta.sortKey ? ' data-sort-key="' + meta.sortKey + '"' : '';
         var classAttr = meta.sortKey ? ' class="table-th-sort"' : '';
+        var titleAttr = meta.description ? ' title="' + meta.description.replace(/"/g, '&quot;') + '"' : '';
         var labelHtml = sorter && meta.sortKey ? sorter.renderLabel(meta.label, meta.sortKey) : meta.label;
-        return '<th data-col="' + col + '"' + sortAttrs + classAttr + style + '>' + labelHtml + '</th>';
+        return '<th data-col="' + col + '"' + sortAttrs + classAttr + titleAttr + style + '>' + labelHtml + '</th>';
       }).join('');
     }
 
@@ -1051,13 +1069,15 @@
     }
 
     function getTableCode() {
+      if (cfg.tableCode) return cfg.tableCode;
       var tableEl = getTable();
-      return (tableEl && tableEl.dataset && tableEl.dataset.layoutTableCode) || cfg.tableCode || '';
+      return (tableEl && tableEl.dataset && tableEl.dataset.layoutTableCode) || '';
     }
 
     function getTableName() {
+      if (cfg.tableName) return cfg.tableName;
       var tableEl = getTable();
-      return (tableEl && tableEl.dataset && tableEl.dataset.layoutTableName) || cfg.tableName || '';
+      return (tableEl && tableEl.dataset && tableEl.dataset.layoutTableName) || '';
     }
 
     function getSurfaceLabel() {
@@ -1085,7 +1105,10 @@
       var hostEl = (handle && handle.parentElement) ? handle.parentElement : wrap.parentElement;
       hostEl.classList.add('table-layout-quick-host');
       quickActionsEl = hostEl.querySelector('.table-layout-quick-actions[data-layout-quick-table-code="' + tableCode + '"]');
-      if (quickActionsEl) return quickActionsEl;
+      if (quickActionsEl) {
+        _positionQuickActions(quickActionsEl);
+        return quickActionsEl;
+      }
 
       quickActionsEl = document.createElement('div');
       quickActionsEl.className = 'table-layout-quick-actions';
@@ -1108,6 +1131,7 @@
           _pulseQuickActions();
         }, { passive: true });
       }
+      _positionQuickActions(quickActionsEl);
       return quickActionsEl;
     }
 
@@ -1119,7 +1143,7 @@
       var handle = panel ? panel.querySelector('.body-shade-handle') : null;
       var topPx = 8;
       if (handle) {
-        topPx = Math.max(0, Math.round(handle.offsetTop + handle.offsetHeight + 4));
+        topPx = Math.max(0, Math.round(handle.offsetTop + handle.offsetHeight + 8));
       }
       el.style.top = topPx + 'px';
     }
@@ -1138,6 +1162,7 @@
     function _pulseQuickActions() {
       var el = _ensureQuickActions();
       if (!el) return;
+      _positionQuickActions(el);
       _clearQuickActionTimers();
       el.classList.add('is-visible');
       el.classList.remove('is-fading-out');

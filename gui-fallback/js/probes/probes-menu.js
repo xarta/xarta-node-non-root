@@ -149,8 +149,8 @@ ProbesMenuConfig.registerFunctions({
     'bm.import':      () => document.getElementById('bm-import-file').click(),
     'bm.refresh':     () => loadBookmarks(),
     'bm.cols':        () => _bmOpenColsModal(),
-    'bm.scroll':      () => toggleBmBrowseHorizontalScroll(),
-    'bm.context':     () => openBmBrowseLayoutContextModal(),
+    'bm.scroll':      () => toggleBmHorizontalScroll(),
+    'bm.context':     () => openBmLayoutContextModal(),
     'bm.pagination':  () => _bmTogglePagination(),
     'bm.archived':    () => toggleBookmarksShowArchived(),
     'bm.explainSort': () => {
@@ -230,7 +230,7 @@ ProbesMenuConfig.registerFunctions({
 });
 
 ProbesMenuConfig.registerLabelGetters({
-    'bm-fn-scroll':      () => _probesHorizontalScrollLabel('Horiz Scroll', () => _bmCurrentTablePrefs()),
+    'bm-fn-scroll':      () => _probesHorizontalScrollLabel('Horiz Scroll', () => _bmSearchActive ? _ensureBmSearchLayoutController() : _ensureBmBrowseLayoutController()),
     'bm-fn-pagination': () => _bmIsPaginationEnabled() ? 'Pagination: On' : 'Pagination: Off',
     'bm-fn-archived': () => (typeof isBookmarksShowArchived === 'function' && isBookmarksShowArchived()) ? 'Show active' : 'Show archived',
     'dns-fn-scroll':     () => _probesHorizontalScrollLabel('Horiz Scroll', () => _ensureDnsLayoutController()),

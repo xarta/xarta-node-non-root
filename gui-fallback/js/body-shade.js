@@ -389,10 +389,18 @@
     moveDrag(e.clientY);
   }
 
-  function onMouseUp() {
+  function onMouseUp(e) {
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup',   onMouseUp);
+    var clickX = e ? e.clientX : 0;
+    var clickY = e ? e.clientY : 0;
+    var wasDragMove = dragMoved;
     endDrag();
+    if (longPressTriggered || wasDragMove) {
+      lastTapAt = 0;
+      return;
+    }
+    handleTapForDoubleToggle(clickX, clickY);
   }
 
   /* ── Bind all drag events to a handle element ───────────────────────────── */

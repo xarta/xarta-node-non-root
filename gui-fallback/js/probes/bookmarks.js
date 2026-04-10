@@ -46,11 +46,13 @@ const _BM_FIELD_META = {
                      return `<td><span class="bm-score-cell" data-metric="score_sources" style="cursor:pointer" title="Click to analyse score">${html}</span></td>`;
                    } },
   rrf_score:     { label: 'RRF Score',    sortKey: 'rrf_score',
+                   description: 'Reciprocal Rank Fusion score — combines keyword and vector signals into a single relevance score. Higher is better. Typical range 0.001–0.066.',
                    render: b => {
                      const v = b.rrf_score;
                      return `<td><span class="bm-score-cell" data-metric="rrf_score" style="cursor:pointer;font-size:11px;font-variant-numeric:tabular-nums;color:var(--text-dim)" title="Click to analyse score">${v != null ? v.toFixed(5) : ''}</span></td>`;
                    } },
   kw_tier:       { label: 'KW Tier',      sortKey: 'kw_tier',
+                   description: 'Keyword match tier — how strongly the query matched via keywords. Lower tier = stronger match. Tier 0 = exact phrase in title/URL (best); Tier 7 = document-level only (weakest). Null = pure vector match with no keyword signal.',
                    render: b => {
                      const tier = b.kw_tier;
                      if (tier == null) return '<td></td>';
@@ -59,6 +61,7 @@ const _BM_FIELD_META = {
                      return `<td><span class="bm-score-cell" data-metric="kw_tier" style="cursor:pointer;font-size:11px;white-space:nowrap;color:${colors[tier]||'#6b7280'}" title="${labels[tier]||''} — Click to analyse">${tier} – ${labels[tier]||'?'}</span></td>`;
                    } },
   cosine_distance:{ label: 'Cos Dist',    sortKey: 'cosine_distance',
+                   description: 'Cosine distance between the query embedding and the document embedding. Lower = more similar. Under 0.3 (shown in green) is a strong vector match. Over 0.6 is weak. Note: this is distance not similarity — lower is better.',
                    render: b => {
                      const v = b.cosine_distance;
                      if (v == null) return '<td></td>';
@@ -128,6 +131,61 @@ function _bmBrowseColumnSeed(col) {
   return seeds[col] || null;
 }
 
+// ── Phase 3: Static search column seed ───────────────────────────────────
+// Search mode has a known base set plus scoring transparency columns.
+// Dynamic detection still runs as a merge-into-seed safety net.
+const _BM_SEARCH_SEED_COLS = [
+  '_icon', 'title', 'url', 'tags', 'description', 'notes',
+  'source', 'created_at', 'updated_at', 'folder', 'favicon_url',
+  'archived',
+  // scoring transparency — search-only
+  'score_sources', 'rrf_score', 'kw_tier', 'cosine_distance',
+  'reranker_rank', 'exact_tier',
+  '_actions'
+];
+
+function _bmSearchColumnSeed(col) {
+  const seeds = {
+    _icon:            { data_type: 'icon',    sample_max_length: 1,   min_width_px: 30,  max_width_px: 30,  width_px: 30 },
+    title:            { data_type: 'text',    sample_max_length: 120, min_width_px: 120, max_width_px: 600, width_px: 250,
+                        sqlite_column: 'title' },
+    url:              { data_type: 'url',     sample_max_length: 200, min_width_px: 100, max_width_px: 400, width_px: 180,
+                        sqlite_column: 'url' },
+    tags:             { data_type: 'text[]',  sample_max_length: 60,  min_width_px: 80,  max_width_px: 300, width_px: 120,
+                        sqlite_column: 'tags' },
+    description:      { data_type: 'text',    sample_max_length: 200, min_width_px: 100, max_width_px: 400, width_px: 180,
+                        sqlite_column: 'description' },
+    notes:            { data_type: 'text',    sample_max_length: 200, min_width_px: 100, max_width_px: 400, width_px: 180,
+                        sqlite_column: 'notes' },
+    source:           { data_type: 'text',    sample_max_length: 20,  min_width_px: 60,  max_width_px: 120, width_px: 80,
+                        sqlite_column: 'source' },
+    created_at:       { data_type: 'datetime',sample_max_length: 19,  min_width_px: 80,  max_width_px: 160, width_px: 100,
+                        sqlite_column: 'created_at' },
+    updated_at:       { data_type: 'datetime',sample_max_length: 19,  min_width_px: 80,  max_width_px: 160, width_px: 100,
+                        sqlite_column: 'updated_at' },
+    folder:           { data_type: 'text',    sample_max_length: 80,  min_width_px: 80,  max_width_px: 200, width_px: 120,
+                        sqlite_column: 'folder' },
+    favicon_url:      { data_type: 'url',     sample_max_length: 200, min_width_px: 30,  max_width_px: 60,  width_px: 40,
+                        sqlite_column: 'favicon_url' },
+    archived:         { data_type: 'boolean', sample_max_length: 3,   min_width_px: 50,  max_width_px: 80,  width_px: 60,
+                        sqlite_column: 'archived' },
+    score_sources:    { data_type: 'text',    sample_max_length: 60,  min_width_px: 80,  max_width_px: 200, width_px: 120,
+                        sqlite_column: 'score_sources' },
+    rrf_score:        { data_type: 'number',  sample_max_length: 10,  min_width_px: 60,  max_width_px: 120, width_px: 80,
+                        sqlite_column: 'rrf_score' },
+    kw_tier:          { data_type: 'number',  sample_max_length: 6,   min_width_px: 50,  max_width_px: 100, width_px: 70,
+                        sqlite_column: 'kw_tier' },
+    cosine_distance:  { data_type: 'number',  sample_max_length: 10,  min_width_px: 60,  max_width_px: 120, width_px: 80,
+                        sqlite_column: 'cosine_distance' },
+    reranker_rank:    { data_type: 'number',  sample_max_length: 6,   min_width_px: 50,  max_width_px: 100, width_px: 70,
+                        sqlite_column: 'reranker_rank' },
+    exact_tier:       { data_type: 'number',  sample_max_length: 6,   min_width_px: 50,  max_width_px: 100, width_px: 70,
+                        sqlite_column: 'exact_tier' },
+    _actions:         { data_type: 'actions', sample_max_length: 0,   min_width_px: 48,  max_width_px: 110, width_px: 110 },
+  };
+  return seeds[col] || null;
+}
+
 // Convert a snake_case key to a human label (fallback for unknown fields)
 function _bmFieldLabel(key) {
   const m = _BM_FIELD_META[key];
@@ -141,11 +199,13 @@ const _VIS_ACTION_INLINE_WIDTH = 90;
 const _VIS_ACTION_COMPACT_WIDTH = 48;
 
 function _bmCompactRowActions() {
+  const browseView = _ensureBmBrowseTableView();
+  const searchView = _ensureBmSearchTableView();
   return typeof TableRowActions !== 'undefined' && TableRowActions.shouldCollapse({
-    view: _bmSearchActive ? undefined : _ensureBmBrowseTableView(),
+    view: _bmSearchActive ? searchView : browseView,
     prefs: _bmSearchActive
-      ? [_bmSearchTablePrefs]
-      : [_ensureBmBrowseTableView()?.prefs, _bmSearchTablePrefs],
+      ? [searchView?.prefs].filter(Boolean)
+      : [browseView?.prefs, searchView?.prefs].filter(Boolean),
     getTable: () => document.getElementById('bm-table'),
     columnKey: '_actions',
     requiredWidth: _BM_ACTION_INLINE_WIDTH,
@@ -277,12 +337,14 @@ function _ensureBmBrowseTableView() {
     meta: Object.fromEntries(
       _BM_BROWSE_SEED_COLS.map(k => [k, {
         label: _bmFieldLabel(k),
-        sortKey: _BM_FIELD_META[k]?.sortKey ?? null
+        sortKey: _BM_FIELD_META[k]?.sortKey ?? null,
+        description: _BM_FIELD_META[k]?.description ?? null,
       }])
     ),
     getMeta: k => ({
       label: _bmFieldLabel(k),
-      sortKey: _BM_FIELD_META[k]?.sortKey ?? null
+      sortKey: _BM_FIELD_META[k]?.sortKey ?? null,
+      description: _BM_FIELD_META[k]?.description ?? null,
     }),
     getTable: () => document.querySelector('#bm-main-view table'),
     getDefaultWidth: col => _bmBrowseDefaultWidth(col),
@@ -336,14 +398,91 @@ async function openBmBrowseLayoutContextModal() {
   await controller.openLayoutContextModal();
 }
 
-const _bmSearchTablePrefs = TablePrefs.create({
-  storageKey: 'bm-search-table-prefs',
-  defaultHidden: _BM_DEFAULT_HIDDEN,
-  minWidth: 40,
-});
-const _bmSearchTableSort = TableSort.create({
-  storageKey: 'bookmarks-search-table-sort',
-});
+// ── Phase 3: Search TableView + bucket controller ────────────────────────
+// Search mode uses the shared TableView + TableBucketLayouts system (code 19).
+let _bmSearchTableView = null;
+let _bmSearchLayoutController = null;
+
+function _bmSearchDefaultWidth(col) {
+  if (col === '_actions') return _bmActionCellWidth();
+  return _bmSearchColumnSeed(col)?.width_px ?? null;
+}
+
+function _ensureBmSearchTableView() {
+  if (_bmSearchTableView || typeof TableView === 'undefined') return _bmSearchTableView;
+  _bmSearchTableView = TableView.create({
+    storageKey: 'bm-search-table-prefs',
+    defaultHidden: _BM_DEFAULT_HIDDEN,
+    columns: _BM_SEARCH_SEED_COLS,
+    getColumns: () => _bmDynColsByMode.search.length ? _bmDynColsByMode.search : _BM_SEARCH_SEED_COLS,
+    meta: Object.fromEntries(
+      _BM_SEARCH_SEED_COLS.map(k => [k, {
+        label: _bmFieldLabel(k),
+        sortKey: _BM_FIELD_META[k]?.sortKey ?? null,
+        description: _BM_FIELD_META[k]?.description ?? null,
+      }])
+    ),
+    getMeta: k => ({
+      label: _bmFieldLabel(k),
+      sortKey: _BM_FIELD_META[k]?.sortKey ?? null,
+      description: _BM_FIELD_META[k]?.description ?? null,
+    }),
+    getTable: () => document.querySelector('#bm-main-view table'),
+    getDefaultWidth: col => _bmSearchDefaultWidth(col),
+    minWidth: 40,
+    sort: {
+      defaultKey: 'kw_tier',
+      defaultDir: 1,
+      storageKey: 'bookmarks-search-table-sort',
+    },
+    onSortChange: () => {
+      if (_bmSearchActive) _renderBmSearchResults(_bmLastSearchResults);
+      _ensureBmSearchLayoutController()?.scheduleLayoutSave();
+    },
+    onColumnResizeEnd: (col, width) => {
+      _ensureBmSearchLayoutController()?.scheduleLayoutSave();
+    },
+  });
+  return _bmSearchTableView;
+}
+
+function _ensureBmSearchLayoutController() {
+  if (_bmSearchLayoutController || typeof TableBucketLayouts === 'undefined') return _bmSearchLayoutController;
+  const view = _ensureBmSearchTableView();
+  _bmSearchLayoutController = TableBucketLayouts.create({
+    getTable: () => document.querySelector('#bm-main-view table'),
+    getView: () => view,
+    getColumns: () => _bmDynColsByMode.search.length ? _bmDynColsByMode.search : _BM_SEARCH_SEED_COLS,
+    getMeta: col => ({
+      label: _bmFieldLabel(col),
+      sortKey: _BM_FIELD_META[col]?.sortKey ?? null
+    }),
+    getDefaultWidth: col => _bmSearchDefaultWidth(col),
+    getColumnSeed: (col, meta, index, ctx) => _bmSearchColumnSeed(col),
+    render: () => { if (_bmSearchActive) _renderBmSearchResults(_bmLastSearchResults); },
+    surfaceLabel: 'Bookmarks Search',
+    tableCode: '19',
+    tableName: 'bookmarks-search',
+  });
+  return _bmSearchLayoutController;
+}
+
+// ── Mode-aware h-scroll and layout context toggles ───────────────────────
+async function toggleBmHorizontalScroll() {
+  const controller = _bmSearchActive
+    ? _ensureBmSearchLayoutController()
+    : _ensureBmBrowseLayoutController();
+  if (!controller) return;
+  await controller.toggleHorizontalScroll();
+}
+
+async function openBmLayoutContextModal() {
+  const controller = _bmSearchActive
+    ? _ensureBmSearchLayoutController()
+    : _ensureBmBrowseLayoutController();
+  if (!controller) return;
+  await controller.openLayoutContextModal();
+}
 
 function _bmModeKey(forceSearch) {
   const isSearch = typeof forceSearch === 'boolean' ? forceSearch : _bmSearchActive;
@@ -355,11 +494,15 @@ function _bmCurrentDynCols() {
 }
 
 function _bmCurrentTablePrefs() {
-  return _bmSearchActive ? _bmSearchTablePrefs : (_ensureBmBrowseTableView()?.prefs || _bmSearchTablePrefs);
+  return _bmSearchActive
+    ? (_ensureBmSearchTableView()?.prefs || null)
+    : (_ensureBmBrowseTableView()?.prefs || null);
 }
 
 function _bmCurrentTableSort() {
-  return _bmSearchActive ? _bmSearchTableSort : (_ensureBmBrowseTableView()?.sorter || _bmSearchTableSort);
+  return _bmSearchActive
+    ? (_ensureBmSearchTableView()?.sorter || null)
+    : (_ensureBmBrowseTableView()?.sorter || null);
 }
 
 function _bmSetSearchActive(active) {
@@ -403,19 +546,24 @@ function _bmDetectCols(rows) {
       _bmDynColsByMode.browse.splice(actionsIdx, 0, ...extras);
     }
   } else {
-    // Search: fully dynamic (legacy behavior preserved exactly)
-    const existingApiCols = _bmDynColsByMode[modeKey].filter(k => k !== '_icon' && k !== '_actions');
-    const existingSet = new Set(existingApiCols);
-    const preserveMissing = true;
-    const nextApiCols = preserveMissing
-      ? [...existingApiCols, ...apiKeys.filter(k => !existingSet.has(k))]
-      : [
-          ...existingApiCols.filter(k => apiKeySet.has(k)),
-          ...apiKeys.filter(k => !existingSet.has(k)),
-        ];
-    _bmDynColsByMode[modeKey] = [
+    // Search: seed-merge with preserveMissing for scoring transparency columns.
+    // Static seed defines order; any extra API fields are appended before _actions.
+    // Previously-seen columns are preserved even if absent from the current response
+    // (scoring columns vary by query but should remain visible once discovered).
+    const seedSet = new Set(_BM_SEARCH_SEED_COLS);
+    const existing = _bmDynColsByMode.search.filter(k => k !== '_icon' && k !== '_actions');
+    const existingSet = new Set(existing);
+    // API extras not in seed and not already known
+    const extras = apiKeys.filter(k => !seedSet.has(k) && !existingSet.has(k) && k !== '_icon' && k !== '_actions');
+    // Previously discovered non-seed columns
+    const prevExtras = existing.filter(k => !seedSet.has(k));
+    // Build: seed minus synthetics, then prev non-seed extras, then new extras
+    const seedBody = _BM_SEARCH_SEED_COLS.filter(k => k !== '_icon' && k !== '_actions');
+    _bmDynColsByMode.search = [
       '_icon',
-      ...nextApiCols,
+      ...seedBody,
+      ...prevExtras,
+      ...extras,
       '_actions',
     ];
   }
@@ -436,45 +584,34 @@ function _bmSortValue(item, sortKey) {
     case 'tags':
       return item.tags || [];
     case 'rrf_score':
+      // Higher = better; sort DESC. Null → sort last in DESC.
+      return item.rrf_score == null ? Number.NEGATIVE_INFINITY : Number(item.rrf_score);
     case 'kw_tier':
+      // Lower tier = better keyword match; sort ASC (0 = phrase in title = best).
+      // Null = pure vector hit with no keyword match; sorts after tier 7.
+      // rrf_score (max ~0.06) is woven in as a fractional tiebreaker: within
+      // the same tier, higher RRF ranks first.  Integer tier steps of 1 are
+      // large enough that subtracting a small RRF value never crosses a tier boundary.
+      return (item.kw_tier == null ? 99 : Number(item.kw_tier)) - (item.rrf_score ?? 0);
     case 'cosine_distance':
     case 'reranker_rank':
     case 'exact_tier':
-      return item[sortKey] == null ? Number.NEGATIVE_INFINITY : Number(item[sortKey]);
+      // Lower = better for all three; null = no match → sort last in ASC.
+      return item[sortKey] == null ? Number.POSITIVE_INFINITY : Number(item[sortKey]);
     default:
       return item[sortKey];
   }
 }
 
 function _bmRebuildThead() {
-  // Browse mode: delegate to the TableView's rebuildHead
-  if (!_bmSearchActive) {
+  // Both modes delegate to their respective TableView's rebuildHead
+  if (_bmSearchActive) {
+    const view = _ensureBmSearchTableView();
+    if (view) { view.rebuildHead(); _bmColResizeDone = false; return; }
+  } else {
     const view = _ensureBmBrowseTableView();
     if (view) { view.rebuildHead(); return; }
   }
-  // Search mode: manual thead rebuild (legacy path)
-  const tr = document.querySelector('#bm-main-view thead tr');
-  if (!tr) return;
-  const prefs = _bmCurrentTablePrefs();
-  const sorter = _bmCurrentTableSort();
-  let html = '';
-  for (const key of _bmVisibleDataCols()) {
-    const sortKey = _BM_FIELD_META[key]?.sortKey ?? null;
-    const label   = _bmFieldLabel(key);
-    const width = prefs.getWidth(key);
-    const styleParts = [];
-    if (width) styleParts.push(`width:${width}px`);
-    else if (key === '_icon') styleParts.push('width:30px');
-    else if (key === '_actions') {
-      if (_bmCompactRowActions()) styleParts.push(`width:${_bmActionCellWidth()}px`);
-    }
-    const style = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
-    html += sortKey
-      ? `<th class="table-th-sort" data-col="${key}" data-sort-key="${sortKey}"${style}>${sorter.renderLabel(label, sortKey)}</th>`
-      : `<th data-col="${key}"${style}>${label}</th>`;
-  }
-  tr.innerHTML = html;
-  _bmColResizeDone = false;
 }
 
 function _bmRenderDataTds(b) {
@@ -506,52 +643,36 @@ function _bmBuildSearchRow(r, scoreIdx) {
 // Modal list is built from the active view's detected columns.
 // No column names are hardcoded here.
 function _bmOpenColsModal() {
-  if (!_bmSearchActive) {
-    // Browse mode: use the TableView column chooser
-    const view = _ensureBmBrowseTableView();
-    if (view) {
-      view.openColumns(
-        document.getElementById('bm-cols-modal-list'),
-        document.getElementById('bm-cols-modal'),
-        _bmFieldLabel
-      );
-      return;
-    }
+  // Both modes use their respective TableView column chooser
+  const view = _bmSearchActive ? _ensureBmSearchTableView() : _ensureBmBrowseTableView();
+  if (view) {
+    view.openColumns(
+      document.getElementById('bm-cols-modal-list'),
+      document.getElementById('bm-cols-modal'),
+      _bmFieldLabel
+    );
+    return;
   }
-  // Search mode: legacy column chooser
-  const list = document.getElementById('bm-cols-modal-list');
-  TablePrefs.renderColumnChooser(list, _bmCurrentDynCols(), _bmHiddenCols, _bmFieldLabel);
-  HubModal.open(document.getElementById('bm-cols-modal'));
 }
 
 function _bmApplyColsModal() {
-  if (!_bmSearchActive) {
-    // Browse mode: use the TableView applyColumns with scheduleLayoutSave
-    const view = _ensureBmBrowseTableView();
-    if (view) {
-      const modal = document.getElementById('bm-cols-modal');
-      view.applyColumns(modal, () => {
-        _bmHiddenCols = view.getHiddenSet();
+  // Both modes use their respective TableView applyColumns with scheduleLayoutSave
+  const view = _bmSearchActive ? _ensureBmSearchTableView() : _ensureBmBrowseTableView();
+  const controller = _bmSearchActive ? _ensureBmSearchLayoutController() : _ensureBmBrowseLayoutController();
+  if (view) {
+    const modal = document.getElementById('bm-cols-modal');
+    view.applyColumns(modal, () => {
+      _bmHiddenCols = view.getHiddenSet();
+      if (_bmSearchActive) {
+        _renderBmSearchResults(_bmLastSearchResults);
+      } else {
         renderBookmarks({ keepPage: true });
-        HubModal.close(modal);
-        _ensureBmBrowseLayoutController()?.scheduleLayoutSave();
-      });
-      return;
-    }
+      }
+      HubModal.close(modal);
+      controller?.scheduleLayoutSave();
+    });
+    return;
   }
-  // Search mode: legacy column apply
-  const modal = document.getElementById('bm-cols-modal');
-  const newHidden = TablePrefs.readHiddenFromChooser(modal, new Set(_bmHiddenCols));
-  const prefs = _bmCurrentTablePrefs();
-  prefs.setHiddenSet(newHidden);
-  _bmHiddenCols = prefs.getHiddenSet(_bmCurrentDynCols());
-  _bmRebuildThead();
-  if (_bmSearchActive) {
-    _renderBmSearchResults(_bmLastSearchResults);
-  } else {
-    renderBookmarks({ keepPage: true });
-  }
-  HubModal.close(document.getElementById('bm-cols-modal'));
 }
 
 async function _bmDownloadExtension(btn) {
@@ -655,6 +776,9 @@ async function _runBmSearch(q) {
       _bmSetSearchActive(true);
       status.textContent = `SeekDB: ${data.count} result${data.count === 1 ? '' : 's'} for "${q}"`;
       status.hidden = false;
+      // Reset to compound-relevance sort on every fresh search (kw_tier ASC
+      // with rrf_score as tiebreaker — see _bmSortValue for compound logic).
+      _ensureBmSearchTableView()?.sorter?.setState('kw_tier', 1);
       _renderBmSearchResults(data.results);
     } else {
       // SeekDB has no results (likely not yet indexed) — keep client-side filter
@@ -1761,34 +1885,15 @@ async function archiveBookmark(id, currentArchived) {
 // ── Column resize ───────────────────────────────────────────────────────
 
 function _bmRenderSharedTable(renderBody) {
-  // Browse mode: delegate to the TableView's render
-  if (!_bmSearchActive) {
-    const view = _ensureBmBrowseTableView();
-    if (view) {
-      view.render(() => {
-        renderBody();
-        _bmColResizeDone = true;
-      });
-      return;
-    }
-  }
-  // Search mode: legacy render path (raw TablePrefs + TableSort)
-  const prefs = _bmCurrentTablePrefs();
-  const sorter = _bmCurrentTableSort();
-  prefs.renderTable({
-    getTable: () => document.querySelector('#bm-main-view table'),
-    rebuildHead: _bmRebuildThead,
-    renderBody,
-    minWidth: 40,
-    afterBind: tableEl => {
+  // Both modes delegate to their respective TableView's render
+  const view = _bmSearchActive ? _ensureBmSearchTableView() : _ensureBmBrowseTableView();
+  if (view) {
+    view.render(() => {
+      renderBody();
       _bmColResizeDone = true;
-      sorter.bind(tableEl, () => {
-        if (_bmSearchActive) _renderBmSearchResults(_bmLastSearchResults);
-        else renderBookmarks();
-      });
-      sorter.syncIndicators(tableEl);
-    },
-  });
+    });
+    return;
+  }
 }
 
 // ── Auto-archive dead links ─────────────────────────────────────────────
@@ -2033,6 +2138,7 @@ async function _bmFetchScoreExplain(query, result, focus, bodyEl) {
 document.addEventListener('DOMContentLoaded', () => {
   _ensureVisitsLayoutController()?.init();
   _ensureBmBrowseLayoutController()?.init();
+  _ensureBmSearchLayoutController()?.init();
   _bmShowArchived = _bmReadShowArchived();
   // Wire the search/filter controls that now live in #pg-ctrl-bookmarks-main
   // (moved from the tab-panel toolbar into the menu-zone page-controls slot).
@@ -2061,12 +2167,11 @@ document.addEventListener('DOMContentLoaded', () => {
     renderBookmarks({ keepPage: true });
   });
 
-  _bmSearchTablePrefs.onLayoutChange(() => {
+  _ensureBmSearchTableView()?.onLayoutChange(() => {
     if (_bmModeKey() !== 'search') return;
-    _bmHiddenCols = _bmSearchTablePrefs.getHiddenSet(_bmCurrentDynCols());
+    _bmHiddenCols = _ensureBmSearchTableView().getHiddenSet();
     _bmRebuildThead();
     if (_bmSearchActive) _renderBmSearchResults(_bmLastSearchResults);
-    else renderBookmarks({ keepPage: true });
   });
 
   document.getElementById('bm-cols-modal-apply')?.addEventListener('click', _bmApplyColsModal);
@@ -2103,7 +2208,96 @@ document.addEventListener('DOMContentLoaded', () => {
   _visTableView?.onLayoutChange(() => {
     renderVisits({ keepPage: true });
   });
+
+  // Long-press on scoring column headers → column info modal
+  (function () {
+    const LONG_PRESS_MS = 500;
+    const MOVE_THRESHOLD = 6;
+    let _lpTimer = null;
+    let _lpStart = null;
+    const table = document.getElementById('bm-table');
+    if (!table) return;
+    table.addEventListener('pointerdown', e => {
+      const th = e.target.closest('th[data-col]');
+      if (!th) return;
+      const col = th.dataset.col;
+      if (!_BM_COL_INFO_CONTENT[col]) return;
+      _lpStart = { x: e.clientX, y: e.clientY };
+      _lpTimer = setTimeout(() => {
+        _lpTimer = null;
+        _bmOpenColInfoModal(col);
+      }, LONG_PRESS_MS);
+    });
+    table.addEventListener('pointermove', e => {
+      if (!_lpTimer || !_lpStart) return;
+      const dx = e.clientX - _lpStart.x;
+      const dy = e.clientY - _lpStart.y;
+      if (Math.abs(dx) > MOVE_THRESHOLD || Math.abs(dy) > MOVE_THRESHOLD) {
+        clearTimeout(_lpTimer);
+        _lpTimer = null;
+      }
+    });
+    const cancelLp = () => { if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; } };
+    table.addEventListener('pointerup', cancelLp);
+    table.addEventListener('pointercancel', cancelLp);
+  })();
 });
+
+// ── Column info modal (long-press on scoring column headers) ────────────
+
+const _BM_COL_INFO_CONTENT = {
+  rrf_score: {
+    title: 'RRF Score',
+    body: `<p><strong>Reciprocal Rank Fusion (RRF) Score</strong></p>
+<p>Combines the keyword search rank and the vector search rank into a single relevance score using the RRF formula:</p>
+<p style="font-family:monospace;background:var(--bg-ctrl);padding:6px 10px;border-radius:4px">score = 1/(k + rank_kw) + 1/(k + rank_vec)</p>
+<p>where <em>k</em> is typically 60.</p>
+<ul>
+  <li><strong>Higher is better.</strong> A score of 0.066 is the theoretical maximum (ranked 1st in both keyword and vector).</li>
+  <li>Typical range: <strong>0.001 – 0.066</strong></li>
+  <li>Results with no keyword match will have a lower RRF score even if the vector match is strong.</li>
+</ul>`,
+  },
+  kw_tier: {
+    title: 'KW Tier',
+    body: `<p><strong>Keyword Match Tier</strong></p>
+<p>How strongly the query matched via keyword search. <strong>Lower tier = stronger match.</strong></p>
+<ul>
+  <li><strong>Tier 0</strong> — Exact phrase in title or URL (best)</li>
+  <li><strong>Tier 1</strong> — All query tokens in title or URL</li>
+  <li><strong>Tier 2</strong> — Partial token match in title or URL</li>
+  <li><strong>Tier 3</strong> — Exact phrase in description or tags</li>
+  <li><strong>Tier 4</strong> — All tokens in description or tags</li>
+  <li><strong>Tier 5</strong> — Partial match in description or tags</li>
+  <li><strong>Tier 6</strong> — Weak keyword signal (e.g. domain only)</li>
+  <li><strong>Tier 7</strong> — Document-level match only (weakest keyword hit)</li>
+  <li><strong>—</strong> (null) — Pure vector match with no keyword signal at all</li>
+</ul>
+<p>When sorted by KW Tier, results within the same tier are ordered by RRF Score as a tiebreaker.</p>`,
+  },
+  cosine_distance: {
+    title: 'Cos Dist',
+    body: `<p><strong>Cosine Distance</strong></p>
+<p>The distance between the query's embedding vector and the document's embedding vector in semantic space. <strong>Lower = more similar.</strong></p>
+<p>This is distance, not similarity — it is the opposite of cosine similarity:</p>
+<p style="font-family:monospace;background:var(--bg-ctrl);padding:6px 10px;border-radius:4px">distance = 1 − cosine_similarity</p>
+<ul>
+  <li><strong style="color:var(--ok, green)">Under 0.30</strong> — Strong vector match (shown in green)</li>
+  <li><strong>0.30 – 0.50</strong> — Moderate match</li>
+  <li><strong style="color:var(--warn, orange)">0.50 – 0.60</strong> — Weak match</li>
+  <li><strong style="color:var(--err, red)">Over 0.60</strong> — Poor semantic similarity</li>
+</ul>
+<p>A low cosine distance means the document content is semantically close to the query, even if no keywords overlap.</p>`,
+  },
+};
+
+function _bmOpenColInfoModal(col) {
+  const info = _BM_COL_INFO_CONTENT[col];
+  if (!info) return;
+  document.getElementById('bm-col-info-title').textContent = info.title;
+  document.getElementById('bm-col-info-body').innerHTML = info.body;
+  HubModal.open(document.getElementById('bm-col-info-modal'));
+}
 
 // ── Sort explanation modal ───────────────────────────────────────────────
 
@@ -2111,7 +2305,7 @@ async function _bmOpenSortExplainModal() {
   if (!_bmSearchActive || !_bmDisplayedSearchRows.length) return;
   const query = (document.getElementById('bm-search')?.value || '').trim();
   const top = _bmDisplayedSearchRows.slice(0, 20);
-  const searchSortState = _bmSearchTableSort.getState();
+  const searchSortState = _ensureBmSearchTableView()?.getSortState() || { key: null, dir: -1 };
   const subtitle = document.getElementById('bm-sort-explain-subtitle');
   subtitle.textContent = `"${query}" — top ${top.length} results`;
   const body = document.getElementById('bm-sort-explain-body');
