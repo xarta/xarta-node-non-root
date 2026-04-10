@@ -47,6 +47,7 @@ const ProbesMenuConfig = createHubMenu({
         { id: 'bm-fn-archived', label: 'Show archived', icon: 'icons/ui/arrow-up-blue.svg', fn: 'bm.archived', activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 6 },
         { id: 'bm-fn-expl',   label: 'Explain Sort',    icon: HIEROGLYPHS.eyeOfHorus,  fn: 'bm.explainSort', activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 7 },
         { id: 'bm-fn-dead',   label: 'Dead links',      icon: HIEROGLYPHS.shen,        fn: 'bm.deadLinks',   activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 8 },
+        { id: 'bm-fn-context', label: 'Layout Context',   icon: HIEROGLYPHS.eyeOfHorus,  fn: 'bm.context',     activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 9 },
 
         // ── pfSense DNS page function items ───────────────────────────────
         { id: 'dns-fn-refresh',  label: 'Refresh',       icon: HIEROGLYPHS.nefer,      fn: 'dns.refresh',    activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 0 },
@@ -148,7 +149,8 @@ ProbesMenuConfig.registerFunctions({
     'bm.import':      () => document.getElementById('bm-import-file').click(),
     'bm.refresh':     () => loadBookmarks(),
     'bm.cols':        () => _bmOpenColsModal(),
-    'bm.scroll':      () => _probesToggleHorizontalScroll(() => _bmCurrentTablePrefs(), () => renderBookmarks({ keepPage: true })),
+    'bm.scroll':      () => toggleBmBrowseHorizontalScroll(),
+    'bm.context':     () => openBmBrowseLayoutContextModal(),
     'bm.pagination':  () => _bmTogglePagination(),
     'bm.archived':    () => toggleBookmarksShowArchived(),
     'bm.explainSort': () => {

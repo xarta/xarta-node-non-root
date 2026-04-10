@@ -89,6 +89,45 @@ const _BM_EXCLUDE_COLS = new Set(['bookmark_id', '_item_type']);
 const _BM_DEFAULT_HIDDEN = ['notes', 'folder', 'favicon_url', 'updated_at', 'archived',
   'score_sources', 'rrf_score', 'kw_tier', 'cosine_distance', 'reranker_rank', 'exact_tier'];
 
+// ── Phase 1: Static browse column seed ───────────────────────────────────
+// Browse mode has a stable, known column set. Dynamic detection still runs
+// as a merge-into-seed safety net, but the static seed is the primary source.
+const _BM_BROWSE_SEED_COLS = [
+  '_icon', 'title', 'url', 'tags', 'description', 'notes',
+  'source', 'created_at', 'updated_at', 'folder', 'favicon_url',
+  'archived', '_actions'
+];
+
+function _bmBrowseColumnSeed(col) {
+  const seeds = {
+    _icon:        { data_type: 'icon',    sample_max_length: 1,   min_width_px: 30,  max_width_px: 30,  width_px: 30 },
+    title:        { data_type: 'text',    sample_max_length: 120, min_width_px: 120, max_width_px: 600, width_px: 250,
+                    sqlite_column: 'title' },
+    url:          { data_type: 'url',     sample_max_length: 200, min_width_px: 100, max_width_px: 400, width_px: 180,
+                    sqlite_column: 'url' },
+    tags:         { data_type: 'text[]',  sample_max_length: 60,  min_width_px: 80,  max_width_px: 300, width_px: 120,
+                    sqlite_column: 'tags' },
+    description:  { data_type: 'text',    sample_max_length: 200, min_width_px: 100, max_width_px: 400, width_px: 180,
+                    sqlite_column: 'description' },
+    notes:        { data_type: 'text',    sample_max_length: 200, min_width_px: 100, max_width_px: 400, width_px: 180,
+                    sqlite_column: 'notes' },
+    source:       { data_type: 'text',    sample_max_length: 20,  min_width_px: 60,  max_width_px: 120, width_px: 80,
+                    sqlite_column: 'source' },
+    created_at:   { data_type: 'datetime',sample_max_length: 19,  min_width_px: 80,  max_width_px: 160, width_px: 100,
+                    sqlite_column: 'created_at' },
+    updated_at:   { data_type: 'datetime',sample_max_length: 19,  min_width_px: 80,  max_width_px: 160, width_px: 100,
+                    sqlite_column: 'updated_at' },
+    folder:       { data_type: 'text',    sample_max_length: 80,  min_width_px: 80,  max_width_px: 200, width_px: 120,
+                    sqlite_column: 'folder' },
+    favicon_url:  { data_type: 'url',     sample_max_length: 200, min_width_px: 30,  max_width_px: 60,  width_px: 40,
+                    sqlite_column: 'favicon_url' },
+    archived:     { data_type: 'boolean', sample_max_length: 3,   min_width_px: 50,  max_width_px: 80,  width_px: 60,
+                    sqlite_column: 'archived' },
+    _actions:     { data_type: 'actions', sample_max_length: 0,   min_width_px: 48,  max_width_px: 110, width_px: 110 },
+  };
+  return seeds[col] || null;
+}
+
 // Convert a snake_case key to a human label (fallback for unknown fields)
 function _bmFieldLabel(key) {
   const m = _BM_FIELD_META[key];
@@ -103,7 +142,10 @@ const _VIS_ACTION_COMPACT_WIDTH = 48;
 
 function _bmCompactRowActions() {
   return typeof TableRowActions !== 'undefined' && TableRowActions.shouldCollapse({
-    prefs: [_bmCurrentTablePrefs(), _bmSearchActive ? _bmBrowseTablePrefs : _bmSearchTablePrefs],
+    view: _bmSearchActive ? undefined : _ensureBmBrowseTableView(),
+    prefs: _bmSearchActive
+      ? [_bmSearchTablePrefs]
+      : [_ensureBmBrowseTableView()?.prefs, _bmSearchTablePrefs],
     getTable: () => document.getElementById('bm-table'),
     columnKey: '_actions',
     requiredWidth: _BM_ACTION_INLINE_WIDTH,
@@ -213,21 +255,91 @@ let _bmDynColsByMode = {
   search: [],
 };
 
-const _bmBrowseTablePrefs = TablePrefs.create({
-  storageKey: 'bm-table-prefs',
-  legacyHiddenKey: 'bm-hidden-cols',
-  defaultHidden: _BM_DEFAULT_HIDDEN,
-  minWidth: 40,
-});
+// ── Phase 2: Browse TableView + bucket controller ────────────────────────
+// Browse mode uses the shared TableView + TableBucketLayouts system (code 14).
+// Search mode stays on raw TablePrefs + TableSort untouched.
+let _bmBrowseTableView = null;
+let _bmBrowseLayoutController = null;
+
+function _bmBrowseDefaultWidth(col) {
+  if (col === '_actions') return _bmActionCellWidth();
+  return _bmBrowseColumnSeed(col)?.width_px ?? null;
+}
+
+function _ensureBmBrowseTableView() {
+  if (_bmBrowseTableView || typeof TableView === 'undefined') return _bmBrowseTableView;
+  _bmBrowseTableView = TableView.create({
+    storageKey: 'bm-table-prefs',
+    legacyHiddenKey: 'bm-hidden-cols',
+    defaultHidden: _BM_DEFAULT_HIDDEN,
+    columns: _BM_BROWSE_SEED_COLS,
+    getColumns: () => _bmDynColsByMode.browse.length ? _bmDynColsByMode.browse : _BM_BROWSE_SEED_COLS,
+    meta: Object.fromEntries(
+      _BM_BROWSE_SEED_COLS.map(k => [k, {
+        label: _bmFieldLabel(k),
+        sortKey: _BM_FIELD_META[k]?.sortKey ?? null
+      }])
+    ),
+    getMeta: k => ({
+      label: _bmFieldLabel(k),
+      sortKey: _BM_FIELD_META[k]?.sortKey ?? null
+    }),
+    getTable: () => document.querySelector('#bm-main-view table'),
+    getDefaultWidth: col => _bmBrowseDefaultWidth(col),
+    minWidth: 40,
+    sort: {
+      defaultKey: 'created_at',
+      defaultDir: -1,
+      storageKey: 'bookmarks-table-sort',
+    },
+    onSortChange: () => {
+      renderBookmarks();
+      _ensureBmBrowseLayoutController()?.scheduleLayoutSave();
+    },
+    onColumnResizeEnd: (col, width) => {
+      _ensureBmBrowseLayoutController()?.scheduleLayoutSave();
+    },
+  });
+  return _bmBrowseTableView;
+}
+
+function _ensureBmBrowseLayoutController() {
+  if (_bmBrowseLayoutController || typeof TableBucketLayouts === 'undefined') return _bmBrowseLayoutController;
+  const view = _ensureBmBrowseTableView();
+  _bmBrowseLayoutController = TableBucketLayouts.create({
+    getTable: () => document.querySelector('#bm-main-view table'),
+    getView: () => view,
+    getColumns: () => _bmDynColsByMode.browse.length ? _bmDynColsByMode.browse : _BM_BROWSE_SEED_COLS,
+    getMeta: col => ({
+      label: _bmFieldLabel(col),
+      sortKey: _BM_FIELD_META[col]?.sortKey ?? null
+    }),
+    getDefaultWidth: col => _bmBrowseDefaultWidth(col),
+    getColumnSeed: (col, meta, index, ctx) => _bmBrowseColumnSeed(col),
+    render: () => renderBookmarks({ keepPage: true }),
+    surfaceLabel: 'Bookmarks',
+    tableCode: '14',
+    tableName: 'bookmarks',
+  });
+  return _bmBrowseLayoutController;
+}
+
+async function toggleBmBrowseHorizontalScroll() {
+  const controller = _ensureBmBrowseLayoutController();
+  if (!controller) return;
+  await controller.toggleHorizontalScroll();
+}
+
+async function openBmBrowseLayoutContextModal() {
+  const controller = _ensureBmBrowseLayoutController();
+  if (!controller) return;
+  await controller.openLayoutContextModal();
+}
+
 const _bmSearchTablePrefs = TablePrefs.create({
   storageKey: 'bm-search-table-prefs',
   defaultHidden: _BM_DEFAULT_HIDDEN,
   minWidth: 40,
-});
-const _bmBrowseTableSort = TableSort.create({
-  defaultKey: 'created_at',
-  defaultDir: -1,
-  storageKey: 'bookmarks-table-sort',
 });
 const _bmSearchTableSort = TableSort.create({
   storageKey: 'bookmarks-search-table-sort',
@@ -243,11 +355,11 @@ function _bmCurrentDynCols() {
 }
 
 function _bmCurrentTablePrefs() {
-  return _bmSearchActive ? _bmSearchTablePrefs : _bmBrowseTablePrefs;
+  return _bmSearchActive ? _bmSearchTablePrefs : (_ensureBmBrowseTableView()?.prefs || _bmSearchTablePrefs);
 }
 
 function _bmCurrentTableSort() {
-  return _bmSearchActive ? _bmSearchTableSort : _bmBrowseTableSort;
+  return _bmSearchActive ? _bmSearchTableSort : (_ensureBmBrowseTableView()?.sorter || _bmSearchTableSort);
 }
 
 function _bmSetSearchActive(active) {
@@ -264,6 +376,10 @@ let _bmHiddenCols = new Set();
 // current row shape for the active logical view. Browse and search keep
 // separate remembered column sets because search can expose extra fields.
 // _icon and _actions are synthetic (not from API): always first and last.
+//
+// Browse mode: merges API keys into the static _BM_BROWSE_SEED_COLS seed.
+// Any unexpected API field is appended after the seed columns.
+// Search mode: fully dynamic detection (unchanged from legacy behavior).
 function _bmDetectCols(rows) {
   const modeKey = _bmModeKey();
   const apiKeys = [];
@@ -275,20 +391,35 @@ function _bmDetectCols(rows) {
       apiKeys.push(key);
     });
   });
-  const existingApiCols = _bmDynColsByMode[modeKey].filter(k => k !== '_icon' && k !== '_actions');
-  const existingSet = new Set(existingApiCols);
-  const preserveMissing = modeKey === 'search';
-  const nextApiCols = preserveMissing
-    ? [...existingApiCols, ...apiKeys.filter(k => !existingSet.has(k))]
-    : [
-        ...existingApiCols.filter(k => apiKeySet.has(k)),
-        ...apiKeys.filter(k => !existingSet.has(k)),
-      ];
-  _bmDynColsByMode[modeKey] = [
-    '_icon',
-    ...nextApiCols,
-    '_actions',
-  ];
+
+  if (modeKey === 'browse') {
+    // Static seed is primary; append any unexpected API fields after the seed
+    const seedSet = new Set(_BM_BROWSE_SEED_COLS);
+    const extras = apiKeys.filter(k => !seedSet.has(k) && k !== '_icon' && k !== '_actions');
+    _bmDynColsByMode.browse = [..._BM_BROWSE_SEED_COLS];
+    if (extras.length) {
+      // Insert extras before _actions (last element)
+      const actionsIdx = _bmDynColsByMode.browse.indexOf('_actions');
+      _bmDynColsByMode.browse.splice(actionsIdx, 0, ...extras);
+    }
+  } else {
+    // Search: fully dynamic (legacy behavior preserved exactly)
+    const existingApiCols = _bmDynColsByMode[modeKey].filter(k => k !== '_icon' && k !== '_actions');
+    const existingSet = new Set(existingApiCols);
+    const preserveMissing = true;
+    const nextApiCols = preserveMissing
+      ? [...existingApiCols, ...apiKeys.filter(k => !existingSet.has(k))]
+      : [
+          ...existingApiCols.filter(k => apiKeySet.has(k)),
+          ...apiKeys.filter(k => !existingSet.has(k)),
+        ];
+    _bmDynColsByMode[modeKey] = [
+      '_icon',
+      ...nextApiCols,
+      '_actions',
+    ];
+  }
+
   const prefs = _bmCurrentTablePrefs();
   prefs.syncColumns(_bmDynColsByMode[modeKey]);
   _bmHiddenCols = prefs.getHiddenSet(_bmDynColsByMode[modeKey]);
@@ -316,6 +447,12 @@ function _bmSortValue(item, sortKey) {
 }
 
 function _bmRebuildThead() {
+  // Browse mode: delegate to the TableView's rebuildHead
+  if (!_bmSearchActive) {
+    const view = _ensureBmBrowseTableView();
+    if (view) { view.rebuildHead(); return; }
+  }
+  // Search mode: manual thead rebuild (legacy path)
   const tr = document.querySelector('#bm-main-view thead tr');
   if (!tr) return;
   const prefs = _bmCurrentTablePrefs();
@@ -369,17 +506,41 @@ function _bmBuildSearchRow(r, scoreIdx) {
 // Modal list is built from the active view's detected columns.
 // No column names are hardcoded here.
 function _bmOpenColsModal() {
+  if (!_bmSearchActive) {
+    // Browse mode: use the TableView column chooser
+    const view = _ensureBmBrowseTableView();
+    if (view) {
+      view.openColumns(
+        document.getElementById('bm-cols-modal-list'),
+        document.getElementById('bm-cols-modal'),
+        _bmFieldLabel
+      );
+      return;
+    }
+  }
+  // Search mode: legacy column chooser
   const list = document.getElementById('bm-cols-modal-list');
   TablePrefs.renderColumnChooser(list, _bmCurrentDynCols(), _bmHiddenCols, _bmFieldLabel);
   HubModal.open(document.getElementById('bm-cols-modal'));
 }
 
 function _bmApplyColsModal() {
+  if (!_bmSearchActive) {
+    // Browse mode: use the TableView applyColumns with scheduleLayoutSave
+    const view = _ensureBmBrowseTableView();
+    if (view) {
+      const modal = document.getElementById('bm-cols-modal');
+      view.applyColumns(modal, () => {
+        _bmHiddenCols = view.getHiddenSet();
+        renderBookmarks({ keepPage: true });
+        HubModal.close(modal);
+        _ensureBmBrowseLayoutController()?.scheduleLayoutSave();
+      });
+      return;
+    }
+  }
+  // Search mode: legacy column apply
   const modal = document.getElementById('bm-cols-modal');
-  // Start from existing hidden set — only update columns that were actually
-  // shown in this modal.  Columns not in the modal (e.g. search-only fields
-  // like domain/item_type/score cols when the modal was opened in browse mode)
-  // keep their current hidden/visible state and are NOT implicitly un-hidden.
   const newHidden = TablePrefs.readHiddenFromChooser(modal, new Set(_bmHiddenCols));
   const prefs = _bmCurrentTablePrefs();
   prefs.setHiddenSet(newHidden);
@@ -388,7 +549,7 @@ function _bmApplyColsModal() {
   if (_bmSearchActive) {
     _renderBmSearchResults(_bmLastSearchResults);
   } else {
-    renderBookmarks({ keepPage: true }); // column toggle — stay on current page
+    renderBookmarks({ keepPage: true });
   }
   HubModal.close(document.getElementById('bm-cols-modal'));
 }
@@ -1600,6 +1761,18 @@ async function archiveBookmark(id, currentArchived) {
 // ── Column resize ───────────────────────────────────────────────────────
 
 function _bmRenderSharedTable(renderBody) {
+  // Browse mode: delegate to the TableView's render
+  if (!_bmSearchActive) {
+    const view = _ensureBmBrowseTableView();
+    if (view) {
+      view.render(() => {
+        renderBody();
+        _bmColResizeDone = true;
+      });
+      return;
+    }
+  }
+  // Search mode: legacy render path (raw TablePrefs + TableSort)
   const prefs = _bmCurrentTablePrefs();
   const sorter = _bmCurrentTableSort();
   prefs.renderTable({
@@ -1859,6 +2032,7 @@ async function _bmFetchScoreExplain(query, result, focus, bodyEl) {
 // Event delegation: score cells in results table + drill-down links in overview modal
 document.addEventListener('DOMContentLoaded', () => {
   _ensureVisitsLayoutController()?.init();
+  _ensureBmBrowseLayoutController()?.init();
   _bmShowArchived = _bmReadShowArchived();
   // Wire the search/filter controls that now live in #pg-ctrl-bookmarks-main
   // (moved from the tab-panel toolbar into the menu-zone page-controls slot).
@@ -1881,10 +2055,9 @@ document.addEventListener('DOMContentLoaded', () => {
     ResponsiveLayout.registerTabControls('bookmarks-main', 'pg-ctrl-bookmarks-main');
   }
 
-  _bmBrowseTablePrefs.onLayoutChange(() => {
+  _ensureBmBrowseTableView()?.onLayoutChange(() => {
     if (_bmModeKey() !== 'browse') return;
-    _bmHiddenCols = _bmBrowseTablePrefs.getHiddenSet(_bmCurrentDynCols());
-    _bmRebuildThead();
+    _bmHiddenCols = _ensureBmBrowseTableView().getHiddenSet();
     renderBookmarks({ keepPage: true });
   });
 
