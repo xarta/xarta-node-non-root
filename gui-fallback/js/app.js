@@ -248,6 +248,8 @@ function switchTab(tab) {
   if (tab === 'manual-links'   && !_manualLinks.length)   loadManualLinks();
   if (tab === 'manual-links-table')    { switchTab('manual-links'); manualLinksShowView('table');    return; }
   if (tab === 'manual-links-rendered') { switchTab('manual-links'); manualLinksShowView('rendered'); return; }
+  if (tab === 'manual-links-tree')     { switchTab('manual-links'); manualLinksShowView('tree');     return; }
+  if (tab === 'manual-links-pretext')  { switchTab('manual-links'); manualLinksShowView('pretext');  return; }
   if (tab === 'settings'       && !_settings.length)      loadSettings();
   if (tab === 'settings')                                  { initSoundToggle(); initVolumeSlider(); initTtsSettingsPanel(); }
   if (tab === 'keys')                                      loadKeys();

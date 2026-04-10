@@ -1,6 +1,6 @@
 /* ── Manual Links ────────────────────────────────────────────────────────── */
 
-let _manualLinksView = 'rendered';   // 'table' | 'rendered' — default to rendered
+let _manualLinksView = 'rendered';   // 'table' | 'rendered' | 'tree' | 'pretext'
 let _editingLinkId   = null;         // null = add mode, string = edit mode
 let _mlFilter    = '';               // table filter text
 let _mlGroupBy   = 'none';          // 'none' | 'group' | 'host'
@@ -242,11 +242,19 @@ function manualLinksShowView(view) {
   _manualLinksView = view;
   document.getElementById('ml-table-view').style.display    = view === 'table'    ? '' : 'none';
   document.getElementById('ml-rendered-view').style.display = view === 'rendered' ? '' : 'none';
+  document.getElementById('ml-tree-view').style.display     = view === 'tree'     ? '' : 'none';
+  document.getElementById('ml-pretext-view').style.display  = view === 'pretext'  ? '' : 'none';
   if (typeof SynthesisMenuConfig !== 'undefined') SynthesisMenuConfig.updateActiveTab('manual-links-' + view);
   // Show/hide the header filter input for the table sub-view
   if (typeof ResponsiveLayout !== 'undefined') ResponsiveLayout.updateControlsForTab('manual-links-' + view);
-  if (view === 'rendered') renderManualLinksRendered();
-  if (view === 'table')    renderManualLinksTable();
+  if (view === 'table') renderManualLinksTable();
+  else renderManualLinksStoryViews();
+}
+
+function renderManualLinksStoryViews() {
+  renderManualLinksRendered();
+  renderManualLinksTree();
+  renderManualLinksPretext();
 }
 
 /* ── Load + render table ─────────────────────────────────────────────────── */
@@ -259,7 +267,7 @@ async function loadManualLinks() {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     _manualLinks = await r.json();
     renderManualLinksTable();
-    if (_manualLinksView === 'rendered') renderManualLinksRendered();
+    renderManualLinksStoryViews();
   } catch (e) {
     if (err) { err.textContent = `Failed to load manual links: ${e.message}`; err.hidden = false; }
   }
@@ -461,6 +469,120 @@ function renderManualLinksRendered() {
   });
 
   container.innerHTML = html;
+}
+
+/* ── Tree view (Page 2) ─────────────────────────────────────────────────── */
+
+function _mlHostNode(lnk) {
+  if (lnk.pve_host) return `PVE ${lnk.pve_host}`;
+  if (lnk.vm_name || lnk.vm_id) return `VM ${lnk.vm_name || lnk.vm_id}`;
+  if (lnk.lxc_name || lnk.lxc_id) return `LXC ${lnk.lxc_name || lnk.lxc_id}`;
+  if (lnk.location) return `Location ${lnk.location}`;
+  if (lnk.is_internet) return 'Internet';
+  return 'Unassigned hardware';
+}
+
+function _mlPrimaryAddress(lnk) {
+  return lnk.vlan_uri || lnk.vlan_ip || lnk.tailnet_uri || lnk.tailnet_ip || '';
+}
+
+function _mlLinkChip(lnk) {
+  const address = _mlPrimaryAddress(lnk);
+  if (!address) return '<span class="ml-tree-chip">No route</span>';
+  const href = /^https?:\/\//i.test(address) ? address : `http://${address}`;
+  return `<a class="ml-tree-chip" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(address)}</a>`;
+}
+
+function renderManualLinksTree() {
+  const container = document.getElementById('ml-tree-body');
+  if (!container) return;
+  if (!_manualLinks.length) {
+    container.innerHTML = '<p class="ml-page-empty">No links defined yet.</p>';
+    return;
+  }
+
+  const roots = _manualLinks.filter(l => !l.parent_id);
+  const childrenByParent = {};
+  _manualLinks.filter(l => l.parent_id).forEach(l => {
+    if (!childrenByParent[l.parent_id]) childrenByParent[l.parent_id] = [];
+    childrenByParent[l.parent_id].push(l);
+  });
+
+  const buckets = {};
+  roots.forEach(lnk => {
+    const host = _mlHostNode(lnk);
+    if (!buckets[host]) buckets[host] = [];
+    buckets[host].push(lnk);
+  });
+
+  const orderedHosts = Object.keys(buckets).sort((a, b) => a.localeCompare(b));
+  const sortLinks = arr => [...arr].sort((a, b) => (a.sort_order - b.sort_order) || (a.label || '').localeCompare(b.label || ''));
+
+  function renderNode(lnk) {
+    const children = sortLinks(childrenByParent[lnk.link_id] || []);
+    const title = lnk.label || lnk.link_id.slice(0, 8);
+    const subtitle = lnk.group_name ? `<span class="ml-tree-subtitle">${esc(lnk.group_name)}</span>` : '';
+    const notes = lnk.notes ? `<div class="ml-tree-notes">${esc(lnk.notes)}</div>` : '';
+    return `<li>
+      <div class="ml-tree-row">
+        <span class="ml-tree-title">${esc(title)}</span>
+        ${subtitle}
+        ${_mlLinkChip(lnk)}
+      </div>
+      ${notes}
+      ${children.length ? `<ul class="ml-tree-children">${children.map(renderNode).join('')}</ul>` : ''}
+    </li>`;
+  }
+
+  container.innerHTML = orderedHosts.map(host =>
+    `<section class="ml-tree-host-section">
+      <h3>${esc(host)}</h3>
+      <ul class="ml-tree-root">${sortLinks(buckets[host]).map(renderNode).join('')}</ul>
+    </section>`
+  ).join('');
+}
+
+/* ── Pretext-inspired view (Page 3) ─────────────────────────────────────── */
+
+function renderManualLinksPretext() {
+  const container = document.getElementById('ml-pretext-body');
+  if (!container) return;
+  if (!_manualLinks.length) {
+    container.innerHTML = '<p class="ml-page-empty">No links defined yet.</p>';
+    return;
+  }
+
+  const records = [..._manualLinks].sort((a, b) => {
+    const ag = (a.group_name || '').toLowerCase();
+    const bg = (b.group_name || '').toLowerCase();
+    if (ag !== bg) return ag.localeCompare(bg);
+    return (a.sort_order - b.sort_order) || (a.label || '').localeCompare(b.label || '');
+  });
+
+  const segments = records.map((lnk, idx) => {
+    const name = lnk.label || `Untitled ${idx + 1}`;
+    const host = _mlHostNode(lnk);
+    const primary = _mlPrimaryAddress(lnk);
+    const secondary = [lnk.vlan_ip, lnk.tailnet_ip].filter(Boolean).join(' | ');
+    const href = primary ? (/^https?:\/\//i.test(primary) ? primary : `http://${primary}`) : '';
+    const chip = primary
+      ? `<a class="ml-pretext-route" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(primary)}</a>`
+      : '<span class="ml-pretext-route ml-pretext-route--dim">No route</span>';
+    const meta = [lnk.group_name || 'no-group', host].join(' · ');
+    const notes = lnk.notes ? `<p class="ml-pretext-notes">${esc(lnk.notes)}</p>` : '';
+    const trail = secondary ? `<p class="ml-pretext-trail">${esc(secondary)}</p>` : '';
+    return `<article class="ml-pretext-card">
+      <header>
+        <h4>${esc(name)}</h4>
+        <p>${esc(meta)}</p>
+      </header>
+      ${chip}
+      ${trail}
+      ${notes}
+    </article>`;
+  }).join('');
+
+  container.innerHTML = `<div class="ml-pretext-grid">${segments}</div>`;
 }
 
 /* ── Modal: Add / Edit ───────────────────────────────────────────────────── */

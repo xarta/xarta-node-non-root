@@ -536,11 +536,24 @@
       </div>
     </div>
 
-    <!-- RENDERED VIEW -->
+    <!-- PAGE 1 (rendered links) -->
     <div id="ml-rendered-view">
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-                  padding:20px 24px;min-height:200px">
+      <div class="ml-page-shell">
         <div id="ml-rendered-body"></div>
+      </div>
+    </div>
+
+    <!-- PAGE 2 (tree view) -->
+    <div id="ml-tree-view" style="display:none">
+      <div class="ml-page-shell">
+        <div id="ml-tree-body"></div>
+      </div>
+    </div>
+
+    <!-- PAGE 3 (pretext-inspired view) -->
+    <div id="ml-pretext-view" style="display:none">
+      <div class="ml-page-shell ml-page-shell--pretext">
+        <div id="ml-pretext-body"></div>
       </div>
     </div>
 
