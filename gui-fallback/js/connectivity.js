@@ -27,6 +27,26 @@ function _diagTailnetKey(value) {
   return String(value || '').trim();
 }
 
+function _diagNodeKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function _diagNodeSlug(value) {
+  return _diagNodeKey(value).replace(/[\s_\.]+/g, '-');
+}
+
+function _findDiagSelfNode(cachedNodes, nodeName) {
+  const key = _diagNodeKey(nodeName);
+  const slug = _diagNodeSlug(nodeName);
+  return (cachedNodes || []).find((node) => {
+    const idKey = _diagNodeKey(node && node.node_id);
+    const nameKey = _diagNodeKey(node && node.display_name);
+    if (idKey && (idKey === key || idKey === slug)) return true;
+    if (nameKey && (nameKey === key || nameKey === slug)) return true;
+    return false;
+  }) || null;
+}
+
 function _preferredReachablePeers(peerResults, targetTailnet) {
   const normalizedTarget = _diagTailnetKey(targetTailnet);
   return (peerResults || [])
@@ -228,7 +248,7 @@ async function showConnectivityDiagnostic() {
     try { return JSON.parse(localStorage.getItem(_LS_DIAG_NODES) || '[]'); } catch { return []; }
   })();
 
-  const selfDiagNode = cachedNodes.find(n => n && n.node_id === nodeName) || null;
+  const selfDiagNode = _findDiagSelfNode(cachedNodes, nodeName);
   const selfTailnet = _diagTailnetKey(selfDiagNode && selfDiagNode.tailnet);
 
   const cachedPveHosts = (() => {

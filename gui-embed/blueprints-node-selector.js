@@ -930,6 +930,7 @@
 
   const LS_NODES = 'bp_nodes_v2';
   const LS_CURRENT = 'bp_current_v2';
+  const LS_PREFERRED_TAILNET = 'bp_preferred_tailnet_v1';
   const LS_BUTTON_PAGE = 'bp_button_page_v1';
 
   const POLL_INTERVAL = 2_000;
@@ -946,6 +947,7 @@
 
   let _nodes = [];
   let _current = null;
+  let _preferredTailnet = '';
   let _buttonPage = 0;
   let _polling = false;
   let _lastPollTick = 0;
@@ -1067,6 +1069,27 @@
     return String(value || '').trim();
   }
 
+  function rememberPreferredTailnet(value) {
+    _preferredTailnet = normalizeTailnet(value);
+    if (_preferredTailnet) {
+      lsSet(LS_PREFERRED_TAILNET, _preferredTailnet);
+    }
+  }
+
+  function resolvePreferredTailnet(currentNode) {
+    const originTailnet = getCurrentOriginTailnet();
+    if (originTailnet) {
+      rememberPreferredTailnet(originTailnet);
+      return originTailnet;
+    }
+    const currentTailnet = normalizeTailnet(currentNode && currentNode.tailnet);
+    if (currentTailnet) {
+      rememberPreferredTailnet(currentTailnet);
+      return currentTailnet;
+    }
+    return normalizeTailnet(_preferredTailnet);
+  }
+
   function getCurrentOriginTailnet() {
     const localNode = _nodes.find(nodeMatchesCurrentOrigin);
     return normalizeTailnet(localNode && localNode.tailnet);
@@ -1105,6 +1128,7 @@
       _current = match.id;
       lsSet(LS_CURRENT, _current);
     }
+    rememberPreferredTailnet(match.tailnet);
     return true;
   }
 
@@ -1453,6 +1477,9 @@
       _current = (selfNode && selfNode.id) || (_nodes[0] && _nodes[0].id) || null;
     }
 
+    const selected = _nodes.find(n => n.id === _current) || selfNode || null;
+    if (selected) rememberPreferredTailnet(selected.tailnet);
+
     lsSet(LS_NODES, { ts: Date.now(), nodes: _nodes });
     lsSet(LS_CURRENT, _current);
     renderBtn();
@@ -1567,13 +1594,20 @@
   }
 
   function pickBestCurrent() {
-    if (_current && _nodes.find(n => n.id === _current)) return;
-    const preferredTailnet = getCurrentOriginTailnet();
+    const currentNode = _current ? _nodes.find(n => n.id === _current) : null;
+    if (currentNode && Number.isFinite(currentNode.latencyMs)) {
+      rememberPreferredTailnet(currentNode.tailnet);
+      return;
+    }
+
+    const preferredTailnet = resolvePreferredTailnet(currentNode);
     const best = _nodes
       .filter(n => Number.isFinite(n.latencyMs))
       .sort((a, b) => compareNodesForFailover(a, b, preferredTailnet))[0];
     const fallback = _nodes.slice().sort((a, b) => compareNodesForFailover(a, b, preferredTailnet))[0];
     _current = (best && best.id) || (fallback && fallback.id) || null;
+    const selected = _nodes.find(n => n.id === _current);
+    if (selected) rememberPreferredTailnet(selected.tailnet);
     lsSet(LS_CURRENT, _current);
   }
 
@@ -1642,6 +1676,7 @@
 
   function init() {
     loadButtonPage();
+    _preferredTailnet = normalizeTailnet(lsGet(LS_PREFERRED_TAILNET));
 
     const cached = lsGet(LS_NODES);
     if (cached && cached.nodes && (Date.now() - cached.ts) < LS_TTL) {
