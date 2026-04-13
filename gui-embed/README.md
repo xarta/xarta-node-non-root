@@ -99,6 +99,23 @@ Supported button keys:
 When `enableDbMenuConfig` is true, DB config defines page and slot order.
 The key list above is used only as fallback if DB config fetch fails.
 
+### Mirrored-input reliability note (S25 Link to Windows)
+
+In touch ribbon mode, the action strip uses pointer capture while dragging.
+Some mirrored-input paths (for example Microsoft Link to Windows controlling
+an S25) can deliver `pointerup` on the ribbon viewport instead of the original
+button element.
+
+If button activation appears to highlight but not execute, verify the selector
+includes the ribbon `pointerup` handoff fix in `bindRibbonDragInteractions()`:
+
+- remember the pressed `.bp-ns-action-btn` on `pointerdown`
+- on non-drag `pointerup`, explicitly trigger that button action
+- suppress the follow-up synthetic click to avoid duplicate dispatch
+
+This is an interaction-layer fix only. It does not change database-driven menu
+authority for page/slot order.
+
 ---
 
 ## Using embed.html locally

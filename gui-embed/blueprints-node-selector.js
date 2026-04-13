@@ -1985,6 +1985,7 @@
       movedPx: 0,
       pointerId: null,
       suppressClick: false,
+      downButtonEl: null,
     };
 
     const fsm = createRibbonFsm({
@@ -2013,6 +2014,9 @@
       drag.startScrollLeft = viewport.scrollLeft;
       drag.movedPx = 0;
       drag.suppressClick = false;
+      drag.downButtonEl = event.target && event.target.closest
+        ? event.target.closest('.bp-ns-action-btn')
+        : null;
       fsm.pointerDown(event);
       if (typeof viewport.setPointerCapture === 'function') {
         try { viewport.setPointerCapture(event.pointerId); } catch {}
@@ -2030,16 +2034,34 @@
 
     function finishDrag(event) {
       if (!drag.active) return;
+      const downButtonEl = drag.downButtonEl;
       if (event && typeof viewport.releasePointerCapture === 'function' && drag.pointerId !== null) {
         try { viewport.releasePointerCapture(drag.pointerId); } catch {}
       }
       drag.active = false;
       drag.pointerId = null;
+      drag.downButtonEl = null;
       if (event && event.type === 'pointercancel') {
         fsm.pointerCancel(event);
       } else {
         const result = fsm.pointerUp(event);
         if (result && result.suppressClick) {
+          drag.suppressClick = true;
+        }
+
+        // With pointer capture, pointerup can land on the viewport instead of
+        // the original button. If this was a tap (not drag), activate the
+        // button explicitly and swallow the follow-up synthetic click.
+        if (
+          !drag.suppressClick
+          && downButtonEl
+          && downButtonEl.isConnected
+          && downButtonEl.dataset
+          && downButtonEl.dataset.action
+          && downButtonEl.dataset.action !== PLACEHOLDER_BUTTON_ACTION
+          && downButtonEl.dataset.action !== ORIGIN_BUTTON_ACTION
+        ) {
+          downButtonEl.click();
           drag.suppressClick = true;
         }
       }
