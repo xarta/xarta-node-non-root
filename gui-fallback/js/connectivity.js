@@ -23,6 +23,24 @@ function _saveDiagNodes(nodes) {
   } catch (_) {}
 }
 
+function _diagTailnetKey(value) {
+  return String(value || '').trim();
+}
+
+function _preferredReachablePeers(peerResults, targetTailnet) {
+  const normalizedTarget = _diagTailnetKey(targetTailnet);
+  return (peerResults || [])
+    .map((peer, index) => ({ peer, index }))
+    .filter(entry => entry.peer && entry.peer.reachable)
+    .sort((a, b) => {
+      const aSameTailnet = normalizedTarget && _diagTailnetKey(a.peer.tailnet) === normalizedTarget ? 0 : 1;
+      const bSameTailnet = normalizedTarget && _diagTailnetKey(b.peer.tailnet) === normalizedTarget ? 0 : 1;
+      if (aSameTailnet !== bSameTailnet) return aSameTailnet - bSameTailnet;
+      return a.index - b.index;
+    })
+    .map(entry => entry.peer);
+}
+
 // Like apiFetch but does NOT trigger openApiKeyModal on 401 (for cross-node diagnostic calls)
 async function _diagFetch(url, options = {}) {
   const secret = localStorage.getItem(_LS_SECRET_KEY) || '';
@@ -210,6 +228,9 @@ async function showConnectivityDiagnostic() {
     try { return JSON.parse(localStorage.getItem(_LS_DIAG_NODES) || '[]'); } catch { return []; }
   })();
 
+  const selfDiagNode = cachedNodes.find(n => n && n.node_id === nodeName) || null;
+  const selfTailnet = _diagTailnetKey(selfDiagNode && selfDiagNode.tailnet);
+
   const cachedPveHosts = (() => {
     try { return JSON.parse(localStorage.getItem(_LS_PVE_HOSTS) || '[]'); } catch { return []; }
   })();
@@ -238,7 +259,7 @@ async function showConnectivityDiagnostic() {
       _checkInternet(),
     ]);
 
-    const reachablePeers = peerResults.filter(p => p.reachable);
+    const reachablePeers = _preferredReachablePeers(peerResults, selfTailnet);
     const respondingPeer = reachablePeers[0] || null;
     let pctResult = null;
     let pctPeer = null;

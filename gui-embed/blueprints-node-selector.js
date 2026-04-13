@@ -1063,6 +1063,32 @@
     }
   }
 
+  function normalizeTailnet(value) {
+    return String(value || '').trim();
+  }
+
+  function getCurrentOriginTailnet() {
+    const localNode = _nodes.find(nodeMatchesCurrentOrigin);
+    return normalizeTailnet(localNode && localNode.tailnet);
+  }
+
+  function compareNodesForFailover(a, b, preferredTailnet) {
+    const targetTailnet = normalizeTailnet(preferredTailnet);
+    const aSameTailnet = targetTailnet && normalizeTailnet(a && a.tailnet) === targetTailnet ? 0 : 1;
+    const bSameTailnet = targetTailnet && normalizeTailnet(b && b.tailnet) === targetTailnet ? 0 : 1;
+    if (aSameTailnet !== bSameTailnet) return aSameTailnet - bSameTailnet;
+
+    const ao = typeof a.displayOrder === 'number' ? a.displayOrder : 999;
+    const bo = typeof b.displayOrder === 'number' ? b.displayOrder : 999;
+    if (ao !== bo) return ao - bo;
+
+    const aLatency = Number.isFinite(a.latencyMs) ? a.latencyMs : Number.POSITIVE_INFINITY;
+    const bLatency = Number.isFinite(b.latencyMs) ? b.latencyMs : Number.POSITIVE_INFINITY;
+    if (aLatency !== bLatency) return aLatency - bLatency;
+
+    return (a.name || '').localeCompare(b.name || '');
+  }
+
   function nodeMatchesCurrentOrigin(node) {
     if (!node || typeof window === 'undefined') return false;
     const currentOrigin = window.location.origin;
@@ -1293,6 +1319,10 @@
       return selfPeer && selfPeer.tailnet ? String(selfPeer.tailnet).trim() : '';
     })();
 
+    if (selfNode) {
+      selfNode.tailnet = selfTailnet;
+    }
+
     const fresh = [];
     if (selfNode) fresh.push(selfNode);
 
@@ -1339,6 +1369,7 @@
         id: p.node_id,
         name: p.display_name || p.node_id,
         displayOrder: typeof p.display_order === 'number' ? p.display_order : 999,
+        tailnet: normalizeTailnet(p.tailnet),
         uiUrl,
         healthUrl: `${uiUrl}/health`,
         fleetPeer: p.fleet_peer ?? true,
@@ -1370,6 +1401,7 @@
           uiUrl: old.uiUrl,
           healthUrl: old.healthUrl || (old.uiUrl ? `${old.uiUrl}/health` : ''),
           displayOrder: old.displayOrder,
+          tailnet: normalizeTailnet(old.tailnet),
           fleetPeer: old.fleetPeer,
           altAddresses: Array.isArray(old.altAddresses) ? old.altAddresses.slice() : [],
           apiLastSeenAt: Number(old.lastSeenAt) || 0,
@@ -1536,10 +1568,12 @@
 
   function pickBestCurrent() {
     if (_current && _nodes.find(n => n.id === _current)) return;
+    const preferredTailnet = getCurrentOriginTailnet();
     const best = _nodes
       .filter(n => Number.isFinite(n.latencyMs))
-      .sort((a, b) => a.latencyMs - b.latencyMs)[0];
-    _current = (best && best.id) || (_nodes[0] && _nodes[0].id) || null;
+      .sort((a, b) => compareNodesForFailover(a, b, preferredTailnet))[0];
+    const fallback = _nodes.slice().sort((a, b) => compareNodesForFailover(a, b, preferredTailnet))[0];
+    _current = (best && best.id) || (fallback && fallback.id) || null;
     lsSet(LS_CURRENT, _current);
   }
 
