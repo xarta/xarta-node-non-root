@@ -28,7 +28,7 @@ async function _diagFetch(url, options = {}) {
   const secret = localStorage.getItem(_LS_SECRET_KEY) || '';
   const token  = await _computeApiToken(secret);
   const headers = { ...(options.headers || {}), ...(token ? { 'X-API-Token': token } : {}) };
-  return fetch(url, { ...options, headers });
+  return fetch(url, { cache: 'no-store', ...options, headers });
 }
 
 async function _checkPeerNodes(peers, thisNodeId) {

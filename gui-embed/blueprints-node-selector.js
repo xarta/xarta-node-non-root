@@ -1252,7 +1252,10 @@
 
     let selfNode = null;
     try {
-      const r = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(5000) });
+      const r = await fetch(`${origin}/health`, {
+        signal: AbortSignal.timeout(5000),
+        cache: 'no-store',
+      });
       if (r.ok) {
         const h = await r.json();
         const uiUrl = (h.ui_url || origin).replace(/\/$/, '');
@@ -1272,9 +1275,16 @@
     } catch {}
 
     let peers = [];
+    let peersLoaded = false;
     try {
-      const r = await _authFetch(`${origin}/api/v1/nodes`, { signal: AbortSignal.timeout(5000) });
-      if (r.ok) peers = await r.json();
+      const r = await _authFetch(`${origin}/api/v1/nodes`, {
+        signal: AbortSignal.timeout(5000),
+        cache: 'no-store',
+      });
+      if (r.ok) {
+        peers = await r.json();
+        peersLoaded = true;
+      }
     } catch {}
 
     const selfTailnet = (() => {
@@ -1349,6 +1359,24 @@
       }
     }
 
+    // Keep prior peers visible when this refresh can only confirm self health.
+    // This avoids collapsing the selector to self-only on partial outages.
+    if (!peersLoaded && _nodes.length) {
+      for (const old of _nodes) {
+        if (fresh.find(n => n.id === old.id)) continue;
+        fresh.push({
+          id: old.id,
+          name: old.name,
+          uiUrl: old.uiUrl,
+          healthUrl: old.healthUrl || (old.uiUrl ? `${old.uiUrl}/health` : ''),
+          displayOrder: old.displayOrder,
+          fleetPeer: old.fleetPeer,
+          altAddresses: Array.isArray(old.altAddresses) ? old.altAddresses.slice() : [],
+          apiLastSeenAt: Number(old.lastSeenAt) || 0,
+        });
+      }
+    }
+
     if (!fresh.length) return;
 
     // Sort by display_order (self is always first regardless of its order value)
@@ -1362,26 +1390,33 @@
     });
 
     const byId = Object.fromEntries(_nodes.map(n => [n.id, n]));
-    _nodes = fresh.map(n => Object.assign(
+      _nodes = fresh.map(n => {
+        const prior = byId[n.id];
+        // For newly discovered nodes with no valid lastSeenAt, use current time
+        // For existing nodes, use the more recent of locally-tracked or DB value
+        const computedLastSeenAt = prior
+          ? Math.max(prior.lastSeenAt || 0, Number(n.apiLastSeenAt) || 0)
+          : (Number(n.apiLastSeenAt) > 0 ? Number(n.apiLastSeenAt) : Date.now());
+        return Object.assign(
       {
         latencyMs: null,
-        lastSeenAt: Number(n.apiLastSeenAt) || 0,
         lastPolledAt: 0,
         discoveredAt: Date.now(),
       },
       n,
-      byId[n.id]
+        (prior
         ? {
-            latencyMs: byId[n.id].latencyMs,
-            lastSeenAt: Math.max(byId[n.id].lastSeenAt || 0, Number(n.apiLastSeenAt) || 0),
-            lastPolledAt: byId[n.id].lastPolledAt,
-            discoveredAt: byId[n.id].discoveredAt || Date.now(),
-            localMode: byId[n.id].localMode,
-            activeHealthUrl: byId[n.id].activeHealthUrl,
+              latencyMs: prior.latencyMs,
+              lastSeenAt: computedLastSeenAt,
+              lastPolledAt: prior.lastPolledAt,
+              discoveredAt: prior.discoveredAt || Date.now(),
+              localMode: prior.localMode,
+              activeHealthUrl: prior.activeHealthUrl,
           }
-        : {},
-    ));
-
+           : {}),
+          { lastSeenAt: computedLastSeenAt }
+          );
+      });
     if (!syncCurrentToLocation() && (!_current || !_nodes.find(n => n.id === _current))) {
       _current = (selfNode && selfNode.id) || (_nodes[0] && _nodes[0].id) || null;
     }
@@ -1399,6 +1434,7 @@
       const r = await fetch(node.healthUrl, {
         method: 'GET',
         signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+        cache: 'no-store',
       });
       if (r.ok) {
         node.localMode = false;
@@ -1417,6 +1453,7 @@
         const r = await fetch(altHealthUrl, {
           method: 'GET',
           signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+          cache: 'no-store',
         });
         if (r.ok) {
           node.localMode = true;
@@ -2265,7 +2302,7 @@
     }
   }
 
-  async function _speakFleetStatusMessage(currentNode, message) {
+  async function _speakFleetStatusMessage(currentNode, message, sentiment = 'negative') {
     if (!currentNode || !message) return false;
     const base = getPreferredBaseUrl(currentNode);
     if (!base) return false;
@@ -2281,7 +2318,7 @@
           interrupt: true,
           mode: 'stream',
           eventKind: 'fleet_nodes_status',
-          fallbackKind: 'negative',
+          fallbackKind: sentiment,
         });
         return true;
       } catch {
@@ -2298,7 +2335,7 @@
           interrupt: true,
           mode: 'stream',
           event_kind: 'fleet_nodes_status',
-          fallback_kind: 'negative',
+          fallback_kind: sentiment,
         }),
         signal: AbortSignal.timeout(12000),
       });
@@ -2360,7 +2397,9 @@
       }
 
       const message = segments.join(' ');
-      const spoke = await _speakFleetStatusMessage(snapshot.current, message);
+      // Determine sentiment based on announcement type: positive for recovery, negative for outages
+      const sentiment = recoveredNames.length > 0 && !offlineNames.length ? 'positive' : 'negative';
+      const spoke = await _speakFleetStatusMessage(snapshot.current, message, sentiment);
       if (spoke) {
         FleetNodeVoiceStateMachine.markFlushed(batch.offline, batch.recovered);
       } else {

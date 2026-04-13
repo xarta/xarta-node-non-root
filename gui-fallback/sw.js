@@ -13,6 +13,10 @@ const STATIC_ASSETS = [
   './js/app-mode-diag.js'
 ];
 
+function isRuntimeCacheableAsset(pathname) {
+  return /\.(css|js|svg|png|jpg|jpeg|webp|gif|ico|woff2?|ttf)$/i.test(pathname);
+}
+
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(STATIC_CACHE);
@@ -41,6 +45,7 @@ self.addEventListener('fetch', event => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/')) return;
+  if (url.pathname === '/health') return;
   if (url.pathname.endsWith('/manifest.webmanifest') || url.pathname.endsWith('/sw.js')) {
     event.respondWith(fetch(req));
     return;
@@ -49,15 +54,16 @@ self.addEventListener('fetch', event => {
   if (req.mode === 'navigate') {
     event.respondWith((async () => {
       try {
-        const fresh = await fetch(req);
-        const cache = await caches.open(RUNTIME_CACHE);
-        cache.put(req, fresh.clone()).catch(() => {});
-        return fresh;
+        return await fetch(req);
       } catch (_) {
-        const cached = await caches.match(req);
-        return cached || caches.match('./index.html');
+        return caches.match('./index.html');
       }
     })());
+    return;
+  }
+
+  if (!isRuntimeCacheableAsset(url.pathname)) {
+    event.respondWith(fetch(req).catch(() => caches.match(req)));
     return;
   }
 

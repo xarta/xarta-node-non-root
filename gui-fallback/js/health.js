@@ -1,7 +1,7 @@
 /* ── Health / header stats ────────────────────────────────────────────── */
 async function loadHealth() {
   try {
-    const r = await apiFetch('/health');
+    const r = await apiFetch('/health', { cache: 'no-store' });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const d = await r.json();
     _nodeName   = d.node_name || d.node_id || '';
