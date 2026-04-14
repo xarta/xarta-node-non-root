@@ -693,6 +693,13 @@ function createHubMenu(cfg) {
 
         openContextMenuAt(anchorEl) {
             if (!anchorEl || typeof anchorEl.getBoundingClientRect !== 'function') return false;
+            // A renderActionButtons() call during the long-press window can detach the
+            // origin button element before this fires.  When the passed element is no longer
+            // in the document, swap in the live element so positioning works correctly.
+            if (anchorEl.isConnected === false) {
+                const liveEl = document.querySelector('[data-action="origin"]');
+                if (liveEl) anchorEl = liveEl;
+            }
             const activeId = this._activeTabId();
             const fnItems = this._contextMenuFunctionItems(activeId);
             if (!fnItems.length) {
