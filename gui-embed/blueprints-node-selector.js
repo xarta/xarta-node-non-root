@@ -1813,6 +1813,83 @@
     setInterval(refreshNodeList, LIST_REFRESH);
   }
 
+  // ── Toggle button FSM ──────────────────────────────────────────────────────
+  //
+  // Canonical FSM pattern (see STATE-MACHINES.md).  The input classifier lives
+  // in connectedCallback; this object only receives clean classified events.
+  //
+  // States:  CLOSED | OPEN
+  // Inputs:  tap | doubleTap | longPress
+  //
+  // Transition table:
+  //   CLOSED + tap       → OPEN    / openPanel
+  //   OPEN   + tap       → CLOSED  / closePanel
+  //   CLOSED + doubleTap → CLOSED  / ttsDoubleTap (no-op hook)
+  //   OPEN   + doubleTap → OPEN    / ttsDoubleTap (no-op hook)
+  //   CLOSED + longPress → CLOSED  / ttsLongPress (no-op hook)
+  //   OPEN   + longPress → OPEN    / ttsLongPress (no-op hook)
+  //
+  const ToggleButtonFsm = (() => {
+    const _TRANSITIONS = {
+      CLOSED: {
+        tap:       { next: 'OPEN',   action: 'openPanel'    },
+        doubleTap: { next: 'CLOSED', action: 'ttsDoubleTap' },
+        longPress: { next: 'CLOSED', action: 'ttsLongPress' },
+      },
+      OPEN: {
+        tap:       { next: 'CLOSED', action: 'closePanel'   },
+        doubleTap: { next: 'OPEN',   action: 'ttsDoubleTap' },
+        longPress: { next: 'OPEN',   action: 'ttsLongPress' },
+      },
+    };
+
+    // Re-derive state from DOM before every dispatch so external close
+    // events (click-outside on document) never desync the machine.
+    function _syncState() {
+      const p = document.getElementById('bp-ns-panel');
+      return (p && p.classList.contains('open')) ? 'OPEN' : 'CLOSED';
+    }
+
+    function _executeAction(action) {
+      if (action === 'openPanel') {
+        const p = document.getElementById('bp-ns-panel');
+        if (!p) return;
+        p.classList.add('open');
+        const btn = document.getElementById('bp-ns-toggle');
+        if (btn) btn.setAttribute('aria-expanded', 'true');
+        renderPanel();
+        return;
+      }
+      if (action === 'closePanel') {
+        const p = document.getElementById('bp-ns-panel');
+        if (p) p.classList.remove('open');
+        const btn = document.getElementById('bp-ns-toggle');
+        if (btn) btn.setAttribute('aria-expanded', 'false');
+        return;
+      }
+      if (action === 'ttsDoubleTap' || action === 'ttsLongPress') {
+        if (typeof window.BlueprintsTtsClient === 'undefined') return;
+        const isDouble = action === 'ttsDoubleTap';
+        window.BlueprintsTtsClient.speak({
+          text:         isDouble ? 'Node selector double tap.' : 'Node selector long press.',
+          interrupt:    true,
+          mode:         'stream',
+          eventKind:    isDouble ? 'double_tap' : 'long_press',
+          fallbackKind: 'negative',
+        }).catch(() => {});
+      }
+    }
+
+    function dispatch(event) {
+      const state = _syncState();
+      const t = _TRANSITIONS[state] && _TRANSITIONS[state][event];
+      if (!t) return;
+      _executeAction(t.action);
+    }
+
+    return { dispatch };
+  })();
+
   class BlueprintsNodeSelector extends HTMLElement {
     connectedCallback() {
       this.innerHTML = `
@@ -1830,10 +1907,94 @@
           </div>
         </div>`;
 
-      this.querySelector('#bp-ns-toggle').addEventListener('click', e => {
+      // ── Toggle button input classifier ─────────────────────────────────
+      // Classifies raw pointer/click events into tap / doubleTap / longPress
+      // and dispatches to ToggleButtonFsm.  Input classification stays here;
+      // the FSM only receives clean classified events (see STATE-MACHINES.md).
+      const _toggleBtn = this.querySelector('#bp-ns-toggle');
+      let _togglePressTimer  = null;
+      let _toggleClickTimer  = null;
+      let _toggleLastClickAt = 0;
+      let _toggleLongPressed = false;
+      let _togglePointerType = 'mouse';
+      let _toggleDownX = 0;
+      let _toggleDownY = 0;
+
+      _toggleBtn.addEventListener('contextmenu', e => e.preventDefault());
+
+      _toggleBtn.addEventListener('pointerdown', e => {
+        if (e.button && e.button !== 0) return;
         e.stopPropagation();
-        togglePanel();
+        clearTimeout(_togglePressTimer);
+        _toggleLongPressed = false;
+        _togglePointerType = e.pointerType || 'mouse';
+        _toggleDownX = e.clientX;
+        _toggleDownY = e.clientY;
+        _togglePressTimer = window.setTimeout(() => {
+          _togglePressTimer  = null;
+          _toggleLongPressed = true;
+          ToggleButtonFsm.dispatch('longPress');
+        }, ACTION_LONG_PRESS_MS);
       });
+
+      _toggleBtn.addEventListener('pointermove', e => {
+        if (!_togglePressTimer) return;
+        const dx = e.clientX - _toggleDownX;
+        const dy = e.clientY - _toggleDownY;
+        if (Math.sqrt(dx * dx + dy * dy) > ACTION_DRAG_CANCEL_PX) {
+          clearTimeout(_togglePressTimer);
+          _togglePressTimer = null;
+        }
+      });
+
+      ['pointerup', 'pointercancel', 'pointerleave'].forEach(evName => {
+        _toggleBtn.addEventListener(evName, () => {
+          clearTimeout(_togglePressTimer);
+          _togglePressTimer = null;
+        });
+      });
+
+      _toggleBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        if (_toggleLongPressed) { _toggleLongPressed = false; return; }
+        const isTouch = _togglePointerType === 'touch' || _togglePointerType === 'pen';
+        const now = Date.now();
+        if (isTouch) {
+          // Touch/pen: immediate single, timestamp comparison for double.
+          const isDouble = _toggleLastClickAt > 0 && (now - _toggleLastClickAt) < ACTION_DOUBLE_CLICK_MS;
+          if (isDouble) {
+            _toggleLastClickAt = 0;
+            clearTimeout(_toggleClickTimer);
+            _toggleClickTimer = null;
+            ToggleButtonFsm.dispatch('doubleTap');
+          } else {
+            _toggleLastClickAt = now;
+            clearTimeout(_toggleClickTimer);
+            _toggleClickTimer = window.setTimeout(() => {
+              _toggleClickTimer  = null;
+              _toggleLastClickAt = 0;
+              ToggleButtonFsm.dispatch('tap');
+            }, ACTION_DOUBLE_CLICK_MS);
+          }
+        } else {
+          // Mouse (inc. Phone Link): timer-based double-click detection.
+          if (_toggleClickTimer && (now - _toggleLastClickAt) <= ACTION_DOUBLE_CLICK_MS) {
+            clearTimeout(_toggleClickTimer);
+            _toggleClickTimer  = null;
+            _toggleLastClickAt = 0;
+            ToggleButtonFsm.dispatch('doubleTap');
+          } else {
+            _toggleLastClickAt = now;
+            clearTimeout(_toggleClickTimer);
+            _toggleClickTimer = window.setTimeout(() => {
+              _toggleClickTimer  = null;
+              _toggleLastClickAt = 0;
+              ToggleButtonFsm.dispatch('tap');
+            }, ACTION_DOUBLE_CLICK_MS);
+          }
+        }
+      });
+
       document.addEventListener('click', closePanel);
       Promise.all([ensureRibbonFsm(), ensureSelectorConfig()]).finally(() => {
         applySelectorConfigFromWindow();
