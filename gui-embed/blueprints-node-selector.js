@@ -2284,9 +2284,11 @@
           lastClickAt = 0;
           clearTimeout(clickTimer);
           clickTimer = null;
-          if (!def || !def.bridgeGroup) {
-            // No assigned action — TTS/sound feedback confirms the event fired.
-            // Mirrors the pattern in app.js _handleOriginLayoutPage.
+          // Only synthesis has an assigned double-tap action (full reload → triggers
+          // the mobile clock on cold start).  All other buttons — including probes and
+          // settings — are no-ops with TTS/sound feedback so the event is still audible.
+          const hasDoubleTapAction = def && def.bridgeGroup === 'synthesis';
+          if (!hasDoubleTapAction) {
             if (typeof window.BlueprintsTtsClient !== 'undefined') {
               const _dtLabel = def ? def.label : action;
               window.BlueprintsTtsClient.speak({
@@ -2299,7 +2301,8 @@
             }
             return;
           }
-          // Double-tap/double-click on a nav button forces a full page load
+          // Synthesis double-tap: force a full page reload (navigates to /fallback-ui/
+          // with no query params, which triggers openClockOverlay on mobile).
           navigateToNodePath(def.buildPath());
         }
 
