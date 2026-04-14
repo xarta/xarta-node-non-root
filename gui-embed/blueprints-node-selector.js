@@ -2234,16 +2234,15 @@
         e.stopPropagation();
         if (longPressTriggered) return;
 
-        const action = btn.dataset.action;
-        const meta   = _dbItemMeta[action] || null;
-        const def    = BUTTON_DEFS[action];
-
-        const now      = Date.now();
-        const isTouch  = lastPointerType === 'touch' || lastPointerType === 'pen';
-        const isDouble = (now - lastClickAt) < ACTION_DOUBLE_CLICK_MS;
-        lastClickAt = now;
+        const action  = btn.dataset.action;
+        const meta    = _dbItemMeta[action] || null;
+        const def     = BUTTON_DEFS[action];
+        const isNav   = !!(def && def.bridgeGroup);
+        const now     = Date.now();
+        const isTouch = lastPointerType === 'touch' || lastPointerType === 'pen';
 
         function dispatchSingle() {
+          lastClickAt = 0;
           const delayMs  = playDbActionSound(meta);
           const runAction = () => {
             if (action === 'paging-button') {
@@ -2270,17 +2269,36 @@
         }
 
         function dispatchDouble() {
+          lastClickAt = 0;
+          clearTimeout(clickTimer);
+          clickTimer = null;
           if (!def || !def.bridgeGroup) return;
-          // Double-tap on a nav button forces a full page load
+          // Double-tap/double-click on a nav button forces a full page load
           navigateToNodePath(def.buildPath());
         }
 
         if (isTouch) {
+          // Touch/pen: fire single immediately (no timer), detect double by timestamp.
+          // Matches origin button behaviour — timestamp comparison avoids needing a
+          // separate timer track alongside the already-running clickTimer.
+          const isDouble = lastClickAt > 0 && (now - lastClickAt) < ACTION_DOUBLE_CLICK_MS;
           if (isDouble) {
-            clearTimeout(clickTimer);
-            clickTimer = null;
             dispatchDouble();
           } else {
+            lastClickAt = now;
+            clearTimeout(clickTimer);
+            clickTimer = window.setTimeout(() => {
+              clickTimer = null;
+              dispatchSingle();
+            }, ACTION_DOUBLE_CLICK_MS);
+          }
+        } else if (isNav) {
+          // Mouse + nav button: timer-based double-click, mirrors origin button pattern.
+          // Needed so Phone Link (sends pointerType:'mouse') also gets double-click.
+          if (clickTimer && (now - lastClickAt) <= ACTION_DOUBLE_CLICK_MS) {
+            dispatchDouble();
+          } else {
+            lastClickAt = now;
             clearTimeout(clickTimer);
             clickTimer = window.setTimeout(() => {
               clickTimer = null;
@@ -2288,7 +2306,7 @@
             }, ACTION_DOUBLE_CLICK_MS);
           }
         } else {
-          // Mouse — no double-click distinction, fire immediately
+          // Mouse + non-nav (doAction, paging): fire immediately, no double-click delay.
           dispatchSingle();
         }
       });
