@@ -204,29 +204,33 @@ function switchGroup(group) {
   document.querySelectorAll('.table-nav button[data-group]').forEach(b => {
     b.style.display = b.dataset.group === group ? '' : 'none';
   });
-  // Show/hide synthesis split-dropdown menu
+  // Hide all group wrappers first, then show only the active one.
+  // This is required for SPA navigation (switchGroup called without a page reload)
+  // because the early-return paths below would otherwise leave a previously-shown
+  // wrapper visible when switching away from it.
   const synthesisWrapper = document.getElementById('synthesisMenuWrapper');
-  if (synthesisWrapper) synthesisWrapper.style.display = group === 'synthesis' ? '' : 'none';
+  const probesWrapper    = document.getElementById('probesMenuWrapper');
+  const settingsWrapper  = document.getElementById('settingsMenuWrapper');
+  if (synthesisWrapper) synthesisWrapper.style.display = 'none';
+  if (probesWrapper)    probesWrapper.style.display    = 'none';
+  if (settingsWrapper)  settingsWrapper.style.display  = 'none';
   if (group === 'synthesis') {
+    if (synthesisWrapper) synthesisWrapper.style.display = '';
     SynthesisMenuConfig.showGroup();
     switchTab('manual-links');
     manualLinksShowView(_manualLinksView);
     SynthesisMenuConfig.updateActiveTab('manual-links-' + _manualLinksView);
     return;
   }
-  // Show/hide probes split-dropdown menu
-  const probesWrapper = document.getElementById('probesMenuWrapper');
-  if (probesWrapper) probesWrapper.style.display = group === 'probes' ? '' : 'none';
   if (group === 'probes') {
+    if (probesWrapper) probesWrapper.style.display = '';
     ProbesMenuConfig.showGroup();
     switchTab('pfsense-dns');
     ProbesMenuConfig.updateActiveTab('pfsense-dns');
     return;
   }
-  // Show/hide settings split-dropdown menu
-  const settingsWrapper = document.getElementById('settingsMenuWrapper');
-  if (settingsWrapper) settingsWrapper.style.display = group === 'settings' ? '' : 'none';
   if (group === 'settings') {
+    if (settingsWrapper) settingsWrapper.style.display = '';
     SettingsMenuConfig.showGroup();
     switchTab('pve-hosts');
     SettingsMenuConfig.updateActiveTab('pve-hosts');
