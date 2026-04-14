@@ -2212,7 +2212,19 @@
         pressTimer = window.setTimeout(() => {
           longPressTriggered = true;
           pressTimer = null;
-          // ── Long-press hook — no-op placeholder ──────────────────────
+          // TTS/sound feedback — confirms the event fired when no action is assigned.
+          // Mirrors the pattern in app.js _handleOriginContextMenu.
+          if (typeof window.BlueprintsTtsClient !== 'undefined') {
+            const _lpDef   = BUTTON_DEFS[btn.dataset.action];
+            const _lpLabel = _lpDef ? _lpDef.label : btn.dataset.action;
+            window.BlueprintsTtsClient.speak({
+              text:         `${_lpLabel} long press.`,
+              interrupt:    true,
+              mode:         'stream',
+              eventKind:    'long_press',
+              fallbackKind: 'negative',
+            }).catch(() => {});
+          }
         }, ACTION_LONG_PRESS_MS);
       });
 
@@ -2272,7 +2284,21 @@
           lastClickAt = 0;
           clearTimeout(clickTimer);
           clickTimer = null;
-          if (!def || !def.bridgeGroup) return;
+          if (!def || !def.bridgeGroup) {
+            // No assigned action — TTS/sound feedback confirms the event fired.
+            // Mirrors the pattern in app.js _handleOriginLayoutPage.
+            if (typeof window.BlueprintsTtsClient !== 'undefined') {
+              const _dtLabel = def ? def.label : action;
+              window.BlueprintsTtsClient.speak({
+                text:         `${_dtLabel} double tap.`,
+                interrupt:    true,
+                mode:         'stream',
+                eventKind:    'double_tap',
+                fallbackKind: 'negative',
+              }).catch(() => {});
+            }
+            return;
+          }
           // Double-tap/double-click on a nav button forces a full page load
           navigateToNodePath(def.buildPath());
         }
