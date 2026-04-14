@@ -800,6 +800,86 @@
     return !!window.PocketTtsNav.goToTab(tabName);
   }
 
+  // ---------------------------------------------------------------------------
+  // Clock overlay self-injection
+  // Used when the clock button is tapped on a page that does not pre-load
+  // clock-overlay.js (e.g. database-tables.html, /ui, etc.).
+  // On gui-fallback/index.html, clock-overlay.js already defines
+  // window.openClockOverlay, so this function is never called there.
+  // ---------------------------------------------------------------------------
+  function _injectClockOverlay() {
+    // Inject minimal inline CSS once
+    if (!document.getElementById('bp-clock-overlay-style')) {
+      var s = document.createElement('style');
+      s.id = 'bp-clock-overlay-style';
+      s.textContent = [
+        '#clock-overlay{position:fixed;inset:0;z-index:9999;display:none;background:#000}',
+        '#clock-overlay.is-active{display:block}',
+        '#clock-overlay__frame{position:absolute;inset:0;width:100%;height:100%;border:none;display:block}',
+        '#clock-overlay__dismiss{position:absolute;inset:0;z-index:1;background:transparent;cursor:pointer;',
+        '-webkit-tap-highlight-color:transparent;touch-action:manipulation}',
+        '#clock-overlay__notifications{position:absolute;inset:0;z-index:2;pointer-events:none}',
+      ].join('');
+      document.head.appendChild(s);
+    }
+    // Inject overlay HTML into body once
+    if (!document.getElementById('clock-overlay')) {
+      var el = document.createElement('div');
+      el.id = 'clock-overlay';
+      el.setAttribute('role', 'dialog');
+      el.setAttribute('aria-modal', 'true');
+      el.setAttribute('aria-label', 'Clock');
+      el.innerHTML = [
+        '<iframe id="clock-overlay__frame" title="Retro Flip Clock" src="" allow="autoplay"></iframe>',
+        '<div id="clock-overlay__dismiss" role="button" tabindex="0" aria-label="Tap to dismiss clock"></div>',
+        '<div id="clock-overlay__notifications" aria-live="polite"></div>',
+      ].join('');
+      document.body.appendChild(el);
+    }
+    // Define open/close API if clock-overlay.js has not already done so
+    if (typeof window.openClockOverlay !== 'function') {
+      var OPEN_GRACE_MS = 450;
+      var _openedAt = 0;
+      var _frameLoaded = false;
+      window.closeClockOverlay = function () {
+        if (Date.now() - _openedAt < OPEN_GRACE_MS) return;
+        var overlay = document.getElementById('clock-overlay');
+        if (overlay) overlay.classList.remove('is-active');
+        document.documentElement.style.overflow = '';
+        document.documentElement.style.touchAction = '';
+      };
+      window.openClockOverlay = function (clockSrc) {
+        var overlay = document.getElementById('clock-overlay');
+        var frame   = document.getElementById('clock-overlay__frame');
+        var dismiss = document.getElementById('clock-overlay__dismiss');
+        if (!overlay) return;
+        if (!_frameLoaded && frame) {
+          frame.src = clockSrc || (SCRIPT_DIR + 'clock.html');
+          _frameLoaded = true;
+        }
+        _openedAt = Date.now();
+        overlay.classList.add('is-active');
+        document.documentElement.style.overflow = 'hidden';
+        document.documentElement.style.touchAction = 'none';
+        if (dismiss && !dismiss._bpClockWired) {
+          dismiss._bpClockWired = true;
+          dismiss.addEventListener('click', window.closeClockOverlay);
+          dismiss.addEventListener('touchend', function (e) {
+            e.preventDefault();
+            window.closeClockOverlay();
+          }, { passive: false });
+          dismiss.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') {
+              e.preventDefault();
+              window.closeClockOverlay();
+            }
+          });
+        }
+      };
+    }
+    window.openClockOverlay(SCRIPT_DIR + 'clock.html');
+  }
+
   const BUTTON_DEFS = {
     'fallback-ui':      { icon: '🧰', label: 'Fallback UI',      buildPath: () => '/fallback-ui/' },
     'ui':               { icon: '🏠', label: 'UI',               buildPath: () => '/' },
@@ -930,13 +1010,13 @@
       icon: '', label: 'Clock',
       doAction() {
         if (typeof window.openClockOverlay === 'function') {
-          // Overlay mode — full-screen over the current page (gui-fallback context).
           window.openClockOverlay();
-        } else {
-          // Fallback: open clock as a standalone full-screen page in a new window.
-          const base = (window.location.origin || '') + '/fallback-ui/embed/clock.html';
-          window.open(base, '_blank', 'noopener');
+          return;
         }
+        // Overlay not present on this page — inject it then open.
+        // This covers db pages, /ui, and any other page hosting the selector
+        // that doesn't already include clock-overlay.js and the overlay HTML.
+        _injectClockOverlay();
       },
     },
   };
