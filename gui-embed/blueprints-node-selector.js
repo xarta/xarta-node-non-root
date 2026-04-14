@@ -926,6 +926,19 @@
         hardRefreshClientAssets();
       },
     },
+    'clock': {
+      icon: '', label: 'Clock',
+      doAction() {
+        if (typeof window.openClockOverlay === 'function') {
+          // Overlay mode — full-screen over the current page (gui-fallback context).
+          window.openClockOverlay();
+        } else {
+          // Fallback: open clock as a standalone full-screen page in a new window.
+          const base = (window.location.origin || '') + '/fallback-ui/embed/clock.html';
+          window.open(base, '_blank', 'noopener');
+        }
+      },
+    },
   };
 
   const LS_NODES = 'bp_nodes_v2';

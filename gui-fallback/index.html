@@ -33,6 +33,7 @@
   <link rel="stylesheet" href="css/hub-modal.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/hub-dialogs.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/embed-menu-grid.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/clock-overlay.css?v={{$assetVersion}}" />
 </head>
 <body class="bp-font-role-root">
 
@@ -2577,6 +2578,7 @@
 <script src="js/ultrawide-debug-panels.js?v={{$assetVersion}}"></script>
 <script src="js/app-mode-diag.js?v={{$assetVersion}}"></script>
 <script src="js/origin-menu-state.js?v={{$assetVersion}}"></script>
+<script src="js/clock-overlay.js?v={{$assetVersion}}"></script>
 <script src="js/app.js?v={{$assetVersion}}"></script>
 <script>
   if ('serviceWorker' in navigator) {
@@ -2913,6 +2915,13 @@
   </div>
   <div class="hub-modal-body" id="bm-col-info-body" style="padding:20px 24px;font-size:13.5px;line-height:1.72"></div>
 </dialog>
+
+<!-- Clock overlay — full-screen retro flip clock; tap dismiss layer to return -->
+<div id="clock-overlay" role="dialog" aria-modal="true" aria-label="Clock">
+  <iframe id="clock-overlay__frame" title="Retro Flip Clock" src="" allow="autoplay"></iframe>
+  <div id="clock-overlay__dismiss" role="button" tabindex="0" aria-label="Tap to dismiss clock"></div>
+  <div id="clock-overlay__notifications" aria-live="polite"></div>
+</div>
 
 </body>
 </html>

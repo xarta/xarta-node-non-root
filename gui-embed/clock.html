@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retro Flip Clock</title>
+    
+    <style>
+        :root {
+            --bg-color: #000000;
+            --text-color: #b3b3b3;
+            --card-gap: 4px;
+            --gap-multiplier: 1; 
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%; 
+            overflow: hidden; 
+            background-color: var(--bg-color);
+        }
+
+        body {
+            display: flex;
+            justify-content: center; 
+            align-items: center;     
+            font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            user-select: none;
+        }
+
+        /* The Canvas for Geometric Nodes */
+        #noise-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 9; /* Over the cards, under the small overlays */
+            pointer-events: none; 
+        }
+
+        .clock-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: gap 1s ease-in-out, transform 1s ease-in-out;
+            z-index: 5;
+        }
+
+        .card {
+            position: relative;
+            container-type: size;
+            perspective: 1500px;
+        }
+
+        @media (orientation: portrait) {
+            .clock-container { 
+                flex-direction: column; 
+                gap: calc(4vh * var(--gap-multiplier)); 
+            }
+            .card { 
+                width: min(92vw, 46vh); 
+                height: min(92vw, 46vh); 
+            }
+        }
+
+        @media (orientation: landscape) {
+            .clock-container { 
+                flex-direction: row; 
+                gap: calc(4vw * var(--gap-multiplier)); 
+            }
+            .card { 
+                width: min(46vw, 92vh); 
+                height: min(46vw, 92vh); 
+            }
+        }
+
+        .date-overlay {
+            position: absolute;
+            top: 3cqh;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 7cqh;
+            color: var(--text-color);
+            font-weight: 700;
+            z-index: 10;
+            letter-spacing: 0.02em;
+        }
+
+        .seconds-overlay {
+            position: absolute;
+            bottom: 3cqh;
+            right: 5cqw;
+            font-size: 11cqh;
+            color: var(--text-color);
+            font-weight: 800;
+            z-index: 10;
+        }
+
+        .half {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: calc(50% - (var(--card-gap) / 2));
+            overflow: hidden;
+            background-color: #111111;
+            -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
+            transform-style: preserve-3d;
+            box-shadow: inset 0 0 2cqw rgba(0,0,0,0.5);
+        }
+
+        .top-half {
+            top: 0;
+            border-radius: 8cqw 8cqw 0 0;
+            transform-origin: bottom;
+            background-image: linear-gradient(to bottom, #1a1a1a, #0f0f0f);
+        }
+
+        .bottom-half {
+            bottom: 0;
+            border-radius: 0 0 8cqw 8cqw;
+            transform-origin: top;
+            background-image: linear-gradient(to bottom, #0a0a0a, #030303);
+        }
+
+        .text {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 100cqh; 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 82cqh;
+            line-height: 1;
+            font-weight: 900; 
+            letter-spacing: -0.04em;
+            color: var(--text-color);
+        }
+
+        .top-half .text { top: 0; }
+        .bottom-half .text { bottom: 0; }
+
+        .text span {
+            display: block;
+            transform: translateY(-6%); 
+        }
+
+        .static-bottom { z-index: 1; }
+        .static-top { z-index: 2; }
+        .flip-bottom { z-index: 3; transform: rotateX(90deg); }
+        .flip-top { z-index: 4; }
+
+        .card.flip .flip-top { animation: flipTop 0.4s ease-in forwards; }
+        .card.flip .flip-bottom { animation: flipBottom 0.4s ease-out 0.4s forwards; }
+
+        @keyframes flipTop {
+            0% { transform: rotateX(0deg); }
+            100% { transform: rotateX(-90deg); }
+        }
+
+        @keyframes flipBottom {
+            0% { transform: rotateX(90deg); }
+            100% { transform: rotateX(0deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="noise-canvas"></canvas>
+
+    <div class="clock-container" id="clock-wrapper">
+        <div class="card" id="hours" data-val="">
+            <div class="date-overlay" id="date-overlay">--/--/--</div>
+            <div class="half static-top top-half"><div class="text"><span></span></div></div>
+            <div class="half static-bottom bottom-half"><div class="text"><span></span></div></div>
+            <div class="half flip-top top-half"><div class="text"><span></span></div></div>
+            <div class="half flip-bottom bottom-half"><div class="text"><span></span></div></div>
+        </div>
+
+        <div class="card" id="minutes" data-val="">
+            <div class="half static-top top-half"><div class="text"><span></span></div></div>
+            <div class="half static-bottom bottom-half"><div class="text"><span></span></div></div>
+            <div class="half flip-top top-half"><div class="text"><span></span></div></div>
+            <div class="half flip-bottom bottom-half"><div class="text"><span></span></div></div>
+            <div class="seconds-overlay" id="seconds-overlay">--</div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. Clock Logic ---
+        const pad = (num) => String(num).padStart(2, '0');
+
+        function updateClock() {
+            const now = new Date();
+            
+            const h = pad(now.getHours());
+            const m = pad(now.getMinutes());
+            const s = pad(now.getSeconds());
+
+            const day = pad(now.getDate());
+            const month = pad(now.getMonth() + 1); 
+            const year = String(now.getFullYear()).slice(-2);
+            
+            document.getElementById('date-overlay').innerText = `${day}/${month}/${year}`;
+            document.getElementById('seconds-overlay').innerText = s;
+
+            updateFlip('hours', h);
+            updateFlip('minutes', m);
+        }
+
+        function updateFlip(id, newValue) {
+            const card = document.getElementById(id);
+            const currentValue = card.dataset.val;
+
+            if (currentValue === newValue) return;
+
+            card.dataset.val = newValue;
+
+            if (!currentValue) {
+                card.querySelectorAll('.text span').forEach(el => el.innerText = newValue);
+                return;
+            }
+
+            card.querySelector('.static-top .text span').innerText = newValue;
+            card.querySelector('.static-bottom .text span').innerText = currentValue;
+            card.querySelector('.flip-top .text span').innerText = currentValue;
+            card.querySelector('.flip-bottom .text span').innerText = newValue;
+
+            card.classList.remove('flip');
+            void card.offsetWidth; 
+            card.classList.add('flip');
+
+            setTimeout(() => {
+                card.querySelector('.static-bottom .text span').innerText = newValue;
+                card.querySelector('.flip-top .text span').innerText = newValue;
+                card.classList.remove('flip');
+            }, 800);
+        }
+
+        // --- 2. Clock Burn-In Positioning ---
+        function applyBurnInProtection() {
+            const root = document.documentElement;
+            const wrapper = document.getElementById('clock-wrapper');
+            
+            const randomMultiplier = 0.5 + (Math.random() * 1.5);
+            root.style.setProperty('--gap-multiplier', randomMultiplier);
+
+            const shiftX = (Math.random() * 10) - 5;
+            const shiftY = (Math.random() * 10) - 5;
+            wrapper.style.transform = `translate(${shiftX}px, ${shiftY}px)`;
+        }
+
+        updateClock();
+        setInterval(updateClock, 1000);
+        setInterval(applyBurnInProtection, 60000);
+        applyBurnInProtection(); 
+
+
+        // --- 3. Dynamic Geometric Nodes System ---
+        const canvas = document.getElementById('noise-canvas');
+        const ctx = canvas.getContext('2d');
+        let width, height;
+        let particles = [];
+        const connectionDistance = 180; // Slightly larger range for forming shapes
+
+        function resizeCanvas() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            
+            const numParticles = Math.floor((width * height) / 25000);
+            particles = Array.from({ length: numParticles }, () => new Particle());
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+
+        class Particle {
+            constructor() {
+                this.reset();
+                this.life = Math.random() * this.maxLife; 
+            }
+
+            reset() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * height;
+                // Faster drift speed to sweep more surface area
+                this.vx = (Math.random() - 0.5) * 1.2;
+                this.vy = (Math.random() - 0.5) * 1.2;
+                this.maxLife = 300 + Math.random() * 500;
+                this.life = 0;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life++;
+                if (this.life >= this.maxLife) this.reset();
+            }
+
+            getOpacity() {
+                return Math.sin((this.life / this.maxLife) * Math.PI);
+            }
+        }
+
+        function animateNodes() {
+            ctx.clearRect(0, 0, width, height);
+            
+            particles.forEach(p => p.update());
+
+            // Set to draw DARK shapes that act as shadows over the bright text
+            // 17, 17, 17 is #111111 (matching the card background shade)
+            ctx.lineWidth = 1.5;
+            
+            for (let i = 0; i < particles.length; i++) {
+                for (let j = i + 1; j < particles.length; j++) {
+                    const p1 = particles[i];
+                    const p2 = particles[j];
+                    const dx = p1.x - p2.x;
+                    const dy = p1.y - p2.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (dist < connectionDistance) {
+                        const distOpacity = 1 - (dist / connectionDistance);
+                        // Higher opacity multiplier so the "shadow" is actually visible
+                        const combinedOpacity = p1.getOpacity() * p2.getOpacity() * distOpacity * 0.8; 
+                        
+                        ctx.strokeStyle = `rgba(17, 17, 17, ${combinedOpacity})`;
+                        ctx.beginPath();
+                        ctx.moveTo(p1.x, p1.y);
+                        ctx.lineTo(p2.x, p2.y);
+                        ctx.stroke();
+                    }
+                }
+            }
+            
+            // Draw Node Points (Dark)
+            particles.forEach(p => {
+                const op = p.getOpacity() * 0.9;
+                ctx.fillStyle = `rgba(17, 17, 17, ${op})`;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            requestAnimationFrame(animateNodes);
+        }
+
+        resizeCanvas();
+        animateNodes();
+    </script>
+</body>
+</html>

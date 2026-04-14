@@ -90,6 +90,29 @@ blueprints-node-selector,
   border-color: rgba(var(--hub-accent-rgb, 0, 212, 255), 0.5);
 }
 
+/* Generic DB-driven icon rule — any button whose JS sets --bp-ns-icon-asset via
+   inline style will render the SVG automatically. No per-action CSS needed for
+   new DB buttons; adding a key to the DB and to BUTTON_DEFS is sufficient. */
+.bp-ns-action-btn[style*="--bp-ns-icon-asset"] {
+  font-size: 0;
+  position: relative;
+}
+.bp-ns-action-btn[style*="--bp-ns-icon-asset"]::before {
+  content: '';
+  display: block;
+  width: 22px;
+  height: 22px;
+  background-image: var(--bp-ns-icon-asset);
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  filter: var(--bp-ns-icon-filter);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
 .bp-ns-action-btn[data-action="paging-button"],
 .bp-ns-action-btn[data-action="placeholder-circle"],
 .bp-ns-action-btn[data-action="origin"],

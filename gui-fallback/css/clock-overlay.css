@@ -1,0 +1,44 @@
+/* Clock overlay — full-screen retro flip clock; tap anywhere on the dismiss layer to return */
+
+#clock-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: none;
+  background: #000;
+}
+
+#clock-overlay.is-active {
+  display: block;
+}
+
+#clock-overlay__frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+/* Transparent tap-to-dismiss capture layer — sits above the iframe.
+   Intercepts all pointer events so a single tap anywhere dismisses the clock.
+   Future notification modals should use z-index: 2 to appear above this layer. */
+#clock-overlay__dismiss {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Notification container — future timed or dismissible modals rendered here.
+   pointer-events: none so the dismiss layer stays active when no notification is shown. */
+#clock-overlay__notifications {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
