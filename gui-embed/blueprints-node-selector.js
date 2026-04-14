@@ -1875,7 +1875,7 @@
           interrupt:    true,
           mode:         'stream',
           eventKind:    isDouble ? 'double_tap' : 'long_press',
-          fallbackKind: 'negative',
+          fallbackKind: 'neutral',
         }).catch(() => {});
       }
     }
@@ -2383,7 +2383,7 @@
               interrupt:    true,
               mode:         'stream',
               eventKind:    'long_press',
-              fallbackKind: 'negative',
+              fallbackKind: 'neutral',
             }).catch(() => {});
           }
         }, ACTION_LONG_PRESS_MS);
@@ -2457,7 +2457,7 @@
                 interrupt:    true,
                 mode:         'stream',
                 eventKind:    'double_tap',
-                fallbackKind: 'negative',
+                fallbackKind: 'neutral',
               }).catch(() => {});
             }
             return;

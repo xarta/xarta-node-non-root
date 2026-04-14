@@ -34,6 +34,9 @@ const _TTS_SETTING_META = {
   'tts.fallback.negative_sound_path': {
     description: 'Asset path for negative fallback sound when TTS unavailable',
   },
+  'tts.fallback.neutral_sound_path': {
+    description: 'Asset path for neutral fallback sound when TTS unavailable (short acknowledgement)',
+  },
 };
 
 let _settingsTableView = null;
@@ -528,6 +531,7 @@ function initTtsSettingsPanel() {
   const messageInput = document.getElementById('tts-default-message');
   const posInput = document.getElementById('tts-fallback-positive-path');
   const negInput = document.getElementById('tts-fallback-negative-path');
+  const neutInput = document.getElementById('tts-fallback-neutral-path');
   const ttsSlider = document.getElementById('tts-volume-slider');
   const ttsLabel = document.getElementById('tts-volume-label');
   const sfxSlider = document.getElementById('tts-fallback-volume-slider');
@@ -538,6 +542,7 @@ function initTtsSettingsPanel() {
   messageInput.value = _settingValueOrDefault('tts.default_message');
   posInput.value = _settingValueOrDefault('tts.fallback.positive_sound_path');
   negInput.value = _settingValueOrDefault('tts.fallback.negative_sound_path');
+  if (neutInput) neutInput.value = _settingValueOrDefault('tts.fallback.neutral_sound_path');
 
   const ttsVol = Math.max(0, Math.min(1, parseFloat(_settingValueOrDefault('tts.volume')) || 0.85));
   const sfxVol = Math.max(0, Math.min(1, parseFloat(_settingValueOrDefault('tts.fallback.volume')) || 0.70));
@@ -658,6 +663,7 @@ async function saveTtsSettings() {
   const message = (document.getElementById('tts-default-message')?.value || '').trim();
   const posPath = (document.getElementById('tts-fallback-positive-path')?.value || '').trim();
   const negPath = (document.getElementById('tts-fallback-negative-path')?.value || '').trim();
+  const neutPath = (document.getElementById('tts-fallback-neutral-path')?.value || '').trim();
   const ttsVol = (parseInt(document.getElementById('tts-volume-slider')?.value || '85', 10) / 100).toFixed(2);
   const sfxVol = (parseInt(document.getElementById('tts-fallback-volume-slider')?.value || '70', 10) / 100).toFixed(2);
 
@@ -665,6 +671,7 @@ async function saveTtsSettings() {
     if (!rawVoice || !message || !posPath || !negPath) {
       throw new Error('Voice, message, and both fallback sound paths are required');
     }
+    // neutPath is optional — neutral fallback silently skipped if unset
     const resolved = await _resolveVoiceIdOrKeep(rawVoice);
     const voice = resolved.value;
     if (status) status.textContent = 'Saving...';
@@ -672,6 +679,7 @@ async function saveTtsSettings() {
     await _saveOneSetting('tts.default_message', message);
     await _saveOneSetting('tts.fallback.positive_sound_path', posPath);
     await _saveOneSetting('tts.fallback.negative_sound_path', negPath);
+    if (neutPath) await _saveOneSetting('tts.fallback.neutral_sound_path', neutPath);
     await _saveOneSetting('tts.volume', ttsVol);
     await _saveOneSetting('tts.fallback.volume', sfxVol);
 
