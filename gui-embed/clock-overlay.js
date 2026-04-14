@@ -19,6 +19,11 @@
 (function () {
   'use strict';
 
+  // Cache-bust token generated once at module init.
+  // Ensures the browser re-fetches clock.html after each page reload, preventing
+  // stale cached versions (e.g. from font trials) from persisting in the HTTP cache.
+  var _CLOCK_BUST = '?_cb=' + Date.now();
+
   // Ignore dismiss events this many ms after open — prevents the opening tap
   // from immediately dismissing the overlay.
   var OPEN_GRACE_MS = 450;
@@ -50,7 +55,7 @@
 
     // Lazy-load the iframe on first open; subsequent opens reuse the live frame.
     if (!_frameLoaded && _frame) {
-      _frame.src = clockSrc || 'embed/clock.html';
+      _frame.src = clockSrc || ('embed/clock.html' + _CLOCK_BUST);
       _frameLoaded = true;
     }
 

@@ -1,3 +1,9 @@
 # Site-specific endpoint config — not tracked in version control.
 # Copy config.example.js to config.js and set your node URL(s).
 config.js
+
+# Font files — large binaries distributed by Syncthing, not git.
+*.ttf
+*.otf
+*.woff
+*.woff2

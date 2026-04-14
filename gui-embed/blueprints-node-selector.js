@@ -808,6 +808,9 @@
   // window.openClockOverlay, so this function is never called there.
   // ---------------------------------------------------------------------------
   function _injectClockOverlay() {
+    // Cache-bust token: generated once at first injection so every page load fetches
+    // clock.html fresh from the server, preventing stale font-trial versions in cache.
+    var _clockBust = '?_cb=' + Date.now();
     // Inject minimal inline CSS once
     if (!document.getElementById('bp-clock-overlay-style')) {
       var s = document.createElement('style');
@@ -854,7 +857,7 @@
         var dismiss = document.getElementById('clock-overlay__dismiss');
         if (!overlay) return;
         if (!_frameLoaded && frame) {
-          frame.src = clockSrc || (SCRIPT_DIR + 'clock.html');
+          frame.src = clockSrc || (SCRIPT_DIR + 'clock.html' + _clockBust);
           _frameLoaded = true;
         }
         _openedAt = Date.now();
@@ -877,7 +880,7 @@
         }
       };
     }
-    window.openClockOverlay(SCRIPT_DIR + 'clock.html');
+    window.openClockOverlay(SCRIPT_DIR + 'clock.html' + _clockBust);
   }
 
   const BUTTON_DEFS = {
