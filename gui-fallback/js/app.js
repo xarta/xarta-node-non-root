@@ -12,6 +12,19 @@ function _isS25StargateOriginMenuMode() {
   return coarsePointer || hasTouch;
 }
 
+// Returns true when the device is a phone-sized form factor (portrait OR landscape).
+// Uses the shorter screen dimension so landscape phones (e.g. S25 Ultra ~412px short side)
+// are still detected.  Threshold of 500px covers phones but excludes tablets and desktops.
+function _isMobileFormFactor() {
+  if (!window.matchMedia) return false;
+  const hasTouch = window.matchMedia('(pointer: coarse)').matches
+    || window.matchMedia('(any-pointer: coarse)').matches
+    || (typeof navigator !== 'undefined' && Number(navigator.maxTouchPoints) > 0);
+  if (!hasTouch) return false;
+  const shortSide = Math.min(window.screen.width, window.screen.height);
+  return shortSide <= 500;
+}
+
 function _applySpecialUiModeAttributes() {
   const root = document.documentElement;
   const body = document.body;
@@ -178,6 +191,7 @@ window.BlueprintsHubMenuBridge = {
   getActiveGroupLayoutTabId: _getActiveGroupLayoutTabId,
   isS25StargateOriginMenuMode: _isS25StargateOriginMenuMode,
   closeAnchoredMenus: _closeActiveOriginMenus,
+  switchGroup,
 };
 
 /* ── Group + tab switching ───────────────────────────────────────────── */
@@ -332,4 +346,24 @@ document.addEventListener('DOMContentLoaded', () => {
   _bmInitEmbedPanel();
   // Auto-resume progress display if reindex was running before page load
   _bmPollReindexProgress();
+  // On mobile form factor, open the clock on every fresh page load / web app launch.
+  // Only fires when no ?tab= or ?group= URL param is directing to a specific page.
+  // Tab navigation inside the SPA never reloads the page so this never interferes.
+  if (!_urlTab && !_urlGroup && _isMobileFormFactor()) {
+    window.setTimeout(() => {
+      if (typeof window.openClockOverlay === 'function') window.openClockOverlay();
+    }, 0);
+  }
+  // Re-show the clock when the user returns to the app from another app / screen lock.
+  // visibilitychange only fires on OS-level focus changes (never from in-app interactions
+  // like dismissing the clock overlay), so this is safe.  Guard avoids resetting the
+  // overlay when the user returns without having dismissed it first.
+  if (_isMobileFormFactor()) {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') return;
+      const overlayEl = document.getElementById('clock-overlay');
+      if (overlayEl && overlayEl.classList.contains('is-active')) return; // already showing
+      if (typeof window.openClockOverlay === 'function') window.openClockOverlay();
+    });
+  }
 });

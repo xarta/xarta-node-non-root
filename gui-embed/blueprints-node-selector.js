@@ -312,6 +312,9 @@
   const ORIGIN_BUTTON_TITLE = 'Origin';
   const ORIGIN_LONG_PRESS_MS = 250;
   const ORIGIN_DOUBLE_CLICK_MS = 260;
+  const ACTION_LONG_PRESS_MS = 250;
+  const ACTION_DOUBLE_CLICK_MS = 260;
+  const ACTION_DRAG_CANCEL_PX = 8;
   const NOOP = () => {};
   const EMBED_FALLBACK_BUTTON_KEYS = [
     'ui',
@@ -886,9 +889,9 @@
   const BUTTON_DEFS = {
     'fallback-ui':      { icon: '🧰', label: 'Fallback UI',      buildPath: () => '/fallback-ui/' },
     'ui':               { icon: '🏠', label: 'UI',               buildPath: () => '/' },
-    'synthesis':        { icon: '📋', label: 'Synthesis',        buildPath: () => '/fallback-ui/' },
-    'probes':           { icon: '📡', label: 'Probes',           buildPath: () => '/fallback-ui/?group=probes' },
-    'settings':         { icon: '⚙️',  label: 'Settings',         buildPath: () => '/fallback-ui/?group=settings' },
+    'synthesis':        { icon: '📋', label: 'Synthesis',        buildPath: () => '/fallback-ui/',                         bridgeGroup: 'synthesis' },
+    'probes':           { icon: '📡', label: 'Probes',           buildPath: () => '/fallback-ui/?group=probes',            bridgeGroup: 'probes' },
+    'settings':         { icon: '⚙️',  label: 'Settings',         buildPath: () => '/fallback-ui/?group=settings',          bridgeGroup: 'settings' },
     'database-tables':  { icon: '🗂️', label: 'Database Tables',  buildPath: () => `${getDbBasePath()}/database-tables.html` },
     'database-diagram': { icon: '🕸️', label: 'Database Diagram', buildPath: () => `${getDbBasePath()}/database-diagram.html` },
     'embed-menu':       { icon: '🪲', label: 'Embed Menu',        buildPath: () => '/fallback-ui/?group=settings&tab=embed-menu' },
@@ -2186,30 +2189,108 @@
         bindOriginButtonInteractions(btn);
         return;
       }
+
+      let pressTimer    = null;
+      let clickTimer    = null;
+      let lastClickAt   = 0;
+      let longPressTriggered = false;
+      let lastPointerType    = 'mouse';
+      let downX = 0;
+      let downY = 0;
+
+      function cancelPressTimer() {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+      }
+
+      btn.addEventListener('pointerdown', e => {
+        cancelPressTimer();
+        longPressTriggered = false;
+        lastPointerType = e.pointerType || 'mouse';
+        downX = e.clientX;
+        downY = e.clientY;
+        pressTimer = window.setTimeout(() => {
+          longPressTriggered = true;
+          pressTimer = null;
+          // ── Long-press hook — no-op placeholder ──────────────────────
+        }, ACTION_LONG_PRESS_MS);
+      });
+
+      btn.addEventListener('pointermove', e => {
+        if (pressTimer === null) return;
+        const dx = e.clientX - downX;
+        const dy = e.clientY - downY;
+        if (Math.sqrt(dx * dx + dy * dy) > ACTION_DRAG_CANCEL_PX) {
+          cancelPressTimer();
+        }
+      });
+
+      ['pointerup', 'pointercancel', 'pointerleave'].forEach(evName => {
+        btn.addEventListener(evName, cancelPressTimer);
+      });
+
       btn.addEventListener('click', e => {
         e.preventDefault();
         e.stopPropagation();
+        if (longPressTriggered) return;
+
         const action = btn.dataset.action;
-        const meta = _dbItemMeta[action] || null;
-        const delayMs = playDbActionSound(meta);
+        const meta   = _dbItemMeta[action] || null;
+        const def    = BUTTON_DEFS[action];
 
-        const runAction = () => {
-          if (action === 'paging-button') {
-            _buttonPage = (_buttonPage + 1) % pageCount;
-            renderActionButtons();
-            return;
+        const now      = Date.now();
+        const isTouch  = lastPointerType === 'touch' || lastPointerType === 'pen';
+        const isDouble = (now - lastClickAt) < ACTION_DOUBLE_CLICK_MS;
+        lastClickAt = now;
+
+        function dispatchSingle() {
+          const delayMs  = playDbActionSound(meta);
+          const runAction = () => {
+            if (action === 'paging-button') {
+              _buttonPage = (_buttonPage + 1) % pageCount;
+              renderActionButtons();
+              return;
+            }
+            if (!def) return;
+            if (typeof def.doAction === 'function') { def.doAction(); return; }
+            // Nav button: prefer SPA switchGroup when available
+            if (def.bridgeGroup &&
+                window.BlueprintsHubMenuBridge &&
+                typeof window.BlueprintsHubMenuBridge.switchGroup === 'function') {
+              window.BlueprintsHubMenuBridge.switchGroup(def.bridgeGroup);
+              return;
+            }
+            navigateToNodePath(def.buildPath());
+          };
+          if (delayMs > 0 && action !== 'paging-button') {
+            window.setTimeout(runAction, delayMs);
+          } else {
+            runAction();
           }
-          const def = BUTTON_DEFS[action];
-          if (!def) return;
-          if (typeof def.doAction === 'function') { def.doAction(); return; }
-          navigateToNodePath(def.buildPath());
-        };
-
-        if (delayMs > 0 && action !== 'paging-button') {
-          window.setTimeout(runAction, delayMs);
-          return;
         }
-        runAction();
+
+        function dispatchDouble() {
+          if (!def || !def.bridgeGroup) return;
+          // Double-tap on a nav button forces a full page load
+          navigateToNodePath(def.buildPath());
+        }
+
+        if (isTouch) {
+          if (isDouble) {
+            clearTimeout(clickTimer);
+            clickTimer = null;
+            dispatchDouble();
+          } else {
+            clearTimeout(clickTimer);
+            clickTimer = window.setTimeout(() => {
+              clickTimer = null;
+              dispatchSingle();
+            }, ACTION_DOUBLE_CLICK_MS);
+          }
+        } else {
+          // Mouse — no double-click distinction, fire immediately
+          dispatchSingle();
+        }
       });
     });
   }
