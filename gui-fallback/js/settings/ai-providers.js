@@ -36,6 +36,8 @@ let _editingAiProviderId = null;
 let _editingAiAssignmentId = null;
 let _aiProvidersTableView = null;
 let _aiAssignmentsTableView = null;
+let _aiObservability = null;
+let _aiObservabilityResults = Object.create(null);
 
 function _providerModalEls() {
   return {
@@ -89,9 +91,27 @@ async function loadAiProviders() {
     _aiAssignments = await ra.json();
     renderAiProviders();
     renderAiAssignments();
+    await loadAiProviderObservability();
   } catch (e) {
     if (err) { err.textContent = `Failed to load AI providers: ${e.message}`; err.hidden = false; }
+    _aiObservability = null;
+    renderAiObservabilityPanel();
   }
+}
+
+async function loadAiProviderObservability() {
+  try {
+    const r = await apiFetch('/api/v1/ai-providers/observability');
+    if (!r.ok) {
+      _aiObservability = null;
+      renderAiObservabilityPanel();
+      return;
+    }
+    _aiObservability = await r.json();
+  } catch {
+    _aiObservability = null;
+  }
+  renderAiObservabilityPanel();
 }
 
 function _typeIcon(type) {
@@ -414,6 +434,137 @@ function renderAiAssignments() {
   });
 }
 
+function _formatAiProbeDuration(ms) {
+  const value = Number(ms);
+  if (!Number.isFinite(value) || value < 0) return '—';
+  if (value < 1000) return `${Math.round(value)} ms`;
+  return `${(value / 1000).toFixed(value >= 10000 ? 1 : 2)} s`;
+}
+
+function _aiObsSlug(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'alias';
+}
+
+function _renderAiObservabilityDbRows(item) {
+  const rows = Array.isArray(item?.db_rows) ? item.db_rows : [];
+  if (!rows.length) return '<span style="color:var(--warn)">Not yet linked to a DB provider row.</span>';
+  return rows.map(row => {
+    const state = row.enabled ? 'enabled' : 'disabled';
+    return `${esc(row.name || 'Provider')} <span style="color:var(--text-dim)">(${esc(row.model_type || 'unknown')}, ${state})</span>`;
+  }).join('<br>');
+}
+
+function _renderAiObservabilityResult(alias) {
+  const result = _aiObservabilityResults[alias];
+  if (!result) return '<span style="color:var(--text-dim)">No test run yet.</span>';
+  const ok = !!result.ok;
+  const accent = ok ? 'var(--ok)' : 'var(--err)';
+  const parts = [];
+  parts.push(`<strong style="color:${accent}">${ok ? 'PASS' : 'FAIL'}</strong>`);
+  if (result.elapsed_ms != null) parts.push(_formatAiProbeDuration(result.elapsed_ms));
+  if (result.provider_family) parts.push(esc(result.provider_family));
+  if (result.observed_model) parts.push(`actual: ${esc(result.observed_model)}`);
+  if (result.failover_observed) parts.push('failover observed');
+  if (result.preview) parts.push(esc(result.preview));
+  if (result.detail) parts.push(esc(result.detail));
+  return parts.join(' · ');
+}
+
+function renderAiObservabilityPanel() {
+  const panel = document.getElementById('ai-observability-panel');
+  const summary = document.getElementById('ai-observability-summary');
+  const badge = document.getElementById('ai-observability-stack-badge');
+  const list = document.getElementById('ai-observability-list');
+  if (!panel || !summary || !badge || !list) return;
+
+  const data = _aiObservability;
+  if (!data || !data.panel_visible) {
+    panel.hidden = true;
+    list.innerHTML = '';
+    return;
+  }
+
+  panel.hidden = false;
+  const stack = data.stack || {};
+  const running = !!stack.running;
+  badge.textContent = running ? 'Stack running' : 'Stack present — degraded';
+  badge.style.background = running ? 'rgba(70,160,90,.16)' : 'rgba(208,152,55,.16)';
+  badge.style.borderColor = running ? 'rgba(70,160,90,.45)' : 'rgba(208,152,55,.45)';
+  badge.style.color = running ? 'var(--ok)' : 'var(--warn)';
+
+  const counts = data.counts || {};
+  summary.textContent = `${counts.aliases || 0} local aliases detected; ${counts.db_linked || 0} currently linked to DB provider rows. ${stack.message || ''}`.trim();
+
+  const models = Array.isArray(data.models) ? data.models : [];
+  if (!models.length) {
+    list.innerHTML = `<div style="padding:10px 12px;border:1px dashed var(--border);border-radius:var(--radius);color:var(--text-dim);font-size:12px;">The local LiteLLM stack is present, but no aliases were found in its current config.</div>`;
+    return;
+  }
+
+  list.innerHTML = models.map(item => {
+    const slug = _aiObsSlug(item.alias);
+    const fallbacks = Array.isArray(item.fallbacks) && item.fallbacks.length ? item.fallbacks.map(esc).join(' → ') : '—';
+    const apiBase = item.api_base ? esc(item.api_base) : 'default';
+    const dbBadge = item.db_bound
+      ? '<span class="badge" style="background:rgba(70,160,90,.16);border-color:rgba(70,160,90,.45);color:var(--ok)">DB-linked</span>'
+      : '<span class="badge" style="background:rgba(208,152,55,.16);border-color:rgba(208,152,55,.45);color:var(--warn)">Config-only</span>';
+    return `<div style="border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;background:rgba(255,255,255,0.02);">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <strong>${esc(item.alias || '—')}</strong>
+            ${dbBadge}
+            <span style="font-size:11px;color:var(--text-dim)">${esc(item.kind || 'unknown')} · ${esc(item.behavior_hint || item.kind || 'unknown')}</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-dim);margin-top:4px;">Target: ${esc(item.configured_model || '—')} · Provider: ${esc(item.provider_family || 'Configured')} · API base: ${apiBase}</div>
+        </div>
+        <button type="button" class="secondary" data-ai-obs-test="${esc(item.alias || '')}" ${item.supports_test ? '' : 'disabled'}>${item.supports_test ? 'Test' : 'No test yet'}</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:8px;font-size:12px;">
+        <div><strong style="color:var(--text-dim)">Fallbacks</strong><br>${fallbacks}</div>
+        <div><strong style="color:var(--text-dim)">Limits</strong><br>${esc(item.limits_text || '—')}</div>
+        <div><strong style="color:var(--text-dim)">DB rows</strong><br>${_renderAiObservabilityDbRows(item)}</div>
+      </div>
+      <div id="ai-obs-result-${slug}" style="margin-top:8px;font-size:12px;color:var(--text-dim);">${_renderAiObservabilityResult(item.alias)}</div>
+    </div>`;
+  }).join('');
+}
+
+async function runAiObservabilityTest(alias) {
+  const escapedAlias = (window.CSS && typeof window.CSS.escape === 'function')
+    ? window.CSS.escape(alias)
+    : String(alias || '').replace(/"/g, '\\"');
+  const button = document.querySelector(`[data-ai-obs-test="${escapedAlias}"]`);
+  const resultEl = document.getElementById(`ai-obs-result-${_aiObsSlug(alias)}`);
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Testing…';
+  }
+  if (resultEl) resultEl.textContent = 'Running a tiny live probe…';
+  try {
+    const r = await apiFetch('/api/v1/ai-providers/observability/test', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ alias }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+    _aiObservabilityResults[alias] = data;
+  } catch (e) {
+    _aiObservabilityResults[alias] = {
+      ok: false,
+      alias,
+      detail: e.message || 'Test failed.',
+    };
+  } finally {
+    renderAiObservabilityPanel();
+    if (button) {
+      button.disabled = false;
+      button.textContent = 'Test';
+    }
+  }
+}
+
 /* ── Provider modal ─────────────────────────────────────────────────── */
 
 function openAiProviderModal(provider_id) {
@@ -667,4 +818,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('ai-providers-cols-modal-apply')?.addEventListener('click', _applyAiProviderColsModal);
   document.getElementById('ai-assignments-cols-modal-apply')?.addEventListener('click', _applyAiAssignmentColsModal);
+  document.getElementById('ai-observability-refresh-btn')?.addEventListener('click', () => { void loadAiProviderObservability(); });
+  document.getElementById('ai-observability-list')?.addEventListener('click', e => {
+    const testBtn = e.target.closest('[data-ai-obs-test]');
+    if (testBtn && testBtn.dataset.aiObsTest) {
+      void runAiObservabilityTest(testBtn.dataset.aiObsTest);
+    }
+  });
 });
