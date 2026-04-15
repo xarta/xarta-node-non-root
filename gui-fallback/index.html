@@ -241,34 +241,17 @@
         </div>
 
         <!-- Fleet Nodes — retouch table select + button.
+            Options populated dynamically from /api/v1/sync/tables.
             Event handlers wired in nodes.js via addEventListener. -->
         <div class="page-control-group" id="pg-ctrl-nodes"
             data-for-tab="nodes" hidden>
           <select id="retouch-table-select">
-            <option value="">— select table —</option>
-            <option value="manual_links">manual_links</option>
-            <option value="services">services</option>
-            <option value="machines">machines</option>
-            <option value="settings">settings</option>
-            <option value="pfsense_dns">pfsense_dns</option>
-            <option value="proxmox_config">proxmox_config</option>
-            <option value="proxmox_nets">proxmox_nets</option>
-            <option value="vlans">vlans</option>
-            <option value="dockge_stacks">dockge_stacks</option>
-            <option value="dockge_stack_services">dockge_stack_services</option>
-            <option value="caddy_configs">caddy_configs</option>
-            <option value="pve_hosts">pve_hosts</option>
-            <option value="arp_manual">arp_manual</option>
-            <option value="ssh_targets">ssh_targets</option>
-            <option value="ai_providers">ai_providers</option>
-            <option value="ai_project_assignments">ai_project_assignments</option>
-            <option value="bookmarks">bookmarks</option>
-            <option value="visits">visits</option>
-            <option value="table_layout_catalog">table_layout_catalog</option>
-            <option value="table_layouts">table_layouts</option>
+            <option value="">— loading tables… —</option>
           </select>
           <button id="retouch-btn" class="hub-ctrl"
                   title="Re-enqueue all rows in selected table for sync to all peers">&#8635; Retouch</button>
+          <button id="retouch-all-btn" class="hub-ctrl"
+                  title="Check parity and retouch all tables that need syncing">&#8635; All</button>
         </div>
 
         <!-- Docs Images — search, usage, tags, date, sort. -->
@@ -638,7 +621,10 @@
     <p id="nodes-error" class="error-msg" hidden></p>
 
     <section style="margin-top:24px">
-      <h2>Sync status</h2>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <h2 style="margin:0">Sync status</h2>
+        <button class="secondary" id="sync-status-refresh-btn" style="font-size:12px" title="Refresh sync status">&#8635; Refresh</button>
+      </div>
       <div id="sync-panel">
         <div class="sync-grid" id="sync-grid">
           <div><span class="spinner"></span> loading…</div>
@@ -646,6 +632,27 @@
       </div>
       <p id="sync-error" class="error-msg" hidden></p>
     </section>
+
+    <!-- Retouch All modal -->
+    <dialog id="retouch-all-modal" class="hub-modal" data-tone="info">
+      <div class="hub-modal-header">
+        <span class="hub-modal-badge">SYNC</span>
+        <span class="hub-modal-title" id="retouch-all-modal-title">Retouch All Tables</span>
+        <button class="hub-modal-close" aria-label="Close" type="button">&#10005;</button>
+      </div>
+      <div class="hub-modal-body">
+        <p style="font-size:12px;color:var(--text-dim);margin:0 0 12px">
+          Checks each table for parity across peers. Only tables that differ are retouched.
+          Closing this panel does not interrupt the process.
+        </p>
+        <div id="retouch-all-progress" style="display:flex;flex-direction:column;gap:4px;max-height:320px;overflow-y:auto"></div>
+        <p id="retouch-all-summary" style="font-size:12px;margin:10px 0 0;min-height:1.4em"></p>
+      </div>
+      <div class="hub-modal-footer">
+        <button class="secondary" id="retouch-all-cancel-btn" type="button">Cancel</button>
+        <button class="hub-modal-close" type="button">Close</button>
+      </div>
+    </dialog>
 
     <!-- Backups -->
     <section style="margin-top:24px">

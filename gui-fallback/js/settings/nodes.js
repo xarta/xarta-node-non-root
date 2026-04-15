@@ -23,6 +23,20 @@ document.addEventListener('DOMContentLoaded', () => {
   if (retouchBtn) {
     retouchBtn.addEventListener('click', function() { retouchTable(this); });
   }
+  const retouchAllBtn = document.getElementById('retouch-all-btn');
+  if (retouchAllBtn) {
+    retouchAllBtn.addEventListener('click', openRetouchAllModal);
+  }
+  const cancelBtn = document.getElementById('retouch-all-cancel-btn');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', cancelRetouchAll);
+  }
+  const syncRefreshBtn = document.getElementById('sync-status-refresh-btn');
+  if (syncRefreshBtn) {
+    syncRefreshBtn.addEventListener('click', function() {
+      if (typeof loadSyncStatus === 'function') loadSyncStatus();
+    });
+  }
   const actionConfirmBtn = document.getElementById('node-action-modal-confirm');
   if (actionConfirmBtn && !actionConfirmBtn.dataset.bound) {
     actionConfirmBtn.addEventListener('click', submitNodeActionModal);
@@ -36,6 +50,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (typeof HubSelect !== 'undefined') {
     HubSelect.init('retouch-table-select');
   }
+  // Populate the retouch select from the API — the backend owns the syncable table list.
+  loadRetouchTableSelect();
   _ensureNodesTableView();
   _ensureNodesLayoutController()?.init();
   document.getElementById('nodes-cols-modal-apply')?.addEventListener('click', _applyNodesColsModal);
@@ -997,4 +1013,254 @@ async function nodePct(nodeId, btn) {
       }
     },
   });
+}
+
+/* ── Retouch All ─────────────────────────────────────────────────────────── */
+
+// Tables list is fetched from /api/v1/sync/tables — the backend's _ALLOWED_TABLES.
+// Never hardcode this; the DB-driven app owns what is syncable.
+async function _fetchSyncTables() {
+  const r = await apiFetch('/api/v1/sync/tables');
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const data = await r.json();
+  return data.tables || [];
+}
+
+async function loadRetouchTableSelect() {
+  const sel = document.getElementById('retouch-table-select');
+  if (!sel) return;
+  try {
+    const tables = await _fetchSyncTables();
+    sel.innerHTML = '<option value="">— select table —</option>' +
+      tables.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+    if (typeof HubSelect !== 'undefined') HubSelect.init('retouch-table-select');
+  } catch (e) {
+    sel.innerHTML = `<option value="">(⚠ could not load tables)</option>`;
+  }
+}
+
+// Module-level state — survives navigation across tabs.
+let _retouchAllState = {
+  running: false,
+  cancelled: false,
+  tables: [],      // [{table, status, detail}] — status: pending|checking|skipped|retouched|error
+  currentIdx: -1,
+  totalRetouched: 0,
+  totalSkipped: 0,
+  totalErrors: 0,
+  startedAt: null,
+  finishedAt: null,
+};
+
+function _retouchAllStatusIcon(status) {
+  if (status === 'pending')   return '<span style="color:var(--text-dim)">&#9675;</span>';
+  if (status === 'checking')  return '<span class="spinner" style="display:inline-block;width:12px;height:12px;vertical-align:middle"></span>';
+  if (status === 'retouched') return '<span style="color:var(--ok,#3fb950)">&#10003;</span>';
+  if (status === 'skipped')   return '<span style="color:var(--text-dim)">&#8212;</span>';
+  if (status === 'error')     return '<span style="color:var(--err,#f85149)">&#10007;</span>';
+  return '';
+}
+
+function _renderRetouchAllProgress() {
+  const container = document.getElementById('retouch-all-progress');
+  const summary   = document.getElementById('retouch-all-summary');
+  if (!container) return;
+
+  container.innerHTML = _retouchAllState.tables.map(row => {
+    const isActive = row.status === 'checking';
+    const rowBg = isActive ? 'background:color-mix(in srgb,var(--accent,#58a6ff) 12%,transparent);' : '';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:3px 6px;border-radius:4px;${rowBg}">
+      <span style="width:16px;text-align:center;flex-shrink:0">${_retouchAllStatusIcon(row.status)}</span>
+      <span style="font-size:12px;flex:1;font-family:monospace">${esc(row.table)}</span>
+      <span style="font-size:11px;color:var(--text-dim);white-space:nowrap">${esc(row.detail || '')}</span>
+    </div>`;
+  }).join('');
+
+  if (summary) {
+    const s = _retouchAllState;
+    if (s.running) {
+      const done = s.tables.filter(r => ['retouched', 'skipped', 'error'].includes(r.status)).length;
+      summary.style.color = 'var(--text-dim)';
+      summary.textContent = `Processing ${done + 1} of ${s.tables.length}…`;
+    } else if (s.finishedAt) {
+      if (s.cancelled && s.totalRetouched === 0 && s.totalSkipped === 0 && s.totalErrors === 0) {
+        summary.style.color = 'var(--text-dim)';
+        summary.textContent = 'Cancelled before any tables were processed.';
+      } else {
+        const parts = [];
+        if (s.totalRetouched) parts.push(`${s.totalRetouched} retouched`);
+        if (s.totalSkipped)   parts.push(`${s.totalSkipped} already in sync`);
+        if (s.totalErrors)    parts.push(`${s.totalErrors} error(s)`);
+        summary.style.color = s.totalErrors ? 'var(--warn,#e6a817)' : 'var(--ok,#3fb950)';
+        summary.textContent = s.cancelled
+          ? `Cancelled. ${parts.join(', ') || 'No tables processed'}.`
+          : `Complete. ${parts.join(', ') || 'No tables processed'}.`;
+      }
+    } else {
+      summary.textContent = '';
+    }
+  }
+}
+
+function _updateRetouchAllCancelBtn() {
+  const btn = document.getElementById('retouch-all-cancel-btn');
+  if (!btn) return;
+  const s = _retouchAllState;
+  if (!s.running && s.finishedAt) {
+    btn.disabled = true;
+    btn.textContent = s.cancelled ? 'Cancelled' : 'Done';
+  } else if (s.running) {
+    btn.disabled = false;
+    btn.textContent = 'Cancel';
+  } else {
+    btn.disabled = false;
+    btn.textContent = 'Cancel';
+  }
+}
+
+function openRetouchAllModal() {
+  const dialog = document.getElementById('retouch-all-modal');
+  if (!dialog) return;
+
+  // If a process is already running or finished, re-attach and show current state.
+  if (_retouchAllState.running || _retouchAllState.finishedAt) {
+    _renderRetouchAllProgress();
+    _updateRetouchAllCancelBtn();
+    HubModal.open(dialog);
+    return;
+  }
+
+  // Fresh start — fetch table list from the API (source of truth).
+  _retouchAllState = {
+    running: true,
+    cancelled: false,
+    tables: [],
+    currentIdx: -1,
+    totalRetouched: 0,
+    totalSkipped: 0,
+    totalErrors: 0,
+    startedAt: Date.now(),
+    finishedAt: null,
+  };
+  // Show modal immediately with a loading state.
+  const progress = document.getElementById('retouch-all-progress');
+  if (progress) progress.innerHTML = '<div style="font-size:12px;color:var(--text-dim)"><span class="spinner" style="display:inline-block;width:12px;height:12px;vertical-align:middle"></span> Loading table list…</div>';
+  const summary = document.getElementById('retouch-all-summary');
+  if (summary) summary.textContent = '';
+  _updateRetouchAllCancelBtn();
+  HubModal.open(dialog);
+
+  _fetchSyncTables().then(tables => {
+    _retouchAllState.tables = tables.map(t => ({ table: t, status: 'pending', detail: '' }));
+    _renderRetouchAllProgress();
+    _runRetouchAll();
+  }).catch(e => {
+    _retouchAllState.running = false;
+    _retouchAllState.finishedAt = Date.now();
+    if (progress) progress.innerHTML = `<div style="font-size:12px;color:var(--err,#f85149)">&#10007; Could not load table list: ${esc(String(e.message || e))}</div>`;
+    _updateRetouchAllCancelBtn();
+  });
+}
+
+function cancelRetouchAll() {
+  if (!_retouchAllState.running) return;
+  _retouchAllState.cancelled = true;
+  _renderRetouchAllProgress();
+  const summary = document.getElementById('retouch-all-summary');
+  if (summary) {
+    summary.style.color = 'var(--text-dim)';
+    summary.textContent = 'Cancelling after current table completes…';
+  }
+}
+
+async function _speakRetouchProgress(text) {
+  try {
+    if (typeof BlueprintsTtsClient !== 'undefined') {
+      await BlueprintsTtsClient.speak({ text, interrupt: false });
+    }
+  } catch (_) { /* TTS is best-effort */ }
+}
+
+async function _runRetouchAll() {
+  const s = _retouchAllState;
+
+  for (let i = 0; i < s.tables.length; i++) {
+    if (s.cancelled) break;
+
+    s.currentIdx = i;
+    const row = s.tables[i];
+    row.status = 'checking';
+    row.detail = 'checking parity…';
+    _renderRetouchAllProgress();
+    _updateRetouchAllCancelBtn();
+
+    try {
+      // Check parity with all peers.
+      const parityResp = await apiFetch(`/api/v1/sync/parity/${encodeURIComponent(row.table)}`);
+      if (!parityResp.ok) throw new Error(`parity check HTTP ${parityResp.status}`);
+      const parity = await parityResp.json();
+
+      if (!parity.needs_retouch) {
+        // All peers match — skip.
+        row.status = 'skipped';
+        row.detail = `${parity.local.row_count} rows in sync`;
+        s.totalSkipped++;
+        _renderRetouchAllProgress();
+        continue;
+      }
+
+      // Needs retouch — proceed.
+      const mismatchCount = (parity.peers || []).filter(p => !p.match).length;
+      row.detail = `retouching (${mismatchCount} peer(s) differ)…`;
+      _renderRetouchAllProgress();
+
+      await _speakRetouchProgress(`Retouching ${row.table.replace(/_/g, ' ')}`);
+
+      const retouchResp = await apiFetch(`/api/v1/sync/retouch/${encodeURIComponent(row.table)}`, { method: 'POST' });
+      if (!retouchResp.ok) throw new Error(`retouch HTTP ${retouchResp.status}`);
+      const retouchData = await retouchResp.json();
+
+      row.status = 'retouched';
+      row.detail = `${retouchData.requeued} rows re-queued`;
+      s.totalRetouched++;
+      _renderRetouchAllProgress();
+
+      await _speakRetouchProgress(`${row.table.replace(/_/g, ' ')} done`);
+
+    } catch (e) {
+      row.status = 'error';
+      row.detail = String(e.message || e).slice(0, 60);
+      s.totalErrors++;
+      _renderRetouchAllProgress();
+      await _speakRetouchProgress(`Error on ${row.table.replace(/_/g, ' ')}`);
+    }
+
+    // Small yield between tables to keep UI responsive.
+    await new Promise(r => setTimeout(r, 80));
+  }
+
+  // Mark remaining pending rows as skipped if cancelled.
+  if (s.cancelled) {
+    s.tables.forEach(row => {
+      if (row.status === 'pending' || row.status === 'checking') {
+        row.status = 'skipped';
+        row.detail = 'cancelled';
+      }
+    });
+  }
+
+  s.running = false;
+  s.finishedAt = Date.now();
+  _renderRetouchAllProgress();
+  _updateRetouchAllCancelBtn();
+
+  // Final TTS summary.
+  const parts = [];
+  if (s.totalRetouched) parts.push(`${s.totalRetouched} retouched`);
+  if (s.totalSkipped)   parts.push(`${s.totalSkipped} in sync`);
+  if (s.totalErrors)    parts.push(`${s.totalErrors} error${s.totalErrors > 1 ? 's' : ''}`);
+  const finalMsg = s.cancelled
+    ? 'Retouch all cancelled.'
+    : `Retouch all complete. ${parts.join(', ') || 'Nothing to do'}.`;
+  await _speakRetouchProgress(finalMsg);
 }
