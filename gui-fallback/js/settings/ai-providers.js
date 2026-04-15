@@ -38,6 +38,7 @@ let _aiProvidersTableView = null;
 let _aiAssignmentsTableView = null;
 let _aiObservability = null;
 let _aiObservabilityResults = Object.create(null);
+let _aiObservabilityRunningAll = false;
 
 function _providerModalEls() {
   return {
@@ -472,19 +473,23 @@ function _renderAiObservabilityResult(alias) {
 
 function renderAiObservabilityPanel() {
   const panel = document.getElementById('ai-observability-panel');
+  const note = document.getElementById('ai-observability-routing-note');
   const summary = document.getElementById('ai-observability-summary');
   const badge = document.getElementById('ai-observability-stack-badge');
+  const testAllBtn = document.getElementById('ai-observability-test-all-btn');
   const list = document.getElementById('ai-observability-list');
-  if (!panel || !summary || !badge || !list) return;
+  if (!panel || !note || !summary || !badge || !list || !testAllBtn) return;
 
   const data = _aiObservability;
   if (!data || !data.panel_visible) {
     panel.hidden = true;
+    note.hidden = true;
     list.innerHTML = '';
     return;
   }
 
   panel.hidden = false;
+  note.hidden = false;
   const stack = data.stack || {};
   const running = !!stack.running;
   badge.textContent = running ? 'Stack running' : 'Stack present — degraded';
@@ -496,6 +501,9 @@ function renderAiObservabilityPanel() {
   summary.textContent = `${counts.aliases || 0} local aliases detected; ${counts.db_linked || 0} currently linked to DB provider rows. ${stack.message || ''}`.trim();
 
   const models = Array.isArray(data.models) ? data.models : [];
+  const runnableCount = models.filter(item => item.supports_test).length;
+  testAllBtn.disabled = !running || !runnableCount || _aiObservabilityRunningAll;
+  testAllBtn.textContent = _aiObservabilityRunningAll ? 'Testing All…' : '▶ Test All';
   if (!models.length) {
     list.innerHTML = `<div style="padding:10px 12px;border:1px dashed var(--border);border-radius:var(--radius);color:var(--text-dim);font-size:12px;">The local LiteLLM stack is present, but no aliases were found in its current config.</div>`;
     return;
@@ -528,6 +536,22 @@ function renderAiObservabilityPanel() {
       <div id="ai-obs-result-${slug}" style="margin-top:8px;font-size:12px;color:var(--text-dim);">${_renderAiObservabilityResult(item.alias)}</div>
     </div>`;
   }).join('');
+}
+
+async function runAiObservabilityTestAll() {
+  const data = _aiObservability;
+  const models = Array.isArray(data?.models) ? data.models.filter(item => item.supports_test) : [];
+  if (!models.length || _aiObservabilityRunningAll) return;
+  _aiObservabilityRunningAll = true;
+  renderAiObservabilityPanel();
+  try {
+    for (const item of models) {
+      await runAiObservabilityTest(item.alias);
+    }
+  } finally {
+    _aiObservabilityRunningAll = false;
+    renderAiObservabilityPanel();
+  }
 }
 
 async function runAiObservabilityTest(alias) {
@@ -819,6 +843,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('ai-providers-cols-modal-apply')?.addEventListener('click', _applyAiProviderColsModal);
   document.getElementById('ai-assignments-cols-modal-apply')?.addEventListener('click', _applyAiAssignmentColsModal);
   document.getElementById('ai-observability-refresh-btn')?.addEventListener('click', () => { void loadAiProviderObservability(); });
+  document.getElementById('ai-observability-test-all-btn')?.addEventListener('click', () => { void runAiObservabilityTestAll(); });
   document.getElementById('ai-observability-list')?.addEventListener('click', e => {
     const testBtn = e.target.closest('[data-ai-obs-test]');
     if (testBtn && testBtn.dataset.aiObsTest) {

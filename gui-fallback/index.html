@@ -954,6 +954,24 @@
       </table>
     </div>
 
+    <section id="ai-observability-routing-note" style="margin-top:20px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;" hidden>
+      <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);margin:0 0 8px;">How local AI routing works on this node</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;font-size:12px;color:var(--text-dim);">
+        <div>
+          <strong style="color:var(--text)">Database-driven catalogue</strong><br>
+          The provider and assignment tables above remain the shared database-driven source of truth for aliases and project-role links.
+        </div>
+        <div>
+          <strong style="color:var(--text)">Node-local transport override</strong><br>
+          When this node has its own LiteLLM stack, the stable local aliases are resolved through the local endpoint here instead of going out to the older shared fallback route.
+        </div>
+        <div>
+          <strong style="color:var(--text)">What the panel shows</strong><br>
+          The observability panel below shows the effective local alias map and live probe results for this specific node, including config-only aliases such as transcription.
+        </div>
+      </div>
+    </section>
+
     <section id="ai-observability-panel" style="margin-top:20px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;" hidden>
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
         <div>
@@ -963,6 +981,7 @@
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <span id="ai-observability-stack-badge" class="badge">Stack: —</span>
           <button type="button" class="secondary" id="ai-observability-refresh-btn">⟳ Refresh</button>
+          <button type="button" class="secondary" id="ai-observability-test-all-btn">▶ Test All</button>
         </div>
       </div>
       <div id="ai-observability-list" style="display:flex;flex-direction:column;gap:8px;"></div>

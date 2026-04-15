@@ -7,3 +7,6 @@ config.js
 *.otf
 *.woff
 *.woff2
+
+# Guard against accidental self-referential local links.
+gui-embed
