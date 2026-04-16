@@ -1415,6 +1415,7 @@
       <div id="pi-stack-present" style="display:none">
         <!-- Guardrail Status -->
         <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);margin:0 0 8px">Guardrail Status</h3>
+        <p style="font-size:12px;color:var(--text-dim);margin:0 0 10px">Click any guardrail row to expand the verified local code path, scope, and limitations.</p>
         <div id="pi-guardrail-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:18px;"></div>
         <p id="pi-guardrail-warning" style="display:none;font-size:12px;color:var(--accent-warn);margin:0 0 16px;padding:8px 10px;background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.25);border-radius:var(--radius)">
           &#9888; One or more guardrails are in <strong>logging_only</strong> mode — they log but do NOT block injections.
@@ -1439,6 +1440,38 @@
           </table>
         </div>
       </div>
+
+      <div id="pi-context-explainer" style="display:grid;gap:10px;margin-top:18px">
+        <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);margin:0">How the protection paths fit together</h3>
+
+        <details style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:0">
+          <summary style="cursor:pointer;padding:10px 12px;font-size:12px;font-weight:600">What this page is measuring</summary>
+          <div style="padding:0 12px 12px;font-size:12px;color:var(--text);line-height:1.55">
+            <p style="margin:0 0 8px">The status cards above come from the live Blueprints endpoint <span style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace">/api/v1/litellm/guardrail-status</span>, which reads the node-local LiteLLM configuration at <span style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace">/xarta-node/.lone-wolf/stacks/litellm/config.yaml</span>.</p>
+            <p style="margin:0">The test runner posts to <span style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace">/api/v1/litellm/injection-test</span>, which then exercises the local LiteLLM chat path using the <span style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace">PRIMARY-LOCAL</span> model alias and a canary token.</p>
+          </div>
+        </details>
+
+        <details style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:0">
+          <summary style="cursor:pointer;padding:10px 12px;font-size:12px;font-weight:600">Safe Web Research skill — separate first safety layer</summary>
+          <div style="padding:0 12px 12px;font-size:12px;color:var(--text);line-height:1.55">
+            <p style="margin:0 0 8px">The research workflow lives at <span style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace">/root/xarta-node/.xarta/.claude/skills/safe-web-research/</span>. Its verified helper scripts include <span style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace">searxng-search.sh</span>, <span style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace">scrapling-fetch.sh</span>, <span style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace">crawl4ai-crawl.sh</span>, <span style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace">liteparse-url.sh</span>, and <span style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace">playwright-probe.sh</span>.</p>
+            <p style="margin:0">Those scripts pass content through <span style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace">sanitize-web-output.py</span>, which strips suspicious instruction lines, secret-exfiltration requests, install or SSH instructions, destructive commands, large blobs or data URIs, duplicate spam, and truncates oversized output.</p>
+          </div>
+        </details>
+
+        <details style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:0">
+          <summary style="cursor:pointer;padding:10px 12px;font-size:12px;font-weight:600">When one request hits one layer vs both layers</summary>
+          <div style="padding:0 12px 12px;font-size:12px;color:var(--text);line-height:1.55">
+            <ol style="margin:0;padding-left:18px">
+              <li style="margin:0 0 6px">If a request only searches or fetches web content locally, the Safe Web Research skill is the relevant first safety layer.</li>
+              <li style="margin:0 0 6px">If that fetched content is then sent through the node-local LiteLLM gateway for summarising or reasoning, the LiteLLM guardrails shown above can also apply on the model path.</li>
+              <li style="margin:0">Direct MCP tool calls use LiteLLM&rsquo;s <span style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace">/mcp/</span> JSON-RPC path, which is separate from <span style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace">/v1/chat/completions</span>. The tool call itself is not the same thing as a model generation step.</li>
+            </ol>
+          </div>
+        </details>
+      </div>
+
       <p id="pi-error" class="error-msg" hidden></p>
     </div><!-- /tab-scroll-shell -->
   </section>
