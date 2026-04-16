@@ -1375,7 +1375,7 @@
   <!-- MCP Servers -->
   <section id="tab-mcp-servers" class="tab-panel">
     <div id="s25-lift-mcp-servers" class="s25-lift-block" data-for-tab="mcp-servers">
-      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Node-local LiteLLM MCP server connections. List is fetched live from the LiteLLM stack — never hardcoded.</p>
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Node-local MCP servers — LiteLLM-connected (fetched live from the stack) and direct local MCP services.</p>
     </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="tab-scroll-shell">
@@ -1386,6 +1386,15 @@
         <div id="mcp-servers-list" style="display:flex;flex-direction:column;gap:10px;"></div>
       </div>
       <p id="mcp-servers-error" class="error-msg" hidden></p>
+
+      <!-- Crawl4AI — direct local MCP server (not part of LiteLLM) -->
+      <div id="crawl4ai-section" style="margin-top:18px">
+        <div style="border-top:1px solid var(--border);padding-top:14px;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+          <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim)">Direct local MCP servers</span>
+          <span style="font-size:11px;color:var(--text-dim);opacity:.7">(not part of the LiteLLM stack)</span>
+        </div>
+        <div id="crawl4ai-card"></div>
+      </div>
     </div><!-- /tab-scroll-shell -->
   </section>
 
@@ -1495,6 +1504,52 @@
         <button type="button" class="secondary" style="font-size:11px;padding:4px 10px" id="mcp-result-copy-btn">&#128203; Copy</button>
       </div>
       <pre id="mcp-result-detail-pre" style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px;font-size:11px;overflow:auto;max-height:380px;white-space:pre-wrap;word-break:break-all"></pre>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Close</button>
+    </div>
+  </dialog>
+
+  <!-- Crawl4AI Test Modal -->
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="crawl4ai-test-modal" style="width:min(700px,96vw);max-width:96vw">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">CRAWL</span>
+        <span class="hub-dialog-title-text">Test Crawl4AI</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body">
+      <!-- Crawl4AI endpoint health row -->
+      <div style="margin-bottom:14px">
+        <span style="font-size:12px;color:var(--text-dim);font-weight:600;text-transform:uppercase;letter-spacing:.5px">Crawl4AI endpoint</span>
+        <span id="crawl4ai-test-health-badge" class="badge" style="margin-left:8px">Checking&hellip;</span>
+        <span style="font-size:11px;color:var(--text-dim);margin-left:6px">GET&nbsp;/health</span>
+      </div>
+      <!-- URL input -->
+      <div class="field" style="margin-bottom:10px">
+        <label for="crawl4ai-test-url-input" style="font-size:12px">URL to crawl</label>
+        <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start">
+          <input id="crawl4ai-test-url-input" type="text" placeholder="Enter or select a URL" />
+          <button type="button" id="crawl4ai-test-url-picker-btn" class="secondary" style="min-width:44px;padding:6px 12px" aria-haspopup="listbox" aria-expanded="false" aria-label="Open URL presets">&#9660;</button>
+        </div>
+        <div id="crawl4ai-test-url-picker" style="display:none;margin-top:6px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);max-height:180px;overflow:auto"></div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Select a preset URL or type your own. The page is fetched headlessly and returned as clean markdown.</div>
+      </div>
+      <!-- Run button -->
+      <div style="margin-bottom:14px">
+        <button type="button" id="crawl4ai-test-run-btn" class="secondary">&#9654; Crawl URL</button>
+        <span id="crawl4ai-test-run-status" style="font-size:12px;color:var(--text-dim);margin-left:10px"></span>
+      </div>
+      <!-- Result -->
+      <div id="crawl4ai-test-result-wrap" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <p style="font-size:12px;color:var(--text-dim);margin:0">Extracted markdown</p>
+          <button type="button" class="secondary" style="font-size:11px;padding:4px 10px" id="crawl4ai-test-copy-btn">&#128203; Copy</button>
+        </div>
+        <pre id="crawl4ai-test-result-pre" style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px;font-size:11px;overflow:auto;max-height:280px;white-space:pre-wrap;word-break:break-all"></pre>
+        <div id="crawl4ai-test-result-stats" style="font-size:11px;color:var(--text-dim);margin-top:4px"></div>
+      </div>
     </div>
     <div class="hub-modal-footer">
       <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Close</button>

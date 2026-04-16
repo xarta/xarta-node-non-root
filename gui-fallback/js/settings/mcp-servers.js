@@ -111,16 +111,21 @@ async function _mcpLoadTab() {
     data = await r.json();
   } catch (e) {
     if (els.error) { els.error.textContent = `Failed to check LiteLLM stack: ${e.message}`; els.error.hidden = false; }
+    // Still load crawl4ai section independently of LiteLLM
+    await _crawl4aiLoadSection();
     return;
   }
 
   if (!data.litellm_present) {
     els.absent.style.display = '';
+    // Still load crawl4ai section independently of LiteLLM
+    await _crawl4aiLoadSection();
     return;
   }
 
   els.present.style.display = '';
   _mcpRenderServerList(data.servers || []);
+  await _crawl4aiLoadSection();
 }
 
 function _mcpRenderServerList(servers) {
@@ -369,7 +374,165 @@ function _mcpOpenResultDetail(idx) {
   els.detailModal.showModal();
 }
 
-// ── Event Wiring ──────────────────────────────────────────────────────────────
+// ── Crawl4AI preset URLs ──────────────────────────────────────────────────────
+
+const CRAWL4AI_TEST_URLS = [
+  'https://www.bbc.co.uk',
+  'https://venturebeat.com',
+  'https://www.marktechpost.com',
+  'https://example.com',
+];
+
+// ── Crawl4AI section ──────────────────────────────────────────────────────────
+
+async function _crawl4aiLoadSection() {
+  const card = document.getElementById('crawl4ai-card');
+  if (!card) return;
+
+  card.innerHTML = '<div style="font-size:12px;color:var(--text-dim);padding:6px 0">Checking Crawl4AI&hellip;</div>';
+
+  let data;
+  try {
+    const r = await apiFetch('/api/v1/crawl4ai/health');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    data = await r.json();
+  } catch (e) {
+    card.innerHTML = _crawl4aiRenderCard({ reachable: false, error: e.message });
+    return;
+  }
+
+  card.innerHTML = _crawl4aiRenderCard(data);
+}
+
+function _crawl4aiRenderCard(data) {
+  const reachable = data.reachable === true;
+  const url = data.url || 'http://localhost:11235';
+  const statusBadge = reachable
+    ? '<span class="badge badge--green" style="margin-left:6px">Online</span>'
+    : `<span class="badge badge--red" style="margin-left:6px">Offline</span>`;
+  const version = data.version ? ` v${esc(data.version)}` : '';
+  const errorNote = !reachable && data.error
+    ? `<div style="font-size:11px;color:var(--accent-warn);margin-top:4px">${esc(data.error)}</div>`
+    : '';
+
+  return `
+    <div class="card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <div style="min-width:0">
+        <div style="font-weight:700;font-size:13px;margin-bottom:3px">crawl4ai${statusBadge}</div>
+        <div style="font-size:11px;color:var(--text-dim);word-break:break-all">${esc(url)}/mcp/sse</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:4px">Headless-browser web crawler with MCP${version}. Not part of the LiteLLM stack — direct local service.</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:3px">transport: <code>sse</code> &nbsp;&middot;&nbsp; tools: md, html, screenshot, pdf, crawl, ask</div>
+        ${errorNote}
+      </div>
+      <button type="button" class="secondary crawl4ai-test-open-btn" style="flex-shrink:0;font-size:12px"${reachable ? '' : ' disabled'}>&#9654; Test</button>
+    </div>
+  `;
+}
+
+// ── Crawl4AI Test Modal ───────────────────────────────────────────────────────
+
+function _crawl4aiOpenTestModal() {
+  const modal = document.getElementById('crawl4ai-test-modal');
+  if (!modal) return;
+
+  const healthBadge = document.getElementById('crawl4ai-test-health-badge');
+  const urlInput    = document.getElementById('crawl4ai-test-url-input');
+  const urlPicker   = document.getElementById('crawl4ai-test-url-picker');
+  const urlPickerBtn = document.getElementById('crawl4ai-test-url-picker-btn');
+  const runStatus   = document.getElementById('crawl4ai-test-run-status');
+  const resultWrap  = document.getElementById('crawl4ai-test-result-wrap');
+  const resultPre   = document.getElementById('crawl4ai-test-result-pre');
+  const resultStats = document.getElementById('crawl4ai-test-result-stats');
+
+  if (healthBadge) { healthBadge.textContent = 'Checking…'; healthBadge.className = 'badge'; }
+  if (urlInput) urlInput.value = CRAWL4AI_TEST_URLS[0] || '';
+  if (urlPicker) urlPicker.style.display = 'none';
+  if (urlPickerBtn) urlPickerBtn.setAttribute('aria-expanded', 'false');
+  if (runStatus) runStatus.textContent = '';
+  if (resultWrap) resultWrap.style.display = 'none';
+  if (resultPre) resultPre.textContent = '';
+  if (resultStats) resultStats.textContent = '';
+
+  _mcpRenderPresetPicker(urlPicker, CRAWL4AI_TEST_URLS, (value) => {
+    if (urlInput) urlInput.value = value;
+    _mcpClosePresetPicker(urlPicker, urlPickerBtn);
+  });
+
+  modal.showModal();
+  _crawl4aiCheckHealth();
+}
+
+async function _crawl4aiCheckHealth() {
+  const badge = document.getElementById('crawl4ai-test-health-badge');
+  if (!badge) return;
+  try {
+    const r = await apiFetch('/api/v1/crawl4ai/health');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    if (data.reachable) {
+      const ver = data.version ? ` — v${data.version}` : '';
+      badge.textContent = `OK${ver}`;
+      badge.className = 'badge badge--green';
+    } else {
+      badge.textContent = `Unreachable: ${data.error || 'unknown'}`;
+      badge.className = 'badge badge--red';
+    }
+  } catch (e) {
+    badge.textContent = `Error: ${e.message}`;
+    badge.className = 'badge badge--red';
+  }
+}
+
+async function _crawl4aiRunCrawl() {
+  const urlInput  = document.getElementById('crawl4ai-test-url-input');
+  const runBtn    = document.getElementById('crawl4ai-test-run-btn');
+  const runStatus = document.getElementById('crawl4ai-test-run-status');
+  const resultWrap = document.getElementById('crawl4ai-test-result-wrap');
+  const resultPre  = document.getElementById('crawl4ai-test-result-pre');
+  const resultStats = document.getElementById('crawl4ai-test-result-stats');
+
+  const url = (urlInput?.value || '').trim() || CRAWL4AI_TEST_URLS[0];
+
+  if (runStatus) runStatus.textContent = 'Crawling… (headless browser, may take 15–30 s)';
+  if (resultWrap) resultWrap.style.display = 'none';
+  if (resultPre) resultPre.textContent = '';
+  if (resultStats) resultStats.textContent = '';
+  if (runBtn) runBtn.disabled = true;
+
+  let data;
+  try {
+    const r = await apiFetch('/api/v1/crawl4ai/crawl', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    if (!r.ok) {
+      const err = await r.text().catch(() => `HTTP ${r.status}`);
+      throw new Error(err.length > 120 ? err.slice(0, 120) + '…' : err);
+    }
+    data = await r.json();
+  } catch (e) {
+    if (runStatus) runStatus.textContent = `Error: ${e.message}`;
+    if (runBtn) runBtn.disabled = false;
+    return;
+  }
+
+  if (runBtn) runBtn.disabled = false;
+
+  const ok = data.ok !== false;
+  if (runStatus) runStatus.textContent = ok ? 'Done' : 'Crawl returned an error';
+
+  const md = data.markdown || '';
+  const mdLen = data.markdown_len || md.length;
+
+  if (resultPre) resultPre.textContent = md || '(no markdown returned)';
+  if (resultStats) {
+    resultStats.textContent = `${mdLen.toLocaleString()} chars extracted from ${data.url || url}`;
+  }
+  if (resultWrap) resultWrap.style.display = '';
+}
+
+
 
 function _mcpWireEvents() {
   // Tab loading now triggered by switchTab() in app.js.
@@ -381,6 +544,15 @@ function _mcpWireEvents() {
     listEl.addEventListener('click', (e) => {
       const btn = e.target.closest('.mcp-test-open-btn');
       if (btn) _mcpOpenTestModal(btn.dataset.serverKey, btn.dataset.serverUrl);
+    });
+  }
+
+  // Crawl4AI [Test] button (delegated on crawl4ai-card)
+  const crawl4aiCard = document.getElementById('crawl4ai-card');
+  if (crawl4aiCard) {
+    crawl4aiCard.addEventListener('click', (e) => {
+      const btn = e.target.closest('.crawl4ai-test-open-btn');
+      if (btn && !btn.disabled) _crawl4aiOpenTestModal();
     });
   }
 
@@ -400,6 +572,29 @@ function _mcpWireEvents() {
     categoryPickerBtn.addEventListener('click', () => _mcpTogglePresetPicker(categoryPicker, categoryPickerBtn));
   }
 
+  // Crawl4AI modal controls
+  const crawl4aiUrlPickerBtn = document.getElementById('crawl4ai-test-url-picker-btn');
+  const crawl4aiUrlPicker    = document.getElementById('crawl4ai-test-url-picker');
+  if (crawl4aiUrlPickerBtn && crawl4aiUrlPicker) {
+    crawl4aiUrlPickerBtn.addEventListener('click', () => _mcpTogglePresetPicker(crawl4aiUrlPicker, crawl4aiUrlPickerBtn));
+  }
+
+  const crawl4aiRunBtn = document.getElementById('crawl4ai-test-run-btn');
+  if (crawl4aiRunBtn) crawl4aiRunBtn.addEventListener('click', _crawl4aiRunCrawl);
+
+  const crawl4aiCopyBtn = document.getElementById('crawl4ai-test-copy-btn');
+  if (crawl4aiCopyBtn) {
+    crawl4aiCopyBtn.addEventListener('click', () => {
+      const pre = document.getElementById('crawl4ai-test-result-pre');
+      if (pre && navigator.clipboard) {
+        navigator.clipboard.writeText(pre.textContent).then(() => {
+          crawl4aiCopyBtn.textContent = '\u2713 Copied';
+          setTimeout(() => { crawl4aiCopyBtn.innerHTML = '&#128203; Copy'; }, 1500);
+        }).catch(() => {});
+      }
+    });
+  }
+
   const queryInput = document.getElementById('mcp-test-query-input');
   if (queryInput) {
     queryInput.placeholder = 'Select or type a search query';
@@ -412,6 +607,12 @@ function _mcpWireEvents() {
     }
     if (els.categoryPicker && els.categoryPickerBtn && !els.categoryPicker.contains(e.target) && e.target !== els.categoryPickerBtn) {
       _mcpClosePresetPicker(els.categoryPicker, els.categoryPickerBtn);
+    }
+    // Close crawl4ai URL picker on outside click
+    const c4Picker = document.getElementById('crawl4ai-test-url-picker');
+    const c4Btn    = document.getElementById('crawl4ai-test-url-picker-btn');
+    if (c4Picker && c4Btn && !c4Picker.contains(e.target) && e.target !== c4Btn) {
+      _mcpClosePresetPicker(c4Picker, c4Btn);
     }
   });
 
