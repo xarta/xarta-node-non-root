@@ -1395,6 +1395,7 @@
         </div>
         <div id="crawl4ai-card"></div>
         <div id="scrapling-card" style="margin-top:10px"></div>
+        <div id="liteparse-card" style="margin-top:10px"></div>
       </div>
     </div><!-- /tab-scroll-shell -->
   </section>
@@ -1658,6 +1659,81 @@
         <div id="scrapling-test-mcp-wrap" style="display:none">
           <p style="font-size:12px;color:var(--text-dim);margin:0 0 6px">Tools available directly from the local Scrapling MCP server</p>
           <div id="scrapling-test-mcp-list" style="display:flex;flex-direction:column;gap:4px"></div>
+        </div>
+      </div>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Close</button>
+    </div>
+  </dialog>
+
+  <!-- LiteParse Test Modal -->
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="liteparse-test-modal" style="width:min(700px,96vw);max-width:96vw">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">PDF</span>
+        <span class="hub-dialog-title-text">Test LiteParse</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body">
+      <div style="margin-bottom:14px">
+        <span style="font-size:12px;color:var(--text-dim);font-weight:600;text-transform:uppercase;letter-spacing:.5px">LiteParse endpoint</span>
+        <span id="liteparse-test-health-badge" class="badge" style="margin-left:8px">Checking&hellip;</span>
+        <span style="font-size:11px;color:var(--text-dim);margin-left:6px">GET&nbsp;/health</span>
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label for="liteparse-test-url-input" style="font-size:12px">PDF URL</label>
+        <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start">
+          <input id="liteparse-test-url-input" type="text" placeholder="Enter or select a PDF URL" />
+          <button type="button" id="liteparse-test-url-picker-btn" class="secondary" style="min-width:44px;padding:6px 12px" aria-haspopup="listbox" aria-expanded="false" aria-label="Open PDF presets">&#9660;</button>
+        </div>
+        <div id="liteparse-test-url-picker" style="display:none;margin-top:6px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);max-height:180px;overflow:auto"></div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">This runs local document extraction only — no model call is required to parse the PDF.</div>
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label for="liteparse-test-format-select" style="font-size:12px">Output format</label>
+        <select id="liteparse-test-format-select">
+          <option value="text">text — plain extracted text</option>
+          <option value="json">json — structured parse output</option>
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label style="font-size:12px">Parse limits <span style="font-weight:normal;font-size:11px;color:var(--text-dim)">(blank&nbsp;= service defaults &mdash; 50 pages, 12&thinsp;000 chars)</span></label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
+          <div>
+            <label for="liteparse-test-max-pages" style="font-size:11px;color:var(--text-dim)">Max pages</label>
+            <input id="liteparse-test-max-pages" type="number" min="1" step="1" placeholder="e.g. 200" style="margin-top:2px" />
+          </div>
+          <div>
+            <label for="liteparse-test-max-chars" style="font-size:11px;color:var(--text-dim)">Max output chars (0&nbsp;= no limit)</label>
+            <input id="liteparse-test-max-chars" type="number" min="0" step="1000" placeholder="e.g. 100000" style="margin-top:2px" />
+          </div>
+        </div>
+      </div>
+      <div style="margin-bottom:14px">
+        <button type="button" id="liteparse-test-run-btn" class="secondary">&#9654; Parse PDF</button>
+        <span id="liteparse-test-run-status" style="font-size:12px;color:var(--text-dim);margin-left:10px"></span>
+      </div>
+      <div id="liteparse-test-result-wrap" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px;flex-wrap:wrap">
+          <p style="font-size:12px;color:var(--text-dim);margin:0">Extracted output</p>
+          <div style="display:flex;gap:8px">
+            <button type="button" class="secondary" style="font-size:11px;padding:4px 10px" id="liteparse-test-copy-btn">&#128203; Copy</button>
+            <button type="button" class="secondary" style="font-size:11px;padding:4px 10px" id="liteparse-test-download-txt-btn">&#8595; Download</button>
+          </div>
+        </div>
+        <pre id="liteparse-test-result-pre" style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px;font-size:11px;overflow:auto;max-height:220px;white-space:pre-wrap;word-break:break-all"></pre>
+        <div id="liteparse-test-result-stats" style="font-size:11px;color:var(--text-dim);margin-top:4px"></div>
+      </div>
+      <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
+        <div style="margin-bottom:8px">
+          <button type="button" id="liteparse-test-tools-btn" class="secondary">&#9881; List Tools</button>
+          <span id="liteparse-test-tools-status" style="font-size:12px;color:var(--text-dim);margin-left:10px"></span>
+        </div>
+        <div id="liteparse-test-tools-wrap" style="display:none">
+          <p style="font-size:12px;color:var(--text-dim);margin:0 0 6px">Standalone LiteParse capabilities exposed on this node</p>
+          <div id="liteparse-test-tools-list" style="display:flex;flex-direction:column;gap:4px"></div>
         </div>
       </div>
     </div>

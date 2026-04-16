@@ -63,9 +63,15 @@ const MCP_TEST_URLS = [
   'https://www.marktechpost.com',
 ];
 
+const LITEPARSE_TEST_PDFS = [
+  'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+  'https://www.orimi.com/pdf-test.pdf',
+];
+
 // State
 let _mcpCurrentServer = null;
 let _mcpCurrentResults = [];
+let _liteparseLastText = '';
 
 function _mcpServerTestConfig(serverKey) {
   if (serverKey === 'scrapling_mcp') {
@@ -162,6 +168,7 @@ async function _mcpLoadTab() {
     // Still load the direct-local sections independently of LiteLLM
     await _crawl4aiLoadSection();
     await _scraplingLoadSection();
+    await _liteparseLoadSection();
     return;
   }
 
@@ -170,6 +177,7 @@ async function _mcpLoadTab() {
     // Still load the direct-local sections independently of LiteLLM
     await _crawl4aiLoadSection();
     await _scraplingLoadSection();
+    await _liteparseLoadSection();
     return;
   }
 
@@ -177,6 +185,7 @@ async function _mcpLoadTab() {
   _mcpRenderServerList(data.servers || []);
   await _crawl4aiLoadSection();
   await _scraplingLoadSection();
+  await _liteparseLoadSection();
 }
 
 function _mcpRenderServerList(servers) {
@@ -643,6 +652,209 @@ async function _scraplingRunMcpTools() {
   if (wrap) wrap.style.display = '';
 }
 
+// ── LiteParse section ─────────────────────────────────────────────────────────
+
+async function _liteparseLoadSection() {
+  const card = document.getElementById('liteparse-card');
+  if (!card) return;
+
+  card.innerHTML = '<div style="font-size:12px;color:var(--text-dim);padding:6px 0">Checking LiteParse&hellip;</div>';
+
+  let data;
+  try {
+    const r = await apiFetch('/api/v1/liteparse/health');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    data = await r.json();
+  } catch (e) {
+    card.innerHTML = _liteparseRenderCard({ reachable: false, error: e.message });
+    return;
+  }
+
+  card.innerHTML = _liteparseRenderCard(data);
+}
+
+function _liteparseRenderCard(data) {
+  const reachable = data.reachable === true;
+  const url = data.url || 'http://localhost:18444';
+  const statusBadge = reachable
+    ? '<span class="badge badge--green" style="margin-left:6px">Online</span>'
+    : '<span class="badge badge--red" style="margin-left:6px">Offline</span>';
+  const errorNote = !reachable && data.error
+    ? `<div style="font-size:11px;color:var(--accent-warn);margin-top:4px">${esc(data.error)}</div>`
+    : '';
+
+  return `
+    <div class="card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <div style="min-width:0">
+        <div style="font-weight:700;font-size:13px;margin-bottom:3px">liteparse${statusBadge}</div>
+        <div style="font-size:11px;color:var(--text-dim);word-break:break-all">${esc(url)}</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:4px">Local PDF/document parser with bounded extraction and a standalone Claude Code MCP wrapper.</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:3px">transport: <code>local service</code> &nbsp;&middot;&nbsp; tools: parse_pdf_url, parse_local_pdf</div>
+        ${errorNote}
+      </div>
+      <button type="button" class="secondary liteparse-test-open-btn" style="flex-shrink:0;font-size:12px"${reachable ? '' : ' disabled'}>&#9654; Test</button>
+    </div>
+  `;
+}
+
+function _liteparseOpenTestModal() {
+  const modal = document.getElementById('liteparse-test-modal');
+  if (!modal) return;
+
+  const healthBadge = document.getElementById('liteparse-test-health-badge');
+  const urlInput = document.getElementById('liteparse-test-url-input');
+  const urlPicker = document.getElementById('liteparse-test-url-picker');
+  const urlPickerBtn = document.getElementById('liteparse-test-url-picker-btn');
+  const formatSelect = document.getElementById('liteparse-test-format-select');
+  const runStatus = document.getElementById('liteparse-test-run-status');
+  const resultWrap = document.getElementById('liteparse-test-result-wrap');
+  const resultPre = document.getElementById('liteparse-test-result-pre');
+  const resultStats = document.getElementById('liteparse-test-result-stats');
+  const toolsStatus = document.getElementById('liteparse-test-tools-status');
+  const toolsWrap = document.getElementById('liteparse-test-tools-wrap');
+
+  if (healthBadge) { healthBadge.textContent = 'Checking…'; healthBadge.className = 'badge'; }
+  if (urlInput) urlInput.value = LITEPARSE_TEST_PDFS[0] || '';
+  if (urlPicker) urlPicker.style.display = 'none';
+  if (urlPickerBtn) urlPickerBtn.setAttribute('aria-expanded', 'false');
+  if (formatSelect) formatSelect.value = 'text';
+  const maxPagesInput = document.getElementById('liteparse-test-max-pages');
+  const maxCharsInput = document.getElementById('liteparse-test-max-chars');
+  if (maxPagesInput) maxPagesInput.value = '';
+  if (maxCharsInput) maxCharsInput.value = '';
+  if (runStatus) runStatus.textContent = '';
+  if (resultWrap) resultWrap.style.display = 'none';
+  if (resultPre) resultPre.textContent = '';
+  if (resultStats) resultStats.textContent = '';
+  if (toolsStatus) toolsStatus.textContent = '';
+  if (toolsWrap) toolsWrap.style.display = 'none';
+  _liteparseLastText = '';
+
+  _mcpRenderPresetPicker(urlPicker, LITEPARSE_TEST_PDFS, (value) => {
+    if (urlInput) urlInput.value = value;
+    _mcpClosePresetPicker(urlPicker, urlPickerBtn);
+  });
+
+  modal.showModal();
+  _liteparseCheckHealth();
+}
+
+async function _liteparseCheckHealth() {
+  const badge = document.getElementById('liteparse-test-health-badge');
+  if (!badge) return;
+  try {
+    const r = await apiFetch('/api/v1/liteparse/health');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    if (data.reachable) {
+      badge.textContent = 'OK';
+      badge.className = 'badge badge--green';
+    } else {
+      badge.textContent = `Unreachable: ${data.error || 'unknown'}`;
+      badge.className = 'badge badge--red';
+    }
+  } catch (e) {
+    badge.textContent = `Error: ${e.message}`;
+    badge.className = 'badge badge--red';
+  }
+}
+
+async function _liteparseRunParse() {
+  const urlInput = document.getElementById('liteparse-test-url-input');
+  const formatSelect = document.getElementById('liteparse-test-format-select');
+  const btn = document.getElementById('liteparse-test-run-btn');
+  const status = document.getElementById('liteparse-test-run-status');
+  const wrap = document.getElementById('liteparse-test-result-wrap');
+  const pre = document.getElementById('liteparse-test-result-pre');
+  const stats = document.getElementById('liteparse-test-result-stats');
+
+  const url = (urlInput?.value || '').trim() || LITEPARSE_TEST_PDFS[0];
+  const outputFormat = formatSelect?.value || 'text';
+
+  if (status) status.textContent = 'Parsing…';
+  if (wrap) wrap.style.display = 'none';
+  if (pre) pre.textContent = '';
+  if (stats) stats.textContent = '';
+  if (btn) btn.disabled = true;
+
+  let data;
+  try {
+    const maxPagesRaw = document.getElementById('liteparse-test-max-pages')?.value?.trim();
+    const maxCharsRaw = document.getElementById('liteparse-test-max-chars')?.value?.trim();
+    const payload = { url, output_format: outputFormat, no_ocr: true };
+    if (maxPagesRaw) payload.max_pages = Math.max(1, parseInt(maxPagesRaw, 10));
+    if (maxCharsRaw !== undefined && maxCharsRaw !== '') {
+      const c = parseInt(maxCharsRaw, 10);
+      payload.max_chars = c <= 0 ? 10_000_000 : c;
+    }
+    const r = await apiFetch('/api/v1/liteparse/parse', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+      const err = await r.text().catch(() => `HTTP ${r.status}`);
+      throw new Error(err.length > 120 ? err.slice(0, 120) + '…' : err);
+    }
+    data = await r.json();
+  } catch (e) {
+    if (status) status.textContent = `Error: ${e.message}`;
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  if (btn) btn.disabled = false;
+  if (status) status.textContent = data.ok ? 'Done' : 'Parse returned an error';
+
+  _liteparseLastText = data.text || '';
+  if (pre) pre.textContent = _liteparseLastText || '(no content returned)';
+  if (stats) stats.textContent = `${(data.chars || _liteparseLastText.length).toLocaleString()} chars extracted from ${data.url || data.file_path || url}`;
+  if (wrap) wrap.style.display = '';
+}
+
+async function _liteparseRunTools() {
+  const btn = document.getElementById('liteparse-test-tools-btn');
+  const status = document.getElementById('liteparse-test-tools-status');
+  const wrap = document.getElementById('liteparse-test-tools-wrap');
+  const list = document.getElementById('liteparse-test-tools-list');
+
+  if (status) status.textContent = 'Fetching…';
+  if (wrap) wrap.style.display = 'none';
+  if (btn) btn.disabled = true;
+
+  let data;
+  try {
+    const r = await apiFetch('/api/v1/liteparse/tools');
+    if (!r.ok) {
+      const err = await r.text().catch(() => `HTTP ${r.status}`);
+      throw new Error(err.length > 120 ? err.slice(0, 120) + '…' : err);
+    }
+    data = await r.json();
+  } catch (e) {
+    if (status) status.textContent = `Error: ${e.message}`;
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  if (btn) btn.disabled = false;
+
+  const tools = data.tools || [];
+  if (status) status.textContent = `${tools.length} tool${tools.length !== 1 ? 's' : ''} found`;
+  if (list) {
+    if (!tools.length) {
+      list.innerHTML = '<div style="font-size:12px;color:var(--text-dim)">No tools returned.</div>';
+    } else {
+      list.innerHTML = tools.map((t) =>
+        `<div style="padding:5px 8px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius)">` +
+        `<span style="font-weight:700;font-size:12px">${esc(t.name)}</span>` +
+        (t.description ? `<span style="font-size:11px;color:var(--text-dim);margin-left:8px">${esc(t.description)}</span>` : '') +
+        `</div>`
+      ).join('');
+    }
+  }
+  if (wrap) wrap.style.display = '';
+}
+
 // ── Crawl4AI preset URLs ──────────────────────────────────────────────────────
 
 const CRAWL4AI_TEST_URLS = [
@@ -1004,6 +1216,15 @@ function _mcpWireEvents() {
     });
   }
 
+  // LiteParse [Test] button (delegated on liteparse-card)
+  const liteparseCard = document.getElementById('liteparse-card');
+  if (liteparseCard) {
+    liteparseCard.addEventListener('click', (e) => {
+      const btn = e.target.closest('.liteparse-test-open-btn');
+      if (btn && !btn.disabled) _liteparseOpenTestModal();
+    });
+  }
+
   // Run Search button
   const runBtn = document.getElementById('mcp-test-run-btn');
   if (runBtn) runBtn.addEventListener('click', _mcpRunSearch);
@@ -1050,6 +1271,47 @@ function _mcpWireEvents() {
 
   const scraplingMcpBtn = document.getElementById('scrapling-test-mcp-btn');
   if (scraplingMcpBtn) scraplingMcpBtn.addEventListener('click', _scraplingRunMcpTools);
+
+  const liteparseUrlPickerBtn = document.getElementById('liteparse-test-url-picker-btn');
+  const liteparseUrlPicker = document.getElementById('liteparse-test-url-picker');
+  if (liteparseUrlPickerBtn && liteparseUrlPicker) {
+    liteparseUrlPickerBtn.addEventListener('click', () => _mcpTogglePresetPicker(liteparseUrlPicker, liteparseUrlPickerBtn));
+  }
+
+  const liteparseRunBtn = document.getElementById('liteparse-test-run-btn');
+  if (liteparseRunBtn) liteparseRunBtn.addEventListener('click', _liteparseRunParse);
+
+  const liteparseToolsBtn = document.getElementById('liteparse-test-tools-btn');
+  if (liteparseToolsBtn) liteparseToolsBtn.addEventListener('click', _liteparseRunTools);
+
+  const liteparseCopyBtn = document.getElementById('liteparse-test-copy-btn');
+  if (liteparseCopyBtn) {
+    liteparseCopyBtn.addEventListener('click', () => {
+      if (_liteparseLastText && navigator.clipboard) {
+        navigator.clipboard.writeText(_liteparseLastText).then(() => {
+          liteparseCopyBtn.textContent = '✓ Copied';
+          setTimeout(() => { liteparseCopyBtn.innerHTML = '&#128203; Copy'; }, 1500);
+        }).catch(() => {});
+      }
+    });
+  }
+
+  const liteparseDlBtn = document.getElementById('liteparse-test-download-txt-btn');
+  if (liteparseDlBtn) {
+    liteparseDlBtn.addEventListener('click', () => {
+      if (!_liteparseLastText) return;
+      const fmt = document.getElementById('liteparse-test-format-select')?.value || 'text';
+      const ext = fmt === 'json' ? 'json' : 'txt';
+      const mime = fmt === 'json' ? 'application/json' : 'text/plain';
+      const blob = new Blob([_liteparseLastText], { type: mime });
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.download = `liteparse-output.${ext}`;
+      a.click();
+      URL.revokeObjectURL(objUrl);
+    });
+  }
 
   const crawl4aiCopyBtn = document.getElementById('crawl4ai-test-copy-btn');
   if (crawl4aiCopyBtn) {
