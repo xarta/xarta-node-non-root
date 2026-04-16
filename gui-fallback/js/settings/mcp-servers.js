@@ -224,7 +224,7 @@ function _mcpRenderServerList(servers) {
         ${_mcpServerQueryGuidance(s.server_key) ? `<div style="font-size:11px;color:var(--text-dim);margin-top:6px">${esc(_mcpServerQueryGuidance(s.server_key))}</div>` : ''}
         <div style="font-size:11px;color:var(--text-dim);margin-top:3px">transport: <code>${esc(s.transport)}</code></div>
       </div>
-      <button type="button" class="secondary mcp-test-open-btn" data-server-key="${esc(s.server_key)}" data-server-url="${esc(s.url)}" style="justify-self:end;align-self:center;font-size:12px">&#9654; Test</button>
+      <button type="button" class="secondary mcp-test-open-btn" data-server-key="${esc(s.server_key)}" data-server-url="${esc(s.url)}" style="justify-self:end;align-self:start;font-size:12px">&#9654; Test</button>
     </div>
   `).join('');
 }
@@ -510,7 +510,7 @@ function _scraplingRenderCard(data) {
     : '';
 
   return `
-    <div class="card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+    <div class="card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:12px">
       <div style="min-width:0">
         <div style="font-weight:700;font-size:13px;margin-bottom:3px">scrapling${statusBadge}</div>
         <div style="font-size:11px;color:var(--text-dim);word-break:break-all">${esc(mcpUrl)}</div>
@@ -518,7 +518,7 @@ function _scraplingRenderCard(data) {
         <div style="font-size:11px;color:var(--text-dim);margin-top:3px">transport: <code>http</code> &nbsp;&middot;&nbsp; tools: get, fetch, stealthy_fetch, bulk_fetch</div>
         ${errorNote}
       </div>
-      <button type="button" class="secondary scrapling-test-open-btn" style="flex-shrink:0;font-size:12px"${reachable ? '' : ' disabled'}>&#9654; Test</button>
+      <button type="button" class="secondary scrapling-test-open-btn" style="justify-self:end;align-self:start;font-size:12px"${reachable ? '' : ' disabled'}>&#9654; Test</button>
     </div>
   `;
 }
@@ -704,7 +704,7 @@ function _liteparseRenderCard(data) {
     : '';
 
   return `
-    <div class="card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+    <div class="card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:12px">
       <div style="min-width:0">
         <div style="font-weight:700;font-size:13px;margin-bottom:3px">liteparse${statusBadge}</div>
         <div style="font-size:11px;color:var(--text-dim);word-break:break-all">${esc(url)}</div>
@@ -712,7 +712,7 @@ function _liteparseRenderCard(data) {
         <div style="font-size:11px;color:var(--text-dim);margin-top:3px">transport: <code>local service</code> &nbsp;&middot;&nbsp; tools: parse_pdf_url, parse_local_pdf</div>
         ${errorNote}
       </div>
-      <button type="button" class="secondary liteparse-test-open-btn" style="flex-shrink:0;font-size:12px"${reachable ? '' : ' disabled'}>&#9654; Test</button>
+      <button type="button" class="secondary liteparse-test-open-btn" style="justify-self:end;align-self:start;font-size:12px"${reachable ? '' : ' disabled'}>&#9654; Test</button>
     </div>
   `;
 }
@@ -938,7 +938,7 @@ function _markitdownRenderCard(data) {
         <div style="font-size:11px;color:var(--text-dim);margin-top:3px">transport: <code>local service</code> &nbsp;&middot;&nbsp; tools: convert_url, convert_upload, markitdown_mcp</div>
         ${errorNote}
       </div>
-      <button type="button" class="secondary markitdown-test-open-btn" style="justify-self:end;align-self:center;font-size:12px"${reachable ? '' : ' disabled'}>&#9654; Test</button>
+      <button type="button" class="secondary markitdown-test-open-btn" style="justify-self:end;align-self:start;font-size:12px"${reachable ? '' : ' disabled'}>&#9654; Test</button>
     </div>
   `;
 }
@@ -1148,7 +1148,7 @@ function _playwrightRenderCard(data) {
     : '';
 
   return `
-    <div class="card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+    <div class="card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:12px">
       <div style="min-width:0">
         <div style="font-weight:700;font-size:13px;margin-bottom:3px">playwright${statusBadge}</div>
         <div style="font-size:11px;color:var(--text-dim);word-break:break-all">${esc(mcpUrl)}</div>
@@ -1156,7 +1156,7 @@ function _playwrightRenderCard(data) {
         <div style="font-size:11px;color:var(--text-dim);margin-top:3px">transport: <code>http</code> &nbsp;&middot;&nbsp; tools: browser_navigate, browser_snapshot, browser_click, browser_take_screenshot</div>
         ${errorNote}
       </div>
-      <button type="button" class="secondary playwright-test-open-btn" style="flex-shrink:0;font-size:12px"${reachable ? '' : ' disabled'}>&#9654; Test</button>
+      <button type="button" class="secondary playwright-test-open-btn" style="justify-self:end;align-self:start;font-size:12px"${reachable ? '' : ' disabled'}>&#9654; Test</button>
     </div>
   `;
 }
@@ -1397,7 +1397,7 @@ function _crawl4aiRenderCard(data) {
     : '';
 
   return `
-    <div class="card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+    <div class="card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:12px">
       <div style="min-width:0">
         <div style="font-weight:700;font-size:13px;margin-bottom:3px">crawl4ai${statusBadge}</div>
         <div style="font-size:11px;color:var(--text-dim);word-break:break-all">${esc(url)}/mcp/sse</div>
@@ -1405,7 +1405,7 @@ function _crawl4aiRenderCard(data) {
         <div style="font-size:11px;color:var(--text-dim);margin-top:3px">transport: <code>sse</code> &nbsp;&middot;&nbsp; tools: md, html, screenshot, pdf, crawl, ask</div>
         ${errorNote}
       </div>
-      <button type="button" class="secondary crawl4ai-test-open-btn" style="flex-shrink:0;font-size:12px"${reachable ? '' : ' disabled'}>&#9654; Test</button>
+      <button type="button" class="secondary crawl4ai-test-open-btn" style="justify-self:end;align-self:start;font-size:12px"${reachable ? '' : ' disabled'}>&#9654; Test</button>
     </div>
   `;
 }
