@@ -74,11 +74,18 @@ const MARKITDOWN_TEST_URLS = [
   'https://jsonplaceholder.typicode.com/todos/1',
 ];
 
+const PLAYWRIGHT_TEST_URLS = [
+  'https://example.com',
+  'https://playwright.dev',
+  'https://www.bbc.co.uk',
+];
+
 // State
 let _mcpCurrentServer = null;
 let _mcpCurrentResults = [];
 let _liteparseLastText = '';
 let _markitdownLastMarkdown = '';
+let _playwrightLastScreenshotB64 = '';
 
 function _mcpServerTestConfig(serverKey) {
   if (serverKey === 'scrapling_mcp') {
@@ -177,6 +184,7 @@ async function _mcpLoadTab() {
     await _scraplingLoadSection();
     await _liteparseLoadSection();
     await _markitdownLoadSection();
+    await _playwrightLoadSection();
     return;
   }
 
@@ -187,6 +195,7 @@ async function _mcpLoadTab() {
     await _scraplingLoadSection();
     await _liteparseLoadSection();
     await _markitdownLoadSection();
+    await _playwrightLoadSection();
     return;
   }
 
@@ -196,6 +205,7 @@ async function _mcpLoadTab() {
   await _scraplingLoadSection();
   await _liteparseLoadSection();
   await _markitdownLoadSection();
+  await _playwrightLoadSection();
 }
 
 function _mcpRenderServerList(servers) {
@@ -1105,6 +1115,243 @@ async function _markitdownRunTools() {
   if (wrap) wrap.style.display = '';
 }
 
+// ── Playwright section ──────────────────────────────────────────────────────
+
+async function _playwrightLoadSection() {
+  const card = document.getElementById('playwright-card');
+  if (!card) return;
+
+  card.innerHTML = '<div style="font-size:12px;color:var(--text-dim);padding:6px 0">Checking Playwright&hellip;</div>';
+
+  let data;
+  try {
+    const r = await apiFetch('/api/v1/playwright/health');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    data = await r.json();
+  } catch (e) {
+    card.innerHTML = _playwrightRenderCard({ reachable: false, error: e.message });
+    return;
+  }
+
+  card.innerHTML = _playwrightRenderCard(data);
+}
+
+function _playwrightRenderCard(data) {
+  const reachable = data.reachable === true;
+  const mcpUrl = data.mcp_url || 'http://localhost:18931/mcp';
+  const statusBadge = reachable
+    ? '<span class="badge badge--green" style="margin-left:6px">Online</span>'
+    : '<span class="badge badge--red" style="margin-left:6px">Offline</span>';
+  const version = data.server_info?.version ? ` v${esc(data.server_info.version)}` : '';
+  const errorNote = !reachable && data.error
+    ? `<div style="font-size:11px;color:var(--accent-warn);margin-top:4px">${esc(data.error)}</div>`
+    : '';
+
+  return `
+    <div class="card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <div style="min-width:0">
+        <div style="font-weight:700;font-size:13px;margin-bottom:3px">playwright${statusBadge}</div>
+        <div style="font-size:11px;color:var(--text-dim);word-break:break-all">${esc(mcpUrl)}</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:4px">Browser automation with CLI-first workflows and a direct local HTTP MCP endpoint.${version}</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:3px">transport: <code>http</code> &nbsp;&middot;&nbsp; tools: browser_navigate, browser_snapshot, browser_click, browser_take_screenshot</div>
+        ${errorNote}
+      </div>
+      <button type="button" class="secondary playwright-test-open-btn" style="flex-shrink:0;font-size:12px"${reachable ? '' : ' disabled'}>&#9654; Test</button>
+    </div>
+  `;
+}
+
+function _playwrightOpenTestModal() {
+  const modal = document.getElementById('playwright-test-modal');
+  if (!modal) return;
+
+  const healthBadge = document.getElementById('playwright-test-health-badge');
+  const urlInput = document.getElementById('playwright-test-url-input');
+  const urlPicker = document.getElementById('playwright-test-url-picker');
+  const urlPickerBtn = document.getElementById('playwright-test-url-picker-btn');
+  const runStatus = document.getElementById('playwright-test-run-status');
+  const resultWrap = document.getElementById('playwright-test-result-wrap');
+  const resultPre = document.getElementById('playwright-test-result-pre');
+  const resultStats = document.getElementById('playwright-test-result-stats');
+  const screenshotStatus = document.getElementById('playwright-test-screenshot-status');
+  const screenshotWrap = document.getElementById('playwright-test-screenshot-wrap');
+  const screenshotImg = document.getElementById('playwright-test-screenshot-img');
+  const screenshotStats = document.getElementById('playwright-test-screenshot-stats');
+  const toolsStatus = document.getElementById('playwright-test-tools-status');
+  const toolsWrap = document.getElementById('playwright-test-tools-wrap');
+
+  if (healthBadge) { healthBadge.textContent = 'Checking…'; healthBadge.className = 'badge'; }
+  if (urlInput) urlInput.value = PLAYWRIGHT_TEST_URLS[0] || '';
+  if (urlPicker) urlPicker.style.display = 'none';
+  if (urlPickerBtn) urlPickerBtn.setAttribute('aria-expanded', 'false');
+  if (runStatus) runStatus.textContent = '';
+  if (resultWrap) resultWrap.style.display = 'none';
+  if (resultPre) resultPre.textContent = '';
+  if (resultStats) resultStats.textContent = '';
+  if (screenshotStatus) screenshotStatus.textContent = '';
+  if (screenshotWrap) screenshotWrap.style.display = 'none';
+  if (screenshotImg) screenshotImg.src = '';
+  if (screenshotStats) screenshotStats.textContent = '';
+  if (toolsStatus) toolsStatus.textContent = '';
+  if (toolsWrap) toolsWrap.style.display = 'none';
+  _playwrightLastScreenshotB64 = '';
+
+  _mcpRenderPresetPicker(urlPicker, PLAYWRIGHT_TEST_URLS, (value) => {
+    if (urlInput) urlInput.value = value;
+    _mcpClosePresetPicker(urlPicker, urlPickerBtn);
+  });
+
+  modal.showModal();
+  _playwrightCheckHealth();
+}
+
+async function _playwrightCheckHealth() {
+  const badge = document.getElementById('playwright-test-health-badge');
+  if (!badge) return;
+  try {
+    const r = await apiFetch('/api/v1/playwright/health');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    if (data.reachable) {
+      const ver = data.server_info?.version ? ` — v${data.server_info.version}` : '';
+      badge.textContent = `OK${ver}`;
+      badge.className = 'badge badge--green';
+    } else {
+      badge.textContent = `Unreachable: ${data.error || 'unknown'}`;
+      badge.className = 'badge badge--red';
+    }
+  } catch (e) {
+    badge.textContent = `Error: ${e.message}`;
+    badge.className = 'badge badge--red';
+  }
+}
+
+async function _playwrightRunProbe() {
+  const urlInput = document.getElementById('playwright-test-url-input');
+  const btn = document.getElementById('playwright-test-run-btn');
+  const status = document.getElementById('playwright-test-run-status');
+  const wrap = document.getElementById('playwright-test-result-wrap');
+  const pre = document.getElementById('playwright-test-result-pre');
+  const stats = document.getElementById('playwright-test-result-stats');
+
+  const url = (urlInput?.value || '').trim() || PLAYWRIGHT_TEST_URLS[0];
+  if (status) status.textContent = 'Running browser probe…';
+  if (wrap) wrap.style.display = 'none';
+  if (pre) pre.textContent = '';
+  if (stats) stats.textContent = '';
+  if (btn) btn.disabled = true;
+
+  let data;
+  try {
+    const r = await apiFetch('/api/v1/playwright/probe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    if (!r.ok) {
+      const err = await r.text().catch(() => `HTTP ${r.status}`);
+      throw new Error(err.length > 120 ? err.slice(0, 120) + '…' : err);
+    }
+    data = await r.json();
+  } catch (e) {
+    if (status) status.textContent = `Error: ${e.message}`;
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  if (btn) btn.disabled = false;
+  if (status) status.textContent = data.ok ? 'Done' : 'Probe returned an error';
+  if (pre) pre.textContent = JSON.stringify({ title: data.title, final_url: data.final_url, http_status: data.http_status, _via: data._via || null }, null, 2);
+  if (stats) stats.textContent = `Title: ${data.title || '(none)'} — final URL: ${data.final_url || url}`;
+  if (wrap) wrap.style.display = '';
+}
+
+async function _playwrightRunScreenshot() {
+  const urlInput = document.getElementById('playwright-test-url-input');
+  const btn = document.getElementById('playwright-test-screenshot-btn');
+  const status = document.getElementById('playwright-test-screenshot-status');
+  const wrap = document.getElementById('playwright-test-screenshot-wrap');
+  const img = document.getElementById('playwright-test-screenshot-img');
+  const stats = document.getElementById('playwright-test-screenshot-stats');
+
+  const url = (urlInput?.value || '').trim() || PLAYWRIGHT_TEST_URLS[0];
+  if (status) status.textContent = 'Capturing…';
+  if (wrap) wrap.style.display = 'none';
+  if (btn) btn.disabled = true;
+
+  let data;
+  try {
+    const r = await apiFetch('/api/v1/playwright/screenshot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    if (!r.ok) {
+      const err = await r.text().catch(() => `HTTP ${r.status}`);
+      throw new Error(err.length > 120 ? err.slice(0, 120) + '…' : err);
+    }
+    data = await r.json();
+  } catch (e) {
+    if (status) status.textContent = `Error: ${e.message}`;
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  if (btn) btn.disabled = false;
+  if (!data.ok || !data.screenshot_b64) {
+    if (status) status.textContent = 'No screenshot data returned';
+    return;
+  }
+
+  if (status) status.textContent = `Done — ${Math.round((data.screenshot_size || 0) / 1024)} KB PNG`;
+  if (img) img.src = `data:image/png;base64,${data.screenshot_b64}`;
+  if (stats) stats.textContent = `${(data.screenshot_size || 0).toLocaleString()} bytes from ${data.final_url || url}`;
+  _playwrightLastScreenshotB64 = data.screenshot_b64;
+  if (wrap) wrap.style.display = '';
+}
+
+async function _playwrightRunTools() {
+  const btn = document.getElementById('playwright-test-tools-btn');
+  const status = document.getElementById('playwright-test-tools-status');
+  const wrap = document.getElementById('playwright-test-tools-wrap');
+  const list = document.getElementById('playwright-test-tools-list');
+
+  if (status) status.textContent = 'Fetching…';
+  if (wrap) wrap.style.display = 'none';
+  if (btn) btn.disabled = true;
+
+  let data;
+  try {
+    const r = await apiFetch('/api/v1/playwright/tools');
+    if (!r.ok) {
+      const err = await r.text().catch(() => `HTTP ${r.status}`);
+      throw new Error(err.length > 120 ? err.slice(0, 120) + '…' : err);
+    }
+    data = await r.json();
+  } catch (e) {
+    if (status) status.textContent = `Error: ${e.message}`;
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  if (btn) btn.disabled = false;
+  const tools = data.tools || [];
+  if (status) status.textContent = `${tools.length} tool${tools.length !== 1 ? 's' : ''} found`;
+  if (list) {
+    if (!tools.length) {
+      list.innerHTML = '<div style="font-size:12px;color:var(--text-dim)">No tools returned.</div>';
+    } else {
+      list.innerHTML = tools.map((t) =>
+        `<div style="padding:5px 8px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius)">` +
+        `<span style="font-weight:700;font-size:12px">${esc(t.name)}</span>` +
+        (t.description ? `<span style="font-size:11px;color:var(--text-dim);margin-left:8px">${esc(t.description)}</span>` : '') +
+        `</div>`
+      ).join('');
+    }
+  }
+  if (wrap) wrap.style.display = '';
+}
+
 // ── Crawl4AI preset URLs ──────────────────────────────────────────────────────
 
 const CRAWL4AI_TEST_URLS = [
@@ -1484,6 +1731,14 @@ function _mcpWireEvents() {
     });
   }
 
+  const playwrightCard = document.getElementById('playwright-card');
+  if (playwrightCard) {
+    playwrightCard.addEventListener('click', (e) => {
+      const btn = e.target.closest('.playwright-test-open-btn');
+      if (btn && !btn.disabled) _playwrightOpenTestModal();
+    });
+  }
+
   // Run Search button
   const runBtn = document.getElementById('mcp-test-run-btn');
   if (runBtn) runBtn.addEventListener('click', _mcpRunSearch);
@@ -1554,6 +1809,21 @@ function _mcpWireEvents() {
 
   const markitdownToolsBtn = document.getElementById('markitdown-test-tools-btn');
   if (markitdownToolsBtn) markitdownToolsBtn.addEventListener('click', _markitdownRunTools);
+
+  const playwrightUrlPickerBtn = document.getElementById('playwright-test-url-picker-btn');
+  const playwrightUrlPicker = document.getElementById('playwright-test-url-picker');
+  if (playwrightUrlPickerBtn && playwrightUrlPicker) {
+    playwrightUrlPickerBtn.addEventListener('click', () => _mcpTogglePresetPicker(playwrightUrlPicker, playwrightUrlPickerBtn));
+  }
+
+  const playwrightRunBtn = document.getElementById('playwright-test-run-btn');
+  if (playwrightRunBtn) playwrightRunBtn.addEventListener('click', _playwrightRunProbe);
+
+  const playwrightScreenshotBtn = document.getElementById('playwright-test-screenshot-btn');
+  if (playwrightScreenshotBtn) playwrightScreenshotBtn.addEventListener('click', _playwrightRunScreenshot);
+
+  const playwrightToolsBtn = document.getElementById('playwright-test-tools-btn');
+  if (playwrightToolsBtn) playwrightToolsBtn.addEventListener('click', _playwrightRunTools);
 
   const liteparseCopyBtn = document.getElementById('liteparse-test-copy-btn');
   if (liteparseCopyBtn) {
@@ -1660,6 +1930,17 @@ function _mcpWireEvents() {
     });
   }
 
+  const playwrightDlPngBtn = document.getElementById('playwright-test-download-png-btn');
+  if (playwrightDlPngBtn) {
+    playwrightDlPngBtn.addEventListener('click', () => {
+      if (!_playwrightLastScreenshotB64) return;
+      const a = document.createElement('a');
+      a.href = `data:image/png;base64,${_playwrightLastScreenshotB64}`;
+      a.download = 'playwright-screenshot.png';
+      a.click();
+    });
+  }
+
   const scraplingCopyBtn = document.getElementById('scrapling-test-copy-btn');
   if (scraplingCopyBtn) {
     scraplingCopyBtn.addEventListener('click', () => {
@@ -1719,6 +2000,12 @@ function _mcpWireEvents() {
     const mBtn    = document.getElementById('markitdown-test-url-picker-btn');
     if (mPicker && mBtn && !mPicker.contains(e.target) && e.target !== mBtn) {
       _mcpClosePresetPicker(mPicker, mBtn);
+    }
+
+    const pPicker = document.getElementById('playwright-test-url-picker');
+    const pBtn = document.getElementById('playwright-test-url-picker-btn');
+    if (pPicker && pBtn && !pPicker.contains(e.target) && e.target !== pBtn) {
+      _mcpClosePresetPicker(pPicker, pBtn);
     }
   });
 
