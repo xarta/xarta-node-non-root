@@ -718,8 +718,10 @@ function _liteparseOpenTestModal() {
   if (urlPicker) urlPicker.style.display = 'none';
   if (urlPickerBtn) urlPickerBtn.setAttribute('aria-expanded', 'false');
   if (formatSelect) formatSelect.value = 'text';
+  const uploadInput = document.getElementById('liteparse-test-file-input');
   const maxPagesInput = document.getElementById('liteparse-test-max-pages');
   const maxCharsInput = document.getElementById('liteparse-test-max-chars');
+  if (uploadInput) uploadInput.value = '';
   if (maxPagesInput) maxPagesInput.value = '';
   if (maxCharsInput) maxCharsInput.value = '';
   if (runStatus) runStatus.textContent = '';
@@ -770,8 +772,10 @@ async function _liteparseRunParse() {
 
   const url = (urlInput?.value || '').trim() || LITEPARSE_TEST_PDFS[0];
   const outputFormat = formatSelect?.value || 'text';
+  const fileInput = document.getElementById('liteparse-test-file-input');
+  const selectedFile = fileInput?.files?.[0] || null;
 
-  if (status) status.textContent = 'Parsing…';
+  if (status) status.textContent = selectedFile ? 'Uploading and parsing…' : 'Parsing…';
   if (wrap) wrap.style.display = 'none';
   if (pre) pre.textContent = '';
   if (stats) stats.textContent = '';
@@ -781,17 +785,34 @@ async function _liteparseRunParse() {
   try {
     const maxPagesRaw = document.getElementById('liteparse-test-max-pages')?.value?.trim();
     const maxCharsRaw = document.getElementById('liteparse-test-max-chars')?.value?.trim();
-    const payload = { url, output_format: outputFormat, no_ocr: true };
-    if (maxPagesRaw) payload.max_pages = Math.max(1, parseInt(maxPagesRaw, 10));
-    if (maxCharsRaw !== undefined && maxCharsRaw !== '') {
-      const c = parseInt(maxCharsRaw, 10);
-      payload.max_chars = c <= 0 ? 10_000_000 : c;
+    let r;
+    if (selectedFile) {
+      const form = new FormData();
+      form.append('file', selectedFile, selectedFile.name || 'upload.pdf');
+      form.append('output_format', outputFormat);
+      form.append('no_ocr', 'true');
+      if (maxPagesRaw) form.append('max_pages', String(Math.max(1, parseInt(maxPagesRaw, 10))));
+      if (maxCharsRaw !== undefined && maxCharsRaw !== '') {
+        const c = parseInt(maxCharsRaw, 10);
+        form.append('max_chars', String(c <= 0 ? 10_000_000 : c));
+      }
+      r = await apiFetch('/api/v1/liteparse/parse-upload', {
+        method: 'POST',
+        body: form,
+      });
+    } else {
+      const payload = { url, output_format: outputFormat, no_ocr: true };
+      if (maxPagesRaw) payload.max_pages = Math.max(1, parseInt(maxPagesRaw, 10));
+      if (maxCharsRaw !== undefined && maxCharsRaw !== '') {
+        const c = parseInt(maxCharsRaw, 10);
+        payload.max_chars = c <= 0 ? 10_000_000 : c;
+      }
+      r = await apiFetch('/api/v1/liteparse/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
     }
-    const r = await apiFetch('/api/v1/liteparse/parse', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
     if (!r.ok) {
       const err = await r.text().catch(() => `HTTP ${r.status}`);
       throw new Error(err.length > 120 ? err.slice(0, 120) + '…' : err);
@@ -808,7 +829,8 @@ async function _liteparseRunParse() {
 
   _liteparseLastText = data.text || '';
   if (pre) pre.textContent = _liteparseLastText || '(no content returned)';
-  if (stats) stats.textContent = `${(data.chars || _liteparseLastText.length).toLocaleString()} chars extracted from ${data.url || data.file_path || url}`;
+  const sourceLabel = data.url || data.file_name || data.file_path || selectedFile?.name || url;
+  if (stats) stats.textContent = `${(data.chars || _liteparseLastText.length).toLocaleString()} chars extracted from ${sourceLabel}`;
   if (wrap) wrap.style.display = '';
 }
 

@@ -1692,6 +1692,11 @@
         <div style="font-size:11px;color:var(--text-dim);margin-top:4px">This runs local document extraction only — no model call is required to parse the PDF.</div>
       </div>
       <div class="field" style="margin-bottom:10px">
+        <label for="liteparse-test-file-input" style="font-size:12px">Or upload a local PDF</label>
+        <input id="liteparse-test-file-input" type="file" accept=".pdf,application/pdf" />
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">If a file is selected it takes precedence over the URL field for this test run.</div>
+      </div>
+      <div class="field" style="margin-bottom:10px">
         <label for="liteparse-test-format-select" style="font-size:12px">Output format</label>
         <select id="liteparse-test-format-select">
           <option value="text">text — plain extracted text</option>
