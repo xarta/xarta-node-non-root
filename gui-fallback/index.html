@@ -1536,19 +1536,52 @@
         <div id="crawl4ai-test-url-picker" style="display:none;margin-top:6px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);max-height:180px;overflow:auto"></div>
         <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Select a preset URL or type your own. The page is fetched headlessly and returned as clean markdown.</div>
       </div>
-      <!-- Run button -->
+      <!-- Run button — markdown crawl -->
       <div style="margin-bottom:14px">
-        <button type="button" id="crawl4ai-test-run-btn" class="secondary">&#9654; Crawl URL</button>
+        <button type="button" id="crawl4ai-test-run-btn" class="secondary">&#9654; Crawl (Markdown)</button>
         <span id="crawl4ai-test-run-status" style="font-size:12px;color:var(--text-dim);margin-left:10px"></span>
       </div>
-      <!-- Result -->
+      <!-- Markdown result -->
       <div id="crawl4ai-test-result-wrap" style="display:none">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
           <p style="font-size:12px;color:var(--text-dim);margin:0">Extracted markdown</p>
           <button type="button" class="secondary" style="font-size:11px;padding:4px 10px" id="crawl4ai-test-copy-btn">&#128203; Copy</button>
         </div>
-        <pre id="crawl4ai-test-result-pre" style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px;font-size:11px;overflow:auto;max-height:280px;white-space:pre-wrap;word-break:break-all"></pre>
+        <pre id="crawl4ai-test-result-pre" style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px;font-size:11px;overflow:auto;max-height:220px;white-space:pre-wrap;word-break:break-all"></pre>
         <div id="crawl4ai-test-result-stats" style="font-size:11px;color:var(--text-dim);margin-top:4px"></div>
+      </div>
+
+      <!-- Screenshot test -->
+      <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:12px">
+        <div style="margin-bottom:10px">
+          <button type="button" id="crawl4ai-test-screenshot-btn" class="secondary">&#128247; Screenshot</button>
+          <span id="crawl4ai-test-screenshot-status" style="font-size:12px;color:var(--text-dim);margin-left:10px"></span>
+        </div>
+        <div id="crawl4ai-test-screenshot-wrap" style="display:none">
+          <img id="crawl4ai-test-screenshot-img" src="" alt="Screenshot" style="max-width:100%;border:1px solid var(--border);border-radius:var(--radius);display:block" />
+          <div id="crawl4ai-test-screenshot-stats" style="font-size:11px;color:var(--text-dim);margin-top:4px"></div>
+        </div>
+      </div>
+
+      <!-- PDF test -->
+      <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
+        <div style="margin-bottom:6px">
+          <button type="button" id="crawl4ai-test-pdf-btn" class="secondary">&#128196; Generate PDF</button>
+          <span id="crawl4ai-test-pdf-status" style="font-size:12px;color:var(--text-dim);margin-left:10px"></span>
+        </div>
+        <div id="crawl4ai-test-pdf-result" style="display:none;font-size:12px;color:var(--text-dim)"></div>
+      </div>
+
+      <!-- MCP schema / tools test -->
+      <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
+        <div style="margin-bottom:8px">
+          <button type="button" id="crawl4ai-test-mcp-btn" class="secondary">&#9881; List MCP Tools</button>
+          <span id="crawl4ai-test-mcp-status" style="font-size:12px;color:var(--text-dim);margin-left:10px"></span>
+        </div>
+        <div id="crawl4ai-test-mcp-wrap" style="display:none">
+          <p style="font-size:12px;color:var(--text-dim);margin:0 0 6px">Tools available from Crawl4AI&rsquo;s own MCP server (/mcp/schema)</p>
+          <div id="crawl4ai-test-mcp-list" style="display:flex;flex-direction:column;gap:4px"></div>
+        </div>
       </div>
     </div>
     <div class="hub-modal-footer">

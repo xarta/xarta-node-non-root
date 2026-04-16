@@ -444,7 +444,7 @@ function _crawl4aiOpenTestModal() {
   const resultPre   = document.getElementById('crawl4ai-test-result-pre');
   const resultStats = document.getElementById('crawl4ai-test-result-stats');
 
-  if (healthBadge) { healthBadge.textContent = 'Checking…'; healthBadge.className = 'badge'; }
+  if (healthBadge) { healthBadge.textContent = 'Checking\u2026'; healthBadge.className = 'badge'; }
   if (urlInput) urlInput.value = CRAWL4AI_TEST_URLS[0] || '';
   if (urlPicker) urlPicker.style.display = 'none';
   if (urlPickerBtn) urlPickerBtn.setAttribute('aria-expanded', 'false');
@@ -452,6 +452,26 @@ function _crawl4aiOpenTestModal() {
   if (resultWrap) resultWrap.style.display = 'none';
   if (resultPre) resultPre.textContent = '';
   if (resultStats) resultStats.textContent = '';
+
+  // Reset screenshot section
+  const ssStatus = document.getElementById('crawl4ai-test-screenshot-status');
+  const ssWrap   = document.getElementById('crawl4ai-test-screenshot-wrap');
+  const ssImg    = document.getElementById('crawl4ai-test-screenshot-img');
+  if (ssStatus) ssStatus.textContent = '';
+  if (ssWrap) ssWrap.style.display = 'none';
+  if (ssImg) ssImg.src = '';
+
+  // Reset PDF section
+  const pdfStatus = document.getElementById('crawl4ai-test-pdf-status');
+  const pdfResult = document.getElementById('crawl4ai-test-pdf-result');
+  if (pdfStatus) pdfStatus.textContent = '';
+  if (pdfResult) { pdfResult.style.display = 'none'; pdfResult.textContent = ''; }
+
+  // Reset MCP schema section
+  const mcpStatus = document.getElementById('crawl4ai-test-mcp-status');
+  const mcpWrap   = document.getElementById('crawl4ai-test-mcp-wrap');
+  if (mcpStatus) mcpStatus.textContent = '';
+  if (mcpWrap) mcpWrap.style.display = 'none';
 
   _mcpRenderPresetPicker(urlPicker, CRAWL4AI_TEST_URLS, (value) => {
     if (urlInput) urlInput.value = value;
@@ -532,6 +552,144 @@ async function _crawl4aiRunCrawl() {
   if (resultWrap) resultWrap.style.display = '';
 }
 
+// ── Crawl4AI Screenshot Test ─────────────────────────────────────────────────
+
+async function _crawl4aiRunScreenshot() {
+  const urlInput  = document.getElementById('crawl4ai-test-url-input');
+  const btn       = document.getElementById('crawl4ai-test-screenshot-btn');
+  const status    = document.getElementById('crawl4ai-test-screenshot-status');
+  const wrap      = document.getElementById('crawl4ai-test-screenshot-wrap');
+  const img       = document.getElementById('crawl4ai-test-screenshot-img');
+  const stats     = document.getElementById('crawl4ai-test-screenshot-stats');
+
+  const url = (urlInput?.value || '').trim() || CRAWL4AI_TEST_URLS[0];
+  if (status) status.textContent = 'Capturing\u2026 (may take 10\u201320\u00a0s)';
+  if (wrap) wrap.style.display = 'none';
+  if (btn) btn.disabled = true;
+
+  let data;
+  try {
+    const r = await apiFetch('/api/v1/crawl4ai/screenshot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    if (!r.ok) {
+      const err = await r.text().catch(() => `HTTP ${r.status}`);
+      throw new Error(err.length > 120 ? err.slice(0, 120) + '\u2026' : err);
+    }
+    data = await r.json();
+  } catch (e) {
+    if (status) status.textContent = `Error: ${e.message}`;
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  if (btn) btn.disabled = false;
+
+  if (!data.ok || !data.screenshot_b64) {
+    if (status) status.textContent = 'No screenshot data returned';
+    return;
+  }
+
+  const kb = Math.round(data.size_bytes / 1024);
+  if (status) status.textContent = `Done \u2014 ${kb}\u00a0KB PNG`;
+  if (img) img.src = `data:image/png;base64,${data.screenshot_b64}`;
+  if (stats) stats.textContent = `${data.size_bytes.toLocaleString()} bytes decoded from ${data.url || url}`;
+  if (wrap) wrap.style.display = '';
+}
+
+// ── Crawl4AI PDF Test ────────────────────────────────────────────────────────
+
+async function _crawl4aiRunPdf() {
+  const urlInput = document.getElementById('crawl4ai-test-url-input');
+  const btn      = document.getElementById('crawl4ai-test-pdf-btn');
+  const status   = document.getElementById('crawl4ai-test-pdf-status');
+  const result   = document.getElementById('crawl4ai-test-pdf-result');
+
+  const url = (urlInput?.value || '').trim() || CRAWL4AI_TEST_URLS[0];
+  if (status) status.textContent = 'Generating\u2026 (may take 10\u201320\u00a0s)';
+  if (result) result.style.display = 'none';
+  if (btn) btn.disabled = true;
+
+  let data;
+  try {
+    const r = await apiFetch('/api/v1/crawl4ai/pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    if (!r.ok) {
+      const err = await r.text().catch(() => `HTTP ${r.status}`);
+      throw new Error(err.length > 120 ? err.slice(0, 120) + '\u2026' : err);
+    }
+    data = await r.json();
+  } catch (e) {
+    if (status) status.textContent = `Error: ${e.message}`;
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  if (btn) btn.disabled = false;
+
+  if (!data.ok) {
+    if (status) status.textContent = 'PDF generation failed';
+    return;
+  }
+
+  const kb = Math.round(data.size_bytes / 1024);
+  if (status) status.textContent = `Done \u2014 ${kb}\u00a0KB`;
+  if (result) {
+    result.textContent = `PDF generated: ${data.size_bytes.toLocaleString()} bytes for ${data.url || url}`;
+    result.style.display = '';
+  }
+}
+
+// ── Crawl4AI MCP Schema Test ─────────────────────────────────────────────────
+
+async function _crawl4aiRunMcpSchema() {
+  const btn    = document.getElementById('crawl4ai-test-mcp-btn');
+  const status = document.getElementById('crawl4ai-test-mcp-status');
+  const wrap   = document.getElementById('crawl4ai-test-mcp-wrap');
+  const list   = document.getElementById('crawl4ai-test-mcp-list');
+
+  if (status) status.textContent = 'Fetching\u2026';
+  if (wrap) wrap.style.display = 'none';
+  if (btn) btn.disabled = true;
+
+  let data;
+  try {
+    const r = await apiFetch('/api/v1/crawl4ai/mcp-schema');
+    if (!r.ok) {
+      const err = await r.text().catch(() => `HTTP ${r.status}`);
+      throw new Error(err.length > 120 ? err.slice(0, 120) + '\u2026' : err);
+    }
+    data = await r.json();
+  } catch (e) {
+    if (status) status.textContent = `Error: ${e.message}`;
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  if (btn) btn.disabled = false;
+
+  const tools = data.tools || [];
+  if (status) status.textContent = `${tools.length} tool${tools.length !== 1 ? 's' : ''} found`;
+
+  if (list) {
+    if (!tools.length) {
+      list.innerHTML = '<div style="font-size:12px;color:var(--text-dim)">No tools listed in schema.</div>';
+    } else {
+      list.innerHTML = tools.map((t) =>
+        `<div style="padding:5px 8px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius)">` +
+        `<span style="font-weight:700;font-size:12px">${esc(t.name)}</span>` +
+        (t.description ? `<span style="font-size:11px;color:var(--text-dim);margin-left:8px">${esc(t.description)}</span>` : '') +
+        `</div>`
+      ).join('');
+    }
+  }
+  if (wrap) wrap.style.display = '';
+}
 
 
 function _mcpWireEvents() {
@@ -581,6 +739,15 @@ function _mcpWireEvents() {
 
   const crawl4aiRunBtn = document.getElementById('crawl4ai-test-run-btn');
   if (crawl4aiRunBtn) crawl4aiRunBtn.addEventListener('click', _crawl4aiRunCrawl);
+
+  const crawl4aiScreenshotBtn = document.getElementById('crawl4ai-test-screenshot-btn');
+  if (crawl4aiScreenshotBtn) crawl4aiScreenshotBtn.addEventListener('click', _crawl4aiRunScreenshot);
+
+  const crawl4aiPdfBtn = document.getElementById('crawl4ai-test-pdf-btn');
+  if (crawl4aiPdfBtn) crawl4aiPdfBtn.addEventListener('click', _crawl4aiRunPdf);
+
+  const crawl4aiMcpBtn = document.getElementById('crawl4ai-test-mcp-btn');
+  if (crawl4aiMcpBtn) crawl4aiMcpBtn.addEventListener('click', _crawl4aiRunMcpSchema);
 
   const crawl4aiCopyBtn = document.getElementById('crawl4ai-test-copy-btn');
   if (crawl4aiCopyBtn) {
