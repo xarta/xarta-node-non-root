@@ -1372,6 +1372,153 @@
     </div>
   </section>
 
+  <!-- MCP Servers -->
+  <section id="tab-mcp-servers" class="tab-panel">
+    <div id="s25-lift-mcp-servers" class="s25-lift-block" data-for-tab="mcp-servers">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Node-local LiteLLM MCP server connections. List is fetched live from the LiteLLM stack — never hardcoded.</p>
+    </div>
+    <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
+    <div class="tab-scroll-shell">
+      <div id="mcp-stack-absent" style="display:none;padding:20px 0;color:var(--text-dim);font-size:13px">
+        <span style="opacity:.5">&#9675;</span> LiteLLM stack not present on this node.
+      </div>
+      <div id="mcp-stack-present" style="display:none">
+        <div id="mcp-servers-list" style="display:flex;flex-direction:column;gap:10px;"></div>
+      </div>
+      <p id="mcp-servers-error" class="error-msg" hidden></p>
+    </div><!-- /tab-scroll-shell -->
+  </section>
+
+  <!-- Prompt Injection -->
+  <section id="tab-prompt-injection" class="tab-panel">
+    <div id="s25-lift-prompt-injection" class="s25-lift-block" data-for-tab="prompt-injection">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Real-time guardrail status and canary-based injection test runner for the node-local LiteLLM stack.</p>
+    </div>
+    <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
+    <div class="tab-scroll-shell">
+      <div id="pi-stack-absent" style="display:none;padding:20px 0;color:var(--text-dim);font-size:13px">
+        <span style="opacity:.5">&#9675;</span> LiteLLM stack not present on this node.
+      </div>
+      <div id="pi-stack-present" style="display:none">
+        <!-- Guardrail Status -->
+        <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);margin:0 0 8px">Guardrail Status</h3>
+        <div id="pi-guardrail-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:18px;"></div>
+        <p id="pi-guardrail-warning" style="display:none;font-size:12px;color:var(--accent-warn);margin:0 0 16px;padding:8px 10px;background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.25);border-radius:var(--radius)">
+          &#9888; One or more guardrails are in <strong>logging_only</strong> mode — they log but do NOT block injections.
+        </p>
+
+        <!-- Injection Test Runner -->
+        <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);margin:0 0 8px">Injection Test Runner</h3>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+          <button type="button" class="secondary" id="pi-run-tests-btn">&#9654; Run Injection Tests</button>
+          <span id="pi-test-status" style="font-size:12px;color:var(--text-dim)"></span>
+        </div>
+        <div id="pi-results-table" style="display:none">
+          <table style="width:100%;font-size:12px;border-collapse:collapse">
+            <thead>
+              <tr style="border-bottom:1px solid var(--border)">
+                <th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600">Test Vector</th>
+                <th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;width:140px">Result</th>
+                <th style="width:40px"></th>
+              </tr>
+            </thead>
+            <tbody id="pi-results-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <p id="pi-error" class="error-msg" hidden></p>
+    </div><!-- /tab-scroll-shell -->
+  </section>
+
+  <!-- MCP Test Modal (hub-modal) -->
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="mcp-test-modal" style="width:min(680px,96vw);max-width:96vw">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">TEST</span>
+        <span class="hub-dialog-title-text" id="mcp-test-modal-title">Test MCP Server</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body">
+      <!-- MCP endpoint status (probes /mcp/ tools/list directly — no model involved) -->
+      <div style="margin-bottom:14px">
+        <span style="font-size:12px;color:var(--text-dim);font-weight:600;text-transform:uppercase;letter-spacing:.5px">MCP endpoint</span>
+        <span id="mcp-test-model-badge" class="badge" style="margin-left:8px">Checking&hellip;</span>
+        <span style="font-size:11px;color:var(--text-dim);margin-left:6px">via&nbsp;POST&nbsp;/mcp/&nbsp;(JSON-RPC&nbsp;tools/list)</span>
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label for="mcp-test-query-input" style="font-size:12px">Test query</label>
+        <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start">
+          <input id="mcp-test-query-input" type="text" placeholder="Select or type a search query" />
+          <button type="button" id="mcp-test-query-picker-btn" class="secondary" style="min-width:44px;padding:6px 12px" aria-haspopup="listbox" aria-expanded="false" aria-label="Open query presets">▼</button>
+        </div>
+        <div id="mcp-test-query-picker" style="display:none;margin-top:6px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);max-height:180px;overflow:auto"></div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Combo-style input: pick a preset from suggestions or type your own query.</div>
+      </div>
+      <div id="mcp-test-query-guidance" style="display:none;margin:-4px 0 12px;font-size:12px;color:var(--text-dim)"></div>
+      <div class="field" style="margin-bottom:10px">
+        <label for="mcp-test-category-input" style="font-size:12px">Category (optional)</label>
+        <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start">
+          <input id="mcp-test-category-input" type="text" placeholder="Select or type a category, or leave blank for default behavior" />
+          <button type="button" id="mcp-test-category-picker-btn" class="secondary" style="min-width:44px;padding:6px 12px" aria-haspopup="listbox" aria-expanded="false" aria-label="Open category presets">▼</button>
+        </div>
+        <div id="mcp-test-category-picker" style="display:none;margin-top:6px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);max-height:180px;overflow:auto"></div>
+        <div id="mcp-test-category-guidance" style="font-size:11px;color:var(--text-dim);margin-top:4px">Passed as <code>arguments.category</code> to the MCP tool. Use this to narrow the search domain. Example: <code>news</code> for current events, <code>images</code> for image-heavy results, or leave blank for SearXNG default behavior.</div>
+      </div>
+      <div style="margin-bottom:14px">
+        <button type="button" id="mcp-test-run-btn" class="secondary">&#9654; Run Search</button>
+        <span id="mcp-test-run-status" style="font-size:12px;color:var(--text-dim);margin-left:10px"></span>
+      </div>
+      <div id="mcp-test-guardrail-status" style="display:none;margin:-6px 0 12px;font-size:12px;color:var(--text-dim)"></div>
+      <!-- Results listbox -->
+      <div id="mcp-test-results-wrap" style="display:none">
+        <p style="font-size:12px;color:var(--text-dim);margin:0 0 6px">Results — click a row to inspect</p>
+        <div id="mcp-test-results-list" style="border:1px solid var(--border);border-radius:var(--radius);overflow-y:auto;max-height:220px;"></div>
+      </div>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Close</button>
+    </div>
+  </dialog>
+
+  <!-- MCP Result Detail Modal (stacked) -->
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="mcp-result-detail-modal" style="width:min(640px,96vw);max-width:96vw">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">JSON</span>
+        <span class="hub-dialog-title-text">Result Detail</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:6px">
+        <button type="button" class="secondary" style="font-size:11px;padding:4px 10px" id="mcp-result-copy-btn">&#128203; Copy</button>
+      </div>
+      <pre id="mcp-result-detail-pre" style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px;font-size:11px;overflow:auto;max-height:380px;white-space:pre-wrap;word-break:break-all"></pre>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Close</button>
+    </div>
+  </dialog>
+
+  <!-- Prompt Injection: More Info Modal -->
+  <dialog class="hub-modal hub-dialog" data-tone="warn" id="pi-breach-info-modal" style="width:min(680px,96vw);max-width:96vw">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">BREACH</span>
+        <span class="hub-dialog-title-text" id="pi-breach-modal-title">Injection Breach Analysis</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body">
+      <p id="pi-breach-modal-loading" style="color:var(--text-dim);font-size:13px">Consulting AI analyst&hellip;</p>
+      <div id="pi-breach-modal-content" style="font-size:13px;line-height:1.6;white-space:pre-wrap;display:none"></div>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Close</button>
+    </div>
+  </dialog>
+
   <dialog class="hub-modal hub-dialog" data-tone="info" id="em-cols-modal">
     <div class="hub-modal-header">
       <h2 class="hub-modal-title">
@@ -2604,6 +2751,8 @@
 <script src="js/settings/nav-items.js?v={{$assetVersion}}"></script>
 <script src="js/settings/form-controls.js?v={{$assetVersion}}"></script>
 <script src="js/settings/embed-menu.js?v={{$assetVersion}}"></script>
+<script src="js/settings/mcp-servers.js?v={{$assetVersion}}"></script>
+<script src="js/settings/prompt-injection.js?v={{$assetVersion}}"></script>
 <script src="js/probes/pfsense.js?v={{$assetVersion}}"></script>
 <script src="js/probes/proxmox-config.js?v={{$assetVersion}}"></script>
 <script src="js/probes/vlans.js?v={{$assetVersion}}"></script>

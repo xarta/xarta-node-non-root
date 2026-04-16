@@ -280,6 +280,8 @@ function switchTab(tab) {
   if (tab === 'form-controls' && !_fcItems.length)         loadFormControls();
   if (tab === 'embed-menu'      && !_embedMenuItems.length)   loadEmbedMenuItems();
   if (tab === 'embed-menu-grid') { if (!_embedMenuItems.length) loadEmbedMenuItems(); else renderEmGrid(); }
+  if (tab === 'mcp-servers')    { if (typeof _mcpLoadTab === 'function')  _mcpLoadTab(); }
+  if (tab === 'prompt-injection') { if (typeof _piLoadTab === 'function') _piLoadTab(); }
   if (tab === 'bookmarks-main'  && !_bookmarks.length)  loadBookmarks();
   if (tab === 'bookmarks-history')                       loadVisits();
   if (tab === 'bookmarks-embeddings')                    _bmLoadEmbedCfg();
