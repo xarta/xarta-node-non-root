@@ -68,10 +68,17 @@ const LITEPARSE_TEST_PDFS = [
   'https://www.orimi.com/pdf-test.pdf',
 ];
 
+const MARKITDOWN_TEST_URLS = [
+  'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+  'https://example.com',
+  'https://jsonplaceholder.typicode.com/todos/1',
+];
+
 // State
 let _mcpCurrentServer = null;
 let _mcpCurrentResults = [];
 let _liteparseLastText = '';
+let _markitdownLastMarkdown = '';
 
 function _mcpServerTestConfig(serverKey) {
   if (serverKey === 'scrapling_mcp') {
@@ -169,6 +176,7 @@ async function _mcpLoadTab() {
     await _crawl4aiLoadSection();
     await _scraplingLoadSection();
     await _liteparseLoadSection();
+    await _markitdownLoadSection();
     return;
   }
 
@@ -178,6 +186,7 @@ async function _mcpLoadTab() {
     await _crawl4aiLoadSection();
     await _scraplingLoadSection();
     await _liteparseLoadSection();
+    await _markitdownLoadSection();
     return;
   }
 
@@ -186,6 +195,7 @@ async function _mcpLoadTab() {
   await _crawl4aiLoadSection();
   await _scraplingLoadSection();
   await _liteparseLoadSection();
+  await _markitdownLoadSection();
 }
 
 function _mcpRenderServerList(servers) {
@@ -877,6 +887,224 @@ async function _liteparseRunTools() {
   if (wrap) wrap.style.display = '';
 }
 
+// ── MarkItDown section ───────────────────────────────────────────────────────
+
+async function _markitdownLoadSection() {
+  const card = document.getElementById('markitdown-card');
+  if (!card) return;
+
+  card.innerHTML = '<div style="font-size:12px;color:var(--text-dim);padding:6px 0">Checking MarkItDown&hellip;</div>';
+
+  let data;
+  try {
+    const r = await apiFetch('/api/v1/markitdown/health');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    data = await r.json();
+  } catch (e) {
+    card.innerHTML = _markitdownRenderCard({ reachable: false, error: e.message });
+    return;
+  }
+
+  card.innerHTML = _markitdownRenderCard(data);
+}
+
+function _markitdownRenderCard(data) {
+  const reachable = data.reachable === true;
+  const url = data.url || 'http://localhost:19000';
+  const statusBadge = reachable
+    ? '<span class="badge badge--green" style="margin-left:6px">Online</span>'
+    : '<span class="badge badge--red" style="margin-left:6px">Offline</span>';
+  const version = data.version ? ` v${esc(data.version)}` : '';
+  const errorNote = !reachable && data.error
+    ? `<div style="font-size:11px;color:var(--accent-warn);margin-top:4px">${esc(data.error)}</div>`
+    : '';
+
+  return `
+    <div class="card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <div style="min-width:0">
+        <div style="font-weight:700;font-size:13px;margin-bottom:3px">markitdown${statusBadge}</div>
+        <div style="font-size:11px;color:var(--text-dim);word-break:break-all">${esc(url)}</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:4px">Broad document-to-Markdown converter for PDF, Office, HTML, CSV, JSON, XML, EPUB, ZIP, and more.${version} OCR-ready plugin support and a standalone Claude Code MCP wrapper are available on this node.</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:3px">transport: <code>local service</code> &nbsp;&middot;&nbsp; tools: convert_url, convert_upload, markitdown_mcp</div>
+        ${errorNote}
+      </div>
+      <button type="button" class="secondary markitdown-test-open-btn" style="flex-shrink:0;font-size:12px"${reachable ? '' : ' disabled'}>&#9654; Test</button>
+    </div>
+  `;
+}
+
+function _markitdownOpenTestModal() {
+  const modal = document.getElementById('markitdown-test-modal');
+  if (!modal) return;
+
+  const healthBadge = document.getElementById('markitdown-test-health-badge');
+  const urlInput = document.getElementById('markitdown-test-url-input');
+  const urlPicker = document.getElementById('markitdown-test-url-picker');
+  const urlPickerBtn = document.getElementById('markitdown-test-url-picker-btn');
+  const runStatus = document.getElementById('markitdown-test-run-status');
+  const resultWrap = document.getElementById('markitdown-test-result-wrap');
+  const resultPre = document.getElementById('markitdown-test-result-pre');
+  const resultStats = document.getElementById('markitdown-test-result-stats');
+  const toolsStatus = document.getElementById('markitdown-test-tools-status');
+  const toolsWrap = document.getElementById('markitdown-test-tools-wrap');
+  const fileInput = document.getElementById('markitdown-test-file-input');
+  const maxCharsInput = document.getElementById('markitdown-test-max-chars');
+
+  if (healthBadge) { healthBadge.textContent = 'Checking…'; healthBadge.className = 'badge'; }
+  if (urlInput) urlInput.value = MARKITDOWN_TEST_URLS[0] || '';
+  if (urlPicker) urlPicker.style.display = 'none';
+  if (urlPickerBtn) urlPickerBtn.setAttribute('aria-expanded', 'false');
+  if (fileInput) fileInput.value = '';
+  if (maxCharsInput) maxCharsInput.value = '';
+  if (runStatus) runStatus.textContent = '';
+  if (resultWrap) resultWrap.style.display = 'none';
+  if (resultPre) resultPre.textContent = '';
+  if (resultStats) resultStats.textContent = '';
+  if (toolsStatus) toolsStatus.textContent = '';
+  if (toolsWrap) toolsWrap.style.display = 'none';
+  _markitdownLastMarkdown = '';
+
+  _mcpRenderPresetPicker(urlPicker, MARKITDOWN_TEST_URLS, (value) => {
+    if (urlInput) urlInput.value = value;
+    _mcpClosePresetPicker(urlPicker, urlPickerBtn);
+  });
+
+  modal.showModal();
+  _markitdownCheckHealth();
+}
+
+async function _markitdownCheckHealth() {
+  const badge = document.getElementById('markitdown-test-health-badge');
+  if (!badge) return;
+  try {
+    const r = await apiFetch('/api/v1/markitdown/health');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    if (data.reachable) {
+      const ver = data.version ? ` — v${data.version}` : '';
+      badge.textContent = `OK${ver}`;
+      badge.className = 'badge badge--green';
+    } else {
+      badge.textContent = `Unreachable: ${data.error || 'unknown'}`;
+      badge.className = 'badge badge--red';
+    }
+  } catch (e) {
+    badge.textContent = `Error: ${e.message}`;
+    badge.className = 'badge badge--red';
+  }
+}
+
+async function _markitdownRunConvert() {
+  const urlInput = document.getElementById('markitdown-test-url-input');
+  const btn = document.getElementById('markitdown-test-run-btn');
+  const status = document.getElementById('markitdown-test-run-status');
+  const wrap = document.getElementById('markitdown-test-result-wrap');
+  const pre = document.getElementById('markitdown-test-result-pre');
+  const stats = document.getElementById('markitdown-test-result-stats');
+  const fileInput = document.getElementById('markitdown-test-file-input');
+  const selectedFile = fileInput?.files?.[0] || null;
+  const maxCharsRaw = document.getElementById('markitdown-test-max-chars')?.value?.trim();
+  const url = (urlInput?.value || '').trim() || MARKITDOWN_TEST_URLS[0];
+
+  if (status) status.textContent = selectedFile ? 'Uploading and converting…' : 'Converting…';
+  if (wrap) wrap.style.display = 'none';
+  if (pre) pre.textContent = '';
+  if (stats) stats.textContent = '';
+  if (btn) btn.disabled = true;
+
+  let data;
+  try {
+    let r;
+    if (selectedFile) {
+      const form = new FormData();
+      form.append('file', selectedFile, selectedFile.name || 'upload.bin');
+      if (maxCharsRaw !== undefined && maxCharsRaw !== '') {
+        const c = parseInt(maxCharsRaw, 10);
+        form.append('max_chars', String(Number.isFinite(c) ? c : 0));
+      }
+      r = await apiFetch('/api/v1/markitdown/convert-upload', {
+        method: 'POST',
+        body: form,
+      });
+    } else {
+      const payload = { url };
+      if (maxCharsRaw !== undefined && maxCharsRaw !== '') {
+        const c = parseInt(maxCharsRaw, 10);
+        payload.max_chars = Number.isFinite(c) ? c : 0;
+      }
+      r = await apiFetch('/api/v1/markitdown/convert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    }
+    if (!r.ok) {
+      const err = await r.text().catch(() => `HTTP ${r.status}`);
+      throw new Error(err.length > 120 ? err.slice(0, 120) + '…' : err);
+    }
+    data = await r.json();
+  } catch (e) {
+    if (status) status.textContent = `Error: ${e.message}`;
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  if (btn) btn.disabled = false;
+  if (status) status.textContent = data.ok ? 'Done' : 'Convert returned an error';
+
+  _markitdownLastMarkdown = data.markdown || '';
+  if (pre) pre.textContent = _markitdownLastMarkdown || '(no markdown returned)';
+  const sourceLabel = data.source || selectedFile?.name || url;
+  const fullChars = data.full_chars || _markitdownLastMarkdown.length;
+  const shownChars = data.chars || _markitdownLastMarkdown.length;
+  const truncNote = data.truncated ? ` (preview capped from ${fullChars.toLocaleString()} total chars)` : '';
+  if (stats) stats.textContent = `${shownChars.toLocaleString()} chars from ${sourceLabel}${truncNote}`;
+  if (wrap) wrap.style.display = '';
+}
+
+async function _markitdownRunTools() {
+  const btn = document.getElementById('markitdown-test-tools-btn');
+  const status = document.getElementById('markitdown-test-tools-status');
+  const wrap = document.getElementById('markitdown-test-tools-wrap');
+  const list = document.getElementById('markitdown-test-tools-list');
+
+  if (status) status.textContent = 'Fetching…';
+  if (wrap) wrap.style.display = 'none';
+  if (btn) btn.disabled = true;
+
+  let data;
+  try {
+    const r = await apiFetch('/api/v1/markitdown/tools');
+    if (!r.ok) {
+      const err = await r.text().catch(() => `HTTP ${r.status}`);
+      throw new Error(err.length > 120 ? err.slice(0, 120) + '…' : err);
+    }
+    data = await r.json();
+  } catch (e) {
+    if (status) status.textContent = `Error: ${e.message}`;
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  if (btn) btn.disabled = false;
+
+  const tools = data.tools || [];
+  if (status) status.textContent = `${tools.length} tool${tools.length !== 1 ? 's' : ''} found`;
+  if (list) {
+    if (!tools.length) {
+      list.innerHTML = '<div style="font-size:12px;color:var(--text-dim)">No tools returned.</div>';
+    } else {
+      list.innerHTML = tools.map((t) =>
+        `<div style="padding:5px 8px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius)">` +
+        `<span style="font-weight:700;font-size:12px">${esc(t.name)}</span>` +
+        (t.description ? `<span style="font-size:11px;color:var(--text-dim);margin-left:8px">${esc(t.description)}</span>` : '') +
+        `</div>`
+      ).join('');
+    }
+  }
+  if (wrap) wrap.style.display = '';
+}
+
 // ── Crawl4AI preset URLs ──────────────────────────────────────────────────────
 
 const CRAWL4AI_TEST_URLS = [
@@ -1247,6 +1475,15 @@ function _mcpWireEvents() {
     });
   }
 
+  // MarkItDown [Test] button (delegated on markitdown-card)
+  const markitdownCard = document.getElementById('markitdown-card');
+  if (markitdownCard) {
+    markitdownCard.addEventListener('click', (e) => {
+      const btn = e.target.closest('.markitdown-test-open-btn');
+      if (btn && !btn.disabled) _markitdownOpenTestModal();
+    });
+  }
+
   // Run Search button
   const runBtn = document.getElementById('mcp-test-run-btn');
   if (runBtn) runBtn.addEventListener('click', _mcpRunSearch);
@@ -1306,6 +1543,18 @@ function _mcpWireEvents() {
   const liteparseToolsBtn = document.getElementById('liteparse-test-tools-btn');
   if (liteparseToolsBtn) liteparseToolsBtn.addEventListener('click', _liteparseRunTools);
 
+  const markitdownUrlPickerBtn = document.getElementById('markitdown-test-url-picker-btn');
+  const markitdownUrlPicker = document.getElementById('markitdown-test-url-picker');
+  if (markitdownUrlPickerBtn && markitdownUrlPicker) {
+    markitdownUrlPickerBtn.addEventListener('click', () => _mcpTogglePresetPicker(markitdownUrlPicker, markitdownUrlPickerBtn));
+  }
+
+  const markitdownRunBtn = document.getElementById('markitdown-test-run-btn');
+  if (markitdownRunBtn) markitdownRunBtn.addEventListener('click', _markitdownRunConvert);
+
+  const markitdownToolsBtn = document.getElementById('markitdown-test-tools-btn');
+  if (markitdownToolsBtn) markitdownToolsBtn.addEventListener('click', _markitdownRunTools);
+
   const liteparseCopyBtn = document.getElementById('liteparse-test-copy-btn');
   if (liteparseCopyBtn) {
     liteparseCopyBtn.addEventListener('click', () => {
@@ -1330,6 +1579,32 @@ function _mcpWireEvents() {
       const a = document.createElement('a');
       a.href = objUrl;
       a.download = `liteparse-output.${ext}`;
+      a.click();
+      URL.revokeObjectURL(objUrl);
+    });
+  }
+
+  const markitdownCopyBtn = document.getElementById('markitdown-test-copy-btn');
+  if (markitdownCopyBtn) {
+    markitdownCopyBtn.addEventListener('click', () => {
+      if (_markitdownLastMarkdown && navigator.clipboard) {
+        navigator.clipboard.writeText(_markitdownLastMarkdown).then(() => {
+          markitdownCopyBtn.textContent = '✓ Copied';
+          setTimeout(() => { markitdownCopyBtn.innerHTML = '&#128203; Copy'; }, 1500);
+        }).catch(() => {});
+      }
+    });
+  }
+
+  const markitdownDlBtn = document.getElementById('markitdown-test-download-md-btn');
+  if (markitdownDlBtn) {
+    markitdownDlBtn.addEventListener('click', () => {
+      if (!_markitdownLastMarkdown) return;
+      const blob = new Blob([_markitdownLastMarkdown], { type: 'text/markdown' });
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.download = 'markitdown-output.md';
       a.click();
       URL.revokeObjectURL(objUrl);
     });
@@ -1437,6 +1712,13 @@ function _mcpWireEvents() {
     const sBtn    = document.getElementById('scrapling-test-url-picker-btn');
     if (sPicker && sBtn && !sPicker.contains(e.target) && e.target !== sBtn) {
       _mcpClosePresetPicker(sPicker, sBtn);
+    }
+
+    // Close markitdown URL picker on outside click
+    const mPicker = document.getElementById('markitdown-test-url-picker');
+    const mBtn    = document.getElementById('markitdown-test-url-picker-btn');
+    if (mPicker && mBtn && !mPicker.contains(e.target) && e.target !== mBtn) {
+      _mcpClosePresetPicker(mPicker, mBtn);
     }
   });
 

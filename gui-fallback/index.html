@@ -1396,6 +1396,7 @@
         <div id="crawl4ai-card"></div>
         <div id="scrapling-card" style="margin-top:10px"></div>
         <div id="liteparse-card" style="margin-top:10px"></div>
+        <div id="markitdown-card" style="margin-top:10px"></div>
       </div>
     </div><!-- /tab-scroll-shell -->
   </section>
@@ -1739,6 +1740,70 @@
         <div id="liteparse-test-tools-wrap" style="display:none">
           <p style="font-size:12px;color:var(--text-dim);margin:0 0 6px">Standalone LiteParse capabilities exposed on this node</p>
           <div id="liteparse-test-tools-list" style="display:flex;flex-direction:column;gap:4px"></div>
+        </div>
+      </div>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Close</button>
+    </div>
+  </dialog>
+
+  <!-- MarkItDown Test Modal -->
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="markitdown-test-modal" style="width:min(700px,96vw);max-width:96vw">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">MD</span>
+        <span class="hub-dialog-title-text">Test MarkItDown</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body">
+      <div style="margin-bottom:14px">
+        <span style="font-size:12px;color:var(--text-dim);font-weight:600;text-transform:uppercase;letter-spacing:.5px">MarkItDown endpoint</span>
+        <span id="markitdown-test-health-badge" class="badge" style="margin-left:8px">Checking&hellip;</span>
+        <span style="font-size:11px;color:var(--text-dim);margin-left:6px">GET&nbsp;/health</span>
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label for="markitdown-test-url-input" style="font-size:12px">Document or page URL</label>
+        <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start">
+          <input id="markitdown-test-url-input" type="text" placeholder="Enter or select a URL" />
+          <button type="button" id="markitdown-test-url-picker-btn" class="secondary" style="min-width:44px;padding:6px 12px" aria-haspopup="listbox" aria-expanded="false" aria-label="Open URL presets">&#9660;</button>
+        </div>
+        <div id="markitdown-test-url-picker" style="display:none;margin-top:6px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);max-height:180px;overflow:auto"></div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Use this for remote PDFs, Office documents, HTML pages, JSON, CSV, XML, and similar sources.</div>
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label for="markitdown-test-file-input" style="font-size:12px">Or upload a local document</label>
+        <input id="markitdown-test-file-input" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.html,.htm,.txt,.csv,.json,.xml,.epub" />
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">If a file is selected it takes precedence over the URL field for this test run.</div>
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label for="markitdown-test-max-chars" style="font-size:12px">Max output chars <span style="font-weight:normal;font-size:11px;color:var(--text-dim)">(blank = service default, 0 = no limit)</span></label>
+        <input id="markitdown-test-max-chars" type="number" min="0" step="1000" placeholder="e.g. 50000" />
+      </div>
+      <div style="margin-bottom:14px">
+        <button type="button" id="markitdown-test-run-btn" class="secondary">&#9654; Convert to Markdown</button>
+        <span id="markitdown-test-run-status" style="font-size:12px;color:var(--text-dim);margin-left:10px"></span>
+      </div>
+      <div id="markitdown-test-result-wrap" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px;flex-wrap:wrap">
+          <p style="font-size:12px;color:var(--text-dim);margin:0">Converted Markdown</p>
+          <div style="display:flex;gap:8px">
+            <button type="button" class="secondary" style="font-size:11px;padding:4px 10px" id="markitdown-test-copy-btn">&#128203; Copy</button>
+            <button type="button" class="secondary" style="font-size:11px;padding:4px 10px" id="markitdown-test-download-md-btn">&#8595; .md</button>
+          </div>
+        </div>
+        <pre id="markitdown-test-result-pre" style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px;font-size:11px;overflow:auto;max-height:220px;white-space:pre-wrap;word-break:break-all"></pre>
+        <div id="markitdown-test-result-stats" style="font-size:11px;color:var(--text-dim);margin-top:4px"></div>
+      </div>
+      <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
+        <div style="margin-bottom:8px">
+          <button type="button" id="markitdown-test-tools-btn" class="secondary">&#9881; List Tools</button>
+          <span id="markitdown-test-tools-status" style="font-size:12px;color:var(--text-dim);margin-left:10px"></span>
+        </div>
+        <div id="markitdown-test-tools-wrap" style="display:none">
+          <p style="font-size:12px;color:var(--text-dim);margin:0 0 6px">Standalone MarkItDown capabilities exposed on this node</p>
+          <div id="markitdown-test-tools-list" style="display:flex;flex-direction:column;gap:4px"></div>
         </div>
       </div>
     </div>
