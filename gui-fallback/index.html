@@ -1394,6 +1394,7 @@
           <span style="font-size:11px;color:var(--text-dim);opacity:.7">(not part of the LiteLLM stack)</span>
         </div>
         <div id="crawl4ai-card"></div>
+        <div id="scrapling-card" style="margin-top:10px"></div>
       </div>
     </div><!-- /tab-scroll-shell -->
   </section>
@@ -1594,6 +1595,69 @@
         <div id="crawl4ai-test-mcp-wrap" style="display:none">
           <p style="font-size:12px;color:var(--text-dim);margin:0 0 6px">Tools available from Crawl4AI&rsquo;s own MCP server (/mcp/schema)</p>
           <div id="crawl4ai-test-mcp-list" style="display:flex;flex-direction:column;gap:4px"></div>
+        </div>
+      </div>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Close</button>
+    </div>
+  </dialog>
+
+  <!-- Scrapling Test Modal -->
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="scrapling-test-modal" style="width:min(700px,96vw);max-width:96vw">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">SCRAPE</span>
+        <span class="hub-dialog-title-text">Test Scrapling</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body">
+      <div style="margin-bottom:14px">
+        <span style="font-size:12px;color:var(--text-dim);font-weight:600;text-transform:uppercase;letter-spacing:.5px">Scrapling endpoint</span>
+        <span id="scrapling-test-health-badge" class="badge" style="margin-left:8px">Checking&hellip;</span>
+        <span style="font-size:11px;color:var(--text-dim);margin-left:6px">POST&nbsp;/mcp&nbsp;initialize</span>
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label for="scrapling-test-url-input" style="font-size:12px">URL to fetch</label>
+        <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start">
+          <input id="scrapling-test-url-input" type="text" placeholder="Enter or select a URL" />
+          <button type="button" id="scrapling-test-url-picker-btn" class="secondary" style="min-width:44px;padding:6px 12px" aria-haspopup="listbox" aria-expanded="false" aria-label="Open URL presets">&#9660;</button>
+        </div>
+        <div id="scrapling-test-url-picker" style="display:none;margin-top:6px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);max-height:180px;overflow:auto"></div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Use a normal request, a dynamic browser fetch, or the stealth fetch path without involving any upstream model call.</div>
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label for="scrapling-test-tool-select" style="font-size:12px">Tool</label>
+        <select id="scrapling-test-tool-select">
+          <option value="get">get — standard request</option>
+          <option value="fetch">fetch — browser-backed</option>
+          <option value="stealthy_fetch">stealthy_fetch — anti-bot / stealth</option>
+        </select>
+      </div>
+      <div style="margin-bottom:14px">
+        <button type="button" id="scrapling-test-run-btn" class="secondary">&#9654; Run Fetch</button>
+        <span id="scrapling-test-run-status" style="font-size:12px;color:var(--text-dim);margin-left:10px"></span>
+      </div>
+      <div id="scrapling-test-result-wrap" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px;flex-wrap:wrap">
+          <p style="font-size:12px;color:var(--text-dim);margin:0">Extracted output</p>
+          <div style="display:flex;gap:8px">
+            <button type="button" class="secondary" style="font-size:11px;padding:4px 10px" id="scrapling-test-copy-btn">&#128203; Copy</button>
+            <button type="button" class="secondary" style="font-size:11px;padding:4px 10px" id="scrapling-test-download-md-btn">&#8595; .md</button>
+          </div>
+        </div>
+        <pre id="scrapling-test-result-pre" style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px;font-size:11px;overflow:auto;max-height:220px;white-space:pre-wrap;word-break:break-all"></pre>
+        <div id="scrapling-test-result-stats" style="font-size:11px;color:var(--text-dim);margin-top:4px"></div>
+      </div>
+      <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
+        <div style="margin-bottom:8px">
+          <button type="button" id="scrapling-test-mcp-btn" class="secondary">&#9881; List MCP Tools</button>
+          <span id="scrapling-test-mcp-status" style="font-size:12px;color:var(--text-dim);margin-left:10px"></span>
+        </div>
+        <div id="scrapling-test-mcp-wrap" style="display:none">
+          <p style="font-size:12px;color:var(--text-dim);margin:0 0 6px">Tools available directly from the local Scrapling MCP server</p>
+          <div id="scrapling-test-mcp-list" style="display:flex;flex-direction:column;gap:4px"></div>
         </div>
       </div>
     </div>

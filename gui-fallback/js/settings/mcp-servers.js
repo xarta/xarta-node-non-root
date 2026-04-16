@@ -56,11 +56,59 @@ const MCP_TEST_CATEGORIES = [
   'social media',
 ];
 
+const MCP_TEST_URLS = [
+  'https://example.com',
+  'https://www.bbc.co.uk',
+  'https://venturebeat.com',
+  'https://www.marktechpost.com',
+];
+
 // State
 let _mcpCurrentServer = null;
 let _mcpCurrentResults = [];
 
+function _mcpServerTestConfig(serverKey) {
+  if (serverKey === 'scrapling_mcp') {
+    return {
+      queryLabel: 'URL to fetch',
+      queryPlaceholder: 'Enter a full URL to fetch via Scrapling',
+      runLabel: '&#9654; Fetch URL',
+      queryValue: MCP_TEST_URLS[0] || 'https://example.com',
+      querySuggestions: MCP_TEST_URLS,
+      categoryEnabled: false,
+      toolName: `${serverKey}-get`,
+      buildArguments(query) {
+        return {
+          url: query,
+          extraction_type: 'markdown',
+          main_content_only: true,
+        };
+      },
+    };
+  }
+
+  return {
+    queryLabel: 'Test query',
+    queryPlaceholder: 'Select or type a search query',
+    runLabel: '&#9654; Run Search',
+    queryValue: MCP_TEST_QUERIES[0] || '',
+    querySuggestions: MCP_TEST_QUERIES,
+    categoryEnabled: true,
+    toolName: `${serverKey}-web_search`,
+    buildArguments(query, category) {
+      return {
+        query,
+        num_results: 5,
+        ...(category ? { category } : {}),
+      };
+    },
+  };
+}
+
 function _mcpServerQueryGuidance(serverKey) {
+  if (serverKey === 'scrapling_mcp') {
+    return 'Enter a full URL. This calls Scrapling\'s direct get tool via the local MCP path; no model provider call is involved.';
+  }
   if (serverKey !== 'searxng_web_search') return '';
   return 'Use concise search phrases, not conversational prompts. Example: use "London weather" instead of "What is the current weather in London?". The optional category field is sent as arguments.category when you want to narrow the search domain.';
 }
@@ -111,21 +159,24 @@ async function _mcpLoadTab() {
     data = await r.json();
   } catch (e) {
     if (els.error) { els.error.textContent = `Failed to check LiteLLM stack: ${e.message}`; els.error.hidden = false; }
-    // Still load crawl4ai section independently of LiteLLM
+    // Still load the direct-local sections independently of LiteLLM
     await _crawl4aiLoadSection();
+    await _scraplingLoadSection();
     return;
   }
 
   if (!data.litellm_present) {
     els.absent.style.display = '';
-    // Still load crawl4ai section independently of LiteLLM
+    // Still load the direct-local sections independently of LiteLLM
     await _crawl4aiLoadSection();
+    await _scraplingLoadSection();
     return;
   }
 
   els.present.style.display = '';
   _mcpRenderServerList(data.servers || []);
   await _crawl4aiLoadSection();
+  await _scraplingLoadSection();
 }
 
 function _mcpRenderServerList(servers) {
@@ -157,6 +208,12 @@ function _mcpOpenTestModal(serverKey, serverUrl) {
   _mcpCurrentServer = { key: serverKey, url: serverUrl };
   _mcpCurrentResults = [];
 
+  const config = _mcpServerTestConfig(serverKey);
+  const queryLabel = document.querySelector('label[for="mcp-test-query-input"]');
+  const categoryLabel = document.querySelector('label[for="mcp-test-category-input"]');
+  const categoryField = els.categoryInput?.closest('.field');
+  const categoryGuidance = document.getElementById('mcp-test-category-guidance');
+
   if (els.testTitle) els.testTitle.textContent = `Test: ${serverKey}`;
   if (els.modelBadge) { els.modelBadge.textContent = 'Checking…'; els.modelBadge.className = 'badge'; }
   if (els.runStatus) els.runStatus.textContent = '';
@@ -166,8 +223,20 @@ function _mcpOpenTestModal(serverKey, serverUrl) {
     els.queryGuidance.textContent = guidance;
     els.queryGuidance.style.display = guidance ? '' : 'none';
   }
-  if (els.queryInput) els.queryInput.value = MCP_TEST_QUERIES[0] || '';
+  if (queryLabel) queryLabel.textContent = config.queryLabel;
+  if (els.queryInput) {
+    els.queryInput.value = config.queryValue;
+    els.queryInput.placeholder = config.queryPlaceholder;
+  }
+  if (els.runBtn) els.runBtn.innerHTML = config.runLabel;
   if (els.categoryInput) els.categoryInput.value = '';
+  if (categoryField) categoryField.style.display = config.categoryEnabled ? '' : 'none';
+  if (categoryLabel) categoryLabel.textContent = config.categoryEnabled ? 'Category (optional)' : 'Category';
+  if (categoryGuidance) {
+    categoryGuidance.textContent = config.categoryEnabled
+      ? 'Passed as arguments.category to the MCP tool. Use this to narrow the search domain. Example: news for current events, images for image-heavy results, or leave blank for the default behavior.'
+      : 'This server test uses direct URL fetches, so category is not used.';
+  }
   if (els.queryPicker) els.queryPicker.style.display = 'none';
   if (els.categoryPicker) els.categoryPicker.style.display = 'none';
   if (els.queryPickerBtn) els.queryPickerBtn.setAttribute('aria-expanded', 'false');
@@ -175,7 +244,7 @@ function _mcpOpenTestModal(serverKey, serverUrl) {
   if (els.resultsWrap) els.resultsWrap.style.display = 'none';
   if (els.resultsList) els.resultsList.innerHTML = '';
 
-  _mcpRenderPresetPicker(els.queryPicker, MCP_TEST_QUERIES, (value) => {
+  _mcpRenderPresetPicker(els.queryPicker, config.querySuggestions || MCP_TEST_QUERIES, (value) => {
     if (els.queryInput) els.queryInput.value = value;
     _mcpClosePresetPicker(els.queryPicker, els.queryPickerBtn);
   });
@@ -247,28 +316,22 @@ async function _mcpRunSearch() {
   const els = _mcpEls();
   if (!_mcpCurrentServer) return;
 
-  const query = (els.queryInput?.value || '').trim() || MCP_TEST_QUERIES[0];
+  const serverKey = _mcpCurrentServer.key;
+  const config = _mcpServerTestConfig(serverKey);
+  const rawQuery = (els.queryInput?.value || '').trim() || config.queryValue;
+  const query = serverKey === 'scrapling_mcp' && rawQuery && !/^https?:\/\//i.test(rawQuery)
+    ? `https://${rawQuery}`
+    : rawQuery;
   const category = (els.categoryInput?.value || '').trim();
 
   if (els.runStatus) els.runStatus.textContent = 'Running…';
   if (els.resultsList) els.resultsList.innerHTML = '';
   if (els.resultsWrap) els.resultsWrap.style.display = 'none';
 
-  // Use the direct MCP JSON-RPC tool-call endpoint.
-  // Tool names from LiteLLM's /mcp/tools/list follow the convention
-  // "<server_name>-<tool_function>", e.g. "searxng_web_search-web_search".
-  // We derive the tool name by appending "-web_search" as the known suffix.
-  const serverKey = _mcpCurrentServer.key;
-  const toolName  = `${serverKey}-web_search`;
-
   const body = {
     server_name: serverKey,
-    tool_name:   toolName,
-    arguments:   {
-      query,
-      num_results: 5,
-      ...(category ? { category } : {}),
-    },
+    tool_name:   config.toolName,
+    arguments:   config.buildArguments(query, category),
   };
 
   let data;
@@ -299,8 +362,17 @@ async function _mcpRunSearch() {
     }
   }
 
-  // Parse the plain-text results returned by the searxng MCP tool
-  const results = _mcpParseTextResults(data.text || '');
+  // Parse the plain-text results returned by the MCP tool.
+  // SearXNG returns structured text blocks; Scrapling returns fetched page content.
+  let results = _mcpParseTextResults(data.text || '');
+  if (!results.length && (data.text || '').trim()) {
+    results = [{
+      title: serverKey === 'scrapling_mcp' ? (query || 'Fetched page') : 'Raw response',
+      url: serverKey === 'scrapling_mcp' ? query : '',
+      snippet: (data.text || '').trim().slice(0, 240),
+    }];
+  }
+
   _mcpCurrentResults = results.length
     ? results.map((result) => ({
         ...result,
@@ -372,6 +444,203 @@ function _mcpOpenResultDetail(idx) {
     els.detailPre.textContent = JSON.stringify(detail, null, 2);
   }
   els.detailModal.showModal();
+}
+
+// ── Scrapling section ─────────────────────────────────────────────────────────
+
+let _scraplingLastMarkdown = '';
+
+async function _scraplingLoadSection() {
+  const card = document.getElementById('scrapling-card');
+  if (!card) return;
+
+  card.innerHTML = '<div style="font-size:12px;color:var(--text-dim);padding:6px 0">Checking Scrapling&hellip;</div>';
+
+  let data;
+  try {
+    const r = await apiFetch('/api/v1/scrapling/health');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    data = await r.json();
+  } catch (e) {
+    card.innerHTML = _scraplingRenderCard({ reachable: false, error: e.message });
+    return;
+  }
+
+  card.innerHTML = _scraplingRenderCard(data);
+}
+
+function _scraplingRenderCard(data) {
+  const reachable = data.reachable === true;
+  const mcpUrl = data.mcp_url || `${data.url || 'http://localhost:18000'}/mcp`;
+  const statusBadge = reachable
+    ? '<span class="badge badge--green" style="margin-left:6px">Online</span>'
+    : '<span class="badge badge--red" style="margin-left:6px">Offline</span>';
+  const version = data.version ? ` v${esc(data.version)}` : '';
+  const errorNote = !reachable && data.error
+    ? `<div style="font-size:11px;color:var(--accent-warn);margin-top:4px">${esc(data.error)}</div>`
+    : '';
+
+  return `
+    <div class="card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <div style="min-width:0">
+        <div style="font-weight:700;font-size:13px;margin-bottom:3px">scrapling${statusBadge}</div>
+        <div style="font-size:11px;color:var(--text-dim);word-break:break-all">${esc(mcpUrl)}</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:4px">MCP-first targeted scraper with standard, browser-backed, and stealth fetch tools.${version} Direct local service.</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:3px">transport: <code>http</code> &nbsp;&middot;&nbsp; tools: get, fetch, stealthy_fetch, bulk_fetch</div>
+        ${errorNote}
+      </div>
+      <button type="button" class="secondary scrapling-test-open-btn" style="flex-shrink:0;font-size:12px"${reachable ? '' : ' disabled'}>&#9654; Test</button>
+    </div>
+  `;
+}
+
+function _scraplingOpenTestModal() {
+  const modal = document.getElementById('scrapling-test-modal');
+  if (!modal) return;
+
+  const healthBadge = document.getElementById('scrapling-test-health-badge');
+  const urlInput = document.getElementById('scrapling-test-url-input');
+  const urlPicker = document.getElementById('scrapling-test-url-picker');
+  const urlPickerBtn = document.getElementById('scrapling-test-url-picker-btn');
+  const toolSelect = document.getElementById('scrapling-test-tool-select');
+  const runStatus = document.getElementById('scrapling-test-run-status');
+  const resultWrap = document.getElementById('scrapling-test-result-wrap');
+  const resultPre = document.getElementById('scrapling-test-result-pre');
+  const resultStats = document.getElementById('scrapling-test-result-stats');
+  const mcpStatus = document.getElementById('scrapling-test-mcp-status');
+  const mcpWrap = document.getElementById('scrapling-test-mcp-wrap');
+
+  if (healthBadge) { healthBadge.textContent = 'Checking…'; healthBadge.className = 'badge'; }
+  if (urlInput) urlInput.value = MCP_TEST_URLS[0] || 'https://example.com';
+  if (urlPicker) urlPicker.style.display = 'none';
+  if (urlPickerBtn) urlPickerBtn.setAttribute('aria-expanded', 'false');
+  if (toolSelect) toolSelect.value = 'get';
+  if (runStatus) runStatus.textContent = '';
+  if (resultWrap) resultWrap.style.display = 'none';
+  if (resultPre) resultPre.textContent = '';
+  if (resultStats) resultStats.textContent = '';
+  if (mcpStatus) mcpStatus.textContent = '';
+  if (mcpWrap) mcpWrap.style.display = 'none';
+  _scraplingLastMarkdown = '';
+
+  _mcpRenderPresetPicker(urlPicker, MCP_TEST_URLS, (value) => {
+    if (urlInput) urlInput.value = value;
+    _mcpClosePresetPicker(urlPicker, urlPickerBtn);
+  });
+
+  modal.showModal();
+  _scraplingCheckHealth();
+}
+
+async function _scraplingCheckHealth() {
+  const badge = document.getElementById('scrapling-test-health-badge');
+  if (!badge) return;
+  try {
+    const r = await apiFetch('/api/v1/scrapling/health');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    if (data.reachable) {
+      const ver = data.version ? ` — v${data.version}` : '';
+      badge.textContent = `OK${ver}`;
+      badge.className = 'badge badge--green';
+    } else {
+      badge.textContent = `Unreachable: ${data.error || 'unknown'}`;
+      badge.className = 'badge badge--red';
+    }
+  } catch (e) {
+    badge.textContent = `Error: ${e.message}`;
+    badge.className = 'badge badge--red';
+  }
+}
+
+async function _scraplingRunFetch() {
+  const urlInput = document.getElementById('scrapling-test-url-input');
+  const toolSelect = document.getElementById('scrapling-test-tool-select');
+  const btn = document.getElementById('scrapling-test-run-btn');
+  const status = document.getElementById('scrapling-test-run-status');
+  const wrap = document.getElementById('scrapling-test-result-wrap');
+  const pre = document.getElementById('scrapling-test-result-pre');
+  const stats = document.getElementById('scrapling-test-result-stats');
+
+  let url = (urlInput?.value || '').trim() || MCP_TEST_URLS[0];
+  if (url && !/^https?:\/\//i.test(url)) url = `https://${url}`;
+  const toolName = toolSelect?.value || 'get';
+
+  if (status) status.textContent = `Running ${toolName}…`;
+  if (wrap) wrap.style.display = 'none';
+  if (pre) pre.textContent = '';
+  if (stats) stats.textContent = '';
+  if (btn) btn.disabled = true;
+
+  let data;
+  try {
+    const r = await apiFetch('/api/v1/scrapling/fetch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, tool_name: toolName }),
+    });
+    if (!r.ok) {
+      const err = await r.text().catch(() => `HTTP ${r.status}`);
+      throw new Error(err.length > 120 ? err.slice(0, 120) + '…' : err);
+    }
+    data = await r.json();
+  } catch (e) {
+    if (status) status.textContent = `Error: ${e.message}`;
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  if (btn) btn.disabled = false;
+  if (status) status.textContent = data.ok ? 'Done' : 'Tool returned an error';
+
+  const md = data.markdown || data.raw_text || '';
+  _scraplingLastMarkdown = md;
+  if (pre) pre.textContent = md || '(no content returned)';
+  if (stats) stats.textContent = `${(data.markdown_len || md.length).toLocaleString()} chars via ${toolName} from ${data.url || url}`;
+  if (wrap) wrap.style.display = '';
+}
+
+async function _scraplingRunMcpTools() {
+  const btn = document.getElementById('scrapling-test-mcp-btn');
+  const status = document.getElementById('scrapling-test-mcp-status');
+  const wrap = document.getElementById('scrapling-test-mcp-wrap');
+  const list = document.getElementById('scrapling-test-mcp-list');
+
+  if (status) status.textContent = 'Fetching…';
+  if (wrap) wrap.style.display = 'none';
+  if (btn) btn.disabled = true;
+
+  let data;
+  try {
+    const r = await apiFetch('/api/v1/scrapling/mcp-tools');
+    if (!r.ok) {
+      const err = await r.text().catch(() => `HTTP ${r.status}`);
+      throw new Error(err.length > 120 ? err.slice(0, 120) + '…' : err);
+    }
+    data = await r.json();
+  } catch (e) {
+    if (status) status.textContent = `Error: ${e.message}`;
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  if (btn) btn.disabled = false;
+
+  const tools = data.tools || [];
+  if (status) status.textContent = `${tools.length} tool${tools.length !== 1 ? 's' : ''} found`;
+  if (list) {
+    if (!tools.length) {
+      list.innerHTML = '<div style="font-size:12px;color:var(--text-dim)">No tools returned.</div>';
+    } else {
+      list.innerHTML = tools.map((t) =>
+        `<div style="padding:5px 8px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius)">` +
+        `<span style="font-weight:700;font-size:12px">${esc(t.name)}</span>` +
+        (t.description ? `<span style="font-size:11px;color:var(--text-dim);margin-left:8px">${esc(t.description)}</span>` : '') +
+        `</div>`
+      ).join('');
+    }
+  }
+  if (wrap) wrap.style.display = '';
 }
 
 // ── Crawl4AI preset URLs ──────────────────────────────────────────────────────
@@ -726,6 +995,15 @@ function _mcpWireEvents() {
     });
   }
 
+  // Scrapling [Test] button (delegated on scrapling-card)
+  const scraplingCard = document.getElementById('scrapling-card');
+  if (scraplingCard) {
+    scraplingCard.addEventListener('click', (e) => {
+      const btn = e.target.closest('.scrapling-test-open-btn');
+      if (btn && !btn.disabled) _scraplingOpenTestModal();
+    });
+  }
+
   // Run Search button
   const runBtn = document.getElementById('mcp-test-run-btn');
   if (runBtn) runBtn.addEventListener('click', _mcpRunSearch);
@@ -760,6 +1038,18 @@ function _mcpWireEvents() {
 
   const crawl4aiMcpBtn = document.getElementById('crawl4ai-test-mcp-btn');
   if (crawl4aiMcpBtn) crawl4aiMcpBtn.addEventListener('click', _crawl4aiRunMcpSchema);
+
+  const scraplingUrlPickerBtn = document.getElementById('scrapling-test-url-picker-btn');
+  const scraplingUrlPicker = document.getElementById('scrapling-test-url-picker');
+  if (scraplingUrlPickerBtn && scraplingUrlPicker) {
+    scraplingUrlPickerBtn.addEventListener('click', () => _mcpTogglePresetPicker(scraplingUrlPicker, scraplingUrlPickerBtn));
+  }
+
+  const scraplingRunBtn = document.getElementById('scrapling-test-run-btn');
+  if (scraplingRunBtn) scraplingRunBtn.addEventListener('click', _scraplingRunFetch);
+
+  const scraplingMcpBtn = document.getElementById('scrapling-test-mcp-btn');
+  if (scraplingMcpBtn) scraplingMcpBtn.addEventListener('click', _scraplingRunMcpTools);
 
   const crawl4aiCopyBtn = document.getElementById('crawl4ai-test-copy-btn');
   if (crawl4aiCopyBtn) {
@@ -811,6 +1101,33 @@ function _mcpWireEvents() {
     });
   }
 
+  const scraplingCopyBtn = document.getElementById('scrapling-test-copy-btn');
+  if (scraplingCopyBtn) {
+    scraplingCopyBtn.addEventListener('click', () => {
+      const pre = document.getElementById('scrapling-test-result-pre');
+      if (pre && navigator.clipboard) {
+        navigator.clipboard.writeText(pre.textContent).then(() => {
+          scraplingCopyBtn.textContent = '✓ Copied';
+          setTimeout(() => { scraplingCopyBtn.innerHTML = '&#128203; Copy'; }, 1500);
+        }).catch(() => {});
+      }
+    });
+  }
+
+  const scraplingDlMdBtn = document.getElementById('scrapling-test-download-md-btn');
+  if (scraplingDlMdBtn) {
+    scraplingDlMdBtn.addEventListener('click', () => {
+      if (!_scraplingLastMarkdown) return;
+      const blob = new Blob([_scraplingLastMarkdown], { type: 'text/markdown' });
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.download = 'scrapling-extract.md';
+      a.click();
+      URL.revokeObjectURL(objUrl);
+    });
+  }
+
   const queryInput = document.getElementById('mcp-test-query-input');
   if (queryInput) {
     queryInput.placeholder = 'Select or type a search query';
@@ -829,6 +1146,13 @@ function _mcpWireEvents() {
     const c4Btn    = document.getElementById('crawl4ai-test-url-picker-btn');
     if (c4Picker && c4Btn && !c4Picker.contains(e.target) && e.target !== c4Btn) {
       _mcpClosePresetPicker(c4Picker, c4Btn);
+    }
+
+    // Close scrapling URL picker on outside click
+    const sPicker = document.getElementById('scrapling-test-url-picker');
+    const sBtn    = document.getElementById('scrapling-test-url-picker-btn');
+    if (sPicker && sBtn && !sPicker.contains(e.target) && e.target !== sBtn) {
+      _mcpClosePresetPicker(sPicker, sBtn);
     }
   });
 
