@@ -1537,9 +1537,12 @@
         <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Select a preset URL or type your own. The page is fetched headlessly and returned as clean markdown.</div>
       </div>
       <!-- Cookie consent toggle -->
-      <div style="margin-bottom:12px;display:flex;align-items:center;gap:8px">
-        <input type="checkbox" id="crawl4ai-accept-cookies-chk" checked style="width:15px;height:15px;cursor:pointer;accent-color:var(--accent,#4a9eff)" />
-        <label for="crawl4ai-accept-cookies-chk" style="font-size:12px;cursor:pointer">Accept cookies / dismiss consent banners (applies to Crawl)</label>
+      <div style="margin-bottom:12px">
+        <label class="hub-checkbox hub-checkbox--row">
+          <input class="hub-checkbox__input" type="checkbox" id="crawl4ai-accept-cookies-chk" checked />
+          <span class="hub-checkbox__box" aria-hidden="true"></span>
+          <span class="hub-checkbox__label" style="font-size:12px">Accept cookies / dismiss consent banners (applies to Crawl)</span>
+        </label>
       </div>
       <!-- Run button — markdown crawl -->
       <div style="margin-bottom:14px">
