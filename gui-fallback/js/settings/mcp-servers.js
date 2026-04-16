@@ -519,6 +519,7 @@ async function _crawl4aiRunCrawl() {
   const resultStats = document.getElementById('crawl4ai-test-result-stats');
 
   const url = (urlInput?.value || '').trim() || CRAWL4AI_TEST_URLS[0];
+  const acceptCookies = document.getElementById('crawl4ai-accept-cookies-chk')?.checked !== false;
 
   if (runStatus) runStatus.textContent = 'Crawling… (headless browser, may take 15–30 s)';
   if (resultWrap) resultWrap.style.display = 'none';
@@ -531,7 +532,7 @@ async function _crawl4aiRunCrawl() {
     const r = await apiFetch('/api/v1/crawl4ai/crawl', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({ url, accept_cookies: acceptCookies }),
     });
     if (!r.ok) {
       const err = await r.text().catch(() => `HTTP ${r.status}`);
