@@ -383,6 +383,9 @@ const CRAWL4AI_TEST_URLS = [
   'https://example.com',
 ];
 
+let _crawl4aiLastScreenshotB64 = '';
+let _crawl4aiLastPdfB64 = '';
+
 // ── Crawl4AI section ──────────────────────────────────────────────────────────
 
 async function _crawl4aiLoadSection() {
@@ -464,8 +467,12 @@ function _crawl4aiOpenTestModal() {
   // Reset PDF section
   const pdfStatus = document.getElementById('crawl4ai-test-pdf-status');
   const pdfResult = document.getElementById('crawl4ai-test-pdf-result');
+  const dlPdfBtn  = document.getElementById('crawl4ai-test-download-pdf-btn');
   if (pdfStatus) pdfStatus.textContent = '';
   if (pdfResult) { pdfResult.style.display = 'none'; pdfResult.textContent = ''; }
+  if (dlPdfBtn) dlPdfBtn.style.display = 'none';
+  _crawl4aiLastScreenshotB64 = '';
+  _crawl4aiLastPdfB64 = '';
 
   // Reset MCP schema section
   const mcpStatus = document.getElementById('crawl4ai-test-mcp-status');
@@ -596,6 +603,7 @@ async function _crawl4aiRunScreenshot() {
   if (status) status.textContent = `Done \u2014 ${kb}\u00a0KB PNG`;
   if (img) img.src = `data:image/png;base64,${data.screenshot_b64}`;
   if (stats) stats.textContent = `${data.size_bytes.toLocaleString()} bytes decoded from ${data.url || url}`;
+  _crawl4aiLastScreenshotB64 = data.screenshot_b64;
   if (wrap) wrap.style.display = '';
 }
 
@@ -643,6 +651,9 @@ async function _crawl4aiRunPdf() {
     result.textContent = `PDF generated: ${data.size_bytes.toLocaleString()} bytes for ${data.url || url}`;
     result.style.display = '';
   }
+  _crawl4aiLastPdfB64 = data.pdf_b64 || '';
+  const dlPdfBtn = document.getElementById('crawl4ai-test-download-pdf-btn');
+  if (dlPdfBtn) dlPdfBtn.style.display = _crawl4aiLastPdfB64 ? '' : 'none';
 }
 
 // ── Crawl4AI MCP Schema Test ─────────────────────────────────────────────────
@@ -759,6 +770,43 @@ function _mcpWireEvents() {
           setTimeout(() => { crawl4aiCopyBtn.innerHTML = '&#128203; Copy'; }, 1500);
         }).catch(() => {});
       }
+    });
+  }
+
+  const crawl4aiDlMdBtn = document.getElementById('crawl4ai-test-download-md-btn');
+  if (crawl4aiDlMdBtn) {
+    crawl4aiDlMdBtn.addEventListener('click', () => {
+      const pre = document.getElementById('crawl4ai-test-result-pre');
+      if (!pre || !pre.textContent) return;
+      const blob = new Blob([pre.textContent], { type: 'text/markdown' });
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.download = 'crawl4ai-extract.md';
+      a.click();
+      URL.revokeObjectURL(objUrl);
+    });
+  }
+
+  const crawl4aiDlPngBtn = document.getElementById('crawl4ai-test-download-png-btn');
+  if (crawl4aiDlPngBtn) {
+    crawl4aiDlPngBtn.addEventListener('click', () => {
+      if (!_crawl4aiLastScreenshotB64) return;
+      const a = document.createElement('a');
+      a.href = `data:image/png;base64,${_crawl4aiLastScreenshotB64}`;
+      a.download = 'crawl4ai-screenshot.png';
+      a.click();
+    });
+  }
+
+  const crawl4aiDlPdfBtn = document.getElementById('crawl4ai-test-download-pdf-btn');
+  if (crawl4aiDlPdfBtn) {
+    crawl4aiDlPdfBtn.addEventListener('click', () => {
+      if (!_crawl4aiLastPdfB64) return;
+      const a = document.createElement('a');
+      a.href = `data:application/pdf;base64,${_crawl4aiLastPdfB64}`;
+      a.download = 'crawl4ai-page.pdf';
+      a.click();
     });
   }
 

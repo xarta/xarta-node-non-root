@@ -1546,6 +1546,7 @@
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
           <p style="font-size:12px;color:var(--text-dim);margin:0">Extracted markdown</p>
           <button type="button" class="secondary" style="font-size:11px;padding:4px 10px" id="crawl4ai-test-copy-btn">&#128203; Copy</button>
+          <button type="button" class="secondary" style="font-size:11px;padding:4px 10px" id="crawl4ai-test-download-md-btn">&#8595; .md</button>
         </div>
         <pre id="crawl4ai-test-result-pre" style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px;font-size:11px;overflow:auto;max-height:220px;white-space:pre-wrap;word-break:break-all"></pre>
         <div id="crawl4ai-test-result-stats" style="font-size:11px;color:var(--text-dim);margin-top:4px"></div>
@@ -1559,7 +1560,10 @@
         </div>
         <div id="crawl4ai-test-screenshot-wrap" style="display:none">
           <img id="crawl4ai-test-screenshot-img" src="" alt="Screenshot" style="max-width:100%;border:1px solid var(--border);border-radius:var(--radius);display:block" />
-          <div id="crawl4ai-test-screenshot-stats" style="font-size:11px;color:var(--text-dim);margin-top:4px"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px">
+            <div id="crawl4ai-test-screenshot-stats" style="font-size:11px;color:var(--text-dim)"></div>
+            <button type="button" class="secondary" style="font-size:11px;padding:4px 10px;flex-shrink:0" id="crawl4ai-test-download-png-btn">&#8595; Download PNG</button>
+          </div>
         </div>
       </div>
 
@@ -1570,6 +1574,7 @@
           <span id="crawl4ai-test-pdf-status" style="font-size:12px;color:var(--text-dim);margin-left:10px"></span>
         </div>
         <div id="crawl4ai-test-pdf-result" style="display:none;font-size:12px;color:var(--text-dim)"></div>
+        <button type="button" class="secondary" style="font-size:11px;padding:4px 10px;margin-top:6px;display:none" id="crawl4ai-test-download-pdf-btn">&#8595; Download PDF</button>
       </div>
 
       <!-- MCP schema / tools test -->
