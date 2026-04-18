@@ -47,7 +47,10 @@ const BlueprintsEventStream = (() => {
 
   const _BACKOFF_INITIAL_MS  = 2_000;
   const _BACKOFF_MAX_MS      = 60_000;
+  const _BACKOFF_JITTER_MS   = 250;
+  const _FAST_RESUME_MS      = 750;
   const _STABLE_MS           = 10_000;
+  const _LS_LAST_EVENT_ID    = 'blueprints_events_last_event_id';
 
   // ── Dedup window ──────────────────────────────────────────────────────────
   // We keep a rolling Set of the last N event_ids recognised.  After replay
@@ -64,7 +67,9 @@ const BlueprintsEventStream = (() => {
   let _backoffMs    = _BACKOFF_INITIAL_MS;
   let _backoffTimer = null;
   let _connectTs    = 0;              // Date.now() when last CONNECTED
-  let _lastEventId  = null;           // most recently received event_id
+  let _lastEventId  = (typeof localStorage !== 'undefined')
+    ? (localStorage.getItem(_LS_LAST_EVENT_ID) || null)
+    : null;
   const _seenIds    = new Set();      // dedup: event_ids dispatched this session
   const _listeners  = new Map();      // eventType → Set<fn>
   const _ANY        = '*';
@@ -115,6 +120,36 @@ const BlueprintsEventStream = (() => {
       bubbles: false,
     }));
     return true;
+  }
+
+  function _hasStoredSecret() {
+    if (typeof localStorage === 'undefined') return false;
+    const key = (typeof _LS_SECRET_KEY === 'string') ? _LS_SECRET_KEY : 'blueprints_api_secret';
+    return !!(localStorage.getItem(key) || '');
+  }
+
+  function _rememberLastEventId(eventId) {
+    if (!eventId) return;
+    _lastEventId = eventId;
+    if (typeof localStorage !== 'undefined') {
+      try { localStorage.setItem(_LS_LAST_EVENT_ID, eventId); } catch (_) {}
+    }
+  }
+
+  function _resumeSoon(reason) {
+    if (!_hasStoredSecret()) return;
+    if (_state === STATE.CONNECTED || _state === STATE.CONNECTING) return;
+    _cancelBackoff();
+    _backoffMs = _BACKOFF_INITIAL_MS;
+    _backoffTimer = setTimeout(async () => {
+      _backoffTimer = null;
+      if (_state === STATE.DISCONNECTED || _state === STATE.BACKING_OFF) {
+        await _open();
+      }
+    }, _FAST_RESUME_MS);
+    if (typeof console.debug === 'function') {
+      console.debug(`[events-stream] reconnect nudged: ${reason || 'resume soon'}`);
+    }
   }
 
   // ── EventSource lifecycle ──────────────────────────────────────────────────
@@ -189,8 +224,9 @@ const BlueprintsEventStream = (() => {
     if (_state !== STATE.CONNECTED) return;
 
     // Track Last-Event-ID for reconnect (browser also does this, but we
-    // want to append it to the URL ourselves each time we reconnect).
-    if (evt.lastEventId) _lastEventId = evt.lastEventId;
+    // also persist it ourselves so a fresh EventSource instance or page reload
+    // can still request a clean catch-up window.
+    if (evt.lastEventId) _rememberLastEventId(evt.lastEventId);
 
     let parsed;
     try {
@@ -200,7 +236,7 @@ const BlueprintsEventStream = (() => {
     }
 
     // Update last event id from the data payload if the header was absent.
-    if (parsed && parsed.event_id) _lastEventId = parsed.event_id;
+    if (parsed && parsed.event_id) _rememberLastEventId(parsed.event_id);
 
     // Dedup: skip events we already dispatched (e.g. catch-up replay overlap).
     if (parsed.event_id) {
@@ -236,7 +272,7 @@ const BlueprintsEventStream = (() => {
   }
 
   function _scheduleReconnect() {
-    const delay = _backoffMs;
+    const delay = _backoffMs + Math.floor(Math.random() * _BACKOFF_JITTER_MS);
     _backoffTimer = setTimeout(async () => {
       _backoffTimer = null;
       if (_state === STATE.BACKING_OFF) {
@@ -270,7 +306,25 @@ const BlueprintsEventStream = (() => {
     _cancelBackoff();
     _destroyEs();
     if (_state !== STATE.DISCONNECTED) {
-      _state = STATE.DISCONNECTED;
+      _transition(STATE.DISCONNECTED, 'stop called');
+    }
+  }
+
+  /** Force the stream to reconnect soon, resetting any long backoff delay. */
+  function resumeSoon(reason = 'resume requested') {
+    _resumeSoon(reason);
+  }
+
+  /** Refresh the stream after auth or connectivity state changes. */
+  function refreshAuth(reason = 'auth refreshed') {
+    _cancelBackoff();
+    _destroyEs();
+    if (_state !== STATE.DISCONNECTED) {
+      _transition(STATE.DISCONNECTED, reason);
+    }
+    _backoffMs = _BACKOFF_INITIAL_MS;
+    if (_hasStoredSecret()) {
+      _open();
     }
   }
 
@@ -294,7 +348,7 @@ const BlueprintsEventStream = (() => {
     _listeners.get(type)?.delete(fn);
   }
 
-  return Object.freeze({ STATE, start, stop, getState, on, off });
+  return Object.freeze({ STATE, start, stop, resumeSoon, refreshAuth, getState, on, off });
 
 })();
 
@@ -311,3 +365,27 @@ if (document.readyState === 'loading') {
     BlueprintsEventStream.start();
   }
 }
+
+window.addEventListener('online', () => {
+  BlueprintsEventStream.resumeSoon('browser online');
+});
+
+window.addEventListener('focus', () => {
+  BlueprintsEventStream.resumeSoon('window focus');
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    BlueprintsEventStream.resumeSoon('tab visible');
+  }
+});
+
+window.addEventListener('storage', (evt) => {
+  if (evt.key === 'blueprints_api_secret') {
+    if (evt.newValue) {
+      BlueprintsEventStream.refreshAuth('api secret updated in another tab');
+    } else {
+      BlueprintsEventStream.stop();
+    }
+  }
+});

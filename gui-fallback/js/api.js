@@ -148,6 +148,13 @@ function saveApiKey() {
   } else {
     localStorage.removeItem(_LS_SECRET_KEY);
   }
+  if (typeof BlueprintsEventStream !== 'undefined') {
+    if (val) {
+      BlueprintsEventStream.refreshAuth('API secret saved');
+    } else {
+      BlueprintsEventStream.stop();
+    }
+  }
   if (errEl) errEl.textContent = '';
   if (typeof HubModal !== 'undefined' && modal) {
     HubModal.close(modal);
