@@ -40,6 +40,8 @@ const _DIAG_ENDPOINTS = [
   { path: '/api/v1/bookmarks',                     label: 'Bookmarks list',            group: 'Browser Links' },
   { path: '/api/v1/bookmarks/tags',                label: 'Bookmark tags',             group: 'Browser Links' },
   { path: '/api/v1/bookmarks/visits',              label: 'Bookmark visits',           group: 'Browser Links' },
+  { path: '/api/v1/events/recent',                 label: 'Event stream history',      group: 'Event Stream' },
+  { path: '/api/v1/litellm-hook/status',           label: 'LiteLLM hook status',       group: 'Event Stream' },
 ];
 
 const _BUCKET_TEST_DEFAULT_USER_CODE = 'FE';
@@ -455,6 +457,23 @@ async function runSelfDiag() {
     <span style="font-size:12px;color:var(--text-dim)">Runs table-layout endpoint checks under test user ${_BUCKET_TEST_DEFAULT_USER_CODE}; rows are wiped before and after.</span>
   </div>`;
 
+  // ── Event Stream — trigger test ──────────────────────────────────────────
+  const _streamState = (typeof BlueprintsEventStream !== 'undefined')
+    ? BlueprintsEventStream.getState()
+    : 'unavailable';
+  html += _diagSection('Event Stream — End-to-End Test');
+  html += `<div id="bp-stream-test-section" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:5px 2px">
+    <button id="bp-stream-trigger-btn"
+      style="padding:3px 10px;background:var(--accent-dim);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:12px;flex-shrink:0">
+      &#x25b6; Trigger stream test
+    </button>
+    <span style="font-size:12px;color:var(--text-dim)">
+      SSE state: <strong id="bp-stream-state-label">${esc(_streamState)}</strong>
+      &nbsp;&mdash;&nbsp;Fires hook API trigger &rarr; hook listener &rarr; Blueprints event &rarr; browser SSE.
+      Timeout 15 s.
+    </span>
+  </div>`;
+
   results.innerHTML = html;
 
   // Bind the propagation round-trip test button
@@ -850,6 +869,134 @@ async function runSelfDiag() {
   const _bucketFullBtn = document.getElementById('bp-bucket-probe-full-btn');
   if (_bucketQuickBtn) _bucketQuickBtn.addEventListener('click', () => _bucketApiProbe('quick'));
   if (_bucketFullBtn) _bucketFullBtn.addEventListener('click', () => _bucketApiProbe('full'));
+
+  // ── Event Stream — trigger test button ───────────────────────────────────
+  const _streamTriggerBtn = document.getElementById('bp-stream-trigger-btn');
+  const _streamStateLabel = document.getElementById('bp-stream-state-label');
+  if (_streamTriggerBtn) {
+    _streamTriggerBtn.addEventListener('click', async () => {
+      const section = document.getElementById('bp-stream-test-section');
+      _streamTriggerBtn.disabled = true;
+      _streamTriggerBtn.textContent = '\u29d0 Testing\u2026';
+      if (_streamStateLabel && typeof BlueprintsEventStream !== 'undefined' && typeof BlueprintsEventStream.getState === 'function') {
+        _streamStateLabel.textContent = BlueprintsEventStream.getState();
+      }
+
+      const _testTimeoutMs = 20000;
+
+      const _resultRow = (ok, detail, timing) =>
+        _selfDiagRow(ok ? '\u2705' : '\u274c', 'event stream end-to-end', detail, timing);
+
+      const _matchesHookEvent = (evt, triggeredAt) => {
+        if (!evt) return false;
+        const fromHook = evt.source === 'litellm-hook-sync';
+        const knownType = evt.event_type === 'model.changed' ||
+          evt.event_type === 'alias.tests.completed' ||
+          evt.event_type === 'alias.tests.failed';
+        const createdAt = Number(evt.created_at || 0);
+        return (fromHook || knownType) && createdAt >= (triggeredAt - 2);
+      };
+
+      const _awaitTriggeredEvent = (triggeredAt) => new Promise((resolve) => {
+        let done = false;
+        let pollBusy = false;
+        let pollTimer = null;
+        let timeoutTimer = null;
+
+        const _finish = (result) => {
+          if (done) return;
+          done = true;
+          if (pollTimer) clearInterval(pollTimer);
+          if (timeoutTimer) clearTimeout(timeoutTimer);
+          document.removeEventListener('blueprints:event', _onEvent);
+          resolve(result);
+        };
+
+        const _onEvent = (domEvt) => {
+          const d = domEvt.detail || {};
+          if (_matchesHookEvent(d, triggeredAt)) {
+            _finish({ ok: true, event: d, via: 'sse-dom' });
+          }
+        };
+
+        document.addEventListener('blueprints:event', _onEvent);
+
+        pollTimer = setInterval(async () => {
+          if (done || pollBusy) return;
+          pollBusy = true;
+          try {
+            const resp = await apiFetch('/api/v1/events/recent?limit=12', {
+              signal: AbortSignal.timeout(5000),
+            });
+            if (resp.ok) {
+              const raw = await resp.json();
+              const events = Array.isArray(raw) ? raw : [];
+              const match = events.find((evt) => _matchesHookEvent(evt, triggeredAt));
+              if (match) {
+                _finish({ ok: true, event: match, via: 'recent-poll' });
+                return;
+              }
+            }
+          } catch (_) {
+          } finally {
+            pollBusy = false;
+          }
+        }, 1000);
+
+        timeoutTimer = setTimeout(() => {
+          _finish({ ok: false, event: null, via: 'timeout' });
+        }, _testTimeoutMs);
+      });
+
+      const startMs = Date.now();
+
+      // 1. Fire the trigger via the Blueprints proxy endpoint.
+      let triggerOk = false;
+      let triggeredAt = Date.now() / 1000;
+      try {
+        const tr = await apiFetch('/api/v1/litellm-hook/trigger-test', {
+          method: 'POST',
+          signal: AbortSignal.timeout(12000),
+        });
+        triggerOk = tr.ok;
+        if (!triggerOk) {
+          const body = await tr.text();
+          if (section) {
+            section.outerHTML = _resultRow(false, `trigger failed: HTTP ${tr.status}`, body.slice(0, 80));
+          }
+          return;
+        }
+        try {
+          const body = await tr.json();
+          triggeredAt = Number(body && body.triggered_at) || triggeredAt;
+        } catch (_) {
+        }
+      } catch (e) {
+        if (section) section.outerHTML = _resultRow(false, 'trigger request error', e.message);
+        return;
+      }
+
+      // 2. Wait for the browser event or confirm via recent event history.
+      const result = await _awaitTriggeredEvent(triggeredAt);
+      const elapsedMs = Date.now() - startMs;
+
+      if (section) {
+        if (result.ok) {
+          section.outerHTML = _resultRow(
+            true,
+            `event received: ${esc(result.event.event_type || '?')}`,
+            `${elapsedMs} ms via ${esc(result.via || 'unknown')}`
+          );
+        } else {
+          section.outerHTML = _resultRow(
+            false,
+            'timeout — no event confirmation in 20 s',
+            triggerOk ? 'trigger OK, pipeline stalled?' : 'trigger failed'
+          );
+        }
+      }
+    });
+  }
 
   const total   = endpointResults.length;
   const passed  = endpointResults.filter(r => r.ok).length;

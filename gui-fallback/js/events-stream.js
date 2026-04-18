@@ -109,6 +109,11 @@ const BlueprintsEventStream = (() => {
     if (typeof console.debug === 'function') {
       console.debug(`[events-stream] ${from} → ${to}` + (reason ? `: ${reason}` : ''));
     }
+    // Notify DOM listeners (e.g. model-change-announcer) of state changes.
+    document.dispatchEvent(new CustomEvent('blueprints:stream:state', {
+      detail: { state: to, from, reason: reason || null },
+      bubbles: false,
+    }));
     return true;
   }
 
