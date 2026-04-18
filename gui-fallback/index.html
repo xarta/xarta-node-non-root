@@ -1131,6 +1131,35 @@
     </div>
   </dialog>
 
+  <!-- Vision image settings modal -->
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="ai-vision-image-modal" style="--modal-width:520px">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge" id="ai-vision-image-modal-badge">SETTINGS</span>
+        <span class="hub-dialog-title-text">Vision Test Image</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body">
+      <p style="font-size:12px;color:var(--text-dim);margin:0 0 12px">
+        Set the local file path for the image used to test vision-capable aliases.
+        The test asks a 10-choice multiple-choice question about the image content
+        (default correct answer: <strong>D</strong> — the digit on the rocket in the default image).
+        If you change the test image, also update <code>_VISION_TEST_EXPECTED_LETTER</code>
+        in <code>observability_backend.py</code> to match the new correct answer.
+      </p>
+      <div class="field">
+        <label for="ai-vision-image-path">Image path</label>
+        <input type="text" id="ai-vision-image-path" placeholder="/path/to/image.jpg" autocomplete="off" />
+      </div>
+      <p class="hub-modal-error" id="ai-vision-image-error"></p>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
+      <button class="hub-modal-btn" id="ai-vision-image-save-btn" type="button">Save</button>
+    </div>
+  </dialog>
+
   <!-- Nav Items -->
   <section id="tab-nav-items" class="tab-panel">
     <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">CMS-driven navigation items — edit labels, icons, sounds and sort order. Changes are fleet-synced automatically.</p>
@@ -3136,6 +3165,8 @@
 <script src="js/synthesis/machines.js?v={{$assetVersion}}"></script>
 <script src="js/sound-manager.js?v={{$assetVersion}}"></script>
 <script src="js/tts-wrapper-client.js?v={{$assetVersion}}"></script>
+<script src="js/events-stream.js?v={{$assetVersion}}"></script>
+<script src="js/model-change-announcer.js?v={{$assetVersion}}"></script>
 <script src="js/form-control-manager.js?v={{$assetVersion}}"></script>
 <script src="js/hub-modal.js?v={{$assetVersion}}"></script>
 <script src="js/hub-dialogs.js?v={{$assetVersion}}"></script>

@@ -526,7 +526,13 @@ function renderAiObservabilityPanel() {
           </div>
           <div style="font-size:12px;color:var(--text-dim);margin-top:4px;">Target: ${esc(item.configured_model || '—')} · Provider: ${esc(item.provider_family || 'Configured')} · API base: ${apiBase}</div>
         </div>
-        <button type="button" class="secondary" data-ai-obs-test="${esc(item.alias || '')}" ${item.supports_test ? '' : 'disabled'}>${item.supports_test ? 'Test' : 'No test yet'}</button>
+        ${item.supports_vision_test
+          ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+               <button type="button" class="secondary" data-ai-obs-vision-test="${esc(item.alias || '')}">Vision Test</button>
+               <button type="button" class="secondary table-icon-btn" title="Vision test image path" data-ai-obs-vision-settings="${esc(item.alias || '')}" style="padding:4px 7px;font-size:13px;line-height:1">⚙</button>
+             </div>`
+          : `<button type="button" class="secondary" data-ai-obs-test="${esc(item.alias || '')}" ${item.supports_test ? '' : 'disabled'}>${item.supports_test ? 'Test' : 'No test yet'}</button>`
+        }
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:8px;font-size:12px;">
         <div><strong style="color:var(--text-dim)">Fallbacks</strong><br>${fallbacks}</div>
@@ -587,6 +593,70 @@ async function runAiObservabilityTest(alias) {
       button.textContent = 'Test';
     }
   }
+}
+
+/* ── Vision test ─────────────────────────────────────────────────────── */
+
+async function runAiObservabilityVisionTest(alias) {
+  const escapedAlias = (window.CSS && typeof window.CSS.escape === 'function')
+    ? window.CSS.escape(alias)
+    : String(alias || '').replace(/"/g, '\\"');
+  const button = document.querySelector(`[data-ai-obs-vision-test="${escapedAlias}"]`);
+  const resultEl = document.getElementById(`ai-obs-result-${_aiObsSlug(alias)}`);
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Testing…';
+  }
+  if (resultEl) resultEl.textContent = 'Running vision probe (this may take a moment)…';
+  try {
+    const r = await apiFetch('/api/v1/ai-providers/observability/vision-test', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ alias }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+    if (data.status === 'vision_image_missing') {
+      _aiObservabilityResults[alias] = data;
+      renderAiObservabilityPanel();
+      openVisionImageSettingsModal(alias);
+      return;
+    }
+    _aiObservabilityResults[alias] = data;
+  } catch (e) {
+    _aiObservabilityResults[alias] = {
+      ok: false,
+      alias,
+      detail: e.message || 'Vision test failed.',
+    };
+  } finally {
+    renderAiObservabilityPanel();
+    const btn = document.querySelector(`[data-ai-obs-vision-test="${escapedAlias}"]`);
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Vision Test';
+    }
+  }
+}
+
+async function openVisionImageSettingsModal(alias) {
+  const modal = document.getElementById('ai-vision-image-modal');
+  if (!modal) return;
+  const input = document.getElementById('ai-vision-image-path');
+  const errEl = document.getElementById('ai-vision-image-error');
+  if (errEl) errEl.textContent = '';
+  // Load current setting value
+  if (input) {
+    input.value = '';
+    try {
+      const r = await apiFetch('/api/v1/settings/ai_providers.vision_test_image');
+      if (r.ok) {
+        const d = await r.json().catch(() => ({}));
+        input.value = d.value || '';
+      }
+    } catch (_) { /* leave blank */ }
+  }
+  if (typeof modal.showModal === 'function') modal.showModal();
 }
 
 /* ── Provider modal ─────────────────────────────────────────────────── */
@@ -848,6 +918,44 @@ document.addEventListener('DOMContentLoaded', () => {
     const testBtn = e.target.closest('[data-ai-obs-test]');
     if (testBtn && testBtn.dataset.aiObsTest) {
       void runAiObservabilityTest(testBtn.dataset.aiObsTest);
+      return;
+    }
+    const visionBtn = e.target.closest('[data-ai-obs-vision-test]');
+    if (visionBtn && visionBtn.dataset.aiObsVisionTest) {
+      void runAiObservabilityVisionTest(visionBtn.dataset.aiObsVisionTest);
+      return;
+    }
+    const settingsBtn = e.target.closest('[data-ai-obs-vision-settings]');
+    if (settingsBtn && settingsBtn.dataset.aiObsVisionSettings) {
+      void openVisionImageSettingsModal(settingsBtn.dataset.aiObsVisionSettings);
+    }
+  });
+
+  // Vision image settings modal — save
+  document.getElementById('ai-vision-image-save-btn')?.addEventListener('click', async () => {
+    const modal = document.getElementById('ai-vision-image-modal');
+    const input = document.getElementById('ai-vision-image-path');
+    const errEl = document.getElementById('ai-vision-image-error');
+    const val = (input?.value || '').trim();
+    if (!val) {
+      if (errEl) errEl.textContent = 'Path cannot be empty.';
+      return;
+    }
+    if (errEl) errEl.textContent = '';
+    try {
+      const r = await apiFetch('/api/v1/settings/ai_providers.vision_test_image', {
+        method: 'PUT',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ value: val }),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        if (errEl) errEl.textContent = d.detail || `HTTP ${r.status}`;
+        return;
+      }
+      if (modal && typeof modal.close === 'function') modal.close();
+    } catch (e) {
+      if (errEl) errEl.textContent = e.message || 'Save failed.';
     }
   });
 });
