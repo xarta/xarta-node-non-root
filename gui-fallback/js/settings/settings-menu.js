@@ -193,6 +193,25 @@ function _fleetUpdateModalEls() {
 const _FLEET_UPDATE_DELAY_MS = 10000;
 const _FLEET_UPDATE_MAX_ATTEMPTS = 3;
 
+function _fleetUpdateFailureText(failure) {
+    return `${failure.nodeId}: ${failure.message}`;
+}
+
+function _fleetUpdateIsTransientErrorMessage(message) {
+    const text = String(message || '').toLowerCase();
+    return text.includes('http 502')
+        || text.includes('http 503')
+        || text.includes('failed to fetch')
+        || text.includes('networkerror')
+        || text.includes('timed out')
+        || text.includes('timeout')
+        || text.includes('abort');
+}
+
+function _fleetUpdateCanSkipRequeue(stage, failures) {
+    return !!stage.restartExpected && failures.length > 0 && failures.every(failure => failure.transient === true);
+}
+
 function _fleetUpdateAppendLog(message, tone) {
     const { log } = _fleetUpdateModalEls();
     if (!log) return;
@@ -271,17 +290,33 @@ async function _verifyFleetRepoStage(nodes, expectedVersions, repoKey, label) {
             const versions = await _fetchNodeRepoVersions(node.node_id);
             const repo = versions[repoKey] || {};
             if (!repo.exists) {
-                return `${node.node_id}: ${label} repo missing`;
+                return {
+                    nodeId: node.node_id,
+                    transient: false,
+                    message: `${label} repo missing`,
+                };
             }
             if (repo.dirty) {
-                return `${node.node_id}: ${label} repo dirty at ${repo.commit || 'unknown'}`;
+                return {
+                    nodeId: node.node_id,
+                    transient: false,
+                    message: `${label} repo dirty at ${repo.commit || 'unknown'}`,
+                };
             }
             if ((repo.commit || '') !== (expectedVersions[repoKey]?.commit || '')) {
-                return `${node.node_id}: ${label} commit ${repo.commit || 'unknown'} != expected ${expectedVersions[repoKey]?.commit || 'unknown'}`;
+                return {
+                    nodeId: node.node_id,
+                    transient: false,
+                    message: `${label} commit ${repo.commit || 'unknown'} != expected ${expectedVersions[repoKey]?.commit || 'unknown'}`,
+                };
             }
             return null;
         } catch (e) {
-            return `${node.node_id}: ${e.message}`;
+            return {
+                nodeId: node.node_id,
+                transient: _fleetUpdateIsTransientErrorMessage(e.message),
+                message: e.message,
+            };
         }
     }));
     return checks.filter(Boolean);
@@ -310,10 +345,10 @@ async function _runFleetUpdateStage(nodes, expectedVersions, stage) {
     }
 
     _fleetUpdateAppendLog(`${stage.label}: ${immediateFailures.length} node check(s) still pending commit convergence.`, 'warn');
-    _fleetUpdateAppendLog(`${stage.label}: changes still propagating, waiting ${Math.round(_FLEET_UPDATE_DELAY_MS / 1000)}s for fleet to settle.`, '');
+    _fleetUpdateAppendLog(`${stage.label}: changes still propagating, waiting ${Math.round((stage.settleMs || _FLEET_UPDATE_DELAY_MS) / 1000)}s for fleet to settle.`, '');
 
-    for (let attempt = 1; attempt <= _FLEET_UPDATE_MAX_ATTEMPTS; attempt += 1) {
-        await _sleep(_FLEET_UPDATE_DELAY_MS);
+    for (let attempt = 1; attempt <= (stage.maxAttempts || _FLEET_UPDATE_MAX_ATTEMPTS); attempt += 1) {
+        await _sleep(stage.settleMs || _FLEET_UPDATE_DELAY_MS);
         const failures = await _verifyFleetRepoStage(nodes, expectedVersions, stage.repoKey, stage.label);
         if (!failures.length) {
             if (attempt === 1) {
@@ -324,22 +359,41 @@ async function _runFleetUpdateStage(nodes, expectedVersions, stage) {
             return;
         }
 
-        if (attempt >= _FLEET_UPDATE_MAX_ATTEMPTS) {
-            throw new Error(`${stage.label} failed after ${attempt} attempts:\n${failures.join('\n')}`);
+        if (attempt >= (stage.maxAttempts || _FLEET_UPDATE_MAX_ATTEMPTS)) {
+            throw new Error(`${stage.label} failed after ${attempt} attempts:\n${failures.map(_fleetUpdateFailureText).join('\n')}`);
         }
 
-        _fleetUpdateAppendLog(`${stage.label}: verification attempt ${attempt} failed, retrying (${attempt + 1}/${_FLEET_UPDATE_MAX_ATTEMPTS}).`, 'warn');
-        failures.forEach(line => _fleetUpdateAppendLog(`  ${line}`, 'warn'));
+        _fleetUpdateAppendLog(`${stage.label}: verification attempt ${attempt} failed, retrying (${attempt + 1}/${stage.maxAttempts || _FLEET_UPDATE_MAX_ATTEMPTS}).`, 'warn');
+        failures.forEach(failure => _fleetUpdateAppendLog(`  ${_fleetUpdateFailureText(failure)}`, 'warn'));
 
-        const retryResp = await apiFetch('/api/v1/sync/git-pull', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ scope: stage.scope }),
-        });
-        if (!retryResp.ok) throw new Error(`${stage.label} retry ${attempt + 1}: HTTP ${retryResp.status}`);
+        if (_fleetUpdateCanSkipRequeue(stage, failures)) {
+            _fleetUpdateAppendLog(`${stage.label}: verification is seeing transient restart-time errors, so skipping requeue and waiting again.`, 'warn');
+            continue;
+        }
 
-        _fleetUpdateAppendLog(`${stage.label}: retry queued. Waiting ${Math.round(_FLEET_UPDATE_DELAY_MS / 1000)}s again.`, '');
-        await _sleep(_FLEET_UPDATE_DELAY_MS);
+        let retryResp;
+        try {
+            retryResp = await apiFetch('/api/v1/sync/git-pull', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ scope: stage.scope }),
+            });
+        } catch (e) {
+            if (stage.restartExpected && _fleetUpdateIsTransientErrorMessage(e.message)) {
+                _fleetUpdateAppendLog(`${stage.label}: requeue hit a transient restart-time error (${e.message}); waiting again without failing.`, 'warn');
+                continue;
+            }
+            throw e;
+        }
+        if (!retryResp.ok) {
+            if (stage.restartExpected && _fleetUpdateIsTransientErrorMessage(`HTTP ${retryResp.status}`)) {
+                _fleetUpdateAppendLog(`${stage.label}: requeue returned transient HTTP ${retryResp.status}; waiting again without failing.`, 'warn');
+                continue;
+            }
+            throw new Error(`${stage.label} retry ${attempt + 1}: HTTP ${retryResp.status}`);
+        }
+
+        _fleetUpdateAppendLog(`${stage.label}: retry queued. Waiting ${Math.round((stage.settleMs || _FLEET_UPDATE_DELAY_MS) / 1000)}s again.`, '');
     }
 }
 
@@ -374,7 +428,7 @@ async function submitFleetUpdate() {
     const stages = [
         { scope: 'outer', repoKey: 'outer', label: 'Root public repo' },
         { scope: 'non_root', repoKey: 'non_root', label: 'Non-root public repo' },
-        { scope: 'inner', repoKey: 'inner', label: 'Private repo' },
+        { scope: 'inner', repoKey: 'inner', label: 'Private repo', settleMs: 20000, maxAttempts: 6, restartExpected: true },
     ];
 
     dialog.dataset.busy = '1';
