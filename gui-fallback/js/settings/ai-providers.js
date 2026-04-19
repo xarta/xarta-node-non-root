@@ -573,7 +573,7 @@ function renderAiObservabilityPanel() {
 async function runAiObservabilitySyncNow() {
   if (_aiObservabilitySyncRunning) return;
   _aiObservabilitySyncRunning = true;
-  _setAiObservabilityActionStatus('Querying the latest upstream running-models feed and reconciling the node-local LiteLLM aliases…');
+  _setAiObservabilityActionStatus('Querying the latest upstream running-models feed and reconciling the node-local LiteLLM aliases… Also nudging ai-forbidden in parallel if it is online and reachable; this panel reports only the local result.');
   renderAiObservabilityPanel();
   try {
     const r = await apiFetch('/api/v1/litellm-hook/sync-now', { method: 'POST' });
@@ -591,15 +591,16 @@ async function runAiObservabilitySyncNow() {
     const changed = !!summary.applied || !!summary.reloaded;
 
     _aiObservabilityResults = Object.create(null);
+    const localSummary = changed
+      ? `Sync complete. ${roleNotes.join(' · ') || 'Local aliases updated and reloaded.'}`
+      : (summary.message || 'Already aligned with the latest upstream running models.');
     _setAiObservabilityActionStatus(
-      changed
-        ? `Sync complete. ${roleNotes.join(' · ') || 'Local aliases updated and reloaded.'}`
-        : (summary.message || 'Already aligned with the latest upstream running models.'),
+      `${localSummary} Ai-forbidden is also nudged in parallel if it is online and reachable; this panel does not report its success or failure.`,
       changed ? 'ok' : 'warn'
     );
     await loadAiProviderObservability();
   } catch (e) {
-    _setAiObservabilityActionStatus(`Sync failed: ${e.message || 'Unknown error.'}`, 'err');
+    _setAiObservabilityActionStatus(`Local sync failed: ${e.message || 'Unknown error.'} Ai-forbidden may still have been attempted separately if it was online and reachable.`, 'err');
   } finally {
     _aiObservabilitySyncRunning = false;
     renderAiObservabilityPanel();
