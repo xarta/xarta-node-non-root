@@ -573,34 +573,43 @@ function renderAiObservabilityPanel() {
 async function runAiObservabilitySyncNow() {
   if (_aiObservabilitySyncRunning) return;
   _aiObservabilitySyncRunning = true;
-  _setAiObservabilityActionStatus('Querying the latest upstream running-models feed and reconciling the node-local LiteLLM aliases… Also nudging ai-forbidden in parallel if it is online and reachable; this panel reports only the local result.');
+  _setAiObservabilityActionStatus('Querying the latest upstream running-models feed and reconciling the LiteLLM aliases for this node, ai-forbidden, and the third isolated LiteLLM surface when they are online and reachable…');
   renderAiObservabilityPanel();
   try {
     const r = await apiFetch('/api/v1/litellm-hook/sync-now', { method: 'POST' });
     const data = await r.json().catch(() => ({}));
-    if (!r.ok || !data.ok) {
+    const summary = data.summary || {};
+
+    if (!r.ok && !Object.keys(summary).length) {
       throw new Error(data.error || data.message || data.detail || `HTTP ${r.status}`);
     }
 
-    const summary = data.summary || {};
-    const selected = summary.selected || {};
-    const roleNotes = [];
-    if (selected.primary?.model_name) roleNotes.push(`primary: ${selected.primary.model_name}`);
-    if (selected.vision?.model_name) roleNotes.push(`vision: ${selected.vision.model_name}`);
-    if (selected.embeddings?.model_name) roleNotes.push(`embeddings: ${selected.embeddings.model_name}`);
-    const changed = !!summary.applied || !!summary.reloaded;
+    const syncTargets = data.sync_targets || {};
+    const aiSync = syncTargets.ai_forbidden || summary.ai_forbidden;
+    const thirdSurfaceSync = syncTargets.third_surface || null;
+
+    const localChanged = !!summary.applied || !!summary.reloaded || !!syncTargets.local?.changed;
+    const localOk = !!summary.verify?.ok && !!summary.alias_smoke?.ok;
+    const aiOk = !aiSync || !!aiSync.ok || !!aiSync.skipped;
+    const remoteOk = !thirdSurfaceSync || !!thirdSurfaceSync.ok || !!thirdSurfaceSync.skipped;
+    const overallOk = (!!data.ok && localOk && aiOk && remoteOk) || (!Object.keys(summary).length && !!data.ok);
+
+    const localState = localChanged ? 'this node: updated and reloaded' : 'this node: already aligned';
+    const aiState = aiSync?.skipped
+      ? 'ai-forbidden: skipped'
+      : (aiSync ? `ai-forbidden: ${aiSync.ok ? 'ok' : 'needs attention'}` : 'ai-forbidden: not reported');
+    const remoteState = thirdSurfaceSync?.skipped
+      ? 'third isolated LiteLLM surface: skipped'
+      : (thirdSurfaceSync ? `third isolated LiteLLM surface: ${thirdSurfaceSync.ok ? 'ok' : 'needs attention'}` : 'third isolated LiteLLM surface: not reported');
 
     _aiObservabilityResults = Object.create(null);
-    const localSummary = changed
-      ? `Sync complete. ${roleNotes.join(' · ') || 'Local aliases updated and reloaded.'}`
-      : (summary.message || 'Already aligned with the latest upstream running models.');
     _setAiObservabilityActionStatus(
-      `${localSummary} Ai-forbidden is also nudged in parallel if it is online and reachable; this panel does not report its success or failure.`,
-      changed ? 'ok' : 'warn'
+      `${overallOk ? 'Sync complete.' : (localOk ? 'Sync finished with warnings.' : 'Local sync needs attention.')} ${localState} · ${aiState} · ${remoteState}`,
+      overallOk ? 'ok' : (localOk ? 'warn' : 'err')
     );
     await loadAiProviderObservability();
   } catch (e) {
-    _setAiObservabilityActionStatus(`Local sync failed: ${e.message || 'Unknown error.'} Ai-forbidden may still have been attempted separately if it was online and reachable.`, 'err');
+    _setAiObservabilityActionStatus(`Sync request failed: ${e.message || 'Unknown error.'}`, 'err');
   } finally {
     _aiObservabilitySyncRunning = false;
     renderAiObservabilityPanel();
