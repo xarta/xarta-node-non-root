@@ -1074,7 +1074,10 @@ function _inlineMd(s) {
     .replace(/(?<![a-zA-Z0-9])_([^_\n]+)_(?![a-zA-Z0-9])/g, '<em class="bp-font-role-docs-markdown">$1</em>')
     .replace(/~~([^~]+)~~/g, '<del class="bp-font-role-docs-markdown">$1</del>')
     .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, src) => {
-      const m = src.match(/\/api\/v1\/doc-images\/([a-f0-9-]+)\/file/);
+      // Old API format: /api/v1/doc-images/UUID/file (backward compatible)
+      let m = src.match(/\/api\/v1\/doc-images\/([a-f0-9-]+)\/file/);
+      // New standard format: doc-images/UUID/filename.ext (Obsidian-compatible relative path)
+      if (!m) m = src.match(/(?:^|.*\/)doc-images\/([a-f0-9-]+)\//);
       return `<img class="bp-font-role-docs-markdown"${m ? ` data-doc-img="${m[1]}"` : ''} src="${src}" alt="${alt}" style="max-width:100%;border-radius:4px;margin:8px 0;display:block" />`;
     })
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, href) => {

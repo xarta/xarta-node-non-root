@@ -643,7 +643,7 @@ async function submitDocImageUpload() {
 }
 
 function _docImgMarkdownSnippet(img) {
-  return `![${img.filename}](/api/v1/doc-images/${img.image_id}/file)`;
+  return `![${img.filename}](doc-images/${img.image_id}/${img.filename})`;
 }
 
 function _docImgAutoSizeField(el) {
