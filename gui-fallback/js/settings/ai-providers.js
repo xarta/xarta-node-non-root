@@ -118,9 +118,11 @@ async function loadAiProviderObservability() {
 }
 
 function _typeIcon(type) {
-  if (type === 'llm')       return '&#129504;';  // brain
-  if (type === 'embedding') return '&#128203;';  // clipboard
-  if (type === 'reranker')  return '&#128270;';  // magnifier
+  if (type === 'llm') return '&#129504;';
+  if (type === 'embedding') return '&#128203;';
+  if (type === 'reranker') return '&#128270;';
+  if (type === 'transcription') return '&#127908;';
+  if (type === 'tts') return '&#128266;';
   return '&#129302;';
 }
 
@@ -457,6 +459,61 @@ function _renderAiObservabilityDbRows(item) {
   }).join('<br>');
 }
 
+function _renderAiTtsGauge(alias, result) {
+  const rawScore = Number(result?.compatibility_score);
+  const score = Number.isFinite(rawScore) ? Math.max(0, Math.min(100, Math.round(rawScore))) : 0;
+  const tone = score >= 85 ? 'var(--ok)' : (score >= 45 ? 'var(--warn)' : 'var(--err)');
+  const label = result?.compatibility_label || (result?.working ? 'Working' : 'Unavailable');
+  return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+    <strong style="color:${tone}">${esc(label)}</strong>
+    <span title="Compatibility ${score}%" style="display:inline-flex;align-items:center;width:74px;height:10px;border:1px solid var(--border);border-radius:999px;background:rgba(255,255,255,0.05);overflow:hidden;vertical-align:middle;">
+      <span style="display:block;height:100%;width:${score}%;background:${tone};"></span>
+    </span>
+    <span style="font-size:11px;color:var(--text-dim)">${score}%</span>
+    <button type="button" class="secondary" data-ai-obs-tts-detail="${esc(alias)}">Details</button>
+  </div>`;
+}
+
+function _openAiObservabilityTtsDetail(alias) {
+  const modal = document.getElementById('ai-tts-compat-modal');
+  const titleEl = document.getElementById('ai-tts-compat-title');
+  const bodyEl = document.getElementById('ai-tts-compat-body');
+  if (!modal || !titleEl || !bodyEl) return;
+  const result = _aiObservabilityResults[alias];
+  titleEl.textContent = `TTS Compatibility — ${alias}`;
+  if (!result) {
+    bodyEl.innerHTML = '<p style="margin:0;color:var(--text-dim)">Run the TTS test first to populate the compatibility report.</p>';
+    HubModal.open(modal);
+    return;
+  }
+  const checks = Array.isArray(result.checks) ? result.checks : [];
+  const summaryBits = [];
+  if (result.compatibility_label) summaryBits.push(esc(result.compatibility_label));
+  if (result.compatibility_score != null) summaryBits.push(`${Math.round(Number(result.compatibility_score) || 0)}%`);
+  if (result.audio_content_type) summaryBits.push(esc(result.audio_content_type));
+  if (result.audio_bytes) summaryBits.push(`${esc(String(result.audio_bytes))} bytes`);
+  bodyEl.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <div style="font-size:13px;line-height:1.45;">
+        <strong style="color:${result.ok ? 'var(--ok)' : 'var(--warn)'}">${result.ok ? 'Working' : 'Not working'}</strong>
+        <span style="color:var(--text-dim)"> · ${summaryBits.join(' · ') || 'No compatibility summary yet.'}</span>
+      </div>
+      <div style="font-size:12px;color:var(--text-dim);">${esc(result.detail || 'No detailed summary available.')}</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${checks.length ? checks.map(check => `
+          <div style="border:1px solid var(--border);border-radius:var(--radius);padding:8px 10px;background:rgba(255,255,255,0.03);">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+              <strong style="color:${check.ok ? 'var(--ok)' : 'var(--warn)'}">${check.ok ? '✓' : '•'} ${esc(check.name || 'Check')}</strong>
+              <span style="font-size:11px;color:var(--text-dim)">${esc(String(check.status ?? '—'))}</span>
+            </div>
+            <div style="font-size:12px;color:var(--text-dim);margin-top:4px;">${esc(check.detail || '—')}</div>
+          </div>
+        `).join('') : '<div style="color:var(--text-dim)">No per-check details were returned.</div>'}
+      </div>
+    </div>`;
+  HubModal.open(modal);
+}
+
 function _renderAiObservabilityResult(alias) {
   const result = _aiObservabilityResults[alias];
   if (!result) return '<span style="color:var(--text-dim)">No test run yet.</span>';
@@ -470,6 +527,9 @@ function _renderAiObservabilityResult(alias) {
   if (result.failover_observed) parts.push('failover observed');
   if (result.preview) parts.push(esc(result.preview));
   if (result.detail) parts.push(esc(result.detail));
+  if (result.kind === 'tts') {
+    return `${_renderAiTtsGauge(alias, result)}<div style="margin-top:6px">${parts.join(' · ')}</div>`;
+  }
   return parts.join(' · ');
 }
 
@@ -557,7 +617,12 @@ function renderAiObservabilityPanel() {
                <button type="button" class="secondary" data-ai-obs-vision-test="${esc(item.alias || '')}">Vision Test</button>
                <button type="button" class="secondary table-icon-btn" title="Vision test image path" data-ai-obs-vision-settings="${esc(item.alias || '')}" style="padding:4px 7px;font-size:13px;line-height:1">⚙</button>
              </div>`
-          : `<button type="button" class="secondary" data-ai-obs-test="${esc(item.alias || '')}" ${item.supports_test ? '' : 'disabled'}>${item.supports_test ? 'Test' : 'No test yet'}</button>`
+          : item.kind === 'tts'
+            ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                 <button type="button" class="secondary" data-ai-obs-test="${esc(item.alias || '')}" ${item.supports_test ? '' : 'disabled'}>${item.supports_test ? 'TTS Test' : 'No test yet'}</button>
+                 <button type="button" class="secondary" data-ai-obs-tts-detail="${esc(item.alias || '')}">Details</button>
+               </div>`
+            : `<button type="button" class="secondary" data-ai-obs-test="${esc(item.alias || '')}" ${item.supports_test ? '' : 'disabled'}>${item.supports_test ? 'Test' : 'No test yet'}</button>`
         }
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:8px;font-size:12px;">
@@ -1001,6 +1066,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const settingsBtn = e.target.closest('[data-ai-obs-vision-settings]');
     if (settingsBtn && settingsBtn.dataset.aiObsVisionSettings) {
       void openVisionImageSettingsModal(settingsBtn.dataset.aiObsVisionSettings);
+      return;
+    }
+    const ttsDetailBtn = e.target.closest('[data-ai-obs-tts-detail]');
+    if (ttsDetailBtn && ttsDetailBtn.dataset.aiObsTtsDetail) {
+      _openAiObservabilityTtsDetail(ttsDetailBtn.dataset.aiObsTtsDetail);
     }
   });
 
