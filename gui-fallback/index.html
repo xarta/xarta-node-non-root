@@ -33,6 +33,7 @@
   <link rel="stylesheet" href="css/hub-modal.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/hub-dialogs.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/embed-menu-grid.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/tts-pool.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="embed/clock-overlay.css?v={{$assetVersion}}" />
 </head>
 <body class="bp-font-role-root">
@@ -2252,6 +2253,142 @@
   </section>
 
   <!-- Probes — Layout editor -->
+  <!-- TTS Pool Test Page -->
+  <section id="tab-tts-pool" class="tab-panel">
+    <div id="s25-lift-tts-pool" class="s25-lift-block" data-for-tab="tts-pool">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">TTS pool testing surface for the currently selected engine. Synthesis and voice-sample actions run against the active pool selection. Use the Probes context menu to switch engines.</p>
+    </div>
+    <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
+    <div class="tab-scroll-shell">
+
+      <!-- Active engine card -->
+      <div class="tts-pool-panel tts-pool-engine-card" id="tts-pool-engine-card">
+        <div class="tts-pool-engine-card__header">
+          <div class="tts-pool-engine-card__intro">
+            <h2 class="tts-pool-section-heading" style="margin:0">Active Engine</h2>
+            <div class="tts-pool-engine-card__title" id="tts-pool-engine-title">Loading&hellip;</div>
+            <p class="tts-pool-engine-card__summary" id="tts-pool-engine-summary">Loading active engine details&hellip;</p>
+          </div>
+          <div class="tts-pool-status-row" id="tts-pool-status-row">
+            <span class="tts-pool-status-dot" id="tts-pool-status-dot"></span>
+            <span class="tts-pool-status-label bp-font-role-status-meta" id="tts-pool-status-label">Loading&hellip;</span>
+            <span class="tts-pool-status-model" id="tts-pool-status-model"></span>
+          </div>
+        </div>
+        <div class="tts-pool-engine-card__grid" id="tts-pool-engine-detail-grid"></div>
+        <div class="tts-pool-engine-card__chips" id="tts-pool-engine-capabilities"></div>
+        <div class="tts-pool-engine-card__links" id="tts-pool-engine-links"></div>
+      </div>
+
+      <!-- Synthesis panel -->
+      <div class="tts-pool-panel">
+        <h2 class="tts-pool-section-heading">Synthesise</h2>
+
+        <div class="tts-pool-form-grid tts-pool-form-grid--two">
+          <div class="tts-pool-form-field">
+            <label for="tts-pool-voice-select">Voice</label>
+            <select id="tts-pool-voice-select">
+              <option value="alloy">alloy</option>
+              <option value="echo">echo</option>
+              <option value="fable">fable</option>
+              <option value="onyx">onyx</option>
+              <option value="nova">nova</option>
+              <option value="shimmer">shimmer</option>
+            </select>
+          </div>
+          <div class="tts-pool-form-field">
+            <label for="tts-pool-format-select">Format</label>
+            <select id="tts-pool-format-select">
+              <option value="wav" selected>wav</option>
+              <option value="mp3">mp3</option>
+              <option value="opus">opus</option>
+              <option value="flac">flac</option>
+              <option value="aac">aac</option>
+              <option value="pcm">pcm</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="tts-pool-preset-row">
+          <label for="tts-pool-preset-select">Preset</label>
+          <select id="tts-pool-preset-select">
+            <option value="">&#8212; custom text &#8212;</option>
+            <option value="Computer, awaiting instructions.">Computer, awaiting instructions.</option>
+            <option value="Unable to comply.">Unable to comply.</option>
+            <option value="Working.">Working.</option>
+            <option value="The quick brown fox jumps over the lazy dog.">The quick brown fox jumps over the lazy dog.</option>
+            <option value="Attention. All hands to battle stations. This is not a drill.">Attention. All hands to battle stations. This is not a drill.</option>
+            <option value="Good evening. How may I assist you today?">Good evening. How may I assist you today?</option>
+          </select>
+        </div>
+
+        <div class="tts-pool-form-field">
+          <label for="tts-pool-text-input">Text</label>
+          <textarea id="tts-pool-text-input" rows="3" placeholder="Enter text to synthesise&hellip;"></textarea>
+        </div>
+
+        <div class="tts-pool-controls">
+          <button id="tts-pool-generate-btn">&#9654; Generate</button>
+          <button class="secondary" id="tts-pool-download-btn" hidden>&#8595; Download</button>
+        </div>
+
+        <p id="tts-pool-synth-status" class="bp-font-role-status-meta" style="font-size:12px;min-height:1.2em;margin:8px 0 0"></p>
+        <p id="tts-pool-synth-error" class="error-msg" hidden></p>
+
+        <div id="tts-pool-audio-result" class="tts-pool-audio-result" hidden>
+          <audio id="tts-pool-audio" controls></audio>
+          <div class="tts-pool-metrics">
+            <span class="tts-pool-metric-badge" id="tts-pool-ttfa-badge" hidden>
+              <span class="tts-pool-metric-badge__label">TTFA</span>
+              <span id="tts-pool-ttfa-value"></span>
+            </span>
+            <span class="tts-pool-metric-badge" id="tts-pool-rtf-badge" hidden>
+              <span class="tts-pool-metric-badge__label">RTF</span>
+              <span id="tts-pool-rtf-value"></span>
+            </span>
+          </div>
+        </div>
+      </div><!-- /synthesis panel -->
+
+      <!-- Voice Samples panel -->
+      <div class="tts-pool-panel" id="tts-pool-voices-panel">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <h2 class="tts-pool-section-heading" style="margin:0">Voice Samples</h2>
+          <button class="secondary" id="tts-pool-voices-refresh-btn" style="font-size:12px">&#8635; Refresh</button>
+        </div>
+        <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">User voice samples on this node. Push to the currently selected TTS context when that context supports voice cloning. <span style="color:var(--ok)">&#10003; On stack</span> = already available for the active context.</p>
+        <div id="tts-pool-voice-list" class="tts-pool-voice-list">
+          <span class="spinner"></span>
+        </div>
+        <p id="tts-pool-voices-error" class="error-msg" hidden></p>
+      </div><!-- /voices panel -->
+
+    </div><!-- /tab-scroll-shell -->
+  </section><!-- /tab-tts-pool -->
+
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="tts-pool-context-modal" style="width:min(560px,95vw)">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">TTS</span>
+        <span class="hub-dialog-title-text">TTS Pool Engine</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body">
+      <div class="tts-pool-modal-field">
+        <label for="tts-pool-context-modal-select">Selected engine</label>
+        <select id="tts-pool-context-modal-select"></select>
+      </div>
+      <p class="tts-pool-context-description" id="tts-pool-context-modal-detail"></p>
+      <div class="hub-modal-error hub-dialog-status" id="tts-pool-context-modal-status"></div>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
+      <button class="hub-modal-btn secondary" type="button" id="tts-pool-context-modal-refresh-btn">Refresh</button>
+      <button class="hub-modal-btn" type="button" id="tts-pool-context-modal-activate-btn">Activate</button>
+    </div>
+  </dialog>
+
   <section id="tab-probes-settings" class="tab-panel">
     <div id="s25-lift-probes-settings" class="s25-lift-block" data-for-tab="probes-settings">
       <p style="font-size:12px;color:var(--text-dim);margin-bottom:16px">Customise the Probes navigation menu. Drag items to reorder on desktop, or use the arrow and nest buttons on touch devices. Layout is saved to this browser only.</p>
@@ -3218,6 +3355,7 @@
 <script src="js/table-pager.js?v={{$assetVersion}}"></script>
 <script src="js/table-ui.js?v={{$assetVersion}}"></script>
 <script src="js/probes/bookmarks.js?v={{$assetVersion}}"></script>
+<script src="js/probes/tts-pool.js?v={{$assetVersion}}"></script>
 <script src="js/probes/probes-menu.js?v={{$assetVersion}}"></script>
 <script src="js/settings/settings-menu.js?v={{$assetVersion}}"></script>
 <script src="js/hub-clear-input.js?v={{$assetVersion}}"></script>

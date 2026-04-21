@@ -35,7 +35,12 @@ const ProbesMenuConfig = createHubMenu({
         { id: 'bookmarks-history',    label: 'History',          icon: HIEROGLYPHS.starDuat,   pageLabel: 'Visit History',     parent: 'bookmarks',       order: 1 },
         { id: 'bookmarks-embeddings', label: 'Embeddings',       icon: HIEROGLYPHS.falcon,     pageLabel: 'Embedding Config',  parent: 'bookmarks',       order: 2 },
         { id: 'bookmarks-setup',      label: 'Setup',            icon: HIEROGLYPHS.djedPillar, pageLabel: 'Setup & Import',    parent: 'bookmarks',       order: 3 },
+        { id: 'tts-pool',             label: 'TTS Pool',         icon: 'icons/hieroglyphs/sistrum-blue.svg', pageLabel: 'TTS Pool', parent: null,              order: 4 },
         { id: 'probes-settings',      label: '☰',                icon: HIEROGLYPHS.kheper,     pageLabel: 'Navbar Layout',     parent: null,              order: 3 },
+
+        // ── TTS Pool page function items ──────────────────────────────────
+        { id: 'tts-fn-refresh', label: 'Refresh',        icon: HIEROGLYPHS.nefer, fn: 'tts.refresh', activeOn: ['tts-pool'], parent: 'probes-settings', order: 0 },
+        { id: 'tts-fn-context', label: 'Switch Engine', icon: HIEROGLYPHS.eyeOfHorus, fn: 'tts.context', activeOn: ['tts-pool'], parent: 'probes-settings', order: 1 },
 
         // ── Bookmarks page function items ─────────────────────────────────
         { id: 'bm-fn-add',    label: 'Add Bookmark', icon: 'icons/ui/plus-blue.svg',          fn: 'bm.add',         activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 0 },
@@ -144,6 +149,10 @@ function _probesExpandCollapseVisible(getState, mode) {
 // matching fn item in defaultMenu above (fn: 'ns.key', activeOn: ['tab-id']).
 
 ProbesMenuConfig.registerFunctions({
+    // TTS Pool
+    'tts.refresh':    () => _ttsPoolRefreshAll(),
+    'tts.context':    () => openTtsPoolContextModal(),
+
     // Bookmarks — Main tab
     'bm.add':         () => openBookmarkModal(null),
     'bm.import':      () => document.getElementById('bm-import-file').click(),
@@ -230,6 +239,7 @@ ProbesMenuConfig.registerFunctions({
 });
 
 ProbesMenuConfig.registerLabelGetters({
+    'tts-fn-context':    () => _ttsPoolContextMenuLabel(),
     'bm-fn-scroll':      () => _probesHorizontalScrollLabel('Horiz Scroll', () => _bmSearchActive ? _ensureBmSearchLayoutController() : _ensureBmBrowseLayoutController()),
     'bm-fn-pagination': () => _bmIsPaginationEnabled() ? 'Pagination: On' : 'Pagination: Off',
     'bm-fn-archived': () => (typeof isBookmarksShowArchived === 'function' && isBookmarksShowArchived()) ? 'Show active' : 'Show archived',

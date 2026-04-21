@@ -282,6 +282,7 @@ function switchTab(tab) {
   if (tab === 'embed-menu-grid') { if (!_embedMenuItems.length) loadEmbedMenuItems(); else renderEmGrid(); }
   if (tab === 'mcp-servers')    { if (typeof _mcpLoadTab === 'function')  _mcpLoadTab(); }
   if (tab === 'prompt-injection') { if (typeof _piLoadTab === 'function') _piLoadTab(); }
+  if (tab === 'tts-pool')       { if (typeof _ttsPoolLoadTab === 'function') _ttsPoolLoadTab(); }
   if (tab === 'bookmarks-main'  && !_bookmarks.length)  loadBookmarks();
   if (tab === 'bookmarks-history')                       loadVisits();
   if (tab === 'bookmarks-embeddings')                    _bmLoadEmbedCfg();

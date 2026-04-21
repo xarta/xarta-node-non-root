@@ -1,0 +1,438 @@
+/* ── TTS Pool Test Page ──────────────────────────────────────────────────── */
+
+.tts-pool-context-description {
+  margin: 8px 0 0;
+  min-height: 1.2em;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.tts-pool-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tts-pool-modal-field label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.tts-pool-modal-field select {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 7px 10px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.tts-pool-modal-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.tts-pool-status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  flex-wrap: wrap;
+}
+
+.tts-pool-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-dim);
+  transition: background .3s;
+}
+.tts-pool-status-dot--ok     { background: var(--ok); }
+.tts-pool-status-dot--error  { background: var(--err); }
+.tts-pool-status-dot--warn   { background: var(--warn); }
+
+.tts-pool-status-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tts-pool-status-model {
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  font-style: italic;
+}
+
+.tts-pool-engine-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.tts-pool-engine-card__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+@media (min-width: 820px) {
+  .tts-pool-engine-card__header {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 34%);
+    align-items: start;
+  }
+}
+
+.tts-pool-engine-card__intro {
+  min-width: 0;
+}
+
+.tts-pool-engine-card__title {
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: var(--text);
+  margin: 4px 0 0;
+}
+
+.tts-pool-engine-card__summary {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.tts-pool-engine-card .tts-pool-status-row {
+  margin: 0;
+  min-width: 0;
+}
+
+.tts-pool-engine-card__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.tts-pool-engine-card__item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+
+.tts-pool-engine-card__item-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.tts-pool-engine-card__item-value {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.45;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tts-pool-engine-card__item-value code {
+  font-size: 11px;
+}
+
+.tts-pool-engine-card__item-value a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.tts-pool-engine-card__item-value a:hover {
+  text-decoration: underline;
+}
+
+.tts-pool-engine-card__chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tts-pool-engine-card__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(91, 156, 246, 0.25);
+  background: rgba(91, 156, 246, 0.09);
+  color: var(--accent);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.tts-pool-engine-card__chip--ok {
+  border-color: rgba(67, 214, 144, 0.28);
+  background: rgba(67, 214, 144, 0.10);
+  color: var(--ok);
+}
+
+.tts-pool-engine-card__chip--warn {
+  border-color: rgba(232, 188, 65, 0.28);
+  background: rgba(232, 188, 65, 0.10);
+  color: var(--warn);
+}
+
+.tts-pool-engine-card__links {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tts-pool-engine-card__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 12px;
+}
+
+.tts-pool-engine-card__link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Panel cards */
+.tts-pool-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 14px;
+}
+
+/* Section headings */
+.tts-pool-section-heading {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  margin: 0 0 12px;
+}
+
+/* Form grid — stacks to single col on mobile, two col on wider screens */
+.tts-pool-form-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+@media (min-width: 480px) {
+  .tts-pool-form-grid--two {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.tts-pool-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.tts-pool-form-field select,
+.tts-pool-form-field textarea {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 7px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.tts-pool-form-field select {
+  height: 34px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.tts-pool-form-field select:focus,
+.tts-pool-form-field textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.tts-pool-form-field textarea {
+  min-height: 80px;
+  line-height: 1.5;
+}
+
+/* Preset row */
+.tts-pool-preset-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.tts-pool-preset-row label {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.tts-pool-preset-row select {
+  flex: 1 1 auto;
+  min-width: 120px;
+  max-width: 280px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 5px 8px;
+  font-size: 12px;
+  height: 30px;
+  cursor: pointer;
+}
+
+/* Control buttons row */
+.tts-pool-controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  align-items: center;
+}
+
+/* Audio result area */
+.tts-pool-audio-result {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tts-pool-audio-result audio {
+  width: 100%;
+  height: 36px;
+  accent-color: var(--accent);
+}
+
+/* Metric badges */
+.tts-pool-metrics {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tts-pool-metric-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: rgba(91, 156, 246, 0.12);
+  border: 1px solid rgba(91, 156, 246, 0.25);
+  color: var(--accent);
+  border-radius: 4px;
+  padding: 2px 8px;
+  letter-spacing: 0.04em;
+}
+
+.tts-pool-metric-badge__label {
+  color: var(--text-dim);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+}
+
+/* Voice sample items */
+.tts-pool-voice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tts-pool-voice-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  flex-wrap: wrap;
+}
+
+.tts-pool-voice-item__name {
+  flex: 1 1 auto;
+  font-size: 13px;
+  color: var(--text);
+  word-break: break-all;
+  min-width: 0;
+}
+
+.tts-pool-voice-item__meta {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.tts-pool-voice-item__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  border-radius: 4px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+.tts-pool-voice-item__state--on-stack {
+  background: rgba(76, 175, 125, 0.15);
+  border: 1px solid rgba(76, 175, 125, 0.3);
+  color: var(--ok);
+}
+.tts-pool-voice-item__state--off-stack {
+  background: rgba(123, 130, 160, 0.1);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.tts-pool-voice-item__actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Generating spinner state */
+.tts-pool-generating-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 8px;
+}
