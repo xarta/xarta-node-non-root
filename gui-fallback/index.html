@@ -3165,18 +3165,24 @@
           <input class="docs-search-input" type="search" id="docs-search-query" autocomplete="off" spellcheck="false" />
         </div>
         <div class="docs-search-controls">
-          <select class="docs-search-mode hub-ctrl" id="docs-search-mode" aria-label="Search mode">
-            <option value="hybrid">Hybrid</option>
-            <option value="vector">Vector</option>
-            <option value="keyword">Keyword</option>
-          </select>
-          <select class="hub-ctrl" id="docs-search-top-k" aria-label="Result count">
-            <option value="5">5</option>
-            <option value="8">8</option>
-            <option value="12">12</option>
-            <option value="20">20</option>
-          </select>
-          <label class="hub-checkbox" style="font-size:13px;color:var(--text);">
+          <label class="docs-search-control">
+            <span>Mode</span>
+            <select class="docs-search-mode hub-ctrl" id="docs-search-mode" aria-label="Search mode">
+              <option value="hybrid">Hybrid</option>
+              <option value="vector">Vector</option>
+              <option value="keyword">Keyword</option>
+            </select>
+          </label>
+          <label class="docs-search-control docs-search-count-control">
+            <span>Docs</span>
+            <select class="hub-ctrl" id="docs-search-top-k" aria-label="Document count">
+              <option value="5">5</option>
+              <option value="8">8</option>
+              <option value="12">12</option>
+              <option value="20">20</option>
+            </select>
+          </label>
+          <label class="hub-checkbox docs-search-rerank-control">
             <input class="hub-checkbox__input" type="checkbox" id="docs-search-rerank" />
             <span class="hub-checkbox__box" aria-hidden="true"></span>
             <span class="hub-checkbox__label">Rerank</span>

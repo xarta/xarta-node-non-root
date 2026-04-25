@@ -15,8 +15,14 @@
 
 .docs-search-form {
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
+  grid-template-columns:
+    minmax(220px, 1fr)
+    minmax(120px, 130px)
+    minmax(74px, 84px)
+    max-content
+    minmax(86px, 86px);
+  column-gap: 8px;
+  row-gap: 10px;
   align-items: end;
 }
 
@@ -30,14 +36,44 @@
 }
 
 .docs-search-controls {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
+  display: contents;
+}
+
+.docs-search-control {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.docs-search-control > span {
+  line-height: 1;
+}
+
+.docs-search-control .hub-ctrl {
+  width: 100%;
+  min-width: 0;
 }
 
 .docs-search-mode {
-  min-width: 132px;
+  min-width: 0;
+}
+
+.docs-search-rerank-control {
+  align-self: end;
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 8px;
+  color: var(--text);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.docs-search-controls .hub-modal-btn {
+  align-self: end;
+  min-height: 36px;
 }
 
 .docs-search-results {
@@ -55,6 +91,10 @@
   border: 1px solid rgba(var(--hub-accent-rgb), 0.26);
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.24);
+}
+
+.docs-search-document.is-expanded {
+  background: rgba(var(--hub-accent-rgb), 0.055);
 }
 
 .docs-search-result.is-selected {
@@ -122,6 +162,31 @@
   flex-wrap: wrap;
 }
 
+.docs-search-chunks {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(var(--hub-accent-rgb), 0.18);
+}
+
+.docs-search-chunk {
+  padding: 8px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.docs-search-chunk:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.docs-search-chunk-title {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
 .docs-search-empty,
 .docs-search-status {
   color: var(--text-dim);
@@ -149,11 +214,18 @@
 
   .docs-search-controls {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(72px, 0.65fr);
+    gap: 8px;
+    align-items: end;
   }
 
   .docs-search-controls .hub-modal-btn {
     width: 100%;
+  }
+
+  .docs-search-rerank-control,
+  .docs-search-controls .hub-modal-btn {
+    min-height: 38px;
   }
 
   .docs-search-result {

@@ -96,12 +96,14 @@ const SettingsMenuConfig = createHubMenu({
         // ── Docs page function items ───────────────────────────────────────
         { id: 'doc-fn-reload',   label: 'Reload',           icon: HIEROGLYPHS.nefer,      fn: 'doc.reload',   activeOn: ['docs'],         parent: 'settings-layout', order: 0 },
         { id: 'doc-fn-search',   label: 'Vector Search',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'doc.search',   activeOn: ['docs'],         parent: 'settings-layout', order: 1 },
-        { id: 'doc-fn-new',      label: 'New Doc',          icon: HIEROGLYPHS.papyrus,    fn: 'doc.new',      activeOn: ['docs'],         parent: 'settings-layout', order: 2 },
-        { id: 'doc-fn-add',      label: 'Add Existing',     icon: 'icons/ui/group-folder-blue.svg', fn: 'doc.add', activeOn: ['docs'], parent: 'settings-layout', order: 3 },
-        { id: 'doc-fn-preview',  label: 'Edit / Preview',   icon: HIEROGLYPHS.khaHorizon, fn: 'doc.preview',  activeOn: ['docs'],         parent: 'settings-layout', order: 4 },
-        { id: 'doc-fn-save',     label: 'Save',             icon: HIEROGLYPHS.tjet,       fn: 'doc.save',     activeOn: ['docs'],         parent: 'settings-layout', order: 5 },
-        { id: 'doc-fn-meta',     label: 'Meta',             icon: HIEROGLYPHS.papyrus,    fn: 'doc.meta',     activeOn: ['docs'],         parent: 'settings-layout', order: 6 },
-        { id: 'doc-fn-delete',   label: 'Delete',           icon: 'icons/ui/trash-blue.svg', fn: 'doc.delete', activeOn: ['docs'], parent: 'settings-layout', order: 7 },
+        { id: 'doc-fn-expand-search', label: 'Expand all search results', icon: HIEROGLYPHS.khaHorizon, fn: 'doc.searchExpand', activeOn: ['docs'], parent: 'settings-layout', order: 2 },
+        { id: 'doc-fn-collapse-search', label: 'Collapse all search results', icon: HIEROGLYPHS.khaHorizon, fn: 'doc.searchCollapse', activeOn: ['docs'], parent: 'settings-layout', order: 3 },
+        { id: 'doc-fn-new',      label: 'New Doc',          icon: HIEROGLYPHS.papyrus,    fn: 'doc.new',      activeOn: ['docs'],         parent: 'settings-layout', order: 4 },
+        { id: 'doc-fn-add',      label: 'Add Existing',     icon: 'icons/ui/group-folder-blue.svg', fn: 'doc.add', activeOn: ['docs'], parent: 'settings-layout', order: 5 },
+        { id: 'doc-fn-preview',  label: 'Edit / Preview',   icon: HIEROGLYPHS.khaHorizon, fn: 'doc.preview',  activeOn: ['docs'],         parent: 'settings-layout', order: 6 },
+        { id: 'doc-fn-save',     label: 'Save',             icon: HIEROGLYPHS.tjet,       fn: 'doc.save',     activeOn: ['docs'],         parent: 'settings-layout', order: 7 },
+        { id: 'doc-fn-meta',     label: 'Meta',             icon: HIEROGLYPHS.papyrus,    fn: 'doc.meta',     activeOn: ['docs'],         parent: 'settings-layout', order: 8 },
+        { id: 'doc-fn-delete',   label: 'Delete',           icon: 'icons/ui/trash-blue.svg', fn: 'doc.delete', activeOn: ['docs'], parent: 'settings-layout', order: 9 },
 
         // ── Doc List page function items ───────────────────────────────────
         { id: 'dlist-fn-addgrp', label: 'Add Group',        icon: HIEROGLYPHS.papyrus,    fn: 'dlist.addGrp', activeOn: ['docs-list'],    parent: 'settings-layout', order: 0 },
@@ -552,14 +554,16 @@ SettingsMenuConfig.registerFunctions({
     'ai.assignContext':   () => openAiAssignmentsLayoutContextModal(),
 
     // Docs
-    'doc.reload':   () => docsRefreshContent(),
-    'doc.search':   () => openDocsSearchModal(),
-    'doc.new':      () => openNewDocModal(),
-    'doc.add':      () => openAddDocModal(),
-    'doc.preview':  () => docsTogglePreview(),
-    'doc.save':     () => docsSave(),
-    'doc.meta':     () => openEditDocModal(),
-    'doc.delete':   () => openDeleteDocModal(),
+    'doc.reload':         () => docsRefreshContent(),
+    'doc.search':         () => openDocsSearchModal(),
+    'doc.searchExpand':   () => docsSearchExpandAll(),
+    'doc.searchCollapse': () => docsSearchCollapseAll(),
+    'doc.new':            () => openNewDocModal(),
+    'doc.add':            () => openAddDocModal(),
+    'doc.preview':        () => docsTogglePreview(),
+    'doc.save':           () => docsSave(),
+    'doc.meta':           () => openEditDocModal(),
+    'doc.delete':         () => openDeleteDocModal(),
 
     // Doc List
     'dlist.addGrp': () => docsListAddGroup(),
