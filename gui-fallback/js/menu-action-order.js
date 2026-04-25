@@ -10,6 +10,7 @@
     { key: 'refresh', rank: 10, patterns: [/\brefresh\b/, /\breload\b/, /refresh ui/] },
     { key: 'run-probe', rank: 20, patterns: [/\bscan\b/, /\bprobe\b/, /\bsweep\b/, /\brebuild\b/, /\brun\b/, /\bsteps\b/, /fleet update/] },
     { key: 'add-create-import', rank: 30, patterns: [/\badd\b/, /\bnew\b/, /\bcreate\b/, /\bimport\b/, /download extension/] },
+    { key: 'search', rank: 35, patterns: [/\bsearch\b/, /\bfind\b/] },
     { key: 'edit-preview', rank: 40, patterns: [/\bedit\b/, /\bpreview\b/] },
     { key: 'save', rank: 50, patterns: [/\bsave\b/] },
     { key: 'meta', rank: 55, patterns: [/\bmeta\b/] },

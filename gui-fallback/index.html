@@ -29,6 +29,7 @@
   <link rel="stylesheet" href="css/body-shade.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/ultrawide-debug-panels.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/docs-images.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/docs-search.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/font-roles.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/hub-modal.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/hub-dialogs.css?v={{$assetVersion}}" />
@@ -3147,6 +3148,49 @@
   </div>
 </dialog>
 
+<!-- Docs search modal -->
+<dialog class="hub-modal hub-dialog docs-search-modal" data-tone="info" id="docs-search-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">FIND</span>
+      <span class="hub-dialog-title-text">Docs Search</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body">
+    <div class="docs-search-shell">
+      <form class="docs-search-form" id="docs-search-form">
+        <div class="docs-search-input-wrap field">
+          <label for="docs-search-query">Query</label>
+          <input class="docs-search-input" type="search" id="docs-search-query" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="docs-search-controls">
+          <select class="docs-search-mode hub-ctrl" id="docs-search-mode" aria-label="Search mode">
+            <option value="hybrid">Hybrid</option>
+            <option value="vector">Vector</option>
+            <option value="keyword">Keyword</option>
+          </select>
+          <select class="hub-ctrl" id="docs-search-top-k" aria-label="Result count">
+            <option value="5">5</option>
+            <option value="8">8</option>
+            <option value="12">12</option>
+            <option value="20">20</option>
+          </select>
+          <label class="hub-checkbox" style="font-size:13px;color:var(--text);">
+            <input class="hub-checkbox__input" type="checkbox" id="docs-search-rerank" />
+            <span class="hub-checkbox__box" aria-hidden="true"></span>
+            <span class="hub-checkbox__label">Rerank</span>
+          </label>
+          <button class="hub-modal-btn" type="submit" id="docs-search-submit">Search</button>
+        </div>
+      </form>
+      <p class="docs-search-status" id="docs-search-status"></p>
+      <p class="hub-modal-error" id="docs-search-error"></p>
+      <div class="docs-search-results" id="docs-search-results"></div>
+    </div>
+  </div>
+</dialog>
+
 <!-- Add (register existing) document modal -->
 <dialog class="hub-modal hub-dialog" data-tone="info" id="add-doc-modal" style="width:min(560px,95vw)">
   <div class="hub-modal-header">
@@ -3335,6 +3379,7 @@
 <script src="js/settings/certs.js?v={{$assetVersion}}"></script>
 <script src="js/settings/docs-history.js?v={{$assetVersion}}"></script>
 <script src="js/settings/docs.js?v={{$assetVersion}}"></script>
+<script src="js/settings/docs-search.js?v={{$assetVersion}}"></script>
 <script src="js/settings/docs-images.js?v={{$assetVersion}}"></script>
 <script src="js/settings/self-diag.js?v={{$assetVersion}}"></script>
 <script src="js/settings/settings.js?v={{$assetVersion}}"></script>
