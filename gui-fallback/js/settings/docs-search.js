@@ -139,6 +139,12 @@ function _docsSearchReadForm() {
 
 function openDocsSearchModal(options = {}) {
   _docsSearchLoadState();
+  if (typeof options.query === 'string' && options.query.trim()) {
+    _docsSearchState.query = options.query.trim();
+  }
+  if (['vector', 'hybrid', 'keyword'].includes(options.mode)) {
+    _docsSearchState.mode = options.mode;
+  }
   _docsSearchSetForm();
   _docsSearchRender();
   const modal = document.getElementById('docs-search-modal');

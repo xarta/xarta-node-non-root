@@ -54,6 +54,7 @@
       </div>
     </div>
     <div class="header-right">
+      <button class="header-help-btn" id="bp-help-open" type="button" title="Blueprints help" aria-label="Blueprints help">?</button>
       <blueprints-node-selector></blueprints-node-selector>
     </div>
   </div>
@@ -3149,6 +3150,39 @@
   </div>
 </dialog>
 
+<!-- App-wide help modal -->
+<dialog class="hub-modal hub-dialog bp-help-modal" data-tone="info" id="bp-help-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">HELP</span>
+      <span class="hub-dialog-title-text">Blueprints Help</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body">
+    <div class="bp-help-shell">
+      <div class="field">
+        <label for="bp-help-query">Question</label>
+        <textarea id="bp-help-query" rows="3" autocomplete="off" spellcheck="true"></textarea>
+      </div>
+      <div class="bp-help-actions">
+        <button class="hub-modal-btn" type="button" id="bp-help-submit">Ask</button>
+        <button class="hub-modal-btn secondary" type="button" id="bp-help-speak">Speak</button>
+        <button class="hub-modal-btn secondary" type="button" id="bp-help-action" hidden>Open</button>
+      </div>
+      <p class="docs-search-status" id="bp-help-status"></p>
+      <p class="hub-modal-error" id="bp-help-error"></p>
+      <div class="bp-help-short" id="bp-help-short"></div>
+      <pre class="bp-help-answer bp-font-role-docs-markdown" id="bp-help-answer"></pre>
+      <div id="bp-help-warnings"></div>
+      <details class="bp-help-evidence-panel">
+        <summary>Evidence</summary>
+        <div id="bp-help-evidence"></div>
+      </details>
+    </div>
+  </div>
+</dialog>
+
 <!-- Docs search modal -->
 <dialog class="hub-modal hub-dialog docs-search-modal" data-tone="info" id="docs-search-modal">
   <div class="hub-modal-header">
@@ -3387,6 +3421,7 @@
 <script src="js/settings/docs-history.js?v={{$assetVersion}}"></script>
 <script src="js/settings/docs.js?v={{$assetVersion}}"></script>
 <script src="js/settings/docs-search.js?v={{$assetVersion}}"></script>
+<script src="js/help-surface.js?v={{$assetVersion}}"></script>
 <script src="js/settings/docs-images.js?v={{$assetVersion}}"></script>
 <script src="js/settings/self-diag.js?v={{$assetVersion}}"></script>
 <script src="js/settings/settings.js?v={{$assetVersion}}"></script>

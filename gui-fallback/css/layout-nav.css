@@ -19,6 +19,24 @@ header .brand { font-size: 15px; font-weight: 700; letter-spacing: .3px; white-s
                 color: var(--text); flex-shrink: 0; margin-right: 14px; }
 .header-left  { display: flex; align-items: center; gap: 0; flex: 1; min-width: 180px; }
 .header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: auto; padding-left: 8px; }
+.header-help-btn {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.36);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--hub-accent);
+  font: 700 18px/1 var(--font);
+  cursor: pointer;
+}
+.header-help-btn:hover {
+  border-color: rgba(var(--hub-accent-rgb), 0.62);
+  background: rgba(var(--hub-accent-rgb), 0.12);
+}
 main { max-width: var(--app-max-width); margin: 0 auto; padding: 16px; width: 100%; }
 section { margin-bottom: 32px; }
 h2 { font-size: 13px; font-weight: 600; text-transform: uppercase;
