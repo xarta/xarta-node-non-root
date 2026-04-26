@@ -40,6 +40,7 @@ let _aiObservability = null;
 let _aiObservabilityResults = Object.create(null);
 let _aiObservabilityRunningAll = false;
 let _aiObservabilitySyncRunning = false;
+let _aiObservabilityDbLinkRunning = false;
 let _aiObservabilitySyncStatus = { message: '', tone: '' };
 
 function _providerModalEls() {
@@ -559,9 +560,10 @@ function renderAiObservabilityPanel() {
   const summary = document.getElementById('ai-observability-summary');
   const badge = document.getElementById('ai-observability-stack-badge');
   const syncBtn = document.getElementById('ai-observability-sync-now-btn');
+  const dbLinkBtn = document.getElementById('ai-observability-db-link-btn');
   const testAllBtn = document.getElementById('ai-observability-test-all-btn');
   const list = document.getElementById('ai-observability-list');
-  if (!panel || !note || !summary || !badge || !list || !testAllBtn || !syncBtn) return;
+  if (!panel || !note || !summary || !badge || !list || !testAllBtn || !syncBtn || !dbLinkBtn) return;
 
   const data = _aiObservability;
   if (!data || !data.panel_visible) {
@@ -586,9 +588,14 @@ function renderAiObservabilityPanel() {
 
   const models = Array.isArray(data.models) ? data.models : [];
   const runnableCount = models.filter(item => item.supports_test).length;
+  const dbLinker = data.db_linker || {};
   syncBtn.disabled = _aiObservabilitySyncRunning;
   syncBtn.textContent = _aiObservabilitySyncRunning ? '⟳ Syncing…' : '⇄ Sync Latest';
-  testAllBtn.disabled = !running || !runnableCount || _aiObservabilityRunningAll || _aiObservabilitySyncRunning;
+  dbLinkBtn.hidden = !dbLinker.available && !dbLinker.candidate_count;
+  dbLinkBtn.disabled = !dbLinker.available || _aiObservabilityDbLinkRunning || _aiObservabilitySyncRunning || _aiObservabilityRunningAll;
+  dbLinkBtn.textContent = _aiObservabilityDbLinkRunning ? 'Linking…' : `AI DB Link${dbLinker.candidate_count ? ` (${dbLinker.candidate_count})` : ''}`;
+  dbLinkBtn.title = dbLinker.reason || 'Create DB provider rows for config-only aliases using local AI JSON proposals.';
+  testAllBtn.disabled = !running || !runnableCount || _aiObservabilityRunningAll || _aiObservabilitySyncRunning || _aiObservabilityDbLinkRunning;
   testAllBtn.textContent = _aiObservabilityRunningAll ? 'Testing All…' : '▶ Test All';
   if (!models.length) {
     list.innerHTML = `<div style="padding:10px 12px;border:1px dashed var(--border);border-radius:var(--radius);color:var(--text-dim);font-size:12px;">The local LiteLLM stack is present, but no aliases were found in its current config.</div>`;
@@ -633,6 +640,36 @@ function renderAiObservabilityPanel() {
       <div id="ai-obs-result-${slug}" style="margin-top:8px;font-size:12px;color:var(--text-dim);">${_renderAiObservabilityResult(item.alias)}</div>
     </div>`;
   }).join('');
+}
+
+async function runAiObservabilityDbLink() {
+  if (_aiObservabilityDbLinkRunning) return;
+  _aiObservabilityDbLinkRunning = true;
+  _setAiObservabilityActionStatus('Asking the local private model for DB-link JSON, then validating the proposed provider rows…');
+  renderAiObservabilityPanel();
+  try {
+    const r = await apiFetch('/api/v1/ai-providers/observability/db-link', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ dry_run: false }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || !data.ok) throw new Error(data.detail || data.error || `HTTP ${r.status}`);
+    const applied = Number(data.applied_count || 0);
+    const skipped = Array.isArray(data.skipped) ? data.skipped.length : 0;
+    _setAiObservabilityActionStatus(
+      applied
+        ? `DB link complete. Added ${applied} provider row${applied === 1 ? '' : 's'}${skipped ? `; skipped ${skipped}.` : '.'}`
+        : `DB link finished; no new rows were needed${skipped ? ` (${skipped} skipped).` : '.'}`,
+      applied ? 'ok' : 'warn'
+    );
+    await loadAiProviders();
+  } catch (e) {
+    _setAiObservabilityActionStatus(`DB link failed: ${e.message || 'Unknown error.'}`, 'err');
+  } finally {
+    _aiObservabilityDbLinkRunning = false;
+    renderAiObservabilityPanel();
+  }
 }
 
 async function runAiObservabilitySyncNow() {
@@ -1053,6 +1090,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('ai-assignments-cols-modal-apply')?.addEventListener('click', _applyAiAssignmentColsModal);
   document.getElementById('ai-observability-refresh-btn')?.addEventListener('click', () => { void loadAiProviderObservability(); });
   document.getElementById('ai-observability-sync-now-btn')?.addEventListener('click', () => { void runAiObservabilitySyncNow(); });
+  document.getElementById('ai-observability-db-link-btn')?.addEventListener('click', () => { void runAiObservabilityDbLink(); });
   document.getElementById('ai-observability-test-all-btn')?.addEventListener('click', () => { void runAiObservabilityTestAll(); });
   document.getElementById('ai-observability-list')?.addEventListener('click', e => {
     const testBtn = e.target.closest('[data-ai-obs-test]');
