@@ -7,6 +7,7 @@ let _docsSearchState = {
   top_k: 8,
   rerank: true,
   results: [],
+  explanation: null,
   expandedDocs: {},
   selectedHandle: null,
   lastError: '',
@@ -147,6 +148,7 @@ function openDocsSearchModal(options = {}) {
   }
   _docsSearchSetForm();
   _docsSearchRender();
+  _docsSearchRenderExplanation();
   const modal = document.getElementById('docs-search-modal');
   if (!modal) return;
   HubModal.open(modal, {
@@ -229,6 +231,37 @@ function _docsSearchRender() {
   _docsSearchRenderStatus(`${groups.length} document${groups.length === 1 ? '' : 's'} from ${results.length} chunk candidate${results.length === 1 ? '' : 's'}`, false);
 }
 
+function _docsSearchRenderExplanation() {
+  const panel = document.getElementById('docs-search-explain-panel');
+  if (!panel) return;
+  const explanation = _docsSearchState.explanation;
+  if (!explanation || typeof explanation !== 'object') {
+    panel.hidden = true;
+    panel.innerHTML = '';
+    return;
+  }
+  const display = explanation.display && typeof explanation.display === 'object'
+    ? explanation.display
+    : {};
+  const summary = String(display.summary || '').trim();
+  const markdown = String(display.markdown || '').trim();
+  const sourceCount = Number.isFinite(display.source_count) ? display.source_count : 0;
+  const evidenceCount = Number.isFinite(display.evidence_document_count) ? display.evidence_document_count : 0;
+  panel.hidden = false;
+  panel.innerHTML = `
+    <section class="docs-search-explain-card">
+      <div class="docs-search-explain-head">
+        <div>
+          <div class="docs-search-explain-title">${_docsSearchEsc(display.title || 'Docs Search Explanation')}</div>
+          <div class="docs-search-explain-meta">${sourceCount} source${sourceCount === 1 ? '' : 's'} · ${evidenceCount} evidence document${evidenceCount === 1 ? '' : 's'}</div>
+        </div>
+      </div>
+      ${summary ? `<p class="docs-search-explain-summary">${_docsSearchEsc(summary)}</p>` : ''}
+      ${markdown ? `<pre class="docs-search-explain-markdown bp-font-role-docs-markdown">${_docsSearchEsc(markdown)}</pre>` : ''}
+    </section>
+  `;
+}
+
 async function _docsSearchRun() {
   _docsSearchReadForm();
   const q = _docsSearchState.query;
@@ -254,6 +287,7 @@ async function _docsSearchRun() {
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
     _docsSearchState.results = Array.isArray(data.results) ? data.results : [];
+    _docsSearchState.explanation = null;
     _docsSearchState.expandedDocs = {};
     const groups = _docsSearchGroups();
     groups.forEach(group => {
@@ -264,9 +298,49 @@ async function _docsSearchRun() {
     _docsSearchState.lastError = '';
     _docsSearchSaveState();
     _docsSearchRender();
+    _docsSearchRenderExplanation();
   } catch (e) {
     _docsSearchState.lastError = e.message || String(e);
     _docsSearchRenderStatus(`Search failed: ${_docsSearchState.lastError}`, true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function _docsSearchExplain() {
+  _docsSearchReadForm();
+  const q = _docsSearchState.query;
+  if (!q) {
+    _docsSearchRenderStatus('Enter a search query.', true);
+    return;
+  }
+  const btn = document.getElementById('docs-search-explain');
+  if (btn) btn.disabled = true;
+  _docsSearchRenderStatus('Synthesizing explanation...', false);
+  try {
+    const body = {
+      query: q,
+      search_mode: _docsSearchState.mode,
+      max_docs: Math.min(5, _docsSearchState.top_k),
+      max_chars_per_doc: 3000,
+      top_k: Math.max(5, _docsSearchState.top_k),
+      rerank: _docsSearchState.rerank,
+      explanation_mode: 'answer',
+    };
+    const r = await apiFetch('/api/v1/docs/search/explain', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+    const display = data.display && typeof data.display === 'object' ? data.display : null;
+    if (!display) throw new Error('Explain response did not include display metadata.');
+    _docsSearchState.explanation = data;
+    _docsSearchRenderExplanation();
+    _docsSearchRenderStatus(`Explanation ready from ${display.source_count || 0} source${display.source_count === 1 ? '' : 's'}.`, false);
+  } catch (e) {
+    _docsSearchRenderStatus(`Explain failed: ${e.message || e}`, true);
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -358,6 +432,7 @@ function _docsSearchSetAllExpanded(expanded, openAfter = false) {
     openDocsSearchModal({ focusQuery: false });
   } else {
     _docsSearchRender();
+    _docsSearchRenderExplanation();
   }
 }
 
@@ -416,6 +491,7 @@ document.addEventListener('DOMContentLoaded', () => {
       _docsSearchRun();
     });
   }
+  document.getElementById('docs-search-explain')?.addEventListener('click', _docsSearchExplain);
   ['docs-search-mode', 'docs-search-top-k', 'docs-search-rerank'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', () => {
