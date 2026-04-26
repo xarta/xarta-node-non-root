@@ -161,7 +161,47 @@ const BlueprintsHelpSurface = (() => {
     }
   }
 
-  function executeAction(action = null) {
+  function _openKnownModal(dispatch) {
+    const opener = dispatch?.opener || '';
+    const modalId = dispatch?.modal_id || '';
+    const openers = {
+      openDocsSearchModal: () => openDocsSearchModal({ query: _query(), mode: 'hybrid', focusQuery: false }),
+      openNewDocModal: () => openNewDocModal(),
+      openAddDocModal: () => openAddDocModal(),
+      'BlueprintsHelpSurface.open': () => open(),
+    };
+    const fn = openers[opener];
+    if (typeof fn === 'function') {
+      fn();
+      return true;
+    }
+    const modal = modalId ? document.getElementById(modalId) : null;
+    if (!modal) return false;
+    if (typeof HubModal !== 'undefined') HubModal.open(modal);
+    else if (!modal.open) modal.showModal();
+    return true;
+  }
+
+  async function _openCatalogedDoc(dispatch) {
+    if (!dispatch?.doc_id && !dispatch?.path) return false;
+    if (dispatch.group && typeof switchGroup === 'function') switchGroup(dispatch.group);
+    if (dispatch.tab && typeof switchTab === 'function') switchTab(dispatch.tab);
+    const menu = window.BlueprintsHubMenuBridge?.getActiveMenuConfig?.();
+    if (menu && dispatch.tab && typeof menu.updateActiveTab === 'function') menu.updateActiveTab(dispatch.tab);
+    if (typeof loadDocs === 'function' && (!Array.isArray(_docsAll) || !_docsAll.length)) {
+      await loadDocs();
+    }
+    if (dispatch.doc_id && typeof docsSelectDoc === 'function') {
+      return await docsSelectDoc(dispatch.doc_id);
+    }
+    if (dispatch.path && typeof docsOpenByPath === 'function') {
+      docsOpenByPath(dispatch.path);
+      return true;
+    }
+    return false;
+  }
+
+  async function executeAction(action = null) {
     const chosen = action || _lastTurn?.action;
     const dispatch = chosen?.dispatch;
     if (!dispatch) return false;
@@ -173,12 +213,11 @@ const BlueprintsHelpSurface = (() => {
         if (menu && typeof menu.updateActiveTab === 'function') menu.updateActiveTab(dispatch.tab);
       }
     }
-    if (dispatch.type === 'open_modal' && dispatch.modal === 'docs-search') {
-      window.setTimeout(() => {
-        if (typeof openDocsSearchModal === 'function') {
-          openDocsSearchModal({ query: _query(), mode: 'hybrid', focusQuery: false });
-        }
-      }, 50);
+    if (dispatch.type === 'open_modal') {
+      window.setTimeout(() => _openKnownModal(dispatch), 50);
+    }
+    if (dispatch.type === 'open_doc') {
+      return await _openCatalogedDoc(dispatch);
     }
     return true;
   }
@@ -202,7 +241,7 @@ const BlueprintsHelpSurface = (() => {
     document.getElementById('bp-help-open')?.addEventListener('click', open);
     document.getElementById('bp-help-submit')?.addEventListener('click', () => ask({ speak: false }));
     document.getElementById('bp-help-speak')?.addEventListener('click', () => ask({ speak: true }));
-    document.getElementById('bp-help-action')?.addEventListener('click', () => executeAction());
+    document.getElementById('bp-help-action')?.addEventListener('click', () => { executeAction(); });
     document.getElementById('bp-help-query')?.addEventListener('keydown', event => {
       if (event.key !== 'Enter' || event.shiftKey) return;
       event.preventDefault();
