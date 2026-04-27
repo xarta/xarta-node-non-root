@@ -29,6 +29,7 @@ let _docsFolderTreeState = {
   mode: 'keyword',
   lastTree: null,
   searchResults: null,
+  explanation: null,
 };
 
 // ── Load + Sidebar ───────────────────────────────────────────────────────────
@@ -192,6 +193,45 @@ async function _docsOpenDoc(docId) {
     errEl.hidden = false;
     return false;
   }
+}
+
+function docsHighlightTerms(terms) {
+  const preview = document.getElementById('docs-preview');
+  if (!preview || preview.style.display === 'none') return;
+  const clean = Array.from(new Set((terms || [])
+    .map(t => String(t || '').trim())
+    .filter(t => t.length >= 3)))
+    .slice(0, 8);
+  if (!clean.length) return;
+  const pattern = new RegExp(`(${clean.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
+  const walker = document.createTreeWalker(preview, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue || !pattern.test(node.nodeValue)) return NodeFilter.FILTER_REJECT;
+      pattern.lastIndex = 0;
+      if (node.parentElement && ['CODE', 'PRE', 'SCRIPT', 'STYLE', 'MARK'].includes(node.parentElement.tagName)) {
+        return NodeFilter.FILTER_REJECT;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach(node => {
+    const frag = document.createDocumentFragment();
+    let last = 0;
+    const text = node.nodeValue;
+    text.replace(pattern, (match, _term, offset) => {
+      if (offset > last) frag.appendChild(document.createTextNode(text.slice(last, offset)));
+      const mark = document.createElement('mark');
+      mark.className = 'docs-search-highlight';
+      mark.textContent = match;
+      frag.appendChild(mark);
+      last = offset + match.length;
+      return match;
+    });
+    if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+    node.parentNode.replaceChild(frag, node);
+  });
 }
 
 async function docsHistoryBack() {
@@ -837,14 +877,20 @@ function docsListDeleteDoc(docId) {
   modal.addEventListener('close', cancelHandler);
 }
 
-function docsListOpenDoc(docId) {
+function docsListOpenDoc(docId, opts = {}) {
   switchTab('docs');
   SettingsMenuConfig.updateActiveTab('docs');
+  const afterOpen = ok => {
+    if (ok && Array.isArray(opts.highlightTerms) && opts.highlightTerms.length) {
+      window.setTimeout(() => docsHighlightTerms(opts.highlightTerms), 80);
+    }
+    return ok;
+  };
   if (docId === _docsActiveId) {
     // docsSelectDoc would bail early — force a fresh load instead
-    _docsOpenDoc(docId);
+    return _docsOpenDoc(docId).then(afterOpen);
   } else {
-    docsSelectDoc(docId);
+    return docsSelectDoc(docId).then(afterOpen);
   }
 }
 
@@ -930,9 +976,11 @@ async function docsListDeleteGroup(groupId, name) {
   }
 }
 
-async function docsListOpenGroupFolder(groupId) {
+async function docsListOpenGroupFolder(groupId, options = {}) {
   const group = groupId ? _docsGroups.find(g => g.group_id === groupId) : null;
-  const groupName = group ? group.name : 'Undefined Group';
+  const groupName = typeof options.title === 'string' && options.title.trim()
+    ? options.title.trim()
+    : (group ? group.name : 'Undefined Group');
   const modal = document.getElementById('docs-folder-tree-modal');
   const title = document.getElementById('docs-folder-tree-title');
   const list = document.getElementById('docs-folder-tree-list');
@@ -943,17 +991,30 @@ async function docsListOpenGroupFolder(groupId) {
     groupId: groupId || null,
     path: null,
     parentPath: null,
-    query: '',
-    mode: 'keyword',
+    query: typeof options.query === 'string' ? options.query.trim() : '',
+    mode: ['keyword', 'vector', 'hybrid'].includes(options.mode) ? options.mode : 'keyword',
     lastTree: null,
     searchResults: null,
+    explanation: null,
   };
   _docsFolderTreeSetSearchForm();
   if (title) title.textContent = groupName;
   if (list) list.innerHTML = '<div class="docs-tree-loading">Loading folder...</div>';
   if (errEl) errEl.textContent = '';
   if (status) status.textContent = '';
-  if (modal && typeof HubModal !== 'undefined') HubModal.open(modal);
+  _docsFolderTreeClearExplanation();
+  if (modal && typeof HubModal !== 'undefined') {
+    HubModal.open(modal, {
+      onOpen: () => {
+        if (options.focusQuery === false) return;
+        const input = document.getElementById('docs-folder-tree-query');
+        if (input) {
+          input.focus();
+          input.select();
+        }
+      },
+    });
+  }
 
   await _docsFolderTreeLoad(null);
 }
@@ -971,6 +1032,63 @@ function _docsFolderTreeReadSearchForm() {
   _docsFolderTreeState.query = (document.getElementById('docs-folder-tree-query')?.value || '').trim();
   const mode = document.getElementById('docs-folder-tree-mode')?.value || 'keyword';
   _docsFolderTreeState.mode = ['keyword', 'vector', 'hybrid'].includes(mode) ? mode : 'keyword';
+}
+
+function _docsFolderTreeClearExplanation() {
+  _docsFolderTreeState.explanation = null;
+  const panel = document.getElementById('docs-folder-tree-explain-panel');
+  if (panel) {
+    panel.hidden = true;
+    panel.innerHTML = '';
+  }
+}
+
+function _docsFolderTreeSearchTerms(result) {
+  const terms = Array.isArray(result?.keyword_terms) ? result.keyword_terms : [];
+  if (terms.length) return terms;
+  return Array.from(new Set((_docsFolderTreeState.query.match(/[A-Za-z0-9._:-]{3,}/g) || [])
+    .map(v => v.toLowerCase())))
+    .slice(0, 8);
+}
+
+function _docsFolderTreeRenderExplanation() {
+  const panel = document.getElementById('docs-folder-tree-explain-panel');
+  if (!panel) return;
+  const explanation = _docsFolderTreeState.explanation;
+  const display = explanation?.display && typeof explanation.display === 'object' ? explanation.display : null;
+  if (!display) {
+    panel.hidden = true;
+    panel.innerHTML = '';
+    return;
+  }
+  const sourceCount = Number(display.source_count || 0);
+  const evidenceCount = Number(display.evidence_count || display.evidence_document_count || 0);
+  const summary = display.summary || '';
+  const markdown = display.markdown || display.answer_markdown || '';
+  panel.hidden = false;
+  panel.innerHTML = `
+    <section class="docs-tree-explain-card">
+      <div>
+        <div class="docs-tree-explain-title">${esc(display.title || 'Docs Search Explanation')}</div>
+        <p class="docs-tree-explain-meta">${sourceCount} source${sourceCount === 1 ? '' : 's'}; ${evidenceCount} evidence document${evidenceCount === 1 ? '' : 's'}</p>
+      </div>
+      ${summary ? `<p class="docs-tree-explain-summary">${esc(summary)}</p>` : ''}
+      ${markdown ? `<pre class="docs-tree-explain-markdown bp-font-role-docs-markdown">${esc(markdown)}</pre>` : ''}
+    </section>
+  `;
+}
+
+function openDocsFolderSearchModal(options = {}) {
+  const activeDoc = _docsAll.find(d => d.doc_id === _docsActiveId) || null;
+  const groupId = Object.prototype.hasOwnProperty.call(options, 'groupId')
+    ? options.groupId
+    : (activeDoc ? activeDoc.group_id || null : null);
+  docsListOpenGroupFolder(groupId, {
+    query: typeof options.query === 'string' ? options.query : '',
+    mode: ['keyword', 'vector', 'hybrid'].includes(options.mode) ? options.mode : 'keyword',
+    focusQuery: options.focusQuery !== false,
+    title: activeDoc || groupId ? '' : 'Docs Search',
+  });
 }
 
 async function _docsFolderTreeLoad(path) {
@@ -1003,6 +1121,7 @@ async function _docsFolderTreeLoad(path) {
 function _docsFolderTreeRender(data) {
   _docsFolderTreeState.lastTree = data;
   _docsFolderTreeState.searchResults = null;
+  _docsFolderTreeClearExplanation();
   _docsFolderTreeState.path = data.relative_folder || '.';
   _docsFolderTreeState.parentPath = data.parent_path || null;
 
@@ -1131,6 +1250,8 @@ function _docsFolderTreeSearchRowHtml(result, path) {
     }
     : null;
   const docAttrs = registered ? ` data-doc-id="${esc(registered.doc_id)}"` : '';
+  const terms = _docsFolderTreeSearchTerms(result);
+  const termsAttr = terms.length ? ` data-highlight-terms="${esc(JSON.stringify(terms))}"` : '';
   const action = registered ? 'open-doc' : '';
   const disabled = registered ? '' : ' disabled';
   const title = registered ? `Open registered document: ${registered.label}` : 'Search result is not registered in Docs';
@@ -1139,7 +1260,7 @@ function _docsFolderTreeSearchRowHtml(result, path) {
     <div class="docs-tree-row" data-path="${esc(path)}" data-type="file">
       <span class="docs-tree-icon docs-tree-icon--file" aria-hidden="true"></span>
       <span class="docs-tree-label">
-        <button class="docs-tree-name bp-font-role-docs-markdown" type="button" data-tree-action="${esc(action)}" data-path="${esc(path)}"${docAttrs} title="${esc(title)}"${disabled}>${esc(result.title || name)}</button>
+        <button class="docs-tree-name bp-font-role-docs-markdown" type="button" data-tree-action="${esc(action)}" data-path="${esc(path)}"${docAttrs}${termsAttr} title="${esc(title)}"${disabled}>${esc(result.title || name)}</button>
         <span class="docs-tree-subpath">${esc(path)}</span>
       </span>
       <span class="docs-tree-actions">${badge}</span>
@@ -1162,6 +1283,7 @@ async function _docsFolderTreeRunSearch(opts = {}) {
 
   if (btn && !opts.fromNavigation) btn.disabled = true;
   if (errEl) errEl.textContent = '';
+  _docsFolderTreeClearExplanation();
   if (status) status.textContent = `Searching ${_docsFolderTreeState.mode} under ${_docsFolderTreeState.path || '.'}...`;
   if (list) list.innerHTML = '<div class="docs-tree-loading">Searching...</div>';
 
@@ -1191,8 +1313,49 @@ function _docsFolderTreeClearSearch() {
   _docsFolderTreeState.query = '';
   _docsFolderTreeState.mode = 'keyword';
   _docsFolderTreeState.searchResults = null;
+  _docsFolderTreeClearExplanation();
   _docsFolderTreeSetSearchForm();
   if (_docsFolderTreeState.lastTree) _docsFolderTreeRender(_docsFolderTreeState.lastTree);
+}
+
+async function _docsFolderTreeExplain() {
+  _docsFolderTreeReadSearchForm();
+  const query = _docsFolderTreeState.query;
+  const btn = document.getElementById('docs-folder-tree-explain-btn');
+  const status = document.getElementById('docs-folder-tree-status');
+  const errEl = document.getElementById('docs-folder-tree-error');
+  if (!query) {
+    if (errEl) errEl.textContent = 'Enter a search query before asking for an explanation.';
+    return;
+  }
+  if (btn) btn.disabled = true;
+  if (errEl) errEl.textContent = '';
+  if (status) status.textContent = 'Synthesizing explanation...';
+  try {
+    const r = await apiFetch('/api/v1/docs/search/explain', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        search_mode: _docsFolderTreeState.mode,
+        max_docs: 5,
+        max_chars_per_doc: 3000,
+        top_k: 12,
+        rerank: _docsFolderTreeState.mode !== 'keyword',
+        explanation_mode: 'answer',
+      }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+    _docsFolderTreeState.explanation = data;
+    _docsFolderTreeRenderExplanation();
+    const display = data.display && typeof data.display === 'object' ? data.display : {};
+    if (status) status.textContent = `Explanation ready from ${display.source_count || 0} source${display.source_count === 1 ? '' : 's'}.`;
+  } catch (e) {
+    if (errEl) errEl.textContent = `Explain failed: ${e.message || e}`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 async function _docsFolderTreeSyncIndex() {
@@ -1241,9 +1404,15 @@ function _docsFolderTreeHandleAction(action, btn) {
   if (action === 'open-doc') {
     const docId = btn.dataset.docId;
     if (!docId) return;
+    let highlightTerms = [];
+    try {
+      highlightTerms = JSON.parse(btn.dataset.highlightTerms || '[]');
+    } catch (_) {
+      highlightTerms = [];
+    }
     const modal = document.getElementById('docs-folder-tree-modal');
     if (modal && typeof HubModal !== 'undefined') HubModal.close(modal);
-    docsListOpenDoc(docId);
+    docsListOpenDoc(docId, { highlightTerms });
   }
 }
 
@@ -1716,6 +1885,11 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     e.stopPropagation();
     _docsFolderTreeRunSearch();
+  });
+  document.getElementById('docs-folder-tree-explain-btn')?.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    _docsFolderTreeExplain();
   });
   document.getElementById('docs-folder-tree-clear-btn')?.addEventListener('click', _docsFolderTreeClearSearch);
   document.getElementById('docs-folder-tree-sync-btn')?.addEventListener('click', _docsFolderTreeSyncIndex);

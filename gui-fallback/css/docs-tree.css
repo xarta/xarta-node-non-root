@@ -62,7 +62,7 @@
 
 .docs-tree-search {
   display: grid;
-  grid-template-columns: minmax(96px, 1fr) 92px 62px 58px 66px;
+  grid-template-columns: minmax(96px, 1fr) 88px 62px 64px 58px 66px;
   gap: 6px;
   align-items: center;
   min-width: 0;
@@ -248,6 +248,43 @@
   margin: 0;
 }
 
+.docs-tree-explain-panel[hidden] {
+  display: none !important;
+}
+
+.docs-tree-explain-panel {
+  border: 1px solid rgba(var(--hub-accent-rgb, 0, 212, 255), 0.24);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 12px;
+}
+
+.docs-tree-explain-card {
+  display: grid;
+  gap: 8px;
+}
+
+.docs-tree-explain-title {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.docs-tree-explain-meta,
+.docs-tree-explain-summary {
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.docs-tree-explain-markdown {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
 @media (max-width: 560px) {
   .docs-tree-toolbar {
     grid-template-columns: auto minmax(0, 1fr);
@@ -264,10 +301,11 @@
 
 @media (max-width: 440px) {
   .docs-tree-search {
-    grid-template-columns: minmax(0, 1fr) 92px;
+    grid-template-columns: minmax(0, 1fr) 88px;
   }
 
   .docs-tree-search-btn,
+  .docs-tree-explain-btn,
   .docs-tree-clear-btn,
   .docs-tree-update-btn {
     grid-column: auto;

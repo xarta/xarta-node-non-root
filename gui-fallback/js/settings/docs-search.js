@@ -445,42 +445,7 @@ function docsSearchCollapseAll() {
 }
 
 function _docsSearchHighlightTerms(terms) {
-  const preview = document.getElementById('docs-preview');
-  if (!preview || preview.style.display === 'none') return;
-  const clean = Array.from(new Set((terms || [])
-    .map(t => String(t || '').trim())
-    .filter(t => t.length >= 3)))
-    .slice(0, 8);
-  if (!clean.length) return;
-  const pattern = new RegExp(`(${clean.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
-  const walker = document.createTreeWalker(preview, NodeFilter.SHOW_TEXT, {
-    acceptNode(node) {
-      if (!node.nodeValue || !pattern.test(node.nodeValue)) return NodeFilter.FILTER_REJECT;
-      pattern.lastIndex = 0;
-      if (node.parentElement && ['CODE', 'PRE', 'SCRIPT', 'STYLE', 'MARK'].includes(node.parentElement.tagName)) {
-        return NodeFilter.FILTER_REJECT;
-      }
-      return NodeFilter.FILTER_ACCEPT;
-    },
-  });
-  const nodes = [];
-  while (walker.nextNode()) nodes.push(walker.currentNode);
-  nodes.forEach(node => {
-    const frag = document.createDocumentFragment();
-    let last = 0;
-    const text = node.nodeValue;
-    text.replace(pattern, (match, _term, offset) => {
-      if (offset > last) frag.appendChild(document.createTextNode(text.slice(last, offset)));
-      const mark = document.createElement('mark');
-      mark.className = 'docs-search-highlight';
-      mark.textContent = match;
-      frag.appendChild(mark);
-      last = offset + match.length;
-      return match;
-    });
-    if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
-    node.parentNode.replaceChild(frag, node);
-  });
+  if (typeof docsHighlightTerms === 'function') docsHighlightTerms(terms);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
