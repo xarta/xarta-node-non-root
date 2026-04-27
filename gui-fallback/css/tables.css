@@ -186,6 +186,8 @@ table.table-shared-ui tbody td.table-action-cell:has(.table-asset-menu) {
 :root {
   --table-action-edit-color: var(--accent);
   --table-action-edit-rgb: 91, 156, 246;
+  --table-action-folder-color: var(--accent);
+  --table-action-folder-rgb: 91, 156, 246;
   --table-action-restart-color: var(--accent);
   --table-action-restart-rgb: 91, 156, 246;
   --table-action-pull-color: var(--accent);
@@ -336,6 +338,16 @@ button.table-icon-btn--edit {
 button.table-icon-btn--edit::before {
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm18-11.5a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0L15.13 4.1l3.75 3.75L21 5.75z'/%3E%3C/svg%3E");
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm18-11.5a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0L15.13 4.1l3.75 3.75L21 5.75z'/%3E%3C/svg%3E");
+}
+
+button.table-icon-btn--folder {
+  --table-action-color: var(--table-action-folder-color);
+  --table-action-rgb: var(--table-action-folder-rgb);
+}
+
+button.table-icon-btn--folder::before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v2H3V6zm0 5h18l-2 9H5l-2-9z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v2H3V6zm0 5h18l-2 9H5l-2-9z'/%3E%3C/svg%3E");
 }
 
 button.table-icon-btn--delete {

@@ -16,6 +16,7 @@ function _docsSchedulePaneSize() {
 let _docsGroups    = [];   // array of DocGroupOut records
 let _docsDragId    = null;  // doc_id currently being dragged
 let _groupDragId   = null;  // group_id currently being dragged
+const _docsExpandedGroups = new Set(); // group key -> expanded in the list view; empty = collapsed by default
 let _docsCurrentModalMode = 'new'; // 'new' | 'edit'
 let _docsGroupModalMode = 'add'; // 'add' | 'edit'
 let _docsEditingGroupId = null;
@@ -601,20 +602,41 @@ function _docsRenderGroupBlock(group) {
   const isUndefined = group === null;
   const groupId     = group ? group.group_id : null;
   const groupName   = group ? group.name : 'Undefined Group';
+  const groupKey    = groupId || '__undefined__';
+  const isExpanded  = _docsExpandedGroups.has(groupKey);
 
   const block = document.createElement('div');
   block.className = 'docs-group-block bp-font-role-docs-markdown';
-  block.dataset.groupId = groupId || '__undefined__';
+  block.dataset.groupId = groupKey;
   block.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden';
 
   // ── Group header ──
   const groupHdr = document.createElement('div');
   groupHdr.className = 'bp-font-role-docs-markdown';
-  groupHdr.style.cssText = 'display:flex;align-items:center;gap:6px;padding:7px 10px;background:var(--bg2,#16161e);border-bottom:1px solid var(--border);font-weight:600;font-size:13px;min-height:34px';
+  groupHdr.setAttribute('role', 'button');
+  groupHdr.setAttribute('tabindex', '0');
+  groupHdr.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+  groupHdr.style.cssText = 'display:flex;align-items:center;gap:6px;padding:7px 10px;background:var(--bg2,#16161e);border-bottom:1px solid var(--border);font-weight:600;font-size:13px;min-height:34px;cursor:pointer';
+
+  const toggleGroup = () => {
+    if (_docsExpandedGroups.has(groupKey)) _docsExpandedGroups.delete(groupKey);
+    else _docsExpandedGroups.add(groupKey);
+    _docsRenderList();
+  };
+
+  groupHdr.addEventListener('click', e => {
+    if (e.target.closest('button')) return;
+    toggleGroup();
+  });
+  groupHdr.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    if (e.target.closest('button')) return;
+    e.preventDefault();
+    toggleGroup();
+  });
 
   if (!isUndefined) {
     groupHdr.draggable = true;
-    groupHdr.style.cursor = 'grab';
     groupHdr.ondragstart = e => {
       _groupDragId = groupId;
       e.dataTransfer.effectAllowed = 'move';
@@ -627,12 +649,35 @@ function _docsRenderGroupBlock(group) {
     };
     groupHdr.innerHTML = `
       <span style="color:var(--text-dim);font-size:15px;user-select:none">≡</span>
+      <span style="color:var(--text-dim);font-size:11px;min-width:12px;text-align:center;user-select:none">${isExpanded ? '▾' : '▸'}</span>
       <span style="flex:1">${esc(groupName)}</span>
-      <button class="secondary table-icon-btn table-icon-btn--edit" type="button" onclick="docsListEditGroup('${groupId}','${esc(groupName)}')" title="Rename group" aria-label="Rename group ${esc(groupName)}"></button>
-      <button class="secondary table-icon-btn table-icon-btn--delete" type="button" onclick="docsListDeleteGroup('${groupId}','${esc(groupName)}')" title="Delete group" aria-label="Delete group ${esc(groupName)}"></button>
+      <button class="secondary table-icon-btn table-icon-btn--folder" type="button" data-docs-action="open-folder" title="Open most common folder" aria-label="Open most common folder for ${esc(groupName)}"></button>
+      <button class="secondary table-icon-btn table-icon-btn--edit" type="button" data-docs-action="edit-group" title="Rename group" aria-label="Rename group ${esc(groupName)}"></button>
+      <button class="secondary table-icon-btn table-icon-btn--delete" type="button" data-docs-action="delete-group" title="Delete group" aria-label="Delete group ${esc(groupName)}"></button>
     `;
+    groupHdr.querySelector('[data-docs-action="open-folder"]')?.addEventListener('click', e => {
+      e.stopPropagation();
+      docsListOpenGroupFolder(groupId);
+    });
+    groupHdr.querySelector('[data-docs-action="edit-group"]')?.addEventListener('click', e => {
+      e.stopPropagation();
+      docsListEditGroup(groupId, groupName);
+    });
+    groupHdr.querySelector('[data-docs-action="delete-group"]')?.addEventListener('click', e => {
+      e.stopPropagation();
+      docsListDeleteGroup(groupId, groupName);
+    });
   } else {
-    groupHdr.innerHTML = `<span style="color:var(--accent);margin-right:4px">📁</span><span style="color:var(--text-dim);font-style:italic">Undefined Group</span>`;
+    groupHdr.innerHTML = `
+      <span style="color:var(--text-dim);font-size:15px;user-select:none">≡</span>
+      <span style="color:var(--text-dim);font-size:11px;min-width:12px;text-align:center;user-select:none">${isExpanded ? '▾' : '▸'}</span>
+      <span style="flex:1;color:var(--text-dim);font-style:italic">${esc(groupName)}</span>
+      <button class="secondary table-icon-btn table-icon-btn--folder" type="button" data-docs-action="open-folder" title="Open most common folder" aria-label="Open most common folder for ${esc(groupName)}"></button>
+    `;
+    groupHdr.querySelector('[data-docs-action="open-folder"]')?.addEventListener('click', e => {
+      e.stopPropagation();
+      docsListOpenGroupFolder(null);
+    });
   }
 
   // ── Group drag-over (groups reordering) ──
@@ -652,15 +697,16 @@ function _docsRenderGroupBlock(group) {
     block.style.outline = '';
     if (_groupDragId && _groupDragId !== groupId && !isUndefined) {
       _docsDropGroupBefore(_groupDragId, groupId);
+    } else if (_docsDragId) {
+      _docsDropDocOnGroup(_docsDragId, groupId);
     }
-    // doc drops are handled by the inner docsList zone
   };
 
   block.appendChild(groupHdr);
 
   // ── Docs list zone ──
   const docsList = document.createElement('div');
-  docsList.dataset.groupId = groupId || '__undefined__';
+  docsList.dataset.groupId = groupKey;
   docsList.style.cssText = 'display:flex;flex-direction:column;min-height:30px';
 
   const groupDocs = _docsAll
@@ -692,6 +738,12 @@ function _docsRenderGroupBlock(group) {
     docsList.style.background = '';
     if (_docsDragId) _docsDropDocOnGroup(_docsDragId, groupId);
   };
+
+  if (!isExpanded) {
+    docsList.hidden = true;
+    docsList.style.display = 'none';
+    return block;
+  }
 
   block.appendChild(docsList);
   return block;
@@ -865,6 +917,31 @@ async function docsListDeleteGroup(groupId, name) {
     await HubDialogs.alertError({
       title: 'Delete failed',
       message: `Failed to delete group: ${e.message}`,
+    });
+  }
+}
+
+async function docsListOpenGroupFolder(groupId) {
+  try {
+    const r = await apiFetch('/api/v1/docs/group-folder/open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ group_id: groupId || null }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+
+    const status = document.getElementById('docs-status');
+    if (status) {
+      status.textContent = `\u2713 Opened folder: ${data.relative_folder || data.folder || 'docs folder'}`;
+      status.style.color = 'var(--accent)';
+      status.hidden = false;
+      setTimeout(() => { status.hidden = true; }, 3000);
+    }
+  } catch (e) {
+    await HubDialogs.alertError({
+      title: 'Open folder failed',
+      message: e.message,
     });
   }
 }
