@@ -5,6 +5,7 @@
 const BlueprintsTtsClient = (() => {
   let _activeSpeechAudio = null;
   let _activeStream = null;
+  let _activeSpeakAbortController = null;
 
   function _clamp01(value, fallback) {
     const parsed = parseFloat(value);
@@ -54,6 +55,10 @@ const BlueprintsTtsClient = (() => {
   }
 
   async function stop() {
+    try {
+      _activeSpeakAbortController?.abort();
+    } catch (_) {}
+    _activeSpeakAbortController = null;
     _stopAudioElement(_activeSpeechAudio);
     _activeSpeechAudio = null;
     await _stopActiveStream();
@@ -200,17 +205,27 @@ const BlueprintsTtsClient = (() => {
     };
 
     if (payload.interrupt) {
+      try {
+        _activeSpeakAbortController?.abort();
+      } catch (_) {}
+      _activeSpeakAbortController = null;
       _stopAudioElement(_activeSpeechAudio);
       _activeSpeechAudio = null;
     }
 
     const abortController = new AbortController();
-    const response = await apiFetch('/api/v1/tts/speak', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: abortController.signal,
-    });
+    _activeSpeakAbortController = abortController;
+    let response;
+    try {
+      response = await apiFetch('/api/v1/tts/speak', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: abortController.signal,
+      });
+    } finally {
+      if (_activeSpeakAbortController === abortController) _activeSpeakAbortController = null;
+    }
 
     if (!response.ok) {
       const detail = await response.text();

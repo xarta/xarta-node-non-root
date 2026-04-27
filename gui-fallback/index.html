@@ -3267,8 +3267,28 @@
       </div>
       <p class="docs-tree-status bp-font-role-status-meta" id="docs-folder-tree-status"></p>
       <p class="hub-modal-error" id="docs-folder-tree-error"></p>
-      <div class="docs-tree-explain-panel" id="docs-folder-tree-explain-panel" hidden></div>
     </div>
+  </div>
+</dialog>
+
+<!-- Docs filesystem tree explanation modal -->
+<dialog class="hub-modal hub-dialog docs-tree-explain-modal" data-tone="info" id="docs-folder-tree-explain-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">EXPLAIN</span>
+      <span class="hub-dialog-title-text" id="docs-folder-tree-explain-title">Docs Search Explanation</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body">
+    <div class="docs-tree-explain-modal-body">
+      <p class="docs-tree-explain-meta bp-font-role-status-meta" id="docs-folder-tree-explain-meta"></p>
+      <pre class="docs-tree-explain-markdown bp-font-role-docs-markdown" id="docs-folder-tree-explain-text"></pre>
+    </div>
+  </div>
+  <div class="hub-modal-footer docs-tree-explain-footer">
+    <span class="docs-tree-explain-tts-status bp-font-role-status-meta" id="docs-folder-tree-explain-tts-status"></span>
+    <button class="docs-tree-speaker-btn" type="button" id="docs-folder-tree-explain-speaker" aria-label="Speak explanation" title="Speak explanation"></button>
   </div>
 </dialog>
 
