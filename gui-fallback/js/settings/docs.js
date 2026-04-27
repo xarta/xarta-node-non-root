@@ -21,7 +21,15 @@ let _docsCurrentModalMode = 'new'; // 'new' | 'edit'
 let _docsGroupModalMode = 'add'; // 'add' | 'edit'
 let _docsEditingGroupId = null;
 let _docsEditingGroupName = '';
-let _docsFolderTreeState = { groupId: null, path: null, parentPath: null };
+let _docsFolderTreeState = {
+  groupId: null,
+  path: null,
+  parentPath: null,
+  query: '',
+  mode: 'keyword',
+  lastTree: null,
+  searchResults: null,
+};
 
 // ── Load + Sidebar ───────────────────────────────────────────────────────────
 
@@ -931,7 +939,16 @@ async function docsListOpenGroupFolder(groupId) {
   const errEl = document.getElementById('docs-folder-tree-error');
   const status = document.getElementById('docs-folder-tree-status');
 
-  _docsFolderTreeState = { groupId: groupId || null, path: null, parentPath: null };
+  _docsFolderTreeState = {
+    groupId: groupId || null,
+    path: null,
+    parentPath: null,
+    query: '',
+    mode: 'keyword',
+    lastTree: null,
+    searchResults: null,
+  };
+  _docsFolderTreeSetSearchForm();
   if (title) title.textContent = groupName;
   if (list) list.innerHTML = '<div class="docs-tree-loading">Loading folder...</div>';
   if (errEl) errEl.textContent = '';
@@ -939,6 +956,21 @@ async function docsListOpenGroupFolder(groupId) {
   if (modal && typeof HubModal !== 'undefined') HubModal.open(modal);
 
   await _docsFolderTreeLoad(null);
+}
+
+function _docsFolderTreeSetSearchForm() {
+  const query = document.getElementById('docs-folder-tree-query');
+  const mode = document.getElementById('docs-folder-tree-mode');
+  if (query) query.value = _docsFolderTreeState.query || '';
+  if (mode) mode.value = ['keyword', 'vector', 'hybrid'].includes(_docsFolderTreeState.mode)
+    ? _docsFolderTreeState.mode
+    : 'keyword';
+}
+
+function _docsFolderTreeReadSearchForm() {
+  _docsFolderTreeState.query = (document.getElementById('docs-folder-tree-query')?.value || '').trim();
+  const mode = document.getElementById('docs-folder-tree-mode')?.value || 'keyword';
+  _docsFolderTreeState.mode = ['keyword', 'vector', 'hybrid'].includes(mode) ? mode : 'keyword';
 }
 
 async function _docsFolderTreeLoad(path) {
@@ -961,6 +993,7 @@ async function _docsFolderTreeLoad(path) {
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
     _docsFolderTreeRender(data);
+    if (_docsFolderTreeState.query) await _docsFolderTreeRunSearch({ fromNavigation: true });
   } catch (e) {
     if (list) list.innerHTML = '';
     if (errEl) errEl.textContent = `Error: ${e.message}`;
@@ -968,6 +1001,8 @@ async function _docsFolderTreeLoad(path) {
 }
 
 function _docsFolderTreeRender(data) {
+  _docsFolderTreeState.lastTree = data;
+  _docsFolderTreeState.searchResults = null;
   _docsFolderTreeState.path = data.relative_folder || '.';
   _docsFolderTreeState.parentPath = data.parent_path || null;
 
@@ -978,11 +1013,15 @@ function _docsFolderTreeRender(data) {
   const upBtn = document.getElementById('docs-folder-tree-up');
 
   const currentPath = data.relative_folder || '.';
-  if (pathEl) pathEl.textContent = currentPath;
+  const canGoUp = !!data.parent_path && currentPath !== 'docs';
+  if (pathEl) {
+    pathEl.textContent = currentPath;
+    pathEl.hidden = !canGoUp;
+  }
   if (upBtn) {
-    const canGoUp = !!data.parent_path && currentPath !== 'docs';
     upBtn.hidden = !canGoUp;
     upBtn.disabled = !canGoUp;
+    upBtn.closest('.docs-tree-toolbar')?.classList.toggle('docs-tree-toolbar--no-up', !canGoUp);
   }
   if (status) {
     const entries = Array.isArray(data.entries) ? data.entries.length : 0;
@@ -991,6 +1030,7 @@ function _docsFolderTreeRender(data) {
   }
 
   if (crumbsEl) {
+    crumbsEl.hidden = !canGoUp;
     const crumbs = (Array.isArray(data.breadcrumbs) ? data.breadcrumbs : [])
       .filter(crumb => (crumb.path || '.') !== '.');
     crumbsEl.innerHTML = crumbs.map(crumb => `
@@ -1006,6 +1046,56 @@ function _docsFolderTreeRender(data) {
   }
 
   list.innerHTML = entries.map(entry => _docsFolderTreeRowHtml(entry)).join('');
+}
+
+function _docsFolderTreeNormalizePath(path) {
+  return String(path || '').trim().replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '') || '.';
+}
+
+function _docsFolderTreeIsInCurrentFolder(path) {
+  const current = _docsFolderTreeNormalizePath(_docsFolderTreeState.path || '.');
+  const candidate = _docsFolderTreeNormalizePath(path);
+  if (!candidate || candidate === '.') return false;
+  if (current === '.') return true;
+  return candidate === current || candidate.startsWith(`${current}/`);
+}
+
+function _docsFolderTreeResultPath(result) {
+  return _docsFolderTreeNormalizePath(result?.viewer_path || result?.register_path || result?.doc_path || '');
+}
+
+function _docsFolderTreeSearchGroups(results) {
+  const seen = new Set();
+  const groups = [];
+  (Array.isArray(results) ? results : []).forEach(result => {
+    if (!result || typeof result !== 'object') return;
+    const path = _docsFolderTreeResultPath(result);
+    if (!_docsFolderTreeIsInCurrentFolder(path)) return;
+    const key = String(result.doc_id || path).toLowerCase();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    groups.push({ result, path });
+  });
+  return groups.slice(0, 80);
+}
+
+function _docsFolderTreeRenderSearchResults(results) {
+  const list = document.getElementById('docs-folder-tree-list');
+  const status = document.getElementById('docs-folder-tree-status');
+  if (!list) return;
+
+  const groups = _docsFolderTreeSearchGroups(results);
+  _docsFolderTreeState.searchResults = groups;
+  if (!groups.length) {
+    list.innerHTML = '<div class="docs-tree-empty">No matching documents in this folder.</div>';
+    if (status) status.textContent = `No matches for "${_docsFolderTreeState.query}" under ${_docsFolderTreeState.path || '.'}`;
+    return;
+  }
+
+  list.innerHTML = groups.map(group => _docsFolderTreeSearchRowHtml(group.result, group.path)).join('');
+  if (status) {
+    status.textContent = `${groups.length} matching document${groups.length === 1 ? '' : 's'} under ${_docsFolderTreeState.path || '.'}`;
+  }
 }
 
 function _docsFolderTreeRowHtml(entry) {
@@ -1029,6 +1119,116 @@ function _docsFolderTreeRowHtml(entry) {
       <span class="docs-tree-actions">${badge}${browseButton}</span>
     </div>
   `;
+}
+
+function _docsFolderTreeSearchRowHtml(result, path) {
+  const name = path.split('/').pop() || result.title || path;
+  const registered = result.openable && result.doc_id
+    ? {
+      doc_id: result.doc_id,
+      label: result.title || name,
+      path: result.viewer_path || path,
+    }
+    : null;
+  const docAttrs = registered ? ` data-doc-id="${esc(registered.doc_id)}"` : '';
+  const action = registered ? 'open-doc' : '';
+  const disabled = registered ? '' : ' disabled';
+  const title = registered ? `Open registered document: ${registered.label}` : 'Search result is not registered in Docs';
+  const badge = registered ? '<span class="docs-tree-badge">Doc</span>' : '<span class="docs-tree-badge">Found</span>';
+  return `
+    <div class="docs-tree-row" data-path="${esc(path)}" data-type="file">
+      <span class="docs-tree-icon docs-tree-icon--file" aria-hidden="true"></span>
+      <span class="docs-tree-label">
+        <button class="docs-tree-name bp-font-role-docs-markdown" type="button" data-tree-action="${esc(action)}" data-path="${esc(path)}"${docAttrs} title="${esc(title)}"${disabled}>${esc(result.title || name)}</button>
+        <span class="docs-tree-subpath">${esc(path)}</span>
+      </span>
+      <span class="docs-tree-actions">${badge}</span>
+    </div>
+  `;
+}
+
+async function _docsFolderTreeRunSearch(opts = {}) {
+  _docsFolderTreeReadSearchForm();
+  const query = _docsFolderTreeState.query;
+  const list = document.getElementById('docs-folder-tree-list');
+  const status = document.getElementById('docs-folder-tree-status');
+  const errEl = document.getElementById('docs-folder-tree-error');
+  const btn = document.getElementById('docs-folder-tree-search-btn');
+
+  if (!query) {
+    if (_docsFolderTreeState.lastTree) _docsFolderTreeRender(_docsFolderTreeState.lastTree);
+    return;
+  }
+
+  if (btn && !opts.fromNavigation) btn.disabled = true;
+  if (errEl) errEl.textContent = '';
+  if (status) status.textContent = `Searching ${_docsFolderTreeState.mode} under ${_docsFolderTreeState.path || '.'}...`;
+  if (list) list.innerHTML = '<div class="docs-tree-loading">Searching...</div>';
+
+  try {
+    const r = await apiFetch('/api/v1/docs/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        mode: _docsFolderTreeState.mode,
+        top_k: 30,
+        rerank: _docsFolderTreeState.mode !== 'keyword',
+      }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+    _docsFolderTreeRenderSearchResults(Array.isArray(data.results) ? data.results : []);
+  } catch (e) {
+    if (list) list.innerHTML = '';
+    if (errEl) errEl.textContent = `Search failed: ${e.message || e}`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function _docsFolderTreeClearSearch() {
+  _docsFolderTreeState.query = '';
+  _docsFolderTreeState.mode = 'keyword';
+  _docsFolderTreeState.searchResults = null;
+  _docsFolderTreeSetSearchForm();
+  if (_docsFolderTreeState.lastTree) _docsFolderTreeRender(_docsFolderTreeState.lastTree);
+}
+
+async function _docsFolderTreeSyncIndex() {
+  const btn = document.getElementById('docs-folder-tree-sync-btn');
+  const status = document.getElementById('docs-folder-tree-status');
+  const errEl = document.getElementById('docs-folder-tree-error');
+  if (btn) btn.disabled = true;
+  if (errEl) errEl.textContent = '';
+  if (status) status.textContent = 'Updating TurboVec docs index...';
+  try {
+    const r = await apiFetch('/api/v1/docs/search/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force: false }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+    const upstream = data.upstream && typeof data.upstream === 'object' ? data.upstream : {};
+    const scanned = upstream.scanned_docs ?? null;
+    const docs = upstream.total_docs ?? upstream.documents ?? upstream.docs ?? null;
+    const chunks = upstream.total_chunks ?? upstream.chunks ?? null;
+    const parts = [];
+    if (scanned !== null) parts.push(`${scanned} scanned`);
+    if (docs !== null) parts.push(`${docs} docs`);
+    if (chunks !== null) parts.push(`${chunks} chunks`);
+    if (status) {
+      status.textContent = parts.length
+        ? `Index update complete: ${parts.join(', ')}`
+        : 'Index update complete.';
+    }
+    if (_docsFolderTreeState.query) await _docsFolderTreeRunSearch();
+  } catch (e) {
+    if (errEl) errEl.textContent = `Update failed: ${e.message || e}`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 function _docsFolderTreeHandleAction(action, btn) {
@@ -1495,4 +1695,29 @@ document.addEventListener('DOMContentLoaded', () => {
       if (_docsFolderTreeState.parentPath) _docsFolderTreeLoad(_docsFolderTreeState.parentPath);
     });
   }
+
+  const docsFolderTreeSearchForm = document.getElementById('docs-folder-tree-search-form');
+  if (docsFolderTreeSearchForm) {
+    docsFolderTreeSearchForm.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      _docsFolderTreeRunSearch();
+    }, true);
+    docsFolderTreeSearchForm.addEventListener('submit', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      _docsFolderTreeRunSearch();
+    });
+  }
+
+  document.getElementById('docs-folder-tree-search-btn')?.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    _docsFolderTreeRunSearch();
+  });
+  document.getElementById('docs-folder-tree-clear-btn')?.addEventListener('click', _docsFolderTreeClearSearch);
+  document.getElementById('docs-folder-tree-sync-btn')?.addEventListener('click', _docsFolderTreeSyncIndex);
+  document.getElementById('docs-folder-tree-mode')?.addEventListener('change', _docsFolderTreeReadSearchForm);
 });

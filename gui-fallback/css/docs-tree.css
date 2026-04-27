@@ -8,19 +8,41 @@
 .docs-tree-shell {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   min-height: 360px;
 }
 
 .docs-tree-toolbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(58px, 0.35fr) minmax(0, 1.65fr);
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
+.docs-tree-toolbar .hub-modal-btn {
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.docs-tree-toolbar .hub-modal-btn[hidden] {
+  display: none !important;
+}
+
+.docs-tree-toolbar.docs-tree-toolbar--no-up {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.docs-tree-toolbar.docs-tree-toolbar--no-up .docs-tree-search {
+  grid-column: 1 / -1;
+}
+
+.docs-tree-path[hidden],
+.docs-tree-breadcrumbs[hidden] {
+  display: none !important;
+}
+
 .docs-tree-path {
-  flex: 1;
   min-width: 0;
   color: var(--text-dim);
   font-family: monospace;
@@ -35,7 +57,35 @@
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
-  min-height: 28px;
+  min-height: 26px;
+}
+
+.docs-tree-search {
+  display: grid;
+  grid-template-columns: minmax(96px, 1fr) 92px 62px 58px 66px;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.docs-tree-search-input {
+  min-width: 0;
+  height: 34px;
+}
+
+.docs-tree-search-mode {
+  min-width: 0;
+  height: 34px;
+  padding-left: 10px;
+  padding-right: 24px;
+}
+
+.docs-tree-search .hub-modal-btn {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  padding-left: 8px;
+  padding-right: 8px;
 }
 
 .docs-tree-crumb {
@@ -152,6 +202,26 @@
   gap: 6px;
 }
 
+.docs-tree-label {
+  min-width: 0;
+}
+
+.docs-tree-label .docs-tree-name {
+  max-width: 100%;
+}
+
+.docs-tree-subpath {
+  color: var(--text-dim);
+  font-family: monospace;
+  font-size: 11px;
+  line-height: 1.3;
+  margin-top: -4px;
+  overflow: hidden;
+  padding-bottom: 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .docs-tree-badge {
   border: 1px solid rgba(var(--hub-accent-rgb, 0, 212, 255), 0.32);
   border-radius: 999px;
@@ -179,6 +249,30 @@
 }
 
 @media (max-width: 560px) {
+  .docs-tree-toolbar {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .docs-tree-toolbar.docs-tree-toolbar--no-up {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .docs-tree-search {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 440px) {
+  .docs-tree-search {
+    grid-template-columns: minmax(0, 1fr) 92px;
+  }
+
+  .docs-tree-search-btn,
+  .docs-tree-clear-btn,
+  .docs-tree-update-btn {
+    grid-column: auto;
+  }
+
   .docs-tree-row {
     grid-template-columns: 20px minmax(0, 1fr);
   }

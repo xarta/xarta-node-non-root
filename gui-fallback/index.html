@@ -3248,6 +3248,17 @@
       <div class="docs-tree-toolbar">
         <button class="hub-modal-btn secondary" type="button" id="docs-folder-tree-up">Up</button>
         <code class="docs-tree-path bp-font-role-docs-markdown" id="docs-folder-tree-path"></code>
+        <form class="docs-tree-search" id="docs-folder-tree-search-form">
+          <input class="hub-ctrl docs-tree-search-input" type="search" id="docs-folder-tree-query" placeholder="Search this folder..." autocomplete="off" spellcheck="false" />
+          <select class="hub-ctrl docs-tree-search-mode" id="docs-folder-tree-mode" aria-label="Search mode">
+            <option value="keyword" selected>Keyword</option>
+            <option value="vector">Vector</option>
+            <option value="hybrid">Hybrid</option>
+          </select>
+          <button class="hub-modal-btn docs-tree-search-btn" type="button" id="docs-folder-tree-search-btn">Search</button>
+          <button class="hub-modal-btn secondary docs-tree-clear-btn" type="button" id="docs-folder-tree-clear-btn">Clear</button>
+          <button class="hub-modal-btn secondary docs-tree-update-btn" type="button" id="docs-folder-tree-sync-btn">Update</button>
+        </form>
       </div>
       <div class="docs-tree-breadcrumbs" id="docs-folder-tree-breadcrumbs"></div>
       <div class="docs-tree-panel">
