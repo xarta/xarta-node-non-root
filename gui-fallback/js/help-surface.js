@@ -238,7 +238,6 @@ const BlueprintsHelpSurface = (() => {
   }
 
   function init() {
-    document.getElementById('bp-help-open')?.addEventListener('click', open);
     document.getElementById('bp-help-submit')?.addEventListener('click', () => ask({ speak: false }));
     document.getElementById('bp-help-speak')?.addEventListener('click', () => ask({ speak: true }));
     document.getElementById('bp-help-action')?.addEventListener('click', () => { executeAction(); });
@@ -257,6 +256,8 @@ const BlueprintsHelpSurface = (() => {
     speakLast,
   };
 })();
+
+window.BlueprintsHelpSurface = BlueprintsHelpSurface;
 
 document.addEventListener('DOMContentLoaded', () => {
   BlueprintsHelpSurface.init();

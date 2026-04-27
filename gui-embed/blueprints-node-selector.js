@@ -1025,6 +1025,15 @@
         _injectClockOverlay();
       },
     },
+    'help': {
+      icon: '?', label: 'Help',
+      doAction() {
+        if (typeof window.BlueprintsHelpSurface !== 'undefined' &&
+            typeof window.BlueprintsHelpSurface.open === 'function') {
+          window.BlueprintsHelpSurface.open();
+        }
+      },
+    },
   };
 
   const LS_NODES = 'bp_nodes_v2';
