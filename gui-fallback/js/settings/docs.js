@@ -21,6 +21,7 @@ let _docsCurrentModalMode = 'new'; // 'new' | 'edit'
 let _docsGroupModalMode = 'add'; // 'add' | 'edit'
 let _docsEditingGroupId = null;
 let _docsEditingGroupName = '';
+let _docsFolderTreeState = { groupId: null, path: null, parentPath: null };
 
 // ── Load + Sidebar ───────────────────────────────────────────────────────────
 
@@ -922,27 +923,127 @@ async function docsListDeleteGroup(groupId, name) {
 }
 
 async function docsListOpenGroupFolder(groupId) {
+  const group = groupId ? _docsGroups.find(g => g.group_id === groupId) : null;
+  const groupName = group ? group.name : 'Undefined Group';
+  const modal = document.getElementById('docs-folder-tree-modal');
+  const title = document.getElementById('docs-folder-tree-title');
+  const list = document.getElementById('docs-folder-tree-list');
+  const errEl = document.getElementById('docs-folder-tree-error');
+  const status = document.getElementById('docs-folder-tree-status');
+
+  _docsFolderTreeState = { groupId: groupId || null, path: null, parentPath: null };
+  if (title) title.textContent = groupName;
+  if (list) list.innerHTML = '<div class="docs-tree-loading">Loading folder...</div>';
+  if (errEl) errEl.textContent = '';
+  if (status) status.textContent = '';
+  if (modal && typeof HubModal !== 'undefined') HubModal.open(modal);
+
+  await _docsFolderTreeLoad(null);
+}
+
+async function _docsFolderTreeLoad(path) {
+  const list = document.getElementById('docs-folder-tree-list');
+  const errEl = document.getElementById('docs-folder-tree-error');
+  const status = document.getElementById('docs-folder-tree-status');
+  if (list) list.innerHTML = '<div class="docs-tree-loading">Loading folder...</div>';
+  if (errEl) errEl.textContent = '';
+  if (status) status.textContent = '';
+
   try {
-    const r = await apiFetch('/api/v1/docs/group-folder/open', {
+    const r = await apiFetch('/api/v1/docs/group-folder/tree', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ group_id: groupId || null }),
+      body: JSON.stringify({
+        group_id: _docsFolderTreeState.groupId || null,
+        path: path || null,
+      }),
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
-
-    const status = document.getElementById('docs-status');
-    if (status) {
-      status.textContent = `\u2713 Opened folder: ${data.relative_folder || data.folder || 'docs folder'}`;
-      status.style.color = 'var(--accent)';
-      status.hidden = false;
-      setTimeout(() => { status.hidden = true; }, 3000);
-    }
+    _docsFolderTreeRender(data);
   } catch (e) {
-    await HubDialogs.alertError({
-      title: 'Open folder failed',
-      message: e.message,
-    });
+    if (list) list.innerHTML = '';
+    if (errEl) errEl.textContent = `Error: ${e.message}`;
+  }
+}
+
+function _docsFolderTreeRender(data) {
+  _docsFolderTreeState.path = data.relative_folder || '.';
+  _docsFolderTreeState.parentPath = data.parent_path || null;
+
+  const pathEl = document.getElementById('docs-folder-tree-path');
+  const crumbsEl = document.getElementById('docs-folder-tree-breadcrumbs');
+  const list = document.getElementById('docs-folder-tree-list');
+  const status = document.getElementById('docs-folder-tree-status');
+  const upBtn = document.getElementById('docs-folder-tree-up');
+
+  const currentPath = data.relative_folder || '.';
+  if (pathEl) pathEl.textContent = currentPath;
+  if (upBtn) {
+    const canGoUp = !!data.parent_path && currentPath !== 'docs';
+    upBtn.hidden = !canGoUp;
+    upBtn.disabled = !canGoUp;
+  }
+  if (status) {
+    const entries = Array.isArray(data.entries) ? data.entries.length : 0;
+    const docs = Number(data.folder_document_count || 0);
+    status.textContent = `${entries} item${entries === 1 ? '' : 's'} in this folder` + (docs ? `; ${docs} document${docs === 1 ? '' : 's'} from this group land here` : '');
+  }
+
+  if (crumbsEl) {
+    const crumbs = (Array.isArray(data.breadcrumbs) ? data.breadcrumbs : [])
+      .filter(crumb => (crumb.path || '.') !== '.');
+    crumbsEl.innerHTML = crumbs.map(crumb => `
+      <button class="docs-tree-crumb bp-font-role-docs-markdown" type="button" data-tree-action="browse" data-path="${esc(crumb.path || '.')}">${esc(crumb.label || '.')}</button>
+    `).join('');
+  }
+
+  if (!list) return;
+  const entries = Array.isArray(data.entries) ? data.entries : [];
+  if (!entries.length) {
+    list.innerHTML = '<div class="docs-tree-empty">This folder is empty.</div>';
+    return;
+  }
+
+  list.innerHTML = entries.map(entry => _docsFolderTreeRowHtml(entry)).join('');
+}
+
+function _docsFolderTreeRowHtml(entry) {
+  const type = entry.type === 'folder' ? 'folder' : 'file';
+  const registered = entry.registered_doc || null;
+  const primaryAction = registered ? 'open-doc' : (type === 'folder' ? 'browse' : '');
+  const disabled = primaryAction ? '' : ' disabled';
+  const title = registered
+    ? `Open registered document: ${registered.label || entry.name}`
+    : (type === 'folder' ? `Browse ${entry.name}` : 'File is not registered in Docs');
+  const docAttrs = registered ? ` data-doc-id="${esc(registered.doc_id)}"` : '';
+  const browseButton = type === 'folder' && registered
+    ? `<button class="hub-modal-btn secondary" type="button" data-tree-action="browse" data-path="${esc(entry.path)}">Browse</button>`
+    : '';
+  const badge = registered ? '<span class="docs-tree-badge">Doc</span>' : '';
+
+  return `
+    <div class="docs-tree-row" data-path="${esc(entry.path)}" data-type="${esc(type)}">
+      <span class="docs-tree-icon docs-tree-icon--${esc(type)}" aria-hidden="true"></span>
+      <button class="docs-tree-name bp-font-role-docs-markdown" type="button" data-tree-action="${esc(primaryAction)}" data-path="${esc(entry.path)}"${docAttrs} title="${esc(title)}"${disabled}>${esc(entry.name)}</button>
+      <span class="docs-tree-actions">${badge}${browseButton}</span>
+    </div>
+  `;
+}
+
+function _docsFolderTreeHandleAction(action, btn) {
+  if (!action) return;
+  if (action === 'browse') {
+    const path = btn.dataset.path || '.';
+    _docsFolderTreeLoad(path);
+    return;
+  }
+  if (action === 'open-doc') {
+    const docId = btn.dataset.docId;
+    if (!docId) return;
+    const modal = document.getElementById('docs-folder-tree-modal');
+    if (modal && typeof HubModal !== 'undefined') HubModal.close(modal);
+    docsListOpenDoc(docId);
   }
 }
 
@@ -1369,4 +1470,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const docsDeleteBtn = document.getElementById('docs-delete-confirm-btn');
   if (docsDeleteBtn) docsDeleteBtn.addEventListener('click', submitDeleteDoc);
+
+  const docsFolderTreeList = document.getElementById('docs-folder-tree-list');
+  if (docsFolderTreeList) {
+    docsFolderTreeList.addEventListener('click', e => {
+      const btn = e.target.closest('[data-tree-action]');
+      if (!btn || !docsFolderTreeList.contains(btn)) return;
+      _docsFolderTreeHandleAction(btn.dataset.treeAction || '', btn);
+    });
+  }
+
+  const docsFolderTreeCrumbs = document.getElementById('docs-folder-tree-breadcrumbs');
+  if (docsFolderTreeCrumbs) {
+    docsFolderTreeCrumbs.addEventListener('click', e => {
+      const btn = e.target.closest('[data-tree-action="browse"]');
+      if (!btn || !docsFolderTreeCrumbs.contains(btn)) return;
+      _docsFolderTreeHandleAction('browse', btn);
+    });
+  }
+
+  const docsFolderTreeUp = document.getElementById('docs-folder-tree-up');
+  if (docsFolderTreeUp) {
+    docsFolderTreeUp.addEventListener('click', () => {
+      if (_docsFolderTreeState.parentPath) _docsFolderTreeLoad(_docsFolderTreeState.parentPath);
+    });
+  }
 });

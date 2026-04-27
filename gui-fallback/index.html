@@ -30,6 +30,7 @@
   <link rel="stylesheet" href="css/ultrawide-debug-panels.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/docs-images.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/docs-search.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/docs-tree.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/font-roles.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/hub-modal.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/hub-dialogs.css?v={{$assetVersion}}" />
@@ -3229,6 +3230,31 @@
       <p class="hub-modal-error" id="docs-search-error"></p>
       <div class="docs-search-explain-panel" id="docs-search-explain-panel" hidden></div>
       <div class="docs-search-results" id="docs-search-results"></div>
+    </div>
+  </div>
+</dialog>
+
+<!-- Docs filesystem tree modal -->
+<dialog class="hub-modal hub-dialog docs-tree-modal" data-tone="info" id="docs-folder-tree-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">TREE</span>
+      <span class="hub-dialog-title-text" id="docs-folder-tree-title">Docs Folder</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body">
+    <div class="docs-tree-shell">
+      <div class="docs-tree-toolbar">
+        <button class="hub-modal-btn secondary" type="button" id="docs-folder-tree-up">Up</button>
+        <code class="docs-tree-path bp-font-role-docs-markdown" id="docs-folder-tree-path"></code>
+      </div>
+      <div class="docs-tree-breadcrumbs" id="docs-folder-tree-breadcrumbs"></div>
+      <div class="docs-tree-panel">
+        <div class="docs-tree-list bp-font-role-docs-markdown" id="docs-folder-tree-list"></div>
+      </div>
+      <p class="docs-tree-status bp-font-role-status-meta" id="docs-folder-tree-status"></p>
+      <p class="hub-modal-error" id="docs-folder-tree-error"></p>
     </div>
   </div>
 </dialog>
