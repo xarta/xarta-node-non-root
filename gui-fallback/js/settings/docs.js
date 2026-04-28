@@ -23,8 +23,11 @@ let _docsEditingGroupId = null;
 let _docsEditingGroupName = '';
 let _docsFolderTreeExplainTtsActive = false;
 let _docsFolderTreeExplainTtsText = '';
+let _docsFolderTreeRequestSeq = 0;
+let _docsFolderTreeStatusCache = null;
 let _docsFolderTreeState = {
   groupId: null,
+  title: 'Docs Folder',
   path: null,
   parentPath: null,
   query: '',
@@ -979,18 +982,16 @@ async function docsListDeleteGroup(groupId, name) {
 }
 
 async function docsListOpenGroupFolder(groupId, options = {}) {
-  const group = groupId ? _docsGroups.find(g => g.group_id === groupId) : null;
-  const groupName = typeof options.title === 'string' && options.title.trim()
-    ? options.title.trim()
-    : (group ? group.name : 'Undefined Group');
+  const requestSeq = ++_docsFolderTreeRequestSeq;
+  const groupName = _docsFolderTreeTitleFor(groupId || null, options);
   const modal = document.getElementById('docs-folder-tree-modal');
-  const title = document.getElementById('docs-folder-tree-title');
   const list = document.getElementById('docs-folder-tree-list');
   const errEl = document.getElementById('docs-folder-tree-error');
   const status = document.getElementById('docs-folder-tree-status');
 
   _docsFolderTreeState = {
     groupId: groupId || null,
+    title: groupName,
     path: null,
     parentPath: null,
     query: typeof options.query === 'string' ? options.query.trim() : '',
@@ -1000,11 +1001,12 @@ async function docsListOpenGroupFolder(groupId, options = {}) {
     explanation: null,
   };
   _docsFolderTreeSetSearchForm();
-  if (title) title.textContent = groupName;
+  _docsFolderTreeSetTitle(groupName);
   if (list) list.innerHTML = '<div class="docs-tree-loading">Loading folder...</div>';
   if (errEl) errEl.textContent = '';
   if (status) status.textContent = '';
   _docsFolderTreeClearExplanation();
+  _docsFolderTreeRefreshStatusBadge();
   if (modal && typeof HubModal !== 'undefined') {
     HubModal.open(modal, {
       onOpen: () => {
@@ -1018,7 +1020,7 @@ async function docsListOpenGroupFolder(groupId, options = {}) {
     });
   }
 
-  await _docsFolderTreeLoad(null);
+  await _docsFolderTreeLoad(null, requestSeq);
 }
 
 function _docsFolderTreeSetSearchForm() {
@@ -1034,6 +1036,23 @@ function _docsFolderTreeReadSearchForm() {
   _docsFolderTreeState.query = (document.getElementById('docs-folder-tree-query')?.value || '').trim();
   const mode = document.getElementById('docs-folder-tree-mode')?.value || 'keyword';
   _docsFolderTreeState.mode = ['keyword', 'vector', 'hybrid'].includes(mode) ? mode : 'keyword';
+}
+
+function _docsFolderTreeTitleFor(groupId, options = {}) {
+  if (typeof options.title === 'string' && options.title.trim()) return options.title.trim();
+  if (groupId) {
+    const group = _docsGroups.find(g => g.group_id === groupId);
+    if (group?.name) return group.name;
+  }
+  if (Object.prototype.hasOwnProperty.call(options, 'groupId') && !groupId) return 'Undefined Group';
+  return 'Docs Search';
+}
+
+function _docsFolderTreeSetTitle(text) {
+  const title = document.getElementById('docs-folder-tree-title');
+  const value = String(text || '').trim() || 'Docs Search';
+  _docsFolderTreeState.title = value;
+  if (title) title.textContent = value;
 }
 
 function _docsFolderTreeScope() {
@@ -1162,20 +1181,127 @@ async function _docsFolderTreeToggleExplainTts() {
   _docsFolderTreeSetExplainTtsActive(false, '');
 }
 
+function _docsFolderTreeSetStatusPill(status = 'unknown') {
+  const pill = document.getElementById('docs-folder-tree-status-pill');
+  if (!pill) return;
+  const clean = ['green', 'amber', 'red'].includes(status) ? status : 'unknown';
+  pill.classList.remove(
+    'docs-tree-status-pill--green',
+    'docs-tree-status-pill--amber',
+    'docs-tree-status-pill--red',
+    'docs-tree-status-pill--unknown',
+  );
+  pill.classList.add(`docs-tree-status-pill--${clean}`);
+  pill.textContent = clean === 'unknown' ? 'status' : clean;
+  pill.title = clean === 'unknown' ? 'Docs search status' : `Docs search status: ${clean}`;
+}
+
+function _docsFolderTreeMetricHtml(label, value) {
+  const display = value === null || value === undefined || value === '' ? '-' : String(value);
+  return `
+    <div class="docs-tree-metric">
+      <div class="docs-tree-metric-value">${esc(display)}</div>
+      <div class="docs-tree-metric-label">${esc(label)}</div>
+    </div>
+  `;
+}
+
+function _docsFolderTreeStatusHtml(data) {
+  const metrics = data?.metrics && typeof data.metrics === 'object' ? data.metrics : {};
+  const checks = Array.isArray(data?.checks) ? data.checks : [];
+  const status = ['green', 'amber', 'red'].includes(data?.status) ? data.status : 'unknown';
+  const checkHtml = checks.map(check => {
+    const state = check.status === 'fail' ? 'fail' : (check.status === 'warn' ? 'warn' : 'ok');
+    const kind = check.critical ? 'critical' : 'watch';
+    return `
+      <section class="docs-tree-check docs-tree-check--${esc(state)}">
+        <span class="docs-tree-check-dot" aria-hidden="true"></span>
+        <div>
+          <div class="docs-tree-check-title">
+            <span>${esc(check.label || check.name || 'Check')}</span>
+            <span class="docs-tree-check-kind">${esc(kind)}</span>
+          </div>
+          <div class="docs-tree-check-detail">${esc(check.detail || '')}</div>
+        </div>
+      </section>
+    `;
+  }).join('');
+  return `
+    <section class="docs-tree-status-summary">
+      <div class="docs-tree-status-summary-head">
+        <div class="docs-tree-status-title">${esc(data?.summary || 'Docs search status')}</div>
+        <span class="docs-tree-status-pill docs-tree-status-pill--${esc(status)}">${esc(status)}</span>
+      </div>
+      <p class="docs-tree-status-meta">Corpus and service checks for the local docs retrieval path.</p>
+    </section>
+    <div class="docs-tree-metric-grid">
+      ${_docsFolderTreeMetricHtml('registered docs', metrics.registered_docs)}
+      ${_docsFolderTreeMetricHtml('indexed docs', metrics.turbovec_documents)}
+      ${_docsFolderTreeMetricHtml('chunks', metrics.turbovec_chunks)}
+      ${_docsFolderTreeMetricHtml('edges', metrics.graph_edges)}
+      ${_docsFolderTreeMetricHtml('graph nodes', metrics.graph_nodes)}
+      ${_docsFolderTreeMetricHtml('headings', metrics.graph_headings)}
+      ${_docsFolderTreeMetricHtml('groups', metrics.doc_groups)}
+      ${_docsFolderTreeMetricHtml('unknown metadata', metrics.unknown_lifecycle_source_docs)}
+    </div>
+    <div class="docs-tree-check-list">${checkHtml || '<div class="docs-tree-empty">No checks returned.</div>'}</div>
+  `;
+}
+
+async function _docsFolderTreeFetchStatus() {
+  const r = await apiFetch('/api/v1/docs/search/status');
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+  _docsFolderTreeStatusCache = data;
+  _docsFolderTreeSetStatusPill(data.status || 'unknown');
+  return data;
+}
+
+async function _docsFolderTreeRefreshStatusBadge() {
+  try {
+    await _docsFolderTreeFetchStatus();
+  } catch (e) {
+    console.warn('docs search status badge failed', e);
+    _docsFolderTreeSetStatusPill('red');
+  }
+}
+
+async function _docsFolderTreeOpenStatusModal() {
+  const modal = document.getElementById('docs-folder-tree-status-modal');
+  const body = document.getElementById('docs-folder-tree-status-dashboard');
+  const badge = document.getElementById('docs-folder-tree-status-badge');
+  if (!modal || !body) return;
+  body.innerHTML = '<div class="docs-tree-loading">Loading status...</div>';
+  if (typeof HubModal !== 'undefined') HubModal.open(modal);
+  else if (typeof modal.showModal === 'function' && !modal.open) modal.showModal();
+  try {
+    const data = await _docsFolderTreeFetchStatus();
+    if (badge) badge.textContent = String(data.status || 'status').toUpperCase();
+    body.innerHTML = _docsFolderTreeStatusHtml(data);
+  } catch (e) {
+    _docsFolderTreeSetStatusPill('red');
+    if (badge) badge.textContent = 'RED';
+    body.innerHTML = `<p class="hub-modal-error">Status failed: ${esc(e.message || e)}</p>`;
+  }
+}
+
 function openDocsFolderSearchModal(options = {}) {
   const activeDoc = _docsAll.find(d => d.doc_id === _docsActiveId) || null;
   const groupId = Object.prototype.hasOwnProperty.call(options, 'groupId')
     ? options.groupId
     : (activeDoc ? activeDoc.group_id || null : null);
-  docsListOpenGroupFolder(groupId, {
+  const explicitGroup = Object.prototype.hasOwnProperty.call(options, 'groupId');
+  const treeOptions = {
     query: typeof options.query === 'string' ? options.query : '',
     mode: ['keyword', 'vector', 'hybrid'].includes(options.mode) ? options.mode : 'keyword',
     focusQuery: options.focusQuery !== false,
-    title: activeDoc || groupId ? '' : 'Docs Search',
-  });
+    title: typeof options.title === 'string' ? options.title : '',
+  };
+  if (explicitGroup) treeOptions.groupId = groupId;
+  docsListOpenGroupFolder(groupId, treeOptions);
 }
 
-async function _docsFolderTreeLoad(path) {
+async function _docsFolderTreeLoad(path, requestSeq = _docsFolderTreeRequestSeq) {
   const list = document.getElementById('docs-folder-tree-list');
   const errEl = document.getElementById('docs-folder-tree-error');
   const status = document.getElementById('docs-folder-tree-status');
@@ -1194,9 +1320,12 @@ async function _docsFolderTreeLoad(path) {
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+    if (requestSeq !== _docsFolderTreeRequestSeq) return;
+    _docsFolderTreeSetTitle(_docsFolderTreeState.title);
     _docsFolderTreeRender(data);
-    if (_docsFolderTreeState.query) await _docsFolderTreeRunSearch({ fromNavigation: true });
+    if (_docsFolderTreeState.query) await _docsFolderTreeRunSearch({ fromNavigation: true, requestSeq });
   } catch (e) {
+    if (requestSeq !== _docsFolderTreeRequestSeq) return;
     if (list) list.innerHTML = '';
     if (errEl) errEl.textContent = `Error: ${e.message}`;
   }
@@ -1353,6 +1482,7 @@ function _docsFolderTreeSearchRowHtml(result, path) {
 }
 
 async function _docsFolderTreeRunSearch(opts = {}) {
+  const requestSeq = opts.requestSeq || ++_docsFolderTreeRequestSeq;
   _docsFolderTreeReadSearchForm();
   const query = _docsFolderTreeState.query;
   const list = document.getElementById('docs-folder-tree-list');
@@ -1385,16 +1515,19 @@ async function _docsFolderTreeRunSearch(opts = {}) {
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+    if (requestSeq !== _docsFolderTreeRequestSeq) return;
     _docsFolderTreeRenderSearchResults(Array.isArray(data.results) ? data.results : []);
   } catch (e) {
+    if (requestSeq !== _docsFolderTreeRequestSeq) return;
     if (list) list.innerHTML = '';
     if (errEl) errEl.textContent = `Search failed: ${e.message || e}`;
   } finally {
-    if (btn) btn.disabled = false;
+    if (requestSeq === _docsFolderTreeRequestSeq && btn) btn.disabled = false;
   }
 }
 
 function _docsFolderTreeClearSearch() {
+  ++_docsFolderTreeRequestSeq;
   _docsFolderTreeState.query = '';
   _docsFolderTreeState.mode = 'keyword';
   _docsFolderTreeState.searchResults = null;
@@ -1484,7 +1617,7 @@ function _docsFolderTreeHandleAction(action, btn) {
   if (!action) return;
   if (action === 'browse') {
     const path = btn.dataset.path || '.';
-    _docsFolderTreeLoad(path);
+    _docsFolderTreeLoad(path, ++_docsFolderTreeRequestSeq);
     return;
   }
   if (action === 'open-doc') {
@@ -1947,7 +2080,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const docsFolderTreeUp = document.getElementById('docs-folder-tree-up');
   if (docsFolderTreeUp) {
     docsFolderTreeUp.addEventListener('click', () => {
-      if (_docsFolderTreeState.parentPath) _docsFolderTreeLoad(_docsFolderTreeState.parentPath);
+      if (_docsFolderTreeState.parentPath) _docsFolderTreeLoad(_docsFolderTreeState.parentPath, ++_docsFolderTreeRequestSeq);
     });
   }
 
@@ -1976,6 +2109,11 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     e.stopPropagation();
     _docsFolderTreeExplain();
+  });
+  document.getElementById('docs-folder-tree-status-pill')?.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    _docsFolderTreeOpenStatusModal();
   });
   document.getElementById('docs-folder-tree-explain-speaker')?.addEventListener('click', e => {
     e.preventDefault();

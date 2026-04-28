@@ -3241,6 +3241,7 @@
       <span class="hub-dialog-badge">TREE</span>
       <span class="hub-dialog-title-text" id="docs-folder-tree-title">Docs Folder</span>
     </h2>
+    <button class="docs-tree-status-pill docs-tree-status-pill--unknown" type="button" id="docs-folder-tree-status-pill" aria-label="Open docs search status dashboard" title="Docs search status">status</button>
     <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
@@ -3267,6 +3268,22 @@
       </div>
       <p class="docs-tree-status bp-font-role-status-meta" id="docs-folder-tree-status"></p>
       <p class="hub-modal-error" id="docs-folder-tree-error"></p>
+    </div>
+  </div>
+</dialog>
+
+<!-- Docs search status modal -->
+<dialog class="hub-modal hub-dialog docs-tree-status-modal" data-tone="info" id="docs-folder-tree-status-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge" id="docs-folder-tree-status-badge">STATUS</span>
+      <span class="hub-dialog-title-text">Docs Search Status</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body">
+    <div class="docs-tree-status-dashboard" id="docs-folder-tree-status-dashboard">
+      <div class="docs-tree-loading">Loading status...</div>
     </div>
   </div>
 </dialog>
