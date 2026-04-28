@@ -469,6 +469,55 @@
   overflow-wrap: anywhere;
 }
 
+.docs-tree-quality {
+  display: grid;
+  gap: 10px;
+}
+
+.docs-tree-backlog-list {
+  display: grid;
+  gap: 6px;
+}
+
+.docs-tree-backlog-item {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.18);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.docs-tree-backlog-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.docs-tree-backlog-path {
+  min-width: 0;
+  color: var(--text);
+  font-family: monospace;
+  font-size: 11px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docs-tree-backlog-score {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.docs-tree-backlog-meta {
+  margin-top: 3px;
+  color: var(--text-dim);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 @media (min-width: 700px) {
   .docs-tree-check-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -1448,19 +1448,23 @@ async function _docsFolderTreeHandleExplainSpeakerDoubleClick() {
   await _docsFolderTreeExplainTtsFsm.dispatch('doubleTap');
 }
 
-function _docsFolderTreeSetStatusPill(status = 'unknown') {
+function _docsFolderTreeSetStatusPill(status = 'unknown', qualityStatus = 'unknown') {
   const pill = document.getElementById('docs-folder-tree-status-pill');
   if (!pill) return;
   const clean = ['green', 'amber', 'red'].includes(status) ? status : 'unknown';
+  const quality = ['green', 'amber', 'red'].includes(qualityStatus) ? qualityStatus : 'unknown';
+  const visual = quality === 'amber' || quality === 'red' ? quality : clean;
   pill.classList.remove(
     'docs-tree-status-pill--green',
     'docs-tree-status-pill--amber',
     'docs-tree-status-pill--red',
     'docs-tree-status-pill--unknown',
   );
-  pill.classList.add(`docs-tree-status-pill--${clean}`);
-  pill.textContent = 'STATUS';
-  pill.title = clean === 'unknown' ? 'Docs search status' : `Docs search status: ${clean}`;
+  pill.classList.add(`docs-tree-status-pill--${visual}`);
+  pill.textContent = quality === 'amber' || quality === 'red' ? 'QUALITY' : 'STATUS';
+  pill.title = clean === 'unknown'
+    ? 'Docs search status'
+    : `Docs search runtime: ${clean}; corpus quality: ${quality}`;
 }
 
 function _docsFolderTreeMetricHtml(label, value) {
@@ -1473,10 +1477,34 @@ function _docsFolderTreeMetricHtml(label, value) {
   `;
 }
 
-function _docsFolderTreeStatusHtml(data) {
+function _docsFolderTreeBacklogHtml(qualityData) {
+  const items = Array.isArray(qualityData?.items) ? qualityData.items : [];
+  if (!items.length) {
+    return '<div class="docs-tree-empty">No metadata backlog items returned.</div>';
+  }
+  return items.slice(0, 12).map(item => `
+    <section class="docs-tree-backlog-item">
+      <div class="docs-tree-backlog-head">
+        <span class="docs-tree-backlog-path">${esc(item.path || '')}</span>
+        <span class="docs-tree-backlog-score">${esc(item.priority_score ?? '-')}</span>
+      </div>
+      <div class="docs-tree-backlog-meta">
+        ${esc(item.folder || 'docs')} | retrieved ${esc(item.retrieval_frequency ?? 0)} | inbound ${esc(item.inbound_graph_links ?? 0)} | folder rank ${esc(item.folder_rank ?? '-')}
+      </div>
+    </section>
+  `).join('');
+}
+
+function _docsFolderTreeStatusHtml(data, qualityData = null) {
   const metrics = data?.metrics && typeof data.metrics === 'object' ? data.metrics : {};
+  const quality = data?.quality && typeof data.quality === 'object' ? data.quality : {};
+  const qualityMetrics = qualityData?.metrics || quality.metrics || {};
   const checks = Array.isArray(data?.checks) ? data.checks : [];
+  const qualityChecks = Array.isArray(quality.checks) ? quality.checks : [];
   const status = ['green', 'amber', 'red'].includes(data?.status) ? data.status : 'unknown';
+  const qualityStatus = ['green', 'amber', 'red'].includes(data?.quality_status || qualityData?.status || quality.status)
+    ? (data?.quality_status || qualityData?.status || quality.status)
+    : 'unknown';
   const checkHtml = checks.map(check => {
     const state = check.status === 'fail' ? 'fail' : (check.status === 'warn' ? 'warn' : 'ok');
     const kind = check.critical ? 'critical' : 'watch';
@@ -1493,12 +1521,27 @@ function _docsFolderTreeStatusHtml(data) {
       </section>
     `;
   }).join('');
+  const qualityCheckHtml = qualityChecks.map(check => {
+    const state = check.status === 'fail' ? 'fail' : (check.status === 'warn' ? 'warn' : 'ok');
+    return `
+      <section class="docs-tree-check docs-tree-check--${esc(state)}">
+        <span class="docs-tree-check-dot" aria-hidden="true"></span>
+        <div>
+          <div class="docs-tree-check-title">
+            <span>${esc(check.label || check.name || 'Quality Check')}</span>
+            <span class="docs-tree-check-kind">quality</span>
+          </div>
+          <div class="docs-tree-check-detail">${esc(check.detail || '')}</div>
+        </div>
+      </section>
+    `;
+  }).join('');
   return `
     <section class="docs-tree-status-summary docs-tree-status-summary--${esc(status)}">
       <div class="docs-tree-status-summary-head">
         <div class="docs-tree-status-title">${esc(data?.summary || 'Docs search status')}</div>
       </div>
-      <p class="docs-tree-status-meta">Corpus and service checks for the local docs retrieval path.</p>
+      <p class="docs-tree-status-meta">Runtime checks for the local docs retrieval path.</p>
     </section>
     <div class="docs-tree-metric-grid">
       ${_docsFolderTreeMetricHtml('registered docs', metrics.registered_docs)}
@@ -1508,9 +1551,25 @@ function _docsFolderTreeStatusHtml(data) {
       ${_docsFolderTreeMetricHtml('graph nodes', metrics.graph_nodes)}
       ${_docsFolderTreeMetricHtml('headings', metrics.graph_headings)}
       ${_docsFolderTreeMetricHtml('groups', metrics.doc_groups)}
-      ${_docsFolderTreeMetricHtml('unknown metadata', metrics.unknown_lifecycle_source_docs)}
+      ${_docsFolderTreeMetricHtml('models', metrics.available_local_models)}
     </div>
     <div class="docs-tree-check-list">${checkHtml || '<div class="docs-tree-empty">No checks returned.</div>'}</div>
+    <section class="docs-tree-quality docs-tree-quality--${esc(qualityStatus)}">
+      <div class="docs-tree-status-summary docs-tree-status-summary--${esc(qualityStatus)}">
+        <div class="docs-tree-status-summary-head">
+          <div class="docs-tree-status-title">${esc(qualityData?.summary || quality.summary || 'Docs corpus quality')}</div>
+        </div>
+        <p class="docs-tree-status-meta">Metadata and review backlog signals. Runtime health stays separate.</p>
+      </div>
+      <div class="docs-tree-metric-grid">
+        ${_docsFolderTreeMetricHtml('unknown metadata', qualityMetrics.unknown_lifecycle_source_docs)}
+        ${_docsFolderTreeMetricHtml('backlog shown', qualityMetrics.backlog_items_returned)}
+        ${_docsFolderTreeMetricHtml('tasks scanned', qualityMetrics.retrieval_tasks_scanned)}
+        ${_docsFolderTreeMetricHtml('folders ranked', qualityMetrics.folders_ranked)}
+      </div>
+      <div class="docs-tree-check-list">${qualityCheckHtml || '<div class="docs-tree-empty">No quality checks returned.</div>'}</div>
+      <div class="docs-tree-backlog-list">${_docsFolderTreeBacklogHtml(qualityData)}</div>
+    </section>
   `;
 }
 
@@ -1519,7 +1578,14 @@ async function _docsFolderTreeFetchStatus() {
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
   _docsFolderTreeStatusCache = data;
-  _docsFolderTreeSetStatusPill(data.status || 'unknown');
+  _docsFolderTreeSetStatusPill(data.status || 'unknown', data.quality_status || data.quality?.status || 'unknown');
+  return data;
+}
+
+async function _docsFolderTreeFetchQuality(limit = 12) {
+  const r = await apiFetch(`/api/v1/docs/search/quality?limit=${encodeURIComponent(limit)}`);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
   return data;
 }
 
@@ -1542,18 +1608,33 @@ async function _docsFolderTreeOpenStatusModal() {
   else if (typeof modal.showModal === 'function' && !modal.open) modal.showModal();
   try {
     const data = await _docsFolderTreeFetchStatus();
+    let qualityData = null;
+    try {
+      qualityData = await _docsFolderTreeFetchQuality(12);
+    } catch (qualityError) {
+      qualityData = {
+        status: 'red',
+        summary: `Quality report failed: ${qualityError.message || qualityError}`,
+        metrics: {},
+        items: [],
+      };
+    }
     if (badge) {
       const clean = ['green', 'amber', 'red'].includes(data.status) ? data.status : 'unknown';
-      badge.textContent = 'STATUS';
+      const quality = ['green', 'amber', 'red'].includes(data.quality_status || qualityData?.status)
+        ? (data.quality_status || qualityData?.status)
+        : 'unknown';
+      const visual = quality === 'amber' || quality === 'red' ? quality : clean;
+      badge.textContent = quality === 'amber' || quality === 'red' ? 'QUALITY' : 'STATUS';
       badge.classList.remove(
         'docs-tree-status-badge--green',
         'docs-tree-status-badge--amber',
         'docs-tree-status-badge--red',
         'docs-tree-status-badge--unknown',
       );
-      badge.classList.add(`docs-tree-status-badge--${clean}`);
+      badge.classList.add(`docs-tree-status-badge--${visual}`);
     }
-    body.innerHTML = _docsFolderTreeStatusHtml(data);
+    body.innerHTML = _docsFolderTreeStatusHtml(data, qualityData);
   } catch (e) {
     _docsFolderTreeSetStatusPill('red');
     if (badge) {
