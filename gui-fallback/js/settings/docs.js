@@ -2220,7 +2220,7 @@ function _mdToHtml(md) {
         bodyRows.push(_tableCells(lines[i]));
       }
 
-      let tableHtml = '<div style="overflow-x:auto;margin:10px 0"><table class="bp-font-role-docs-markdown" style="width:100%;border-collapse:collapse;font-size:13px">';
+      let tableHtml = '<div class="docs-preview-table-wrap" style="overflow-x:auto;margin:10px 0"><table class="bp-font-role-docs-markdown docs-preview-table" style="width:100%;border-collapse:collapse;font-size:13px">';
       tableHtml += '<thead><tr>';
       for (const cell of headerCells) {
         tableHtml += `<th class="bp-font-role-table-header bp-font-role-docs-markdown" style="text-align:left;padding:7px 9px;border:1px solid var(--border);background:var(--bg)">${_inlineMd(cell)}</th>`;

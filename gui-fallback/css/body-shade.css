@@ -95,6 +95,21 @@ body.has-fill-tab {
   min-height: calc(100vh - 220px);
 }
 
+@media (max-width: 600px) and (orientation: portrait) {
+  #docs-preview {
+    padding: 10px 6px !important;
+  }
+
+  #docs-preview .docs-preview-table-wrap {
+    margin: 8px 0 !important;
+  }
+
+  #docs-preview .docs-preview-table th,
+  #docs-preview .docs-preview-table td {
+    padding: 5px 6px !important;
+  }
+}
+
 @media (min-width: 601px) {
   #tab-docs {
     margin-bottom: 0;
