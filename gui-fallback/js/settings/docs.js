@@ -1290,6 +1290,8 @@ async function _docsFolderTreeToggleExplainTts() {
       mode: 'stream',
       eventKind: 'docs_explain',
       fallbackKind: 'positive',
+      sanitizeText: true,
+      transformProfile: 'speech',
     });
   } catch (e) {
     if (e?.name === 'AbortError') {

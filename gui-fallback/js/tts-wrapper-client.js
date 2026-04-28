@@ -202,6 +202,8 @@ const BlueprintsTtsClient = (() => {
       mode: typeof opts.mode === 'string' ? opts.mode : undefined,
       event_kind: typeof opts.eventKind === 'string' ? opts.eventKind : undefined,
       fallback_kind: typeof opts.fallbackKind === 'string' ? opts.fallbackKind : undefined,
+      sanitize_text: typeof opts.sanitizeText === 'boolean' ? opts.sanitizeText : undefined,
+      transform_profile: typeof opts.transformProfile === 'string' ? opts.transformProfile : undefined,
     };
 
     if (payload.interrupt) {
