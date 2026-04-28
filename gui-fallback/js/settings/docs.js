@@ -5,11 +5,69 @@ let _docsActiveId  = null; // currently open doc_id
 let _docsDirty     = false; // unsaved changes in the textarea
 let _docsPreview   = false; // preview mode active for current doc (kept in sync with _docsViewModes)
 const _docsViewModes = {}; // doc_id → true (preview) | false (edit); default preview on first open
+const _DOCS_HIDE_FRONTMATTER_KEY = 'blueprints.docs.hideFrontmatter.v1';
+let _docsHideFrontmatter = _docsLoadHideFrontmatterSetting();
 
 function _docsSchedulePaneSize() {
   if (window.BodyShade && typeof window.BodyShade.scheduleSizeFillTable === 'function') {
     window.BodyShade.scheduleSizeFillTable();
   }
+}
+
+function _docsLoadHideFrontmatterSetting() {
+  try {
+    const stored = localStorage.getItem(_DOCS_HIDE_FRONTMATTER_KEY);
+    return stored === null ? true : stored !== '0';
+  } catch (_) {
+    return true;
+  }
+}
+
+function _docsSaveHideFrontmatterSetting() {
+  try {
+    localStorage.setItem(_DOCS_HIDE_FRONTMATTER_KEY, _docsHideFrontmatter ? '1' : '0');
+  } catch (_) {
+    // Storage can be unavailable in hardened/private browser contexts.
+  }
+}
+
+function _docsStripFrontmatterForPreview(markdown) {
+  const text = String(markdown || '');
+  const start = text.charCodeAt(0) === 0xfeff ? 1 : 0;
+  if (text.slice(start, start + 3) !== '---') return text;
+  const firstLineEnd = text.indexOf('\n', start);
+  const firstLine = text.slice(start, firstLineEnd === -1 ? text.length : firstLineEnd).trim();
+  if (firstLine !== '---') return text;
+
+  let lineStart = firstLineEnd === -1 ? text.length : firstLineEnd + 1;
+  while (lineStart < text.length) {
+    let lineEnd = text.indexOf('\n', lineStart);
+    if (lineEnd === -1) lineEnd = text.length;
+    const line = text.slice(lineStart, lineEnd).trim();
+    if (line === '---') {
+      const afterFence = lineEnd < text.length ? lineEnd + 1 : lineEnd;
+      return text.slice(afterFence).replace(/^\s*\n/, '');
+    }
+    lineStart = lineEnd + 1;
+  }
+  return text;
+}
+
+function _docsPreviewMarkdown(markdown) {
+  return _docsHideFrontmatter ? _docsStripFrontmatterForPreview(markdown) : String(markdown || '');
+}
+
+function docsToggleFrontmatterPreview() {
+  _docsHideFrontmatter = !_docsHideFrontmatter;
+  _docsSaveHideFrontmatterSetting();
+  if (_docsPreview) _docsRenderPreview();
+  if (typeof SettingsMenuConfig !== 'undefined') {
+    SettingsMenuConfig.updateActiveTab('docs');
+  }
+}
+
+function docsFrontmatterToggleLabel() {
+  return `Frontmatter: ${_docsHideFrontmatter ? 'Hidden' : 'Shown'}`;
 }
 
 // ── List view state ──────────────────────────────────────────────────────────
@@ -305,7 +363,7 @@ function _docsFillPane(doc) {
   // Apply stored view mode (default: preview)
   if (_docsPreview) {
     // Render preview immediately
-    preview.innerHTML = _mdToHtml(editor.value);
+    preview.innerHTML = _mdToHtml(_docsPreviewMarkdown(editor.value));
     _docsResolvePrevImgs(preview);
     editor.style.display  = 'none';
     preview.style.display = 'block';
@@ -434,7 +492,7 @@ async function docsTogglePreview() {
 
 async function _docsRenderPreview() {
   const preview = document.getElementById('docs-preview');
-  preview.innerHTML = _mdToHtml(document.getElementById('docs-editor').value);
+  preview.innerHTML = _mdToHtml(_docsPreviewMarkdown(document.getElementById('docs-editor').value));
   await _docsResolvePrevImgs(preview);
 }
 

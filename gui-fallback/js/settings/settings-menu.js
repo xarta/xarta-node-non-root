@@ -99,9 +99,10 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'doc-fn-new',      label: 'New Doc',          icon: HIEROGLYPHS.papyrus,    fn: 'doc.new',      activeOn: ['docs'],         parent: 'settings-layout', order: 2 },
         { id: 'doc-fn-add',      label: 'Add Existing',     icon: 'icons/ui/group-folder-blue.svg', fn: 'doc.add', activeOn: ['docs'], parent: 'settings-layout', order: 3 },
         { id: 'doc-fn-preview',  label: 'Edit / Preview',   icon: HIEROGLYPHS.khaHorizon, fn: 'doc.preview',  activeOn: ['docs'],         parent: 'settings-layout', order: 4 },
-        { id: 'doc-fn-save',     label: 'Save',             icon: HIEROGLYPHS.tjet,       fn: 'doc.save',     activeOn: ['docs'],         parent: 'settings-layout', order: 5 },
-        { id: 'doc-fn-meta',     label: 'Meta',             icon: HIEROGLYPHS.papyrus,    fn: 'doc.meta',     activeOn: ['docs'],         parent: 'settings-layout', order: 6 },
-        { id: 'doc-fn-delete',   label: 'Delete',           icon: 'icons/ui/trash-blue.svg', fn: 'doc.delete', activeOn: ['docs'], parent: 'settings-layout', order: 7 },
+        { id: 'doc-fn-frontmatter', label: 'Frontmatter: Hidden', icon: HIEROGLYPHS.eyeOfHorus, fn: 'doc.frontmatter', activeOn: ['docs'], parent: 'settings-layout', order: 5 },
+        { id: 'doc-fn-save',     label: 'Save',             icon: HIEROGLYPHS.tjet,       fn: 'doc.save',     activeOn: ['docs'],         parent: 'settings-layout', order: 6 },
+        { id: 'doc-fn-meta',     label: 'Meta',             icon: HIEROGLYPHS.papyrus,    fn: 'doc.meta',     activeOn: ['docs'],         parent: 'settings-layout', order: 7 },
+        { id: 'doc-fn-delete',   label: 'Delete',           icon: 'icons/ui/trash-blue.svg', fn: 'doc.delete', activeOn: ['docs'], parent: 'settings-layout', order: 8 },
 
         // ── Doc List page function items ───────────────────────────────────
         { id: 'dlist-fn-addgrp', label: 'Add Group',        icon: HIEROGLYPHS.papyrus,    fn: 'dlist.addGrp', activeOn: ['docs-list'],    parent: 'settings-layout', order: 0 },
@@ -559,6 +560,7 @@ SettingsMenuConfig.registerFunctions({
     'doc.new':            () => openNewDocModal(),
     'doc.add':            () => openAddDocModal(),
     'doc.preview':        () => docsTogglePreview(),
+    'doc.frontmatter':    () => docsToggleFrontmatterPreview(),
     'doc.save':           () => docsSave(),
     'doc.meta':           () => openEditDocModal(),
     'doc.delete':         () => openDeleteDocModal(),
@@ -613,6 +615,7 @@ SettingsMenuConfig.registerFunctions({
 
 SettingsMenuConfig.registerLabelGetters({
     'doc-fn-search': () => 'Search',
+    'doc-fn-frontmatter': () => docsFrontmatterToggleLabel(),
 });
 
 SettingsMenuConfig.registerVisibilityGetters({
