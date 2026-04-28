@@ -85,6 +85,14 @@ let _docsFolderTreeExplainTtsClickTimer = null;
 let _docsFolderTreeExplainTtsLastClickAt = 0;
 let _docsFolderTreeExplainTtsText = '';
 const _DOCS_FOLDER_TREE_EXPLAIN_TTS_DOUBLE_CLICK_MS = 260;
+let _docsDocSpeechState = 'IDLE';
+let _docsDocSpeechRunId = 0;
+let _docsDocSpeechClickTimer = null;
+let _docsDocSpeechLastClickAt = 0;
+let _docsDocSpeechLongPressTimer = null;
+let _docsDocSpeechLastLongPressAt = 0;
+const _DOCS_DOC_SPEECH_DOUBLE_CLICK_MS = 260;
+const _DOCS_DOC_SPEECH_LONG_PRESS_MS = 650;
 let _docsFolderTreeRequestSeq = 0;
 let _docsFolderTreeStatusCache = null;
 const _DOCS_FOLDER_TREE_SEARCH_CACHE_KEY = 'blueprints.docs.folderTree.lastSearch.v1';
@@ -377,6 +385,9 @@ function _docsFillPane(doc) {
   }
   // Track changes
   editor.oninput = () => { _docsDirty = true; };
+  const speechControl = document.getElementById('docs-doc-speech-control');
+  if (speechControl) speechControl.hidden = false;
+  _docsDocSpeechSetState('IDLE', '');
   _docsSchedulePaneSize();
 }
 
@@ -389,6 +400,7 @@ function _docsShowPane(docId) {
 }
 
 function _docsHidePane() {
+  _docsDocSpeechStop();
   document.getElementById('docs-active-label').textContent = '';
   document.getElementById('docs-active-desc').textContent  = '';
   document.getElementById('docs-editor').value = '';
@@ -398,6 +410,8 @@ function _docsHidePane() {
   // Note: do NOT reset _docsPreview here — per-doc view mode is managed by _docsViewModes
   const pb = document.getElementById('docs-preview-btn');
   if (pb) pb.textContent = '👁 Preview';
+  const speechControl = document.getElementById('docs-doc-speech-control');
+  if (speechControl) speechControl.hidden = true;
   // Note: do NOT clear _docsViewModes here — keep per-doc memory across hide/show cycles
   _docsSchedulePaneSize();
 }
@@ -1197,6 +1211,246 @@ function _docsFolderTreeSearchTerms(result) {
   return Array.from(new Set((_docsFolderTreeState.query.match(/[A-Za-z0-9._:-]{3,}/g) || [])
     .map(v => v.toLowerCase())))
     .slice(0, 8);
+}
+
+function _docsDocSpeechSetState(state = 'IDLE', message = '') {
+  const clean = ['IDLE', 'SPEAKING', 'PAUSED'].includes(state) ? state : 'IDLE';
+  _docsDocSpeechState = clean;
+  const btn = document.getElementById('docs-doc-speaker');
+  const status = document.getElementById('docs-doc-speech-status');
+  const isSpeaking = clean === 'SPEAKING';
+  const isPaused = clean === 'PAUSED';
+  if (btn) {
+    btn.classList.toggle('is-idle', clean === 'IDLE');
+    btn.classList.toggle('is-speaking', isSpeaking);
+    btn.classList.toggle('is-paused', isPaused);
+    btn.classList.toggle('is-generating', /generat|prepar/i.test(String(message || '')));
+    btn.setAttribute('aria-pressed', isSpeaking ? 'true' : 'false');
+    const label = isPaused
+      ? 'Resume document audio'
+      : (isSpeaking ? 'Pause document audio' : 'Speak document');
+    btn.setAttribute('aria-label', label);
+    btn.title = `${label}; long press regenerates narration`;
+  }
+  if (status) status.textContent = message;
+}
+
+function _docsDocSpeechSyncState() {
+  const btn = document.getElementById('docs-doc-speaker');
+  if (!btn) {
+    _docsDocSpeechState = 'IDLE';
+    return _docsDocSpeechState;
+  }
+  if (btn.classList.contains('is-speaking')) _docsDocSpeechState = 'SPEAKING';
+  else if (btn.classList.contains('is-paused')) _docsDocSpeechState = 'PAUSED';
+  else _docsDocSpeechState = 'IDLE';
+  return _docsDocSpeechState;
+}
+
+function _docsDocSpeechClearClickTimer() {
+  if (!_docsDocSpeechClickTimer) return;
+  clearTimeout(_docsDocSpeechClickTimer);
+  _docsDocSpeechClickTimer = null;
+}
+
+function _docsDocSpeechClearLongPressTimer() {
+  if (!_docsDocSpeechLongPressTimer) return;
+  clearTimeout(_docsDocSpeechLongPressTimer);
+  _docsDocSpeechLongPressTimer = null;
+}
+
+function _docsDocSpeechResetClassifiers() {
+  _docsDocSpeechClearClickTimer();
+  _docsDocSpeechClearLongPressTimer();
+  _docsDocSpeechLastClickAt = 0;
+}
+
+async function _docsDocSpeechStopClient() {
+  if (typeof BlueprintsTtsClient !== 'undefined' && typeof BlueprintsTtsClient.stop === 'function') {
+    try {
+      await BlueprintsTtsClient.stop();
+    } catch (e) {
+      console.warn('docs narration: failed to stop TTS', e);
+    }
+  }
+}
+
+async function _docsDocSpeechStop() {
+  _docsDocSpeechResetClassifiers();
+  _docsDocSpeechRunId += 1;
+  _docsDocSpeechSetState('IDLE', '');
+  await _docsDocSpeechStopClient();
+}
+
+async function _docsDocSpeechPause() {
+  if (typeof BlueprintsTtsClient === 'undefined' || typeof BlueprintsTtsClient.pause !== 'function') {
+    await _docsDocSpeechStop();
+    return;
+  }
+  try {
+    const result = await BlueprintsTtsClient.pause();
+    if (result?.paused) {
+      _docsDocSpeechSetState('PAUSED', '');
+      return;
+    }
+  } catch (e) {
+    console.warn('docs narration: failed to pause TTS', e);
+  }
+  await _docsDocSpeechStop();
+}
+
+async function _docsDocSpeechResume() {
+  if (typeof BlueprintsTtsClient === 'undefined' || typeof BlueprintsTtsClient.resume !== 'function') {
+    await _docsDocSpeechStop();
+    return;
+  }
+  try {
+    const result = await BlueprintsTtsClient.resume();
+    if (result?.resumed) {
+      _docsDocSpeechSetState('SPEAKING', '');
+      return;
+    }
+  } catch (e) {
+    console.warn('docs narration: failed to resume TTS', e);
+  }
+  await _docsDocSpeechStop();
+}
+
+async function _docsDocSpeechMarkdown(force = false) {
+  if (!_docsActiveId) throw new Error('No active document.');
+  if (_docsDirty) {
+    _docsDocSpeechSetState('SPEAKING', 'Saving...');
+    await docsSave(true);
+    if (_docsDirty) throw new Error('Save failed; narration uses the saved document.');
+  }
+  _docsDocSpeechSetState('SPEAKING', force ? 'Regenerating...' : 'Preparing...');
+  const r = await apiFetch(`/api/v1/docs/${_docsActiveId}/speech`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ force }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+  const markdown = String(data.markdown || '').trim();
+  if (!markdown) throw new Error('Narration was empty.');
+  return markdown;
+}
+
+async function _docsDocSpeechStart(force = false) {
+  if (!_docsActiveId) return;
+  if (typeof BlueprintsTtsClient === 'undefined' || typeof BlueprintsTtsClient.speak !== 'function') {
+    _docsDocSpeechSetState('IDLE', 'TTS unavailable.');
+    return;
+  }
+  const runId = _docsDocSpeechRunId + 1;
+  _docsDocSpeechRunId = runId;
+  await _docsDocSpeechStopClient();
+  if (runId !== _docsDocSpeechRunId) return;
+  _docsDocSpeechSetState('SPEAKING', force ? 'Regenerating...' : 'Preparing...');
+  try {
+    const text = await _docsDocSpeechMarkdown(force);
+    if (runId !== _docsDocSpeechRunId) return;
+    _docsDocSpeechSetState('SPEAKING', '');
+    await BlueprintsTtsClient.speak({
+      text,
+      interrupt: true,
+      mode: 'stream',
+      eventKind: 'docs_document_narration',
+      fallbackKind: 'positive',
+      sanitizeText: true,
+      transformProfile: 'speech',
+    });
+  } catch (e) {
+    if (e?.name === 'AbortError') {
+      if (runId === _docsDocSpeechRunId) _docsDocSpeechSetState('IDLE', '');
+      return;
+    }
+    console.warn('docs narration: TTS failed', e);
+    const message = e?.message ? `TTS failed: ${e.message}` : 'TTS failed.';
+    if (runId === _docsDocSpeechRunId) _docsDocSpeechSetState('IDLE', message);
+    return;
+  }
+  if (runId === _docsDocSpeechRunId) _docsDocSpeechSetState('IDLE', '');
+}
+
+const _docsDocSpeechFsm = (() => {
+  const transitions = {
+    IDLE: {
+      tap: { actions: ['start'] },
+      doubleTap: { actions: ['stop'] },
+      longPress: { actions: ['regenerate'] },
+    },
+    SPEAKING: {
+      tap: { actions: ['pause'] },
+      doubleTap: { actions: ['stop'] },
+      longPress: { actions: ['regenerate'] },
+    },
+    PAUSED: {
+      tap: { actions: ['resume'] },
+      doubleTap: { actions: ['stop'] },
+      longPress: { actions: ['regenerate'] },
+    },
+  };
+
+  async function _executeAction(action) {
+    if (action === 'start') return _docsDocSpeechStart(false);
+    if (action === 'regenerate') return _docsDocSpeechStart(true);
+    if (action === 'pause') return _docsDocSpeechPause();
+    if (action === 'resume') return _docsDocSpeechResume();
+    if (action === 'stop') return _docsDocSpeechStop();
+    return undefined;
+  }
+
+  async function dispatch(event) {
+    const state = _docsDocSpeechSyncState();
+    const transition = transitions[state]?.[event];
+    if (!transition) return;
+    for (const action of transition.actions) {
+      await _executeAction(action);
+    }
+  }
+
+  function getState() {
+    return _docsDocSpeechSyncState();
+  }
+
+  return { dispatch, getState };
+})();
+
+function _docsDocSpeechHandleClick() {
+  if (Date.now() - _docsDocSpeechLastLongPressAt < 700) return;
+  _docsDocSpeechClearClickTimer();
+  const now = Date.now();
+  if (
+    _docsDocSpeechLastClickAt
+    && (now - _docsDocSpeechLastClickAt) <= _DOCS_DOC_SPEECH_DOUBLE_CLICK_MS
+  ) {
+    _docsDocSpeechLastClickAt = 0;
+    _docsDocSpeechFsm.dispatch('doubleTap');
+    return;
+  }
+  _docsDocSpeechLastClickAt = now;
+  _docsDocSpeechClickTimer = setTimeout(() => {
+    _docsDocSpeechClickTimer = null;
+    _docsDocSpeechLastClickAt = 0;
+    _docsDocSpeechFsm.dispatch('tap');
+  }, _DOCS_DOC_SPEECH_DOUBLE_CLICK_MS);
+}
+
+async function _docsDocSpeechHandleDoubleClick() {
+  _docsDocSpeechResetClassifiers();
+  await _docsDocSpeechFsm.dispatch('doubleTap');
+}
+
+function _docsDocSpeechHandlePointerDown(event) {
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
+  _docsDocSpeechClearLongPressTimer();
+  _docsDocSpeechLongPressTimer = setTimeout(() => {
+    _docsDocSpeechLongPressTimer = null;
+    _docsDocSpeechLastLongPressAt = Date.now();
+    _docsDocSpeechResetClassifiers();
+    _docsDocSpeechFsm.dispatch('longPress');
+  }, _DOCS_DOC_SPEECH_LONG_PRESS_MS);
 }
 
 function _docsFolderTreeSetExplainTtsState(state = 'IDLE', message = '') {
@@ -2619,6 +2873,31 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     e.stopPropagation();
     _docsFolderTreeHandleExplainSpeakerDoubleClick();
+  });
+  const docsDocSpeaker = document.getElementById('docs-doc-speaker');
+  docsDocSpeaker?.addEventListener('pointerdown', e => {
+    e.stopPropagation();
+    _docsDocSpeechHandlePointerDown(e);
+  });
+  docsDocSpeaker?.addEventListener('pointerup', e => {
+    e.stopPropagation();
+    _docsDocSpeechClearLongPressTimer();
+  });
+  docsDocSpeaker?.addEventListener('pointercancel', _docsDocSpeechClearLongPressTimer);
+  docsDocSpeaker?.addEventListener('pointerleave', _docsDocSpeechClearLongPressTimer);
+  docsDocSpeaker?.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  docsDocSpeaker?.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    _docsDocSpeechHandleClick();
+  });
+  docsDocSpeaker?.addEventListener('dblclick', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    _docsDocSpeechHandleDoubleClick();
   });
   document.getElementById('docs-folder-tree-clear-btn')?.addEventListener('click', _docsFolderTreeClearSearch);
   document.getElementById('docs-folder-tree-sync-btn')?.addEventListener('click', _docsFolderTreeSyncIndex);

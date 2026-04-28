@@ -740,7 +740,67 @@
   outline: none;
 }
 
+#docs-editor-pane {
+  position: relative;
+}
+
+.docs-doc-speech-control {
+  position: absolute;
+  top: 38px;
+  right: 24px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(52vw, 340px);
+}
+
+.docs-doc-speech-control[hidden] {
+  display: none;
+}
+
+.docs-doc-speech-status {
+  min-width: 0;
+  max-width: 280px;
+  padding: 3px 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid rgba(var(--hub-accent-rgb, 0, 212, 255), 0.22);
+  border-radius: 6px;
+  background: rgba(3, 6, 18, 0.72);
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.docs-doc-speech-status:empty {
+  display: none;
+}
+
+.docs-doc-speaker-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.24);
+}
+
+.docs-doc-speaker-btn.is-generating {
+  border-color: rgba(200, 168, 75, 0.7);
+  background-color: rgba(200, 168, 75, 0.14);
+  background-image: url("../assets/icons/ui/speaker-gold.svg");
+}
+
 @media (max-width: 560px) {
+  .docs-doc-speech-control {
+    top: 30px;
+    right: 6px;
+    max-width: 46vw;
+  }
+
+  .docs-doc-speech-status {
+    max-width: 40vw;
+  }
+
   .docs-tree-modal[open],
   .docs-tree-explain-modal[open] {
     display: flex;
