@@ -126,8 +126,13 @@
 .docs-tree-search-mode {
   min-width: 0;
   height: 34px;
-  padding-left: 10px;
-  padding-right: 24px;
+  font-size: 12px;
+  padding-left: 8px;
+  padding-right: 22px;
+}
+
+.docs-tree-modal .hub-modal-body select.docs-tree-search-mode {
+  font-size: 12px;
 }
 
 .docs-tree-search .hub-modal-btn {
@@ -253,21 +258,26 @@
 }
 
 .docs-tree-label {
+  display: grid;
+  gap: 2px;
   min-width: 0;
+  padding: 7px 0;
 }
 
 .docs-tree-label .docs-tree-name {
   max-width: 100%;
+  padding: 0;
+  width: 100%;
 }
 
 .docs-tree-subpath {
+  display: block;
   color: var(--text-dim);
   font-family: monospace;
   font-size: 11px;
   line-height: 1.3;
-  margin-top: -4px;
+  min-width: 0;
   overflow: hidden;
-  padding-bottom: 7px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -300,12 +310,13 @@
 
 .docs-tree-status-dashboard {
   display: grid;
-  gap: 8px;
+  gap: 16px;
 }
 
 .docs-tree-status-summary {
   display: grid;
   gap: 6px;
+  margin: 0;
   padding: 9px 11px;
   border: 1px solid rgba(var(--hub-accent-rgb), 0.24);
   border-radius: 8px;
@@ -370,6 +381,7 @@
   grid-template-columns: auto 1fr;
   gap: 6px 8px;
   align-items: start;
+  margin: 0;
   padding: 8px 10px;
   border: 1px solid rgba(var(--hub-accent-rgb), 0.2);
   border-radius: 8px;
@@ -499,12 +511,13 @@
 
   .docs-tree-search {
     grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr) minmax(108px, 0.45fr);
   }
 }
 
 @media (max-width: 440px) {
   .docs-tree-search {
-    grid-template-columns: minmax(0, 1fr) 88px;
+    grid-template-columns: minmax(0, 1fr) minmax(108px, 0.5fr);
   }
 
   .docs-tree-search-btn,
@@ -515,13 +528,20 @@
   }
 
   .docs-tree-row {
-    grid-template-columns: 20px minmax(0, 1fr);
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    align-items: start;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .docs-tree-label {
+    padding: 0;
   }
 
   .docs-tree-actions {
-    grid-column: 2;
-    justify-content: flex-start;
-    padding: 0 0 8px;
+    align-self: start;
+    justify-content: flex-end;
+    padding: 1px 0 0;
   }
 
   .docs-tree-metric-grid {
