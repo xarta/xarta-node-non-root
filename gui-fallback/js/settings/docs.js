@@ -1055,6 +1055,15 @@ function _docsFolderTreeSetTitle(text) {
   if (title) title.textContent = value;
 }
 
+function _docsFolderTreeTitleFromPath(path) {
+  const clean = String(path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  if (!clean || clean === '.') return 'Docs Search';
+  if (clean === 'docs') return 'DOCS';
+  const parts = clean.split('/').filter(Boolean);
+  const leaf = parts[parts.length - 1] || clean;
+  return leaf.replace(/[-_]+/g, ' ').toUpperCase();
+}
+
 function _docsFolderTreeScope() {
   const path = String(_docsFolderTreeState.path || '.').replace(/\\/g, '/').replace(/^\/+/, '');
   if (!path || path === '.') {
@@ -1321,7 +1330,6 @@ async function _docsFolderTreeLoad(path, requestSeq = _docsFolderTreeRequestSeq)
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
     if (requestSeq !== _docsFolderTreeRequestSeq) return;
-    _docsFolderTreeSetTitle(_docsFolderTreeState.title);
     _docsFolderTreeRender(data);
     if (_docsFolderTreeState.query) await _docsFolderTreeRunSearch({ fromNavigation: true, requestSeq });
   } catch (e) {
@@ -1345,6 +1353,7 @@ function _docsFolderTreeRender(data) {
   const upBtn = document.getElementById('docs-folder-tree-up');
 
   const currentPath = data.relative_folder || '.';
+  _docsFolderTreeSetTitle(_docsFolderTreeTitleFromPath(currentPath));
   const canGoUp = !!data.parent_path && currentPath !== 'docs';
   if (pathEl) {
     pathEl.textContent = currentPath;
