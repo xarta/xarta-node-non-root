@@ -25,6 +25,8 @@ let _docsFolderTreeExplainTtsActive = false;
 let _docsFolderTreeExplainTtsText = '';
 let _docsFolderTreeRequestSeq = 0;
 let _docsFolderTreeStatusCache = null;
+const _DOCS_FOLDER_TREE_SEARCH_CACHE_KEY = 'blueprints.docs.folderTree.lastSearch.v1';
+let _docsFolderTreeSearchCache = _docsFolderTreeLoadSearchCache();
 let _docsFolderTreeState = {
   groupId: null,
   title: 'Docs Folder',
@@ -36,6 +38,28 @@ let _docsFolderTreeState = {
   searchResults: null,
   explanation: null,
 };
+
+function _docsFolderTreeLoadSearchCache() {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(_DOCS_FOLDER_TREE_SEARCH_CACHE_KEY) || '{}');
+    if (!parsed || typeof parsed !== 'object') return { query: '', mode: 'keyword' };
+    const mode = ['keyword', 'vector', 'hybrid'].includes(parsed.mode) ? parsed.mode : 'keyword';
+    return { query: String(parsed.query || '').trim(), mode };
+  } catch (_) {
+    return { query: '', mode: 'keyword' };
+  }
+}
+
+function _docsFolderTreeSaveSearchCache(query, mode) {
+  const cleanQuery = String(query || '').trim();
+  const cleanMode = ['keyword', 'vector', 'hybrid'].includes(mode) ? mode : 'keyword';
+  _docsFolderTreeSearchCache = { query: cleanQuery, mode: cleanMode };
+  try {
+    sessionStorage.setItem(_DOCS_FOLDER_TREE_SEARCH_CACHE_KEY, JSON.stringify(_docsFolderTreeSearchCache));
+  } catch (_) {
+    // Storage can be unavailable in hardened/private browser contexts.
+  }
+}
 
 // ── Load + Sidebar ───────────────────────────────────────────────────────────
 
@@ -988,14 +1012,19 @@ async function docsListOpenGroupFolder(groupId, options = {}) {
   const list = document.getElementById('docs-folder-tree-list');
   const errEl = document.getElementById('docs-folder-tree-error');
   const status = document.getElementById('docs-folder-tree-status');
+  const hasQueryOption = Object.prototype.hasOwnProperty.call(options, 'query');
+  const hasModeOption = Object.prototype.hasOwnProperty.call(options, 'mode');
+  const cached = _docsFolderTreeSearchCache || { query: '', mode: 'keyword' };
+  const initialQuery = hasQueryOption ? String(options.query || '').trim() : cached.query;
+  const optionMode = hasModeOption ? options.mode : cached.mode;
 
   _docsFolderTreeState = {
     groupId: groupId || null,
     title: groupName,
     path: null,
     parentPath: null,
-    query: typeof options.query === 'string' ? options.query.trim() : '',
-    mode: ['keyword', 'vector', 'hybrid'].includes(options.mode) ? options.mode : 'keyword',
+    query: initialQuery,
+    mode: ['keyword', 'vector', 'hybrid'].includes(optionMode) ? optionMode : 'keyword',
     lastTree: null,
     searchResults: null,
     explanation: null,
@@ -1036,6 +1065,7 @@ function _docsFolderTreeReadSearchForm() {
   _docsFolderTreeState.query = (document.getElementById('docs-folder-tree-query')?.value || '').trim();
   const mode = document.getElementById('docs-folder-tree-mode')?.value || 'keyword';
   _docsFolderTreeState.mode = ['keyword', 'vector', 'hybrid'].includes(mode) ? mode : 'keyword';
+  _docsFolderTreeSaveSearchCache(_docsFolderTreeState.query, _docsFolderTreeState.mode);
 }
 
 function _docsFolderTreeTitleFor(groupId, options = {}) {
@@ -1089,9 +1119,13 @@ function _docsFolderTreeClearExplanation() {
   else _docsFolderTreeStopExplainTts();
   const text = document.getElementById('docs-folder-tree-explain-text');
   const meta = document.getElementById('docs-folder-tree-explain-meta');
+  const sources = document.getElementById('docs-folder-tree-explain-sources');
+  const sourcesBtn = document.getElementById('docs-folder-tree-explain-sources-btn');
   const status = document.getElementById('docs-folder-tree-explain-tts-status');
   if (text) text.textContent = '';
   if (meta) meta.textContent = '';
+  if (sources) sources.innerHTML = '';
+  if (sourcesBtn) sourcesBtn.hidden = true;
   if (status) status.textContent = '';
 }
 
@@ -1131,15 +1165,94 @@ function _docsFolderTreeExplanationText(display) {
   return String(display?.markdown || display?.answer_markdown || '').trim();
 }
 
+function _docsFolderTreeExplanationSources(display) {
+  const displaySources = Array.isArray(display?.sources) ? display.sources : [];
+  if (displaySources.length) return displaySources;
+  const explanation = _docsFolderTreeState.explanation;
+  return Array.isArray(explanation?.sources) ? explanation.sources : [];
+}
+
+function _docsFolderTreeExplanationSourcesHtml(sources) {
+  const items = (Array.isArray(sources) ? sources : []).filter(source => source && typeof source === 'object');
+  if (!items.length) return '';
+  return `
+    <div class="docs-tree-explain-source-title">Sources</div>
+    <ol class="docs-tree-explain-source-list">
+      ${items.map((source, index) => {
+        const label = source.label || source.citation_label || `[S${index + 1}]`;
+        const path = source.path || '';
+        const title = source.title || path || 'Source';
+        const lifecycle = source.lifecycle || 'unknown';
+        const sourceType = source.source_type || 'unknown';
+        const authority = source.authority || 'unknown';
+        const fetched = source.fetched === false ? 'ranked' : 'fetched';
+        const openable = _docsFindDocForSourcePath(path) ? '' : ' disabled';
+        return `
+          <li class="docs-tree-explain-source">
+            <span class="docs-tree-explain-source-label">${esc(label)}</span>
+            <button class="docs-tree-explain-source-main" type="button" data-source-path="${esc(path)}"${openable}>
+              <span class="docs-tree-explain-source-name">${esc(title)}</span>
+              <span class="docs-tree-explain-source-path">${esc(path)}</span>
+              <span class="docs-tree-explain-source-meta">${esc(`${lifecycle} / ${sourceType} / ${authority} / ${fetched}`)}</span>
+            </button>
+          </li>
+        `;
+      }).join('')}
+    </ol>
+  `;
+}
+
+function _docsSourcePathCandidates(path) {
+  const clean = String(path || '').trim().replace(/\\/g, '/').replace(/^\/+/, '');
+  if (!clean) return [];
+  const candidates = [clean];
+  if (clean.startsWith('docs/')) candidates.push(clean.slice(5));
+  else candidates.push(`docs/${clean}`);
+  return Array.from(new Set(candidates.map(item => item.toLowerCase())));
+}
+
+function _docsFindDocForSourcePath(path) {
+  const candidates = _docsSourcePathCandidates(path);
+  if (!candidates.length) return null;
+  return _docsAll.find(doc => doc.path && candidates.includes(String(doc.path).toLowerCase())) || null;
+}
+
+async function _docsFolderTreeOpenSourcesModal() {
+  const modal = document.getElementById('docs-folder-tree-sources-modal');
+  const body = document.getElementById('docs-folder-tree-explain-sources');
+  const display = _docsFolderTreeState.explanation?.display || {};
+  const sources = _docsFolderTreeExplanationSources(display);
+  if (!modal || !body || !sources.length) return;
+  if (!_docsAll.length) await loadDocs();
+  body.innerHTML = _docsFolderTreeExplanationSourcesHtml(sources);
+  if (typeof HubModal !== 'undefined') HubModal.open(modal);
+  else if (typeof modal.showModal === 'function' && !modal.open) modal.showModal();
+}
+
+async function _docsFolderTreeOpenSourceDoc(path) {
+  if (!_docsAll.length) await loadDocs();
+  const doc = _docsFindDocForSourcePath(path);
+  if (!doc) return;
+  const sourcesModal = document.getElementById('docs-folder-tree-sources-modal');
+  const explainModal = document.getElementById('docs-folder-tree-explain-modal');
+  const treeModal = document.getElementById('docs-folder-tree-modal');
+  if (sourcesModal && typeof HubModal !== 'undefined') HubModal.close(sourcesModal);
+  if (explainModal && typeof HubModal !== 'undefined') HubModal.close(explainModal);
+  if (treeModal && typeof HubModal !== 'undefined') HubModal.close(treeModal);
+  await docsListOpenDoc(doc.doc_id);
+}
+
 function _docsFolderTreeOpenExplanationModal() {
   const modal = document.getElementById('docs-folder-tree-explain-modal');
   const title = document.getElementById('docs-folder-tree-explain-title');
   const meta = document.getElementById('docs-folder-tree-explain-meta');
   const text = document.getElementById('docs-folder-tree-explain-text');
+  const sourcesBtn = document.getElementById('docs-folder-tree-explain-sources-btn');
   const explanation = _docsFolderTreeState.explanation;
   const display = explanation?.display && typeof explanation.display === 'object' ? explanation.display : null;
   if (!modal || !display) return;
-  const sourceCount = Number(display.source_count || 0);
+  const sources = _docsFolderTreeExplanationSources(display);
+  const sourceCount = Number(display.source_count || sources.length || 0);
   const evidenceCount = Number(display.evidence_count || display.evidence_document_count || 0);
   const markdown = _docsFolderTreeExplanationText(display);
   _docsFolderTreeExplainTtsText = markdown;
@@ -1147,6 +1260,7 @@ function _docsFolderTreeOpenExplanationModal() {
   if (meta) {
     meta.textContent = `${sourceCount} source${sourceCount === 1 ? '' : 's'}; ${evidenceCount} evidence document${evidenceCount === 1 ? '' : 's'}`;
   }
+  if (sourcesBtn) sourcesBtn.hidden = !sources.length;
   if (text) text.textContent = markdown || 'No grounded explanation was returned for this query.';
   _docsFolderTreeSetExplainTtsActive(false, '');
   if (typeof HubModal !== 'undefined') {
@@ -1201,7 +1315,7 @@ function _docsFolderTreeSetStatusPill(status = 'unknown') {
     'docs-tree-status-pill--unknown',
   );
   pill.classList.add(`docs-tree-status-pill--${clean}`);
-  pill.textContent = clean === 'unknown' ? 'status' : clean;
+  pill.textContent = 'STATUS';
   pill.title = clean === 'unknown' ? 'Docs search status' : `Docs search status: ${clean}`;
 }
 
@@ -1236,10 +1350,9 @@ function _docsFolderTreeStatusHtml(data) {
     `;
   }).join('');
   return `
-    <section class="docs-tree-status-summary">
+    <section class="docs-tree-status-summary docs-tree-status-summary--${esc(status)}">
       <div class="docs-tree-status-summary-head">
         <div class="docs-tree-status-title">${esc(data?.summary || 'Docs search status')}</div>
-        <span class="docs-tree-status-pill docs-tree-status-pill--${esc(status)}">${esc(status)}</span>
       </div>
       <p class="docs-tree-status-meta">Corpus and service checks for the local docs retrieval path.</p>
     </section>
@@ -1285,11 +1398,30 @@ async function _docsFolderTreeOpenStatusModal() {
   else if (typeof modal.showModal === 'function' && !modal.open) modal.showModal();
   try {
     const data = await _docsFolderTreeFetchStatus();
-    if (badge) badge.textContent = String(data.status || 'status').toUpperCase();
+    if (badge) {
+      const clean = ['green', 'amber', 'red'].includes(data.status) ? data.status : 'unknown';
+      badge.textContent = 'STATUS';
+      badge.classList.remove(
+        'docs-tree-status-badge--green',
+        'docs-tree-status-badge--amber',
+        'docs-tree-status-badge--red',
+        'docs-tree-status-badge--unknown',
+      );
+      badge.classList.add(`docs-tree-status-badge--${clean}`);
+    }
     body.innerHTML = _docsFolderTreeStatusHtml(data);
   } catch (e) {
     _docsFolderTreeSetStatusPill('red');
-    if (badge) badge.textContent = 'RED';
+    if (badge) {
+      badge.textContent = 'STATUS';
+      badge.classList.remove(
+        'docs-tree-status-badge--green',
+        'docs-tree-status-badge--amber',
+        'docs-tree-status-badge--red',
+        'docs-tree-status-badge--unknown',
+      );
+      badge.classList.add('docs-tree-status-badge--red');
+    }
     body.innerHTML = `<p class="hub-modal-error">Status failed: ${esc(e.message || e)}</p>`;
   }
 }
@@ -1301,11 +1433,15 @@ function openDocsFolderSearchModal(options = {}) {
     : (activeDoc ? activeDoc.group_id || null : null);
   const explicitGroup = Object.prototype.hasOwnProperty.call(options, 'groupId');
   const treeOptions = {
-    query: typeof options.query === 'string' ? options.query : '',
-    mode: ['keyword', 'vector', 'hybrid'].includes(options.mode) ? options.mode : 'keyword',
     focusQuery: options.focusQuery !== false,
     title: typeof options.title === 'string' ? options.title : '',
   };
+  if (Object.prototype.hasOwnProperty.call(options, 'query')) {
+    treeOptions.query = typeof options.query === 'string' ? options.query : '';
+  }
+  if (Object.prototype.hasOwnProperty.call(options, 'mode')) {
+    treeOptions.mode = ['keyword', 'vector', 'hybrid'].includes(options.mode) ? options.mode : 'keyword';
+  }
   if (explicitGroup) treeOptions.groupId = groupId;
   docsListOpenGroupFolder(groupId, treeOptions);
 }
@@ -1539,6 +1675,7 @@ function _docsFolderTreeClearSearch() {
   ++_docsFolderTreeRequestSeq;
   _docsFolderTreeState.query = '';
   _docsFolderTreeState.mode = 'keyword';
+  _docsFolderTreeSaveSearchCache('', 'keyword');
   _docsFolderTreeState.searchResults = null;
   _docsFolderTreeClearExplanation();
   _docsFolderTreeSetSearchForm();
@@ -2118,6 +2255,18 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     e.stopPropagation();
     _docsFolderTreeExplain();
+  });
+  document.getElementById('docs-folder-tree-explain-sources-btn')?.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    _docsFolderTreeOpenSourcesModal();
+  });
+  document.getElementById('docs-folder-tree-explain-sources')?.addEventListener('click', e => {
+    const btn = e.target.closest('[data-source-path]');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    _docsFolderTreeOpenSourceDoc(btn.dataset.sourcePath || '');
   });
   document.getElementById('docs-folder-tree-status-pill')?.addEventListener('click', e => {
     e.preventDefault();

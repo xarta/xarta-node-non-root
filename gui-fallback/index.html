@@ -3241,7 +3241,7 @@
       <span class="hub-dialog-badge">TREE</span>
       <span class="hub-dialog-title-text" id="docs-folder-tree-title">Docs Folder</span>
     </h2>
-    <button class="docs-tree-status-pill docs-tree-status-pill--unknown" type="button" id="docs-folder-tree-status-pill" aria-label="Open docs search status dashboard" title="Docs search status">status</button>
+    <button class="docs-tree-status-pill docs-tree-status-pill--unknown" type="button" id="docs-folder-tree-status-pill" aria-label="Open docs search status dashboard" title="Docs search status">STATUS</button>
     <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
@@ -3299,13 +3299,30 @@
   </div>
   <div class="hub-modal-body">
     <div class="docs-tree-explain-modal-body">
-      <p class="docs-tree-explain-meta bp-font-role-status-meta" id="docs-folder-tree-explain-meta"></p>
+      <div class="docs-tree-explain-meta-row">
+        <p class="docs-tree-explain-meta bp-font-role-status-meta" id="docs-folder-tree-explain-meta"></p>
+        <button class="hub-modal-btn secondary docs-tree-explain-sources-btn" type="button" id="docs-folder-tree-explain-sources-btn" hidden>Sources</button>
+      </div>
       <pre class="docs-tree-explain-markdown bp-font-role-docs-markdown" id="docs-folder-tree-explain-text"></pre>
     </div>
   </div>
   <div class="hub-modal-footer docs-tree-explain-footer">
     <span class="docs-tree-explain-tts-status bp-font-role-status-meta" id="docs-folder-tree-explain-tts-status"></span>
     <button class="docs-tree-speaker-btn" type="button" id="docs-folder-tree-explain-speaker" aria-label="Speak explanation" title="Speak explanation"></button>
+  </div>
+</dialog>
+
+<!-- Docs filesystem tree explanation sources modal -->
+<dialog class="hub-modal hub-dialog docs-tree-sources-modal" data-tone="info" id="docs-folder-tree-sources-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">SOURCES</span>
+      <span class="hub-dialog-title-text">Explanation Sources</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body">
+    <div class="docs-tree-explain-sources" id="docs-folder-tree-explain-sources"></div>
   </div>
 </dialog>
 
