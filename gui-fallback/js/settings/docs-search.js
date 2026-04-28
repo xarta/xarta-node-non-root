@@ -82,6 +82,27 @@ function _docsSearchScoreText(result) {
   return typeof score === 'number' ? score.toFixed(3) : '';
 }
 
+function _docsSearchFolderForPath(path) {
+  const clean = String(path || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  const idx = clean.lastIndexOf('/');
+  if (idx < 0) return '';
+  return clean.slice(0, idx + 1);
+}
+
+function _docsSearchExplainScope() {
+  const selected = _docsSearchFindGroup(_docsSearchState.selectedHandle)?.representative;
+  const top = _docsSearchGroups()[0]?.representative;
+  const result = selected || top || null;
+  const path = result?.viewer_path || result?.register_path || result?.doc_path || '';
+  const folder = _docsSearchFolderForPath(path);
+  return {
+    group_id: result?.doc_group_id || null,
+    folder: folder || null,
+    allowed_paths: folder ? [folder] : [],
+    follow_markdown_links: !folder,
+  };
+}
+
 function _docsSearchGroups() {
   const map = new Map();
   const order = [];
@@ -326,6 +347,7 @@ async function _docsSearchExplain() {
       top_k: Math.max(5, _docsSearchState.top_k),
       rerank: _docsSearchState.rerank,
       explanation_mode: 'answer',
+      ..._docsSearchExplainScope(),
     };
     const r = await apiFetch('/api/v1/docs/search/explain', {
       method: 'POST',
