@@ -21,8 +21,12 @@ let _docsCurrentModalMode = 'new'; // 'new' | 'edit'
 let _docsGroupModalMode = 'add'; // 'add' | 'edit'
 let _docsEditingGroupId = null;
 let _docsEditingGroupName = '';
-let _docsFolderTreeExplainTtsActive = false;
+let _docsFolderTreeExplainTtsState = 'IDLE';
+let _docsFolderTreeExplainTtsRunId = 0;
+let _docsFolderTreeExplainTtsClickTimer = null;
+let _docsFolderTreeExplainTtsLastClickAt = 0;
 let _docsFolderTreeExplainTtsText = '';
+const _DOCS_FOLDER_TREE_EXPLAIN_TTS_DOUBLE_CLICK_MS = 260;
 let _docsFolderTreeRequestSeq = 0;
 let _docsFolderTreeStatusCache = null;
 const _DOCS_FOLDER_TREE_SEARCH_CACHE_KEY = 'blueprints.docs.folderTree.lastSearch.v1';
@@ -1137,21 +1141,51 @@ function _docsFolderTreeSearchTerms(result) {
     .slice(0, 8);
 }
 
-function _docsFolderTreeSetExplainTtsActive(active, message = '') {
-  _docsFolderTreeExplainTtsActive = Boolean(active);
+function _docsFolderTreeSetExplainTtsState(state = 'IDLE', message = '') {
+  const clean = ['IDLE', 'SPEAKING', 'PAUSED'].includes(state) ? state : 'IDLE';
+  _docsFolderTreeExplainTtsState = clean;
   const btn = document.getElementById('docs-folder-tree-explain-speaker');
   const status = document.getElementById('docs-folder-tree-explain-tts-status');
+  const isSpeaking = clean === 'SPEAKING';
+  const isPaused = clean === 'PAUSED';
   if (btn) {
-    btn.classList.toggle('is-speaking', _docsFolderTreeExplainTtsActive);
-    btn.setAttribute('aria-pressed', _docsFolderTreeExplainTtsActive ? 'true' : 'false');
-    btn.setAttribute('aria-label', _docsFolderTreeExplainTtsActive ? 'Stop explanation audio' : 'Speak explanation');
-    btn.title = _docsFolderTreeExplainTtsActive ? 'Stop explanation audio' : 'Speak explanation';
+    btn.classList.toggle('is-idle', clean === 'IDLE');
+    btn.classList.toggle('is-speaking', isSpeaking);
+    btn.classList.toggle('is-paused', isPaused);
+    btn.setAttribute('aria-pressed', isSpeaking ? 'true' : 'false');
+    const label = isPaused
+      ? 'Resume explanation audio'
+      : (isSpeaking ? 'Pause explanation audio' : 'Speak explanation');
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
   }
   if (status) status.textContent = message;
 }
 
-async function _docsFolderTreeStopExplainTts() {
-  _docsFolderTreeSetExplainTtsActive(false, '');
+function _docsFolderTreeSyncExplainTtsState() {
+  const btn = document.getElementById('docs-folder-tree-explain-speaker');
+  if (!btn) {
+    _docsFolderTreeExplainTtsState = 'IDLE';
+    return _docsFolderTreeExplainTtsState;
+  }
+  if (btn.classList.contains('is-speaking')) _docsFolderTreeExplainTtsState = 'SPEAKING';
+  else if (btn.classList.contains('is-paused')) _docsFolderTreeExplainTtsState = 'PAUSED';
+  else _docsFolderTreeExplainTtsState = 'IDLE';
+  return _docsFolderTreeExplainTtsState;
+}
+
+function _docsFolderTreeClearExplainTtsClickTimer() {
+  if (!_docsFolderTreeExplainTtsClickTimer) return;
+  clearTimeout(_docsFolderTreeExplainTtsClickTimer);
+  _docsFolderTreeExplainTtsClickTimer = null;
+}
+
+function _docsFolderTreeResetExplainTtsClickClassifier() {
+  _docsFolderTreeClearExplainTtsClickTimer();
+  _docsFolderTreeExplainTtsLastClickAt = 0;
+}
+
+async function _docsFolderTreeStopExplainTtsClient() {
   if (typeof BlueprintsTtsClient !== 'undefined' && typeof BlueprintsTtsClient.stop === 'function') {
     try {
       await BlueprintsTtsClient.stop();
@@ -1160,6 +1194,126 @@ async function _docsFolderTreeStopExplainTts() {
     }
   }
 }
+
+async function _docsFolderTreeStopExplainTts() {
+  _docsFolderTreeResetExplainTtsClickClassifier();
+  _docsFolderTreeExplainTtsRunId += 1;
+  _docsFolderTreeSetExplainTtsState('IDLE', '');
+  await _docsFolderTreeStopExplainTtsClient();
+}
+
+async function _docsFolderTreePauseExplainTts() {
+  if (typeof BlueprintsTtsClient === 'undefined' || typeof BlueprintsTtsClient.pause !== 'function') {
+    await _docsFolderTreeStopExplainTts();
+    return;
+  }
+  try {
+    const result = await BlueprintsTtsClient.pause();
+    if (result?.paused) {
+      _docsFolderTreeSetExplainTtsState('PAUSED', '');
+      return;
+    }
+  } catch (e) {
+    console.warn('docs folder explain: failed to pause TTS', e);
+  }
+  await _docsFolderTreeStopExplainTts();
+}
+
+async function _docsFolderTreeResumeExplainTts() {
+  if (typeof BlueprintsTtsClient === 'undefined' || typeof BlueprintsTtsClient.resume !== 'function') {
+    await _docsFolderTreeStopExplainTts();
+    return;
+  }
+  try {
+    const result = await BlueprintsTtsClient.resume();
+    if (result?.resumed) {
+      _docsFolderTreeSetExplainTtsState('SPEAKING', '');
+      return;
+    }
+  } catch (e) {
+    console.warn('docs folder explain: failed to resume TTS', e);
+  }
+  await _docsFolderTreeStopExplainTts();
+}
+
+async function _docsFolderTreeStartExplainTts() {
+  const text = (_docsFolderTreeExplainTtsText || document.getElementById('docs-folder-tree-explain-text')?.textContent || '').trim();
+  if (!text) return;
+  if (typeof BlueprintsTtsClient === 'undefined' || typeof BlueprintsTtsClient.speak !== 'function') {
+    _docsFolderTreeSetExplainTtsState('IDLE', 'TTS is not available.');
+    return;
+  }
+  const runId = _docsFolderTreeExplainTtsRunId + 1;
+  _docsFolderTreeExplainTtsRunId = runId;
+  await _docsFolderTreeStopExplainTtsClient();
+  if (runId !== _docsFolderTreeExplainTtsRunId) return;
+  _docsFolderTreeSetExplainTtsState('SPEAKING', '');
+  try {
+    await BlueprintsTtsClient.speak({
+      text,
+      interrupt: true,
+      mode: 'stream',
+      eventKind: 'docs_explain',
+      fallbackKind: 'positive',
+      sanitizeText: true,
+      transformProfile: 'speech',
+    });
+  } catch (e) {
+    if (e?.name === 'AbortError') {
+      if (runId === _docsFolderTreeExplainTtsRunId) _docsFolderTreeSetExplainTtsState('IDLE', '');
+      return;
+    }
+    console.warn('docs folder explain: TTS failed', e);
+    const message = e?.message ? `TTS failed: ${e.message}` : 'TTS failed.';
+    if (runId === _docsFolderTreeExplainTtsRunId) _docsFolderTreeSetExplainTtsState('IDLE', message);
+    return;
+  }
+  if (runId === _docsFolderTreeExplainTtsRunId) _docsFolderTreeSetExplainTtsState('IDLE', '');
+}
+
+const _docsFolderTreeExplainTtsFsm = (() => {
+  // Speaker FSM:
+  // IDLE + tap -> start; SPEAKING + tap -> pause; PAUSED + tap -> resume.
+  // Any state + doubleTap -> stop. Raw click timing is classified outside the FSM.
+  const transitions = {
+    IDLE: {
+      tap: { next: 'SPEAKING', actions: ['start'] },
+      doubleTap: { next: 'IDLE', actions: ['stop'] },
+    },
+    SPEAKING: {
+      tap: { next: 'PAUSED', actions: ['pause'] },
+      doubleTap: { next: 'IDLE', actions: ['stop'] },
+    },
+    PAUSED: {
+      tap: { next: 'SPEAKING', actions: ['resume'] },
+      doubleTap: { next: 'IDLE', actions: ['stop'] },
+    },
+  };
+
+  async function _executeAction(action) {
+    if (action === 'start') return _docsFolderTreeStartExplainTts();
+    if (action === 'pause') return _docsFolderTreePauseExplainTts();
+    if (action === 'resume') return _docsFolderTreeResumeExplainTts();
+    if (action === 'stop') return _docsFolderTreeStopExplainTts();
+    return undefined;
+  }
+
+  async function dispatch(event) {
+    const state = _docsFolderTreeSyncExplainTtsState();
+    const transition = transitions[state]?.[event];
+    if (!transition) return;
+    _docsFolderTreeExplainTtsState = transition.next;
+    for (const action of transition.actions) {
+      await _executeAction(action);
+    }
+  }
+
+  function getState() {
+    return _docsFolderTreeSyncExplainTtsState();
+  }
+
+  return { dispatch, getState };
+})();
 
 function _docsFolderTreeExplanationText(display) {
   return String(display?.markdown || display?.answer_markdown || '').trim();
@@ -1262,7 +1416,7 @@ function _docsFolderTreeOpenExplanationModal() {
   }
   if (sourcesBtn) sourcesBtn.hidden = !sources.length;
   if (text) text.textContent = markdown || 'No grounded explanation was returned for this query.';
-  _docsFolderTreeSetExplainTtsActive(false, '');
+  _docsFolderTreeSetExplainTtsState('IDLE', '');
   if (typeof HubModal !== 'undefined') {
     HubModal.open(modal, { onClose: _docsFolderTreeStopExplainTts });
   } else if (typeof modal.showModal === 'function' && !modal.open) {
@@ -1270,40 +1424,28 @@ function _docsFolderTreeOpenExplanationModal() {
   }
 }
 
-async function _docsFolderTreeToggleExplainTts() {
-  if (_docsFolderTreeExplainTtsActive) {
-    await _docsFolderTreeStopExplainTts();
+function _docsFolderTreeHandleExplainSpeakerClick() {
+  _docsFolderTreeClearExplainTtsClickTimer();
+  const now = Date.now();
+  if (
+    _docsFolderTreeExplainTtsLastClickAt
+    && (now - _docsFolderTreeExplainTtsLastClickAt) <= _DOCS_FOLDER_TREE_EXPLAIN_TTS_DOUBLE_CLICK_MS
+  ) {
+    _docsFolderTreeExplainTtsLastClickAt = 0;
+    _docsFolderTreeExplainTtsFsm.dispatch('doubleTap');
     return;
   }
-  const text = (_docsFolderTreeExplainTtsText || document.getElementById('docs-folder-tree-explain-text')?.textContent || '').trim();
-  if (!text) return;
-  if (typeof BlueprintsTtsClient === 'undefined' || typeof BlueprintsTtsClient.speak !== 'function') {
-    _docsFolderTreeSetExplainTtsActive(false, 'TTS is not available.');
-    return;
-  }
-  await _docsFolderTreeStopExplainTts();
-  _docsFolderTreeSetExplainTtsActive(true, 'Speaking...');
-  try {
-    await BlueprintsTtsClient.speak({
-      text,
-      interrupt: true,
-      mode: 'stream',
-      eventKind: 'docs_explain',
-      fallbackKind: 'positive',
-      sanitizeText: true,
-      transformProfile: 'speech',
-    });
-  } catch (e) {
-    if (e?.name === 'AbortError') {
-      _docsFolderTreeSetExplainTtsActive(false, '');
-      return;
-    }
-    console.warn('docs folder explain: TTS failed', e);
-    const message = e?.message ? `TTS failed: ${e.message}` : 'TTS failed.';
-    _docsFolderTreeSetExplainTtsActive(false, message);
-    return;
-  }
-  _docsFolderTreeSetExplainTtsActive(false, '');
+  _docsFolderTreeExplainTtsLastClickAt = now;
+  _docsFolderTreeExplainTtsClickTimer = setTimeout(() => {
+    _docsFolderTreeExplainTtsClickTimer = null;
+    _docsFolderTreeExplainTtsLastClickAt = 0;
+    _docsFolderTreeExplainTtsFsm.dispatch('tap');
+  }, _DOCS_FOLDER_TREE_EXPLAIN_TTS_DOUBLE_CLICK_MS);
+}
+
+async function _docsFolderTreeHandleExplainSpeakerDoubleClick() {
+  _docsFolderTreeResetExplainTtsClickClassifier();
+  await _docsFolderTreeExplainTtsFsm.dispatch('doubleTap');
 }
 
 function _docsFolderTreeSetStatusPill(status = 'unknown') {
@@ -2278,7 +2420,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('docs-folder-tree-explain-speaker')?.addEventListener('click', e => {
     e.preventDefault();
     e.stopPropagation();
-    _docsFolderTreeToggleExplainTts();
+    _docsFolderTreeHandleExplainSpeakerClick();
+  });
+  document.getElementById('docs-folder-tree-explain-speaker')?.addEventListener('dblclick', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    _docsFolderTreeHandleExplainSpeakerDoubleClick();
   });
   document.getElementById('docs-folder-tree-clear-btn')?.addEventListener('click', _docsFolderTreeClearSearch);
   document.getElementById('docs-folder-tree-sync-btn')?.addEventListener('click', _docsFolderTreeSyncIndex);

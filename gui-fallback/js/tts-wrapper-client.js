@@ -72,6 +72,32 @@ const BlueprintsTtsClient = (() => {
     } catch (_) {}
   }
 
+  async function pause() {
+    if (_activeStream?.audioCtx && _activeStream.audioCtx.state === 'running') {
+      await _activeStream.audioCtx.suspend();
+      _activeStream.paused = true;
+      return { ok: true, paused: true, kind: 'stream' };
+    }
+    if (_activeSpeechAudio && !_activeSpeechAudio.paused) {
+      _activeSpeechAudio.pause();
+      return { ok: true, paused: true, kind: 'audio' };
+    }
+    return { ok: false, paused: false };
+  }
+
+  async function resume() {
+    if (_activeStream?.audioCtx && _activeStream.audioCtx.state === 'suspended') {
+      await _activeStream.audioCtx.resume();
+      _activeStream.paused = false;
+      return { ok: true, resumed: true, kind: 'stream' };
+    }
+    if (_activeSpeechAudio && _activeSpeechAudio.paused) {
+      await _activeSpeechAudio.play();
+      return { ok: true, resumed: true, kind: 'audio' };
+    }
+    return { ok: false, resumed: false };
+  }
+
   async function _playAudioBlob(blob, engine) {
     if (!blob || !blob.size) {
       throw new Error('Wrapper returned empty audio payload.');
@@ -109,6 +135,7 @@ const BlueprintsTtsClient = (() => {
 
     const streamState = {
       stopped: false,
+      paused: false,
       audioCtx,
       abortController,
     };
@@ -181,6 +208,9 @@ const BlueprintsTtsClient = (() => {
       }
       if (_activeStream === streamState) {
         try {
+          while (!streamState.stopped && streamState.paused && audioCtx.state === 'suspended') {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
           if (!streamState.stopped && audioCtx.state !== 'closed') {
             const tailMs = Math.max(0, Math.round((nextStartTime - audioCtx.currentTime + 0.05) * 1000));
             if (tailMs > 0) {
@@ -268,6 +298,8 @@ const BlueprintsTtsClient = (() => {
   return {
     speak,
     stop,
+    pause,
+    resume,
     setTtsVolume,
     getTtsVolume,
     setTtsFallbackVolume,

@@ -659,11 +659,31 @@
 }
 
 .docs-tree-speaker-btn:hover,
-.docs-tree-speaker-btn:focus-visible,
+.docs-tree-speaker-btn:focus-visible {
+  border-color: rgba(var(--hub-accent-rgb, 0, 212, 255), 0.58);
+  background-color: rgba(var(--hub-accent-rgb, 0, 212, 255), 0.08);
+  background-image: url("../assets/icons/ui/speaker-blue.svg");
+  outline: none;
+}
+
+.docs-tree-speaker-btn.is-idle {
+  border-color: rgba(var(--hub-accent-rgb, 0, 212, 255), 0.34);
+  background-color: rgba(0, 0, 0, 0.24);
+  background-image: url("../assets/icons/ui/speaker-blue.svg");
+  outline: none;
+}
+
 .docs-tree-speaker-btn.is-speaking {
   border-color: rgba(200, 168, 75, 0.68);
   background-color: rgba(200, 168, 75, 0.1);
   background-image: url("../assets/icons/ui/speaker-gold.svg");
+  outline: none;
+}
+
+.docs-tree-speaker-btn.is-paused {
+  border-color: rgba(var(--hub-accent-rgb, 0, 212, 255), 0.58);
+  background-color: rgba(var(--hub-accent-rgb, 0, 212, 255), 0.08);
+  background-image: url("../assets/icons/ui/speaker-blue.svg");
   outline: none;
 }
 
