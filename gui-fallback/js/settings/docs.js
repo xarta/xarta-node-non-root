@@ -1036,6 +1036,23 @@ function _docsFolderTreeReadSearchForm() {
   _docsFolderTreeState.mode = ['keyword', 'vector', 'hybrid'].includes(mode) ? mode : 'keyword';
 }
 
+function _docsFolderTreeScope() {
+  const path = String(_docsFolderTreeState.path || '.').replace(/\\/g, '/').replace(/^\/+/, '');
+  if (!path || path === '.') {
+    return {
+      group_id: _docsFolderTreeState.groupId || null,
+      folder: null,
+      allowed_paths: [],
+    };
+  }
+  const folder = path.endsWith('/') ? path : `${path}/`;
+  return {
+    group_id: _docsFolderTreeState.groupId || null,
+    folder,
+    allowed_paths: [folder],
+  };
+}
+
 function _docsFolderTreeClearExplanation() {
   _docsFolderTreeState.explanation = null;
   _docsFolderTreeExplainTtsText = '';
@@ -1363,6 +1380,7 @@ async function _docsFolderTreeRunSearch(opts = {}) {
         mode: _docsFolderTreeState.mode,
         top_k: 30,
         rerank: _docsFolderTreeState.mode !== 'keyword',
+        ..._docsFolderTreeScope(),
       }),
     });
     const data = await r.json().catch(() => ({}));
@@ -1410,6 +1428,7 @@ async function _docsFolderTreeExplain() {
         top_k: 12,
         rerank: _docsFolderTreeState.mode !== 'keyword',
         explanation_mode: 'answer',
+        ..._docsFolderTreeScope(),
       }),
     });
     const data = await r.json().catch(() => ({}));
