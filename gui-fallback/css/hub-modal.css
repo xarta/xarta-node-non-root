@@ -68,6 +68,10 @@ dialog.hub-modal {
     line-height: 1.5;
 }
 
+dialog.hub-modal:not([open]) {
+    display: none;
+}
+
 /* Frosted glass where backdrop-filter is supported (all modern Chromium) */
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
     dialog.hub-modal {

@@ -668,8 +668,8 @@
 }
 
 @media (max-width: 560px) {
-  .docs-tree-modal,
-  .docs-tree-explain-modal {
+  .docs-tree-modal[open],
+  .docs-tree-explain-modal[open] {
     display: flex;
     flex-direction: column;
     height: calc(100dvh - 16px);
