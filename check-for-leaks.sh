@@ -6,6 +6,11 @@
 #
 # Source data defaults to the root-managed repo because /xarta-node is the
 # non-root public repo and does not carry its own .env or private inner clone.
+#
+# Policy: never "fix" a leak hit by splitting, concatenating, encoding, or
+# reconstructing the same private literal in public source. That is still a
+# leak-pattern bypass. Move the value into ignored/private configuration, remove
+# it from public code, or change the allowlist/scanner policy intentionally.
 
 set -euo pipefail
 
@@ -68,6 +73,11 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
+
+print_leak_fix_guidance() {
+    echo -e "${YELLOW}Do not bypass this finding by splitting, concatenating, encoding, or reconstructing the private value in public code.${NC}"
+    echo "Fix it by removing the value from public source, reading it from ignored/private config, or changing scanner policy only after intentional review."
+}
 
 if [[ ! -f "$ENV_FILE" ]]; then
     echo "Error: .env not found at $ENV_FILE" >&2
@@ -175,6 +185,7 @@ while IFS= read -r line; do
             rel="${match/$REPO_DIR\//}"
             echo "       $rel"
         done
+        print_leak_fix_guidance
         echo ""
         LEAKS=$((LEAKS + 1))
     fi
@@ -208,6 +219,7 @@ else
                 rel="${match/$REPO_DIR\//}"
                 echo "       $rel"
             done
+            print_leak_fix_guidance
             echo ""
             LEAKS=$((LEAKS + 1))
         fi
@@ -251,6 +263,7 @@ PYEOF
                 rel="${match/$REPO_DIR\//}"
                 echo "       $rel"
             done
+            print_leak_fix_guidance
             echo ""
             LEAKS=$((LEAKS + 1))
         fi
@@ -260,6 +273,7 @@ fi
 echo "---"
 if [[ "$LEAKS" -gt 0 ]]; then
     echo -e "${RED}${LEAKS} leak(s) found.${NC} Review the files above before pushing."
+    print_leak_fix_guidance
     exit 1
 else
     echo -e "${GREEN}No leaks found.${NC}"

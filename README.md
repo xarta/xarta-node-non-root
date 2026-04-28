@@ -28,6 +28,20 @@ Fleet bootstrap scripts in `xarta-node` (`setup-blueprints.sh`,
 `BLUEPRINTS_EMBED_DIR`, and `BLUEPRINTS_ASSETS_DIR` environment variables to
 point the application at this repo's content instead.
 
+## Leak scanner policy
+
+Before committing or pushing public repo changes, run:
+
+```bash
+bash check-for-leaks.sh
+```
+
+If the scanner reports a value from private configuration, do not work around it
+by splitting the string, concatenating fragments, encoding it, or reconstructing
+the same private literal in public source. That is a scanner bypass, not a fix.
+Move the value into ignored/private configuration, remove it from public code, or
+change the scanner allowlist only after an intentional review.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
