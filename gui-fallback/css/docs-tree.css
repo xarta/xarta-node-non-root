@@ -184,6 +184,9 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.22);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -191,6 +194,7 @@
   display: flex;
   flex-direction: column;
   max-height: min(56vh, 560px);
+  min-height: 0;
   overflow: auto;
 }
 
@@ -696,7 +700,15 @@
     max-height: calc(100dvh - 16px);
   }
 
-  .docs-tree-modal .hub-modal-body,
+  .docs-tree-modal .hub-modal-body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    max-height: none;
+    min-height: 0;
+    overflow: hidden;
+  }
+
   .docs-tree-explain-modal .hub-modal-body {
     display: flex;
     flex: 1 1 auto;
@@ -723,6 +735,15 @@
   .docs-tree-list,
   .docs-tree-explain-markdown {
     max-height: none;
+  }
+
+  .docs-tree-list {
+    flex: 1 1 auto;
+  }
+
+  .docs-tree-status,
+  .docs-tree-modal .hub-modal-error {
+    flex: 0 0 auto;
   }
 
   .docs-tree-toolbar {
