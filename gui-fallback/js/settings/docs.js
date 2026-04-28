@@ -2108,6 +2108,26 @@ function _mdToHtml(md) {
   return html;
 }
 
+function _docsPreviewAttr(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function _docsCleanMarkdownHref(href) {
+  return String(href || '').trim().replace(/\\/g, '/');
+}
+
+function _docsIsInternalMarkdownHref(href) {
+  const clean = _docsCleanMarkdownHref(href);
+  if (!clean || clean.startsWith('#')) return false;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(clean) || clean.startsWith('//') || clean.startsWith('/')) return false;
+  const target = clean.split('#')[0].split('?')[0];
+  return /\.md$/i.test(target) || target.endsWith('/');
+}
+
 function _inlineMd(s) {
   // Stash code spans before any other processing so their content is never
   // touched by bold/italic/link regexes, and so HTML-special chars inside them
@@ -2137,11 +2157,10 @@ function _inlineMd(s) {
       return `<img class="bp-font-role-docs-markdown"${m ? ` data-doc-img="${m[1]}"` : ''} src="${src}" alt="${alt}" style="max-width:100%;border-radius:4px;margin:8px 0;display:block" />`;
     })
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, href) => {
-      // Internal doc link: relative .md path that isn't an absolute URL
-      const isDocLink = href && !href.match(/^https?:\/\/|^\/\//) && /\.md$/i.test(href);
-      if (isDocLink) {
-        const safeHref = href.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        return `<a class="bp-font-role-docs-markdown" href="#" onclick="docsOpenByPath('${safeHref}'); return false;" style="color:var(--accent);text-decoration:underline;text-decoration-style:dashed" title="Open: ${href}">${text}</a>`;
+      const cleanHref = _docsCleanMarkdownHref(href);
+      if (_docsIsInternalMarkdownHref(cleanHref)) {
+        const safeHref = _docsPreviewAttr(cleanHref);
+        return `<a class="bp-font-role-docs-markdown" href="#" data-docs-preview-link="${safeHref}" style="color:var(--accent);text-decoration:underline;text-decoration-style:dashed" title="Open: ${safeHref}">${text}</a>`;
       }
       return `<a class="bp-font-role-docs-markdown" href="${href}" style="color:var(--accent);text-decoration:underline" target="_blank" rel="noopener noreferrer">${text}</a>`;
     })
@@ -2157,10 +2176,43 @@ function _inlineMd(s) {
   return s;
 }
 
+function _docsNormalizePreviewPath(path) {
+  let clean = _docsCleanMarkdownHref(path).split('#')[0].split('?')[0];
+  try {
+    clean = decodeURIComponent(clean);
+  } catch (_) {}
+  const parts = clean.split('/');
+  const normalized = [];
+  for (const part of parts) {
+    if (!part || part === '.') continue;
+    if (part === '..') normalized.pop();
+    else normalized.push(part);
+  }
+  return normalized.join('/');
+}
+
+function _docsPreviewPathCandidates(path) {
+  const clean = _docsNormalizePreviewPath(path);
+  if (!clean) return [];
+  const candidates = [clean];
+  if (clean.endsWith('/')) {
+    candidates.push(`${clean}README.md`);
+  } else if (!/\.md$/i.test(clean)) {
+    candidates.push(`${clean}/README.md`);
+  }
+  return Array.from(new Set(candidates));
+}
+
+function _docsFindDocByPreviewPath(path) {
+  const candidates = _docsPreviewPathCandidates(path).map(p => p.toLowerCase());
+  if (!candidates.length) return null;
+  return _docsAll.find(d => d.path && candidates.includes(String(d.path).toLowerCase())) || null;
+}
+
 // Navigate to a doc by relative path or basename (called from inline preview links)
 function docsOpenByPath(href) {
-  // 1. Exact match against stored path (e.g. href already is "docs/security/README.md")
-  let doc = _docsAll.find(d => d.path && d.path.toLowerCase() === href.toLowerCase());
+  const cleanHref = _docsCleanMarkdownHref(href);
+  let doc = _docsFindDocByPreviewPath(cleanHref);
 
   // 2. Resolve relative to the current document's directory (standard markdown behaviour).
   //    e.g. current doc is "docs/security/SECURITY.md", href is "README.md"
@@ -2169,20 +2221,13 @@ function docsOpenByPath(href) {
     const cur = _docsAll.find(d => d.doc_id === _docsActiveId);
     if (cur && cur.path) {
       const curDir = cur.path.split('/').slice(0, -1).join('/');
-      const parts  = (curDir + '/' + href).split('/');
-      const resolved = [];
-      for (const p of parts) {
-        if (p === '..') resolved.pop();
-        else if (p !== '.') resolved.push(p);
-      }
-      const resolvedPath = resolved.join('/');
-      doc = _docsAll.find(d => d.path && d.path.toLowerCase() === resolvedPath.toLowerCase());
+      doc = _docsFindDocByPreviewPath(`${curDir}/${cleanHref}`);
     }
   }
 
   // 3. Basename fallback — last resort for unambiguous filenames
   if (!doc) {
-    const base = href.split('/').pop().toLowerCase();
+    const base = _docsNormalizePreviewPath(cleanHref).split('/').pop().toLowerCase();
     doc = _docsAll.find(d => {
       if (!d.path) return false;
       return d.path.split('/').pop().toLowerCase() === base;
@@ -2191,7 +2236,7 @@ function docsOpenByPath(href) {
   if (!doc) {
     const status = document.getElementById('docs-status');
     if (status) {
-      status.textContent = `\u2717 Doc not found: ${href}`;
+      status.textContent = `\u2717 Doc not found: ${cleanHref}`;
       status.style.color = '#f87171';
       status.hidden = false;
       setTimeout(() => { status.hidden = true; }, 4000);
@@ -2203,6 +2248,13 @@ function docsOpenByPath(href) {
   } else {
     docsSelectDoc(doc.doc_id);
   }
+}
+
+function _docsHandlePreviewLinkClick(e) {
+  const link = e.target.closest('[data-docs-preview-link]');
+  if (!link) return;
+  e.preventDefault();
+  docsOpenByPath(link.dataset.docsPreviewLink || '');
 }
 
 // ── Add existing document modal ─────────────────────────────────────────────
@@ -2314,6 +2366,8 @@ async function _addDocSubmit() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('docs-preview')?.addEventListener('click', _docsHandlePreviewLinkClick);
+
   // New / Edit doc modal submit
   const docsSubmitBtn = document.getElementById('docs-modal-submit');
   if (docsSubmitBtn) {
