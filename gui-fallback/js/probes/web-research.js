@@ -46,6 +46,12 @@ function _webResearchEsc(value) {
   }[c]));
 }
 
+function _webResearchMarkdownHtml(markdown) {
+  const text = String(markdown || '').trim() || 'No summary returned.';
+  if (typeof _mdToHtml === 'function') return _mdToHtml(text);
+  return `<pre class="web-research-markdown-plain bp-font-role-docs-markdown">${_webResearchEsc(text)}</pre>`;
+}
+
 function _webResearchOptionKey(opts = _webResearchState) {
   return JSON.stringify({
     query: String(opts.query || '').trim(),
@@ -185,7 +191,7 @@ function _webResearchRender() {
           <span class="web-research-pill ${result.ok ? 'ok' : ''}">${_webResearchEsc(result.status || 'succeeded')}</span>
           <span class="web-research-pill">${_webResearchEsc(result.depth || _webResearchState.depth || 'standard')}</span>
         </div>
-        <pre class="web-research-markdown bp-font-role-docs-markdown">${_webResearchEsc(markdown || 'No summary returned.')}</pre>
+        <div class="web-research-markdown bp-font-role-docs-markdown">${_webResearchMarkdownHtml(markdown)}</div>
       </section>
       <div class="body-shade-handle web-research-shade-handle" id="web-research-shade-handle" role="separator" aria-label="Resize web research synthesis and sources" aria-orientation="horizontal" tabindex="0">
         <div class="body-shade-grip"></div>

@@ -249,8 +249,23 @@
   min-height: 0;
   margin: 0;
   overflow-y: auto;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.web-research-markdown > :first-child {
+  margin-top: 0 !important;
+}
+
+.web-research-markdown > :last-child {
+  margin-bottom: 0 !important;
+}
+
+.web-research-markdown-plain {
+  margin: 0;
+  white-space: pre-wrap;
   color: var(--text-dim);
   font-size: 11.5px;
   line-height: 1.5;
