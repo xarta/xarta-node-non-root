@@ -30,6 +30,7 @@
   <link rel="stylesheet" href="css/ultrawide-debug-panels.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/docs-images.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/docs-search.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/web-research.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/docs-tree.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/font-roles.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/hub-modal.css?v={{$assetVersion}}" />
@@ -3238,6 +3239,46 @@
   </div>
 </dialog>
 
+<!-- Web research modal -->
+<dialog class="hub-modal hub-dialog web-research-modal" data-tone="info" id="web-research-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">WEB</span>
+      <span class="hub-dialog-title-text">Web Search</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body">
+    <div class="web-research-shell">
+      <form class="web-research-form" id="web-research-form">
+        <label class="web-research-control web-research-input-wrap">
+          <span>Query</span>
+          <input class="web-research-input hub-ctrl" type="search" id="web-research-query" maxlength="300" autocomplete="off" spellcheck="false" />
+        </label>
+        <div class="web-research-controls">
+          <label class="web-research-control">
+            <span>Depth</span>
+            <select class="hub-ctrl" id="web-research-depth" aria-label="Research depth">
+              <option value="quick">Quick</option>
+              <option value="standard">Standard</option>
+              <option value="deep">Deep</option>
+            </select>
+          </label>
+          <button class="hub-modal-btn" type="submit" id="web-research-submit">Search</button>
+          <button class="hub-modal-btn secondary" type="button" id="web-research-clear">Clear</button>
+        </div>
+      </form>
+      <p class="web-research-status bp-font-role-status-meta" id="web-research-status"></p>
+      <p class="hub-modal-error" id="web-research-error"></p>
+      <div class="web-research-results" id="web-research-results"></div>
+    </div>
+  </div>
+  <div class="hub-modal-footer web-research-footer">
+    <span class="web-research-tts-status bp-font-role-status-meta" id="web-research-tts-status"></span>
+    <button class="docs-tree-speaker-btn web-research-speaker" type="button" id="web-research-speaker" aria-label="Speak web research" title="Speak web research"></button>
+  </div>
+</dialog>
+
 <!-- Docs filesystem tree modal -->
 <dialog class="hub-modal hub-dialog docs-tree-modal" data-tone="info" id="docs-folder-tree-modal">
   <div class="hub-modal-header">
@@ -3541,6 +3582,7 @@
 <script src="js/table-ui.js?v={{$assetVersion}}"></script>
 <script src="js/probes/bookmarks.js?v={{$assetVersion}}"></script>
 <script src="js/probes/tts-pool.js?v={{$assetVersion}}"></script>
+<script src="js/probes/web-research.js?v={{$assetVersion}}"></script>
 <script src="js/probes/probes-menu.js?v={{$assetVersion}}"></script>
 <script src="js/settings/settings-menu.js?v={{$assetVersion}}"></script>
 <script src="js/hub-clear-input.js?v={{$assetVersion}}"></script>

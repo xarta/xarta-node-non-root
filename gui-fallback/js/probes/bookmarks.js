@@ -2322,8 +2322,8 @@ async function _bmOpenSortExplainModal() {
         sort_dir: searchSortState.key ? (searchSortState.dir === -1 ? 'desc' : 'asc') : 'desc',
       }),
     });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const data = await r.json();
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
     const md = data.explanation || '(No response)';
     body.innerHTML = typeof _mdToHtml === 'function' ? _mdToHtml(md) : `<pre style="white-space:pre-wrap">${esc(md)}</pre>`;
   } catch (e) {
