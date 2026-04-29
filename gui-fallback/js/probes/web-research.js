@@ -35,6 +35,12 @@ let _webResearchSplitResizeQueued = false;
 let _webResearchTopShadePointer = null;
 let _webResearchTopShadeResizeQueued = false;
 let _webResearchControlsRatio = 1;
+let _webResearchEgressIp = {
+  ip: '',
+  checkedAt: '',
+  error: '',
+  loading: false,
+};
 
 function _webResearchEsc(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({
@@ -110,6 +116,53 @@ function _webResearchSetStatus(text = '', isError = false) {
   const err = document.getElementById('web-research-error');
   if (status) status.textContent = isError ? '' : text;
   if (err) err.textContent = isError ? text : '';
+}
+
+function _webResearchRenderEgressIp() {
+  const box = document.getElementById('web-research-ip-box');
+  const value = document.getElementById('web-research-ip-value');
+  const btn = document.getElementById('web-research-ip-refresh');
+  if (!box || !value || !btn) return;
+  box.classList.toggle('is-error', !!_webResearchEgressIp.error);
+  btn.classList.toggle('is-loading', !!_webResearchEgressIp.loading);
+  btn.disabled = !!_webResearchEgressIp.loading;
+  if (_webResearchEgressIp.loading && !_webResearchEgressIp.ip) {
+    value.textContent = 'checking...';
+  } else if (_webResearchEgressIp.error) {
+    value.textContent = 'unavailable';
+  } else {
+    value.textContent = _webResearchEgressIp.ip || 'not checked';
+  }
+  const titleBits = ['Public IP observed by nullclaw01 web research tooling'];
+  if (_webResearchEgressIp.checkedAt) titleBits.push(`Checked: ${_webResearchEgressIp.checkedAt}`);
+  if (_webResearchEgressIp.error) titleBits.push(_webResearchEgressIp.error);
+  box.title = titleBits.join('\n');
+}
+
+async function _webResearchLoadEgressIp(force = false) {
+  if (_webResearchEgressIp.loading && !force) return;
+  _webResearchEgressIp = { ..._webResearchEgressIp, loading: true, error: '' };
+  _webResearchRenderEgressIp();
+  try {
+    const response = await apiFetch('/api/v1/web-research/egress-ip');
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok || !data.ip) {
+      throw new Error(data.detail || data.error || `HTTP ${response.status}`);
+    }
+    _webResearchEgressIp = {
+      ip: String(data.ip || ''),
+      checkedAt: String(data.checked_at || ''),
+      error: '',
+      loading: false,
+    };
+  } catch (e) {
+    _webResearchEgressIp = {
+      ..._webResearchEgressIp,
+      error: e?.message || 'Could not check web research IP.',
+      loading: false,
+    };
+  }
+  _webResearchRenderEgressIp();
 }
 
 function _webResearchSetBusy(busy) {
@@ -751,6 +804,7 @@ function openWebResearchModal(options = {}) {
       _webResearchInitTopShade();
       _webResearchQueueTopShadeSync();
       _webResearchQueueSplitSync();
+      _webResearchLoadEgressIp(false);
     },
   });
 }
@@ -1078,13 +1132,25 @@ function _webResearchBindSpeaker() {
 
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('web-research-form');
+  form?.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    _webResearchRun();
+  }, true);
   form?.addEventListener('submit', e => {
     e.preventDefault();
+    e.stopPropagation();
     _webResearchRun();
   });
   document.getElementById('web-research-clear')?.addEventListener('click', e => {
     e.preventDefault();
     _webResearchClear();
+  });
+  document.getElementById('web-research-ip-refresh')?.addEventListener('click', e => {
+    e.preventDefault();
+    _webResearchLoadEgressIp(true);
   });
   ['web-research-depth'].forEach(id => {
     document.getElementById(id)?.addEventListener('change', () => {
@@ -1094,6 +1160,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   _webResearchBindSpeaker();
   _webResearchInitTopShade();
+  _webResearchRenderEgressIp();
   window.addEventListener('resize', _webResearchQueueSplitSync);
   window.addEventListener('resize', _webResearchQueueTopShadeSync);
   window.visualViewport?.addEventListener('resize', _webResearchQueueSplitSync);

@@ -1,4 +1,4 @@
-const BP_CACHE_VERSION = 'bp-fallback-v66';
+const BP_CACHE_VERSION = 'bp-fallback-v67';
 const STATIC_CACHE = `${BP_CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${BP_CACHE_VERSION}-runtime`;
 

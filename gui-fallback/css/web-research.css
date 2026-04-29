@@ -15,6 +15,63 @@
   flex: 0 0 auto;
 }
 
+.web-research-ip-box {
+  box-sizing: border-box;
+  display: inline-grid;
+  grid-template-columns: auto minmax(94px, auto) 34px;
+  gap: 7px;
+  align-items: center;
+  min-width: 0;
+  max-width: min(420px, 48vw);
+  height: 34px;
+  padding: 0 4px 0 10px;
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.24);
+  border-radius: 8px;
+  background: rgba(var(--hub-accent-rgb), 0.08);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.web-research-ip-label {
+  color: var(--text-dim);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.web-research-ip-value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.web-research-ip-box.is-error .web-research-ip-value {
+  color: var(--err);
+}
+
+.web-research-ip-refresh {
+  width: 28px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.web-research-ip-refresh.is-loading span {
+  animation: web-research-refresh-spin 0.8s linear infinite;
+}
+
+@keyframes web-research-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .web-research-modal .hub-modal-body {
   display: flex;
   flex: 1 1 auto;
@@ -387,6 +444,16 @@
     max-width: calc(100vw - 16px);
     height: calc(100dvh - 16px);
     max-height: calc(100dvh - 16px);
+  }
+
+  .web-research-modal .hub-modal-header {
+    flex-wrap: wrap;
+  }
+
+  .web-research-ip-box {
+    order: 3;
+    width: 100%;
+    max-width: none;
   }
 
   .web-research-form {
