@@ -42,6 +42,8 @@ let _aiObservabilityRunningAll = false;
 let _aiObservabilitySyncRunning = false;
 let _aiObservabilityDbLinkRunning = false;
 let _aiObservabilitySyncStatus = { message: '', tone: '' };
+let _aiPrivateFallbackAlertTimer = null;
+let _aiPrivateFallbackAlerting = false;
 
 function _providerModalEls() {
   return {
@@ -460,6 +462,139 @@ function _renderAiObservabilityDbRows(item) {
   }).join('<br>');
 }
 
+function _aiPrivateNameCandidates(item) {
+  const names = [item?.alias, item?.configured_model];
+  const rows = Array.isArray(item?.db_rows) ? item.db_rows : [];
+  rows.forEach(row => names.push(row?.name));
+  return names.map(value => String(value || '').trim()).filter(Boolean);
+}
+
+function _aiHasPrivateName(item) {
+  return _aiPrivateNameCandidates(item).some(value => value.toUpperCase().includes('PRIVATE'));
+}
+
+function _aiNonPrivateFallbacks(item) {
+  const fallbacks = Array.isArray(item?.fallbacks) ? item.fallbacks.filter(Boolean) : [];
+  return fallbacks.filter(value => !String(value || '').toUpperCase().includes('PRIVATE'));
+}
+
+function _aiPrivateFallbackViolations(models) {
+  return models.filter(item => {
+    return _aiHasPrivateName(item) && _aiNonPrivateFallbacks(item).length > 0;
+  });
+}
+
+function _renderAiPrivateFallbackBadge(item) {
+  const fallbacks = _aiNonPrivateFallbacks(item);
+  if (!_aiHasPrivateName(item)) return '';
+  if (!fallbacks.length) {
+    return '<span class="badge" style="background:rgba(70,160,90,.16);border-color:rgba(70,160,90,.45);color:var(--ok)">Private no-fallback OK</span>';
+  }
+  return '<span class="badge" style="background:rgba(190,70,70,.16);border-color:rgba(190,70,70,.55);color:var(--err)">Private non-private fallback</span>';
+}
+
+function _renderAiPrivateFallbackSummary(violations) {
+  if (!violations.length) {
+    return '<span style="color:var(--ok)">Private fallback check: ok.</span>';
+  }
+  const aliases = violations.map(item => item.alias || 'unnamed').slice(0, 5).join(', ');
+  const suffix = violations.length > 5 ? `, +${violations.length - 5} more` : '';
+  return `<span style="color:var(--err)">Private fallback check: ${violations.length} alias${violations.length === 1 ? '' : 'es'} with non-private fallback configured (${esc(aliases)}${suffix}).</span>`;
+}
+
+function _renderAiFallbacks(item) {
+  const fallbacks = Array.isArray(item?.fallbacks) ? item.fallbacks.filter(Boolean) : [];
+  if (!fallbacks.length) return '—';
+  if (_aiHasPrivateName(item)) {
+    return fallbacks.map(value => {
+      const text = esc(value);
+      return String(value || '').toUpperCase().includes('PRIVATE')
+        ? text
+        : `<span style="color:var(--err);font-weight:700">${text}</span>`;
+    }).join(' → ');
+  }
+  return fallbacks.map(esc).join(' → ');
+}
+
+function _aiPrivateFallbackAlertKey(item) {
+  const alias = String(item?.alias || 'alias').trim();
+  const fallbacks = _aiNonPrivateFallbacks(item).map(String).join('|');
+  return `${alias}=>${fallbacks}`;
+}
+
+function _aiGetAlertedPrivateFallbackKeys() {
+  try {
+    return new Set(JSON.parse(sessionStorage.getItem('ai.privateFallbackAlertedKeys') || '[]'));
+  } catch (_) {
+    return new Set();
+  }
+}
+
+function _aiSaveAlertedPrivateFallbackKeys(keys) {
+  try {
+    sessionStorage.setItem('ai.privateFallbackAlertedKeys', JSON.stringify(Array.from(keys).slice(-50)));
+  } catch (_) { /* best effort */ }
+}
+
+async function _speakAiPrivateFallbackAlert(item) {
+  if (typeof BlueprintsTtsClient === 'undefined' || typeof BlueprintsTtsClient.speak !== 'function') return;
+  const alias = String(item?.alias || 'private alias');
+  const fallbacks = _aiNonPrivateFallbacks(item).join(', ');
+  try {
+    await BlueprintsTtsClient.speak({
+      text: `Warning. Private AI provider ${alias} has a non-private fallback configured: ${fallbacks}.`,
+      interrupt: true,
+      mode: 'stream',
+      eventKind: 'ai_private_fallback_violation',
+      fallbackKind: 'negative',
+    });
+  } catch (_) { /* best effort */ }
+}
+
+async function _showAiPrivateFallbackAlert(item, totalCount) {
+  const alias = String(item?.alias || 'Unknown alias');
+  const fallbacks = _aiNonPrivateFallbacks(item);
+  const detail = [
+    `Alias: ${alias}`,
+    `Non-private fallback${fallbacks.length === 1 ? '' : 's'}: ${fallbacks.join(', ') || 'none'}`,
+    totalCount > 1 ? `${totalCount - 1} additional PRIVATE alias${totalCount - 1 === 1 ? '' : 'es'} also need attention.` : '',
+  ].filter(Boolean).join('\n');
+  void _speakAiPrivateFallbackAlert(item);
+  if (typeof HubDialogs !== 'undefined' && typeof HubDialogs.alert === 'function') {
+    await HubDialogs.alert({
+      tone: 'danger',
+      badge: 'WARN',
+      title: 'Private AI Fallback Detected',
+      message: 'A PRIVATE AI provider has a non-private fallback in LiteLLM config.',
+      detail,
+      confirmText: 'Review',
+    });
+    return;
+  }
+  alert(`Private AI fallback detected.\n\n${detail}`);
+}
+
+function _maybeAlertAiPrivateFallbackViolation(violations) {
+  if (!Array.isArray(violations) || !violations.length || _aiPrivateFallbackAlerting) return;
+  const alerted = _aiGetAlertedPrivateFallbackKeys();
+  const firstNew = violations.find(item => !alerted.has(_aiPrivateFallbackAlertKey(item)));
+  if (!firstNew) return;
+  if (_aiPrivateFallbackAlertTimer) window.clearTimeout(_aiPrivateFallbackAlertTimer);
+  _aiPrivateFallbackAlertTimer = window.setTimeout(async () => {
+    const key = _aiPrivateFallbackAlertKey(firstNew);
+    const currentAlerted = _aiGetAlertedPrivateFallbackKeys();
+    if (currentAlerted.has(key)) return;
+    currentAlerted.add(key);
+    _aiSaveAlertedPrivateFallbackKeys(currentAlerted);
+    _aiPrivateFallbackAlerting = true;
+    try {
+      await _showAiPrivateFallbackAlert(firstNew, violations.length);
+    } finally {
+      _aiPrivateFallbackAlerting = false;
+    }
+  }, 250);
+}
+
 function _renderAiTtsGauge(alias, result) {
   const rawScore = Number(result?.compatibility_score);
   const score = Number.isFinite(rawScore) ? Math.max(0, Math.min(100, Math.round(rawScore))) : 0;
@@ -582,11 +717,12 @@ function renderAiObservabilityPanel() {
   badge.style.borderColor = running ? 'rgba(70,160,90,.45)' : 'rgba(208,152,55,.45)';
   badge.style.color = running ? 'var(--ok)' : 'var(--warn)';
 
+  const models = Array.isArray(data.models) ? data.models : [];
+  const privateFallbackViolations = _aiPrivateFallbackViolations(models);
   const counts = data.counts || {};
-  summary.textContent = `${counts.aliases || 0} local aliases detected; ${counts.db_linked || 0} currently linked to DB provider rows. ${stack.message || ''}`.trim();
+  summary.innerHTML = `${esc(`${counts.aliases || 0} local aliases detected; ${counts.db_linked || 0} currently linked to DB provider rows. ${stack.message || ''}`.trim())} ${_renderAiPrivateFallbackSummary(privateFallbackViolations)}`.trim();
   _setAiObservabilityActionStatus(_aiObservabilitySyncStatus.message, _aiObservabilitySyncStatus.tone);
 
-  const models = Array.isArray(data.models) ? data.models : [];
   const runnableCount = models.filter(item => item.supports_test).length;
   const dbLinker = data.db_linker || {};
   syncBtn.disabled = _aiObservabilitySyncRunning;
@@ -604,17 +740,19 @@ function renderAiObservabilityPanel() {
 
   list.innerHTML = models.map(item => {
     const slug = _aiObsSlug(item.alias);
-    const fallbacks = Array.isArray(item.fallbacks) && item.fallbacks.length ? item.fallbacks.map(esc).join(' → ') : '—';
+    const fallbacks = _renderAiFallbacks(item);
+    const privateFallbackViolation = _aiNonPrivateFallbacks(item).length > 0 && _aiHasPrivateName(item);
     const apiBase = item.api_base ? esc(item.api_base) : 'default';
     const dbBadge = item.db_bound
       ? '<span class="badge" style="background:rgba(70,160,90,.16);border-color:rgba(70,160,90,.45);color:var(--ok)">DB-linked</span>'
       : '<span class="badge" style="background:rgba(208,152,55,.16);border-color:rgba(208,152,55,.45);color:var(--warn)">Config-only</span>';
-    return `<div style="border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;background:rgba(255,255,255,0.02);">
+    return `<div style="border:1px solid ${privateFallbackViolation ? 'rgba(190,70,70,.72)' : 'var(--border)'};border-radius:var(--radius);padding:10px 12px;background:${privateFallbackViolation ? 'rgba(190,70,70,.10)' : 'rgba(255,255,255,0.02)'};">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;">
         <div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <strong>${esc(item.alias || '—')}</strong>
             ${dbBadge}
+            ${_renderAiPrivateFallbackBadge(item)}
             <span style="font-size:11px;color:var(--text-dim)">${esc(item.kind || 'unknown')} · ${esc(item.behavior_hint || item.kind || 'unknown')}</span>
           </div>
           <div style="font-size:12px;color:var(--text-dim);margin-top:4px;">Target: ${esc(item.configured_model || '—')} · Provider: ${esc(item.provider_family || 'Configured')} · API base: ${apiBase}</div>
@@ -640,6 +778,7 @@ function renderAiObservabilityPanel() {
       <div id="ai-obs-result-${slug}" style="margin-top:8px;font-size:12px;color:var(--text-dim);">${_renderAiObservabilityResult(item.alias)}</div>
     </div>`;
   }).join('');
+  _maybeAlertAiPrivateFallbackViolation(privateFallbackViolations);
 }
 
 async function runAiObservabilityDbLink() {
