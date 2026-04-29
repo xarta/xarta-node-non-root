@@ -5,6 +5,12 @@
 const WEB_RESEARCH_LS_KEY = 'bp_web_research_v1';
 const WEB_RESEARCH_DOUBLE_CLICK_MS = 260;
 const WEB_RESEARCH_LONG_PRESS_MS = 650;
+const WEB_RESEARCH_SPLIT_LONG_PRESS_MS = 200;
+const WEB_RESEARCH_SPLIT_DRAG_ACTIVATE_PX = 3;
+const WEB_RESEARCH_SPLIT_LONG_PRESS_MOVE_PX = 12;
+const WEB_RESEARCH_SPLIT_DOUBLE_TAP_MS = 320;
+const WEB_RESEARCH_SPLIT_DOUBLE_TAP_MOVE_PX = 24;
+const WEB_RESEARCH_SPLIT_DEFAULT_RATIO = 0.58;
 
 let _webResearchState = {
   query: '',
@@ -12,6 +18,7 @@ let _webResearchState = {
   result: null,
   recent: {},
   searchedAt: null,
+  splitRatio: WEB_RESEARCH_SPLIT_DEFAULT_RATIO,
 };
 let _webResearchInFlight = false;
 let _webResearchSpeechState = 'IDLE';
@@ -20,6 +27,8 @@ let _webResearchSpeechClickTimer = null;
 let _webResearchSpeechLastClickAt = 0;
 let _webResearchSpeechLongPressTimer = null;
 let _webResearchSpeechLastLongPressAt = 0;
+let _webResearchSplitPointer = null;
+let _webResearchSplitResizeQueued = false;
 
 function _webResearchEsc(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({
@@ -49,6 +58,7 @@ function _webResearchLoadState() {
       result: raw.result && typeof raw.result === 'object' ? raw.result : null,
       recent: raw.recent && typeof raw.recent === 'object' ? raw.recent : {},
       searchedAt: raw.searchedAt || null,
+      splitRatio: Number.isFinite(raw.splitRatio) ? raw.splitRatio : WEB_RESEARCH_SPLIT_DEFAULT_RATIO,
     };
   } catch {
     localStorage.removeItem(WEB_RESEARCH_LS_KEY);
@@ -63,6 +73,7 @@ function _webResearchSaveState() {
     result: _webResearchState.result,
     recent: Object.fromEntries(recentEntries),
     searchedAt: _webResearchState.searchedAt,
+    splitRatio: _webResearchState.splitRatio,
   }));
 }
 
@@ -102,10 +113,12 @@ function _webResearchRender() {
   if (!panel) return;
   const result = _webResearchState.result;
   if (!result || typeof result !== 'object') {
+    panel.classList.remove('has-result');
     panel.innerHTML = '<div class="web-research-empty">No research yet.</div>';
     _webResearchSetStatus('', false);
     return;
   }
+  panel.classList.add('has-result');
   const display = result.display && typeof result.display === 'object' ? result.display : {};
   const sources = Array.isArray(display.source_items) ? display.source_items : [];
   const warnings = Array.isArray(display.warnings) ? display.warnings : [];
@@ -151,22 +164,281 @@ function _webResearchRender() {
       ${firewallNotes.map(item => `<p class="web-research-note">${_webResearchEsc(item)}</p>`).join('')}
     </section>` : '';
   panel.innerHTML = `
-    <section class="web-research-answer">
-      <div class="web-research-answer-head">
-        <strong>${_webResearchEsc(result.query || _webResearchState.query || 'Research')}</strong>
-        <span class="web-research-pill ${result.ok ? 'ok' : ''}">${_webResearchEsc(result.status || 'succeeded')}</span>
-        <span class="web-research-pill">${_webResearchEsc(result.depth || _webResearchState.depth || 'standard')}</span>
+    <div class="web-research-split" id="web-research-split">
+      <section class="web-research-answer" id="web-research-synthesis-pane">
+        <div class="web-research-speech-control" id="web-research-speech-control">
+          <span class="web-research-tts-status bp-font-role-status-meta" id="web-research-tts-status"></span>
+          <button class="docs-tree-speaker-btn web-research-speaker" type="button" id="web-research-speaker" aria-label="Speak web research" title="Speak web research"></button>
+        </div>
+        <div class="web-research-answer-head">
+          <strong>${_webResearchEsc(result.query || _webResearchState.query || 'Research')}</strong>
+          <span class="web-research-pill ${result.ok ? 'ok' : ''}">${_webResearchEsc(result.status || 'succeeded')}</span>
+          <span class="web-research-pill">${_webResearchEsc(result.depth || _webResearchState.depth || 'standard')}</span>
+        </div>
+        <pre class="web-research-markdown bp-font-role-docs-markdown">${_webResearchEsc(markdown || 'No summary returned.')}</pre>
+      </section>
+      <div class="body-shade-handle web-research-shade-handle" id="web-research-shade-handle" role="separator" aria-label="Resize web research synthesis and sources" aria-orientation="horizontal" tabindex="0">
+        <div class="body-shade-grip"></div>
       </div>
-      <pre class="web-research-markdown bp-font-role-docs-markdown">${_webResearchEsc(markdown || 'No summary returned.')}</pre>
-    </section>
-    <section class="web-research-sources">
-      <div class="web-research-section-title">Sources</div>
-      ${sourceRows}
-    </section>
-    ${warningsHtml}
-    ${firewallHtml}
+      <section class="web-research-sources" id="web-research-sources-pane">
+        <div class="web-research-section-title">Sources</div>
+        ${sourceRows}
+        ${warningsHtml}
+        ${firewallHtml}
+      </section>
+    </div>
   `;
   _webResearchSetStatus(result.ok === false ? `Research failed. ${sourceStatus} returned.` : `${sourceStatus} returned.`, result.ok === false);
+  _webResearchBindSpeaker();
+  _webResearchInitSplit();
+}
+
+function _webResearchGetSplitParts() {
+  const split = document.getElementById('web-research-split');
+  const synthesis = document.getElementById('web-research-synthesis-pane');
+  const handle = document.getElementById('web-research-shade-handle');
+  const sources = document.getElementById('web-research-sources-pane');
+  if (!split || !synthesis || !handle || !sources) return null;
+  return { split, synthesis, handle, sources };
+}
+
+function _webResearchClampSplitHeight(height) {
+  const parts = _webResearchGetSplitParts();
+  if (!parts) return 0;
+  const total = Math.max(0, parts.split.clientHeight - parts.handle.offsetHeight);
+  if (!total) return 0;
+  const minSynthesis = Math.min(116, Math.max(72, Math.round(total * 0.28)));
+  const minSources = Math.min(116, Math.max(72, Math.round(total * 0.28)));
+  const maxSynthesis = Math.max(minSynthesis, total - minSources);
+  return Math.max(minSynthesis, Math.min(Math.round(height), maxSynthesis));
+}
+
+function _webResearchApplySplitHeight(height, persist = true) {
+  const parts = _webResearchGetSplitParts();
+  if (!parts) return;
+  const total = Math.max(0, parts.split.clientHeight - parts.handle.offsetHeight);
+  if (!total) return;
+  const next = _webResearchClampSplitHeight(height);
+  parts.synthesis.style.setProperty('--web-research-synthesis-height', `${next}px`);
+  if (persist) {
+    _webResearchState.splitRatio = Math.max(0.1, Math.min(0.9, next / total));
+    _webResearchSaveState();
+  }
+}
+
+function _webResearchSyncSplit() {
+  const parts = _webResearchGetSplitParts();
+  if (!parts) return;
+  const total = Math.max(0, parts.split.clientHeight - parts.handle.offsetHeight);
+  if (!total) return;
+  const ratio = Number.isFinite(_webResearchState.splitRatio)
+    ? _webResearchState.splitRatio
+    : WEB_RESEARCH_SPLIT_DEFAULT_RATIO;
+  _webResearchApplySplitHeight(total * ratio, false);
+}
+
+function _webResearchQueueSplitSync() {
+  if (_webResearchSplitResizeQueued) return;
+  _webResearchSplitResizeQueued = true;
+  requestAnimationFrame(() => {
+    _webResearchSplitResizeQueued = false;
+    _webResearchSyncSplit();
+  });
+}
+
+const _webResearchShadeHandleFsm = (() => {
+  const transitions = {
+    IDLE: {
+      tap: { next: 'IDLE', actions: ['emitTap'] },
+      doubleTap: { next: 'IDLE', actions: ['emitDoubleTap'] },
+      longPress: { next: 'IDLE', actions: ['emitLongPress'] },
+      dragStart: { next: 'DRAGGING', actions: ['emitDragStart'] },
+      keyResize: { next: 'IDLE', actions: ['resizeByKey'] },
+    },
+    DRAGGING: {
+      dragMove: { next: 'DRAGGING', actions: ['resizeByDrag'] },
+      dragEnd: { next: 'IDLE', actions: ['emitDragEnd'] },
+      dragCancel: { next: 'IDLE', actions: ['emitDragCancel'] },
+    },
+  };
+  let state = 'IDLE';
+
+  function emit(name, detail = {}) {
+    const handle = document.getElementById('web-research-shade-handle');
+    handle?.dispatchEvent(new CustomEvent('webresearchshadehandle', {
+      bubbles: true,
+      detail: { event: name, state, ...detail },
+    }));
+  }
+
+  function execute(action, detail) {
+    if (action === 'emitTap') emit('tap', detail);
+    else if (action === 'emitDoubleTap') emit('doubleTap', detail);
+    else if (action === 'emitLongPress') emit('longPress', detail);
+    else if (action === 'emitDragStart') emit('dragStart', detail);
+    else if (action === 'resizeByDrag') {
+      _webResearchApplySplitHeight(detail.height);
+      emit('dragMove', detail);
+    } else if (action === 'resizeByKey') {
+      _webResearchApplySplitHeight(detail.height);
+      emit('keyResize', detail);
+    } else if (action === 'emitDragEnd') emit('dragEnd', detail);
+    else if (action === 'emitDragCancel') emit('dragCancel', detail);
+  }
+
+  function dispatch(event, detail = {}) {
+    const transition = transitions[state]?.[event];
+    if (!transition) return;
+    state = transition.next;
+    for (const action of transition.actions) execute(action, detail);
+  }
+
+  return { dispatch };
+})();
+
+function _webResearchClearSplitLongPress() {
+  if (!_webResearchSplitPointer?.longPressTimer) return;
+  clearTimeout(_webResearchSplitPointer.longPressTimer);
+  _webResearchSplitPointer.longPressTimer = null;
+}
+
+function _webResearchHandleSplitTap(event) {
+  const now = Date.now();
+  const last = _webResearchSplitPointer?.lastTap || null;
+  if (last) {
+    const dt = now - last.at;
+    const dx = event.clientX - last.x;
+    const dy = event.clientY - last.y;
+    const moved = Math.sqrt((dx * dx) + (dy * dy));
+    if (dt <= WEB_RESEARCH_SPLIT_DOUBLE_TAP_MS && moved <= WEB_RESEARCH_SPLIT_DOUBLE_TAP_MOVE_PX) {
+      _webResearchSplitPointer = { lastTap: null };
+      _webResearchShadeHandleFsm.dispatch('doubleTap', { clientX: event.clientX, clientY: event.clientY });
+      return;
+    }
+  }
+  _webResearchSplitPointer = {
+    ...(_webResearchSplitPointer || {}),
+    lastTap: { at: now, x: event.clientX, y: event.clientY },
+  };
+  _webResearchShadeHandleFsm.dispatch('tap', { clientX: event.clientX, clientY: event.clientY });
+}
+
+function _webResearchInitSplit() {
+  const parts = _webResearchGetSplitParts();
+  if (!parts) return;
+  const handle = parts.handle;
+  if (handle.dataset.webResearchSplitBound !== '1') {
+    handle.dataset.webResearchSplitBound = '1';
+    handle.addEventListener('pointerdown', _webResearchSplitPointerDown);
+    handle.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    handle.addEventListener('keydown', _webResearchSplitKeydown);
+  }
+  _webResearchQueueSplitSync();
+}
+
+function _webResearchSplitPointerDown(event) {
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
+  const parts = _webResearchGetSplitParts();
+  if (!parts) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const startHeight = parts.synthesis.getBoundingClientRect().height;
+  _webResearchClearSplitLongPress();
+  _webResearchSplitPointer = {
+    pointerId: event.pointerId,
+    startY: event.clientY,
+    startX: event.clientX,
+    startHeight,
+    isDragging: false,
+    longPressTriggered: false,
+    lastTap: _webResearchSplitPointer?.lastTap || null,
+    longPressTimer: setTimeout(() => {
+      if (!_webResearchSplitPointer || _webResearchSplitPointer.pointerId !== event.pointerId) return;
+      _webResearchSplitPointer.longPressTriggered = true;
+      _webResearchShadeHandleFsm.dispatch('longPress', {
+        clientX: _webResearchSplitPointer.startX,
+        clientY: _webResearchSplitPointer.startY,
+      });
+    }, WEB_RESEARCH_SPLIT_LONG_PRESS_MS),
+  };
+  parts.handle.classList.add('is-grabbing');
+  parts.handle.setPointerCapture?.(event.pointerId);
+  parts.handle.addEventListener('pointermove', _webResearchSplitPointerMove);
+  parts.handle.addEventListener('pointerup', _webResearchSplitPointerUp);
+  parts.handle.addEventListener('pointercancel', _webResearchSplitPointerCancel);
+}
+
+function _webResearchSplitPointerMove(event) {
+  const pointer = _webResearchSplitPointer;
+  if (!pointer || pointer.pointerId !== event.pointerId) return;
+  const dy = event.clientY - pointer.startY;
+  const dx = event.clientX - pointer.startX;
+  const moved = Math.sqrt((dx * dx) + (dy * dy));
+  if (moved > WEB_RESEARCH_SPLIT_LONG_PRESS_MOVE_PX) _webResearchClearSplitLongPress();
+  if (!pointer.isDragging && moved > WEB_RESEARCH_SPLIT_DRAG_ACTIVATE_PX) {
+    pointer.isDragging = true;
+    _webResearchShadeHandleFsm.dispatch('dragStart', { clientX: event.clientX, clientY: event.clientY });
+  }
+  if (!pointer.isDragging) return;
+  _webResearchShadeHandleFsm.dispatch('dragMove', {
+    clientX: event.clientX,
+    clientY: event.clientY,
+    height: pointer.startHeight + dy,
+  });
+}
+
+function _webResearchSplitPointerUp(event) {
+  const pointer = _webResearchSplitPointer;
+  const parts = _webResearchGetSplitParts();
+  if (!pointer || pointer.pointerId !== event.pointerId) return;
+  _webResearchClearSplitLongPress();
+  parts?.handle.classList.remove('is-grabbing');
+  parts?.handle.releasePointerCapture?.(event.pointerId);
+  parts?.handle.removeEventListener('pointermove', _webResearchSplitPointerMove);
+  parts?.handle.removeEventListener('pointerup', _webResearchSplitPointerUp);
+  parts?.handle.removeEventListener('pointercancel', _webResearchSplitPointerCancel);
+  if (pointer.isDragging) {
+    _webResearchShadeHandleFsm.dispatch('dragEnd', { clientX: event.clientX, clientY: event.clientY });
+  } else if (!pointer.longPressTriggered) {
+    _webResearchHandleSplitTap(event);
+  }
+}
+
+function _webResearchSplitPointerCancel(event) {
+  const pointer = _webResearchSplitPointer;
+  const parts = _webResearchGetSplitParts();
+  if (!pointer || pointer.pointerId !== event.pointerId) return;
+  _webResearchClearSplitLongPress();
+  parts?.handle.classList.remove('is-grabbing');
+  parts?.handle.releasePointerCapture?.(event.pointerId);
+  parts?.handle.removeEventListener('pointermove', _webResearchSplitPointerMove);
+  parts?.handle.removeEventListener('pointerup', _webResearchSplitPointerUp);
+  parts?.handle.removeEventListener('pointercancel', _webResearchSplitPointerCancel);
+  _webResearchShadeHandleFsm.dispatch('dragCancel', { clientX: event.clientX, clientY: event.clientY });
+}
+
+function _webResearchSplitKeydown(event) {
+  const parts = _webResearchGetSplitParts();
+  if (!parts) return;
+  const current = parts.synthesis.getBoundingClientRect().height;
+  const total = Math.max(0, parts.split.clientHeight - parts.handle.offsetHeight);
+  let next = current;
+  if (event.key === 'ArrowUp') next = current - 32;
+  else if (event.key === 'ArrowDown') next = current + 32;
+  else if (event.key === 'Home') next = 0;
+  else if (event.key === 'End') next = total;
+  else if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    _webResearchShadeHandleFsm.dispatch('tap');
+    return;
+  } else {
+    return;
+  }
+  event.preventDefault();
+  _webResearchShadeHandleFsm.dispatch('keyResize', { height: next, key: event.key });
 }
 
 function openWebResearchModal(options = {}) {
@@ -185,6 +457,7 @@ function openWebResearchModal(options = {}) {
         input.focus();
         input.select();
       }
+      _webResearchQueueSplitSync();
     },
   });
 }
@@ -231,6 +504,7 @@ async function _webResearchRun() {
 }
 
 function _webResearchClear() {
+  _webResearchSpeechStop();
   _webResearchState.result = null;
   _webResearchState.query = '';
   _webResearchState.searchedAt = null;
@@ -478,6 +752,37 @@ function _webResearchSpeechHandlePointerDown(event) {
   }, WEB_RESEARCH_LONG_PRESS_MS);
 }
 
+function _webResearchBindSpeaker() {
+  const speaker = document.getElementById('web-research-speaker');
+  if (!speaker || speaker.dataset.webResearchSpeechBound === '1') return;
+  speaker.dataset.webResearchSpeechBound = '1';
+  speaker.addEventListener('pointerdown', e => {
+    e.stopPropagation();
+    _webResearchSpeechHandlePointerDown(e);
+  });
+  speaker.addEventListener('pointerup', e => {
+    e.stopPropagation();
+    _webResearchSpeechClearLongPressTimer();
+  });
+  speaker.addEventListener('pointercancel', _webResearchSpeechClearLongPressTimer);
+  speaker.addEventListener('pointerleave', _webResearchSpeechClearLongPressTimer);
+  speaker.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  speaker.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    _webResearchSpeechHandleClick();
+  });
+  speaker.addEventListener('dblclick', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    _webResearchSpeechHandleDoubleClick();
+  });
+  _webResearchSpeechSetState(_webResearchSpeechState, '');
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('web-research-form');
   form?.addEventListener('submit', e => {
@@ -494,31 +799,9 @@ document.addEventListener('DOMContentLoaded', () => {
       _webResearchSaveState();
     });
   });
-  const speaker = document.getElementById('web-research-speaker');
-  speaker?.addEventListener('pointerdown', e => {
-    e.stopPropagation();
-    _webResearchSpeechHandlePointerDown(e);
-  });
-  speaker?.addEventListener('pointerup', e => {
-    e.stopPropagation();
-    _webResearchSpeechClearLongPressTimer();
-  });
-  speaker?.addEventListener('pointercancel', _webResearchSpeechClearLongPressTimer);
-  speaker?.addEventListener('pointerleave', _webResearchSpeechClearLongPressTimer);
-  speaker?.addEventListener('contextmenu', e => {
-    e.preventDefault();
-    e.stopPropagation();
-  });
-  speaker?.addEventListener('click', e => {
-    e.preventDefault();
-    e.stopPropagation();
-    _webResearchSpeechHandleClick();
-  });
-  speaker?.addEventListener('dblclick', e => {
-    e.preventDefault();
-    e.stopPropagation();
-    _webResearchSpeechHandleDoubleClick();
-  });
+  _webResearchBindSpeaker();
+  window.addEventListener('resize', _webResearchQueueSplitSync);
+  window.visualViewport?.addEventListener('resize', _webResearchQueueSplitSync);
 });
 
 window.openWebResearchModal = openWebResearchModal;
