@@ -96,6 +96,7 @@ const HubModal = (() => {
 
     /* Fired on the <dialog> element; detects backdrop clicks */
     function _onDialogClick(e) {
+        if (e.target !== e.currentTarget) return;
         /* getBoundingClientRect returns the dialog's CONTENT box,
            not counting the ::backdrop. A click outside this rect
            originated on the backdrop. */

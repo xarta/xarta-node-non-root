@@ -66,6 +66,61 @@
   animation: web-research-refresh-spin 0.8s linear infinite;
 }
 
+.web-research-private-toggle {
+  position: relative;
+  box-sizing: border-box;
+  width: 104px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0 10px;
+  gap: 8px;
+  border-color: rgba(248, 113, 113, 0.55);
+  color: #f87171;
+}
+
+.web-research-private-toggle.is-private {
+  border-color: rgba(74, 222, 128, 0.62);
+  background: rgba(74, 222, 128, 0.1);
+  color: #4ade80;
+}
+
+.web-research-key-icon {
+  position: relative;
+  display: inline-block;
+  width: 17px;
+  height: 12px;
+  flex: 0 0 17px;
+}
+
+.web-research-key-icon::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 2px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid currentColor;
+  border-radius: 999px;
+}
+
+.web-research-key-icon::after {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 6px;
+  width: 8px;
+  height: 2px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  background: currentColor;
+}
+
+.web-research-private-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 @keyframes web-research-refresh-spin {
   to {
     transform: rotate(360deg);
@@ -410,6 +465,11 @@
   border-color: rgba(var(--hub-accent-rgb), 0.45);
 }
 
+.web-research-pill.private {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.45);
+}
+
 .web-research-note-block {
   display: grid;
   gap: 6px;
@@ -452,8 +512,13 @@
 
   .web-research-ip-box {
     order: 3;
-    width: 100%;
+    width: calc(100% - 112px);
     max-width: none;
+  }
+
+  .web-research-private-toggle {
+    order: 4;
+    width: 104px;
   }
 
   .web-research-form {

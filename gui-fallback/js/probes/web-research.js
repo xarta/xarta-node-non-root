@@ -12,7 +12,7 @@ const WEB_RESEARCH_SPLIT_DOUBLE_TAP_MS = 320;
 const WEB_RESEARCH_SPLIT_DOUBLE_TAP_MOVE_PX = 24;
 const WEB_RESEARCH_SPLIT_DEFAULT_RATIO = 0.58;
 const WEB_RESEARCH_SPLIT_EDGE_GUARD_PX = 44;
-const WEB_RESEARCH_STATE_SCHEMA = 2;
+const WEB_RESEARCH_STATE_SCHEMA = 3;
 
 let _webResearchState = {
   query: '',
@@ -22,6 +22,7 @@ let _webResearchState = {
   searchedAt: null,
   schema: WEB_RESEARCH_STATE_SCHEMA,
   splitRatio: WEB_RESEARCH_SPLIT_DEFAULT_RATIO,
+  privateMode: false,
 };
 let _webResearchInFlight = false;
 let _webResearchSpeechState = 'IDLE';
@@ -69,17 +70,19 @@ function _webResearchLoadState() {
   try {
     const raw = JSON.parse(localStorage.getItem(WEB_RESEARCH_LS_KEY) || '{}');
     if (!raw || typeof raw !== 'object') return;
+    const privateMode = !!raw.privateMode;
     _webResearchState = {
       ..._webResearchState,
-      query: String(raw.query || ''),
+      query: privateMode ? '' : String(raw.query || ''),
       depth: ['quick', 'standard', 'deep'].includes(raw.depth) ? raw.depth : 'standard',
-      result: raw.result && typeof raw.result === 'object' ? raw.result : null,
-      recent: raw.recent && typeof raw.recent === 'object' ? raw.recent : {},
-      searchedAt: raw.searchedAt || null,
+      result: !privateMode && raw.result && typeof raw.result === 'object' ? raw.result : null,
+      recent: !privateMode && raw.recent && typeof raw.recent === 'object' ? raw.recent : {},
+      searchedAt: privateMode ? null : raw.searchedAt || null,
       schema: WEB_RESEARCH_STATE_SCHEMA,
-      splitRatio: raw.schema === WEB_RESEARCH_STATE_SCHEMA && Number.isFinite(raw.splitRatio)
+      splitRatio: raw.schema >= 2 && Number.isFinite(raw.splitRatio)
         ? raw.splitRatio
         : WEB_RESEARCH_SPLIT_DEFAULT_RATIO,
+      privateMode,
     };
   } catch {
     localStorage.removeItem(WEB_RESEARCH_LS_KEY);
@@ -88,15 +91,19 @@ function _webResearchLoadState() {
 
 function _webResearchSaveState() {
   const recentEntries = Object.entries(_webResearchState.recent || {}).slice(-8);
-  localStorage.setItem(WEB_RESEARCH_LS_KEY, JSON.stringify({
-    query: _webResearchState.query,
+  const payload = {
     depth: _webResearchState.depth,
-    result: _webResearchState.result,
-    recent: Object.fromEntries(recentEntries),
-    searchedAt: _webResearchState.searchedAt,
     schema: WEB_RESEARCH_STATE_SCHEMA,
     splitRatio: _webResearchState.splitRatio,
-  }));
+    privateMode: !!_webResearchState.privateMode,
+  };
+  if (!_webResearchState.privateMode) {
+    payload.query = _webResearchState.query;
+    payload.result = _webResearchState.result;
+    payload.recent = Object.fromEntries(recentEntries);
+    payload.searchedAt = _webResearchState.searchedAt;
+  }
+  localStorage.setItem(WEB_RESEARCH_LS_KEY, JSON.stringify(payload));
 }
 
 function _webResearchSetForm() {
@@ -116,6 +123,30 @@ function _webResearchSetStatus(text = '', isError = false) {
   const err = document.getElementById('web-research-error');
   if (status) status.textContent = isError ? '' : text;
   if (err) err.textContent = isError ? text : '';
+}
+
+function _webResearchRenderPrivacyToggle() {
+  const btn = document.getElementById('web-research-private-toggle');
+  if (!btn) return;
+  const enabled = !!_webResearchState.privateMode;
+  btn.classList.toggle('is-private', enabled);
+  btn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+  btn.setAttribute('aria-label', enabled ? 'Private mode on' : 'Private mode off');
+  btn.title = enabled
+    ? 'Private mode on: local history, speech cache, and task artifacts are reduced'
+    : 'Private mode off: local query/result retention is enabled';
+  const text = btn.querySelector('.web-research-private-text');
+  if (text) text.textContent = enabled ? 'Private' : 'Retained';
+}
+
+function _webResearchSetPrivateMode(enabled) {
+  _webResearchState.privateMode = !!enabled;
+  if (_webResearchState.privateMode) {
+    _webResearchState.recent = {};
+    _webResearchState.searchedAt = null;
+  }
+  _webResearchSaveState();
+  _webResearchRenderPrivacyToggle();
 }
 
 function _webResearchRenderEgressIp() {
@@ -243,6 +274,7 @@ function _webResearchRender() {
           <strong>${_webResearchEsc(result.query || _webResearchState.query || 'Research')}</strong>
           <span class="web-research-pill ${result.ok ? 'ok' : ''}">${_webResearchEsc(result.status || 'succeeded')}</span>
           <span class="web-research-pill">${_webResearchEsc(result.depth || _webResearchState.depth || 'standard')}</span>
+          ${result.private_mode ? '<span class="web-research-pill private">private</span>' : ''}
         </div>
         <div class="web-research-markdown bp-font-role-docs-markdown">${_webResearchMarkdownHtml(markdown)}</div>
       </section>
@@ -791,6 +823,7 @@ function openWebResearchModal(options = {}) {
     _webResearchState.query = options.query.trim();
   }
   _webResearchSetForm();
+  _webResearchRenderPrivacyToggle();
   _webResearchRender();
   const modal = document.getElementById('web-research-modal');
   if (!modal || typeof HubModal === 'undefined') return;
@@ -816,7 +849,7 @@ async function _webResearchRun() {
     _webResearchSetStatus('Enter a web research query.', true);
     return;
   }
-  const cached = _webResearchState.recent?.[_webResearchOptionKey()];
+  const cached = _webResearchState.privateMode ? null : _webResearchState.recent?.[_webResearchOptionKey()];
   if (cached && typeof cached === 'object') {
     _webResearchState.result = cached;
     _webResearchState.searchedAt = cached.searched_at || _webResearchState.searchedAt;
@@ -832,6 +865,7 @@ async function _webResearchRun() {
       body: JSON.stringify({
         query: _webResearchState.query,
         depth: _webResearchState.depth,
+        private_mode: !!_webResearchState.privateMode,
       }),
     });
     const data = await response.json().catch(() => ({}));
@@ -840,7 +874,9 @@ async function _webResearchRun() {
     _webResearchState.result = data;
     _webResearchState.searchedAt = data.searched_at;
     _webResearchState.recent = _webResearchState.recent || {};
-    _webResearchState.recent[_webResearchOptionKey()] = data;
+    if (!_webResearchState.privateMode) {
+      _webResearchState.recent[_webResearchOptionKey()] = data;
+    }
     _webResearchSaveState();
     _webResearchRender();
   } catch (e) {
@@ -852,13 +888,31 @@ async function _webResearchRun() {
 
 function _webResearchClear() {
   _webResearchSpeechStop();
-  _webResearchState.result = null;
-  _webResearchState.query = '';
-  _webResearchState.searchedAt = null;
+  const depth = _webResearchState.depth || 'standard';
+  const splitRatio = Number.isFinite(_webResearchState.splitRatio)
+    ? _webResearchState.splitRatio
+    : WEB_RESEARCH_SPLIT_DEFAULT_RATIO;
+  const privateMode = !!_webResearchState.privateMode;
+  try {
+    localStorage.removeItem(WEB_RESEARCH_LS_KEY);
+  } catch {
+    // Best-effort cleanup; the visible modal state is still reset below.
+  }
+  _webResearchState = {
+    query: '',
+    depth,
+    result: null,
+    recent: {},
+    searchedAt: null,
+    schema: WEB_RESEARCH_STATE_SCHEMA,
+    splitRatio,
+    privateMode,
+  };
   _webResearchSetForm();
   _webResearchSaveState();
   _webResearchRender();
   _webResearchSetStatus('', false);
+  _webResearchRenderPrivacyToggle();
 }
 
 function _webResearchSpeechSetState(state = 'IDLE', message = '') {
@@ -977,13 +1031,14 @@ async function _webResearchSpeechMarkdown(force = false) {
       markdown: display.summary_markdown,
       display,
       force_refresh: !!force,
+      private_mode: !!result.private_mode || !!_webResearchState.privateMode,
     }),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
   const markdown = String(data.markdown || display.audio_markdown || '').trim();
   if (!markdown) throw new Error('Narration was empty.');
-  if (data.cache_key && result.cache_key !== data.cache_key) {
+  if (data.cache_key && result.cache_key !== data.cache_key && !result.private_mode) {
     result.cache_key = data.cache_key;
     _webResearchSaveState();
   }
@@ -1152,6 +1207,10 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     _webResearchLoadEgressIp(true);
   });
+  document.getElementById('web-research-private-toggle')?.addEventListener('click', e => {
+    e.preventDefault();
+    _webResearchSetPrivateMode(!_webResearchState.privateMode);
+  });
   ['web-research-depth'].forEach(id => {
     document.getElementById(id)?.addEventListener('change', () => {
       _webResearchReadForm();
@@ -1161,6 +1220,7 @@ document.addEventListener('DOMContentLoaded', () => {
   _webResearchBindSpeaker();
   _webResearchInitTopShade();
   _webResearchRenderEgressIp();
+  _webResearchRenderPrivacyToggle();
   window.addEventListener('resize', _webResearchQueueSplitSync);
   window.addEventListener('resize', _webResearchQueueTopShadeSync);
   window.visualViewport?.addEventListener('resize', _webResearchQueueSplitSync);
