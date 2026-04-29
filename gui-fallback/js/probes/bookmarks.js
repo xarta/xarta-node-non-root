@@ -1898,11 +1898,41 @@ function _bmRenderSharedTable(renderBody) {
 
 // ── Auto-archive dead links ─────────────────────────────────────────────
 
+let _bmDeadLinksInFlight = false;
+
+async function _bmDeadLinksTestCount() {
+  const r = await apiFetch('/api/v1/bookmarks/dead-link-check-count');
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const data = await r.json();
+  return Number.isFinite(data?.count) ? data.count : 0;
+}
+
 async function _bmAutoArchiveDead(btn) {
+  if (_bmDeadLinksInFlight) return;
   const panel = document.getElementById('bm-deadlink-panel');
   const statusEl = document.getElementById('bm-deadlink-status');
   const resultsEl = document.getElementById('bm-deadlink-results');
-  const total = _bookmarks.length;
+  let total = 0;
+  try {
+    total = await _bmDeadLinksTestCount();
+  } catch (e) {
+    statusEl.textContent = `Could not count links for dead-link check: ${e.message}`;
+    statusEl.style.color = 'var(--err)';
+    resultsEl.textContent = '';
+    panel.style.display = '';
+    return;
+  }
+  const ok = await HubDialogs.confirm({
+    tone: 'warning',
+    badge: 'LINK',
+    title: 'Check dead links?',
+    message: `Check ${total} bookmark${total === 1 ? '' : 's'} for dead links?`,
+    detail: `${total} link${total === 1 ? '' : 's'} will be tested. This can take a minute. Bookmarks detected as dead links will be archived automatically.`,
+    confirmText: 'Check links',
+    cancelText: 'Cancel',
+  });
+  if (!ok) return;
+  _bmDeadLinksInFlight = true;
   statusEl.textContent = `Checking ${total} bookmark${total === 1 ? '' : 's'} for dead links\u2026 (may take a minute)`;
   statusEl.style.color = 'var(--text-dim)';
   resultsEl.textContent = '';
@@ -1931,6 +1961,7 @@ async function _bmAutoArchiveDead(btn) {
     resultsEl.textContent = '';
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = orig; }
+    _bmDeadLinksInFlight = false;
   }
 }
 

@@ -11,6 +11,8 @@ const WEB_RESEARCH_SPLIT_LONG_PRESS_MOVE_PX = 12;
 const WEB_RESEARCH_SPLIT_DOUBLE_TAP_MS = 320;
 const WEB_RESEARCH_SPLIT_DOUBLE_TAP_MOVE_PX = 24;
 const WEB_RESEARCH_SPLIT_DEFAULT_RATIO = 0.58;
+const WEB_RESEARCH_SPLIT_EDGE_GUARD_PX = 44;
+const WEB_RESEARCH_STATE_SCHEMA = 2;
 
 let _webResearchState = {
   query: '',
@@ -18,6 +20,7 @@ let _webResearchState = {
   result: null,
   recent: {},
   searchedAt: null,
+  schema: WEB_RESEARCH_STATE_SCHEMA,
   splitRatio: WEB_RESEARCH_SPLIT_DEFAULT_RATIO,
 };
 let _webResearchInFlight = false;
@@ -29,6 +32,9 @@ let _webResearchSpeechLongPressTimer = null;
 let _webResearchSpeechLastLongPressAt = 0;
 let _webResearchSplitPointer = null;
 let _webResearchSplitResizeQueued = false;
+let _webResearchTopShadePointer = null;
+let _webResearchTopShadeResizeQueued = false;
+let _webResearchControlsRatio = 1;
 
 function _webResearchEsc(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({
@@ -58,7 +64,10 @@ function _webResearchLoadState() {
       result: raw.result && typeof raw.result === 'object' ? raw.result : null,
       recent: raw.recent && typeof raw.recent === 'object' ? raw.recent : {},
       searchedAt: raw.searchedAt || null,
-      splitRatio: Number.isFinite(raw.splitRatio) ? raw.splitRatio : WEB_RESEARCH_SPLIT_DEFAULT_RATIO,
+      schema: WEB_RESEARCH_STATE_SCHEMA,
+      splitRatio: raw.schema === WEB_RESEARCH_STATE_SCHEMA && Number.isFinite(raw.splitRatio)
+        ? raw.splitRatio
+        : WEB_RESEARCH_SPLIT_DEFAULT_RATIO,
     };
   } catch {
     localStorage.removeItem(WEB_RESEARCH_LS_KEY);
@@ -73,6 +82,7 @@ function _webResearchSaveState() {
     result: _webResearchState.result,
     recent: Object.fromEntries(recentEntries),
     searchedAt: _webResearchState.searchedAt,
+    schema: WEB_RESEARCH_STATE_SCHEMA,
     splitRatio: _webResearchState.splitRatio,
   }));
 }
@@ -202,26 +212,57 @@ function _webResearchGetSplitParts() {
   return { split, synthesis, handle, sources };
 }
 
+function _webResearchViewportHeight() {
+  if (window.visualViewport && Number.isFinite(window.visualViewport.height) && window.visualViewport.height > 0) {
+    return window.visualViewport.height;
+  }
+  return window.innerHeight || document.documentElement.clientHeight || 0;
+}
+
+function _webResearchSplitTotal(parts) {
+  if (!parts) return 0;
+  const layoutTotal = Math.max(0, parts.split.clientHeight - parts.handle.offsetHeight);
+  const rect = parts.split.getBoundingClientRect();
+  const modal = document.getElementById('web-research-modal');
+  const modalBottom = modal ? modal.getBoundingClientRect().bottom : _webResearchViewportHeight();
+  const visibleBottom = Math.min(_webResearchViewportHeight(), modalBottom) - WEB_RESEARCH_SPLIT_EDGE_GUARD_PX;
+  const visibleTotal = Math.max(0, visibleBottom - rect.top - parts.handle.offsetHeight);
+  if (!layoutTotal) return visibleTotal;
+  return Math.min(layoutTotal, visibleTotal);
+}
+
+function _webResearchClampVisibleSplitHandle(persist = false) {
+  const parts = _webResearchGetSplitParts();
+  if (!parts) return;
+  const total = _webResearchSplitTotal(parts);
+  if (!total) return;
+  const current = parts.synthesis.getBoundingClientRect().height;
+  if (current > total) _webResearchApplySplitHeight(total, persist);
+}
+
 function _webResearchClampSplitHeight(height) {
   const parts = _webResearchGetSplitParts();
   if (!parts) return 0;
-  const total = Math.max(0, parts.split.clientHeight - parts.handle.offsetHeight);
+  const total = _webResearchSplitTotal(parts);
   if (!total) return 0;
-  const minSynthesis = Math.min(116, Math.max(72, Math.round(total * 0.28)));
-  const minSources = Math.min(116, Math.max(72, Math.round(total * 0.28)));
-  const maxSynthesis = Math.max(minSynthesis, total - minSources);
-  return Math.max(minSynthesis, Math.min(Math.round(height), maxSynthesis));
+  return Math.max(0, Math.min(Math.round(height), total));
 }
 
 function _webResearchApplySplitHeight(height, persist = true) {
   const parts = _webResearchGetSplitParts();
   if (!parts) return;
-  const total = Math.max(0, parts.split.clientHeight - parts.handle.offsetHeight);
+  const total = _webResearchSplitTotal(parts);
   if (!total) return;
   const next = _webResearchClampSplitHeight(height);
+  const sourcesHeight = Math.max(0, total - next);
   parts.synthesis.style.setProperty('--web-research-synthesis-height', `${next}px`);
+  parts.synthesis.classList.toggle('is-collapsed', next <= 1);
+  parts.sources.classList.toggle('is-collapsed', sourcesHeight <= 1);
+  parts.handle.setAttribute('aria-valuemin', '0');
+  parts.handle.setAttribute('aria-valuemax', String(total));
+  parts.handle.setAttribute('aria-valuenow', String(next));
   if (persist) {
-    _webResearchState.splitRatio = Math.max(0.1, Math.min(0.9, next / total));
+    _webResearchState.splitRatio = Math.max(0, Math.min(1, next / total));
     _webResearchSaveState();
   }
 }
@@ -229,12 +270,13 @@ function _webResearchApplySplitHeight(height, persist = true) {
 function _webResearchSyncSplit() {
   const parts = _webResearchGetSplitParts();
   if (!parts) return;
-  const total = Math.max(0, parts.split.clientHeight - parts.handle.offsetHeight);
+  const total = _webResearchSplitTotal(parts);
   if (!total) return;
   const ratio = Number.isFinite(_webResearchState.splitRatio)
     ? _webResearchState.splitRatio
     : WEB_RESEARCH_SPLIT_DEFAULT_RATIO;
   _webResearchApplySplitHeight(total * ratio, false);
+  _webResearchClampVisibleSplitHandle(false);
 }
 
 function _webResearchQueueSplitSync() {
@@ -243,6 +285,49 @@ function _webResearchQueueSplitSync() {
   requestAnimationFrame(() => {
     _webResearchSplitResizeQueued = false;
     _webResearchSyncSplit();
+  });
+}
+
+function _webResearchGetTopShadeParts() {
+  const controls = document.getElementById('web-research-controls-panel');
+  const handle = document.getElementById('web-research-top-shade-handle');
+  const results = document.getElementById('web-research-results');
+  if (!controls || !handle || !results) return null;
+  return { controls, handle, results };
+}
+
+function _webResearchGetControlsMaxHeight() {
+  const parts = _webResearchGetTopShadeParts();
+  if (!parts) return 0;
+  return Math.max(0, Math.ceil(parts.controls.scrollHeight));
+}
+
+function _webResearchApplyControlsHeight(height) {
+  const parts = _webResearchGetTopShadeParts();
+  if (!parts) return;
+  const max = _webResearchGetControlsMaxHeight();
+  const next = Math.max(0, Math.min(Math.round(height), max));
+  parts.controls.style.setProperty('--web-research-controls-height', `${next}px`);
+  parts.controls.classList.toggle('is-collapsed', next <= 1);
+  parts.handle.setAttribute('aria-valuemin', '0');
+  parts.handle.setAttribute('aria-valuemax', String(max));
+  parts.handle.setAttribute('aria-valuenow', String(next));
+  _webResearchControlsRatio = max ? Math.max(0, Math.min(1, next / max)) : 1;
+  _webResearchQueueSplitSync();
+}
+
+function _webResearchSyncTopShade() {
+  const max = _webResearchGetControlsMaxHeight();
+  if (!max) return;
+  _webResearchApplyControlsHeight(max * _webResearchControlsRatio);
+}
+
+function _webResearchQueueTopShadeSync() {
+  if (_webResearchTopShadeResizeQueued) return;
+  _webResearchTopShadeResizeQueued = true;
+  requestAnimationFrame(() => {
+    _webResearchTopShadeResizeQueued = false;
+    _webResearchSyncTopShade();
   });
 }
 
@@ -296,10 +381,66 @@ const _webResearchShadeHandleFsm = (() => {
   return { dispatch };
 })();
 
+const _webResearchTopShadeHandleFsm = (() => {
+  const transitions = {
+    IDLE: {
+      tap: { next: 'IDLE', actions: ['emitTap'] },
+      doubleTap: { next: 'IDLE', actions: ['emitDoubleTap'] },
+      longPress: { next: 'IDLE', actions: ['emitLongPress'] },
+      dragStart: { next: 'DRAGGING', actions: ['emitDragStart'] },
+      keyResize: { next: 'IDLE', actions: ['resizeByKey'] },
+    },
+    DRAGGING: {
+      dragMove: { next: 'DRAGGING', actions: ['resizeByDrag'] },
+      dragEnd: { next: 'IDLE', actions: ['emitDragEnd'] },
+      dragCancel: { next: 'IDLE', actions: ['emitDragCancel'] },
+    },
+  };
+  let state = 'IDLE';
+
+  function emit(name, detail = {}) {
+    const handle = document.getElementById('web-research-top-shade-handle');
+    handle?.dispatchEvent(new CustomEvent('webresearchtopshadehandle', {
+      bubbles: true,
+      detail: { event: name, state, ...detail },
+    }));
+  }
+
+  function execute(action, detail) {
+    if (action === 'emitTap') emit('tap', detail);
+    else if (action === 'emitDoubleTap') emit('doubleTap', detail);
+    else if (action === 'emitLongPress') emit('longPress', detail);
+    else if (action === 'emitDragStart') emit('dragStart', detail);
+    else if (action === 'resizeByDrag') {
+      _webResearchApplyControlsHeight(detail.height);
+      emit('dragMove', detail);
+    } else if (action === 'resizeByKey') {
+      _webResearchApplyControlsHeight(detail.height);
+      emit('keyResize', detail);
+    } else if (action === 'emitDragEnd') emit('dragEnd', detail);
+    else if (action === 'emitDragCancel') emit('dragCancel', detail);
+  }
+
+  function dispatch(event, detail = {}) {
+    const transition = transitions[state]?.[event];
+    if (!transition) return;
+    state = transition.next;
+    for (const action of transition.actions) execute(action, detail);
+  }
+
+  return { dispatch };
+})();
+
 function _webResearchClearSplitLongPress() {
   if (!_webResearchSplitPointer?.longPressTimer) return;
   clearTimeout(_webResearchSplitPointer.longPressTimer);
   _webResearchSplitPointer.longPressTimer = null;
+}
+
+function _webResearchClearTopShadeLongPress() {
+  if (!_webResearchTopShadePointer?.longPressTimer) return;
+  clearTimeout(_webResearchTopShadePointer.longPressTimer);
+  _webResearchTopShadePointer.longPressTimer = null;
 }
 
 function _webResearchHandleSplitTap(event) {
@@ -323,6 +464,30 @@ function _webResearchHandleSplitTap(event) {
   _webResearchShadeHandleFsm.dispatch('tap', { clientX: event.clientX, clientY: event.clientY });
 }
 
+function _webResearchHandleTopShadeTap(event) {
+  const now = Date.now();
+  const last = _webResearchTopShadePointer?.lastTap || null;
+  if (last) {
+    const dt = now - last.at;
+    const dx = event.clientX - last.x;
+    const dy = event.clientY - last.y;
+    const moved = Math.sqrt((dx * dx) + (dy * dy));
+    if (dt <= WEB_RESEARCH_SPLIT_DOUBLE_TAP_MS && moved <= WEB_RESEARCH_SPLIT_DOUBLE_TAP_MOVE_PX) {
+      _webResearchTopShadePointer = { lastTap: null };
+      _webResearchTopShadeHandleFsm.dispatch('doubleTap', {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+      return;
+    }
+  }
+  _webResearchTopShadePointer = {
+    ...(_webResearchTopShadePointer || {}),
+    lastTap: { at: now, x: event.clientX, y: event.clientY },
+  };
+  _webResearchTopShadeHandleFsm.dispatch('tap', { clientX: event.clientX, clientY: event.clientY });
+}
+
 function _webResearchInitSplit() {
   const parts = _webResearchGetSplitParts();
   if (!parts) return;
@@ -337,6 +502,103 @@ function _webResearchInitSplit() {
     handle.addEventListener('keydown', _webResearchSplitKeydown);
   }
   _webResearchQueueSplitSync();
+}
+
+function _webResearchInitTopShade() {
+  const parts = _webResearchGetTopShadeParts();
+  if (!parts) return;
+  const handle = parts.handle;
+  if (handle.dataset.webResearchTopShadeBound !== '1') {
+    handle.dataset.webResearchTopShadeBound = '1';
+    handle.addEventListener('pointerdown', _webResearchTopShadePointerDown);
+    handle.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    handle.addEventListener('keydown', _webResearchTopShadeKeydown);
+  }
+  _webResearchQueueTopShadeSync();
+}
+
+function _webResearchTopShadePointerDown(event) {
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
+  const parts = _webResearchGetTopShadeParts();
+  if (!parts) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const startHeight = parts.controls.getBoundingClientRect().height;
+  _webResearchClearTopShadeLongPress();
+  _webResearchTopShadePointer = {
+    pointerId: event.pointerId,
+    startY: event.clientY,
+    startX: event.clientX,
+    startHeight,
+    isDragging: false,
+    longPressTriggered: false,
+    lastTap: _webResearchTopShadePointer?.lastTap || null,
+    longPressTimer: setTimeout(() => {
+      if (!_webResearchTopShadePointer || _webResearchTopShadePointer.pointerId !== event.pointerId) return;
+      _webResearchTopShadePointer.longPressTriggered = true;
+      _webResearchTopShadeHandleFsm.dispatch('longPress', {
+        clientX: _webResearchTopShadePointer.startX,
+        clientY: _webResearchTopShadePointer.startY,
+      });
+    }, WEB_RESEARCH_SPLIT_LONG_PRESS_MS),
+  };
+  parts.handle.classList.add('is-grabbing');
+  parts.handle.setPointerCapture?.(event.pointerId);
+  parts.handle.addEventListener('pointermove', _webResearchTopShadePointerMove);
+  parts.handle.addEventListener('pointerup', _webResearchTopShadePointerUp);
+  parts.handle.addEventListener('pointercancel', _webResearchTopShadePointerCancel);
+}
+
+function _webResearchTopShadePointerMove(event) {
+  const pointer = _webResearchTopShadePointer;
+  if (!pointer || pointer.pointerId !== event.pointerId) return;
+  const dy = event.clientY - pointer.startY;
+  const dx = event.clientX - pointer.startX;
+  const moved = Math.sqrt((dx * dx) + (dy * dy));
+  if (moved > WEB_RESEARCH_SPLIT_LONG_PRESS_MOVE_PX) _webResearchClearTopShadeLongPress();
+  if (!pointer.isDragging && moved > WEB_RESEARCH_SPLIT_DRAG_ACTIVATE_PX) {
+    pointer.isDragging = true;
+    _webResearchTopShadeHandleFsm.dispatch('dragStart', { clientX: event.clientX, clientY: event.clientY });
+  }
+  if (!pointer.isDragging) return;
+  _webResearchTopShadeHandleFsm.dispatch('dragMove', {
+    clientX: event.clientX,
+    clientY: event.clientY,
+    height: pointer.startHeight + dy,
+  });
+}
+
+function _webResearchTopShadePointerUp(event) {
+  const pointer = _webResearchTopShadePointer;
+  const parts = _webResearchGetTopShadeParts();
+  if (!pointer || pointer.pointerId !== event.pointerId) return;
+  _webResearchClearTopShadeLongPress();
+  parts?.handle.classList.remove('is-grabbing');
+  parts?.handle.releasePointerCapture?.(event.pointerId);
+  parts?.handle.removeEventListener('pointermove', _webResearchTopShadePointerMove);
+  parts?.handle.removeEventListener('pointerup', _webResearchTopShadePointerUp);
+  parts?.handle.removeEventListener('pointercancel', _webResearchTopShadePointerCancel);
+  if (pointer.isDragging) {
+    _webResearchTopShadeHandleFsm.dispatch('dragEnd', { clientX: event.clientX, clientY: event.clientY });
+  } else if (!pointer.longPressTriggered) {
+    _webResearchHandleTopShadeTap(event);
+  }
+}
+
+function _webResearchTopShadePointerCancel(event) {
+  const pointer = _webResearchTopShadePointer;
+  const parts = _webResearchGetTopShadeParts();
+  if (!pointer || pointer.pointerId !== event.pointerId) return;
+  _webResearchClearTopShadeLongPress();
+  parts?.handle.classList.remove('is-grabbing');
+  parts?.handle.releasePointerCapture?.(event.pointerId);
+  parts?.handle.removeEventListener('pointermove', _webResearchTopShadePointerMove);
+  parts?.handle.removeEventListener('pointerup', _webResearchTopShadePointerUp);
+  parts?.handle.removeEventListener('pointercancel', _webResearchTopShadePointerCancel);
+  _webResearchTopShadeHandleFsm.dispatch('dragCancel', { clientX: event.clientX, clientY: event.clientY });
 }
 
 function _webResearchSplitPointerDown(event) {
@@ -401,6 +663,7 @@ function _webResearchSplitPointerUp(event) {
   parts?.handle.removeEventListener('pointerup', _webResearchSplitPointerUp);
   parts?.handle.removeEventListener('pointercancel', _webResearchSplitPointerCancel);
   if (pointer.isDragging) {
+    _webResearchClampVisibleSplitHandle(true);
     _webResearchShadeHandleFsm.dispatch('dragEnd', { clientX: event.clientX, clientY: event.clientY });
   } else if (!pointer.longPressTriggered) {
     _webResearchHandleSplitTap(event);
@@ -424,7 +687,7 @@ function _webResearchSplitKeydown(event) {
   const parts = _webResearchGetSplitParts();
   if (!parts) return;
   const current = parts.synthesis.getBoundingClientRect().height;
-  const total = Math.max(0, parts.split.clientHeight - parts.handle.offsetHeight);
+  const total = _webResearchSplitTotal(parts);
   let next = current;
   if (event.key === 'ArrowUp') next = current - 32;
   else if (event.key === 'ArrowDown') next = current + 32;
@@ -441,8 +704,30 @@ function _webResearchSplitKeydown(event) {
   _webResearchShadeHandleFsm.dispatch('keyResize', { height: next, key: event.key });
 }
 
+function _webResearchTopShadeKeydown(event) {
+  const parts = _webResearchGetTopShadeParts();
+  if (!parts) return;
+  const current = parts.controls.getBoundingClientRect().height;
+  const max = _webResearchGetControlsMaxHeight();
+  let next = current;
+  if (event.key === 'ArrowUp') next = current - 32;
+  else if (event.key === 'ArrowDown') next = current + 32;
+  else if (event.key === 'Home') next = 0;
+  else if (event.key === 'End') next = max;
+  else if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    _webResearchTopShadeHandleFsm.dispatch('tap');
+    return;
+  } else {
+    return;
+  }
+  event.preventDefault();
+  _webResearchTopShadeHandleFsm.dispatch('keyResize', { height: next, key: event.key });
+}
+
 function openWebResearchModal(options = {}) {
   _webResearchLoadState();
+  _webResearchControlsRatio = 1;
   if (typeof options.query === 'string' && options.query.trim()) {
     _webResearchState.query = options.query.trim();
   }
@@ -457,6 +742,8 @@ function openWebResearchModal(options = {}) {
         input.focus();
         input.select();
       }
+      _webResearchInitTopShade();
+      _webResearchQueueTopShadeSync();
       _webResearchQueueSplitSync();
     },
   });
@@ -800,8 +1087,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   _webResearchBindSpeaker();
+  _webResearchInitTopShade();
   window.addEventListener('resize', _webResearchQueueSplitSync);
+  window.addEventListener('resize', _webResearchQueueTopShadeSync);
   window.visualViewport?.addEventListener('resize', _webResearchQueueSplitSync);
+  window.visualViewport?.addEventListener('resize', _webResearchQueueTopShadeSync);
 });
 
 window.openWebResearchModal = openWebResearchModal;

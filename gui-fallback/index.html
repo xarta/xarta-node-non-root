@@ -3250,26 +3250,31 @@
   </div>
   <div class="hub-modal-body">
     <div class="web-research-shell">
-      <form class="web-research-form" id="web-research-form">
-        <label class="web-research-control web-research-input-wrap">
-          <span>Query</span>
-          <input class="web-research-input hub-ctrl" type="search" id="web-research-query" maxlength="300" autocomplete="off" spellcheck="false" />
-        </label>
-        <div class="web-research-controls">
-          <label class="web-research-control">
-            <span>Depth</span>
-            <select class="hub-ctrl" id="web-research-depth" aria-label="Research depth">
-              <option value="quick">Quick</option>
-              <option value="standard">Standard</option>
-              <option value="deep">Deep</option>
-            </select>
+      <div class="web-research-controls-panel" id="web-research-controls-panel">
+        <form class="web-research-form" id="web-research-form">
+          <label class="web-research-control web-research-input-wrap">
+            <span>Query</span>
+            <input class="web-research-input hub-ctrl" type="search" id="web-research-query" maxlength="300" autocomplete="off" spellcheck="false" />
           </label>
-          <button class="hub-modal-btn" type="submit" id="web-research-submit">Search</button>
-          <button class="hub-modal-btn secondary" type="button" id="web-research-clear">Clear</button>
-        </div>
-      </form>
-      <p class="web-research-status bp-font-role-status-meta" id="web-research-status"></p>
-      <p class="hub-modal-error" id="web-research-error"></p>
+          <div class="web-research-controls">
+            <label class="web-research-control">
+              <span>Depth</span>
+              <select class="hub-ctrl" id="web-research-depth" aria-label="Research depth">
+                <option value="quick">Quick</option>
+                <option value="standard">Standard</option>
+                <option value="deep">Deep</option>
+              </select>
+            </label>
+            <button class="hub-modal-btn" type="submit" id="web-research-submit">Search</button>
+            <button class="hub-modal-btn secondary" type="button" id="web-research-clear">Clear</button>
+          </div>
+        </form>
+        <p class="web-research-status bp-font-role-status-meta" id="web-research-status"></p>
+        <p class="hub-modal-error" id="web-research-error"></p>
+      </div>
+      <div class="body-shade-handle web-research-top-shade-handle" id="web-research-top-shade-handle" role="separator" aria-label="Resize web research controls and results" aria-orientation="horizontal" tabindex="0">
+        <div class="body-shade-grip"></div>
+      </div>
       <div class="web-research-results" id="web-research-results"></div>
     </div>
   </div>
