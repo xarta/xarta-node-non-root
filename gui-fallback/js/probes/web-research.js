@@ -152,19 +152,18 @@ function _webResearchSetPrivateMode(enabled) {
 function _webResearchRenderEgressIp() {
   const box = document.getElementById('web-research-ip-box');
   const value = document.getElementById('web-research-ip-value');
-  const btn = document.getElementById('web-research-ip-refresh');
-  if (!box || !value || !btn) return;
+  if (!box || !value) return;
   box.classList.toggle('is-error', !!_webResearchEgressIp.error);
-  btn.classList.toggle('is-loading', !!_webResearchEgressIp.loading);
-  btn.disabled = !!_webResearchEgressIp.loading;
+  box.classList.toggle('is-loading', !!_webResearchEgressIp.loading);
+  box.disabled = !!_webResearchEgressIp.loading;
   if (_webResearchEgressIp.loading && !_webResearchEgressIp.ip) {
-    value.textContent = 'checking...';
+    value.textContent = 'checking';
   } else if (_webResearchEgressIp.error) {
     value.textContent = 'unavailable';
   } else {
     value.textContent = _webResearchEgressIp.ip || 'not checked';
   }
-  const titleBits = ['Public IP observed by nullclaw01 web research tooling'];
+  const titleBits = ['Click to refresh public IP observed by nullclaw01 web research tooling'];
   if (_webResearchEgressIp.checkedAt) titleBits.push(`Checked: ${_webResearchEgressIp.checkedAt}`);
   if (_webResearchEgressIp.error) titleBits.push(_webResearchEgressIp.error);
   box.title = titleBits.join('\n');
@@ -1203,7 +1202,7 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     _webResearchClear();
   });
-  document.getElementById('web-research-ip-refresh')?.addEventListener('click', e => {
+  document.getElementById('web-research-ip-box')?.addEventListener('click', e => {
     e.preventDefault();
     _webResearchLoadEgressIp(true);
   });

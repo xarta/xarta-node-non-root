@@ -12,30 +12,42 @@
 }
 
 .web-research-modal .hub-modal-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "title spacer ip close";
   flex: 0 0 auto;
+}
+
+.web-research-modal .hub-modal-title {
+  grid-area: title;
+  flex: 0 1 auto;
+}
+
+.web-research-modal .hub-dialog-close {
+  grid-area: close;
 }
 
 .web-research-ip-box {
   box-sizing: border-box;
-  display: inline-grid;
-  grid-template-columns: auto minmax(94px, auto) 34px;
-  gap: 7px;
+  display: inline-flex;
+  grid-area: ip;
   align-items: center;
+  justify-content: center;
   min-width: 0;
-  max-width: min(420px, 48vw);
+  max-width: 150px;
   height: 34px;
-  padding: 0 4px 0 10px;
+  padding: 0 10px;
   border: 1px solid rgba(var(--hub-accent-rgb), 0.24);
   border-radius: 8px;
   background: rgba(var(--hub-accent-rgb), 0.08);
   color: var(--text);
+  cursor: pointer;
   font-size: 12px;
 }
 
-.web-research-ip-label {
-  color: var(--text-dim);
-  font-weight: 700;
-  white-space: nowrap;
+.web-research-ip-box:hover {
+  background: rgba(var(--hub-accent-rgb), 0.14);
+  border-color: rgba(var(--hub-accent-rgb), 0.42);
 }
 
 .web-research-ip-value {
@@ -53,35 +65,40 @@
   color: var(--err);
 }
 
-.web-research-ip-refresh {
-  width: 28px;
-  height: 26px;
-  min-height: 26px;
-  padding: 0;
-  font-size: 16px;
-  line-height: 1;
-}
-
-.web-research-ip-refresh.is-loading span {
+.web-research-ip-box.is-loading .web-research-ip-value {
   animation: web-research-refresh-spin 0.8s linear infinite;
 }
 
-.web-research-private-toggle {
+.web-research-modal .web-research-private-toggle.hub-modal-btn.secondary {
   position: relative;
   box-sizing: border-box;
-  width: 104px;
-  height: 34px;
-  min-height: 34px;
-  padding: 0 10px;
-  gap: 8px;
-  border-color: rgba(248, 113, 113, 0.55);
+  width: 32px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  gap: 0;
+  flex: 0 0 32px;
+  border-color: #f87171;
+  background: rgba(248, 113, 113, 0.08);
   color: #f87171;
 }
 
-.web-research-private-toggle.is-private {
-  border-color: rgba(74, 222, 128, 0.62);
-  background: rgba(74, 222, 128, 0.1);
+.web-research-modal .web-research-private-toggle.hub-modal-btn.secondary:hover {
+  border-color: #fb7185;
+  background: rgba(248, 113, 113, 0.16);
+  color: #fb7185;
+}
+
+.web-research-modal .web-research-private-toggle.hub-modal-btn.secondary.is-private {
+  border-color: #4ade80;
+  background: rgba(74, 222, 128, 0.12);
   color: #4ade80;
+}
+
+.web-research-modal .web-research-private-toggle.hub-modal-btn.secondary.is-private:hover {
+  border-color: #86efac;
+  background: rgba(74, 222, 128, 0.2);
+  color: #86efac;
 }
 
 .web-research-key-icon {
@@ -116,9 +133,7 @@
 }
 
 .web-research-private-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: none;
 }
 
 @keyframes web-research-refresh-spin {
@@ -507,18 +522,16 @@
   }
 
   .web-research-modal .hub-modal-header {
-    flex-wrap: wrap;
+    grid-template-columns: minmax(0, 1fr) minmax(94px, auto) auto;
+    grid-template-areas: "title ip close";
+  }
+
+  .web-research-modal .hub-modal-title {
+    gap: 8px;
   }
 
   .web-research-ip-box {
-    order: 3;
-    width: calc(100% - 112px);
-    max-width: none;
-  }
-
-  .web-research-private-toggle {
-    order: 4;
-    width: 104px;
+    max-width: 128px;
   }
 
   .web-research-form {
