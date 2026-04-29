@@ -3294,11 +3294,17 @@
       <span class="hub-dialog-badge">KEY</span>
       <span class="hub-dialog-title-text" id="web-research-privacy-title">Web Research Privacy Mode</span>
     </h2>
-    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Back">&#8592; Back</button>
+    <div class="web-research-privacy-speech-control" id="web-research-privacy-speech-control">
+      <span class="docs-doc-speech-status bp-font-role-status-meta" id="web-research-privacy-speech-status"></span>
+      <button class="docs-tree-speaker-btn docs-doc-speaker-btn" type="button" id="web-research-privacy-speaker" aria-label="Speak privacy document" title="Speak privacy document"></button>
+    </div>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body">
-    <div class="web-research-privacy-doc bp-font-role-docs-markdown" id="web-research-privacy-doc">
-      Loading privacy documentation...
+    <div class="web-research-privacy-doc-shell">
+      <div class="web-research-privacy-doc bp-font-role-docs-markdown" id="web-research-privacy-doc">
+        Loading privacy documentation...
+      </div>
     </div>
     <p class="hub-modal-error" id="web-research-privacy-error"></p>
   </div>

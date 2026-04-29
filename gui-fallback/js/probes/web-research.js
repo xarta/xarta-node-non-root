@@ -35,12 +35,19 @@ let _webResearchPrivacyPointer = null;
 let _webResearchPrivacyClickTimer = null;
 let _webResearchPrivacyLastClickAt = 0;
 let _webResearchPrivacyLastLongPressAt = 0;
+let _webResearchPrivacySpeechState = 'IDLE';
+let _webResearchPrivacySpeechRunId = 0;
+let _webResearchPrivacySpeechClickTimer = null;
+let _webResearchPrivacySpeechLastClickAt = 0;
+let _webResearchPrivacySpeechLongPressTimer = null;
+let _webResearchPrivacySpeechLastLongPressAt = 0;
 let _webResearchSplitPointer = null;
 let _webResearchSplitResizeQueued = false;
 let _webResearchTopShadePointer = null;
 let _webResearchTopShadeResizeQueued = false;
 let _webResearchControlsRatio = 1;
 let _webResearchPrivacyDocMarkdown = '';
+let _webResearchPrivacyDocId = '';
 let _webResearchEgressIp = {
   ip: '',
   checkedAt: '',
@@ -71,6 +78,7 @@ function _webResearchDocMarkdownHtml(markdown) {
   } else {
     text = text.replace(/^---\n[\s\S]*?\n---\n?/, '').trim();
   }
+  text = text.replace(/^\s*\[<-\s+[^\]\n]+\]\([^)]+\)\s*\n+/i, '').trim();
   return _webResearchMarkdownHtml(text);
 }
 
@@ -175,15 +183,18 @@ async function _webResearchOpenPrivacyDoc() {
   } else {
     doc.innerHTML = _webResearchDocMarkdownHtml(_webResearchPrivacyDocMarkdown);
   }
+  _webResearchBindPrivacySpeaker();
   HubModal.open(modal);
-  if (_webResearchPrivacyDocMarkdown) return;
+  if (_webResearchPrivacyDocMarkdown && _webResearchPrivacyDocId) return;
   try {
     const response = await apiFetch('/api/v1/web-research/privacy-doc');
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data.ok) throw new Error(data.detail || data.error || `HTTP ${response.status}`);
     _webResearchPrivacyDocMarkdown = String(data.markdown || '').trim();
+    _webResearchPrivacyDocId = String(data.doc_id || '');
     document.getElementById('web-research-privacy-title').textContent = data.title || 'Web Research Privacy Mode';
     doc.innerHTML = _webResearchDocMarkdownHtml(_webResearchPrivacyDocMarkdown);
+    _webResearchBindPrivacySpeaker();
   } catch (e) {
     doc.textContent = 'Could not load privacy documentation.';
     if (err) err.textContent = e?.message || 'Privacy documentation could not be loaded.';
@@ -342,6 +353,267 @@ function _webResearchPrivacyHandleClick(event) {
     _webResearchPrivacyLastClickAt = 0;
     _webResearchPrivacyKeyFsm.dispatch('tap', { clientX: event.clientX, clientY: event.clientY });
   }, WEB_RESEARCH_DOUBLE_CLICK_MS);
+}
+
+function _webResearchPrivacySpeechSetState(state = 'IDLE', message = '') {
+  const clean = ['IDLE', 'SPEAKING', 'PAUSED'].includes(state) ? state : 'IDLE';
+  _webResearchPrivacySpeechState = clean;
+  const btn = document.getElementById('web-research-privacy-speaker');
+  const status = document.getElementById('web-research-privacy-speech-status');
+  const isSpeaking = clean === 'SPEAKING';
+  const isPaused = clean === 'PAUSED';
+  if (btn) {
+    btn.classList.toggle('is-idle', clean === 'IDLE');
+    btn.classList.toggle('is-speaking', isSpeaking);
+    btn.classList.toggle('is-paused', isPaused);
+    btn.classList.toggle('is-generating', /generat|prepar/i.test(String(message || '')));
+    btn.setAttribute('aria-pressed', isSpeaking ? 'true' : 'false');
+    const label = isPaused
+      ? 'Resume privacy document audio'
+      : (isSpeaking ? 'Pause privacy document audio' : 'Speak privacy document');
+    btn.setAttribute('aria-label', label);
+    btn.title = `${label}; long press regenerates narration`;
+  }
+  if (status) status.textContent = message;
+}
+
+function _webResearchPrivacySpeechSyncState() {
+  const btn = document.getElementById('web-research-privacy-speaker');
+  if (!btn) {
+    _webResearchPrivacySpeechState = 'IDLE';
+    return _webResearchPrivacySpeechState;
+  }
+  if (btn.classList.contains('is-speaking')) _webResearchPrivacySpeechState = 'SPEAKING';
+  else if (btn.classList.contains('is-paused')) _webResearchPrivacySpeechState = 'PAUSED';
+  else _webResearchPrivacySpeechState = 'IDLE';
+  return _webResearchPrivacySpeechState;
+}
+
+function _webResearchPrivacySpeechClearClickTimer() {
+  if (!_webResearchPrivacySpeechClickTimer) return;
+  clearTimeout(_webResearchPrivacySpeechClickTimer);
+  _webResearchPrivacySpeechClickTimer = null;
+}
+
+function _webResearchPrivacySpeechClearLongPressTimer() {
+  if (!_webResearchPrivacySpeechLongPressTimer) return;
+  clearTimeout(_webResearchPrivacySpeechLongPressTimer);
+  _webResearchPrivacySpeechLongPressTimer = null;
+}
+
+function _webResearchPrivacySpeechResetClassifiers() {
+  _webResearchPrivacySpeechClearClickTimer();
+  _webResearchPrivacySpeechClearLongPressTimer();
+  _webResearchPrivacySpeechLastClickAt = 0;
+}
+
+async function _webResearchPrivacySpeechStopClient() {
+  if (typeof BlueprintsTtsClient !== 'undefined' && typeof BlueprintsTtsClient.stop === 'function') {
+    try {
+      await BlueprintsTtsClient.stop();
+    } catch (e) {
+      console.warn('web research privacy doc narration: failed to stop TTS', e);
+    }
+  }
+}
+
+async function _webResearchPrivacySpeechStop() {
+  _webResearchPrivacySpeechResetClassifiers();
+  _webResearchPrivacySpeechRunId += 1;
+  _webResearchPrivacySpeechSetState('IDLE', '');
+  await _webResearchPrivacySpeechStopClient();
+}
+
+async function _webResearchPrivacySpeechPause() {
+  if (typeof BlueprintsTtsClient === 'undefined' || typeof BlueprintsTtsClient.pause !== 'function') {
+    await _webResearchPrivacySpeechStop();
+    return;
+  }
+  try {
+    const result = await BlueprintsTtsClient.pause();
+    if (result?.paused) {
+      _webResearchPrivacySpeechSetState('PAUSED', '');
+      return;
+    }
+  } catch (e) {
+    console.warn('web research privacy doc narration: failed to pause TTS', e);
+  }
+  await _webResearchPrivacySpeechStop();
+}
+
+async function _webResearchPrivacySpeechResume() {
+  if (typeof BlueprintsTtsClient === 'undefined' || typeof BlueprintsTtsClient.resume !== 'function') {
+    await _webResearchPrivacySpeechStop();
+    return;
+  }
+  try {
+    const result = await BlueprintsTtsClient.resume();
+    if (result?.resumed) {
+      _webResearchPrivacySpeechSetState('SPEAKING', '');
+      return;
+    }
+  } catch (e) {
+    console.warn('web research privacy doc narration: failed to resume TTS', e);
+  }
+  await _webResearchPrivacySpeechStop();
+}
+
+async function _webResearchPrivacySpeechMarkdown(force = false) {
+  if (!_webResearchPrivacyDocId) await _webResearchOpenPrivacyDoc();
+  if (!_webResearchPrivacyDocId) throw new Error('Privacy document is not registered in the docs database.');
+  _webResearchPrivacySpeechSetState('SPEAKING', force ? 'Regenerating...' : 'Preparing...');
+  const response = await apiFetch(`/api/v1/docs/${encodeURIComponent(_webResearchPrivacyDocId)}/speech`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ force: !!force }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+  const markdown = String(data.markdown || '').trim();
+  if (!markdown) throw new Error('Narration was empty.');
+  return markdown;
+}
+
+async function _webResearchPrivacySpeechStart(force = false) {
+  if (typeof BlueprintsTtsClient === 'undefined' || typeof BlueprintsTtsClient.speak !== 'function') {
+    _webResearchPrivacySpeechSetState('IDLE', 'TTS unavailable.');
+    return;
+  }
+  const runId = _webResearchPrivacySpeechRunId + 1;
+  _webResearchPrivacySpeechRunId = runId;
+  await _webResearchPrivacySpeechStopClient();
+  if (runId !== _webResearchPrivacySpeechRunId) return;
+  _webResearchPrivacySpeechSetState('SPEAKING', force ? 'Regenerating...' : 'Preparing...');
+  try {
+    const text = await _webResearchPrivacySpeechMarkdown(force);
+    if (runId !== _webResearchPrivacySpeechRunId) return;
+    _webResearchPrivacySpeechSetState('SPEAKING', '');
+    await BlueprintsTtsClient.speak({
+      text,
+      interrupt: true,
+      mode: 'stream',
+      eventKind: 'docs_document_narration',
+      fallbackKind: 'positive',
+      sanitizeText: true,
+      transformProfile: 'speech',
+    });
+  } catch (e) {
+    if (e?.name === 'AbortError') {
+      if (runId === _webResearchPrivacySpeechRunId) _webResearchPrivacySpeechSetState('IDLE', '');
+      return;
+    }
+    console.warn('web research privacy doc narration: TTS failed', e);
+    if (runId === _webResearchPrivacySpeechRunId) {
+      _webResearchPrivacySpeechSetState('IDLE', `TTS failed: ${e.message || e}`);
+    }
+    return;
+  }
+  if (runId === _webResearchPrivacySpeechRunId) _webResearchPrivacySpeechSetState('IDLE', '');
+}
+
+const _webResearchPrivacySpeechFsm = (() => {
+  const transitions = {
+    IDLE: {
+      tap: { actions: ['start'] },
+      doubleTap: { actions: ['stop'] },
+      longPress: { actions: ['regenerate'] },
+    },
+    SPEAKING: {
+      tap: { actions: ['pause'] },
+      doubleTap: { actions: ['stop'] },
+      longPress: { actions: ['regenerate'] },
+    },
+    PAUSED: {
+      tap: { actions: ['resume'] },
+      doubleTap: { actions: ['stop'] },
+      longPress: { actions: ['regenerate'] },
+    },
+  };
+
+  async function execute(action) {
+    if (action === 'start') return _webResearchPrivacySpeechStart(false);
+    if (action === 'regenerate') return _webResearchPrivacySpeechStart(true);
+    if (action === 'pause') return _webResearchPrivacySpeechPause();
+    if (action === 'resume') return _webResearchPrivacySpeechResume();
+    if (action === 'stop') return _webResearchPrivacySpeechStop();
+    return undefined;
+  }
+
+  async function dispatch(event) {
+    const state = _webResearchPrivacySpeechSyncState();
+    const transition = transitions[state]?.[event];
+    if (!transition) return;
+    for (const action of transition.actions) await execute(action);
+  }
+
+  return { dispatch };
+})();
+
+function _webResearchPrivacySpeechHandleClick() {
+  if (Date.now() - _webResearchPrivacySpeechLastLongPressAt < 700) return;
+  _webResearchPrivacySpeechClearClickTimer();
+  const now = Date.now();
+  if (
+    _webResearchPrivacySpeechLastClickAt
+    && (now - _webResearchPrivacySpeechLastClickAt) <= WEB_RESEARCH_DOUBLE_CLICK_MS
+  ) {
+    _webResearchPrivacySpeechLastClickAt = 0;
+    _webResearchPrivacySpeechFsm.dispatch('doubleTap');
+    return;
+  }
+  _webResearchPrivacySpeechLastClickAt = now;
+  _webResearchPrivacySpeechClickTimer = setTimeout(() => {
+    _webResearchPrivacySpeechClickTimer = null;
+    _webResearchPrivacySpeechLastClickAt = 0;
+    _webResearchPrivacySpeechFsm.dispatch('tap');
+  }, WEB_RESEARCH_DOUBLE_CLICK_MS);
+}
+
+async function _webResearchPrivacySpeechHandleDoubleClick() {
+  _webResearchPrivacySpeechResetClassifiers();
+  await _webResearchPrivacySpeechFsm.dispatch('doubleTap');
+}
+
+function _webResearchPrivacySpeechHandlePointerDown(event) {
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
+  _webResearchPrivacySpeechClearLongPressTimer();
+  _webResearchPrivacySpeechLongPressTimer = setTimeout(() => {
+    _webResearchPrivacySpeechLongPressTimer = null;
+    _webResearchPrivacySpeechLastLongPressAt = Date.now();
+    _webResearchPrivacySpeechResetClassifiers();
+    _webResearchPrivacySpeechFsm.dispatch('longPress');
+  }, WEB_RESEARCH_LONG_PRESS_MS);
+}
+
+function _webResearchBindPrivacySpeaker() {
+  const speaker = document.getElementById('web-research-privacy-speaker');
+  if (!speaker || speaker.dataset.webResearchPrivacySpeechBound === '1') return;
+  speaker.dataset.webResearchPrivacySpeechBound = '1';
+  speaker.addEventListener('pointerdown', e => {
+    e.stopPropagation();
+    _webResearchPrivacySpeechHandlePointerDown(e);
+  });
+  speaker.addEventListener('pointerup', e => {
+    e.stopPropagation();
+    _webResearchPrivacySpeechClearLongPressTimer();
+  });
+  speaker.addEventListener('pointercancel', _webResearchPrivacySpeechClearLongPressTimer);
+  speaker.addEventListener('pointerleave', _webResearchPrivacySpeechClearLongPressTimer);
+  speaker.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  speaker.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    _webResearchPrivacySpeechHandleClick();
+  });
+  speaker.addEventListener('dblclick', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    _webResearchPrivacySpeechHandleDoubleClick();
+  });
+  _webResearchPrivacySpeechSetState(_webResearchPrivacySpeechState, '');
 }
 
 function _webResearchRenderEgressIp() {
@@ -1438,6 +1710,10 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     docsOpenByPath(link.dataset.docsPreviewLink || '');
   });
+  const privacyModal = document.getElementById('web-research-privacy-modal');
+  privacyModal?.addEventListener('close', () => {
+    _webResearchPrivacySpeechStop();
+  });
   ['web-research-depth'].forEach(id => {
     document.getElementById(id)?.addEventListener('change', () => {
       _webResearchReadForm();
@@ -1445,6 +1721,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   _webResearchBindSpeaker();
+  _webResearchBindPrivacySpeaker();
   _webResearchInitTopShade();
   _webResearchRenderEgressIp();
   _webResearchRenderPrivacyToggle();

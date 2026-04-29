@@ -145,7 +145,20 @@
   max-height: calc(100dvh - 20px);
 }
 
+.web-research-privacy-doc-shell {
+  min-height: 0;
+}
+
+.web-research-privacy-speech-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  max-width: min(38vw, 300px);
+}
+
 .web-research-privacy-doc {
+  min-height: 0;
   color: var(--text);
   font-size: 13px;
   line-height: 1.7;
@@ -563,7 +576,7 @@
 
   .web-research-controls {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(86px, 86px) minmax(86px, 86px);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
     align-items: end;
   }
@@ -591,13 +604,24 @@
   }
 }
 
+@media (max-width: 900px) {
+  .web-research-control > span {
+    display: none;
+  }
+}
+
 @media (max-width: 460px) {
   .web-research-form {
     grid-template-columns: 1fr;
   }
 
   .web-research-controls {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .web-research-controls .hub-ctrl,
+  .web-research-controls .hub-modal-btn {
+    min-width: 0;
   }
 
   .web-research-answer-head {
@@ -608,5 +632,13 @@
     position: static;
     align-self: flex-end;
     max-width: 100%;
+  }
+
+  .web-research-privacy-speech-control {
+    max-width: 34vw;
+  }
+
+  .web-research-privacy-speech-control .docs-doc-speech-status {
+    display: none;
   }
 }
