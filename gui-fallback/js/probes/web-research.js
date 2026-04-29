@@ -31,11 +31,16 @@ let _webResearchSpeechClickTimer = null;
 let _webResearchSpeechLastClickAt = 0;
 let _webResearchSpeechLongPressTimer = null;
 let _webResearchSpeechLastLongPressAt = 0;
+let _webResearchPrivacyPointer = null;
+let _webResearchPrivacyClickTimer = null;
+let _webResearchPrivacyLastClickAt = 0;
+let _webResearchPrivacyLastLongPressAt = 0;
 let _webResearchSplitPointer = null;
 let _webResearchSplitResizeQueued = false;
 let _webResearchTopShadePointer = null;
 let _webResearchTopShadeResizeQueued = false;
 let _webResearchControlsRatio = 1;
+let _webResearchPrivacyDocMarkdown = '';
 let _webResearchEgressIp = {
   ip: '',
   checkedAt: '',
@@ -57,6 +62,16 @@ function _webResearchMarkdownHtml(markdown) {
   const text = String(markdown || '').trim() || 'No summary returned.';
   if (typeof _mdToHtml === 'function') return _mdToHtml(text);
   return `<pre class="web-research-markdown-plain bp-font-role-docs-markdown">${_webResearchEsc(text)}</pre>`;
+}
+
+function _webResearchDocMarkdownHtml(markdown) {
+  let text = String(markdown || '').trim();
+  if (typeof _docsPreviewMarkdown === 'function') {
+    text = _docsPreviewMarkdown(text);
+  } else {
+    text = text.replace(/^---\n[\s\S]*?\n---\n?/, '').trim();
+  }
+  return _webResearchMarkdownHtml(text);
 }
 
 function _webResearchOptionKey(opts = _webResearchState) {
@@ -133,8 +148,8 @@ function _webResearchRenderPrivacyToggle() {
   btn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
   btn.setAttribute('aria-label', enabled ? 'Private mode on' : 'Private mode off');
   btn.title = enabled
-    ? 'Private mode on: local history, speech cache, and task artifacts are reduced'
-    : 'Private mode off: local query/result retention is enabled';
+    ? 'Private mode on: local history, speech cache, and task artifacts are reduced. Long press for details.'
+    : 'Private mode off: local query/result retention is enabled. Long press for details.';
   const text = btn.querySelector('.web-research-private-text');
   if (text) text.textContent = enabled ? 'Private' : 'Retained';
 }
@@ -147,6 +162,186 @@ function _webResearchSetPrivateMode(enabled) {
   }
   _webResearchSaveState();
   _webResearchRenderPrivacyToggle();
+}
+
+async function _webResearchOpenPrivacyDoc() {
+  const modal = document.getElementById('web-research-privacy-modal');
+  const doc = document.getElementById('web-research-privacy-doc');
+  const err = document.getElementById('web-research-privacy-error');
+  if (!modal || !doc || typeof HubModal === 'undefined') return;
+  if (err) err.textContent = '';
+  if (!_webResearchPrivacyDocMarkdown) {
+    doc.textContent = 'Loading privacy documentation...';
+  } else {
+    doc.innerHTML = _webResearchDocMarkdownHtml(_webResearchPrivacyDocMarkdown);
+  }
+  HubModal.open(modal);
+  if (_webResearchPrivacyDocMarkdown) return;
+  try {
+    const response = await apiFetch('/api/v1/web-research/privacy-doc');
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) throw new Error(data.detail || data.error || `HTTP ${response.status}`);
+    _webResearchPrivacyDocMarkdown = String(data.markdown || '').trim();
+    document.getElementById('web-research-privacy-title').textContent = data.title || 'Web Research Privacy Mode';
+    doc.innerHTML = _webResearchDocMarkdownHtml(_webResearchPrivacyDocMarkdown);
+  } catch (e) {
+    doc.textContent = 'Could not load privacy documentation.';
+    if (err) err.textContent = e?.message || 'Privacy documentation could not be loaded.';
+  }
+}
+
+const _webResearchPrivacyKeyFsm = (() => {
+  const transitions = {
+    RETAINED: {
+      tap: { next: 'PRIVATE', actions: ['enablePrivate'] },
+      doubleTap: { next: 'RETAINED', actions: ['emitDoubleTap'] },
+      longPress: { next: 'RETAINED', actions: ['openDoc'] },
+    },
+    PRIVATE: {
+      tap: { next: 'RETAINED', actions: ['disablePrivate'] },
+      doubleTap: { next: 'PRIVATE', actions: ['emitDoubleTap'] },
+      longPress: { next: 'PRIVATE', actions: ['openDoc'] },
+    },
+  };
+  let state = 'RETAINED';
+
+  function syncState() {
+    state = _webResearchState.privateMode ? 'PRIVATE' : 'RETAINED';
+  }
+
+  function emit(name, detail = {}) {
+    const key = document.getElementById('web-research-private-toggle');
+    key?.dispatchEvent(new CustomEvent('webresearchprivacykey', {
+      bubbles: true,
+      detail: { event: name, state, ...detail },
+    }));
+  }
+
+  function execute(action, detail) {
+    if (action === 'enablePrivate') {
+      _webResearchSetPrivateMode(true);
+      emit('tap', detail);
+    } else if (action === 'disablePrivate') {
+      _webResearchSetPrivateMode(false);
+      emit('tap', detail);
+    } else if (action === 'emitDoubleTap') {
+      emit('doubleTap', detail);
+    } else if (action === 'openDoc') {
+      emit('longPress', detail);
+      _webResearchOpenPrivacyDoc();
+    }
+  }
+
+  function dispatch(event, detail = {}) {
+    syncState();
+    const transition = transitions[state]?.[event];
+    if (!transition) return;
+    state = transition.next;
+    for (const action of transition.actions) execute(action, detail);
+    syncState();
+  }
+
+  return { dispatch };
+})();
+
+function _webResearchClearPrivacyLongPress() {
+  if (!_webResearchPrivacyPointer?.longPressTimer) return;
+  clearTimeout(_webResearchPrivacyPointer.longPressTimer);
+  _webResearchPrivacyPointer.longPressTimer = null;
+}
+
+function _webResearchClearPrivacyClickTimer() {
+  if (!_webResearchPrivacyClickTimer) return;
+  clearTimeout(_webResearchPrivacyClickTimer);
+  _webResearchPrivacyClickTimer = null;
+}
+
+function _webResearchPrivacyPointerDown(event) {
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
+  const key = document.getElementById('web-research-private-toggle');
+  if (!key) return;
+  _webResearchClearPrivacyLongPress();
+  _webResearchPrivacyPointer = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    longPressTriggered: false,
+    longPressTimer: setTimeout(() => {
+      if (!_webResearchPrivacyPointer || _webResearchPrivacyPointer.pointerId !== event.pointerId) return;
+      _webResearchPrivacyPointer.longPressTriggered = true;
+      _webResearchPrivacyLastLongPressAt = Date.now();
+      _webResearchClearPrivacyClickTimer();
+      _webResearchPrivacyLastClickAt = 0;
+      _webResearchPrivacyKeyFsm.dispatch('longPress', {
+        clientX: _webResearchPrivacyPointer.startX,
+        clientY: _webResearchPrivacyPointer.startY,
+      });
+    }, WEB_RESEARCH_LONG_PRESS_MS),
+  };
+  key.setPointerCapture?.(event.pointerId);
+  key.addEventListener('pointermove', _webResearchPrivacyPointerMove);
+  key.addEventListener('pointerup', _webResearchPrivacyPointerUp);
+  key.addEventListener('pointercancel', _webResearchPrivacyPointerCancel);
+}
+
+function _webResearchPrivacyPointerMove(event) {
+  const pointer = _webResearchPrivacyPointer;
+  if (!pointer || pointer.pointerId !== event.pointerId) return;
+  const dx = event.clientX - pointer.startX;
+  const dy = event.clientY - pointer.startY;
+  const moved = Math.sqrt((dx * dx) + (dy * dy));
+  if (moved > WEB_RESEARCH_SPLIT_LONG_PRESS_MOVE_PX) _webResearchClearPrivacyLongPress();
+}
+
+function _webResearchPrivacyPointerUp(event) {
+  const pointer = _webResearchPrivacyPointer;
+  const key = document.getElementById('web-research-private-toggle');
+  if (!pointer || pointer.pointerId !== event.pointerId) return;
+  _webResearchClearPrivacyLongPress();
+  key?.releasePointerCapture?.(event.pointerId);
+  key?.removeEventListener('pointermove', _webResearchPrivacyPointerMove);
+  key?.removeEventListener('pointerup', _webResearchPrivacyPointerUp);
+  key?.removeEventListener('pointercancel', _webResearchPrivacyPointerCancel);
+  if (pointer.longPressTriggered) {
+    _webResearchPrivacyLastLongPressAt = Date.now();
+    _webResearchClearPrivacyClickTimer();
+    _webResearchPrivacyLastClickAt = 0;
+  }
+}
+
+function _webResearchPrivacyPointerCancel(event) {
+  const pointer = _webResearchPrivacyPointer;
+  const key = document.getElementById('web-research-private-toggle');
+  if (!pointer || pointer.pointerId !== event.pointerId) return;
+  _webResearchClearPrivacyLongPress();
+  key?.releasePointerCapture?.(event.pointerId);
+  key?.removeEventListener('pointermove', _webResearchPrivacyPointerMove);
+  key?.removeEventListener('pointerup', _webResearchPrivacyPointerUp);
+  key?.removeEventListener('pointercancel', _webResearchPrivacyPointerCancel);
+}
+
+function _webResearchPrivacyHandleClick(event) {
+  const now = Date.now();
+  if (now - _webResearchPrivacyLastLongPressAt < 700) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+  _webResearchClearPrivacyClickTimer();
+  if (
+    _webResearchPrivacyLastClickAt
+    && (now - _webResearchPrivacyLastClickAt) <= WEB_RESEARCH_DOUBLE_CLICK_MS
+  ) {
+    _webResearchPrivacyLastClickAt = 0;
+    _webResearchPrivacyKeyFsm.dispatch('doubleTap', { clientX: event.clientX, clientY: event.clientY });
+    return;
+  }
+  _webResearchPrivacyLastClickAt = now;
+  _webResearchPrivacyClickTimer = setTimeout(() => {
+    _webResearchPrivacyClickTimer = null;
+    _webResearchPrivacyLastClickAt = 0;
+    _webResearchPrivacyKeyFsm.dispatch('tap', { clientX: event.clientX, clientY: event.clientY });
+  }, WEB_RESEARCH_DOUBLE_CLICK_MS);
 }
 
 function _webResearchRenderEgressIp() {
@@ -1206,9 +1401,42 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     _webResearchLoadEgressIp(true);
   });
-  document.getElementById('web-research-private-toggle')?.addEventListener('click', e => {
+  const privateToggle = document.getElementById('web-research-private-toggle');
+  privateToggle?.addEventListener('pointerdown', _webResearchPrivacyPointerDown);
+  privateToggle?.addEventListener('click', e => {
     e.preventDefault();
-    _webResearchSetPrivateMode(!_webResearchState.privateMode);
+    e.stopPropagation();
+    _webResearchPrivacyHandleClick(e);
+  });
+  privateToggle?.addEventListener('dblclick', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    _webResearchClearPrivacyClickTimer();
+    _webResearchPrivacyLastClickAt = 0;
+    _webResearchPrivacyKeyFsm.dispatch('doubleTap', { clientX: e.clientX, clientY: e.clientY });
+  });
+  privateToggle?.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  privateToggle?.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      _webResearchPrivacyKeyFsm.dispatch('tap');
+    } else if (e.key === '?') {
+      e.preventDefault();
+      _webResearchPrivacyKeyFsm.dispatch('longPress');
+    }
+  });
+  document.getElementById('web-research-privacy-doc')?.addEventListener('click', e => {
+    const link = e.target.closest('[data-docs-preview-link]');
+    if (!link) return;
+    if (typeof docsOpenByPath !== 'function') {
+      e.preventDefault();
+      return;
+    }
+    e.preventDefault();
+    docsOpenByPath(link.dataset.docsPreviewLink || '');
   });
   ['web-research-depth'].forEach(id => {
     document.getElementById(id)?.addEventListener('change', () => {

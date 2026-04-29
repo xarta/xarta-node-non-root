@@ -136,6 +136,29 @@
   display: none;
 }
 
+.web-research-privacy-modal {
+  width: min(860px, calc(100vw - 20px));
+  max-width: calc(100vw - 20px);
+}
+
+.web-research-privacy-modal[open] {
+  max-height: calc(100dvh - 20px);
+}
+
+.web-research-privacy-doc {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.web-research-privacy-doc > :first-child {
+  margin-top: 0 !important;
+}
+
+.web-research-privacy-doc > :last-child {
+  margin-bottom: 0 !important;
+}
+
 @keyframes web-research-refresh-spin {
   to {
     transform: rotate(360deg);

@@ -3245,7 +3245,7 @@
     <h2 class="hub-modal-title">
       <span class="hub-dialog-badge">WEB</span>
       <span class="hub-dialog-title-text">Web Search</span>
-      <button class="hub-modal-btn secondary web-research-private-toggle" type="button" id="web-research-private-toggle" aria-pressed="false" aria-label="Private mode off" title="Private mode off: local query/result retention is enabled">
+      <button class="hub-modal-btn secondary web-research-private-toggle" type="button" id="web-research-private-toggle" aria-pressed="false" aria-label="Private mode off" title="Private mode off: local query/result retention is enabled. Long press for details.">
         <span class="web-research-key-icon" aria-hidden="true"></span>
         <span class="web-research-private-text">Retained</span>
       </button>
@@ -3284,6 +3284,23 @@
       </div>
       <div class="web-research-results" id="web-research-results"></div>
     </div>
+  </div>
+</dialog>
+
+<!-- Web research privacy-mode document modal -->
+<dialog class="hub-modal hub-dialog web-research-privacy-modal" data-tone="info" id="web-research-privacy-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">KEY</span>
+      <span class="hub-dialog-title-text" id="web-research-privacy-title">Web Research Privacy Mode</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Back">&#8592; Back</button>
+  </div>
+  <div class="hub-modal-body">
+    <div class="web-research-privacy-doc bp-font-role-docs-markdown" id="web-research-privacy-doc">
+      Loading privacy documentation...
+    </div>
+    <p class="hub-modal-error" id="web-research-privacy-error"></p>
   </div>
 </dialog>
 
