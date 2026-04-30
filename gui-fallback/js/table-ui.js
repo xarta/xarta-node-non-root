@@ -2209,15 +2209,17 @@
         sortableMinWidth: options.polishSortableMinWidthPx || 50,
         targetFillRatio: options.polishTargetFillRatio || 0.985,
       });
-      measuredColumns = _relaxSparseMeasuredColumns(measuredColumns, {
-        columns: columns,
-        headerMap: headerMap,
-        host: host,
-        viewportWidth: viewportWidth,
-        sortState: sortState,
-        hiddenSet: hiddenSet,
-        sparseRelaxThreshold: options.sparseRelaxThreshold || 0.9,
-      });
+      if (options.disableSparseRelax !== true) {
+        measuredColumns = _relaxSparseMeasuredColumns(measuredColumns, {
+          columns: columns,
+          headerMap: headerMap,
+          host: host,
+          viewportWidth: viewportWidth,
+          sortState: sortState,
+          hiddenSet: hiddenSet,
+          sparseRelaxThreshold: options.sparseRelaxThreshold || 0.9,
+        });
+      }
       return {
         columns: measuredColumns,
         rowCount: rows.length,
@@ -2348,8 +2350,9 @@
       if (!await _prepareHorizontalAutoFit(options)) return null;
 
       headerHyphenationCache = Object.create(null);
+      var measureOptions = Object.assign({}, options, { disableSparseRelax: true });
       var levelMeasurements = [];
-      levelMeasurements.push(await _measureHorizontalLayout(options));
+      levelMeasurements.push(await _measureHorizontalLayout(measureOptions));
 
       var restoreMeasurementState = null;
       if (typeof cfg.prepareGroupedAutoFitMeasurement === 'function') {
@@ -2362,7 +2365,7 @@
       }
       try {
         if (restoreMeasurementState) {
-          levelMeasurements.push(await _measureHorizontalLayout(options));
+          levelMeasurements.push(await _measureHorizontalLayout(measureOptions));
         }
         var measurement = _mergeGroupedHorizontalMeasurements(levelMeasurements);
         return await _applyHorizontalMeasurement(measurement, Object.assign({
