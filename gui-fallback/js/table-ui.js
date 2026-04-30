@@ -971,7 +971,7 @@
       Object.keys(overrides || {}).forEach(function (col) {
         var label = overrides[col];
         if (typeof label === 'string' && label) {
-          headerLabelOverrides[col] = _escapeLayoutText(label).replace(/&amp;shy;/g, '&shy;');
+          headerLabelOverrides[col] = _safeHeaderLabelHtml(label);
         }
       });
       rebuildHead();
@@ -1660,6 +1660,22 @@
       return clone.innerHTML;
     }
 
+    function _safeHeaderLabelHtml(label) {
+      return _escapeLayoutText(label)
+        .replace(/&lt;br\s*\/?&gt;/gi, '<br>')
+        .replace(/&amp;shy;/g, '&shy;');
+    }
+
+    function _wrappedHeaderLabel(label) {
+      var text = String(label || '').replace(/\s+/g, ' ').trim();
+      if (!text) return null;
+      var parts = text.split(' ').filter(Boolean);
+      if (parts.length > 1) {
+        return parts.map(function (part) { return _escapeLayoutText(part); }).join('<br>');
+      }
+      return _hyphenatedHeaderLabel(text);
+    }
+
     function _hyphenatedHeaderLabel(label) {
       var text = String(label || '').replace(/\s+/g, ' ').trim();
       if (!/^[A-Za-z][A-Za-z0-9-]{6,}$/.test(text)) return null;
@@ -1745,6 +1761,10 @@
       var profile = _measureHeaderLineProfile(headerEl, widthPx, host, htmlOverride);
       if (!profile.lineCount || profile.lineCount <= 1) return reserve;
       return profile.widestIsLast ? reserve * 2 : reserve;
+    }
+
+    function _headerHtmlForColumn(headerEl, column) {
+      return column && column.headerLabel ? _headerMeasureHtml(headerEl, column.headerLabel) : null;
     }
 
     function _percentile(values, fraction) {
@@ -1868,6 +1888,7 @@
         var width = _clampMeasuredWidth(rawWidth, seed, columnKey, viewportWidth);
         return {
           columnKey: columnKey,
+          index: index,
           width: width,
           rawWidth: rawWidth,
           rawBodyWidth: rawBodyWidth,
@@ -1878,6 +1899,57 @@
           maxWidth: seed.max_width_px,
         };
       });
+      var anyHeaderWrapped = measuredColumns.some(function (column) {
+        var headerEl = headerMap[column.columnKey];
+        if (!headerEl) return false;
+        var profile = _measureHeaderLineProfile(
+          headerEl,
+          column.width,
+          host,
+          _headerHtmlForColumn(headerEl, column)
+        );
+        return profile.lineCount > 1;
+      });
+      if (anyHeaderWrapped) {
+        measuredColumns.forEach(function (column) {
+          var headerEl = headerMap[column.columnKey];
+          if (!headerEl || column.columnKey.charAt(0) === '_' || !(column.headerWidth > column.rawBodyWidth)) {
+            return;
+          }
+          var currentProfile = _measureHeaderLineProfile(
+            headerEl,
+            column.width,
+            host,
+            _headerHtmlForColumn(headerEl, column)
+          );
+          if (currentProfile.lineCount > 1) return;
+
+          var wrappedLabel = _wrappedHeaderLabel(_headerPlainLabel(headerEl));
+          if (!wrappedLabel) return;
+          var wrappedHtml = _headerMeasureHtml(headerEl, wrappedLabel);
+          var wrappedHeaderWidth = _smallestWidthWithinHeight(headerEl, maxCompactHeaderHeight, {
+            host: host,
+            seed: getColumnSeed(column.columnKey, column.index, sortState, hiddenSet),
+            measureHtml: wrappedHtml,
+            wrapTolerancePx: 1,
+          }) + _headerAffordanceReserve(headerEl);
+          var candidateRawWidth = Math.max(column.rawBodyWidth, wrappedHeaderWidth)
+            + _headerDominanceBuffer(headerEl, wrappedHeaderWidth, column.rawBodyWidth, host, wrappedHtml);
+          var candidateWidth = _clampMeasuredWidth(
+            candidateRawWidth,
+            getColumnSeed(column.columnKey, column.index, sortState, hiddenSet),
+            column.columnKey,
+            viewportWidth
+          );
+          if (candidateWidth <= column.width + Number(options.headerSecondPassTolerancePx || 2)) {
+            column.width = candidateWidth;
+            column.rawWidth = candidateRawWidth;
+            column.compactHeaderWidth = wrappedHeaderWidth;
+            column.headerLabel = wrappedLabel;
+            column.secondPassHeaderWrap = true;
+          }
+        });
+      }
       return {
         columns: measuredColumns,
         rowCount: rows.length,

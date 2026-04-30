@@ -89,7 +89,7 @@ try {
       table.className = scroll ? 'table-shared-ui table-shared-ui--scroll-x' : 'table-shared-ui';
       table.innerHTML = '<colgroup>' + columns.map((column) => `<col data-col="${column}" style="width:${widths[column] || 80}px">`).join('') + '</colgroup>'
         + '<thead><tr>'
-        + headerCell('display_name', 'Display<br>Name')
+        + headerCell('display_name', 'Display Name')
         + headerCell('addresses', 'Addresses')
         + headerCell('hostnames', 'Hostnames')
         + headerCell('gen', 'Gen')
@@ -168,6 +168,7 @@ try {
       saved,
       clippedChips,
       clippedSortArrows,
+      displayHeaderHtml: document.querySelector('th[data-col="display_name"]')?.innerHTML || '',
       pendingHeaderHtml: document.querySelector('th[data-col="pending"]')?.innerHTML || '',
       maxRowHeight: Math.max(...rowHeights),
       inlineActionRows: document.querySelectorAll('.table-inline-actions').length,
@@ -183,6 +184,7 @@ try {
     clippedSortArrows: result.clippedSortArrows,
     inlineActionRows: result.inlineActionRows,
     compactActionRows: result.compactActionRows,
+    displayHeaderHtml: result.displayHeaderHtml,
     pendingHeaderHtml: result.pendingHeaderHtml,
   }, null, 2));
 
@@ -191,6 +193,8 @@ try {
   assert.deepEqual(result.clippedSortArrows, []);
   assert.equal(result.inlineActionRows, nodes.length);
   assert.equal(result.compactActionRows, 0);
+  assert.match(result.saved.columns.find((column) => column.column_key === 'display_name')?.header_label || '', /<br>/);
+  assert.match(result.displayHeaderHtml, /Display<br>Name/);
   assert.equal(result.saved.columns.find((column) => column.column_key === 'pending')?.header_label || '', 'Pend-ing');
   assert.match(result.pendingHeaderHtml, /Pend-ing/);
   assert.ok(result.maxRowHeight <= 76, `row too deep: ${result.maxRowHeight}px`);
