@@ -351,6 +351,7 @@ function _dnsRenderDetailCell(record, col) {
 
 function _dnsRenderGroupRow(group, isOpen, visibleCols) {
   const cellCount = Math.max(1, visibleCols.length);
+  const groupColumn = esc(visibleCols[0] || 'ip_address');
   const stats = group.stats;
   const pingSummary = stats.bestPing == null
     ? ''
@@ -358,11 +359,11 @@ function _dnsRenderGroupRow(group, isOpen, visibleCols) {
   const summary = `${group.records.length} record${group.records.length !== 1 ? 's' : ''}${stats.activeCount < group.records.length ? ` · ${stats.activeCount} active` : ''}${pingSummary} · MAC ${esc(stats.mac)}`;
   if (cellCount === 1) {
     return `<tr data-dns-group-hdr="${group.safeip}" data-dns-group-open="${isOpen ? '1' : '0'}" data-dns-toggle="${group.safeip}" style="cursor:pointer;background:var(--surface);border-top:2px solid var(--border)">
-      <td style="font-weight:600"><span id="dns-grp-arrow-${group.safeip}" style="font-size:10px;color:var(--text-dim);margin-right:5px">${isOpen ? '▼' : '▶'}</span><code>${esc(group.ip)}</code> <span style="color:var(--text-dim);font-size:12px">${summary}</span></td>
+      <td data-col="${groupColumn}" style="font-weight:600"><span id="dns-grp-arrow-${group.safeip}" style="font-size:10px;color:var(--text-dim);margin-right:5px">${isOpen ? '▼' : '▶'}</span><code>${esc(group.ip)}</code> <span style="color:var(--text-dim);font-size:12px">${summary}</span></td>
     </tr>`;
   }
   return `<tr data-dns-group-hdr="${group.safeip}" data-dns-group-open="${isOpen ? '1' : '0'}" data-dns-toggle="${group.safeip}" style="cursor:pointer;background:var(--surface);border-top:2px solid var(--border)">
-    <td style="font-weight:600"><span id="dns-grp-arrow-${group.safeip}" style="font-size:10px;color:var(--text-dim);margin-right:5px">${isOpen ? '▼' : '▶'}</span><code>${esc(group.ip)}</code></td>
+    <td data-col="${groupColumn}" style="font-weight:600"><span id="dns-grp-arrow-${group.safeip}" style="font-size:10px;color:var(--text-dim);margin-right:5px">${isOpen ? '▼' : '▶'}</span><code>${esc(group.ip)}</code></td>
     <td colspan="${cellCount - 1}" style="color:var(--text-dim);font-size:12px">${summary}</td>
   </tr>`;
 }

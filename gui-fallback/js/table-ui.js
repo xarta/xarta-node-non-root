@@ -2176,10 +2176,10 @@
       };
     }
 
-    async function autoFitHorizontalLayout(options) {
+    async function _prepareHorizontalAutoFit(options) {
       options = options || {};
       var view = getView();
-      if (!view) return null;
+      if (!view) return false;
       if (options.ensureHorizontalScroll !== false
           && typeof view.isHorizontalScrollEnabled === 'function'
           && typeof view.setHorizontalScrollEnabled === 'function'
@@ -2195,9 +2195,11 @@
       }
       if (typeof cfg.render === 'function') cfg.render();
       await _afterNextPaint();
+      return true;
+    }
 
-      headerHyphenationCache = Object.create(null);
-      var measurement = await _measureHorizontalLayout(options);
+    async function _applyHorizontalMeasurement(measurement, options) {
+      options = options || {};
       var layoutData = buildLayoutPayload();
       if (!measurement || !layoutData) return measurement;
       var widthsByColumn = Object.create(null);
@@ -2235,8 +2237,69 @@
       return measurement;
     }
 
+    async function autoFitHorizontalLayout(options) {
+      options = options || {};
+      if (!await _prepareHorizontalAutoFit(options)) return null;
+
+      headerHyphenationCache = Object.create(null);
+      var measurement = await _measureHorizontalLayout(options);
+      return _applyHorizontalMeasurement(measurement, options);
+    }
+
+    function _mergeGroupedHorizontalMeasurements(measurements) {
+      var validMeasurements = (measurements || []).filter(Boolean);
+      if (!validMeasurements.length) return null;
+      var byColumn = Object.create(null);
+      var orderedColumns = [];
+      validMeasurements.forEach(function (measurement) {
+        (measurement.columns || []).forEach(function (column) {
+          if (!column || !column.columnKey) return;
+          if (!byColumn[column.columnKey]) {
+            byColumn[column.columnKey] = Object.assign({}, column);
+            orderedColumns.push(column.columnKey);
+            return;
+          }
+          var target = byColumn[column.columnKey];
+          if (Number(column.width || 0) > Number(target.width || 0)) {
+            var existingHeaderLabel = target.headerLabel;
+            Object.assign(target, column);
+            if (!target.headerLabel && existingHeaderLabel) target.headerLabel = existingHeaderLabel;
+          } else {
+            target.rawWidth = Math.max(Number(target.rawWidth) || 0, Number(column.rawWidth) || 0);
+            target.rawBodyWidth = Math.max(Number(target.rawBodyWidth) || 0, Number(column.rawBodyWidth) || 0);
+            target.headerWidth = Math.max(Number(target.headerWidth) || 0, Number(column.headerWidth) || 0);
+            target.compactHeaderWidth = Math.max(Number(target.compactHeaderWidth) || 0, Number(column.compactHeaderWidth) || 0);
+            if (!target.headerLabel && column.headerLabel) target.headerLabel = column.headerLabel;
+          }
+        });
+      });
+      var mergedColumns = orderedColumns.map(function (columnKey) {
+        return byColumn[columnKey];
+      });
+      return {
+        columns: mergedColumns,
+        rowCount: validMeasurements.reduce(function (sum, measurement) {
+          return sum + (Number(measurement.rowCount) || 0);
+        }, 0),
+        viewportWidth: validMeasurements.reduce(function (max, measurement) {
+          return Math.max(max, Number(measurement.viewportWidth) || 0);
+        }, 0),
+        tableWidth: mergedColumns.reduce(function (sum, column) {
+          return sum + (Number(column.width) || 0);
+        }, 0),
+        percentile: validMeasurements[0].percentile,
+        groupedLevelCount: validMeasurements.length,
+      };
+    }
+
     async function autoFitGroupedHorizontalLayout(options) {
       options = Object.assign({}, options || {});
+      if (!await _prepareHorizontalAutoFit(options)) return null;
+
+      headerHyphenationCache = Object.create(null);
+      var levelMeasurements = [];
+      levelMeasurements.push(await _measureHorizontalLayout(options));
+
       var restoreMeasurementState = null;
       if (typeof cfg.prepareGroupedAutoFitMeasurement === 'function') {
         restoreMeasurementState = await cfg.prepareGroupedAutoFitMeasurement({
@@ -2247,7 +2310,11 @@
         await _afterNextPaint();
       }
       try {
-        return await autoFitHorizontalLayout(Object.assign({
+        if (restoreMeasurementState) {
+          levelMeasurements.push(await _measureHorizontalLayout(options));
+        }
+        var measurement = _mergeGroupedHorizontalMeasurements(levelMeasurements);
+        return await _applyHorizontalMeasurement(measurement, Object.assign({
           seedOrigin: 'browser-measured-grouped',
           algorithmVersion: 'browser-measured-grouped-horizontal-v1',
         }, options));

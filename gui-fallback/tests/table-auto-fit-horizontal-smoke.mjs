@@ -559,14 +559,14 @@ try {
       const columns = ['ip_address', 'fqdn', 'record_type', 'source', 'mac_address', 'active', 'last_seen'];
       const groups = [
         {
-          ip: '192.0.2.10',
+          ip: '2001:db8:13:20::10',
           records: [
             ['alpha-office-west-wing.example.invalid', 'A', 'resolver-cache', '02:00:00:00:00:10', true, '2026-04-30 10:20:30'],
             ['alpha-printer.example.invalid', 'PTR', 'static-dhcp', '02:00:00:00:00:10', true, '2026-04-30 10:21:30'],
           ],
         },
         {
-          ip: '192.0.2.11',
+          ip: '2001:db8:13:20::11',
           records: [
             ['beta-lab-long-hostname.example.invalid', 'AAAA', 'resolver-cache', '02:00:00:00:00:11', false, '2026-04-30 10:22:30'],
           ],
@@ -602,7 +602,7 @@ try {
           + '<thead><tr>' + columns.map((column) => `<th data-col="${column}"><span class="table-th-sort">${esc(labels[column])}<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>`).join('') + '</tr></thead>'
           + '<tbody>' + groups.map((group) => {
             const summary = `${group.records.length} records · MAC ${group.records[0][3]}`;
-            const header = `<tr data-group-row="${esc(group.ip)}"><td><strong>${esc(group.ip)}</strong></td><td colspan="${columns.length - 1}" style="color:var(--text-dim)">${esc(summary)}</td></tr>`;
+            const header = `<tr data-group-row="${esc(group.ip)}"><td data-col="ip_address"><strong class="group-ip">${esc(group.ip)}</strong></td><td colspan="${columns.length - 1}" style="color:var(--text-dim)">${esc(summary)}</td></tr>`;
             const detail = group.records.map((record) => '<tr data-detail-row style="display:' + (open ? 'table-row' : 'none') + '">'
               + '<td style="padding-left:20px;color:var(--text-dim)">↳</td>'
               + `<td><span class="table-cell-clip__text">${esc(record[0])}</span></td>`
@@ -682,6 +682,11 @@ try {
       const measurement = await controller.autoFitLayout({ percentile: 1 });
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const hiddenDetailRows = Array.from(document.querySelectorAll('[data-detail-row]')).filter((row) => row.style.display === 'none').length;
+      const clippedGroupIps = Array.from(document.querySelectorAll('.group-ip')).filter((el) => {
+        const textRect = el.getBoundingClientRect();
+        const cellRect = el.closest('td').getBoundingClientRect();
+        return textRect.left < cellRect.left - 1 || textRect.right > cellRect.right + 1;
+      }).map((el) => el.textContent);
       return {
         widths: { ...widths },
         saved,
@@ -690,6 +695,7 @@ try {
         prepareCalls,
         restoreCalls,
         hiddenDetailRows,
+        clippedGroupIps,
       };
     });
     console.log(JSON.stringify({
@@ -699,6 +705,7 @@ try {
         prepareCalls: groupedResult.prepareCalls,
         restoreCalls: groupedResult.restoreCalls,
         hiddenDetailRows: groupedResult.hiddenDetailRows,
+        clippedGroupIps: groupedResult.clippedGroupIps,
         rowCountMeasured: groupedResult.measurement?.rowCount,
       },
     }, null, 2));
@@ -707,6 +714,8 @@ try {
     assert.equal(groupedResult.restoreCalls, 1, 'grouped auto-fit should restore expansion state once');
     assert.equal(groupedResult.open, false, 'grouped auto-fit should restore collapsed state');
     assert.equal(groupedResult.hiddenDetailRows, 3, 'detail rows should be collapsed again after measurement');
+    assert.deepEqual(groupedResult.clippedGroupIps, [], 'grouped top-level IP cells should not clip after auto-fit');
+    assert.ok(groupedResult.widths.ip_address >= 138, `grouped IP column should measure top-level group content: ${groupedResult.widths.ip_address}px`);
     assert.ok(groupedResult.widths.fqdn >= 190, `grouped FQDN should measure hidden detail content: ${groupedResult.widths.fqdn}px`);
     assert.ok(groupedResult.widths.record_type <= 100, `grouped Type column should remain compact: ${groupedResult.widths.record_type}px`);
     assert.ok(groupedResult.widths.source >= 112, `grouped Source column should measure detail content: ${groupedResult.widths.source}px`);
