@@ -54,6 +54,7 @@ try {
   await page.addScriptTag({ content: tableUiSource });
   const result = await page.evaluate(async ({ columns, nodes }) => {
     const widths = Object.fromEntries(columns.map((column) => [column, 300]));
+    let headerLabels = {};
     let hidden = new Set();
     let scroll = true;
     let saved = null;
@@ -64,15 +65,21 @@ try {
 
     function actionCell() {
       if ((widths._actions || 0) < 172) {
-        return '<td data-col="_actions" class="table-action-cell table-action-cell--compact"><button class="secondary table-icon-btn table-row-action-trigger" type="button" aria-label="Actions">:</button></td>';
+        return '<td class="table-action-cell table-action-cell--compact"><button class="secondary table-icon-btn table-row-action-trigger" type="button" aria-label="Actions">:</button></td>';
       }
-      return '<td data-col="_actions" class="table-action-cell" style="white-space:nowrap"><div class="table-inline-actions">'
+      return '<td class="table-action-cell" style="white-space:nowrap"><div class="table-inline-actions">'
         + '<button class="secondary table-icon-btn table-icon-btn--restart" type="button"></button>'
         + '<button class="secondary table-icon-btn table-icon-btn--pull" type="button"></button>'
         + '<button class="secondary table-icon-btn table-icon-btn--queue" type="button"></button>'
         + '<button class="secondary table-icon-btn table-icon-btn--power" type="button"></button>'
         + '<button class="secondary table-icon-btn table-icon-btn--delete" type="button"></button>'
         + '</div></td>';
+    }
+
+    function headerCell(column, labelHtml) {
+      const label = headerLabels[column] || labelHtml;
+      const arrow = column === 'display_name' ? '<span class="table-sort-arrow active">▲</span>' : '<span class="table-sort-arrow">⇅</span>';
+      return `<th data-col="${column}"><span class="table-th-sort">${label}${arrow}</span><span class="table-col-resize"></span></th>`;
     }
 
     function render() {
@@ -82,25 +89,25 @@ try {
       table.className = scroll ? 'table-shared-ui table-shared-ui--scroll-x' : 'table-shared-ui';
       table.innerHTML = '<colgroup>' + columns.map((column) => `<col data-col="${column}" style="width:${widths[column] || 80}px">`).join('') + '</colgroup>'
         + '<thead><tr>'
-        + '<th data-col="display_name"><span class="table-th-sort">Display<br>Name<span class="table-sort-arrow active">▲</span></span><span class="table-col-resize"></span></th>'
-        + '<th data-col="addresses"><span class="table-th-sort">Addresses<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>'
-        + '<th data-col="hostnames"><span class="table-th-sort">Hostnames<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>'
-        + '<th data-col="gen"><span class="table-th-sort">Gen<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>'
-        + '<th data-col="commit"><span class="table-th-sort">Commit<br>(Outer)<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>'
-        + '<th data-col="commit_non_root"><span class="table-th-sort">Commit<br>(Non-root)<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>'
-        + '<th data-col="commit_inner"><span class="table-th-sort">Commit<br>(Inner)<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>'
-        + '<th data-col="pending"><span class="table-th-sort">Pending<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>'
+        + headerCell('display_name', 'Display<br>Name')
+        + headerCell('addresses', 'Addresses')
+        + headerCell('hostnames', 'Hostnames')
+        + headerCell('gen', 'Gen')
+        + headerCell('commit', 'Commit<br>(Outer)')
+        + headerCell('commit_non_root', 'Commit<br>(Non-root)')
+        + headerCell('commit_inner', 'Commit<br>(Inner)')
+        + headerCell('pending', 'Pending')
         + '<th data-col="_actions">Actions<span class="table-col-resize"></span></th>'
         + '</tr></thead><tbody>'
         + nodes.map(([name, addresses, hostnames, gen]) => '<tr>'
-          + `<td data-col="display_name" style="white-space:nowrap"><strong>${esc(name)}</strong></td>`
-          + `<td data-col="addresses">${addresses.map((address) => `<span class="ip-chip">${esc(address)}</span>`).join('<br>')}</td>`
-          + `<td data-col="hostnames"><span class="ip-chip">${esc(hostnames[0])}</span><br><span class="ip-chip" style="opacity:0.75">${esc(hostnames[1])}</span></td>`
-          + `<td data-col="gen" style="font-size:12px">${esc(gen)}</td>`
-          + '<td data-col="commit">7e10b5e</td>'
-          + '<td data-col="commit_non_root">3b1b64d</td>'
-          + '<td data-col="commit_inner">6e6399b</td>'
-          + '<td data-col="pending"><span style="color:var(--text-dim)">—</span></td>'
+          + `<td style="white-space:nowrap"><strong>${esc(name)}</strong></td>`
+          + `<td>${addresses.map((address) => `<span class="ip-chip">${esc(address)}</span>`).join('<br>')}</td>`
+          + `<td><span class="ip-chip">${esc(hostnames[0])}</span><br><span class="ip-chip" style="opacity:0.75">${esc(hostnames[1])}</span></td>`
+          + `<td style="font-size:12px">${esc(gen)}</td>`
+          + '<td>7e10b5e</td>'
+          + '<td>3b1b64d</td>'
+          + '<td>6e6399b</td>'
+          + '<td><span style="color:var(--text-dim)">—</span></td>'
           + actionCell()
           + '</tr>').join('')
         + '</tbody>';
@@ -112,6 +119,8 @@ try {
       getHiddenSet: () => new Set(hidden),
       getSortState: () => ({ key: 'display_name', dir: 1 }),
       setSortState: () => {},
+      setHeaderLabelOverrides: (overrides) => { headerLabels = { ...overrides }; },
+      getHeaderLabelOverride: (column) => headerLabels[column] || null,
       prefs: {
         getWidth: (column) => widths[column] || null,
         setWidth: (column, width) => { widths[column] = width; },
@@ -141,11 +150,16 @@ try {
     const measurement = await controller.autoFitHorizontalLayout({ ensureHorizontalScroll: true, includeAllColumns: true, percentile: 1 });
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
-    const clippedChips = Array.from(document.querySelectorAll('td[data-col="addresses"] .ip-chip, td[data-col="hostnames"] .ip-chip')).filter((chip) => {
+    const clippedChips = Array.from(document.querySelectorAll('.ip-chip')).filter((chip) => {
       const chipRect = chip.getBoundingClientRect();
       const cellRect = chip.closest('td').getBoundingClientRect();
       return chipRect.left < cellRect.left - 1 || chipRect.right > cellRect.right + 1;
     }).map((chip) => chip.textContent);
+    const clippedSortArrows = Array.from(document.querySelectorAll('th[data-col] .table-sort-arrow')).filter((arrow) => {
+      const arrowRect = arrow.getBoundingClientRect();
+      const headerRect = arrow.closest('th').getBoundingClientRect();
+      return arrowRect.left < headerRect.left - 1 || arrowRect.right > headerRect.right + 1;
+    }).map((arrow) => arrow.closest('th').dataset.col);
 
     const rowHeights = Array.from(document.querySelectorAll('tbody tr')).map((row) => Math.ceil(row.getBoundingClientRect().height));
     return {
@@ -153,6 +167,8 @@ try {
       measurement,
       saved,
       clippedChips,
+      clippedSortArrows,
+      pendingHeaderHtml: document.querySelector('th[data-col="pending"]')?.innerHTML || '',
       maxRowHeight: Math.max(...rowHeights),
       inlineActionRows: document.querySelectorAll('.table-inline-actions').length,
       compactActionRows: document.querySelectorAll('.table-action-cell--compact').length,
@@ -164,22 +180,27 @@ try {
     tableWidth: result.measurement.tableWidth,
     maxRowHeight: result.maxRowHeight,
     clippedChips: result.clippedChips,
+    clippedSortArrows: result.clippedSortArrows,
     inlineActionRows: result.inlineActionRows,
     compactActionRows: result.compactActionRows,
+    pendingHeaderHtml: result.pendingHeaderHtml,
   }, null, 2));
 
   assert.equal(result.saved.algorithm_version, 'browser-measured-horizontal-v1');
   assert.deepEqual(result.clippedChips, []);
+  assert.deepEqual(result.clippedSortArrows, []);
   assert.equal(result.inlineActionRows, nodes.length);
   assert.equal(result.compactActionRows, 0);
+  assert.match(result.saved.columns.find((column) => column.column_key === 'pending')?.header_label || '', /&shy;/);
+  assert.match(result.pendingHeaderHtml, /Pend/);
   assert.ok(result.maxRowHeight <= 76, `row too deep: ${result.maxRowHeight}px`);
-  assert.ok(result.widths.addresses >= 185, `addresses too narrow: ${result.widths.addresses}px`);
+  assert.ok(result.widths.addresses >= 180, `addresses too narrow: ${result.widths.addresses}px`);
   assert.ok(result.widths.hostnames >= 215, `hostnames too narrow: ${result.widths.hostnames}px`);
   assert.ok(result.widths._actions >= 172, `actions too narrow: ${result.widths._actions}px`);
   assert.ok(result.widths.commit <= 95, `commit too wide: ${result.widths.commit}px`);
   assert.ok(result.widths.commit_inner <= 100, `commit inner too wide: ${result.widths.commit_inner}px`);
   assert.ok(result.widths.commit_non_root <= 135, `commit non-root too wide: ${result.widths.commit_non_root}px`);
-  assert.ok(result.measurement.tableWidth >= 1060, `table too narrow: ${result.measurement.tableWidth}px`);
+  assert.ok(result.measurement.tableWidth >= 970, `table too narrow: ${result.measurement.tableWidth}px`);
   assert.ok(result.measurement.tableWidth <= 1230, `table too wide: ${result.measurement.tableWidth}px`);
 } finally {
   await browser.close();

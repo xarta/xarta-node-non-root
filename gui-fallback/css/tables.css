@@ -56,17 +56,17 @@ table.table-shared-ui.table-shared-ui--scroll-x {
   table-layout: fixed;
 }
 thead th { background: var(--surface); color: var(--text-dim); font-size: 11px;
-           text-transform: uppercase; letter-spacing: .6px; padding: 8px 10px;
+           text-transform: uppercase; letter-spacing: .6px; padding: 8px 2px;
            text-align: left; border-bottom: 1px solid var(--border);
            position: sticky; top: 0; z-index: 36; }
-thead th[data-col] { padding-right: 22px; }
+thead th[data-col] { padding-right: 2px; }
 .table-th-sort { cursor: pointer; user-select: none; }
 .table-th-sort:hover { color: var(--text); }
 .table-sort-arrow { font-size: 10px; margin-left: 3px; opacity: .45; }
 .table-sort-arrow.active { opacity: 1; color: var(--accent); }
 tbody tr { border-bottom: 1px solid var(--border); }
 tbody tr:hover { background: rgba(91,156,246,.06); }
-tbody td { padding: 9px 10px; vertical-align: top; }
+tbody td { padding: 9px 2px; vertical-align: top; }
 table.table-shared-ui tbody td { overflow: hidden; line-height: 1.35; }
 
 table.table-shared-ui tbody td.ni-col-icon-asset,
@@ -834,9 +834,9 @@ button.table-icon-btn--history::before {
 }
 @media (max-width: 600px) {
   .table-wrap { max-height: var(--table-wrap-max-h, calc(100vh - 160px)); }
-  thead th { padding: 6px 8px; }
-  thead th[data-col] { padding-right: 24px; }
-  tbody td { padding: 3px 8px; }
+  thead th { padding: 6px 2px; }
+  thead th[data-col] { padding-right: 2px; }
+  tbody td { padding: 3px 2px; }
   table.table-shared-ui tbody td { line-height: 1.15; }
   .table-cell-clamp {
     line-height: 1.1;
@@ -894,7 +894,7 @@ button.table-icon-btn--history::before {
 /* ── Machines / Nodes tables ── */
 .ip-chip { display: inline-block; background: var(--surface); border: 1px solid var(--border);
            border-radius: 3px; padding: 1px 6px; font-size: 11px; margin: 1px;
-           font-family: monospace; }
+           font-family: monospace; white-space: nowrap; }
 .kind-badge { display: inline-block; border-radius: 3px; padding: 1px 7px;
               font-size: 11px; font-weight: 600; text-transform: uppercase; }
 .kind-proxmox { background: #2a1f3d; color: #c49cf6; }

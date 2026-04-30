@@ -897,6 +897,7 @@
     });
     var sorter = cfg.sort ? createTableSort(cfg.sort) : null;
     var hiddenCols = new Set();
+    var headerLabelOverrides = Object.create(null);
 
     function getColumns() {
       var next = typeof cfg.getColumns === 'function' ? cfg.getColumns() : columns;
@@ -929,6 +930,13 @@
       return { label: col };
     }
 
+    function getHeaderLabel(col, meta) {
+      if (Object.prototype.hasOwnProperty.call(headerLabelOverrides, col)) {
+        return headerLabelOverrides[col];
+      }
+      return (meta && meta.label) || col;
+    }
+
     function rebuildHead() {
       var table = typeof cfg.getTable === 'function' ? cfg.getTable() : null;
       if (!table) return;
@@ -952,9 +960,27 @@
         var sortAttrs = meta.sortKey ? ' data-sort-key="' + meta.sortKey + '"' : '';
         var classAttr = meta.sortKey ? ' class="table-th-sort"' : '';
         var titleAttr = meta.description ? ' title="' + meta.description.replace(/"/g, '&quot;') + '"' : '';
-        var labelHtml = sorter && meta.sortKey ? sorter.renderLabel(meta.label, meta.sortKey) : meta.label;
+        var headerLabel = getHeaderLabel(col, meta);
+        var labelHtml = sorter && meta.sortKey ? sorter.renderLabel(headerLabel, meta.sortKey) : headerLabel;
         return '<th data-col="' + col + '"' + sortAttrs + classAttr + titleAttr + style + '>' + labelHtml + '</th>';
       }).join('');
+    }
+
+    function setHeaderLabelOverrides(overrides) {
+      headerLabelOverrides = Object.create(null);
+      Object.keys(overrides || {}).forEach(function (col) {
+        var label = overrides[col];
+        if (typeof label === 'string' && label) {
+          headerLabelOverrides[col] = _escapeLayoutText(label).replace(/&amp;shy;/g, '&shy;');
+        }
+      });
+      rebuildHead();
+    }
+
+    function getHeaderLabelOverride(col) {
+      return Object.prototype.hasOwnProperty.call(headerLabelOverrides, col)
+        ? headerLabelOverrides[col]
+        : null;
     }
 
     function render(renderBody) {
@@ -1029,6 +1055,8 @@
       applyColumns: applyColumns,
       onLayoutChange: onLayoutChange,
       syncColumns: syncColumns,
+      setHeaderLabelOverrides: setHeaderLabelOverrides,
+      getHeaderLabelOverride: getHeaderLabelOverride,
     };
   }
 
@@ -1230,6 +1258,9 @@
       return {
         column_key: columnKey,
         display_name: extra.display_name || meta.label || columnKey,
+        header_label: view && typeof view.getHeaderLabelOverride === 'function'
+          ? view.getHeaderLabelOverride(columnKey)
+          : null,
         sqlite_column: Object.prototype.hasOwnProperty.call(extra, 'sqlite_column') ? extra.sqlite_column : (isActions ? null : columnKey),
         width_px: width || undefined,
         min_width_px: extra.min_width_px || 40,
@@ -1292,11 +1323,15 @@
       if (!view || !layoutData || !Array.isArray(layoutData.columns)) return;
       var hidden = new Set();
       var sortMatch = null;
+      var headerLabelOverrides = Object.create(null);
       applyingRemoteLayout = true;
       try {
         layoutData.columns.forEach(function (column) {
           if (!column || !column.column_key) return;
           if (column.hidden) hidden.add(column.column_key);
+          if (typeof column.header_label === 'string' && column.header_label) {
+            headerLabelOverrides[column.column_key] = column.header_label;
+          }
           if (column.width_px && view.prefs && typeof view.prefs.setWidth === 'function') {
             view.prefs.setWidth(column.column_key, column.width_px);
           }
@@ -1313,6 +1348,9 @@
         });
         if (view.prefs && typeof view.prefs.setHiddenSet === 'function') {
           view.prefs.setHiddenSet(hidden);
+        }
+        if (typeof view.setHeaderLabelOverrides === 'function') {
+          view.setHeaderLabelOverrides(headerLabelOverrides);
         }
         if (typeof view.setSortState === 'function') {
           view.setSortState(sortMatch ? sortMatch.key : null, sortMatch ? sortMatch.dir : 1);
@@ -1420,8 +1458,20 @@
         .filter(Boolean);
     }
 
-    function _cellForColumn(row, columnKey) {
-      return row ? row.querySelector('td[data-col="' + window.CSS.escape(columnKey) + '"]') : null;
+    function _cellForColumn(row, columnKey, columnIndex, visibleColumnCount) {
+      if (!row) return null;
+      var keyed = row.querySelector('td[data-col="' + window.CSS.escape(columnKey) + '"]');
+      if (keyed) return keyed;
+      var cells = Array.prototype.slice.call(row.children).filter(function (cell) {
+        return cell && cell.tagName === 'TD';
+      });
+      var hasColspan = cells.some(function (cell) {
+        return Number(cell.getAttribute('colspan') || 1) > 1;
+      });
+      if (!hasColspan && cells.length >= visibleColumnCount && Number.isFinite(columnIndex)) {
+        return cells[columnIndex] || null;
+      }
+      return null;
     }
 
     function _copyMeasureStyles(sourceEl, clone) {
@@ -1455,10 +1505,10 @@
       clone.style.boxSizing = 'border-box';
     }
 
-    function _normaliseMeasureClone(sourceEl, widthPx) {
+    function _normaliseMeasureClone(sourceEl, widthPx, htmlOverride) {
       var clone = document.createElement('div');
       clone.className = sourceEl.className || '';
-      clone.innerHTML = sourceEl.innerHTML;
+      clone.innerHTML = typeof htmlOverride === 'string' ? htmlOverride : sourceEl.innerHTML;
       if (sourceEl.dataset && sourceEl.dataset.col) clone.dataset.col = sourceEl.dataset.col;
       clone.querySelectorAll('[id]').forEach(function (el) { el.removeAttribute('id'); });
       _copyMeasureStyles(sourceEl, clone);
@@ -1485,9 +1535,9 @@
       return clone;
     }
 
-    function _measureElement(sourceEl, widthPx, host) {
+    function _measureElement(sourceEl, widthPx, host, htmlOverride) {
       if (!sourceEl) return { width: 0, height: 0, scrollWidth: 0 };
-      var clone = _normaliseMeasureClone(sourceEl, widthPx);
+      var clone = _normaliseMeasureClone(sourceEl, widthPx, htmlOverride);
       host.appendChild(clone);
       var rect = clone.getBoundingClientRect();
       var result = {
@@ -1507,17 +1557,15 @@
 
     function _measureActionCellWidth(cell, host, seed) {
       if (!cell) return 0;
+      var seedMax = Number(seed && seed.max_width_px);
+      if (Number.isFinite(seedMax) && seedMax > 0 && seedMax <= 260) {
+        return seedMax;
+      }
       var inlineActions = cell.querySelector('.table-inline-actions');
       if (inlineActions) {
         var measured = _measureElement(inlineActions, null, host).width + _horizontalPadding(cell);
-        var seedMaxInline = Number(seed && seed.max_width_px);
-        if (Number.isFinite(seedMaxInline) && seedMaxInline > 0 && seedMaxInline <= 260) {
-          measured = Math.max(measured, seedMaxInline);
-        }
         return Math.ceil(measured);
       }
-      var seedMax = Number(seed && seed.max_width_px);
-      if (Number.isFinite(seedMax) && seedMax > 0 && seedMax <= 260) return seedMax;
       return _measureElement(cell, null, host).width;
     }
 
@@ -1526,19 +1574,20 @@
       var host = options.host || _ensureMeasureHost();
       var seed = options.seed || {};
       var isActionColumn = !!options.isActionColumn;
+      var measureHtml = options.measureHtml;
       if (isActionColumn && sourceEl && sourceEl.tagName === 'TD') {
         return _measureActionCellWidth(sourceEl, host, seed);
       }
-      var natural = _measureElement(sourceEl, null, host);
+      var natural = _measureElement(sourceEl, null, host, measureHtml);
       var naturalWidth = Math.ceil(natural.width || 0);
       if (!naturalWidth) return 0;
 
       var minWidth = Math.max(1, Math.ceil(Number(seed.min_width_px) || 1));
       var high = Math.max(naturalWidth, minWidth);
-      var baseline = _measureElement(sourceEl, high, host).height || natural.height || 0;
+      var baseline = _measureElement(sourceEl, high, host, measureHtml).height || natural.height || 0;
       var tolerance = Number(options.wrapTolerancePx || 1);
       var fitsAtWidth = function (widthPx) {
-        var measured = _measureElement(sourceEl, widthPx, host);
+        var measured = _measureElement(sourceEl, widthPx, host, measureHtml);
         return measured.height <= baseline + tolerance
           && measured.scrollWidth <= Math.ceil(widthPx) + tolerance;
       };
@@ -1554,6 +1603,88 @@
         }
       }
       return Math.ceil(high);
+    }
+
+    function _smallestWidthWithinHeight(sourceEl, maxHeightPx, options) {
+      options = options || {};
+      var host = options.host || _ensureMeasureHost();
+      var seed = options.seed || {};
+      var measureHtml = options.measureHtml;
+      var natural = _measureElement(sourceEl, null, host, measureHtml);
+      var naturalWidth = Math.ceil(natural.width || 0);
+      if (!naturalWidth) return 0;
+
+      var minWidth = Math.max(1, Math.ceil(Number(seed.min_width_px) || 1));
+      var high = Math.max(naturalWidth, minWidth);
+      var tolerance = Number(options.wrapTolerancePx || 1);
+      var maxHeight = Math.max(1, Math.ceil(Number(maxHeightPx) || natural.height || 1));
+      var fitsAtWidth = function (widthPx) {
+        var measured = _measureElement(sourceEl, widthPx, host, measureHtml);
+        return measured.height <= maxHeight + tolerance
+          && measured.scrollWidth <= Math.ceil(widthPx) + tolerance;
+      };
+      if (!fitsAtWidth(high)) return high;
+      if (fitsAtWidth(minWidth)) return minWidth;
+
+      var low = minWidth;
+      while (low < high) {
+        var mid = Math.floor((low + high) / 2);
+        if (fitsAtWidth(mid)) high = mid;
+        else low = mid + 1;
+      }
+      return Math.ceil(high);
+    }
+
+    function _headerAffordanceReserve(headerEl) {
+      if (!headerEl) return 0;
+      return headerEl.querySelector('.table-sort-arrow') ? 8 : 0;
+    }
+
+    function _headerPlainLabel(headerEl) {
+      if (!headerEl) return '';
+      var clone = headerEl.cloneNode(true);
+      clone.querySelectorAll('.table-sort-arrow, .table-col-resize').forEach(function (el) {
+        el.remove();
+      });
+      return (clone.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function _headerMeasureHtml(headerEl, labelHtml) {
+      if (!headerEl) return '';
+      var clone = headerEl.cloneNode(true);
+      clone.querySelectorAll('.table-col-resize').forEach(function (el) { el.remove(); });
+      var sortLabel = clone.querySelector('.table-th-sort') || clone;
+      var arrow = sortLabel.querySelector('.table-sort-arrow');
+      var arrowHtml = arrow ? arrow.outerHTML : '';
+      sortLabel.innerHTML = labelHtml + arrowHtml;
+      return clone.innerHTML;
+    }
+
+    function _softHyphenHeaderLabel(label) {
+      var text = String(label || '').replace(/\s+/g, ' ').trim();
+      if (!/^[A-Za-z][A-Za-z0-9-]{6,}$/.test(text)) return null;
+      var plain = text.replace(/-/g, '');
+      var lower = plain.toLowerCase();
+      var suffixes = ['names', 'name', 'tion', 'sion', 'ment', 'ness', 'able', 'ible', 'less', 'ship', 'ing'];
+      var splitAt = -1;
+      suffixes.some(function (suffix) {
+        if (!lower.endsWith(suffix)) return false;
+        var index = plain.length - suffix.length;
+        if (index < 3 || plain.length - index < 3) return false;
+        splitAt = index;
+        return true;
+      });
+      if (splitAt < 0) {
+        var target = Math.floor(plain.length * 0.58);
+        for (var i = target; i >= 3; i -= 1) {
+          if (/[aeiouy]/i.test(plain.charAt(i - 1)) && /[bcdfghjklmnpqrstvwxz]/i.test(plain.charAt(i))) {
+            splitAt = i;
+            break;
+          }
+        }
+      }
+      if (splitAt < 3 || plain.length - splitAt < 3) return null;
+      return _escapeLayoutText(plain.slice(0, splitAt)) + '&shy;' + _escapeLayoutText(plain.slice(splitAt));
     }
 
     function _percentile(values, fraction) {
@@ -1597,40 +1728,83 @@
       var rows = Array.prototype.slice.call(tableEl.querySelectorAll('tbody tr'));
       var viewportWidth = tableEl.closest('.table-wrap')?.clientWidth || window.innerWidth || 0;
       var percentile = Object.prototype.hasOwnProperty.call(options, 'percentile') ? Number(options.percentile) : 1;
+      var rowHeights = rows.map(function (row) {
+        return Math.ceil(row.getBoundingClientRect().height || 0);
+      }).filter(function (height) { return Number.isFinite(height) && height > 0; });
+      var meanRowHeight = rowHeights.length
+        ? rowHeights.reduce(function (sum, height) { return sum + height; }, 0) / rowHeights.length
+        : 48;
+      var maxCompactHeaderHeight = Math.ceil(meanRowHeight * Number(options.headerWrapRowRatio || 1.2));
       var measuredColumns = columns.map(function (columnKey, index) {
         var seed = getColumnSeed(columnKey, index, sortState, hiddenSet);
         var isActionColumn = columnKey.charAt(0) === '_';
-        var widths = [];
+        var bodyWidths = [];
         var headerEl = headerMap[columnKey];
+        var headerWidth = 0;
+        var compactHeaderLabel = null;
+        var compactHeaderWidth = 0;
         if (headerEl) {
-          widths.push(_smallestWidthWithoutExtraWrap(headerEl, {
+          headerWidth = _smallestWidthWithoutExtraWrap(headerEl, {
             host: host,
             seed: seed,
             wrapTolerancePx: 1,
-          }));
+          }) + _headerAffordanceReserve(headerEl);
         }
         rows.forEach(function (row) {
-          var cell = _cellForColumn(row, columnKey);
+          var cell = _cellForColumn(row, columnKey, index, columns.length);
           if (!cell) return;
-          widths.push(_smallestWidthWithoutExtraWrap(cell, {
+          bodyWidths.push(_smallestWidthWithoutExtraWrap(cell, {
             host: host,
             seed: seed,
             isActionColumn: isActionColumn,
             wrapTolerancePx: 1,
           }));
         });
-        var rawWidth = _percentile(widths, percentile);
+        var rawBodyWidth = _percentile(bodyWidths, percentile);
         if (rows.some(function (row) {
-          var cell = _cellForColumn(row, columnKey);
+          var cell = _cellForColumn(row, columnKey, index, columns.length);
           return !!(cell && cell.querySelector('.ip-chip'));
         })) {
-          rawWidth += Number(options.chipBreathingPx || 18);
+          rawBodyWidth += Number(options.chipBreathingPx || 18);
+        }
+        var rawWidth = Math.max(headerWidth, rawBodyWidth);
+        if (headerEl && headerWidth > 0 && rawBodyWidth > 0 && !isActionColumn) {
+          compactHeaderWidth = _smallestWidthWithinHeight(headerEl, maxCompactHeaderHeight, {
+            host: host,
+            seed: seed,
+            wrapTolerancePx: 1,
+          }) + _headerAffordanceReserve(headerEl);
+
+          var singleWordLabel = _headerPlainLabel(headerEl);
+          var narrowDataThreshold = Math.max(headerWidth * 0.3, (Number(seed.min_width_px) || 40) + 12);
+          if (rawBodyWidth <= narrowDataThreshold) {
+            compactHeaderLabel = _softHyphenHeaderLabel(singleWordLabel);
+            if (compactHeaderLabel) {
+              compactHeaderWidth = _smallestWidthWithinHeight(headerEl, maxCompactHeaderHeight, {
+                host: host,
+                seed: seed,
+                measureHtml: _headerMeasureHtml(headerEl, compactHeaderLabel),
+                wrapTolerancePx: 1,
+              }) + _headerAffordanceReserve(headerEl);
+            }
+          }
+
+          var compactRawWidth = Math.max(rawBodyWidth, compactHeaderWidth);
+          if (compactRawWidth > 0 && compactRawWidth <= headerWidth * Number(options.headerWrapSavingsRatio || 0.7)) {
+            rawWidth = compactRawWidth;
+          } else {
+            compactHeaderLabel = null;
+          }
         }
         var width = _clampMeasuredWidth(rawWidth, seed, columnKey, viewportWidth);
         return {
           columnKey: columnKey,
           width: width,
           rawWidth: rawWidth,
+          rawBodyWidth: rawBodyWidth,
+          headerWidth: headerWidth,
+          compactHeaderWidth: compactHeaderWidth,
+          headerLabel: compactHeaderLabel,
           minWidth: seed.min_width_px,
           maxWidth: seed.max_width_px,
         };
@@ -1668,8 +1842,10 @@
       var layoutData = buildLayoutPayload();
       if (!measurement || !layoutData) return measurement;
       var widthsByColumn = Object.create(null);
+      var headerLabelsByColumn = Object.create(null);
       measurement.columns.forEach(function (column) {
         widthsByColumn[column.columnKey] = column.width;
+        if (column.headerLabel) headerLabelsByColumn[column.columnKey] = column.headerLabel;
       });
       layoutData.seed_origin = options.seedOrigin || 'browser-measured';
       layoutData.algorithm_version = options.algorithmVersion || 'browser-measured-horizontal-v1';
@@ -1684,6 +1860,11 @@
         if (!column || !column.column_key) return;
         if (Object.prototype.hasOwnProperty.call(widthsByColumn, column.column_key)) {
           column.width_px = widthsByColumn[column.column_key];
+        }
+        if (Object.prototype.hasOwnProperty.call(headerLabelsByColumn, column.column_key)) {
+          column.header_label = headerLabelsByColumn[column.column_key];
+        } else {
+          delete column.header_label;
         }
         if (options.includeAllColumns !== false) column.hidden = false;
       });
