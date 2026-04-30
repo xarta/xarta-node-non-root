@@ -527,6 +527,139 @@ try {
   } finally {
     await genericPage.close();
   }
+
+  const backupPage = await browser.newPage({ viewport: { width: 660, height: 420 } });
+  try {
+    await backupPage.setContent(`<!doctype html>
+      <html>
+        <head>
+          <style>
+            body { margin:0; background:#080b12; color:#f8fbff; font-family: Segoe UI, Arial, sans-serif; }
+            ${tableCss}
+            .table-wrap { width: 640px; }
+          </style>
+        </head>
+        <body>
+          <div class="table-wrap"><table id="backups-table" class="table-shared-ui table-shared-ui--scroll-x"></table></div>
+        </body>
+      </html>`);
+    await backupPage.addScriptTag({ content: tableUiSource });
+    const backupResult = await backupPage.evaluate(async () => {
+      const columns = ['filename', 'size_bytes', 'created_at', '_actions'];
+      const rows = [
+        ['2026-03-10-132340-blueprints.db.tar.gz', '5.2 KB', '2026-03-10 13:23:40 UTC'],
+        ['2026-04-29-192036-blueprints.db.tar.gz', '3251.8 KB', '2026-04-29 19:20:38 UTC'],
+      ];
+      const widths = { filename: 80, size_bytes: 72, created_at: 170, _actions: 102 };
+      let hidden = new Set();
+      let scroll = true;
+      let saved = null;
+      function esc(value) {
+        return String(value).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+      }
+      function filenameCell(filename) {
+        return `<td><span class="table-cell-clip"><span class="table-cell-clip__text"><code style="font-size:12px">${esc(filename)}</code></span></span></td>`;
+      }
+      function actionsCell() {
+        return '<td class="table-action-cell" style="white-space:nowrap"><div class="table-inline-actions">'
+          + '<button class="secondary table-icon-btn table-icon-btn--restore" type="button"></button>'
+          + '<button class="secondary table-icon-btn table-icon-btn--force-restore" type="button"></button>'
+          + '<button class="secondary table-icon-btn table-icon-btn--delete" type="button"></button>'
+          + '</div></td>';
+      }
+      function render() {
+        const table = document.getElementById('backups-table');
+        const total = columns.reduce((sum, column) => sum + (widths[column] || 80), 0);
+        table.style.setProperty('--table-fit-width', total + 'px');
+        table.className = scroll ? 'table-shared-ui table-shared-ui--scroll-x' : 'table-shared-ui';
+        table.innerHTML = '<colgroup>' + columns.map((column) => `<col data-col="${column}" style="width:${widths[column] || 80}px">`).join('') + '</colgroup>'
+          + '<thead><tr>'
+          + '<th data-col="filename"><span class="table-th-sort">Filename<span class="table-sort-arrow active">▲</span></span><span class="table-col-resize"></span></th>'
+          + '<th data-col="size_bytes"><span class="table-th-sort">Size<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>'
+          + '<th data-col="created_at"><span class="table-th-sort">Created<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>'
+          + '<th data-col="_actions">Actions<span class="table-col-resize"></span></th>'
+          + '</tr></thead><tbody>'
+          + rows.map((row) => '<tr>'
+            + filenameCell(row[0])
+            + `<td style="white-space:nowrap">${esc(row[1])}</td>`
+            + `<td style="white-space:nowrap;color:var(--text-dim)">${esc(row[2])}</td>`
+            + actionsCell()
+            + '</tr>').join('')
+          + '</tbody>';
+      }
+      const view = {
+        isHorizontalScrollEnabled: () => scroll,
+        setHorizontalScrollEnabled: (enabled) => { scroll = !!enabled; },
+        getHiddenSet: () => new Set(hidden),
+        getSortState: () => ({ key: 'filename', dir: 1 }),
+        setSortState: () => {},
+        setHeaderLabelOverrides: () => {},
+        getHeaderLabelOverride: () => null,
+        prefs: {
+          getWidth: (column) => widths[column] || null,
+          setWidth: (column, width) => { widths[column] = width; },
+          setHiddenSet: (next) => { hidden = new Set(next); render(); },
+        },
+      };
+      window.apiFetch = async (url, opts = {}) => {
+        if (url.includes('/resolve')) {
+          return {
+            ok: true,
+            json: async () => ({
+              layout_key: '0000070A',
+              layout_data: {
+                version: 1,
+                columns: columns.map((column_key, position) => ({
+                  column_key,
+                  position,
+                  hidden: false,
+                  width_px: widths[column_key],
+                })),
+              },
+            }),
+          };
+        }
+        const body = JSON.parse(opts.body || '{}');
+        saved = body.layout_data || null;
+        return { ok: true, json: async () => ({ layout_key: '0000070A', layout_data: saved }) };
+      };
+      render();
+      const controller = window.TableBucketLayouts.create({
+        getTable: () => document.getElementById('backups-table'),
+        getView: () => view,
+        getColumns: () => columns,
+        getMeta: (column) => ({
+          label: column === 'filename' ? 'Filename' : column === 'size_bytes' ? 'Size' : column === 'created_at' ? 'Created' : 'Actions',
+          sortKey: column === '_actions' ? null : column,
+        }),
+        getColumnSeed: (column) => ({
+          min_width_px: column === '_actions' ? 48 : 40,
+          max_width_px: column === '_actions' ? 102 : 900,
+          width_px: widths[column],
+        }),
+        tableCode: '07',
+        tableName: 'node-backups',
+        render,
+      });
+      const measurement = await controller.autoFitHorizontalLayout({ ensureHorizontalScroll: true, includeAllColumns: true, percentile: 1 });
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const clippedFilenames = Array.from(document.querySelectorAll('.table-cell-clip__text')).filter((el) => {
+        return el.scrollWidth > el.clientWidth + 1;
+      }).map((el) => el.textContent);
+      return {
+        widths: { ...widths },
+        measurement,
+        savedFilenameWidth: saved?.columns?.find((column) => column.column_key === 'filename')?.width_px || null,
+        clippedFilenames,
+      };
+    });
+    console.log(JSON.stringify({ backupAutoFit: backupResult }, null, 2));
+    assert.deepEqual(backupResult.clippedFilenames, [], 'backup filenames should not be clipped after auto-fit');
+    assert.ok(backupResult.savedFilenameWidth >= 220, `backup filename column too narrow: ${backupResult.savedFilenameWidth}px`);
+    assert.ok(backupResult.widths.filename > backupResult.widths.created_at, 'filename data should dominate header-sized columns when filenames are longer');
+  } finally {
+    await backupPage.close();
+  }
 } finally {
   await browser.close();
 }

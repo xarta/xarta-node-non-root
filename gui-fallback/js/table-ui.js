@@ -1564,10 +1564,24 @@
       var clone = _normaliseMeasureClone(sourceEl, widthPx, htmlOverride);
       host.appendChild(clone);
       var rect = clone.getBoundingClientRect();
+      var descendantScrollWidth = 0;
+      var cloneLeft = rect.left || 0;
+      clone.querySelectorAll('*').forEach(function (child) {
+        var childRect = child.getBoundingClientRect();
+        var scrollWidth = Math.ceil(child.scrollWidth || 0);
+        if (!scrollWidth) return;
+        descendantScrollWidth = Math.max(
+          descendantScrollWidth,
+          Math.ceil((childRect.left || 0) - cloneLeft + scrollWidth)
+        );
+      });
       var result = {
         width: Math.ceil(rect.width || clone.offsetWidth || 0),
         height: Math.ceil(rect.height || clone.offsetHeight || 0),
-        scrollWidth: Math.ceil(clone.scrollWidth || rect.width || 0),
+        scrollWidth: Math.max(
+          Math.ceil(clone.scrollWidth || rect.width || 0),
+          descendantScrollWidth
+        ),
       };
       host.removeChild(clone);
       return result;
