@@ -1990,7 +1990,7 @@
       var tenPercentViewport = viewportWidth * 0.1;
       var comfortPx = tenPxBudget < tenPercentViewport ? 10 : 5;
 
-      return measuredColumns.map(function (column) {
+      var relaxedColumns = measuredColumns.map(function (column) {
         var seed = getColumnSeed(column.columnKey, column.index, sortState, hiddenSet);
         var headerEl = headerMap[column.columnKey];
         var nextWidth = Number(column.width) || 0;
@@ -2007,6 +2007,18 @@
         column.width = nextWidth;
         return column;
       });
+      var lastColumn = relaxedColumns[relaxedColumns.length - 1];
+      if (lastColumn) {
+        var lastHeaderEl = headerMap[lastColumn.columnKey];
+        var lastHeaderWidth = Math.ceil(Number(lastColumn.headerWidth) || 0);
+        if (lastHeaderEl && lastHeaderWidth > Number(lastColumn.width || 0)) {
+          lastColumn.sparseRelaxedLastHeaderFloor = true;
+          lastColumn.sparseRelaxedWidth = lastHeaderWidth;
+          lastColumn.sparseRelaxDelta = lastHeaderWidth - (Number(lastColumn.width) || 0);
+          lastColumn.width = lastHeaderWidth;
+        }
+      }
+      return relaxedColumns;
     }
 
     function _percentile(values, fraction) {

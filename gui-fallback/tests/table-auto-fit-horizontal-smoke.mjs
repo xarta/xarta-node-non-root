@@ -559,7 +559,7 @@ try {
         ['20', '198.51.100.0/24', 'inferred', '—'],
         ['99', '203.0.113.0/24', 'inferred', '—'],
       ];
-      const widths = { vlan_id: 160, cidr: 160, source: 160, description: 160, _actions: 80 };
+      const widths = { vlan_id: 160, cidr: 160, source: 160, description: 160, _actions: 56 };
       let hidden = new Set();
       let scroll = true;
       let saved = null;
@@ -655,7 +655,7 @@ try {
         }),
         getColumnSeed: (column) => ({
           min_width_px: column === '_actions' ? 44 : 40,
-          max_width_px: column === '_actions' ? 80 : 260,
+          max_width_px: column === '_actions' ? 56 : 260,
           width_px: widths[column],
         }),
         tableCode: '13',
@@ -664,11 +664,18 @@ try {
       });
       const measurement = await controller.autoFitHorizontalLayout({ ensureHorizontalScroll: true, includeAllColumns: true, percentile: 1 });
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const actionTh = document.querySelector('th[data-col="_actions"]');
+      const actionLabel = actionTh?.querySelector('.table-th-sort');
+      const actionThRect = actionTh?.getBoundingClientRect();
+      const actionLabelRect = actionLabel?.getBoundingClientRect();
       return {
         widths: { ...widths },
         measurement,
         savedDescriptionLabel: saved?.columns?.find((column) => column.column_key === 'description')?.header_label || null,
         descriptionHeader: document.querySelector('th[data-col="description"]')?.textContent || '',
+        actionHeaderFits: !!(actionThRect && actionLabelRect
+          && actionLabelRect.left >= actionThRect.left - 0.5
+          && actionLabelRect.right <= actionThRect.right + 0.5),
         hyphenationRequests,
       };
     });
@@ -678,6 +685,8 @@ try {
     assert.doesNotMatch(sparseResult.descriptionHeader, /Descrip-tion/, 'sparse comfort pass should restore the full header');
     assert.ok(sparseResult.measurement.tableWidth < 900, `sparse table should still be comfortably below viewport: ${sparseResult.measurement.tableWidth}px`);
     assert.ok(sparseResult.widths.description >= 90, `description should get comfort width: ${sparseResult.widths.description}px`);
+    assert.ok(sparseResult.actionHeaderFits, 'sparse comfort pass should back the final Actions header inside its own column');
+    assert.ok(sparseResult.widths._actions > 56, `actions should grow past tiny action max for header backing: ${sparseResult.widths._actions}px`);
   } finally {
     await sparsePage.close();
   }
