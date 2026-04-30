@@ -191,13 +191,13 @@ try {
   assert.deepEqual(result.clippedSortArrows, []);
   assert.equal(result.inlineActionRows, nodes.length);
   assert.equal(result.compactActionRows, 0);
-  assert.match(result.saved.columns.find((column) => column.column_key === 'pending')?.header_label || '', /&shy;/);
-  assert.match(result.pendingHeaderHtml, /Pend/);
+  assert.equal(result.saved.columns.find((column) => column.column_key === 'pending')?.header_label || '', 'Pend-ing');
+  assert.match(result.pendingHeaderHtml, /Pend-ing/);
   assert.ok(result.maxRowHeight <= 76, `row too deep: ${result.maxRowHeight}px`);
   assert.ok(result.widths.addresses >= 180, `addresses too narrow: ${result.widths.addresses}px`);
   assert.ok(result.widths.hostnames >= 215, `hostnames too narrow: ${result.widths.hostnames}px`);
   assert.ok(result.widths._actions >= 172, `actions too narrow: ${result.widths._actions}px`);
-  assert.ok(result.widths.commit <= 95, `commit too wide: ${result.widths.commit}px`);
+  assert.ok(result.widths.commit <= 110, `commit too wide: ${result.widths.commit}px`);
   assert.ok(result.widths.commit_inner <= 100, `commit inner too wide: ${result.widths.commit_inner}px`);
   assert.ok(result.widths.commit_non_root <= 135, `commit non-root too wide: ${result.widths.commit_non_root}px`);
   assert.ok(result.measurement.tableWidth >= 970, `table too narrow: ${result.measurement.tableWidth}px`);

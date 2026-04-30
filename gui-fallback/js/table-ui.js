@@ -1637,7 +1637,7 @@
 
     function _headerAffordanceReserve(headerEl) {
       if (!headerEl) return 0;
-      return headerEl.querySelector('.table-sort-arrow') ? 8 : 0;
+      return headerEl.querySelector('.table-sort-arrow') ? 12 : 0;
     }
 
     function _headerPlainLabel(headerEl) {
@@ -1660,7 +1660,7 @@
       return clone.innerHTML;
     }
 
-    function _softHyphenHeaderLabel(label) {
+    function _hyphenatedHeaderLabel(label) {
       var text = String(label || '').replace(/\s+/g, ' ').trim();
       if (!/^[A-Za-z][A-Za-z0-9-]{6,}$/.test(text)) return null;
       var plain = text.replace(/-/g, '');
@@ -1684,7 +1684,67 @@
         }
       }
       if (splitAt < 3 || plain.length - splitAt < 3) return null;
-      return _escapeLayoutText(plain.slice(0, splitAt)) + '&shy;' + _escapeLayoutText(plain.slice(splitAt));
+      return _escapeLayoutText(plain.slice(0, splitAt) + '-' + plain.slice(splitAt));
+    }
+
+    function _measureHeaderLineProfile(headerEl, widthPx, host, htmlOverride) {
+      if (!headerEl || !Number.isFinite(Number(widthPx)) || Number(widthPx) <= 0) {
+        return { lineCount: 0, widestIsLast: false };
+      }
+      var clone = _normaliseMeasureClone(headerEl, widthPx, htmlOverride);
+      host.appendChild(clone);
+      clone.querySelectorAll('.table-col-resize, .table-sort-arrow').forEach(function (el) {
+        el.remove();
+      });
+      var sortLabel = clone.querySelector('.table-th-sort') || clone;
+      var groups = [];
+      var walker = document.createTreeWalker(sortLabel, NodeFilter.SHOW_TEXT, {
+        acceptNode: function (node) {
+          return /\S/.test(node.nodeValue || '') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+        },
+      });
+      var node = walker.nextNode();
+      while (node) {
+        var range = document.createRange();
+        range.selectNodeContents(node);
+        Array.prototype.slice.call(range.getClientRects()).forEach(function (rect) {
+          if (!rect || rect.width <= 0 || rect.height <= 0) return;
+          var top = Math.round(rect.top);
+          var group = groups.find(function (candidate) {
+            return Math.abs(candidate.top - top) <= 2;
+          });
+          if (!group) {
+            group = { top: top, left: rect.left, right: rect.right };
+            groups.push(group);
+          } else {
+            group.left = Math.min(group.left, rect.left);
+            group.right = Math.max(group.right, rect.right);
+          }
+        });
+        range.detach();
+        node = walker.nextNode();
+      }
+      host.removeChild(clone);
+      groups.sort(function (left, right) { return left.top - right.top; });
+      if (!groups.length) return { lineCount: 0, widestIsLast: false };
+      var widestIndex = 0;
+      groups.forEach(function (group, index) {
+        group.width = Math.ceil(group.right - group.left);
+        if (group.width >= groups[widestIndex].width) widestIndex = index;
+      });
+      return {
+        lineCount: groups.length,
+        widestIsLast: widestIndex === groups.length - 1,
+        lines: groups,
+      };
+    }
+
+    function _headerDominanceBuffer(headerEl, widthPx, rawBodyWidth, host, htmlOverride) {
+      var reserve = _headerAffordanceReserve(headerEl);
+      if (!reserve || !headerEl || widthPx <= rawBodyWidth) return 0;
+      var profile = _measureHeaderLineProfile(headerEl, widthPx, host, htmlOverride);
+      if (!profile.lineCount || profile.lineCount <= 1) return reserve;
+      return profile.widestIsLast ? reserve * 2 : reserve;
     }
 
     function _percentile(values, fraction) {
@@ -1778,7 +1838,7 @@
           var singleWordLabel = _headerPlainLabel(headerEl);
           var narrowDataThreshold = Math.max(headerWidth * 0.3, (Number(seed.min_width_px) || 40) + 12);
           if (rawBodyWidth <= narrowDataThreshold) {
-            compactHeaderLabel = _softHyphenHeaderLabel(singleWordLabel);
+            compactHeaderLabel = _hyphenatedHeaderLabel(singleWordLabel);
             if (compactHeaderLabel) {
               compactHeaderWidth = _smallestWidthWithinHeight(headerEl, maxCompactHeaderHeight, {
                 host: host,
@@ -1791,10 +1851,19 @@
 
           var compactRawWidth = Math.max(rawBodyWidth, compactHeaderWidth);
           if (compactRawWidth > 0 && compactRawWidth <= headerWidth * Number(options.headerWrapSavingsRatio || 0.7)) {
-            rawWidth = compactRawWidth;
+            rawWidth = compactRawWidth + _headerDominanceBuffer(
+              headerEl,
+              compactHeaderWidth,
+              rawBodyWidth,
+              host,
+              compactHeaderLabel ? _headerMeasureHtml(headerEl, compactHeaderLabel) : null
+            );
           } else {
             compactHeaderLabel = null;
+            rawWidth += _headerDominanceBuffer(headerEl, headerWidth, rawBodyWidth, host, null);
           }
+        } else if (headerEl && headerWidth > 0 && !isActionColumn) {
+          rawWidth += _headerDominanceBuffer(headerEl, headerWidth, rawBodyWidth, host, null);
         }
         var width = _clampMeasuredWidth(rawWidth, seed, columnKey, viewportWidth);
         return {
