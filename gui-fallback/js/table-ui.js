@@ -1776,6 +1776,96 @@
       return column && column.headerLabel ? _headerMeasureHtml(headerEl, column.headerLabel) : null;
     }
 
+    function _columnBodyBreathingPx(column, rows, columns) {
+      if (!column || column.columnKey.charAt(0) === '_') return 0;
+      var hasChip = rows.some(function (row) {
+        var cell = _cellForColumn(row, column.columnKey, column.index, columns.length);
+        return !!(cell && cell.querySelector('.ip-chip'));
+      });
+      if (hasChip) return 0;
+      if (column.rawBodyWidth >= 80) return 8;
+      if (column.rawBodyWidth >= 44) return 4;
+      return 2;
+    }
+
+    function _polishMeasuredColumns(measuredColumns, context) {
+      context = context || {};
+      var rows = context.rows || [];
+      var columns = context.columns || [];
+      var headerMap = context.headerMap || Object.create(null);
+      var host = context.host || _ensureMeasureHost();
+      var viewportWidth = Number(context.viewportWidth) || 0;
+      var sortState = context.sortState || { key: null, dir: 0 };
+      var hiddenSet = context.hiddenSet || new Set();
+      var maxGrowPerColumn = Math.max(0, Number(context.maxGrowPerColumn || 14));
+      var targetFillRatio = Number(context.targetFillRatio || 0.985);
+      var sortableMinWidth = Math.max(0, Number(context.sortableMinWidth || 50));
+      var polished = measuredColumns.map(function (column) {
+        var seed = getColumnSeed(column.columnKey, column.index, sortState, hiddenSet);
+        var headerEl = headerMap[column.columnKey];
+        var headerHtml = _headerHtmlForColumn(headerEl, column);
+        var bodyNeed = column.rawBodyWidth + _columnBodyBreathingPx(column, rows, columns);
+        var headerNeed = 0;
+        if (headerEl) {
+          var currentHeader = _measureElement(headerEl, column.width, host, headerHtml);
+          headerNeed = _smallestWidthWithinHeight(headerEl, currentHeader.height || 1, {
+            host: host,
+            seed: seed,
+            measureHtml: headerHtml,
+            wrapTolerancePx: 1,
+          });
+        }
+        var preferred = Math.max(bodyNeed, headerNeed || 0);
+        if (headerEl && headerEl.querySelector('.table-sort-arrow') && column.columnKey.charAt(0) !== '_') {
+          preferred = Math.max(preferred, sortableMinWidth);
+        }
+        if (column.columnKey.charAt(0) === '_') {
+          preferred = Math.max(preferred, column.width);
+        }
+        var nextWidth = _clampMeasuredWidth(preferred, seed, column.columnKey, viewportWidth);
+        if (nextWidth > column.width) {
+          nextWidth = Math.min(nextWidth, column.width + maxGrowPerColumn);
+        }
+        column.polishNeedWidth = Math.ceil(preferred || 0);
+        column.polishBeforeWidth = column.width;
+        column.width = nextWidth;
+        column.polishDelta = column.width - column.polishBeforeWidth;
+        return column;
+      });
+
+      var targetWidth = viewportWidth > 0 ? Math.floor(viewportWidth * targetFillRatio) : 0;
+      var total = polished.reduce(function (sum, column) { return sum + column.width; }, 0);
+      if (targetWidth > 0 && total < targetWidth) {
+        var remaining = targetWidth - total;
+        var recipients = polished.filter(function (column) {
+          return column.columnKey.charAt(0) !== '_' && column.rawBodyWidth >= 44;
+        }).map(function (column) {
+          return {
+            column: column,
+            cap: Math.max(0, Math.min(maxGrowPerColumn, (Number(column.maxWidth) || 900) - column.width)),
+            slack: column.width - (column.polishNeedWidth || column.rawBodyWidth || 0),
+          };
+        }).filter(function (entry) {
+          return entry.cap > 0;
+        }).sort(function (left, right) {
+          return left.slack - right.slack;
+        });
+        while (remaining > 0 && recipients.length) {
+          var changed = false;
+          recipients.forEach(function (entry) {
+            if (remaining <= 0 || entry.cap <= 0) return;
+            entry.column.width += 1;
+            entry.column.polishDelta += 1;
+            entry.cap -= 1;
+            remaining -= 1;
+            changed = true;
+          });
+          if (!changed) break;
+        }
+      }
+      return polished;
+    }
+
     function _percentile(values, fraction) {
       var sorted = values.filter(function (value) {
         return Number.isFinite(value) && value > 0;
@@ -1959,6 +2049,18 @@
           }
         });
       }
+      measuredColumns = _polishMeasuredColumns(measuredColumns, {
+        rows: rows,
+        columns: columns,
+        headerMap: headerMap,
+        host: host,
+        viewportWidth: viewportWidth,
+        sortState: sortState,
+        hiddenSet: hiddenSet,
+        maxGrowPerColumn: options.polishMaxGrowPerColumnPx || 14,
+        sortableMinWidth: options.polishSortableMinWidthPx || 50,
+        targetFillRatio: options.polishTargetFillRatio || 0.985,
+      });
       return {
         columns: measuredColumns,
         rowCount: rows.length,

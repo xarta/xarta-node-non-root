@@ -214,14 +214,17 @@ try {
   assert.equal(result.saved.columns.find((column) => column.column_key === 'pending')?.header_label || '', 'Pend-ing');
   assert.match(result.pendingHeaderHtml, /Pend-ing/);
   assert.ok(result.maxRowHeight <= 76, `row too deep: ${result.maxRowHeight}px`);
+  assert.ok(result.widths.display_name >= 105, `display name too tight: ${result.widths.display_name}px`);
   assert.ok(result.widths.addresses >= 180, `addresses too narrow: ${result.widths.addresses}px`);
   assert.ok(result.widths.hostnames >= 215, `hostnames too narrow: ${result.widths.hostnames}px`);
+  assert.ok(result.widths.gen >= 50, `gen too tight: ${result.widths.gen}px`);
+  assert.ok(result.widths.pending >= 50, `pending too tight: ${result.widths.pending}px`);
   assert.ok(result.widths._actions >= 172, `actions too narrow: ${result.widths._actions}px`);
-  assert.ok(result.widths.commit <= 110, `commit too wide: ${result.widths.commit}px`);
-  assert.ok(result.widths.commit_inner <= 100, `commit inner too wide: ${result.widths.commit_inner}px`);
-  assert.ok(result.widths.commit_non_root <= 135, `commit non-root too wide: ${result.widths.commit_non_root}px`);
-  assert.ok(result.measurement.tableWidth >= 970, `table too narrow: ${result.measurement.tableWidth}px`);
-  assert.ok(result.measurement.tableWidth <= 1230, `table too wide: ${result.measurement.tableWidth}px`);
+  assert.ok(result.widths.commit <= 75, `commit too wide: ${result.widths.commit}px`);
+  assert.ok(result.widths.commit_inner <= 75, `commit inner too wide: ${result.widths.commit_inner}px`);
+  assert.ok(result.widths.commit_non_root <= 75, `commit non-root too wide: ${result.widths.commit_non_root}px`);
+  assert.ok(result.measurement.tableWidth >= 980, `table too narrow: ${result.measurement.tableWidth}px`);
+  assert.ok(result.measurement.tableWidth <= 1000, `table too wide: ${result.measurement.tableWidth}px`);
 
   const remotePage = await browser.newPage({ viewport: { width: 1030, height: 768 } });
   const remoteLogs = [];
