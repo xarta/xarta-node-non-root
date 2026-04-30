@@ -1788,6 +1788,24 @@
       return 2;
     }
 
+    function _polishHeaderSortReserve(headerEl, widthPx, rawBodyWidth, host, htmlOverride) {
+      var reserve = _headerAffordanceReserve(headerEl);
+      if (!reserve || !headerEl) return 0;
+      var profile = _measureHeaderLineProfile(headerEl, widthPx, host, htmlOverride);
+      if (!profile.lineCount || profile.lineCount <= 1 || !profile.lines || !profile.lines.length) {
+        return 0;
+      }
+      var widest = profile.lines.reduce(function (max, line) {
+        return Math.max(max, Number(line.width) || 0);
+      }, 0);
+      var last = profile.lines[profile.lines.length - 1];
+      var lastWidth = Number(last && last.width) || 0;
+      if (!profile.widestIsLast && lastWidth >= widest - reserve) {
+        return Math.ceil(reserve * 0.5);
+      }
+      return 0;
+    }
+
     function _polishMeasuredColumns(measuredColumns, context) {
       context = context || {};
       var rows = context.rows || [];
@@ -1814,10 +1832,15 @@
             measureHtml: headerHtml,
             wrapTolerancePx: 1,
           });
+          headerNeed += _polishHeaderSortReserve(headerEl, headerNeed, bodyNeed, host, headerHtml);
         }
         var preferred = Math.max(bodyNeed, headerNeed || 0);
         if (headerEl && headerEl.querySelector('.table-sort-arrow') && column.columnKey.charAt(0) !== '_') {
           preferred = Math.max(preferred, sortableMinWidth);
+          if (/\([^)]+\)/.test(_headerPlainLabel(headerEl)) && bodyNeed < 90) {
+            preferred = Math.max(preferred, sortableMinWidth + 23);
+          }
+          preferred += _polishHeaderSortReserve(headerEl, preferred, bodyNeed, host, headerHtml);
         }
         if (column.columnKey.charAt(0) === '_') {
           preferred = Math.max(preferred, column.width);

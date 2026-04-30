@@ -220,11 +220,12 @@ try {
   assert.ok(result.widths.gen >= 50, `gen too tight: ${result.widths.gen}px`);
   assert.ok(result.widths.pending >= 50, `pending too tight: ${result.widths.pending}px`);
   assert.ok(result.widths._actions >= 172, `actions too narrow: ${result.widths._actions}px`);
-  assert.ok(result.widths.commit <= 75, `commit too wide: ${result.widths.commit}px`);
-  assert.ok(result.widths.commit_inner <= 75, `commit inner too wide: ${result.widths.commit_inner}px`);
-  assert.ok(result.widths.commit_non_root <= 75, `commit non-root too wide: ${result.widths.commit_non_root}px`);
+  assert.ok(result.widths.commit >= 72, `commit too tight: ${result.widths.commit}px`);
+  assert.ok(result.widths.commit <= 82, `commit too wide: ${result.widths.commit}px`);
+  assert.ok(result.widths.commit_inner <= 82, `commit inner too wide: ${result.widths.commit_inner}px`);
+  assert.ok(result.widths.commit_non_root <= 82, `commit non-root too wide: ${result.widths.commit_non_root}px`);
   assert.ok(result.measurement.tableWidth >= 980, `table too narrow: ${result.measurement.tableWidth}px`);
-  assert.ok(result.measurement.tableWidth <= 1000, `table too wide: ${result.measurement.tableWidth}px`);
+  assert.ok(result.measurement.tableWidth <= 1030, `table too wide: ${result.measurement.tableWidth}px`);
 
   const remotePage = await browser.newPage({ viewport: { width: 1030, height: 768 } });
   const remoteLogs = [];
