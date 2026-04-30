@@ -125,7 +125,7 @@ table.table-shared-ui tbody td.table-action-cell:has(.table-asset-menu) {
 .table-col-resize {
   position: absolute;
   top: 2px;
-  right: 2px;
+  right: 0;
   width: 14px;
   height: calc(100% - 4px);
   cursor: col-resize;
@@ -136,9 +136,8 @@ table.table-shared-ui tbody td.table-action-cell:has(.table-asset-menu) {
   background:
     linear-gradient(
       to right,
-      transparent 0 5px,
-      var(--text-dim) 5px 6px,
-      transparent 6px 100%
+      transparent 0 calc(100% - 1px),
+      var(--text-dim) calc(100% - 1px) 100%
     );
   background-position: center;
   background-repeat: no-repeat;
@@ -844,7 +843,7 @@ button.table-icon-btn--history::before {
   }
   .table-col-resize {
     top: 1px;
-    right: 1px;
+    right: 0;
     width: 18px;
     height: calc(100% - 2px);
     background-size: 14px 100%;

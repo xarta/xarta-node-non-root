@@ -160,6 +160,16 @@ try {
       const headerRect = arrow.closest('th').getBoundingClientRect();
       return arrowRect.left < headerRect.left - 1 || arrowRect.right > headerRect.right + 1;
     }).map((arrow) => arrow.closest('th').dataset.col);
+    const clippedHeaderLabels = Array.from(document.querySelectorAll('th[data-col] .table-th-sort')).filter((label) => {
+      const labelRect = label.getBoundingClientRect();
+      const headerRect = label.closest('th').getBoundingClientRect();
+      return labelRect.left < headerRect.left - 1 || labelRect.right > headerRect.right + 1;
+    }).map((label) => label.closest('th').dataset.col);
+    const misalignedResizeHandles = Array.from(document.querySelectorAll('th[data-col] .table-col-resize')).filter((handle) => {
+      const handleRect = handle.getBoundingClientRect();
+      const headerRect = handle.closest('th').getBoundingClientRect();
+      return Math.abs(handleRect.right - headerRect.right) > 0.75;
+    }).map((handle) => handle.closest('th').dataset.col);
 
     const rowHeights = Array.from(document.querySelectorAll('tbody tr')).map((row) => Math.ceil(row.getBoundingClientRect().height));
     return {
@@ -168,6 +178,8 @@ try {
       saved,
       clippedChips,
       clippedSortArrows,
+      clippedHeaderLabels,
+      misalignedResizeHandles,
       displayHeaderHtml: document.querySelector('th[data-col="display_name"]')?.innerHTML || '',
       pendingHeaderHtml: document.querySelector('th[data-col="pending"]')?.innerHTML || '',
       maxRowHeight: Math.max(...rowHeights),
@@ -182,6 +194,8 @@ try {
     maxRowHeight: result.maxRowHeight,
     clippedChips: result.clippedChips,
     clippedSortArrows: result.clippedSortArrows,
+    clippedHeaderLabels: result.clippedHeaderLabels,
+    misalignedResizeHandles: result.misalignedResizeHandles,
     inlineActionRows: result.inlineActionRows,
     compactActionRows: result.compactActionRows,
     displayHeaderHtml: result.displayHeaderHtml,
@@ -191,6 +205,8 @@ try {
   assert.equal(result.saved.algorithm_version, 'browser-measured-horizontal-v1');
   assert.deepEqual(result.clippedChips, []);
   assert.deepEqual(result.clippedSortArrows, []);
+  assert.deepEqual(result.clippedHeaderLabels, []);
+  assert.deepEqual(result.misalignedResizeHandles, []);
   assert.equal(result.inlineActionRows, nodes.length);
   assert.equal(result.compactActionRows, 0);
   assert.match(result.saved.columns.find((column) => column.column_key === 'display_name')?.header_label || '', /<br>/);
