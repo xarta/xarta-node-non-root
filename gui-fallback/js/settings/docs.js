@@ -1357,8 +1357,8 @@ async function _docsDocSpeechStart(force = false) {
       mode: 'stream',
       eventKind: 'docs_document_narration',
       fallbackKind: 'positive',
-      sanitizeText: true,
-      transformProfile: 'speech',
+      sanitizeText: false,
+      transformProfile: 'none',
     });
   } catch (e) {
     if (e?.name === 'AbortError') {

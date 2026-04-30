@@ -494,8 +494,8 @@ async function _webResearchPrivacySpeechStart(force = false) {
       mode: 'stream',
       eventKind: 'docs_document_narration',
       fallbackKind: 'positive',
-      sanitizeText: true,
-      transformProfile: 'speech',
+      sanitizeText: false,
+      transformProfile: 'none',
     });
   } catch (e) {
     if (e?.name === 'AbortError') {
@@ -1528,8 +1528,8 @@ async function _webResearchSpeechStart(force = false) {
     await BlueprintsTtsClient.speak({
       text,
       mode: 'stream',
-      sanitizeText: true,
-      transformProfile: 'speech',
+      sanitizeText: false,
+      transformProfile: 'none',
       interrupt: true,
       eventKind: 'web_research_narration',
       fallbackKind: 'neutral',
