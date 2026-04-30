@@ -17,9 +17,13 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const tableUiSource = fs.readFileSync(path.resolve(here, '../js/table-ui.js'), 'utf8');
 const tableCss = fs.readFileSync(path.resolve(here, '../css/tables.css'), 'utf8');
 const servicesSource = fs.readFileSync(path.resolve(here, '../js/synthesis/services.js'), 'utf8');
+const proxmoxConfigSource = fs.readFileSync(path.resolve(here, '../js/probes/proxmox-config.js'), 'utf8');
 
 assert.match(servicesSource, /links:[\s\S]*?defaultWidth:\s*76/, 'Services Links default width should stay compact');
 assert.match(servicesSource, /case 'links':\s*return \{[^}]*min_width_px:\s*50/, 'Services Links seed min width should stay compact');
+assert.match(proxmoxConfigSource, /autoFitMode:\s*'grouped'/, 'Proxmox Config should use grouped auto-fit');
+assert.match(proxmoxConfigSource, /prepareGroupedAutoFitMeasurement:\s*_preparePveConfigGroupedAutoFitMeasurement/, 'Proxmox Config should prepare nested rows for grouped auto-fit');
+assert.match(proxmoxConfigSource, /_pveConfigRenderNetMeasurementRows/, 'Proxmox Config should expose network detail measurement rows during auto-fit');
 
 const columns = ['display_name', 'addresses', 'hostnames', 'gen', 'commit', 'commit_non_root', 'commit_inner', 'pending', '_actions'];
 const nodes = [

@@ -34,6 +34,7 @@ let _pveFilterTimer = null;  // debounce handle for pve-search input
 let _pveConfigTableView = null;
 let _pveOpenGroups = new Set();
 let _pveOpenNetDetails = new Set();
+let _pveAutoFitMeasuringDetails = false;
 
 function _ensurePveConfigTableView() {
   if (_pveConfigTableView || typeof TableView === 'undefined') return _pveConfigTableView;
@@ -83,6 +84,28 @@ function _pveConfigColumnSeed(col) {
   };
 }
 
+function _preparePveConfigGroupedAutoFitMeasurement() {
+  const previousOpenGroups = new Set(_pveOpenGroups);
+  const previousOpenNetDetails = new Set(_pveOpenNetDetails);
+  const previousMeasuringDetails = _pveAutoFitMeasuringDetails;
+  _pveFilteredRows().forEach(row => {
+    const safePve = 'pg' + String(row.pve_name || '').replace(/[^a-zA-Z0-9]/g, '_');
+    const safeid = String(row.config_id).replace(/[^a-zA-Z0-9_-]/g, '_');
+    _pveOpenGroups.add(safePve);
+    if ((_proxmoxNetsMap[row.config_id] || []).length > 0) {
+      _pveOpenNetDetails.add(safeid);
+    }
+  });
+  _pveAutoFitMeasuringDetails = true;
+  renderProxmoxConfig();
+  return () => {
+    _pveOpenGroups = previousOpenGroups;
+    _pveOpenNetDetails = previousOpenNetDetails;
+    _pveAutoFitMeasuringDetails = previousMeasuringDetails;
+    renderProxmoxConfig();
+  };
+}
+
 function _ensurePveConfigLayoutController() {
   if (_pveConfigLayoutController || typeof TableBucketLayouts === 'undefined') return _pveConfigLayoutController;
   _pveConfigLayoutController = TableBucketLayouts.create({
@@ -93,6 +116,8 @@ function _ensurePveConfigLayoutController() {
     getDefaultWidth: col => col === '_actions' ? _pveConfigActionCellWidth() : null,
     getColumnSeed: col => _pveConfigColumnSeed(col),
     render: () => renderProxmoxConfig(),
+    autoFitMode: 'grouped',
+    prepareGroupedAutoFitMeasurement: _preparePveConfigGroupedAutoFitMeasurement,
     surfaceLabel: 'Proxmox Config',
     layoutContextTitle: 'Proxmox Config Layout Context',
   });
@@ -247,10 +272,11 @@ function _pveConfigRenderMainCell(row, col, safeid, nets) {
 
 function _pveConfigRenderGroupRow(group, visibleCols, isOpen) {
   const cellCount = Math.max(1, visibleCols.length);
+  const groupColumn = esc(visibleCols[0] || 'pve_name');
   if (cellCount === 1) {
-    return `<tr data-pve-group-hdr="${group.safePve}" data-pve-group-open="${isOpen ? '1' : '0'}" data-pve-group-toggle="${group.safePve}" style="cursor:pointer;background:var(--surface);border-top:2px solid var(--border)"><td style="padding:7px 10px;font-weight:600"><span id="pve-grp-arrow-${group.safePve}" style="font-size:10px;color:var(--text-dim);margin-right:6px">${isOpen ? '▼' : '▶'}</span><code>${esc(group.pve)}</code><span style="font-size:11px;font-weight:normal;color:var(--text-dim);margin-left:8px">${group.typeSummary}</span></td></tr>`;
+    return `<tr data-pve-group-hdr="${group.safePve}" data-pve-group-open="${isOpen ? '1' : '0'}" data-pve-group-toggle="${group.safePve}" style="cursor:pointer;background:var(--surface);border-top:2px solid var(--border)"><td data-col="${groupColumn}" style="padding:7px 10px;font-weight:600"><span id="pve-grp-arrow-${group.safePve}" style="font-size:10px;color:var(--text-dim);margin-right:6px">${isOpen ? '▼' : '▶'}</span><code>${esc(group.pve)}</code><span style="font-size:11px;font-weight:normal;color:var(--text-dim);margin-left:8px">${group.typeSummary}</span></td></tr>`;
   }
-  return `<tr data-pve-group-hdr="${group.safePve}" data-pve-group-open="${isOpen ? '1' : '0'}" data-pve-group-toggle="${group.safePve}" style="cursor:pointer;background:var(--surface);border-top:2px solid var(--border)"><td colspan="${cellCount}" style="padding:7px 10px;font-weight:600"><span id="pve-grp-arrow-${group.safePve}" style="font-size:10px;color:var(--text-dim);margin-right:6px">${isOpen ? '▼' : '▶'}</span><code>${esc(group.pve)}</code><span style="font-size:11px;font-weight:normal;color:var(--text-dim);margin-left:8px">${group.typeSummary}</span></td></tr>`;
+  return `<tr data-pve-group-hdr="${group.safePve}" data-pve-group-open="${isOpen ? '1' : '0'}" data-pve-group-toggle="${group.safePve}" style="cursor:pointer;background:var(--surface);border-top:2px solid var(--border)"><td data-col="${groupColumn}" style="padding:7px 10px;font-weight:600"><span id="pve-grp-arrow-${group.safePve}" style="font-size:10px;color:var(--text-dim);margin-right:6px">${isOpen ? '▼' : '▶'}</span><code>${esc(group.pve)}</code></td><td colspan="${cellCount - 1}" style="padding:7px 10px;font-weight:600"><span style="font-size:11px;font-weight:normal;color:var(--text-dim)">${group.typeSummary}</span></td></tr>`;
 }
 
 function _pveConfigRenderNetDetailRow(groupSafePve, safeid, nets, colspan) {
@@ -260,6 +286,38 @@ function _pveConfigRenderNetDetailRow(groupSafePve, safeid, nets, colspan) {
     return `<tr style="background:var(--bg-alt,#161b22)"><td style="padding:2px 4px 2px 16px;color:var(--text-dim);font-size:11px;white-space:nowrap">${esc(net.net_key)} <span style="display:inline-flex;vertical-align:middle;margin-left:4px">${_pveConfigRenderNetDeleteButton(net.net_id, net.net_key)}</span></td><td colspan="2"><code style="font-size:11px">${esc(net.ip_address || '—')}</code>${srcTag}</td><td><code style="font-size:11px">${esc(net.mac_address || '—')}</code></td><td style="font-size:11px">${net.vlan_tag ?? '—'}</td><td style="font-size:11px;color:var(--text-dim)">${esc(net.bridge || '—')}</td><td style="font-size:11px;color:var(--text-dim)">${esc(net.model || '—')}</td><td colspan="4"></td></tr>`;
   }).join('');
   return `<tr id="nets-detail-${safeid}" data-pve-group="${groupSafePve}" data-nets-detail="1" style="display:table-row"><td colspan="${colspan}" style="padding:0;border-top:1px solid var(--border,#30363d)"><table style="width:100%;border-collapse:collapse"><thead><tr style="font-size:10px;color:var(--text-dim);background:var(--bg-darker,#0d1117)"><th style="padding:2px 4px 2px 16px;text-align:left">NIC</th><th colspan="2" style="text-align:left">IP</th><th style="text-align:left">MAC</th><th style="text-align:left">VLAN</th><th style="text-align:left">Bridge</th><th style="text-align:left">Model</th><th colspan="4"></th></tr></thead><tbody>${netsHtml}</tbody></table></td></tr>`;
+}
+
+function _pveConfigRenderNetMeasurementRows(groupSafePve, safeid, nets, visibleCols) {
+  return nets.map(net => {
+    const netText = `${net.net_key || ''} ${net.ip_address || ''}`.trim() || '—';
+    const detectedText = [net.mac_address || '', net.vlan_tag == null ? '' : `vlan ${net.vlan_tag}`].filter(Boolean).join(' · ') || '—';
+    const tagsText = [net.bridge || '', net.model || ''].filter(Boolean).join(' · ') || '—';
+    return `<tr data-pve-group="${groupSafePve}" data-nets-detail="${safeid}" data-net-measurement-row="1" style="display:table-row">${visibleCols.map(col => {
+      switch (col) {
+        case 'pve_name':
+        case 'vmid':
+        case 'vm_type':
+        case 'name':
+        case 'status':
+        case 'cores':
+        case 'memory_mb':
+          return '<td></td>';
+        case 'networks':
+          return `<td><code>${esc(netText)}</code></td>`;
+        case 'detected':
+          return `<td><code style="font-size:11px">${esc(detectedText)}</code></td>`;
+        case 'tags':
+          return `<td style="font-size:11px;color:var(--text-dim)">${esc(tagsText)}</td>`;
+        case 'last_probed':
+          return '<td></td>';
+        case '_actions':
+          return '<td></td>';
+        default:
+          return '<td></td>';
+      }
+    }).join('')}</tr>`;
+  }).join('');
 }
 
 function _pveConfigRenderSharedTable(renderBody) {
@@ -589,7 +647,9 @@ function renderProxmoxConfig() {
         if (isOpen) {
           html.push(`<tr data-pve-group="${group.safePve}" data-vm-row="${safeid}" style="display:table-row">${visibleCols.map(col => _pveConfigRenderMainCell(row, col, safeid, nets)).join('')}</tr>`);
           if (nets.length > 0 && _pveOpenNetDetails.has(safeid)) {
-            html.push(_pveConfigRenderNetDetailRow(group.safePve, safeid, nets, Math.max(1, visibleCols.length)));
+            html.push(_pveAutoFitMeasuringDetails
+              ? _pveConfigRenderNetMeasurementRows(group.safePve, safeid, nets, visibleCols)
+              : _pveConfigRenderNetDetailRow(group.safePve, safeid, nets, Math.max(1, visibleCols.length)));
           }
         }
       });
