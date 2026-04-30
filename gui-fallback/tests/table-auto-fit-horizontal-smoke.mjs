@@ -16,6 +16,10 @@ try {
 const here = path.dirname(fileURLToPath(import.meta.url));
 const tableUiSource = fs.readFileSync(path.resolve(here, '../js/table-ui.js'), 'utf8');
 const tableCss = fs.readFileSync(path.resolve(here, '../css/tables.css'), 'utf8');
+const servicesSource = fs.readFileSync(path.resolve(here, '../js/synthesis/services.js'), 'utf8');
+
+assert.match(servicesSource, /links:[\s\S]*?defaultWidth:\s*76/, 'Services Links default width should stay compact');
+assert.match(servicesSource, /case 'links':\s*return \{[^}]*min_width_px:\s*50/, 'Services Links seed min width should stay compact');
 
 const columns = ['display_name', 'addresses', 'hostnames', 'gen', 'commit', 'commit_non_root', 'commit_inner', 'pending', '_actions'];
 const nodes = [
@@ -659,6 +663,131 @@ try {
     assert.ok(backupResult.widths.filename > backupResult.widths.created_at, 'filename data should dominate header-sized columns when filenames are longer');
   } finally {
     await backupPage.close();
+  }
+
+  const servicesPage = await browser.newPage({ viewport: { width: 980, height: 620 } });
+  try {
+    await servicesPage.setContent(`<!doctype html>
+      <html>
+        <head>
+          <style>
+            body { margin:0; background:#080b12; color:#f8fbff; font-family: Segoe UI, Arial, sans-serif; }
+            ${tableCss}
+            .table-wrap { width: 964px; }
+          </style>
+        </head>
+        <body>
+          <div class="table-wrap"><table id="services-table" class="table-shared-ui table-shared-ui--scroll-x"></table></div>
+        </body>
+      </html>`);
+    await servicesPage.addScriptTag({ content: tableUiSource });
+    const servicesResult = await servicesPage.evaluate(async () => {
+      const columns = ['host_machine', 'project_status', 'tags', 'links', 'description'];
+      const rows = [
+        ['lab-host / demo-841', 'deployed', ['agent', 'ai', 'docker', 'demo841'], null, 'General-purpose AI agent framework'],
+        ['internet / none', 'deployed', [], [{ label: 'Open', url: 'https://example.invalid/test' }], 'Test url'],
+        ['none / internet', 'deployed', [], [{ label: 'Open', url: 'https://example.invalid/another' }], 'Just another test'],
+        ['lab-host / demo-841', 'deployed', ['tts', 'audiobook', 'gradio', 'gpu', 'docker', 'demo841'], null, 'Gradio UI for converting eBooks'],
+      ];
+      const widths = { host_machine: 260, project_status: 150, tags: 260, links: 220, description: 420 };
+      let hidden = new Set();
+      let scroll = true;
+      let saved = null;
+      function esc(value) {
+        return String(value).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+      }
+      function render() {
+        const table = document.getElementById('services-table');
+        const total = columns.reduce((sum, column) => sum + (widths[column] || 80), 0);
+        table.style.setProperty('--table-fit-width', total + 'px');
+        table.className = scroll ? 'table-shared-ui table-shared-ui--scroll-x' : 'table-shared-ui';
+        table.innerHTML = '<colgroup>' + columns.map((column) => `<col data-col="${column}" style="width:${widths[column] || 80}px">`).join('') + '</colgroup>'
+          + '<thead><tr>'
+          + '<th data-col="host_machine"><span class="table-th-sort">Host / LXC<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>'
+          + '<th data-col="project_status"><span class="table-th-sort">Status<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>'
+          + '<th data-col="tags"><span class="table-th-sort">Tags<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>'
+          + '<th data-col="links"><span class="table-th-sort">Links<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>'
+          + '<th data-col="description"><span class="table-th-sort">Description<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>'
+          + '</tr></thead><tbody>'
+          + rows.map((row) => '<tr>'
+            + `<td>${esc(row[0])}</td>`
+            + `<td><span class="status-deployed">${esc(row[1])}</span></td>`
+            + `<td>${row[2].map((tag) => `<span class="tag">${esc(tag)}</span>`).join('')}</td>`
+            + `<td>${row[3] ? row[3].map((link) => `<a class="link-badge" href="${esc(link.url)}">${esc(link.label)}</a>`).join('') : '<span style="color:var(--text-dim)">—</span>'}</td>`
+            + `<td style="color:var(--text-dim);font-size:13px">${esc(row[4])}</td>`
+            + '</tr>').join('')
+          + '</tbody>';
+      }
+      const view = {
+        isHorizontalScrollEnabled: () => scroll,
+        setHorizontalScrollEnabled: (enabled) => { scroll = !!enabled; },
+        getHiddenSet: () => new Set(hidden),
+        getSortState: () => ({ key: 'host_machine', dir: 1 }),
+        setSortState: () => {},
+        setHeaderLabelOverrides: () => {},
+        getHeaderLabelOverride: () => null,
+        prefs: {
+          getWidth: (column) => widths[column] || null,
+          setWidth: (column, width) => { widths[column] = width; },
+          setHiddenSet: (next) => { hidden = new Set(next); render(); },
+        },
+      };
+      window.apiFetch = async (url, opts = {}) => {
+        if (url.includes('/resolve')) {
+          return {
+            ok: true,
+            json: async () => ({
+              layout_key: '0000040A',
+              layout_data: {
+                version: 1,
+                columns: columns.map((column_key, position) => ({
+                  column_key,
+                  position,
+                  hidden: false,
+                  width_px: widths[column_key],
+                })),
+              },
+            }),
+          };
+        }
+        const body = JSON.parse(opts.body || '{}');
+        saved = body.layout_data || null;
+        return { ok: true, json: async () => ({ layout_key: '0000040A', layout_data: saved }) };
+      };
+      render();
+      const controller = window.TableBucketLayouts.create({
+        getTable: () => document.getElementById('services-table'),
+        getView: () => view,
+        getColumns: () => columns,
+        getMeta: (column) => ({
+          label: column === 'host_machine' ? 'Host / LXC' : column === 'project_status' ? 'Status' : column === 'links' ? 'Links' : column,
+          sortKey: column,
+        }),
+        getColumnSeed: (column) => {
+          if (column === 'links') return { min_width_px: 50, max_width_px: 360, width_px: widths[column] };
+          if (column === 'project_status') return { min_width_px: 96, max_width_px: 220, width_px: widths[column] };
+          if (column === 'tags') return { min_width_px: 120, max_width_px: 520, width_px: widths[column] };
+          if (column === 'description') return { min_width_px: 160, max_width_px: 1400, width_px: widths[column] };
+          return { min_width_px: 120, max_width_px: 420, width_px: widths[column] };
+        },
+        tableCode: '04',
+        tableName: 'services',
+        render,
+      });
+      const measurement = await controller.autoFitHorizontalLayout({ ensureHorizontalScroll: true, includeAllColumns: true, percentile: 1 });
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      return {
+        widths: { ...widths },
+        savedLinksWidth: saved?.columns?.find((column) => column.column_key === 'links')?.width_px || null,
+        clippedBadges: Array.from(document.querySelectorAll('.link-badge')).filter((badge) => badge.scrollWidth > badge.clientWidth + 1).map((badge) => badge.textContent),
+        tableWidth: measurement.tableWidth,
+      };
+    });
+    console.log(JSON.stringify({ servicesAutoFit: servicesResult }, null, 2));
+    assert.deepEqual(servicesResult.clippedBadges, [], 'Services links badges should not clip after auto-fit');
+    assert.ok(servicesResult.savedLinksWidth <= 90, `Services links column should stay compact for Open badges: ${servicesResult.savedLinksWidth}px`);
+  } finally {
+    await servicesPage.close();
   }
 } finally {
   await browser.close();

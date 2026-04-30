@@ -41,7 +41,7 @@ const _SVC_FIELD_META = {
   links: {
     label: 'Links',
     sortKey: 'links',
-    defaultWidth: 220,
+    defaultWidth: 76,
     render: s => {
       const linkBadges = (s.links || []).map(l => {
         const href = l.url || l.href || '#';
@@ -104,7 +104,7 @@ function _svcColumnSeed(col) {
     case 'tags':
       return { sqlite_column: 'tags', data_type: 'TEXT', sample_max_length: 32, min_width_px: 120, max_width_px: 520 };
     case 'links':
-      return { sqlite_column: 'links', data_type: 'TEXT', sample_max_length: 48, min_width_px: 140, max_width_px: 720 };
+      return { sqlite_column: 'links', data_type: 'TEXT', sample_max_length: 16, min_width_px: 50, max_width_px: 360 };
     case 'description':
       return { sqlite_column: 'description', data_type: 'TEXT', sample_max_length: 80, min_width_px: 160, max_width_px: 1400 };
     default:
