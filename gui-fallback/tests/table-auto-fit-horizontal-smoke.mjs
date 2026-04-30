@@ -536,6 +536,152 @@ try {
     await genericPage.close();
   }
 
+  const sparsePage = await browser.newPage({ viewport: { width: 1024, height: 620 } });
+  try {
+    await sparsePage.setContent(`<!doctype html>
+      <html>
+        <head>
+          <style>
+            body { margin:0; background:#080b12; color:#f8fbff; font-family: Segoe UI, Arial, sans-serif; }
+            ${tableCss}
+            .table-wrap { width: 1000px; }
+          </style>
+        </head>
+        <body>
+          <div class="table-wrap"><table id="sparse-table" class="table-shared-ui table-shared-ui--scroll-x"></table></div>
+        </body>
+      </html>`);
+    await sparsePage.addScriptTag({ content: tableUiSource });
+    const sparseResult = await sparsePage.evaluate(async () => {
+      const columns = ['vlan_id', 'cidr', 'source', 'description', '_actions'];
+      const rows = [
+        ['3', '192.0.2.0/24', 'inferred', '—'],
+        ['20', '198.51.100.0/24', 'inferred', '—'],
+        ['99', '203.0.113.0/24', 'inferred', '—'],
+      ];
+      const widths = { vlan_id: 160, cidr: 160, source: 160, description: 160, _actions: 80 };
+      let hidden = new Set();
+      let scroll = true;
+      let saved = null;
+      let headerLabels = {};
+      const hyphenationRequests = [];
+      function esc(value) {
+        return String(value).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+      }
+      function render() {
+        const table = document.getElementById('sparse-table');
+        const total = columns.reduce((sum, column) => sum + (widths[column] || 80), 0);
+        table.style.setProperty('--table-fit-width', total + 'px');
+        table.className = scroll ? 'table-shared-ui table-shared-ui--scroll-x' : 'table-shared-ui';
+        const labels = {
+          vlan_id: 'VLAN',
+          cidr: 'CIDR',
+          source: 'Source',
+          description: 'Description',
+          _actions: 'Actions',
+        };
+        table.innerHTML = '<colgroup>' + columns.map((column) => `<col data-col="${column}" style="width:${widths[column] || 80}px">`).join('') + '</colgroup>'
+          + '<thead><tr>' + columns.map((column) => {
+            const label = headerLabels[column] || labels[column];
+            return `<th data-col="${column}"><span class="table-th-sort">${label}<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>`;
+          }).join('') + '</tr></thead><tbody>'
+          + rows.map((row) => '<tr>'
+            + `<td style="font-weight:700">${esc(row[0])}</td>`
+            + `<td><code>${esc(row[1])}</code></td>`
+            + `<td>${esc(row[2])}</td>`
+            + `<td style="color:var(--text-dim)">${esc(row[3])}</td>`
+            + '<td class="table-action-cell"><button class="secondary table-icon-btn table-icon-btn--edit" type="button"></button></td>'
+            + '</tr>').join('')
+          + '</tbody>';
+      }
+      const view = {
+        isHorizontalScrollEnabled: () => scroll,
+        setHorizontalScrollEnabled: (enabled) => { scroll = !!enabled; },
+        getHiddenSet: () => new Set(hidden),
+        getSortState: () => ({ key: 'vlan_id', dir: 1 }),
+        setSortState: () => {},
+        setHeaderLabelOverrides: (overrides) => { headerLabels = { ...overrides }; render(); },
+        getHeaderLabelOverride: (column) => headerLabels[column] || null,
+        prefs: {
+          getWidth: (column) => widths[column] || null,
+          setWidth: (column, width) => { widths[column] = width; },
+          setHiddenSet: (next) => { hidden = new Set(next); render(); },
+        },
+      };
+      window.apiFetch = async (url, opts = {}) => {
+        if (url.includes('/hyphenate-header')) {
+          const body = JSON.parse(opts.body || '{}');
+          hyphenationRequests.push(body);
+          return {
+            ok: true,
+            json: async () => ({
+              header: body.header,
+              header_label: body.header === 'Description' ? 'Descrip-tion' : null,
+              changed: body.header === 'Description',
+              confidence: body.header === 'Description' ? 0.9 : 0.1,
+              reason: 'test hyphenation',
+              used_llm: true,
+            }),
+          };
+        }
+        if (url.includes('/resolve')) {
+          return {
+            ok: true,
+            json: async () => ({
+              layout_key: '0000130A',
+              layout_data: {
+                version: 1,
+                columns: columns.map((column_key, position) => ({
+                  column_key,
+                  position,
+                  hidden: false,
+                  width_px: widths[column_key],
+                })),
+              },
+            }),
+          };
+        }
+        saved = JSON.parse(opts.body || '{}').layout_data || null;
+        return { ok: true, json: async () => ({ layout_key: '0000130A', layout_data: saved }) };
+      };
+      render();
+      const controller = window.TableBucketLayouts.create({
+        getTable: () => document.getElementById('sparse-table'),
+        getView: () => view,
+        getColumns: () => columns,
+        getMeta: (column) => ({
+          label: column === 'vlan_id' ? 'VLAN' : column === '_actions' ? 'Actions' : column,
+          sortKey: column === '_actions' ? null : column,
+        }),
+        getColumnSeed: (column) => ({
+          min_width_px: column === '_actions' ? 44 : 40,
+          max_width_px: column === '_actions' ? 80 : 260,
+          width_px: widths[column],
+        }),
+        tableCode: '13',
+        tableName: 'sparse-vlans-test',
+        render,
+      });
+      const measurement = await controller.autoFitHorizontalLayout({ ensureHorizontalScroll: true, includeAllColumns: true, percentile: 1 });
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      return {
+        widths: { ...widths },
+        measurement,
+        savedDescriptionLabel: saved?.columns?.find((column) => column.column_key === 'description')?.header_label || null,
+        descriptionHeader: document.querySelector('th[data-col="description"]')?.textContent || '',
+        hyphenationRequests,
+      };
+    });
+    console.log(JSON.stringify({ sparseAutoFit: sparseResult }, null, 2));
+    assert.ok(sparseResult.hyphenationRequests.some((request) => request.header === 'Description'), 'sparse table should try compact hyphenation first');
+    assert.equal(sparseResult.savedDescriptionLabel, null, 'sparse comfort pass should remove auto hyphenation');
+    assert.doesNotMatch(sparseResult.descriptionHeader, /Descrip-tion/, 'sparse comfort pass should restore the full header');
+    assert.ok(sparseResult.measurement.tableWidth < 900, `sparse table should still be comfortably below viewport: ${sparseResult.measurement.tableWidth}px`);
+    assert.ok(sparseResult.widths.description >= 90, `description should get comfort width: ${sparseResult.widths.description}px`);
+  } finally {
+    await sparsePage.close();
+  }
+
   const groupedPage = await browser.newPage({ viewport: { width: 1010, height: 620 } });
   try {
     await groupedPage.setContent(`<!doctype html>

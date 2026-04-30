@@ -1967,6 +1967,48 @@
       return polished;
     }
 
+    function _isAutoHyphenatedHeaderLabel(label) {
+      var text = String(label || '');
+      return !!(text && text.indexOf('-') >= 0 && text.indexOf('<br') < 0);
+    }
+
+    function _relaxSparseMeasuredColumns(measuredColumns, context) {
+      context = context || {};
+      var viewportWidth = Number(context.viewportWidth) || 0;
+      if (!viewportWidth || !measuredColumns || !measuredColumns.length) return measuredColumns;
+      var sparseThreshold = viewportWidth * Number(context.sparseRelaxThreshold || 0.9);
+      var total = measuredColumns.reduce(function (sum, column) {
+        return sum + (Number(column.width) || 0);
+      }, 0);
+      if (total >= sparseThreshold) return measuredColumns;
+
+      var host = context.host || _ensureMeasureHost();
+      var headerMap = context.headerMap || Object.create(null);
+      var sortState = context.sortState || { key: null, dir: 0 };
+      var hiddenSet = context.hiddenSet || new Set();
+      var tenPxBudget = measuredColumns.length * 10;
+      var tenPercentViewport = viewportWidth * 0.1;
+      var comfortPx = tenPxBudget < tenPercentViewport ? 10 : 5;
+
+      return measuredColumns.map(function (column) {
+        var seed = getColumnSeed(column.columnKey, column.index, sortState, hiddenSet);
+        var headerEl = headerMap[column.columnKey];
+        var nextWidth = Number(column.width) || 0;
+        if (headerEl && column.headerLabel && _isAutoHyphenatedHeaderLabel(column.headerLabel)) {
+          var headerNeed = Math.max(Number(column.headerWidth) || 0, Number(column.rawBodyWidth) || 0)
+            + _headerDominanceBuffer(headerEl, Number(column.headerWidth) || 0, Number(column.rawBodyWidth) || 0, host, null);
+          nextWidth = Math.max(nextWidth, _clampMeasuredWidth(headerNeed, seed, column.columnKey, viewportWidth));
+          column.headerLabel = null;
+          column.sparseRelaxedHeaderLabel = true;
+        }
+        nextWidth = _clampMeasuredWidth(nextWidth + comfortPx, seed, column.columnKey, viewportWidth);
+        column.sparseRelaxedWidth = nextWidth;
+        column.sparseRelaxDelta = nextWidth - (Number(column.width) || 0);
+        column.width = nextWidth;
+        return column;
+      });
+    }
+
     function _percentile(values, fraction) {
       var sorted = values.filter(function (value) {
         return Number.isFinite(value) && value > 0;
@@ -2166,6 +2208,15 @@
         maxGrowPerColumn: options.polishMaxGrowPerColumnPx || 14,
         sortableMinWidth: options.polishSortableMinWidthPx || 50,
         targetFillRatio: options.polishTargetFillRatio || 0.985,
+      });
+      measuredColumns = _relaxSparseMeasuredColumns(measuredColumns, {
+        columns: columns,
+        headerMap: headerMap,
+        host: host,
+        viewportWidth: viewportWidth,
+        sortState: sortState,
+        hiddenSet: hiddenSet,
+        sparseRelaxThreshold: options.sparseRelaxThreshold || 0.9,
       });
       return {
         columns: measuredColumns,
