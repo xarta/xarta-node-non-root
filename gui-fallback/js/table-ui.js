@@ -1822,6 +1822,7 @@
         var seed = getColumnSeed(column.columnKey, column.index, sortState, hiddenSet);
         var headerEl = headerMap[column.columnKey];
         var headerHtml = _headerHtmlForColumn(headerEl, column);
+        var isParentheticalHeader = headerEl && /\([^)]+\)/.test(_headerPlainLabel(headerEl));
         var bodyNeed = column.rawBodyWidth + _columnBodyBreathingPx(column, rows, columns);
         var headerNeed = 0;
         if (headerEl) {
@@ -1832,15 +1833,18 @@
             measureHtml: headerHtml,
             wrapTolerancePx: 1,
           });
-          headerNeed += _polishHeaderSortReserve(headerEl, headerNeed, bodyNeed, host, headerHtml);
+          if (!isParentheticalHeader) {
+            headerNeed += _polishHeaderSortReserve(headerEl, headerNeed, bodyNeed, host, headerHtml);
+          }
         }
         var preferred = Math.max(bodyNeed, headerNeed || 0);
         if (headerEl && headerEl.querySelector('.table-sort-arrow') && column.columnKey.charAt(0) !== '_') {
           preferred = Math.max(preferred, sortableMinWidth);
-          if (/\([^)]+\)/.test(_headerPlainLabel(headerEl)) && bodyNeed < 90) {
+          if (isParentheticalHeader && bodyNeed < 90) {
             preferred = Math.max(preferred, sortableMinWidth + 23);
+          } else {
+            preferred += _polishHeaderSortReserve(headerEl, preferred, bodyNeed, host, headerHtml);
           }
-          preferred += _polishHeaderSortReserve(headerEl, preferred, bodyNeed, host, headerHtml);
         }
         if (column.columnKey.charAt(0) === '_') {
           preferred = Math.max(preferred, column.width);
