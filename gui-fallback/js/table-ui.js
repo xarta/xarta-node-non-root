@@ -2235,6 +2235,30 @@
       return measurement;
     }
 
+    async function autoFitGroupedHorizontalLayout(options) {
+      options = Object.assign({}, options || {});
+      var restoreMeasurementState = null;
+      if (typeof cfg.prepareGroupedAutoFitMeasurement === 'function') {
+        restoreMeasurementState = await cfg.prepareGroupedAutoFitMeasurement({
+          mode: 'grouped-horizontal',
+          table: getTable(),
+          view: getView(),
+        });
+        await _afterNextPaint();
+      }
+      try {
+        return await autoFitHorizontalLayout(Object.assign({
+          seedOrigin: 'browser-measured-grouped',
+          algorithmVersion: 'browser-measured-grouped-horizontal-v1',
+        }, options));
+      } finally {
+        if (typeof restoreMeasurementState === 'function') {
+          await restoreMeasurementState();
+          await _afterNextPaint();
+        }
+      }
+    }
+
     async function autoFitLayout(options) {
       options = Object.assign({}, options || {});
       var view = getView();
@@ -2246,6 +2270,9 @@
       }
       if (!Object.prototype.hasOwnProperty.call(options, 'includeAllColumns')) {
         options.includeAllColumns = horizontalScrollEnabled;
+      }
+      if (options.autoFitMode === 'grouped' || cfg.autoFitMode === 'grouped') {
+        return autoFitGroupedHorizontalLayout(options);
       }
       return autoFitHorizontalLayout(options);
     }
@@ -2482,6 +2509,7 @@
       persistLayout: persistLayout,
       autoFitLayout: autoFitLayout,
       autoFitHorizontalLayout: autoFitHorizontalLayout,
+      autoFitGroupedHorizontalLayout: autoFitGroupedHorizontalLayout,
       toggleHorizontalScroll: toggleHorizontalScroll,
       setHorizontalScrollEnabled: function (enabled) {
         var view = getView();

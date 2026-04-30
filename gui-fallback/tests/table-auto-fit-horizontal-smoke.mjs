@@ -532,6 +532,188 @@ try {
     await genericPage.close();
   }
 
+  const groupedPage = await browser.newPage({ viewport: { width: 1010, height: 620 } });
+  try {
+    await groupedPage.setContent(`<!doctype html>
+      <html>
+        <head>
+          <style>
+            :root {
+              --surface:#151823;
+              --border:#2b3450;
+              --text:#f8fbff;
+              --text-dim:#8fa1c7;
+              --accent:#5b9cf6;
+            }
+            body { margin:0; background:#080b12; color:#f8fbff; font-family: Segoe UI, Arial, sans-serif; }
+            ${tableCss}
+            .table-wrap { width: 990px; }
+          </style>
+        </head>
+        <body>
+          <div class="table-wrap"><table id="grouped-table" class="table-shared-ui table-shared-ui--scroll-x"></table></div>
+        </body>
+      </html>`);
+    await groupedPage.addScriptTag({ content: tableUiSource });
+    const groupedResult = await groupedPage.evaluate(async () => {
+      const columns = ['ip_address', 'fqdn', 'record_type', 'source', 'mac_address', 'active', 'last_seen'];
+      const groups = [
+        {
+          ip: '192.0.2.10',
+          records: [
+            ['alpha-office-west-wing.example.invalid', 'A', 'resolver-cache', '02:00:00:00:00:10', true, '2026-04-30 10:20:30'],
+            ['alpha-printer.example.invalid', 'PTR', 'static-dhcp', '02:00:00:00:00:10', true, '2026-04-30 10:21:30'],
+          ],
+        },
+        {
+          ip: '192.0.2.11',
+          records: [
+            ['beta-lab-long-hostname.example.invalid', 'AAAA', 'resolver-cache', '02:00:00:00:00:11', false, '2026-04-30 10:22:30'],
+          ],
+        },
+      ];
+      const labels = {
+        ip_address: 'IP Address',
+        fqdn: 'FQDN',
+        record_type: 'Type',
+        source: 'Source',
+        mac_address: 'MAC',
+        active: 'Active',
+        last_seen: 'Last Seen',
+      };
+      const widths = Object.fromEntries(columns.map((column) => [column, 180]));
+      let open = false;
+      let hidden = new Set();
+      let scroll = true;
+      let saved = null;
+      let prepareCalls = 0;
+      let restoreCalls = 0;
+
+      function esc(value) {
+        return String(value).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+      }
+
+      function render() {
+        const table = document.getElementById('grouped-table');
+        const total = columns.reduce((sum, column) => sum + (widths[column] || 80), 0);
+        table.style.setProperty('--table-fit-width', total + 'px');
+        table.className = scroll ? 'table-shared-ui table-shared-ui--scroll-x' : 'table-shared-ui';
+        table.innerHTML = '<colgroup>' + columns.map((column) => `<col data-col="${column}" style="width:${widths[column]}px">`).join('') + '</colgroup>'
+          + '<thead><tr>' + columns.map((column) => `<th data-col="${column}"><span class="table-th-sort">${esc(labels[column])}<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>`).join('') + '</tr></thead>'
+          + '<tbody>' + groups.map((group) => {
+            const summary = `${group.records.length} records · MAC ${group.records[0][3]}`;
+            const header = `<tr data-group-row="${esc(group.ip)}"><td><strong>${esc(group.ip)}</strong></td><td colspan="${columns.length - 1}" style="color:var(--text-dim)">${esc(summary)}</td></tr>`;
+            const detail = group.records.map((record) => '<tr data-detail-row style="display:' + (open ? 'table-row' : 'none') + '">'
+              + '<td style="padding-left:20px;color:var(--text-dim)">↳</td>'
+              + `<td><span class="table-cell-clip__text">${esc(record[0])}</span></td>`
+              + `<td>${esc(record[1])}</td>`
+              + `<td><span class="table-cell-clip__text">${esc(record[2])}</span></td>`
+              + `<td><code>${esc(record[3])}</code></td>`
+              + `<td style="text-align:center">${record[4] ? '✓' : '✗'}</td>`
+              + `<td style="white-space:nowrap;color:var(--text-dim)">${esc(record[5])}</td>`
+              + '</tr>').join('');
+            return header + detail;
+          }).join('') + '</tbody>';
+      }
+
+      const view = {
+        isHorizontalScrollEnabled: () => scroll,
+        setHorizontalScrollEnabled: (enabled) => { scroll = !!enabled; },
+        getHiddenSet: () => new Set(hidden),
+        getSortState: () => ({ key: 'ip_address', dir: 1 }),
+        setSortState: () => {},
+        setHeaderLabelOverrides: () => {},
+        getHeaderLabelOverride: () => null,
+        prefs: {
+          getWidth: (column) => widths[column] || null,
+          setWidth: (column, width) => { widths[column] = width; },
+          setHiddenSet: (next) => { hidden = new Set(next); render(); },
+        },
+      };
+      window.apiFetch = async (url, opts = {}) => {
+        if (url.includes('/resolve')) {
+          return {
+            ok: true,
+            json: async () => ({
+              layout_key: '0000120A',
+              layout_data: {
+                version: 1,
+                columns: columns.map((column_key, position) => ({
+                  column_key,
+                  position,
+                  hidden: false,
+                  width_px: widths[column_key],
+                })),
+              },
+            }),
+          };
+        }
+        const body = JSON.parse(opts.body || '{}');
+        saved = body.layout_data || null;
+        return { ok: true, json: async () => ({ layout_key: '0000120A', layout_data: saved }) };
+      };
+      render();
+      const controller = window.TableBucketLayouts.create({
+        getTable: () => document.getElementById('grouped-table'),
+        getView: () => view,
+        getColumns: () => columns,
+        getMeta: (column) => ({ label: labels[column], sortKey: column }),
+        getColumnSeed: (column) => ({
+          min_width_px: column === 'fqdn' ? 72 : 40,
+          max_width_px: column === 'fqdn' ? 420 : 260,
+          width_px: widths[column],
+        }),
+        tableCode: '12',
+        tableName: 'grouped-dns-test',
+        autoFitMode: 'grouped',
+        prepareGroupedAutoFitMeasurement: () => {
+          prepareCalls += 1;
+          const wasOpen = open;
+          open = true;
+          render();
+          return () => {
+            restoreCalls += 1;
+            open = wasOpen;
+            render();
+          };
+        },
+        render,
+      });
+      const measurement = await controller.autoFitLayout({ percentile: 1 });
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const hiddenDetailRows = Array.from(document.querySelectorAll('[data-detail-row]')).filter((row) => row.style.display === 'none').length;
+      return {
+        widths: { ...widths },
+        saved,
+        measurement,
+        open,
+        prepareCalls,
+        restoreCalls,
+        hiddenDetailRows,
+      };
+    });
+    console.log(JSON.stringify({
+      groupedAutoFit: {
+        widths: groupedResult.widths,
+        algorithm: groupedResult.saved?.algorithm_version,
+        prepareCalls: groupedResult.prepareCalls,
+        restoreCalls: groupedResult.restoreCalls,
+        hiddenDetailRows: groupedResult.hiddenDetailRows,
+        rowCountMeasured: groupedResult.measurement?.rowCount,
+      },
+    }, null, 2));
+    assert.equal(groupedResult.saved.algorithm_version, 'browser-measured-grouped-horizontal-v1');
+    assert.equal(groupedResult.prepareCalls, 1, 'grouped auto-fit should prepare expanded measurement once');
+    assert.equal(groupedResult.restoreCalls, 1, 'grouped auto-fit should restore expansion state once');
+    assert.equal(groupedResult.open, false, 'grouped auto-fit should restore collapsed state');
+    assert.equal(groupedResult.hiddenDetailRows, 3, 'detail rows should be collapsed again after measurement');
+    assert.ok(groupedResult.widths.fqdn >= 190, `grouped FQDN should measure hidden detail content: ${groupedResult.widths.fqdn}px`);
+    assert.ok(groupedResult.widths.record_type <= 100, `grouped Type column should remain compact: ${groupedResult.widths.record_type}px`);
+    assert.ok(groupedResult.widths.source >= 112, `grouped Source column should measure detail content: ${groupedResult.widths.source}px`);
+  } finally {
+    await groupedPage.close();
+  }
+
   const backupPage = await browser.newPage({ viewport: { width: 660, height: 420 } });
   try {
     await backupPage.setContent(`<!doctype html>

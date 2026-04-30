@@ -104,6 +104,20 @@ function _dnsColumnSeed(col) {
   };
 }
 
+function _prepareDnsGroupedAutoFitMeasurement() {
+  const previousOpenGroups = new Set(_dnsOpenGroups);
+  const view = _ensureDnsTableView();
+  const sortState = view?.getSortState() || { key: 'ip_address', dir: 1 };
+  _dnsBuildGroups(_dnsFilteredRows(), sortState).forEach(group => {
+    _dnsOpenGroups.add(group.safeip);
+  });
+  renderPfSenseDns();
+  return () => {
+    _dnsOpenGroups = previousOpenGroups;
+    renderPfSenseDns();
+  };
+}
+
 function _ensureDnsLayoutController() {
   if (_dnsLayoutController || typeof TableBucketLayouts === 'undefined') return _dnsLayoutController;
   _dnsLayoutController = TableBucketLayouts.create({
@@ -114,6 +128,8 @@ function _ensureDnsLayoutController() {
     getDefaultWidth: () => null,
     getColumnSeed: col => _dnsColumnSeed(col),
     render: () => renderPfSenseDns(),
+    autoFitMode: 'grouped',
+    prepareGroupedAutoFitMeasurement: _prepareDnsGroupedAutoFitMeasurement,
     surfaceLabel: 'pfSense DNS',
     layoutContextTitle: 'pfSense DNS Layout Context',
   });
