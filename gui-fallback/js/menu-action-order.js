@@ -16,6 +16,7 @@
     { key: 'save', rank: 50, patterns: [/\bsave\b/] },
     { key: 'meta', rank: 55, patterns: [/\bmeta\b/] },
     { key: 'columns', rank: 60, patterns: [/\bcolumns\b/] },
+    { key: 'auto-fit', rank: 61, patterns: [/\bauto\s*fit\b/, /\bfit widths\b/] },
     { key: 'pagination', rank: 62, patterns: [/\bpagination\b/] },
     { key: 'explore-browse', rank: 63, patterns: [/\bexplore\b/, /\bbrowse\b/] },
     { key: 'grouping', rank: 64, patterns: [/\bgroup:\b/, /\bgroup\b/] },

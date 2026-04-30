@@ -1378,6 +1378,323 @@
       }
     }
 
+    function _afterNextPaint() {
+      return new Promise(function (resolve) {
+        window.requestAnimationFrame(function () {
+          window.requestAnimationFrame(resolve);
+        });
+      });
+    }
+
+    function _ensureMeasureHost() {
+      var host = document.getElementById('table-layout-measure-host');
+      if (host) return host;
+      host = document.createElement('div');
+      host.id = 'table-layout-measure-host';
+      host.setAttribute('aria-hidden', 'true');
+      host.style.cssText = [
+        'position:absolute',
+        'left:-10000px',
+        'top:-10000px',
+        'width:auto',
+        'height:auto',
+        'visibility:hidden',
+        'pointer-events:none',
+        'contain:layout style paint',
+        'z-index:-1',
+      ].join(';');
+      document.body.appendChild(host);
+      return host;
+    }
+
+    function _numberFromPx(value) {
+      var n = parseFloat(value || '0');
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    function _visibleColumnKeys() {
+      var tableEl = getTable();
+      if (!tableEl) return [];
+      return Array.prototype.slice.call(tableEl.querySelectorAll('thead th[data-col]'))
+        .map(function (th) { return th.dataset.col || ''; })
+        .filter(Boolean);
+    }
+
+    function _cellForColumn(row, columnKey) {
+      return row ? row.querySelector('td[data-col="' + window.CSS.escape(columnKey) + '"]') : null;
+    }
+
+    function _copyMeasureStyles(sourceEl, clone) {
+      var style = window.getComputedStyle(sourceEl);
+      [
+        'fontFamily',
+        'fontSize',
+        'fontStyle',
+        'fontWeight',
+        'letterSpacing',
+        'lineHeight',
+        'textTransform',
+        'whiteSpace',
+        'wordBreak',
+        'overflowWrap',
+        'paddingTop',
+        'paddingRight',
+        'paddingBottom',
+        'paddingLeft',
+        'borderTopWidth',
+        'borderRightWidth',
+        'borderBottomWidth',
+        'borderLeftWidth',
+        'borderTopStyle',
+        'borderRightStyle',
+        'borderBottomStyle',
+        'borderLeftStyle',
+      ].forEach(function (prop) {
+        clone.style[prop] = style[prop];
+      });
+      clone.style.boxSizing = 'border-box';
+    }
+
+    function _normaliseMeasureClone(sourceEl, widthPx) {
+      var clone = document.createElement('div');
+      clone.className = sourceEl.className || '';
+      clone.innerHTML = sourceEl.innerHTML;
+      if (sourceEl.dataset && sourceEl.dataset.col) clone.dataset.col = sourceEl.dataset.col;
+      clone.querySelectorAll('[id]').forEach(function (el) { el.removeAttribute('id'); });
+      _copyMeasureStyles(sourceEl, clone);
+      clone.style.position = 'static';
+      clone.style.left = 'auto';
+      clone.style.top = 'auto';
+      clone.style.transform = 'none';
+      clone.style.visibility = 'hidden';
+      clone.style.overflow = 'visible';
+      clone.style.textOverflow = 'clip';
+      clone.style.maxWidth = 'none';
+      clone.style.minWidth = '0';
+      clone.style.height = 'auto';
+      clone.style.minHeight = '0';
+      clone.style.float = 'none';
+      clone.style.contain = 'none';
+      if (Number.isFinite(widthPx) && widthPx > 0) {
+        clone.style.display = 'block';
+        clone.style.width = Math.ceil(widthPx) + 'px';
+      } else {
+        clone.style.display = 'inline-block';
+        clone.style.width = 'max-content';
+      }
+      return clone;
+    }
+
+    function _measureElement(sourceEl, widthPx, host) {
+      if (!sourceEl) return { width: 0, height: 0, scrollWidth: 0 };
+      var clone = _normaliseMeasureClone(sourceEl, widthPx);
+      host.appendChild(clone);
+      var rect = clone.getBoundingClientRect();
+      var result = {
+        width: Math.ceil(rect.width || clone.offsetWidth || 0),
+        height: Math.ceil(rect.height || clone.offsetHeight || 0),
+        scrollWidth: Math.ceil(clone.scrollWidth || rect.width || 0),
+      };
+      host.removeChild(clone);
+      return result;
+    }
+
+    function _horizontalPadding(el) {
+      if (!el) return 0;
+      var style = window.getComputedStyle(el);
+      return _numberFromPx(style.paddingLeft) + _numberFromPx(style.paddingRight);
+    }
+
+    function _measureActionCellWidth(cell, host, seed) {
+      if (!cell) return 0;
+      var inlineActions = cell.querySelector('.table-inline-actions');
+      if (inlineActions) {
+        var measured = _measureElement(inlineActions, null, host).width + _horizontalPadding(cell);
+        var seedMaxInline = Number(seed && seed.max_width_px);
+        if (Number.isFinite(seedMaxInline) && seedMaxInline > 0 && seedMaxInline <= 260) {
+          measured = Math.max(measured, seedMaxInline);
+        }
+        return Math.ceil(measured);
+      }
+      var seedMax = Number(seed && seed.max_width_px);
+      if (Number.isFinite(seedMax) && seedMax > 0 && seedMax <= 260) return seedMax;
+      return _measureElement(cell, null, host).width;
+    }
+
+    function _smallestWidthWithoutExtraWrap(sourceEl, options) {
+      options = options || {};
+      var host = options.host || _ensureMeasureHost();
+      var seed = options.seed || {};
+      var isActionColumn = !!options.isActionColumn;
+      if (isActionColumn && sourceEl && sourceEl.tagName === 'TD') {
+        return _measureActionCellWidth(sourceEl, host, seed);
+      }
+      var natural = _measureElement(sourceEl, null, host);
+      var naturalWidth = Math.ceil(natural.width || 0);
+      if (!naturalWidth) return 0;
+
+      var minWidth = Math.max(1, Math.ceil(Number(seed.min_width_px) || 1));
+      var high = Math.max(naturalWidth, minWidth);
+      var baseline = _measureElement(sourceEl, high, host).height || natural.height || 0;
+      var tolerance = Number(options.wrapTolerancePx || 1);
+      var fitsAtWidth = function (widthPx) {
+        var measured = _measureElement(sourceEl, widthPx, host);
+        return measured.height <= baseline + tolerance
+          && measured.scrollWidth <= Math.ceil(widthPx) + tolerance;
+      };
+      if (fitsAtWidth(minWidth)) return minWidth;
+
+      var low = minWidth;
+      while (low < high) {
+        var mid = Math.floor((low + high) / 2);
+        if (fitsAtWidth(mid)) {
+          high = mid;
+        } else {
+          low = mid + 1;
+        }
+      }
+      return Math.ceil(high);
+    }
+
+    function _percentile(values, fraction) {
+      var sorted = values.filter(function (value) {
+        return Number.isFinite(value) && value > 0;
+      }).sort(function (a, b) { return a - b; });
+      if (!sorted.length) return 0;
+      var f = Number.isFinite(Number(fraction)) ? Number(fraction) : 1;
+      f = Math.max(0, Math.min(1, f));
+      var index = Math.max(0, Math.ceil(sorted.length * f) - 1);
+      return sorted[index];
+    }
+
+    function _clampMeasuredWidth(width, seed, columnKey, viewportWidth) {
+      var minWidth = Math.max(1, Math.ceil(Number(seed && seed.min_width_px) || 40));
+      var maxWidth = Math.ceil(Number(seed && seed.max_width_px) || 900);
+      if (columnKey && columnKey.charAt(0) === '_' && maxWidth <= 260) {
+        minWidth = Math.min(minWidth, maxWidth);
+      }
+      var mobileCap = Math.max(minWidth, Math.floor((viewportWidth || window.innerWidth || 0) * 0.66));
+      var isMobilePortrait = (window.innerWidth || 0) <= 600 && window.matchMedia('(orientation: portrait)').matches;
+      var effectiveMax = isMobilePortrait && !(columnKey && columnKey.charAt(0) === '_')
+        ? Math.min(maxWidth, Math.max(mobileCap, minWidth))
+        : maxWidth;
+      return Math.max(minWidth, Math.min(Math.ceil(width || minWidth), effectiveMax));
+    }
+
+    function _measureHorizontalLayout(options) {
+      options = options || {};
+      var tableEl = getTable();
+      var view = getView();
+      if (!tableEl || !view) return null;
+      var host = _ensureMeasureHost();
+      var columns = _visibleColumnKeys();
+      var sortState = typeof view.getSortState === 'function' ? view.getSortState() : { key: null, dir: 0 };
+      var hiddenSet = typeof view.getHiddenSet === 'function' ? view.getHiddenSet() : new Set();
+      var headerMap = Object.create(null);
+      Array.prototype.slice.call(tableEl.querySelectorAll('thead th[data-col]')).forEach(function (th) {
+        headerMap[th.dataset.col] = th;
+      });
+      var rows = Array.prototype.slice.call(tableEl.querySelectorAll('tbody tr'));
+      var viewportWidth = tableEl.closest('.table-wrap')?.clientWidth || window.innerWidth || 0;
+      var percentile = Object.prototype.hasOwnProperty.call(options, 'percentile') ? Number(options.percentile) : 1;
+      var measuredColumns = columns.map(function (columnKey, index) {
+        var seed = getColumnSeed(columnKey, index, sortState, hiddenSet);
+        var isActionColumn = columnKey.charAt(0) === '_';
+        var widths = [];
+        var headerEl = headerMap[columnKey];
+        if (headerEl) {
+          widths.push(_smallestWidthWithoutExtraWrap(headerEl, {
+            host: host,
+            seed: seed,
+            wrapTolerancePx: 1,
+          }));
+        }
+        rows.forEach(function (row) {
+          var cell = _cellForColumn(row, columnKey);
+          if (!cell) return;
+          widths.push(_smallestWidthWithoutExtraWrap(cell, {
+            host: host,
+            seed: seed,
+            isActionColumn: isActionColumn,
+            wrapTolerancePx: 1,
+          }));
+        });
+        var rawWidth = _percentile(widths, percentile);
+        if (rows.some(function (row) {
+          var cell = _cellForColumn(row, columnKey);
+          return !!(cell && cell.querySelector('.ip-chip'));
+        })) {
+          rawWidth += Number(options.chipBreathingPx || 18);
+        }
+        var width = _clampMeasuredWidth(rawWidth, seed, columnKey, viewportWidth);
+        return {
+          columnKey: columnKey,
+          width: width,
+          rawWidth: rawWidth,
+          minWidth: seed.min_width_px,
+          maxWidth: seed.max_width_px,
+        };
+      });
+      return {
+        columns: measuredColumns,
+        rowCount: rows.length,
+        viewportWidth: viewportWidth,
+        tableWidth: measuredColumns.reduce(function (sum, column) { return sum + column.width; }, 0),
+        percentile: percentile,
+      };
+    }
+
+    async function autoFitHorizontalLayout(options) {
+      options = options || {};
+      var view = getView();
+      if (!view) return null;
+      if (options.ensureHorizontalScroll !== false
+          && typeof view.isHorizontalScrollEnabled === 'function'
+          && typeof view.setHorizontalScrollEnabled === 'function'
+          && !view.isHorizontalScrollEnabled()) {
+        view.setHorizontalScrollEnabled(true);
+      }
+      if (view.prefs && typeof view.prefs.setHiddenSet === 'function' && options.includeAllColumns !== false) {
+        view.prefs.setHiddenSet(new Set());
+      }
+      await resolveRemoteLayout({ rerender: false, forceApply: true });
+      if (view.prefs && typeof view.prefs.setHiddenSet === 'function' && options.includeAllColumns !== false) {
+        view.prefs.setHiddenSet(new Set());
+      }
+      if (typeof cfg.render === 'function') cfg.render();
+      await _afterNextPaint();
+
+      var measurement = _measureHorizontalLayout(options);
+      var layoutData = buildLayoutPayload();
+      if (!measurement || !layoutData) return measurement;
+      var widthsByColumn = Object.create(null);
+      measurement.columns.forEach(function (column) {
+        widthsByColumn[column.columnKey] = column.width;
+      });
+      layoutData.seed_origin = options.seedOrigin || 'browser-measured';
+      layoutData.algorithm_version = options.algorithmVersion || 'browser-measured-horizontal-v1';
+      layoutData.bucket_flags = getViewportBits();
+      layoutData.measurement = {
+        row_count: measurement.rowCount,
+        viewport_width_px: measurement.viewportWidth,
+        table_width_px: measurement.tableWidth,
+        percentile: measurement.percentile,
+      };
+      layoutData.columns.forEach(function (column) {
+        if (!column || !column.column_key) return;
+        if (Object.prototype.hasOwnProperty.call(widthsByColumn, column.column_key)) {
+          column.width_px = widthsByColumn[column.column_key];
+        }
+        if (options.includeAllColumns !== false) column.hidden = false;
+      });
+
+      applyRemoteLayout(layoutData);
+      await persistLayout({ layoutData: layoutData });
+      if (typeof cfg.render === 'function') cfg.render();
+      _syncQuickActionsState();
+      return measurement;
+    }
+
     function scheduleLayoutSave(options) {
       options = options || {};
       clearTimeout(layoutSaveTimer);
@@ -1608,6 +1925,7 @@
       resolveRemoteLayout: resolveRemoteLayout,
       scheduleLayoutSave: scheduleLayoutSave,
       persistLayout: persistLayout,
+      autoFitHorizontalLayout: autoFitHorizontalLayout,
       toggleHorizontalScroll: toggleHorizontalScroll,
       openLayoutContextModal: openLayoutContextModal,
       bindLayoutChange: bindLayoutChange,

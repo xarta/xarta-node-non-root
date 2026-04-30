@@ -183,6 +183,19 @@ async function toggleNodesHorizontalScroll() {
   await controller.toggleHorizontalScroll();
 }
 
+async function autoFitNodesHorizontalLayout() {
+  const controller = _ensureNodesLayoutController();
+  if (!controller || typeof controller.autoFitHorizontalLayout !== 'function') return;
+  const measurement = await controller.autoFitHorizontalLayout({
+    ensureHorizontalScroll: true,
+    includeAllColumns: true,
+    percentile: 1,
+  });
+  if (measurement) {
+    console.info('Fleet Nodes horizontal auto-fit:', measurement);
+  }
+}
+
 async function openNodesLayoutContextModal() {
   const controller = _ensureNodesLayoutController();
   if (!controller) return;

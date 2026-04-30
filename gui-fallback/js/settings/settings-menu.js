@@ -64,8 +64,9 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'nod-fn-bkpcols',  label: 'Backup Columns',   icon: HIEROGLYPHS.khaHorizon, fn: 'nod.backupColumns', activeOn: ['nodes'],   parent: 'settings-layout', order: 2 },
         { id: 'nod-fn-update',   label: 'Fleet Update',     icon: HIEROGLYPHS.crookFlail, fn: 'nod.update',   activeOn: ['nodes'],        parent: 'settings-layout', order: 3 },
         { id: 'nod-fn-scroll',   label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'nod.scroll', activeOn: ['nodes'], parent: 'settings-layout', order: 4 },
-        { id: 'nod-fn-context',  label: 'Layout Context',   icon: HIEROGLYPHS.eyeOfHorus, fn: 'nod.context',  activeOn: ['nodes'],        parent: 'settings-layout', order: 5 },
-        { id: 'bkp-fn-context',  label: 'Backup Layout Context', icon: HIEROGLYPHS.eyeOfHorus, fn: 'bkp.context', activeOn: ['nodes'],   parent: 'settings-layout', order: 6 },
+        { id: 'nod-fn-autofit',  label: 'Auto Fit Widths',  icon: 'icons/ui/table-columns-blue.svg', fn: 'nod.autoFit', activeOn: ['nodes'], parent: 'settings-layout', order: 5 },
+        { id: 'nod-fn-context',  label: 'Layout Context',   icon: HIEROGLYPHS.eyeOfHorus, fn: 'nod.context',  activeOn: ['nodes'],        parent: 'settings-layout', order: 6 },
+        { id: 'bkp-fn-context',  label: 'Backup Layout Context', icon: HIEROGLYPHS.eyeOfHorus, fn: 'bkp.context', activeOn: ['nodes'],   parent: 'settings-layout', order: 7 },
 
         // ── App Config page function items ────────────────────────────────
         { id: 'cfg-fn-add',      label: 'Add setting',      icon: HIEROGLYPHS.djedPillar, fn: 'cfg.add',      activeOn: ['settings'],     parent: 'settings-layout', order: 0 },
@@ -523,6 +524,7 @@ SettingsMenuConfig.registerFunctions({
             await bkpCtrl.resolveRemoteLayout?.({ rerender: true });
         }
     },
+    'nod.autoFit': async () => autoFitNodesHorizontalLayout(),
     'nod.context':  () => openNodesLayoutContextModal(),
     'bkp.context':  () => openBackupsLayoutContextModal(),
 
