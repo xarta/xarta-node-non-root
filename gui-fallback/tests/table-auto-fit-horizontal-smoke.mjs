@@ -222,6 +222,111 @@ try {
   assert.ok(result.widths.commit_non_root <= 135, `commit non-root too wide: ${result.widths.commit_non_root}px`);
   assert.ok(result.measurement.tableWidth >= 970, `table too narrow: ${result.measurement.tableWidth}px`);
   assert.ok(result.measurement.tableWidth <= 1230, `table too wide: ${result.measurement.tableWidth}px`);
+
+  const remotePage = await browser.newPage({ viewport: { width: 1030, height: 768 } });
+  const remoteLogs = [];
+  remotePage.on('console', (message) => remoteLogs.push(`${message.type()}:${message.text()}`));
+  try {
+    await remotePage.route('http://table-layout-remote.test/', (route) => route.fulfill({
+      contentType: 'text/html',
+      body: `<!doctype html>
+        <html>
+          <head><style>${tableCss}</style></head>
+          <body>
+            <table id="nodes-table" data-layout-table-name="fleet-nodes" data-layout-table-code="06">
+              <thead><tr></tr></thead>
+              <tbody id="nodes-tbody"></tbody>
+            </table>
+          </body>
+        </html>`,
+    }));
+    await remotePage.goto('http://table-layout-remote.test/');
+    await remotePage.addScriptTag({ content: tableUiSource });
+    const remoteResult = await remotePage.evaluate(async ({ columns }) => {
+      const meta = {
+        display_name: { label: 'Display Name', sortKey: 'display_name' },
+        addresses: { label: 'Addresses', sortKey: 'addresses' },
+        hostnames: { label: 'Hostnames', sortKey: 'hostnames' },
+        gen: { label: 'Gen', sortKey: 'gen' },
+        commit: { label: 'Commit (Outer)', sortKey: 'commit' },
+        commit_non_root: { label: 'Commit (Non-root)', sortKey: 'commit_non_root' },
+        commit_inner: { label: 'Commit (Inner)', sortKey: 'commit_inner' },
+        pending: { label: 'Pending', sortKey: 'pending' },
+        _actions: { label: 'Actions' },
+      };
+      const widths = {
+        display_name: 99,
+        addresses: 184,
+        hostnames: 222,
+        gen: 64,
+        commit: 100,
+        commit_non_root: 76,
+        commit_inner: 83,
+        pending: 64,
+        _actions: 172,
+      };
+      const layoutData = {
+        version: 1,
+        columns: columns.map((column_key, position) => ({
+          column_key,
+          position,
+          width_px: widths[column_key],
+          header_label: column_key === 'display_name'
+            ? 'Display<br>Name'
+            : column_key === 'pending'
+              ? 'Pend-ing'
+              : undefined,
+        })),
+      };
+      const view = window.TableView.create({
+        storageKey: `remote-layout-test-${Date.now()}`,
+        columns,
+        meta,
+        getTable: () => document.getElementById('nodes-table'),
+        fallbackColumn: 'display_name',
+        sort: {
+          storageKey: `remote-layout-sort-test-${Date.now()}`,
+          defaultKey: 'display_name',
+          defaultDir: 1,
+        },
+      });
+      function renderBody() {
+        document.getElementById('nodes-tbody').innerHTML = `<tr>${columns.map((column) => `<td>${column}</td>`).join('')}</tr>`;
+      }
+      window.apiFetch = async () => ({
+        ok: true,
+        json: async () => ({ layout_key: '0000060A', layout_data: layoutData }),
+      });
+      const controller = window.TableBucketLayouts.create({
+        getTable: () => document.getElementById('nodes-table'),
+        getView: () => view,
+        getColumns: () => columns,
+        getMeta: (column) => meta[column],
+        render: () => view.render(renderBody),
+        surfaceLabel: 'Fleet Nodes',
+      });
+      const payload = await controller.resolveRemoteLayout({ rerender: true, forceApply: true });
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      return {
+        payloadKey: payload && payload.layout_key,
+        controllerKey: controller.getLayoutKey(),
+        displayHeaderHtml: document.querySelector('th[data-col="display_name"]')?.innerHTML || '',
+        pendingHeaderHtml: document.querySelector('th[data-col="pending"]')?.innerHTML || '',
+      };
+    }, { columns });
+
+    console.log(JSON.stringify({
+      remoteLayoutApply: remoteResult,
+      remoteWarnings: remoteLogs.filter((line) => line.includes('layout resolve failed')),
+    }, null, 2));
+    assert.equal(remoteResult.payloadKey, '0000060A');
+    assert.equal(remoteResult.controllerKey, '0000060A');
+    assert.match(remoteResult.displayHeaderHtml, /Display<br>Name/);
+    assert.match(remoteResult.pendingHeaderHtml, /Pend-ing/);
+    assert.deepEqual(remoteLogs.filter((line) => line.includes('layout resolve failed')), []);
+  } finally {
+    await remotePage.close();
+  }
 } finally {
   await browser.close();
 }

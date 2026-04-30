@@ -17,6 +17,17 @@
     localStorage.setItem(key, JSON.stringify(value));
   }
 
+  function safeHeaderLabelHtml(label) {
+    return String(label == null ? '' : label)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+      .replace(/&lt;br\s*\/?&gt;/gi, '<br>')
+      .replace(/&amp;shy;/g, '&shy;');
+  }
+
   function getLayoutKey() {
     var width = window.innerWidth || document.documentElement.clientWidth || 0;
     var isPortrait = window.matchMedia('(orientation: portrait)').matches;
@@ -971,7 +982,7 @@
       Object.keys(overrides || {}).forEach(function (col) {
         var label = overrides[col];
         if (typeof label === 'string' && label) {
-          headerLabelOverrides[col] = _safeHeaderLabelHtml(label);
+          headerLabelOverrides[col] = safeHeaderLabelHtml(label);
         }
       });
       rebuildHead();
@@ -1661,9 +1672,7 @@
     }
 
     function _safeHeaderLabelHtml(label) {
-      return _escapeLayoutText(label)
-        .replace(/&lt;br\s*\/?&gt;/gi, '<br>')
-        .replace(/&amp;shy;/g, '&shy;');
+      return safeHeaderLabelHtml(label);
     }
 
     function _wrappedHeaderLabel(label) {
