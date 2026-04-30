@@ -142,8 +142,12 @@ table.table-shared-ui tbody td.table-action-cell:has(.table-asset-menu) {
   background-position: center;
   background-repeat: no-repeat;
   background-size: 12px 100%;
-  opacity: 0.92;
+  opacity: 0;
   transition: opacity 220ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+table.table-resize-handles-visible .table-col-resize {
+  opacity: 0.92;
 }
 
 .table-col-resize:hover,

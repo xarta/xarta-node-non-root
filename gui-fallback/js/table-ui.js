@@ -104,15 +104,25 @@
     function scheduleHide(delayMs) {
       clearTimeout(hideTimer);
       hideTimer = setTimeout(function () {
+        if (tableEl.dataset.colResizeDragging === '1') return;
         tableEl.classList.remove('table-resize-handles-visible');
       }, delayMs);
     }
+    tableEl._scheduleResizeHandleHide = scheduleHide;
 
     function revealTemporarily() {
-      if (!isCoarsePointer()) return;
       showHandles();
       scheduleHide(3000);
     }
+
+    tableEl.addEventListener('pointerenter', function () {
+      revealTemporarily();
+    }, { passive: true });
+
+    tableEl.addEventListener('pointermove', function (e) {
+      if (!e.target.closest('thead th[data-col]')) return;
+      revealTemporarily();
+    }, { passive: true });
 
     tableEl.addEventListener('pointerdown', function (e) {
       var th = e.target.closest('thead th[data-col]');
@@ -121,26 +131,22 @@
     }, { passive: true });
 
     tableEl.addEventListener('pointerup', function () {
-      if (!isCoarsePointer()) return;
       scheduleHide(3000);
     }, { passive: true });
 
     tableEl.addEventListener('pointercancel', function () {
-      if (!isCoarsePointer()) return;
       scheduleHide(3000);
     }, { passive: true });
 
     tableEl.addEventListener('pointerleave', function () {
-      if (!isCoarsePointer()) return;
-      scheduleHide(3000);
+      scheduleHide(isCoarsePointer() ? 3000 : 900);
     }, { passive: true });
 
     if (typeof window.matchMedia === 'function') {
       var coarseMq = window.matchMedia('(pointer: coarse)');
       var syncPointerMode = function () {
         clearTimeout(hideTimer);
-        if (coarseMq.matches) tableEl.classList.remove('table-resize-handles-visible');
-        else tableEl.classList.add('table-resize-handles-visible');
+        tableEl.classList.remove('table-resize-handles-visible');
       };
       syncPointerMode();
       if (typeof coarseMq.addEventListener === 'function') {
@@ -508,10 +514,8 @@
             if (typeof resizer.releasePointerCapture === 'function') {
               try { resizer.releasePointerCapture(pointerId); } catch (_) {}
             }
-            if (isCoarsePointer()) {
-              window.setTimeout(function () {
-                tableEl.classList.remove('table-resize-handles-visible');
-              }, 3000);
+            if (typeof tableEl._scheduleResizeHandleHide === 'function') {
+              tableEl._scheduleResizeHandleHide(3000);
             }
           }
 
@@ -1088,6 +1092,15 @@
     var reservedCode = cfg.reservedCode || '00';
     var userCode = cfg.userCode || '00';
     var saveDelayMs = Number(cfg.saveDelayMs || 300);
+    var headerHyphenationCache = Object.create(null);
+    var headerHyphenationExamples = [
+      { header: 'Pending', header_label: 'Pend-ing', changed: true },
+      { header: 'Hostnames', header_label: 'Host-names', changed: true },
+      { header: 'Filename', header_label: 'File-name', changed: true },
+      { header: 'Status', header_label: 'Status', changed: false },
+      { header: 'Commit', header_label: 'Commit', changed: false },
+      { header: 'Actions', header_label: 'Actions', changed: false },
+    ];
 
     function getView() {
       return typeof cfg.getView === 'function' ? cfg.getView() : null;
@@ -1675,17 +1688,64 @@
       return safeHeaderLabelHtml(label);
     }
 
-    function _wrappedHeaderLabel(label) {
+    function _validHyphenatedHeaderLabel(label, candidate) {
+      var source = String(label || '').replace(/[^a-z0-9]+/gi, '').toLowerCase();
+      var target = String(candidate || '').replace(/[^a-z0-9]+/gi, '').toLowerCase();
+      return !!(source && target && source === target && String(candidate || '').indexOf('<') < 0);
+    }
+
+    async function _requestHyphenatedHeaderLabel(label, context) {
+      var text = String(label || '').replace(/\s+/g, ' ').trim();
+      if (!text || typeof apiFetch !== 'function') return null;
+      var cacheKey = [
+        getTableName(),
+        context && context.columnKey,
+        text,
+      ].join('|').toLowerCase();
+      if (Object.prototype.hasOwnProperty.call(headerHyphenationCache, cacheKey)) {
+        return headerHyphenationCache[cacheKey];
+      }
+      if (!/^[A-Za-z][A-Za-z0-9-]{6,}$/.test(text)) {
+        headerHyphenationCache[cacheKey] = null;
+        return null;
+      }
+      var fallback = _deterministicHyphenatedHeaderLabel(text);
+      try {
+        var response = await apiFetch('/api/v1/table-layouts/hyphenate-header', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            header: text,
+            table_name: getTableName(),
+            column_key: context && context.columnKey ? context.columnKey : null,
+            examples: headerHyphenationExamples,
+          }),
+        });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        var payload = await response.json();
+        var headerLabel = payload && payload.changed ? String(payload.header_label || '').trim() : '';
+        if (headerLabel && _validHyphenatedHeaderLabel(text, headerLabel)) {
+          headerHyphenationCache[cacheKey] = _escapeLayoutText(headerLabel);
+          return headerHyphenationCache[cacheKey];
+        }
+      } catch (error) {
+        console.warn(getSurfaceLabel() + ' header hyphenation failed:', error);
+      }
+      headerHyphenationCache[cacheKey] = fallback;
+      return fallback;
+    }
+
+    async function _wrappedHeaderLabel(label, context) {
       var text = String(label || '').replace(/\s+/g, ' ').trim();
       if (!text) return null;
       var parts = text.split(' ').filter(Boolean);
       if (parts.length > 1) {
         return parts.map(function (part) { return _escapeLayoutText(part); }).join('<br>');
       }
-      return _hyphenatedHeaderLabel(text);
+      return _requestHyphenatedHeaderLabel(text, context);
     }
 
-    function _hyphenatedHeaderLabel(label) {
+    function _deterministicHyphenatedHeaderLabel(label) {
       var text = String(label || '').replace(/\s+/g, ' ').trim();
       if (!/^[A-Za-z][A-Za-z0-9-]{6,}$/.test(text)) return null;
       var plain = text.replace(/-/g, '');
@@ -1918,7 +1978,7 @@
       return Math.max(minWidth, Math.min(Math.ceil(width || minWidth), effectiveMax));
     }
 
-    function _measureHorizontalLayout(options) {
+    async function _measureHorizontalLayout(options) {
       options = options || {};
       var tableEl = getTable();
       var view = getView();
@@ -1941,7 +2001,7 @@
         ? rowHeights.reduce(function (sum, height) { return sum + height; }, 0) / rowHeights.length
         : 48;
       var maxCompactHeaderHeight = Math.ceil(meanRowHeight * Number(options.headerWrapRowRatio || 1.2));
-      var measuredColumns = columns.map(function (columnKey, index) {
+      var measuredColumns = await Promise.all(columns.map(async function (columnKey, index) {
         var seed = getColumnSeed(columnKey, index, sortState, hiddenSet);
         var isActionColumn = columnKey.charAt(0) === '_';
         var bodyWidths = [];
@@ -1984,7 +2044,9 @@
           var singleWordLabel = _headerPlainLabel(headerEl);
           var narrowDataThreshold = Math.max(headerWidth * 0.3, (Number(seed.min_width_px) || 40) + 12);
           if (rawBodyWidth <= narrowDataThreshold) {
-            compactHeaderLabel = _hyphenatedHeaderLabel(singleWordLabel);
+            compactHeaderLabel = await _requestHyphenatedHeaderLabel(singleWordLabel, {
+              columnKey: columnKey,
+            });
             if (compactHeaderLabel) {
               compactHeaderWidth = _smallestWidthWithinHeight(headerEl, maxCompactHeaderHeight, {
                 host: host,
@@ -2024,7 +2086,7 @@
           minWidth: seed.min_width_px,
           maxWidth: seed.max_width_px,
         };
-      });
+      }));
       var anyHeaderWrapped = measuredColumns.some(function (column) {
         var headerEl = headerMap[column.columnKey];
         if (!headerEl) return false;
@@ -2037,10 +2099,11 @@
         return profile.lineCount > 1;
       });
       if (anyHeaderWrapped) {
-        measuredColumns.forEach(function (column) {
+        for (var secondPassIndex = 0; secondPassIndex < measuredColumns.length; secondPassIndex += 1) {
+          var column = measuredColumns[secondPassIndex];
           var headerEl = headerMap[column.columnKey];
           if (!headerEl || column.columnKey.charAt(0) === '_' || !(column.headerWidth > column.rawBodyWidth)) {
-            return;
+            continue;
           }
           var currentProfile = _measureHeaderLineProfile(
             headerEl,
@@ -2048,10 +2111,12 @@
             host,
             _headerHtmlForColumn(headerEl, column)
           );
-          if (currentProfile.lineCount > 1) return;
+          if (currentProfile.lineCount > 1) continue;
 
-          var wrappedLabel = _wrappedHeaderLabel(_headerPlainLabel(headerEl));
-          if (!wrappedLabel) return;
+          var wrappedLabel = await _wrappedHeaderLabel(_headerPlainLabel(headerEl), {
+            columnKey: column.columnKey,
+          });
+          if (!wrappedLabel) continue;
           var wrappedHtml = _headerMeasureHtml(headerEl, wrappedLabel);
           var wrappedHeaderWidth = _smallestWidthWithinHeight(headerEl, maxCompactHeaderHeight, {
             host: host,
@@ -2074,7 +2139,7 @@
             column.headerLabel = wrappedLabel;
             column.secondPassHeaderWrap = true;
           }
-        });
+        }
       }
       measuredColumns = _polishMeasuredColumns(measuredColumns, {
         rows: rows,
@@ -2117,7 +2182,8 @@
       if (typeof cfg.render === 'function') cfg.render();
       await _afterNextPaint();
 
-      var measurement = _measureHorizontalLayout(options);
+      headerHyphenationCache = Object.create(null);
+      var measurement = await _measureHorizontalLayout(options);
       var layoutData = buildLayoutPayload();
       if (!measurement || !layoutData) return measurement;
       var widthsByColumn = Object.create(null);

@@ -58,6 +58,7 @@ try {
     let hidden = new Set();
     let scroll = true;
     let saved = null;
+    const hyphenationRequests = [];
 
     function esc(value) {
       return String(value).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -129,6 +130,22 @@ try {
     };
 
     window.apiFetch = async (url, opts) => {
+      if (url.includes('/hyphenate-header')) {
+        const body = JSON.parse(opts.body);
+        hyphenationRequests.push(body);
+        const changed = body.header === 'Pending';
+        return {
+          ok: true,
+          json: async () => ({
+            header: body.header,
+            header_label: changed ? 'Pend-ing' : null,
+            changed,
+            confidence: changed ? 0.92 : 0.2,
+            reason: changed ? 'common suffix split' : 'no useful split',
+            used_llm: true,
+          }),
+        };
+      }
       if (url.includes('/resolve')) {
         return { ok: true, json: async () => ({ layout_key: '0000060A', layout_data: { version: 1, columns: columns.map((column_key, position) => ({ column_key, width_px: widths[column_key], position, hidden: false })) } }) };
       }
@@ -170,12 +187,12 @@ try {
       const headerRect = handle.closest('th').getBoundingClientRect();
       return Math.abs(handleRect.right - headerRect.right) > 0.75;
     }).map((handle) => handle.closest('th').dataset.col);
-
     const rowHeights = Array.from(document.querySelectorAll('tbody tr')).map((row) => Math.ceil(row.getBoundingClientRect().height));
     return {
       widths: { ...widths },
       measurement,
       saved,
+      hyphenationRequests,
       clippedChips,
       clippedSortArrows,
       clippedHeaderLabels,
@@ -200,6 +217,7 @@ try {
     compactActionRows: result.compactActionRows,
     displayHeaderHtml: result.displayHeaderHtml,
     pendingHeaderHtml: result.pendingHeaderHtml,
+    hyphenationRequests: result.hyphenationRequests,
   }, null, 2));
 
   assert.equal(result.saved.algorithm_version, 'browser-measured-horizontal-v1');
@@ -213,6 +231,8 @@ try {
   assert.match(result.displayHeaderHtml, /Display<br>Name/);
   assert.equal(result.saved.columns.find((column) => column.column_key === 'pending')?.header_label || '', 'Pend-ing');
   assert.match(result.pendingHeaderHtml, /Pend-ing/);
+  assert.ok(result.hyphenationRequests.some((request) => request.header === 'Pending'), 'LLM hyphenation request should include Pending');
+  assert.ok(result.hyphenationRequests.some((request) => Array.isArray(request.examples) && request.examples.some((example) => example.header_label === 'Pend-ing')), 'LLM hyphenation request should include examples');
   assert.ok(result.maxRowHeight <= 76, `row too deep: ${result.maxRowHeight}px`);
   assert.ok(result.widths.display_name >= 105, `display name too tight: ${result.widths.display_name}px`);
   assert.ok(result.widths.addresses >= 180, `addresses too narrow: ${result.widths.addresses}px`);
@@ -281,15 +301,20 @@ try {
             ? 'Display<br>Name'
             : column_key === 'pending'
               ? 'Pend-ing'
-              : undefined,
+            : undefined,
         })),
       };
+      const savedLayouts = [];
+      let controller = null;
       const view = window.TableView.create({
         storageKey: `remote-layout-test-${Date.now()}`,
         columns,
         meta,
         getTable: () => document.getElementById('nodes-table'),
         fallbackColumn: 'display_name',
+        onColumnResizeEnd: () => {
+          controller?.scheduleLayoutSave();
+        },
         sort: {
           storageKey: `remote-layout-sort-test-${Date.now()}`,
           defaultKey: 'display_name',
@@ -299,36 +324,113 @@ try {
       function renderBody() {
         document.getElementById('nodes-tbody').innerHTML = `<tr>${columns.map((column) => `<td>${column}</td>`).join('')}</tr>`;
       }
-      window.apiFetch = async () => ({
-        ok: true,
-        json: async () => ({ layout_key: '0000060A', layout_data: layoutData }),
-      });
-      const controller = window.TableBucketLayouts.create({
+      window.apiFetch = async (url, opts = {}) => {
+        if (url.includes('/resolve')) {
+          return {
+            ok: true,
+            json: async () => ({ layout_key: '0000060A', layout_data: layoutData }),
+          };
+        }
+        const body = JSON.parse(opts.body || '{}');
+        savedLayouts.push(body.layout_data || null);
+        return {
+          ok: true,
+          json: async () => ({ layout_key: '0000060A', layout_data: body.layout_data || layoutData }),
+        };
+      };
+      controller = window.TableBucketLayouts.create({
         getTable: () => document.getElementById('nodes-table'),
         getView: () => view,
         getColumns: () => columns,
         getMeta: (column) => meta[column],
+        getColumnSeed: (column) => ({
+          min_width_px: column === '_actions' ? 48 : 40,
+          max_width_px: column === '_actions' ? 172 : 900,
+          width_px: view.prefs.getWidth(column) || widths[column],
+        }),
         render: () => view.render(renderBody),
         surfaceLabel: 'Fleet Nodes',
       });
       const payload = await controller.resolveRemoteLayout({ rerender: true, forceApply: true });
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const resizeHandle = document.querySelector('th[data-col] .table-col-resize');
+      const resizeTable = document.getElementById('nodes-table');
+      const resizeHandleOpacityInitial = Number(window.getComputedStyle(resizeHandle).opacity || 0);
+      resizeTable.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const resizeHandleOpacityVisible = Number(window.getComputedStyle(resizeHandle).opacity || 0);
+      resizeTable.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'mouse' }));
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      const resizeHandleOpacityFaded = Number(window.getComputedStyle(resizeHandle).opacity || 0);
+      const displayHeader = document.querySelector('th[data-col="display_name"]');
+      const displayHandle = displayHeader.querySelector('.table-col-resize');
+      const displayRect = displayHeader.getBoundingClientRect();
+      const dragStartX = displayRect.right - 2;
+      const dragY = displayRect.top + displayRect.height / 2;
+      displayHandle.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true,
+        button: 0,
+        clientX: dragStartX,
+        clientY: dragY,
+        isPrimary: true,
+        pointerId: 41,
+        pointerType: 'mouse',
+      }));
+      document.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true,
+        button: 0,
+        clientX: dragStartX + 28,
+        clientY: dragY,
+        isPrimary: true,
+        pointerId: 41,
+        pointerType: 'mouse',
+      }));
+      document.dispatchEvent(new PointerEvent('pointerup', {
+        bubbles: true,
+        button: 0,
+        clientX: dragStartX + 28,
+        clientY: dragY,
+        isPrimary: true,
+        pointerId: 41,
+        pointerType: 'mouse',
+      }));
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      const savedDisplayWidth = savedLayouts.at(-1)?.columns?.find((column) => column.column_key === 'display_name')?.width_px || null;
       return {
         payloadKey: payload && payload.layout_key,
         controllerKey: controller.getLayoutKey(),
         displayHeaderHtml: document.querySelector('th[data-col="display_name"]')?.innerHTML || '',
         pendingHeaderHtml: document.querySelector('th[data-col="pending"]')?.innerHTML || '',
+        resizeHandleOpacityInitial,
+        resizeHandleOpacityVisible,
+        resizeHandleOpacityFaded,
+        savedLayoutCount: savedLayouts.length,
+        savedDisplayWidth,
       };
     }, { columns });
 
     console.log(JSON.stringify({
       remoteLayoutApply: remoteResult,
+      resizeHandleOpacity: {
+        initial: remoteResult.resizeHandleOpacityInitial,
+        visible: remoteResult.resizeHandleOpacityVisible,
+        faded: remoteResult.resizeHandleOpacityFaded,
+      },
+      manualResizeSave: {
+        count: remoteResult.savedLayoutCount,
+        displayWidth: remoteResult.savedDisplayWidth,
+      },
       remoteWarnings: remoteLogs.filter((line) => line.includes('layout resolve failed')),
     }, null, 2));
     assert.equal(remoteResult.payloadKey, '0000060A');
     assert.equal(remoteResult.controllerKey, '0000060A');
     assert.match(remoteResult.displayHeaderHtml, /Display<br>Name/);
     assert.match(remoteResult.pendingHeaderHtml, /Pend-ing/);
+    assert.ok(remoteResult.resizeHandleOpacityInitial <= 0.05, `resize handles should start hidden: ${remoteResult.resizeHandleOpacityInitial}`);
+    assert.ok(remoteResult.resizeHandleOpacityVisible >= 0.5, `resize handles should reveal: ${remoteResult.resizeHandleOpacityVisible}`);
+    assert.ok(remoteResult.resizeHandleOpacityFaded <= 0.05, `resize handles should fade out: ${remoteResult.resizeHandleOpacityFaded}`);
+    assert.ok(remoteResult.savedLayoutCount >= 1, 'manual resize should save the bucket layout');
+    assert.ok(remoteResult.savedDisplayWidth > 99, `manual resize did not save wider display_name width: ${remoteResult.savedDisplayWidth}`);
     assert.deepEqual(remoteLogs.filter((line) => line.includes('layout resolve failed')), []);
   } finally {
     await remotePage.close();
