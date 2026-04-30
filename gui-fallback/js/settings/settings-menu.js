@@ -56,7 +56,8 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'pveh-fn-scan',    label: 'Scan for Proxmox', icon: HIEROGLYPHS.wasScepter, fn: 'pveh.scan',    activeOn: ['pve-hosts'],    parent: 'settings-layout', order: 1 },
         { id: 'pveh-fn-cols',    label: 'Columns',          icon: HIEROGLYPHS.khaHorizon, fn: 'pveh.columns', activeOn: ['pve-hosts'],    parent: 'settings-layout', order: 2 },
         { id: 'pveh-fn-scroll',  label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'pveh.scroll', activeOn: ['pve-hosts'], parent: 'settings-layout', order: 3 },
-        { id: 'pveh-fn-context', label: 'Layout Context',   icon: HIEROGLYPHS.eyeOfHorus, fn: 'pveh.context', activeOn: ['pve-hosts'],    parent: 'settings-layout', order: 4 },
+        { id: 'pveh-fn-autofit', label: 'Auto Fit Widths',  icon: 'icons/ui/table-columns-blue.svg', fn: 'pveh.autoFit', activeOn: ['pve-hosts'], parent: 'settings-layout', order: 4 },
+        { id: 'pveh-fn-context', label: 'Layout Context',   icon: HIEROGLYPHS.eyeOfHorus, fn: 'pveh.context', activeOn: ['pve-hosts'],    parent: 'settings-layout', order: 5 },
 
         // ── Fleet Nodes page function items ───────────────────────────────
         { id: 'nod-fn-refresh',  label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'nod.refresh',  activeOn: ['nodes'],        parent: 'settings-layout', order: 0 },
@@ -74,14 +75,16 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'cfg-fn-cols',     label: 'Columns',          icon: HIEROGLYPHS.khaHorizon, fn: 'cfg.columns',  activeOn: ['settings'],     parent: 'settings-layout', order: 2 },
         { id: 'cfg-fn-cache',    label: 'Refresh UI',       icon: HIEROGLYPHS.nefer,      fn: 'cfg.cache',    activeOn: ['settings'],     parent: 'settings-layout', order: 3 },
         { id: 'cfg-fn-scroll',   label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'cfg.scroll', activeOn: ['settings'], parent: 'settings-layout', order: 4 },
-        { id: 'cfg-fn-context',  label: 'Layout Context',   icon: HIEROGLYPHS.eyeOfHorus, fn: 'cfg.context',  activeOn: ['settings'],     parent: 'settings-layout', order: 5 },
+        { id: 'cfg-fn-autofit',  label: 'Auto Fit Widths',  icon: 'icons/ui/table-columns-blue.svg', fn: 'cfg.autoFit', activeOn: ['settings'], parent: 'settings-layout', order: 5 },
+        { id: 'cfg-fn-context',  label: 'Layout Context',   icon: HIEROGLYPHS.eyeOfHorus, fn: 'cfg.context',  activeOn: ['settings'],     parent: 'settings-layout', order: 6 },
 
         // ── Manual ARP page function items ────────────────────────────────
         { id: 'arp-fn-add',      label: 'Add entry',        icon: HIEROGLYPHS.obelisk,    fn: 'arp.add',      activeOn: ['arp-manual'],   parent: 'settings-layout', order: 0 },
         { id: 'arp-fn-refresh',  label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'arp.refresh',  activeOn: ['arp-manual'],   parent: 'settings-layout', order: 1 },
         { id: 'arp-fn-cols',     label: 'Columns',          icon: HIEROGLYPHS.khaHorizon, fn: 'arp.columns',  activeOn: ['arp-manual'],   parent: 'settings-layout', order: 2 },
-        { id: 'arp-fn-context',  label: 'Layout Context',   icon: HIEROGLYPHS.eyeOfHorus, fn: 'arp.context',  activeOn: ['arp-manual'],   parent: 'settings-layout', order: 3 },
-        { id: 'arp-fn-scroll',   label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'arp.scroll', activeOn: ['arp-manual'], parent: 'settings-layout', order: 4 },
+        { id: 'arp-fn-scroll',   label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'arp.scroll', activeOn: ['arp-manual'], parent: 'settings-layout', order: 3 },
+        { id: 'arp-fn-autofit',  label: 'Auto Fit Widths',  icon: 'icons/ui/table-columns-blue.svg', fn: 'arp.autoFit', activeOn: ['arp-manual'], parent: 'settings-layout', order: 4 },
+        { id: 'arp-fn-context',  label: 'Layout Context',   icon: HIEROGLYPHS.eyeOfHorus, fn: 'arp.context',  activeOn: ['arp-manual'],   parent: 'settings-layout', order: 5 },
 
         // ── AI Providers page function items ──────────────────────────────
         { id: 'ai-fn-addprov',   label: 'Add provider',     icon: HIEROGLYPHS.falcon,     fn: 'ai.addProv',      activeOn: ['ai-providers'], parent: 'settings-layout', order: 0 },
@@ -91,8 +94,9 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'ai-fn-assigncols',label: 'Assignment columns', icon: HIEROGLYPHS.khaHorizon, fn: 'ai.assignCols', activeOn: ['ai-providers'], parent: 'settings-layout', order: 4 },
         { id: 'ai-fn-provscroll', label: 'Provider Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'ai.providerScroll', activeOn: ['ai-providers'], parent: 'settings-layout', order: 5 },
         { id: 'ai-fn-assignscroll', label: 'Assignment Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'ai.assignScroll', activeOn: ['ai-providers'], parent: 'settings-layout', order: 6 },
-        { id: 'ai-fn-provcontext',  label: 'Provider Context',  icon: HIEROGLYPHS.eyeOfHorus, fn: 'ai.providerContext',  activeOn: ['ai-providers'], parent: 'settings-layout', order: 7 },
-        { id: 'ai-fn-assigncontext', label: 'Assignment Context', icon: HIEROGLYPHS.eyeOfHorus, fn: 'ai.assignContext',  activeOn: ['ai-providers'], parent: 'settings-layout', order: 8 },
+        { id: 'ai-fn-autofit',  label: 'Auto Fit Widths', icon: 'icons/ui/table-columns-blue.svg', fn: 'ai.autoFit', activeOn: ['ai-providers'], parent: 'settings-layout', order: 7 },
+        { id: 'ai-fn-provcontext',  label: 'Provider Context',  icon: HIEROGLYPHS.eyeOfHorus, fn: 'ai.providerContext',  activeOn: ['ai-providers'], parent: 'settings-layout', order: 8 },
+        { id: 'ai-fn-assigncontext', label: 'Assignment Context', icon: HIEROGLYPHS.eyeOfHorus, fn: 'ai.assignContext',  activeOn: ['ai-providers'], parent: 'settings-layout', order: 9 },
 
         // ── Docs page function items ───────────────────────────────────────
         { id: 'doc-fn-reload',   label: 'Reload',           icon: HIEROGLYPHS.nefer,      fn: 'doc.reload',   activeOn: ['docs'],         parent: 'settings-layout', order: 0 },
@@ -116,13 +120,15 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'key-fn-refresh',  label: 'Refresh',           icon: HIEROGLYPHS.nefer,      fn: 'key.refresh',  activeOn: ['keys'],         parent: 'settings-layout', order: 0 },
         { id: 'key-fn-cols',     label: 'Columns',           icon: HIEROGLYPHS.khaHorizon, fn: 'key.columns',  activeOn: ['keys'],         parent: 'settings-layout', order: 1 },
         { id: 'key-fn-scroll',   label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'key.scroll', activeOn: ['keys'], parent: 'settings-layout', order: 2 },
-        { id: 'key-fn-context',  label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'key.context',  activeOn: ['keys'],         parent: 'settings-layout', order: 3 },
+        { id: 'key-fn-autofit',  label: 'Auto Fit Widths',   icon: 'icons/ui/table-columns-blue.svg', fn: 'key.autoFit', activeOn: ['keys'], parent: 'settings-layout', order: 3 },
+        { id: 'key-fn-context',  label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'key.context',  activeOn: ['keys'],         parent: 'settings-layout', order: 4 },
 
         // ── Certificates page function items ─────────────────────────────
         { id: 'cert-fn-refresh', label: 'Refresh',           icon: HIEROGLYPHS.nefer,      fn: 'cert.refresh', activeOn: ['certs'],        parent: 'settings-layout', order: 0 },
         { id: 'cert-fn-cols',    label: 'Columns',           icon: HIEROGLYPHS.khaHorizon, fn: 'cert.columns', activeOn: ['certs'],        parent: 'settings-layout', order: 1 },
         { id: 'cert-fn-scroll',  label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'cert.scroll', activeOn: ['certs'], parent: 'settings-layout', order: 2 },
-        { id: 'cert-fn-context', label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'cert.context', activeOn: ['certs'],        parent: 'settings-layout', order: 3 },
+        { id: 'cert-fn-autofit', label: 'Auto Fit Widths',   icon: 'icons/ui/table-columns-blue.svg', fn: 'cert.autoFit', activeOn: ['certs'], parent: 'settings-layout', order: 3 },
+        { id: 'cert-fn-context', label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'cert.context', activeOn: ['certs'],        parent: 'settings-layout', order: 4 },
 
         // ── Nav Items page function items ──────────────────────────────────
         { id: 'ni-fn-refresh',   label: 'Refresh',           icon: HIEROGLYPHS.nefer,      fn: 'ni.refresh',   activeOn: ['nav-items'], parent: 'settings-layout', order: 0 },
@@ -130,7 +136,8 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'ni-fn-explore-icons', label: 'Explore Icons', icon: 'icons/ui/group-folder-blue.svg', fn: 'ni.exploreIcons', activeOn: ['nav-items'], parent: 'settings-layout', order: 2 },
         { id: 'ni-fn-explore-sounds', label: 'Explore Sounds', icon: 'icons/ui/group-folder-blue.svg', fn: 'ni.exploreSounds', activeOn: ['nav-items'], parent: 'settings-layout', order: 3 },
         { id: 'ni-fn-scroll',    label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'ni.scroll', activeOn: ['nav-items'], parent: 'settings-layout', order: 4 },
-        { id: 'ni-fn-context',   label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'ni.context',   activeOn: ['nav-items'], parent: 'settings-layout', order: 5 },
+        { id: 'ni-fn-autofit',   label: 'Auto Fit Widths',   icon: 'icons/ui/table-columns-blue.svg', fn: 'ni.autoFit', activeOn: ['nav-items'], parent: 'settings-layout', order: 5 },
+        { id: 'ni-fn-context',   label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'ni.context',   activeOn: ['nav-items'], parent: 'settings-layout', order: 6 },
         // ── Form Controls page function items ────────────────────────────────
         { id: 'fc-fn-refresh',   label: 'Refresh',           icon: HIEROGLYPHS.nefer,      fn: 'fc.refresh',   activeOn: ['form-controls'], parent: 'settings-layout', order: 0 },
         { id: 'fc-fn-add',       label: 'Add Key',           icon: 'icons/ui/plus-blue.svg', fn: 'fc.add',     activeOn: ['form-controls'], parent: 'settings-layout', order: 1 },
@@ -138,14 +145,16 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'fc-fn-explore-icons', label: 'Explore Icons', icon: 'icons/ui/group-folder-blue.svg', fn: 'fc.exploreIcons', activeOn: ['form-controls'], parent: 'settings-layout', order: 3 },
         { id: 'fc-fn-explore-sounds', label: 'Explore Sounds', icon: 'icons/ui/group-folder-blue.svg', fn: 'fc.exploreSounds', activeOn: ['form-controls'], parent: 'settings-layout', order: 4 },
         { id: 'fc-fn-scroll',    label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'fc.scroll', activeOn: ['form-controls'], parent: 'settings-layout', order: 5 },
-        { id: 'fc-fn-context',   label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'fc.context',   activeOn: ['form-controls'], parent: 'settings-layout', order: 6 },
+        { id: 'fc-fn-autofit',   label: 'Auto Fit Widths',   icon: 'icons/ui/table-columns-blue.svg', fn: 'fc.autoFit', activeOn: ['form-controls'], parent: 'settings-layout', order: 6 },
+        { id: 'fc-fn-context',   label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'fc.context',   activeOn: ['form-controls'], parent: 'settings-layout', order: 7 },
 
         // ── Embed Menu page function items ─────────────────────────────────
         { id: 'em-fn-refresh',   label: 'Refresh',           icon: HIEROGLYPHS.nefer,      fn: 'em.refresh',      activeOn: ['embed-menu'], parent: 'settings-layout', order: 0 },
         { id: 'em-fn-cols',      label: 'Columns',           icon: HIEROGLYPHS.khaHorizon, fn: 'em.columns',      activeOn: ['embed-menu'], parent: 'settings-layout', order: 1 },
         { id: 'em-fn-explore-icons', label: 'Explore Icons', icon: 'icons/ui/group-folder-blue.svg', fn: 'em.exploreIcons', activeOn: ['embed-menu'], parent: 'settings-layout', order: 2 },
         { id: 'em-fn-explore-sounds', label: 'Explore Sounds', icon: 'icons/ui/group-folder-blue.svg', fn: 'em.exploreSounds', activeOn: ['embed-menu'], parent: 'settings-layout', order: 3 },
-        { id: 'em-fn-context',   label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'em.context',      activeOn: ['embed-menu'], parent: 'settings-layout', order: 4 },
+        { id: 'em-fn-autofit',   label: 'Auto Fit Widths',   icon: 'icons/ui/table-columns-blue.svg', fn: 'em.autoFit', activeOn: ['embed-menu'], parent: 'settings-layout', order: 4 },
+        { id: 'em-fn-context',   label: 'Layout Context',    icon: HIEROGLYPHS.eyeOfHorus, fn: 'em.context',      activeOn: ['embed-menu'], parent: 'settings-layout', order: 5 },
 
         // ── Embed Menu Grid page function items ───────────────────────────
         { id: 'emg-fn-refresh',  label: 'Refresh',           icon: HIEROGLYPHS.nefer,      fn: 'em.refresh',      activeOn: ['embed-menu-grid'], parent: 'settings-layout', order: 0 },
@@ -171,6 +180,25 @@ function _settingsToggleHorizontalScrollMany(getControllers, rerender) {
         controller.setHorizontalScrollEnabled(nextEnabled);
     });
     if (typeof rerender === 'function') rerender();
+}
+
+async function _settingsAutoFitLayout(getController) {
+    const controller = typeof getController === 'function' ? getController() : null;
+    if (!controller) return null;
+    if (typeof controller.autoFitLayout !== 'function') return null;
+    return controller.autoFitLayout({ percentile: 1 });
+}
+
+async function _settingsAutoFitLayouts(getControllers) {
+    const controllers = typeof getControllers === 'function' ? getControllers() : [];
+    if (!Array.isArray(controllers)) return [];
+    const measurements = [];
+    for (const controller of controllers) {
+        if (!controller) continue;
+        const measurement = await _settingsAutoFitLayout(() => controller);
+        if (measurement) measurements.push(measurement);
+    }
+    return measurements;
 }
 
 function _settingsHorizontalScrollLabel(label, getController) {
@@ -504,6 +532,7 @@ SettingsMenuConfig.registerFunctions({
     'pveh.scan':    () => scanPveHosts(),
     'pveh.columns': () => _pveOpenColsModal(),
     'pveh.scroll':  () => togglePveHostsHorizontalScroll(),
+    'pveh.autoFit': () => _settingsAutoFitLayout(() => _ensurePveHostsLayoutController()),
     'pveh.context': () => openPveHostsLayoutContextModal(),
 
     // Fleet Nodes
@@ -517,11 +546,10 @@ SettingsMenuConfig.registerFunctions({
         if (nodesCtrl) await nodesCtrl.toggleHorizontalScroll();
         if (bkpCtrl) {
             const nowEnabled = !!(nodesCtrl?.isHorizontalScrollEnabled?.());
-            const bkpView = _ensureBackupsTableView?.();
-            if (bkpView && typeof bkpView.setHorizontalScrollEnabled === 'function') {
-                bkpView.setHorizontalScrollEnabled(nowEnabled);
+            if (typeof bkpCtrl.setHorizontalScrollEnabled === 'function') {
+                bkpCtrl.setHorizontalScrollEnabled(nowEnabled);
             }
-            await bkpCtrl.resolveRemoteLayout?.({ rerender: true });
+            await bkpCtrl.resolveRemoteLayout?.({ rerender: true, forceApply: true });
         }
     },
     'nod.autoFit': async () => autoFitNodesHorizontalLayout(),
@@ -534,6 +562,7 @@ SettingsMenuConfig.registerFunctions({
     'cfg.columns':  () => openSettingsColsModal(),
     'cfg.cache':    () => forceRefreshUiAssets(),
     'cfg.scroll':   () => toggleSettingsHorizontalScroll(),
+    'cfg.autoFit':  () => _settingsAutoFitLayout(() => _ensureSettingsLayoutController()),
     'cfg.context':  () => openSettingsLayoutContextModal(),
 
     // Manual ARP
@@ -542,6 +571,7 @@ SettingsMenuConfig.registerFunctions({
     'arp.columns':  () => _openArpManualColsModal(),
     'arp.context':  () => openArpManualLayoutContextModal(),
     'arp.scroll':   () => toggleArpManualHorizontalScroll(),
+    'arp.autoFit':  () => _settingsAutoFitLayout(() => _ensureArpManualLayoutController()),
 
     // AI Providers
     'ai.addProv':         () => openAiProviderModal(null),
@@ -551,6 +581,10 @@ SettingsMenuConfig.registerFunctions({
     'ai.assignCols':      () => _openAiAssignmentColsModal(),
     'ai.providerScroll':  () => toggleAiProvidersHorizontalScroll(),
     'ai.assignScroll':    () => toggleAiAssignmentsHorizontalScroll(),
+    'ai.autoFit':         () => _settingsAutoFitLayouts(() => [
+        _ensureAiProvidersLayoutController(),
+        _ensureAiAssignmentsLayoutController(),
+    ]),
     'ai.providerContext': () => openAiProvidersLayoutContextModal(),
     'ai.assignContext':   () => openAiAssignmentsLayoutContextModal(),
 
@@ -582,12 +616,14 @@ SettingsMenuConfig.registerFunctions({
     'key.refresh':  () => loadKeys(),
     'key.columns':  () => openKeysColsModal(),
     'key.scroll':   () => toggleKeysHorizontalScroll(),
+    'key.autoFit':  () => _settingsAutoFitLayout(() => _ensureKeysLayoutController()),
     'key.context':  () => openKeysLayoutContextModal(),
 
     // Certificates
     'cert.refresh': () => loadCerts(),
     'cert.columns': () => openCertsColsModal(),
     'cert.scroll':  () => toggleCertsHorizontalScroll(),
+    'cert.autoFit': () => _settingsAutoFitLayout(() => _ensureCertsLayoutController()),
     'cert.context': () => openCertsLayoutContextModal(),
 
     // Nav Items
@@ -596,6 +632,7 @@ SettingsMenuConfig.registerFunctions({
     'ni.exploreIcons': () => openNiExploreIcons(),
     'ni.exploreSounds': () => openNiExploreSounds(),
     'ni.scroll':    () => toggleNiHorizontalScroll(),
+    'ni.autoFit':   () => _settingsAutoFitLayout(() => _ensureNiLayoutController()),
     'ni.context':   () => openNiLayoutContextModal(),
 
     // Form Controls
@@ -605,6 +642,7 @@ SettingsMenuConfig.registerFunctions({
     'fc.exploreIcons': () => openFcExploreIcons(),
     'fc.exploreSounds': () => openFcExploreSounds(),
     'fc.scroll':    () => toggleFcHorizontalScroll(),
+    'fc.autoFit':   () => _settingsAutoFitLayout(() => _ensureFcLayoutController()),
     'fc.context':   () => openFcLayoutContextModal(),
 
     // Embed Menu
@@ -612,6 +650,7 @@ SettingsMenuConfig.registerFunctions({
     'em.columns':   () => _openEmColsModal(),
     'em.exploreIcons': () => openEmExploreIcons(),
     'em.exploreSounds': () => openEmExploreSounds(),
+    'em.autoFit':   () => _settingsAutoFitLayout(() => _ensureEmLayoutController()),
     'em.context':   () => openEmLayoutContextModal(),
 });
 

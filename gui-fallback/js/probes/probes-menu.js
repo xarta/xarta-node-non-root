@@ -48,12 +48,13 @@ const ProbesMenuConfig = createHubMenu({
         { id: 'bm-fn-refresh',label: 'Refresh',      icon: HIEROGLYPHS.nefer,                  fn: 'bm.refresh',     activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 2 },
         { id: 'bm-fn-cols',   label: 'Columns',      icon: 'icons/ui/table-columns-blue.svg',  fn: 'bm.cols',        activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 3 },
         { id: 'bm-fn-scroll', label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'bm.scroll', activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 4 },
-        { id: 'bm-fn-pagination', label: 'Pagination', icon: 'icons/ui/table-columns-blue.svg', fn: 'bm.pagination', activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 5 },
-        { id: 'bm-fn-archived', label: 'Show archived', icon: 'icons/ui/arrow-up-blue.svg', fn: 'bm.archived', activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 6 },
-        { id: 'bm-fn-expl',   label: 'Explain Sort',    icon: HIEROGLYPHS.eyeOfHorus,  fn: 'bm.explainSort', activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 7 },
-        { id: 'bm-fn-dead',   label: 'Dead links',      icon: HIEROGLYPHS.shen,        fn: 'bm.deadLinks',   activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 8 },
-        { id: 'bm-fn-web-search', label: 'Web Search',   icon: HIEROGLYPHS.eyeOfHorus,  fn: 'bm.webSearch',   activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 9 },
-        { id: 'bm-fn-context', label: 'Layout Context',   icon: HIEROGLYPHS.eyeOfHorus,  fn: 'bm.context',     activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 10 },
+        { id: 'bm-fn-autofit', label: 'Auto Fit Widths', icon: 'icons/ui/table-columns-blue.svg', fn: 'bm.autoFit', activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 5 },
+        { id: 'bm-fn-pagination', label: 'Pagination', icon: 'icons/ui/table-columns-blue.svg', fn: 'bm.pagination', activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 6 },
+        { id: 'bm-fn-archived', label: 'Show archived', icon: 'icons/ui/arrow-up-blue.svg', fn: 'bm.archived', activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 7 },
+        { id: 'bm-fn-expl',   label: 'Explain Sort',    icon: HIEROGLYPHS.eyeOfHorus,  fn: 'bm.explainSort', activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 8 },
+        { id: 'bm-fn-dead',   label: 'Dead links',      icon: HIEROGLYPHS.shen,        fn: 'bm.deadLinks',   activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 9 },
+        { id: 'bm-fn-web-search', label: 'Web Search',   icon: HIEROGLYPHS.eyeOfHorus,  fn: 'bm.webSearch',   activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 10 },
+        { id: 'bm-fn-context', label: 'Layout Context',   icon: HIEROGLYPHS.eyeOfHorus,  fn: 'bm.context',     activeOn: ['bookmarks-main'], parent: 'probes-settings', order: 11 },
 
         // ── pfSense DNS page function items ───────────────────────────────
         { id: 'dns-fn-refresh',  label: 'Refresh',       icon: HIEROGLYPHS.nefer,      fn: 'dns.refresh',    activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 0 },
@@ -61,10 +62,11 @@ const ProbesMenuConfig = createHubMenu({
         { id: 'dns-fn-sweep',    label: 'Ping Sweep',    icon: HIEROGLYPHS.wasScepter, fn: 'dns.sweep',      activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 2 },
         { id: 'dns-fn-cols',     label: 'Columns',       icon: 'icons/ui/table-columns-blue.svg', fn: 'dns.cols', activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 3 },
         { id: 'dns-fn-scroll',   label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'dns.scroll', activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 4 },
-        { id: 'dns-fn-inactive', label: 'Hide inactive', icon: 'icons/ui/arrow-up-blue.svg', fn: 'dns.inactive', activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 5 },
-        { id: 'dns-fn-expand',   label: 'Expand all',    icon: 'icons/ui/chevron-down-blue.svg', fn: 'dns.expandAll',  activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 6 },
-        { id: 'dns-fn-collapse', label: 'Collapse all',  icon: 'icons/ui/chevron-up-blue.svg',   fn: 'dns.collapseAll',activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 7 },
-        { id: 'dns-fn-context',  label: 'Layout Context', icon: HIEROGLYPHS.eyeOfHorus, fn: 'dns.context',  activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 8 },
+        { id: 'dns-fn-autofit',  label: 'Auto Fit Widths', icon: 'icons/ui/table-columns-blue.svg', fn: 'dns.autoFit', activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 5 },
+        { id: 'dns-fn-inactive', label: 'Hide inactive', icon: 'icons/ui/arrow-up-blue.svg', fn: 'dns.inactive', activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 6 },
+        { id: 'dns-fn-expand',   label: 'Expand all',    icon: 'icons/ui/chevron-down-blue.svg', fn: 'dns.expandAll',  activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 7 },
+        { id: 'dns-fn-collapse', label: 'Collapse all',  icon: 'icons/ui/chevron-up-blue.svg',   fn: 'dns.collapseAll',activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 8 },
+        { id: 'dns-fn-context',  label: 'Layout Context', icon: HIEROGLYPHS.eyeOfHorus, fn: 'dns.context',  activeOn: ['pfsense-dns'], parent: 'probes-settings', order: 9 },
 
         // ── Proxmox Config page function items ────────────────────────────
         { id: 'pve-fn-refresh',   label: 'Refresh',     icon: HIEROGLYPHS.nefer,      fn: 'pve.refresh',    activeOn: ['proxmox-config'], parent: 'probes-settings', order: 0 },
@@ -72,45 +74,51 @@ const ProbesMenuConfig = createHubMenu({
         { id: 'pve-fn-steps',     label: 'Steps',       icon: HIEROGLYPHS.djedPillar, fn: 'pve.steps',      activeOn: ['proxmox-config'], parent: 'probes-settings', order: 2 },
         { id: 'pve-fn-cols',      label: 'Columns',     icon: 'icons/ui/table-columns-blue.svg', fn: 'pve.cols',      activeOn: ['proxmox-config'], parent: 'probes-settings', order: 3 },
         { id: 'pve-fn-scroll',    label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'pve.scroll', activeOn: ['proxmox-config'], parent: 'probes-settings', order: 4 },
-        { id: 'pve-fn-expand',    label: 'Expand all',  icon: 'icons/ui/chevron-down-blue.svg',  fn: 'pve.expandAll', activeOn: ['proxmox-config'], parent: 'probes-settings', order: 5 },
-        { id: 'pve-fn-collapse',  label: 'Collapse all', icon: 'icons/ui/chevron-up-blue.svg',   fn: 'pve.collapseAll',activeOn: ['proxmox-config'], parent: 'probes-settings', order: 6 },
-        { id: 'pve-fn-context',   label: 'Layout Context', icon: HIEROGLYPHS.eyeOfHorus, fn: 'pve.context', activeOn: ['proxmox-config'], parent: 'probes-settings', order: 7 },
+        { id: 'pve-fn-autofit',   label: 'Auto Fit Widths', icon: 'icons/ui/table-columns-blue.svg', fn: 'pve.autoFit', activeOn: ['proxmox-config'], parent: 'probes-settings', order: 5 },
+        { id: 'pve-fn-expand',    label: 'Expand all',  icon: 'icons/ui/chevron-down-blue.svg',  fn: 'pve.expandAll', activeOn: ['proxmox-config'], parent: 'probes-settings', order: 6 },
+        { id: 'pve-fn-collapse',  label: 'Collapse all', icon: 'icons/ui/chevron-up-blue.svg',   fn: 'pve.collapseAll',activeOn: ['proxmox-config'], parent: 'probes-settings', order: 7 },
+        { id: 'pve-fn-context',   label: 'Layout Context', icon: HIEROGLYPHS.eyeOfHorus, fn: 'pve.context', activeOn: ['proxmox-config'], parent: 'probes-settings', order: 8 },
 
         // ── VLANs page function items ──────────────────────────────────────
         { id: 'vlan-fn-refresh',    label: 'Refresh',             icon: HIEROGLYPHS.nefer,      fn: 'vlan.refresh',    activeOn: ['vlans'],             parent: 'probes-settings', order: 0 },
         { id: 'vlan-fn-cols',       label: 'Columns',             icon: 'icons/ui/table-columns-blue.svg', fn: 'vlan.cols', activeOn: ['vlans'], parent: 'probes-settings', order: 1 },
         { id: 'vlan-fn-scroll',     label: 'Horiz Scroll: Is Off',   icon: 'icons/ui/table-columns-blue.svg', fn: 'vlan.scroll', activeOn: ['vlans'], parent: 'probes-settings', order: 2 },
-        { id: 'vlan-fn-context',    label: 'Layout Context',      icon: HIEROGLYPHS.eyeOfHorus, fn: 'vlan.context', activeOn: ['vlans'], parent: 'probes-settings', order: 3 },
+        { id: 'vlan-fn-autofit',    label: 'Auto Fit Widths',     icon: 'icons/ui/table-columns-blue.svg', fn: 'vlan.autoFit', activeOn: ['vlans'], parent: 'probes-settings', order: 3 },
+        { id: 'vlan-fn-context',    label: 'Layout Context',      icon: HIEROGLYPHS.eyeOfHorus, fn: 'vlan.context', activeOn: ['vlans'], parent: 'probes-settings', order: 4 },
 
         // ── SSH Targets page function items ────────────────────────────────
         { id: 'ssh-fn-rebuild',     label: 'Rebuild from config', icon: HIEROGLYPHS.doorBolt,   fn: 'ssh.rebuild',     activeOn: ['ssh-targets'],       parent: 'probes-settings', order: 0 },
         { id: 'ssh-fn-cols',        label: 'Columns',             icon: 'icons/ui/table-columns-blue.svg', fn: 'ssh.cols', activeOn: ['ssh-targets'], parent: 'probes-settings', order: 1 },
         { id: 'ssh-fn-scroll',      label: 'Horiz Scroll: Is Off',   icon: 'icons/ui/table-columns-blue.svg', fn: 'ssh.scroll', activeOn: ['ssh-targets'], parent: 'probes-settings', order: 2 },
-        { id: 'ssh-fn-context',     label: 'Layout Context',      icon: HIEROGLYPHS.eyeOfHorus, fn: 'ssh.context', activeOn: ['ssh-targets'], parent: 'probes-settings', order: 3 },
+        { id: 'ssh-fn-autofit',     label: 'Auto Fit Widths',     icon: 'icons/ui/table-columns-blue.svg', fn: 'ssh.autoFit', activeOn: ['ssh-targets'], parent: 'probes-settings', order: 3 },
+        { id: 'ssh-fn-context',     label: 'Layout Context',      icon: HIEROGLYPHS.eyeOfHorus, fn: 'ssh.context', activeOn: ['ssh-targets'], parent: 'probes-settings', order: 4 },
 
         // ── Dockge Stacks page function items ──────────────────────────────
         { id: 'dockge-fn-refresh',  label: 'Refresh',             icon: HIEROGLYPHS.nefer,      fn: 'dockge.refresh',  activeOn: ['dockge-stacks'],     parent: 'probes-settings', order: 0 },
         { id: 'dockge-fn-probe',    label: 'Probe Dockge',        icon: HIEROGLYPHS.wasScepter, fn: 'dockge.probe',    activeOn: ['dockge-stacks'],     parent: 'probes-settings', order: 1 },
         { id: 'dockge-fn-cols',     label: 'Columns',             icon: 'icons/ui/table-columns-blue.svg', fn: 'dockge.cols',    activeOn: ['dockge-stacks'],     parent: 'probes-settings', order: 2 },
         { id: 'dockge-fn-scroll',   label: 'Horiz Scroll: Is Off',   icon: 'icons/ui/table-columns-blue.svg', fn: 'dockge.scroll',  activeOn: ['dockge-stacks'],     parent: 'probes-settings', order: 3 },
-        { id: 'dockge-fn-obsolete', label: 'Hide obsolete',       icon: 'icons/ui/arrow-up-blue.svg', fn: 'dockge.obsolete', activeOn: ['dockge-stacks'], parent: 'probes-settings', order: 4 },
-        { id: 'dockge-fn-expand',   label: 'Expand all',          icon: 'icons/ui/chevron-down-blue.svg', fn: 'dockge.expandAll',activeOn: ['dockge-stacks'],     parent: 'probes-settings', order: 5 },
-        { id: 'dockge-fn-collapse', label: 'Collapse all',        icon: 'icons/ui/chevron-up-blue.svg',   fn: 'dockge.collapse', activeOn: ['dockge-stacks'],     parent: 'probes-settings', order: 6 },
-        { id: 'dockge-fn-context',  label: 'Layout Context',      icon: HIEROGLYPHS.eyeOfHorus, fn: 'dockge.context',  activeOn: ['dockge-stacks'],     parent: 'probes-settings', order: 7 },
+        { id: 'dockge-fn-autofit',  label: 'Auto Fit Widths',     icon: 'icons/ui/table-columns-blue.svg', fn: 'dockge.autoFit', activeOn: ['dockge-stacks'], parent: 'probes-settings', order: 4 },
+        { id: 'dockge-fn-obsolete', label: 'Hide obsolete',       icon: 'icons/ui/arrow-up-blue.svg', fn: 'dockge.obsolete', activeOn: ['dockge-stacks'], parent: 'probes-settings', order: 5 },
+        { id: 'dockge-fn-expand',   label: 'Expand all',          icon: 'icons/ui/chevron-down-blue.svg', fn: 'dockge.expandAll',activeOn: ['dockge-stacks'],     parent: 'probes-settings', order: 6 },
+        { id: 'dockge-fn-collapse', label: 'Collapse all',        icon: 'icons/ui/chevron-up-blue.svg',   fn: 'dockge.collapse', activeOn: ['dockge-stacks'],     parent: 'probes-settings', order: 7 },
+        { id: 'dockge-fn-context',  label: 'Layout Context',      icon: HIEROGLYPHS.eyeOfHorus, fn: 'dockge.context',  activeOn: ['dockge-stacks'],     parent: 'probes-settings', order: 8 },
 
         // ── Caddy Configs page function items ──────────────────────────────
         { id: 'caddy-fn-refresh',   label: 'Refresh',             icon: HIEROGLYPHS.nefer,      fn: 'caddy.refresh',   activeOn: ['caddy-configs'],     parent: 'probes-settings', order: 0 },
         { id: 'caddy-fn-probe',     label: 'Probe Caddy',         icon: HIEROGLYPHS.wasScepter, fn: 'caddy.probe',     activeOn: ['caddy-configs'],     parent: 'probes-settings', order: 1 },
         { id: 'caddy-fn-cols',      label: 'Columns',             icon: 'icons/ui/table-columns-blue.svg', fn: 'caddy.cols', activeOn: ['caddy-configs'], parent: 'probes-settings', order: 2 },
         { id: 'caddy-fn-scroll',    label: 'Horiz Scroll: Is Off',   icon: 'icons/ui/table-columns-blue.svg', fn: 'caddy.scroll', activeOn: ['caddy-configs'], parent: 'probes-settings', order: 3 },
-        { id: 'caddy-fn-context',   label: 'Layout Context',      icon: HIEROGLYPHS.eyeOfHorus, fn: 'caddy.context',  activeOn: ['caddy-configs'], parent: 'probes-settings', order: 4 },
+        { id: 'caddy-fn-autofit',   label: 'Auto Fit Widths',     icon: 'icons/ui/table-columns-blue.svg', fn: 'caddy.autoFit', activeOn: ['caddy-configs'], parent: 'probes-settings', order: 4 },
+        { id: 'caddy-fn-context',   label: 'Layout Context',      icon: HIEROGLYPHS.eyeOfHorus, fn: 'caddy.context',  activeOn: ['caddy-configs'], parent: 'probes-settings', order: 5 },
 
         // ── Visit History page function items ──────────────────────────────
         { id: 'vis-fn-refresh',     label: 'Refresh',             icon: HIEROGLYPHS.nefer,      fn: 'vis.refresh',     activeOn: ['bookmarks-history'], parent: 'probes-settings', order: 0 },
         { id: 'vis-fn-cols',        label: 'Columns',              icon: 'icons/ui/table-columns-blue.svg', fn: 'vis.cols', activeOn: ['bookmarks-history'], parent: 'probes-settings', order: 1 },
         { id: 'vis-fn-scroll',      label: 'Horiz Scroll: Is Off',    icon: 'icons/ui/table-columns-blue.svg', fn: 'vis.scroll', activeOn: ['bookmarks-history'], parent: 'probes-settings', order: 2 },
-        { id: 'vis-fn-pagination',  label: 'Pagination',           icon: 'icons/ui/table-columns-blue.svg', fn: 'vis.pagination', activeOn: ['bookmarks-history'], parent: 'probes-settings', order: 3 },
-        { id: 'vis-fn-context',     label: 'Layout Context',       icon: HIEROGLYPHS.eyeOfHorus, fn: 'vis.context', activeOn: ['bookmarks-history'], parent: 'probes-settings', order: 4 },
+        { id: 'vis-fn-autofit',     label: 'Auto Fit Widths',      icon: 'icons/ui/table-columns-blue.svg', fn: 'vis.autoFit', activeOn: ['bookmarks-history'], parent: 'probes-settings', order: 3 },
+        { id: 'vis-fn-pagination',  label: 'Pagination',           icon: 'icons/ui/table-columns-blue.svg', fn: 'vis.pagination', activeOn: ['bookmarks-history'], parent: 'probes-settings', order: 4 },
+        { id: 'vis-fn-context',     label: 'Layout Context',       icon: HIEROGLYPHS.eyeOfHorus, fn: 'vis.context', activeOn: ['bookmarks-history'], parent: 'probes-settings', order: 5 },
 
         // ── Setup & Import page function items ─────────────────────────────
         { id: 'setup-fn-import',    label: 'Import HTML',         icon: HIEROGLYPHS.papyrus,    fn: 'setup.import',    activeOn: ['bookmarks-setup'],   parent: 'probes-settings', order: 0 },
@@ -129,6 +137,13 @@ function _probesHorizontalScrollLabel(label, getController) {
     const controller = typeof getController === 'function' ? getController() : null;
     const enabled = !!(controller && typeof controller.isHorizontalScrollEnabled === 'function' && controller.isHorizontalScrollEnabled());
     return `${label}: ${enabled ? 'Is On' : 'Is Off'}`;
+}
+
+async function _probesAutoFitLayout(getController) {
+    const controller = typeof getController === 'function' ? getController() : null;
+    if (!controller) return null;
+    if (typeof controller.autoFitLayout !== 'function') return null;
+    return controller.autoFitLayout({ percentile: 1 });
 }
 
 function _probesExpandCollapseVisible(getState, mode) {
@@ -160,6 +175,7 @@ ProbesMenuConfig.registerFunctions({
     'bm.refresh':     () => loadBookmarks(),
     'bm.cols':        () => _bmOpenColsModal(),
     'bm.scroll':      () => toggleBmHorizontalScroll(),
+    'bm.autoFit':     () => _probesAutoFitLayout(() => _bmSearchActive ? _ensureBmSearchLayoutController() : _ensureBmBrowseLayoutController()),
     'bm.context':     () => openBmLayoutContextModal(),
     'bm.pagination':  () => _bmTogglePagination(),
     'bm.archived':    () => toggleBookmarksShowArchived(),
@@ -184,6 +200,7 @@ ProbesMenuConfig.registerFunctions({
     'dns.sweep':      () => pingSweep(),
     'dns.cols':       () => _dnsOpenColsModal(),
     'dns.scroll':     () => togglePfSenseDnsHorizontalScroll(),
+    'dns.autoFit':    () => _probesAutoFitLayout(() => _ensureDnsLayoutController()),
     'dns.inactive':   () => togglePfSenseDnsHideInactive(),
     'dns.context':   () => openPfSenseDnsLayoutContextModal(),
     'dns.expandAll':  () => setAllDnsGroups(true),
@@ -195,6 +212,7 @@ ProbesMenuConfig.registerFunctions({
     'pve.steps':      () => togglePveSteps(),
     'pve.cols':       () => _pveOpenConfigColsModal(),
     'pve.scroll':     () => toggleProxmoxConfigHorizontalScroll(),
+    'pve.autoFit':    () => _probesAutoFitLayout(() => _ensurePveConfigLayoutController()),
     'pve.context':   () => openProxmoxConfigLayoutContextModal(),
     'pve.expandAll':  () => setAllNets(true),
     'pve.collapseAll':() => setAllNets(false),
@@ -203,12 +221,14 @@ ProbesMenuConfig.registerFunctions({
     'vlan.refresh':   () => loadVlans(),
     'vlan.cols':      () => openVlansColsModal(),
     'vlan.scroll':    () => toggleVlansHorizontalScroll(),
+    'vlan.autoFit':   () => _probesAutoFitLayout(() => _ensureVlansLayoutController()),
     'vlan.context':  () => openVlansLayoutContextModal(),
 
     // SSH Targets
     'ssh.rebuild':    () => rebuildSshTargets(),
     'ssh.cols':       () => openSshTargetsColsModal(),
     'ssh.scroll':     () => toggleSshTargetsHorizontalScroll(),
+    'ssh.autoFit':    () => _probesAutoFitLayout(() => _ensureSshTargetsLayoutController()),
     'ssh.context':   () => openSshTargetsLayoutContextModal(),
 
     // Dockge Stacks
@@ -216,6 +236,7 @@ ProbesMenuConfig.registerFunctions({
     'dockge.probe':      () => probeDockgeStacks(),
     'dockge.cols':       () => openDockgeColsModal(),
     'dockge.scroll':     () => toggleDockgeHorizontalScroll(),
+    'dockge.autoFit':    () => _probesAutoFitLayout(() => _ensureDockgeLayoutController()),
     'dockge.obsolete':   () => toggleDockgeHideObsolete(),
     'dockge.context':  () => openDockgeLayoutContextModal(),
     'dockge.expandAll':  () => setAllDockgeServices(true),
@@ -226,12 +247,14 @@ ProbesMenuConfig.registerFunctions({
     'caddy.probe':    () => probeCaddyConfigs(),
     'caddy.cols':     () => openCaddyColsModal(),
     'caddy.scroll':   () => toggleCaddyHorizontalScroll(),
+    'caddy.autoFit':  () => _probesAutoFitLayout(() => _ensureCaddyLayoutController()),
     'caddy.context':  () => openCaddyLayoutContextModal(),
 
     // Visit History
     'vis.refresh':    () => loadVisits(),
     'vis.cols':       () => _visOpenColsModal(),
     'vis.scroll':     () => toggleVisitsHorizontalScroll(),
+    'vis.autoFit':    () => _probesAutoFitLayout(() => _ensureVisitsLayoutController()),
     'vis.context':   () => openVisitsLayoutContextModal(),
     'vis.pagination': () => _visTogglePagination(),
 

@@ -435,6 +435,98 @@ try {
   } finally {
     await remotePage.close();
   }
+
+  const genericPage = await browser.newPage({ viewport: { width: 720, height: 420 } });
+  try {
+    await genericPage.setContent(`<!doctype html>
+      <html>
+        <head>
+          <style>
+            body { margin:0; font-family: Segoe UI, Arial, sans-serif; }
+            ${tableCss}
+            .table-wrap { width: 680px; }
+          </style>
+        </head>
+        <body>
+          <div class="table-wrap"><table id="generic-table" class="table-shared-ui"></table></div>
+        </body>
+      </html>`);
+    await genericPage.addScriptTag({ content: tableUiSource });
+    const genericResult = await genericPage.evaluate(async () => {
+      const columns = ['name', 'value', 'notes'];
+      const widths = { name: 160, value: 160, notes: 160 };
+      let hidden = new Set(['notes']);
+      let scroll = false;
+      function render() {
+        const visible = columns.filter((column) => !hidden.has(column));
+        const table = document.getElementById('generic-table');
+        table.className = scroll ? 'table-shared-ui table-shared-ui--scroll-x' : 'table-shared-ui';
+        table.innerHTML = '<colgroup>' + visible.map((column) => `<col data-col="${column}" style="width:${widths[column]}px">`).join('') + '</colgroup>'
+          + '<thead><tr>' + visible.map((column) => `<th data-col="${column}"><span class="table-th-sort">${column}<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>`).join('') + '</tr></thead>'
+          + '<tbody><tr><td>Alpha</td><td>Short value</td></tr></tbody>';
+      }
+      const view = {
+        isHorizontalScrollEnabled: () => scroll,
+        setHorizontalScrollEnabled: (enabled) => { scroll = !!enabled; },
+        getHiddenSet: () => new Set(hidden),
+        getSortState: () => ({ key: 'name', dir: 1 }),
+        setSortState: () => {},
+        setHeaderLabelOverrides: () => {},
+        getHeaderLabelOverride: () => null,
+        prefs: {
+          getWidth: (column) => widths[column] || null,
+          setWidth: (column, width) => { widths[column] = width; },
+          setHiddenSet: (next) => { hidden = new Set(next); render(); },
+        },
+      };
+      window.apiFetch = async (url, opts = {}) => {
+        if (url.includes('/resolve')) {
+          return {
+            ok: true,
+            json: async () => ({
+              layout_key: '00009900',
+              layout_data: {
+                version: 1,
+                columns: columns.map((column_key, position) => ({
+                  column_key,
+                  position,
+                  hidden: hidden.has(column_key),
+                  width_px: widths[column_key],
+                })),
+              },
+            }),
+          };
+        }
+        return {
+          ok: true,
+          json: async () => ({ layout_key: '00009900', layout_data: JSON.parse(opts.body).layout_data }),
+        };
+      };
+      render();
+      const controller = window.TableBucketLayouts.create({
+        getTable: () => document.getElementById('generic-table'),
+        getView: () => view,
+        getColumns: () => columns,
+        getMeta: (column) => ({ label: column, sortKey: column }),
+        getColumnSeed: (column) => ({ min_width_px: 40, max_width_px: 400, width_px: widths[column] }),
+        tableCode: '99',
+        tableName: 'generic-fit-mode',
+        render,
+      });
+      await controller.autoFitLayout({ percentile: 1 });
+      return {
+        scroll,
+        hidden: Array.from(hidden),
+        visibleHeaders: Array.from(document.querySelectorAll('th[data-col]')).map((th) => th.dataset.col),
+      };
+    });
+    console.log(JSON.stringify({ genericAutoFit: genericResult }, null, 2));
+    assert.equal(genericResult.scroll, false, 'generic auto-fit must not force horizontal scroll on');
+    assert.deepEqual(genericResult.hidden, ['notes'], 'fit-mode auto-fit must preserve current hidden columns');
+    assert.deepEqual(genericResult.visibleHeaders, ['name', 'value'], 'fit-mode auto-fit should only measure visible columns');
+  } finally {
+    await genericPage.close();
+  }
 } finally {
   await browser.close();
 }

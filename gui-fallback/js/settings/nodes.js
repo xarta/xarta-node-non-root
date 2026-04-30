@@ -184,15 +184,20 @@ async function toggleNodesHorizontalScroll() {
 }
 
 async function autoFitNodesHorizontalLayout() {
+  const measurements = [];
   const controller = _ensureNodesLayoutController();
-  if (!controller || typeof controller.autoFitHorizontalLayout !== 'function') return;
-  const measurement = await controller.autoFitHorizontalLayout({
-    ensureHorizontalScroll: true,
-    includeAllColumns: true,
-    percentile: 1,
-  });
-  if (measurement) {
-    console.info('Fleet Nodes horizontal auto-fit:', measurement);
+  if (controller) {
+    if (typeof controller.autoFitLayout === 'function') {
+      const measurement = await controller.autoFitLayout({ percentile: 1 });
+      if (measurement) measurements.push({ table: 'fleet-nodes', measurement });
+    }
+  }
+  if (typeof autoFitBackupsLayout === 'function') {
+    const measurement = await autoFitBackupsLayout();
+    if (measurement) measurements.push({ table: 'node-backups', measurement });
+  }
+  if (measurements.length) {
+    console.info('Fleet Nodes page auto-fit:', measurements);
   }
 }
 

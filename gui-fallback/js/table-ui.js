@@ -2221,6 +2221,21 @@
       return measurement;
     }
 
+    async function autoFitLayout(options) {
+      options = Object.assign({}, options || {});
+      var view = getView();
+      var horizontalScrollEnabled = !!(view
+        && typeof view.isHorizontalScrollEnabled === 'function'
+        && view.isHorizontalScrollEnabled());
+      if (!Object.prototype.hasOwnProperty.call(options, 'ensureHorizontalScroll')) {
+        options.ensureHorizontalScroll = horizontalScrollEnabled;
+      }
+      if (!Object.prototype.hasOwnProperty.call(options, 'includeAllColumns')) {
+        options.includeAllColumns = horizontalScrollEnabled;
+      }
+      return autoFitHorizontalLayout(options);
+    }
+
     function scheduleLayoutSave(options) {
       options = options || {};
       clearTimeout(layoutSaveTimer);
@@ -2451,8 +2466,14 @@
       resolveRemoteLayout: resolveRemoteLayout,
       scheduleLayoutSave: scheduleLayoutSave,
       persistLayout: persistLayout,
+      autoFitLayout: autoFitLayout,
       autoFitHorizontalLayout: autoFitHorizontalLayout,
       toggleHorizontalScroll: toggleHorizontalScroll,
+      setHorizontalScrollEnabled: function (enabled) {
+        var view = getView();
+        if (!view || typeof view.setHorizontalScrollEnabled !== 'function') return false;
+        return view.setHorizontalScrollEnabled(!!enabled);
+      },
       openLayoutContextModal: openLayoutContextModal,
       bindLayoutChange: bindLayoutChange,
       init: init,

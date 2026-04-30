@@ -129,6 +129,17 @@ async function toggleBackupsHorizontalScroll() {
   await controller.toggleHorizontalScroll();
 }
 
+async function autoFitBackupsLayout() {
+  const controller = _ensureBackupsLayoutController();
+  if (!controller) return null;
+  if (typeof controller.autoFitLayout !== 'function') return null;
+  const measurement = await controller.autoFitLayout({ percentile: 1 });
+  if (measurement) {
+    console.info('Node Backups auto-fit:', measurement);
+  }
+  return measurement;
+}
+
 async function openBackupsLayoutContextModal() {
   const controller = _ensureBackupsLayoutController();
   if (!controller) return;
