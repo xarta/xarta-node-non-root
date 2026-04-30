@@ -882,7 +882,11 @@ async function runSelfDiag() {
         _streamStateLabel.textContent = BlueprintsEventStream.getState();
       }
 
-      const _testTimeoutMs = 20000;
+      // This trigger exercises the real hook path, including local alias
+      // reconcile, possible LiteLLM reload, and alias smoke tests before the
+      // Blueprints event is posted. Changed-model runs regularly exceed 20 s.
+      const _testTimeoutMs = 90000;
+      const _testTimeoutSec = Math.round(_testTimeoutMs / 1000);
 
       const _resultRow = (ok, detail, timing) =>
         _selfDiagRow(ok ? '\u2705' : '\u274c', 'event stream end-to-end', detail, timing);
@@ -990,7 +994,7 @@ async function runSelfDiag() {
         } else {
           section.outerHTML = _resultRow(
             false,
-            'timeout — no event confirmation in 20 s',
+            `timeout — no event confirmation in ${_testTimeoutSec} s`,
             triggerOk ? 'trigger OK, pipeline stalled?' : 'trigger failed'
           );
         }
