@@ -822,9 +822,9 @@
     function renderLabel(label, key) {
       var activeState = getActiveState();
       var active = activeState.key === key;
-      var arrow = active ? (activeState.dir === 1 ? '&#9650;' : '&#9660;') : '&#x21C5;';
+      var directionClass = active ? (activeState.dir === 1 ? ' table-sort-arrow--asc' : ' table-sort-arrow--desc') : ' table-sort-arrow--neutral';
       return String(label || '')
-        + '<span class="table-sort-arrow' + (active ? ' active' : '') + '" data-sort-arrow="' + key + '">' + arrow + '</span>';
+        + '<span class="table-sort-arrow' + (active ? ' active' : '') + directionClass + '" data-sort-arrow="' + key + '" aria-hidden="true"></span>';
     }
 
     function syncIndicators(tableEl) {
@@ -837,7 +837,9 @@
         var arrow = th.querySelector('[data-sort-arrow]');
         if (!arrow) return;
         arrow.classList.toggle('active', isActive);
-        arrow.innerHTML = isActive ? (activeState.dir === 1 ? '&#9650;' : '&#9660;') : '&#x21C5;';
+        arrow.classList.toggle('table-sort-arrow--asc', isActive && activeState.dir === 1);
+        arrow.classList.toggle('table-sort-arrow--desc', isActive && activeState.dir !== 1);
+        arrow.classList.toggle('table-sort-arrow--neutral', !isActive);
       });
     }
 

@@ -62,8 +62,35 @@ thead th { background: var(--surface); color: var(--text-dim); font-size: 11px;
 thead th[data-col] { padding-right: 2px; }
 .table-th-sort { cursor: pointer; user-select: none; }
 .table-th-sort:hover { color: var(--text); }
-.table-sort-arrow { font-size: 10px; margin-left: 3px; opacity: .45; }
+.table-sort-arrow {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-left: 4px;
+  opacity: .45;
+  color: var(--text-dim);
+  vertical-align: -1px;
+  background-color: currentColor;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
 .table-sort-arrow.active { opacity: 1; color: var(--accent); }
+.table-sort-arrow--asc {
+  -webkit-mask-image: url("/fallback-ui/assets/icons/ui/chevron-up-blue.svg");
+  mask-image: url("/fallback-ui/assets/icons/ui/chevron-up-blue.svg");
+}
+.table-sort-arrow--desc {
+  -webkit-mask-image: url("/fallback-ui/assets/icons/ui/chevron-down-blue.svg");
+  mask-image: url("/fallback-ui/assets/icons/ui/chevron-down-blue.svg");
+}
+.table-sort-arrow--neutral {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 9 12 4l5 5'/%3E%3Cpath d='M7 15l5 5 5-5'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 9 12 4l5 5'/%3E%3Cpath d='M7 15l5 5 5-5'/%3E%3C/svg%3E");
+}
 tbody tr { border-bottom: 1px solid var(--border); }
 tbody tr:hover { background: rgba(91,156,246,.06); }
 tbody td { padding: 9px 2px; vertical-align: top; }
@@ -893,6 +920,154 @@ button.table-icon-btn--history::before {
 .status-wip      { color: var(--warn); }
 .status-planned  { color: var(--text-dim); }
 .empty-row td { text-align: center; color: var(--text-dim); padding: 32px; }
+
+/* ── Compact table symbols ─────────────────────────────────────────────── */
+
+.table-row-toggle-icon,
+.table-child-marker,
+.table-status-symbol {
+  display: inline-block;
+  flex: 0 0 auto;
+  background-color: currentColor;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.table-row-toggle-icon {
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  color: var(--text-dim);
+  vertical-align: -1px;
+  -webkit-mask-image: url("/fallback-ui/assets/icons/ui/chevron-down-blue.svg");
+  mask-image: url("/fallback-ui/assets/icons/ui/chevron-down-blue.svg");
+  transform: rotate(-90deg);
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.table-row-toggle-icon.is-open {
+  color: var(--accent);
+  transform: rotate(0deg);
+}
+
+.table-row-toggle-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.table-row-toggle-button .table-row-toggle-icon {
+  margin-right: 2px;
+}
+
+.table-child-marker-cell {
+  padding-left: 20px;
+  color: var(--text-dim);
+}
+
+.table-child-marker {
+  width: 12px;
+  height: 12px;
+  vertical-align: -1px;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 4v10a3 3 0 0 0 3 3h7'/%3E%3Cpath d='m14 14 3 3-3 3'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 4v10a3 3 0 0 0 3 3h7'/%3E%3Cpath d='m14 14 3 3-3 3'/%3E%3C/svg%3E");
+}
+
+.table-status-cell {
+  text-align: center;
+}
+
+.table-status-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.table-status-symbol {
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
+}
+
+.table-status-symbol--ok {
+  color: var(--ok);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7'/%3E%3C/svg%3E");
+}
+
+.table-status-symbol--inactive {
+  color: var(--text-dim);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M7 7 17 17M17 7 7 17'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M7 7 17 17M17 7 7 17'/%3E%3C/svg%3E");
+}
+
+.table-status-symbol--error {
+  color: var(--err, #f85149);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M7 7 17 17M17 7 7 17'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M7 7 17 17M17 7 7 17'/%3E%3C/svg%3E");
+}
+
+/* ── Certificates table ────────────────────────────────────────────────── */
+
+.certs-status-row > td {
+  vertical-align: middle;
+}
+
+.certs-status-cell {
+  white-space: nowrap;
+}
+
+.certs-status-cell .table-status-inline {
+  font-weight: 600;
+}
+
+.certs-details-cell {
+  min-width: 0;
+}
+
+.certs-details {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  justify-content: center;
+}
+
+.certs-details__name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-family: monospace;
+  font-size: 11px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.certs-details__meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.certs-details__expiry {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.certs-details__tag {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+}
 
 /* ── Machines / Nodes tables ── */
 .ip-chip { display: inline-block; background: var(--surface); border: 1px solid var(--border);

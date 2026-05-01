@@ -1073,9 +1073,9 @@ let _retouchAllState = {
 function _retouchAllStatusIcon(status) {
   if (status === 'pending')   return '<span style="color:var(--text-dim)">&#9675;</span>';
   if (status === 'checking')  return '<span class="spinner" style="display:inline-block;width:12px;height:12px;vertical-align:middle"></span>';
-  if (status === 'retouched') return '<span style="color:var(--ok,#3fb950)">&#10003;</span>';
+  if (status === 'retouched') return '<span class="table-status-symbol table-status-symbol--ok" role="img" aria-label="Retouched" title="Retouched"></span>';
   if (status === 'skipped')   return '<span style="color:var(--text-dim)">&#8212;</span>';
-  if (status === 'error')     return '<span style="color:var(--err,#f85149)">&#10007;</span>';
+  if (status === 'error')     return '<span class="table-status-symbol table-status-symbol--error" role="img" aria-label="Error" title="Error"></span>';
   return '';
 }
 
@@ -1175,7 +1175,7 @@ function openRetouchAllModal() {
   }).catch(e => {
     _retouchAllState.running = false;
     _retouchAllState.finishedAt = Date.now();
-    if (progress) progress.innerHTML = `<div style="font-size:12px;color:var(--err,#f85149)">&#10007; Could not load table list: ${esc(String(e.message || e))}</div>`;
+    if (progress) progress.innerHTML = `<div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--err,#f85149)"><span class="table-status-symbol table-status-symbol--error" aria-hidden="true"></span><span>Could not load table list: ${esc(String(e.message || e))}</span></div>`;
     _updateRetouchAllCancelBtn();
   });
 }

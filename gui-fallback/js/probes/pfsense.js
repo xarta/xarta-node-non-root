@@ -322,10 +322,20 @@ function _dnsRenderPingCell(pingMs) {
   return `<td style="text-align:right;color:var(--err)">${pingMs.toFixed(1)}</td>`;
 }
 
+function _dnsRowToggleIcon(isOpen) {
+  return `<span class="table-row-toggle-icon${isOpen ? ' is-open' : ''}" aria-hidden="true"></span>`;
+}
+
+function _dnsActiveStatusCell(isActive) {
+  const label = isActive ? 'Active' : 'Inactive';
+  const stateClass = isActive ? 'table-status-symbol--ok' : 'table-status-symbol--inactive';
+  return `<td class="table-status-cell"><span class="table-status-symbol ${stateClass}" role="img" aria-label="${label}" title="${label}"></span></td>`;
+}
+
 function _dnsRenderDetailCell(record, col) {
   switch (col) {
     case 'ip_address':
-      return '<td style="padding-left:20px;color:var(--text-dim);font-size:11px">↳</td>';
+      return '<td class="table-child-marker-cell"><span class="table-child-marker" aria-hidden="true"></span></td>';
     case 'fqdn':
       return `<td class="table-cell-clip">${esc(record.fqdn || '')}</td>`;
     case 'record_type':
@@ -335,7 +345,7 @@ function _dnsRenderDetailCell(record, col) {
     case 'mac_address':
       return `<td><code style="font-size:11px">${esc(record.mac_address || '—')}</code></td>`;
     case 'active':
-      return `<td style="text-align:center">${record.active ? '<span style="color:var(--ok)">✓</span>' : '<span style="color:var(--text-dim)">✗</span>'}</td>`;
+      return _dnsActiveStatusCell(!!record.active);
     case 'last_seen':
       return `<td style="white-space:nowrap;color:var(--text-dim)">${esc(_dnsFormatDate(record.last_seen))}</td>`;
     case 'last_probed':
@@ -359,11 +369,11 @@ function _dnsRenderGroupRow(group, isOpen, visibleCols) {
   const summary = `${group.records.length} record${group.records.length !== 1 ? 's' : ''}${stats.activeCount < group.records.length ? ` · ${stats.activeCount} active` : ''}${pingSummary} · MAC ${esc(stats.mac)}`;
   if (cellCount === 1) {
     return `<tr data-dns-group-hdr="${group.safeip}" data-dns-group-open="${isOpen ? '1' : '0'}" data-dns-toggle="${group.safeip}" style="cursor:pointer;background:var(--surface);border-top:2px solid var(--border)">
-      <td data-col="${groupColumn}" style="font-weight:600"><span id="dns-grp-arrow-${group.safeip}" style="font-size:10px;color:var(--text-dim);margin-right:5px">${isOpen ? '▼' : '▶'}</span><code>${esc(group.ip)}</code> <span style="color:var(--text-dim);font-size:12px">${summary}</span></td>
+      <td data-col="${groupColumn}" style="font-weight:600"><span id="dns-grp-arrow-${group.safeip}">${_dnsRowToggleIcon(isOpen)}</span><code>${esc(group.ip)}</code> <span style="color:var(--text-dim);font-size:12px">${summary}</span></td>
     </tr>`;
   }
   return `<tr data-dns-group-hdr="${group.safeip}" data-dns-group-open="${isOpen ? '1' : '0'}" data-dns-toggle="${group.safeip}" style="cursor:pointer;background:var(--surface);border-top:2px solid var(--border)">
-    <td data-col="${groupColumn}" style="font-weight:600"><span id="dns-grp-arrow-${group.safeip}" style="font-size:10px;color:var(--text-dim);margin-right:5px">${isOpen ? '▼' : '▶'}</span><code>${esc(group.ip)}</code></td>
+    <td data-col="${groupColumn}" style="font-weight:600"><span id="dns-grp-arrow-${group.safeip}">${_dnsRowToggleIcon(isOpen)}</span><code>${esc(group.ip)}</code></td>
     <td colspan="${cellCount - 1}" style="color:var(--text-dim);font-size:12px">${summary}</td>
   </tr>`;
 }

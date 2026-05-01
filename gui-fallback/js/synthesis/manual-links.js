@@ -323,7 +323,7 @@ function renderManualLinksTable() {
   keys.forEach(k => {
     const collapsed = _mlCollapsed.has(k);
     html += `<tr class="ml-group-hdr" data-gkey="${esc(k)}">
-      <td colspan="${Math.max(1, _mlVisibleCols().length)}">${collapsed ? '▶' : '▼'} ${esc(k)} <span style="font-weight:400;opacity:.6">(${map[k].length})</span></td>
+      <td colspan="${Math.max(1, _mlVisibleCols().length)}"><span class="table-row-toggle-icon${collapsed ? '' : ' is-open'}" aria-hidden="true"></span>${esc(k)} <span style="font-weight:400;opacity:.6">(${map[k].length})</span></td>
     </tr>`;
     if (!collapsed) html += map[k].map(rowHtml).join('');
   });

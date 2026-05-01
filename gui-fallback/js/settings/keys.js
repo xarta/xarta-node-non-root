@@ -143,12 +143,18 @@ function _keysPathCell(key) {
   return `<td><span class="table-cell-clip"><span class="table-cell-clip__text" style="font-family:monospace;font-size:11px;color:var(--text-dim)">${esc(key.path || '—')}</span></span></td>`;
 }
 
+function _keysPresenceCell(isPresent) {
+  const label = isPresent ? 'present' : 'missing';
+  const stateClass = isPresent ? 'table-status-symbol--ok' : 'table-status-symbol--error';
+  return `<td><span class="table-status-inline"><span class="table-status-symbol ${stateClass}" role="img" aria-label="${label}" title="${label}"></span><span>${label}</span></span></td>`;
+}
+
 function _keysPrivateCell(key) {
-  return `<td style="${key.present ? 'color:var(--ok)' : 'color:var(--err)'}">${key.present ? '&#10003; present' : '&#10007; missing'}</td>`;
+  return _keysPresenceCell(!!key.present);
 }
 
 function _keysPublicCell(key) {
-  return `<td style="${key.pub_present ? 'color:var(--ok)' : 'color:var(--text-dim)'}">${key.pub_present ? '&#10003; present' : '&#10007; missing'}</td>`;
+  return _keysPresenceCell(!!key.pub_present);
 }
 
 function _keysActionButtons(key) {
@@ -356,8 +362,9 @@ function openKeyInfo(id) {
         </div>
         <div style="display:flex;gap:12px">
           <span style="min-width:80px;color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:.4px">Status</span>
-          <span style="${key.present ? 'color:var(--ok)' : 'color:var(--err)'}">
-            ${key.present ? '&#10003; present' : '&#10007; not present on this node'}
+          <span class="table-status-inline">
+            <span class="table-status-symbol ${key.present ? 'table-status-symbol--ok' : 'table-status-symbol--error'}" aria-hidden="true"></span>
+            <span>${key.present ? 'present' : 'not present on this node'}</span>
           </span>
         </div>
       </div>

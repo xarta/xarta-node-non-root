@@ -298,7 +298,7 @@ function renderDockgeStacks() {
     const safeid      = (d.stack_id || '').replace(/[^a-zA-Z0-9_-]/g,'_');
     const svcs        = _dockgeServicesMap[d.stack_id] || [];
     const svcCount    = svcs.length;
-    const envBadge    = d.env_file_exists ? '<span style="color:var(--ok)">✓</span>' : '<span style="color:var(--text-dim)">✗</span>';
+    const envBadge    = `<span class="table-status-symbol ${d.env_file_exists ? 'table-status-symbol--ok' : 'table-status-symbol--inactive'}" role="img" aria-label="${d.env_file_exists ? 'Env file exists' : 'Env file missing'}" title="${d.env_file_exists ? 'Env file exists' : 'Env file missing'}"></span>`;
     const typeBadge   = _vmTypeBadge(d.vm_type);
     const parentBadge = _parentBadge(d.parent_context, d.parent_stack_name);
     const statusCol   = d.status === 'running' ? 'var(--ok)'
@@ -313,7 +313,7 @@ function renderDockgeStacks() {
     // Toggle button (shows service count)
     const servicesOpen = _dockgeOpenServices.has(safeid);
     const toggleCell = svcCount > 0
-      ? `<button class="secondary" id="dockge-svc-btn-${safeid}" style="padding:1px 5px;font-size:11px" type="button" data-dockge-svc-toggle="${safeid}">${servicesOpen ? '&#9660;' : '&#9658;'} ${svcCount}</button>`
+      ? `<button class="secondary table-row-toggle-button" id="dockge-svc-btn-${safeid}" style="padding:1px 5px;font-size:11px" type="button" data-dockge-svc-toggle="${safeid}"><span class="table-row-toggle-icon${servicesOpen ? ' is-open' : ''}" aria-hidden="true"></span>${svcCount}</button>`
       : `<span style="color:var(--text-dim)">${svcCount}</span>`;
 
     // Services expandable sub-row

@@ -87,7 +87,7 @@ try {
 
     function headerCell(column, labelHtml) {
       const label = headerLabels[column] || labelHtml;
-      const arrow = column === 'display_name' ? '<span class="table-sort-arrow active">▲</span>' : '<span class="table-sort-arrow">⇅</span>';
+      const arrow = column === 'display_name' ? '<span class="table-sort-arrow active table-sort-arrow--asc" aria-hidden="true"></span>' : '<span class="table-sort-arrow table-sort-arrow--neutral" aria-hidden="true"></span>';
       return `<th data-col="${column}"><span class="table-th-sort">${label}${arrow}</span><span class="table-col-resize"></span></th>`;
     }
 
@@ -470,7 +470,7 @@ try {
         const table = document.getElementById('generic-table');
         table.className = scroll ? 'table-shared-ui table-shared-ui--scroll-x' : 'table-shared-ui';
         table.innerHTML = '<colgroup>' + visible.map((column) => `<col data-col="${column}" style="width:${widths[column]}px">`).join('') + '</colgroup>'
-          + '<thead><tr>' + visible.map((column) => `<th data-col="${column}"><span class="table-th-sort">${column}<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>`).join('') + '</tr></thead>'
+          + '<thead><tr>' + visible.map((column) => `<th data-col="${column}"><span class="table-th-sort">${column}<span class="table-sort-arrow table-sort-arrow--neutral" aria-hidden="true"></span></span><span class="table-col-resize"></span></th>`).join('') + '</tr></thead>'
           + '<tbody><tr><td>Alpha</td><td>Short value</td></tr></tbody>';
       }
       const view = {
@@ -583,7 +583,7 @@ try {
         table.innerHTML = '<colgroup>' + columns.map((column) => `<col data-col="${column}" style="width:${widths[column] || 80}px">`).join('') + '</colgroup>'
           + '<thead><tr>' + columns.map((column) => {
             const label = headerLabels[column] || labels[column];
-            return `<th data-col="${column}"><span class="table-th-sort">${label}<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>`;
+            return `<th data-col="${column}"><span class="table-th-sort">${label}<span class="table-sort-arrow table-sort-arrow--neutral" aria-hidden="true"></span></span><span class="table-col-resize"></span></th>`;
           }).join('') + '</tr></thead><tbody>'
           + rows.map((row) => '<tr>'
             + `<td style="font-weight:700">${esc(row[0])}</td>`
@@ -758,17 +758,17 @@ try {
         table.style.setProperty('--table-fit-width', total + 'px');
         table.className = scroll ? 'table-shared-ui table-shared-ui--scroll-x' : 'table-shared-ui';
         table.innerHTML = '<colgroup>' + columns.map((column) => `<col data-col="${column}" style="width:${widths[column]}px">`).join('') + '</colgroup>'
-          + '<thead><tr>' + columns.map((column) => `<th data-col="${column}"><span class="table-th-sort">${esc(labels[column])}<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>`).join('') + '</tr></thead>'
+          + '<thead><tr>' + columns.map((column) => `<th data-col="${column}"><span class="table-th-sort">${esc(labels[column])}<span class="table-sort-arrow table-sort-arrow--neutral" aria-hidden="true"></span></span><span class="table-col-resize"></span></th>`).join('') + '</tr></thead>'
           + '<tbody>' + groups.map((group) => {
             const summary = `${group.records.length} records · MAC ${group.records[0][3]}`;
             const header = `<tr data-group-row="${esc(group.ip)}"><td data-col="ip_address"><strong class="group-ip">${esc(group.ip)}</strong></td><td colspan="${columns.length - 1}" style="color:var(--text-dim)">${esc(summary)}</td></tr>`;
             const detail = group.records.map((record) => '<tr data-detail-row style="display:' + (open ? 'table-row' : 'none') + '">'
-              + '<td style="padding-left:20px;color:var(--text-dim)">↳</td>'
+              + '<td class="table-child-marker-cell"><span class="table-child-marker" aria-hidden="true"></span></td>'
               + `<td><span class="table-cell-clip__text">${esc(record[0])}</span></td>`
               + `<td>${esc(record[1])}</td>`
               + `<td><span class="table-cell-clip__text">${esc(record[2])}</span></td>`
               + `<td><code>${esc(record[3])}</code></td>`
-              + `<td style="text-align:center">${record[4] ? '✓' : '✗'}</td>`
+              + `<td class="table-status-cell"><span class="table-status-symbol ${record[4] ? 'table-status-symbol--ok' : 'table-status-symbol--inactive'}" aria-hidden="true"></span></td>`
               + `<td style="white-space:nowrap;color:var(--text-dim)">${esc(record[5])}</td>`
               + '</tr>').join('');
             return header + detail;
@@ -928,9 +928,9 @@ try {
         table.className = scroll ? 'table-shared-ui table-shared-ui--scroll-x' : 'table-shared-ui';
         table.innerHTML = '<colgroup>' + columns.map((column) => `<col data-col="${column}" style="width:${widths[column] || 80}px">`).join('') + '</colgroup>'
           + '<thead><tr>'
-          + '<th data-col="filename"><span class="table-th-sort">Filename<span class="table-sort-arrow active">▲</span></span><span class="table-col-resize"></span></th>'
-          + '<th data-col="size_bytes"><span class="table-th-sort">Size<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>'
-          + '<th data-col="created_at"><span class="table-th-sort">Created<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>'
+          + '<th data-col="filename"><span class="table-th-sort">Filename<span class="table-sort-arrow active table-sort-arrow--asc" aria-hidden="true"></span></span><span class="table-col-resize"></span></th>'
+          + '<th data-col="size_bytes"><span class="table-th-sort">Size<span class="table-sort-arrow table-sort-arrow--neutral" aria-hidden="true"></span></span><span class="table-col-resize"></span></th>'
+          + '<th data-col="created_at"><span class="table-th-sort">Created<span class="table-sort-arrow table-sort-arrow--neutral" aria-hidden="true"></span></span><span class="table-col-resize"></span></th>'
           + '<th data-col="_actions">Actions<span class="table-col-resize"></span></th>'
           + '</tr></thead><tbody>'
           + rows.map((row) => '<tr>'
@@ -1053,11 +1053,11 @@ try {
         table.className = scroll ? 'table-shared-ui table-shared-ui--scroll-x' : 'table-shared-ui';
         table.innerHTML = '<colgroup>' + columns.map((column) => `<col data-col="${column}" style="width:${widths[column] || 80}px">`).join('') + '</colgroup>'
           + '<thead><tr>'
-          + '<th data-col="host_machine"><span class="table-th-sort">Host / LXC<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>'
-          + '<th data-col="project_status"><span class="table-th-sort">Status<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>'
-          + '<th data-col="tags"><span class="table-th-sort">Tags<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>'
-          + '<th data-col="links"><span class="table-th-sort">Links<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>'
-          + '<th data-col="description"><span class="table-th-sort">Description<span class="table-sort-arrow">⇅</span></span><span class="table-col-resize"></span></th>'
+          + '<th data-col="host_machine"><span class="table-th-sort">Host / LXC<span class="table-sort-arrow table-sort-arrow--neutral" aria-hidden="true"></span></span><span class="table-col-resize"></span></th>'
+          + '<th data-col="project_status"><span class="table-th-sort">Status<span class="table-sort-arrow table-sort-arrow--neutral" aria-hidden="true"></span></span><span class="table-col-resize"></span></th>'
+          + '<th data-col="tags"><span class="table-th-sort">Tags<span class="table-sort-arrow table-sort-arrow--neutral" aria-hidden="true"></span></span><span class="table-col-resize"></span></th>'
+          + '<th data-col="links"><span class="table-th-sort">Links<span class="table-sort-arrow table-sort-arrow--neutral" aria-hidden="true"></span></span><span class="table-col-resize"></span></th>'
+          + '<th data-col="description"><span class="table-th-sort">Description<span class="table-sort-arrow table-sort-arrow--neutral" aria-hidden="true"></span></span><span class="table-col-resize"></span></th>'
           + '</tr></thead><tbody>'
           + rows.map((row) => '<tr>'
             + `<td>${esc(row[0])}</td>`

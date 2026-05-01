@@ -149,22 +149,23 @@ function _certPathCell(cert) {
 }
 
 function _certStatusCell(cert) {
-  return `<td>${cert.present
-    ? '<span style="color:var(--ok)">&#10003; present</span>'
-    : '<span style="color:var(--err)">&#10007; missing</span>'}</td>`;
+  const label = cert.present ? 'present' : 'missing';
+  const stateClass = cert.present ? 'table-status-symbol--ok' : 'table-status-symbol--error';
+  return `<td class="certs-status-cell"><span class="table-status-inline"><span class="table-status-symbol ${stateClass}" role="img" aria-label="${label}" title="${label}"></span><span>${label}</span></span></td>`;
 }
 
 function _certDetailsCell(cert) {
   if (cert.kind === 'key') {
-    return '<td><span style="color:var(--text-dim);font-size:12px">private key</span></td>';
+    return '<td class="certs-details-cell"><span style="color:var(--text-dim);font-size:12px">private key</span></td>';
   }
-  if (!(cert.cn || cert.expires)) return '<td></td>';
-  const cnPart = cert.cn ? `<span class="table-cell-clip"><span class="table-cell-clip__text" style="font-family:monospace;font-size:11px">${esc(cert.cn)}</span></span>` : '';
+  if (!(cert.cn || cert.expires)) return '<td class="certs-details-cell"></td>';
+  const cnPart = cert.cn ? `<span class="certs-details__name" title="${esc(cert.cn)}">${esc(cert.cn)}</span>` : '';
   const expPart = cert.expires
-    ? `<span style="${_certExpiryStyle(cert.expires_days)};font-size:11px">Exp: ${esc(_certExpiryLabel(cert.expires, cert.expires_days))}</span>`
+    ? `<span class="certs-details__expiry" style="${_certExpiryStyle(cert.expires_days)}" title="Expires ${esc(_certExpiryLabel(cert.expires, cert.expires_days))}">Exp: ${esc(_certExpiryLabel(cert.expires, cert.expires_days))}</span>`
     : '';
-  const caPart = cert.is_ca ? `<span style="color:var(--text-dim);font-size:11px"> [CA]</span>` : '';
-  return `<td>${[cnPart, expPart + caPart].filter(Boolean).join('<br>')}</td>`;
+  const caPart = cert.is_ca ? '<span class="certs-details__tag">[CA]</span>' : '';
+  const metaPart = [expPart, caPart].filter(Boolean).join('');
+  return `<td class="certs-details-cell"><div class="certs-details">${cnPart}${metaPart ? `<div class="certs-details__meta">${metaPart}</div>` : ''}</div></td>`;
 }
 
 function _certActionsCell(cert) {
@@ -241,7 +242,7 @@ function renderCertsTable() {
 
     const rows = view?.sorter ? view.sorter.sortRows(groupCerts, _certSortValue) : groupCerts;
     rows.forEach(c => {
-      html += `<tr>${visibleCols.map(col => {
+      html += `<tr class="certs-status-row">${visibleCols.map(col => {
         switch (col) {
           case 'label':
             return _certLabelCell(c);

@@ -1206,11 +1206,10 @@ function renderVisits(opts = {}) {
   let html = '';
   for (const item of pageItems) {
     if (item.type === 'domain-header') {
-      const chevron = item.expanded ? '&#9660;' : '&#9658;';
       html += `<tr class="vis-group-header" onclick="_visToggleDomain('${esc(item.domain)}')"
         style="cursor:pointer;background:rgba(0,0,0,0.25)">
         <td colspan="${expandColspan}" style="padding:7px 10px;font-weight:600;font-size:12px;user-select:none">
-          <span style="color:var(--text-dim);margin-right:6px;font-size:11px">${chevron}</span>
+          <span class="table-row-toggle-icon${item.expanded ? ' is-open' : ''}" aria-hidden="true"></span>
           <span style="color:var(--accent)">${esc(item.domain)}</span>
           <span style="color:var(--text-dim);font-weight:400;margin-left:8px;font-size:11px">${item.totalVisitCount} visit${item.totalVisitCount === 1 ? '' : 's'}</span>
           ${item.urlCount > 1 ? `<span style="color:var(--text-dim);font-weight:400;font-size:10px;margin-left:5px">(${item.urlCount} URLs)</span>` : ''}

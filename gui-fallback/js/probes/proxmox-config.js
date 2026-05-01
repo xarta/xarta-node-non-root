@@ -246,7 +246,7 @@ function _pveConfigRenderNetworksCell(configId, safeid, nets, ipAddress) {
   }
   const firstIp = nets[0].ip_address || '—';
   const isOpen = _pveOpenNetDetails.has(safeid);
-  return `<td><button class="secondary" style="padding:1px 5px;font-size:11px;margin-right:4px" type="button" data-pve-nets-toggle="${safeid}" id="nets-btn-${safeid}">${isOpen ? '▼' : '▶'} ${nets.length}</button><code>${esc(firstIp)}</code></td>`;
+  return `<td><button class="secondary table-row-toggle-button" style="padding:1px 5px;font-size:11px;margin-right:4px" type="button" data-pve-nets-toggle="${safeid}" id="nets-btn-${safeid}"><span class="table-row-toggle-icon${isOpen ? ' is-open' : ''}" aria-hidden="true"></span>${nets.length}</button><code>${esc(firstIp)}</code></td>`;
 }
 
 function _pveConfigRenderMainCell(row, col, safeid, nets) {
@@ -274,9 +274,9 @@ function _pveConfigRenderGroupRow(group, visibleCols, isOpen) {
   const cellCount = Math.max(1, visibleCols.length);
   const groupColumn = esc(visibleCols[0] || 'pve_name');
   if (cellCount === 1) {
-    return `<tr data-pve-group-hdr="${group.safePve}" data-pve-group-open="${isOpen ? '1' : '0'}" data-pve-group-toggle="${group.safePve}" style="cursor:pointer;background:var(--surface);border-top:2px solid var(--border)"><td data-col="${groupColumn}" style="padding:7px 10px;font-weight:600"><span id="pve-grp-arrow-${group.safePve}" style="font-size:10px;color:var(--text-dim);margin-right:6px">${isOpen ? '▼' : '▶'}</span><code>${esc(group.pve)}</code><span style="font-size:11px;font-weight:normal;color:var(--text-dim);margin-left:8px">${group.typeSummary}</span></td></tr>`;
+    return `<tr data-pve-group-hdr="${group.safePve}" data-pve-group-open="${isOpen ? '1' : '0'}" data-pve-group-toggle="${group.safePve}" style="cursor:pointer;background:var(--surface);border-top:2px solid var(--border)"><td data-col="${groupColumn}" style="padding:7px 10px;font-weight:600"><span id="pve-grp-arrow-${group.safePve}"><span class="table-row-toggle-icon${isOpen ? ' is-open' : ''}" aria-hidden="true"></span></span><code>${esc(group.pve)}</code><span style="font-size:11px;font-weight:normal;color:var(--text-dim);margin-left:8px">${group.typeSummary}</span></td></tr>`;
   }
-  return `<tr data-pve-group-hdr="${group.safePve}" data-pve-group-open="${isOpen ? '1' : '0'}" data-pve-group-toggle="${group.safePve}" style="cursor:pointer;background:var(--surface);border-top:2px solid var(--border)"><td data-col="${groupColumn}" style="padding:7px 10px;font-weight:600"><span id="pve-grp-arrow-${group.safePve}" style="font-size:10px;color:var(--text-dim);margin-right:6px">${isOpen ? '▼' : '▶'}</span><code>${esc(group.pve)}</code></td><td colspan="${cellCount - 1}" style="padding:7px 10px;font-weight:600"><span style="font-size:11px;font-weight:normal;color:var(--text-dim)">${group.typeSummary}</span></td></tr>`;
+  return `<tr data-pve-group-hdr="${group.safePve}" data-pve-group-open="${isOpen ? '1' : '0'}" data-pve-group-toggle="${group.safePve}" style="cursor:pointer;background:var(--surface);border-top:2px solid var(--border)"><td data-col="${groupColumn}" style="padding:7px 10px;font-weight:600"><span id="pve-grp-arrow-${group.safePve}"><span class="table-row-toggle-icon${isOpen ? ' is-open' : ''}" aria-hidden="true"></span></span><code>${esc(group.pve)}</code></td><td colspan="${cellCount - 1}" style="padding:7px 10px;font-weight:600"><span style="font-size:11px;font-weight:normal;color:var(--text-dim)">${group.typeSummary}</span></td></tr>`;
 }
 
 function _pveConfigRenderNetDetailRow(groupSafePve, safeid, nets, colspan) {
