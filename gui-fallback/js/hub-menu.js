@@ -439,7 +439,10 @@ function createHubMenu(cfg) {
                     (!item.fn && item.id === domActiveId)
                     || (Array.isArray(item.activeOn) && item.activeOn.includes(domActiveId))
                 );
-                if (ownsDomTab) return domActiveId;
+                if (ownsDomTab) {
+                    this._activeId = domActiveId;
+                    return domActiveId;
+                }
             }
             if (this._activeId) return this._activeId;
             return domActiveId;
