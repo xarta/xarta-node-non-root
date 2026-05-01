@@ -432,9 +432,17 @@ function createHubMenu(cfg) {
         },
 
         _activeTabId() {
-            if (this._activeId) return this._activeId;
             const activePanel = document.querySelector('.tab-panel.active');
-            return activePanel ? activePanel.id.replace('tab-', '') : null;
+            const domActiveId = activePanel ? activePanel.id.replace('tab-', '') : null;
+            if (domActiveId) {
+                const ownsDomTab = this.defaultMenu.some(item =>
+                    (!item.fn && item.id === domActiveId)
+                    || (Array.isArray(item.activeOn) && item.activeOn.includes(domActiveId))
+                );
+                if (ownsDomTab) return domActiveId;
+            }
+            if (this._activeId) return this._activeId;
+            return domActiveId;
         },
 
         _contextMenuFunctionItems(activeId) {

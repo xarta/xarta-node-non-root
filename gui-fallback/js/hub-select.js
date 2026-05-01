@@ -2,10 +2,9 @@
    hub-select.js — Custom Select Widget
    xarta-node Blueprints GUI
 
-   Replaces a native <select> with a custom dropdown that uses
-   position:fixed for its popup panel — bypassing all overflow and
-   z-index stacking contexts so the dropdown always opens downward
-   and is never clipped regardless of ancestor CSS.
+   Replaces a native <select> with a custom dropdown. Page selects use
+   a fixed popup appended to <body>; modal selects keep the popup inside
+   the owning <dialog> so it participates in the dialog top layer.
 
    The native <select> is kept hidden in the DOM so all existing
    JS code that reads .value or listens to 'change' events continues
@@ -43,11 +42,22 @@ const HubSelect = (() => {
     // class controls display/visibility again.
     function _position(btnEl, menuEl) {
         const rect = btnEl.getBoundingClientRect();
+        const rootEl = menuEl._hubSelectRoot || document.body;
+        const isBodyRoot = rootEl === document.body;
+        const rootRect = isBodyRoot
+            ? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
+            : rootEl.getBoundingClientRect();
+        const scrollLeft = isBodyRoot ? 0 : (rootEl.scrollLeft || 0);
+        const scrollTop = isBodyRoot ? 0 : (rootEl.scrollTop || 0);
         const vw   = window.innerWidth;
 
         // Clamp max-width so the popup never exceeds the viewport
-        const maxW = Math.min(320, vw - 16);
-        menuEl.style.top      = (rect.bottom + 4) + 'px';
+        const rootW = Math.max(0, isBodyRoot ? vw : (rootEl.clientWidth || rootRect.width || vw));
+        const maxW = Math.max(120, Math.min(320, vw - 16, rootW - 16));
+        const popupTop = isBodyRoot
+            ? rect.bottom + 4
+            : rect.bottom - rootRect.top + scrollTop + 4;
+        menuEl.style.top      = popupTop + 'px';
         menuEl.style.minWidth = rect.width + 'px';
         menuEl.style.maxWidth = maxW + 'px';
 
@@ -63,21 +73,20 @@ const HubSelect = (() => {
         menuEl.style.display       = '';
         menuEl.style.flexDirection = '';
         menuEl.style.visibility    = '';
-        menuEl.style.top           = (rect.bottom + 4) + 'px';
+        menuEl.style.top           = popupTop + 'px';
 
-        // Decide horizontal anchor
-        if (rect.left + menuW > vw - 8) {
-            // Would clip right edge — right-align to button's right edge
-            menuEl.style.left  = 'auto';
-            menuEl.style.right = (vw - rect.right) + 'px';
-        } else {
-            menuEl.style.left  = rect.left + 'px';
-            menuEl.style.right = 'auto';
-        }
+        // Left-align to the trigger, then clamp within the popup root.
+        const desiredLeft = isBodyRoot
+            ? rect.left
+            : rect.left - rootRect.left + scrollLeft;
+        const minLeft = isBodyRoot ? 8 : scrollLeft + 8;
+        const maxLeft = Math.max(minLeft, (isBodyRoot ? vw : rootW + scrollLeft) - menuW - 8);
+        menuEl.style.left  = Math.min(Math.max(desiredLeft, minLeft), maxLeft) + 'px';
+        menuEl.style.right = 'auto';
     }
 
     /* ── Rebuild custom menu items from native select options ──── */
-    function _syncOptions(selectEl, menuEl, labelEl) {
+    function _syncOptions(selectEl, menuEl, labelEl, btnEl) {
         menuEl.innerHTML = '';
         const currentVal = selectEl.value;
 
@@ -104,7 +113,7 @@ const HubSelect = (() => {
 
                 // Close popup
                 menuEl.classList.remove('hub-select-open');
-                menuEl.previousElementSibling?.setAttribute('aria-expanded', 'false');
+                btnEl?.setAttribute('aria-expanded', 'false');
             });
             menuEl.appendChild(item);
         });
@@ -150,17 +159,23 @@ const HubSelect = (() => {
             'position:absolute;opacity:0;pointer-events:none;width:0;height:0;';
         wrapper.appendChild(selectEl);
 
-        /* ── Build fixed popup (appended to body to escape overflow) ── */
+        /* ── Build popup ── */
         const menuEl = document.createElement('div');
         menuEl.className = 'hub-select-menu';
         menuEl.setAttribute('role', 'listbox');
-        document.body.appendChild(menuEl);
+        const popupRoot = selectEl.closest('dialog') || document.body;
+        menuEl._hubSelectRoot = popupRoot;
+        if (popupRoot !== document.body) menuEl.classList.add('hub-select-menu--dialog');
+        popupRoot.appendChild(menuEl);
 
         /* ── Initial option sync ── */
-        _syncOptions(selectEl, menuEl, labelEl);
+        _syncOptions(selectEl, menuEl, labelEl, btn);
 
         /* ── Open / close on button click ── */
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (selectEl.disabled) return;
             const isOpen = menuEl.classList.contains('hub-select-open');
 
             // Close any other open hub-select menus
@@ -201,13 +216,16 @@ const HubSelect = (() => {
         }
         window.addEventListener('scroll', onReposition, { passive: true });
         window.addEventListener('resize', onReposition, { passive: true });
+        if (popupRoot !== document.body) {
+            popupRoot.addEventListener('scroll', onReposition, { passive: true });
+        }
 
         /* ── MutationObserver: re-sync when native options are rebuilt ── */
         // _loadBookmarkTags (and similar) rebuild innerHTML on the native select.
         // MutationObserver fires as a microtask after the synchronous JS
         // completes, so selectEl.value is already restored to the previous
         // value when _syncOptions reads it.
-        const mo = new MutationObserver(() => _syncOptions(selectEl, menuEl, labelEl));
+        const mo = new MutationObserver(() => _syncOptions(selectEl, menuEl, labelEl, btn));
         mo.observe(selectEl, { childList: true });
 
         /* ── Register cleanup fn ── */
@@ -217,6 +235,7 @@ const HubSelect = (() => {
             document.removeEventListener('keydown', onEscape);
             window.removeEventListener('scroll', onReposition);
             window.removeEventListener('resize', onReposition);
+            if (popupRoot !== document.body) popupRoot.removeEventListener('scroll', onReposition);
             menuEl.remove();
         });
     }

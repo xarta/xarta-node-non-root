@@ -258,9 +258,14 @@
 }
 
 .web-research-control .hub-select-btn {
+  font-size: 1.2em;
   max-width: none;
   min-width: 0;
   width: 100%;
+}
+
+.web-research-modal .hub-select-item {
+  font-size: 1.2em;
 }
 
 .web-research-controls .hub-modal-btn {

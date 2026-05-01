@@ -199,8 +199,8 @@ select.hub-ctrl option {
 /* ── Custom select widget (.hub-select) ─────────────────────── */
 /* JS half: hub-select.js                                         */
 /* Replaces native <select> to guarantee the popup opens downward.
-   The popup uses position:fixed, appended to <body>, so it is
-   never clipped by any ancestor overflow or z-index context.    */
+   Page popups are fixed from <body>; modal popups are absolute
+   inside their owning <dialog> so they stay in the top layer.    */
 
 .hub-select {
     position: relative;
@@ -258,6 +258,10 @@ select.hub-ctrl option {
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: rgba(var(--hub-accent-rgb), 0.3) transparent;
+}
+
+.hub-select-menu--dialog {
+    position: absolute;
 }
 
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {

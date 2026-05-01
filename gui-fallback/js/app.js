@@ -76,6 +76,65 @@ function _closeActiveOriginMenus() {
   if (menu && typeof menu.closeAnchoredMenus === 'function') menu.closeAnchoredMenus();
 }
 
+function _groupMenuEntries() {
+  return [
+    { group: 'synthesis', menu: typeof SynthesisMenuConfig !== 'undefined' ? SynthesisMenuConfig : null, wrapperId: 'synthesisMenuWrapper' },
+    { group: 'probes', menu: typeof ProbesMenuConfig !== 'undefined' ? ProbesMenuConfig : null, wrapperId: 'probesMenuWrapper' },
+    { group: 'settings', menu: typeof SettingsMenuConfig !== 'undefined' ? SettingsMenuConfig : null, wrapperId: 'settingsMenuWrapper' },
+  ];
+}
+
+function _menuOwnsTab(menu, tab) {
+  if (!menu || !tab) return false;
+  const items = Array.isArray(menu.defaultMenu) ? menu.defaultMenu : [];
+  return items.some(item => {
+    if (!item) return false;
+    if (!item.fn && item.id === tab) return true;
+    return Array.isArray(item.activeOn) && item.activeOn.includes(tab);
+  });
+}
+
+function _inferGroupForTab(tab) {
+  const entry = _groupMenuEntries().find(candidate => _menuOwnsTab(candidate.menu, tab));
+  return entry ? entry.group : null;
+}
+
+function _showOnlyGroupWrapper(group) {
+  _groupMenuEntries().forEach(entry => {
+    const wrapper = document.getElementById(entry.wrapperId);
+    if (wrapper) wrapper.style.display = entry.group === group ? '' : 'none';
+  });
+}
+
+function _syncActiveMenuForTab(tab) {
+  const group = _inferGroupForTab(tab);
+  if (!group) return;
+  _selectorOriginMenuGroup = group;
+  _activeGroup = group;
+  _showOnlyGroupWrapper(group);
+  document.querySelectorAll('.group-tab').forEach(b => {
+    const onclick = b.getAttribute('onclick') || '';
+    b.classList.toggle('active', onclick.includes(`'${group}'`));
+  });
+  document.querySelectorAll('.table-nav button[data-group]').forEach(b => {
+    b.style.display = b.dataset.group === group ? '' : 'none';
+  });
+  const menu = _getActiveGroupMenuConfig();
+  if (menu && typeof menu.showGroup === 'function') menu.showGroup();
+  if (menu && typeof menu.updateActiveTab === 'function') menu.updateActiveTab(tab);
+}
+
+function _currentActiveTabId() {
+  const activePanel = document.querySelector('.tab-panel.active[id^="tab-"]');
+  return activePanel ? activePanel.id.replace(/^tab-/, '') : null;
+}
+
+function _currentPageState() {
+  const activeTab = _currentActiveTabId();
+  const group = _inferGroupForTab(activeTab) || _selectorOriginMenuGroup || _activeGroup || 'synthesis';
+  return { group, tab: activeTab };
+}
+
 const _originDefaultTtsMessages = {
   tap: '',
   double_tap: 'Origin double tap has no assigned action. Awaiting assignment.',
@@ -208,14 +267,8 @@ function switchGroup(group) {
   // This is required for SPA navigation (switchGroup called without a page reload)
   // because the early-return paths below would otherwise leave a previously-shown
   // wrapper visible when switching away from it.
-  const synthesisWrapper = document.getElementById('synthesisMenuWrapper');
-  const probesWrapper    = document.getElementById('probesMenuWrapper');
-  const settingsWrapper  = document.getElementById('settingsMenuWrapper');
-  if (synthesisWrapper) synthesisWrapper.style.display = 'none';
-  if (probesWrapper)    probesWrapper.style.display    = 'none';
-  if (settingsWrapper)  settingsWrapper.style.display  = 'none';
+  _showOnlyGroupWrapper(group);
   if (group === 'synthesis') {
-    if (synthesisWrapper) synthesisWrapper.style.display = '';
     SynthesisMenuConfig.showGroup();
     switchTab('manual-links');
     manualLinksShowView(_manualLinksView);
@@ -223,14 +276,12 @@ function switchGroup(group) {
     return;
   }
   if (group === 'probes') {
-    if (probesWrapper) probesWrapper.style.display = '';
     ProbesMenuConfig.showGroup();
     switchTab('pfsense-dns');
     ProbesMenuConfig.updateActiveTab('pfsense-dns');
     return;
   }
   if (group === 'settings') {
-    if (settingsWrapper) settingsWrapper.style.display = '';
     SettingsMenuConfig.showGroup();
     switchTab('pve-hosts');
     SettingsMenuConfig.updateActiveTab('pve-hosts');
@@ -288,6 +339,7 @@ function switchTab(tab) {
   if (tab === 'bookmarks-embeddings')                    _bmLoadEmbedCfg();
   if (tab === 'bookmarks'        && !_bookmarks.length)  loadBookmarks();
   if (tab === 'bookmarks') { switchTab('bookmarks-main'); return; }
+  _syncActiveMenuForTab(tab);
   // Notify responsive layout so the correct page-controls group is shown/hidden
   if (typeof ResponsiveLayout !== 'undefined') ResponsiveLayout.updateControlsForTab(tab);
   // self-diag: just show the shell — user clicks Run to trigger tests

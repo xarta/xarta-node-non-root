@@ -778,6 +778,10 @@ async function forceRefreshUiAssets() {
   _setUiRefreshStatus('Clearing app-controlled caches and reopening the page...');
 
   try {
+    const pageState = (typeof _currentPageState === 'function') ? _currentPageState() : {};
+    const reloadUrl = new URL(window.location.href);
+    if (pageState.group) reloadUrl.searchParams.set('group', pageState.group);
+    if (pageState.tab) reloadUrl.searchParams.set('tab', pageState.tab);
     try { localStorage.removeItem('bp_fe_settings'); } catch (_) {}
     if ('serviceWorker' in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
@@ -791,7 +795,9 @@ async function forceRefreshUiAssets() {
 
     try { sessionStorage.clear(); } catch (_) {}
     _setUiRefreshStatus('Reloading the page...');
-    window.location.reload();
+    const targetUrl = reloadUrl.toString();
+    if (targetUrl === window.location.href) window.location.reload();
+    else window.location.replace(targetUrl);
     return;
   } catch (e) {
     _setUiRefreshStatus('Could not fully clear app caches. You can still use a private tab or clear site data from the browser settings.', 'warn');
