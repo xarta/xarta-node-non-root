@@ -1729,6 +1729,9 @@ document.addEventListener('DOMContentLoaded', () => {
       _webResearchSaveState();
     });
   });
+  if (typeof HubSelect !== 'undefined') {
+    HubSelect.init('web-research-depth');
+  }
   _webResearchBindSpeaker();
   _webResearchBindPrivacySpeaker();
   _webResearchInitTopShade();

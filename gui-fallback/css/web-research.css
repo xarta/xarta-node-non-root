@@ -253,6 +253,16 @@
   min-width: 0;
 }
 
+.web-research-control .hub-select {
+  width: 100%;
+}
+
+.web-research-control .hub-select-btn {
+  max-width: none;
+  min-width: 0;
+  width: 100%;
+}
+
 .web-research-controls .hub-modal-btn {
   align-self: end;
   box-sizing: border-box;
