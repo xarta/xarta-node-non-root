@@ -34,9 +34,9 @@
   align-items: center;
   justify-content: center;
   min-width: 0;
-  max-width: 150px;
+  max-width: 170px;
   height: 34px;
-  padding: 0 10px;
+  padding: 0 8px;
   border: 1px solid rgba(var(--hub-accent-rgb), 0.24);
   border-radius: 8px;
   background: rgba(var(--hub-accent-rgb), 0.08);
@@ -362,17 +362,17 @@
 
 .web-research-answer-head {
   flex: 0 0 auto;
-  padding-right: 100px;
+  align-items: center;
+  min-height: 36px;
+  padding-right: 0;
 }
 
 .web-research-speech-control {
-  position: absolute;
-  top: 10px;
-  right: 12px;
-  z-index: 2;
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 8px;
+  margin-left: auto;
   max-width: min(46vw, 320px);
 }
 
@@ -558,16 +558,17 @@
   }
 
   .web-research-modal .hub-modal-header {
-    grid-template-columns: minmax(0, 1fr) minmax(94px, auto) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(132px, auto) auto;
     grid-template-areas: "title ip close";
   }
 
   .web-research-modal .hub-modal-title {
-    gap: 8px;
+    gap: 6px;
   }
 
   .web-research-ip-box {
-    max-width: 128px;
+    max-width: 148px;
+    padding: 0 6px;
   }
 
   .web-research-form {
@@ -591,11 +592,10 @@
   }
 
   .web-research-answer-head {
-    padding-right: 48px;
+    padding-right: 0;
   }
 
   .web-research-speech-control {
-    right: 8px;
     max-width: 46vw;
   }
 
@@ -629,7 +629,6 @@
   }
 
   .web-research-speech-control {
-    position: static;
     align-self: flex-end;
     max-width: 100%;
   }

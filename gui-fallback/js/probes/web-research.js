@@ -65,6 +65,10 @@ function _webResearchEsc(value) {
   }[c]));
 }
 
+function _webResearchNormalizeQuery(query) {
+  return String(query || '').trim().replace(/\s+/g, ' ');
+}
+
 function _webResearchMarkdownHtml(markdown) {
   const text = String(markdown || '').trim() || 'No summary returned.';
   if (typeof _mdToHtml === 'function') return _mdToHtml(text);
@@ -732,15 +736,14 @@ function _webResearchRender() {
   panel.innerHTML = `
     <div class="web-research-split" id="web-research-split">
       <section class="web-research-answer" id="web-research-synthesis-pane">
-        <div class="web-research-speech-control" id="web-research-speech-control">
-          <span class="web-research-tts-status bp-font-role-status-meta" id="web-research-tts-status"></span>
-          <button class="docs-tree-speaker-btn web-research-speaker" type="button" id="web-research-speaker" aria-label="Speak web research" title="Speak web research"></button>
-        </div>
         <div class="web-research-answer-head">
-          <strong>${_webResearchEsc(result.query || _webResearchState.query || 'Research')}</strong>
           <span class="web-research-pill ${result.ok ? 'ok' : ''}">${_webResearchEsc(result.status || 'succeeded')}</span>
           <span class="web-research-pill">${_webResearchEsc(result.depth || _webResearchState.depth || 'standard')}</span>
           ${result.private_mode ? '<span class="web-research-pill private">private</span>' : ''}
+          <div class="web-research-speech-control" id="web-research-speech-control">
+            <span class="web-research-tts-status bp-font-role-status-meta" id="web-research-tts-status"></span>
+            <button class="docs-tree-speaker-btn web-research-speaker" type="button" id="web-research-speaker" aria-label="Speak web research" title="Speak web research"></button>
+          </div>
         </div>
         <div class="web-research-markdown bp-font-role-docs-markdown">${_webResearchMarkdownHtml(markdown)}</div>
       </section>
@@ -1286,7 +1289,7 @@ function openWebResearchModal(options = {}) {
   _webResearchLoadState();
   _webResearchControlsRatio = 1;
   if (typeof options.query === 'string' && options.query.trim()) {
-    _webResearchState.query = options.query.trim();
+    _webResearchState.query = _webResearchNormalizeQuery(options.query);
   }
   _webResearchSetForm();
   _webResearchRenderPrivacyToggle();
@@ -1311,6 +1314,8 @@ function openWebResearchModal(options = {}) {
 async function _webResearchRun() {
   if (_webResearchInFlight) return;
   _webResearchReadForm();
+  _webResearchState.query = _webResearchNormalizeQuery(_webResearchState.query);
+  _webResearchSetForm();
   if (!_webResearchState.query) {
     _webResearchSetStatus('Enter a web research query.', true);
     return;
@@ -1337,6 +1342,10 @@ async function _webResearchRun() {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
     data.searched_at = new Date().toISOString();
+    if (typeof data.query === 'string' && data.query.trim()) {
+      _webResearchState.query = data.query.trim();
+      _webResearchSetForm();
+    }
     _webResearchState.result = data;
     _webResearchState.searchedAt = data.searched_at;
     _webResearchState.recent = _webResearchState.recent || {};
