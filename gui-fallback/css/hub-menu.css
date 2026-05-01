@@ -58,7 +58,8 @@
 .hub-menu-toggle .current-tab-label { flex: 1; text-align: left; }
 
 .hub-menu-toggle .dropdown-arrow {
-    font-size: 10px;
+    width: 12px;
+    height: 12px;
     transition: transform 0.2s ease;
 }
 
@@ -207,6 +208,9 @@
 }
 
 .hub-tab-split .hub-tab-caret {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: rgba(var(--hub-accent-rgb), 0.06);
     border: 1px solid rgba(var(--hub-accent-rgb), 0.3);
     border-left: none;
@@ -217,6 +221,12 @@
     cursor: pointer;
     font-size: 10px;
     transition: all 0.2s ease;
+}
+
+.hub-tab-split .hub-tab-caret .menu-editor-icon,
+.hub-primary-menu-caret .menu-editor-icon {
+    width: 12px;
+    height: 12px;
 }
 
 .hub-tab-split .hub-tab-caret:hover {
@@ -348,6 +358,9 @@
 }
 
 .hub-primary-menu-caret {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex: 0 0 auto;
     width: 42px;
     border: 1px solid rgba(var(--hub-accent-rgb), 0.3);
@@ -466,6 +479,9 @@
 }
 
 .has-children-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     background: rgba(var(--hub-accent-rgb), 0.2);
     color: var(--hub-accent);
     padding: 2px 8px;
@@ -473,7 +489,10 @@
     font-size: 0.8em;
 }
 
-.btn-edit-item, .btn-promote-item, .btn-move-item, .btn-nest-prev {
+.btn-edit-item, .btn-edit-page-label, .btn-promote-item, .btn-move-item, .btn-nest-prev {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: transparent;
     border: 1px solid rgba(255, 255, 255, 0.1);
     color: #888;
@@ -485,14 +504,42 @@
     transition: all 0.2s ease;
 }
 
-.btn-edit-item:hover { background: rgba(var(--hub-accent-rgb), 0.2); border-color: rgba(var(--hub-accent-rgb), 0.4); color: var(--hub-accent); }
-.btn-promote-item:hover { background: rgba(74, 222, 128, 0.2); border-color: rgba(74, 222, 128, 0.4); color: #4ade80; }
+.btn-edit-item, .btn-edit-page-label { color: #c8a84b; }
+.btn-edit-item:hover, .btn-edit-page-label:hover { background: rgba(var(--hub-accent-rgb), 0.2); border-color: rgba(var(--hub-accent-rgb), 0.4); color: var(--hub-accent); }
+.btn-promote-item { color: #c8a84b; }
+.btn-promote-item:hover { background: rgba(200, 168, 75, 0.18); border-color: rgba(200, 168, 75, 0.45); color: #c8a84b; }
 .btn-move-item:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.24); color: var(--hub-text); }
 .btn-nest-prev:hover { background: rgba(var(--hub-accent-rgb), 0.14); border-color: rgba(var(--hub-accent-rgb), 0.35); color: var(--hub-accent); }
-.btn-edit-item:disabled, .btn-promote-item:disabled, .btn-move-item:disabled, .btn-nest-prev:disabled {
+.btn-edit-item:disabled, .btn-edit-page-label:disabled, .btn-promote-item:disabled, .btn-move-item:disabled, .btn-nest-prev:disabled {
     opacity: 0.3;
     cursor: not-allowed;
 }
+
+.menu-editor-icon {
+    --_menu-editor-icon-url: none;
+    display: inline-block;
+    width: 15px;
+    height: 15px;
+    flex: 0 0 auto;
+    background-color: currentColor;
+    -webkit-mask-image: var(--_menu-editor-icon-url);
+    mask-image: var(--_menu-editor-icon-url);
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+}
+
+.menu-editor-icon--move-up { --_menu-editor-icon-url: url("/fallback-ui/assets/icons/ui/arrow-up-blue.svg"); }
+.menu-editor-icon--move-down { --_menu-editor-icon-url: url("/fallback-ui/assets/icons/ui/arrow-down-blue.svg"); }
+.menu-editor-icon--promote { --_menu-editor-icon-url: url("/fallback-ui/assets/icons/ui/arrow-up-gold.svg"); }
+.menu-editor-icon--chevron-down { --_menu-editor-icon-url: url("/fallback-ui/assets/icons/ui/chevron-down-blue.svg"); }
+.menu-editor-icon--nest { --_menu-editor-icon-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 4v6a4 4 0 0 0 4 4h8'/%3E%3Cpath d='m14 10 4 4-4 4'/%3E%3C/svg%3E"); }
+.menu-editor-icon--edit-label { --_menu-editor-icon-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20h4l11-11a2.8 2.8 0 0 0-4-4L4 16v4z'/%3E%3Cpath d='m13.5 6.5 4 4'/%3E%3C/svg%3E"); }
+.menu-editor-icon--page-label { --_menu-editor-icon-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 13 12 21 3 12V4h8l9 9z'/%3E%3Ccircle cx='8' cy='8' r='1.5' fill='black' stroke='none'/%3E%3C/svg%3E"); }
+.menu-editor-icon--function { --_menu-editor-icon-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M13 2 4 14h7l-1 8 10-13h-7l1-7z'/%3E%3C/svg%3E"); }
 
 .menu-editor-children {
     padding: 0 15px 10px 35px;
@@ -542,6 +589,20 @@
 .menu-editor-instructions p { margin: 0 0 8px 0; color: #aaa; font-size: 0.9em; }
 .menu-editor-instructions p:last-child { margin-bottom: 0; }
 .menu-editor-instructions strong { color: var(--hub-accent); }
+
+.menu-editor-help-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--hub-accent);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.menu-editor-help-action .menu-editor-icon {
+    width: 13px;
+    height: 13px;
+}
 
 /* ── 4. Desktop layout ───────────────────────────────────────── */
 
@@ -632,6 +693,9 @@
 /* Appears in the layout editor in place of the → pageLabel indicator
    for items that call a function rather than navigate to a tab. */
 .menu-fn-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     font-size: 10px;
     background: rgba(var(--hub-accent-rgb), 0.12);
     border: 1px solid rgba(var(--hub-accent-rgb), 0.35);
@@ -641,6 +705,11 @@
     font-family: 'Courier New', Courier, monospace;
     white-space: nowrap;
     letter-spacing: 0.02em;
+}
+
+.menu-fn-badge .menu-editor-icon {
+    width: 10px;
+    height: 10px;
 }
 
 /* ── Function child item row in editor (subtle tint) ─────────────────── */
@@ -1312,4 +1381,3 @@
 .ni-picker-play {
     font-size: 14px;
 }
-

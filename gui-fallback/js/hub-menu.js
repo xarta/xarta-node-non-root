@@ -601,7 +601,7 @@ function createHubMenu(cfg) {
                     caretBtn.className = 'hub-primary-menu-caret';
                     caretBtn.type = 'button';
                     caretBtn.setAttribute('aria-label', 'Toggle submenu');
-                    caretBtn.textContent = '▼';
+                    caretBtn.innerHTML = '<span class="menu-editor-icon menu-editor-icon--chevron-down" aria-hidden="true"></span>';
 
                     const submenu = document.createElement('div');
                     submenu.className = 'hub-primary-menu-submenu';
@@ -846,7 +846,7 @@ function createHubMenu(cfg) {
                     dropdown.innerHTML = `
                         <div class="hub-tab-split">
                             <button class="hub-tab hub-tab-label${isActive ? ' active' : ''}" data-tab="${item.id}">${labelText}</button>
-                            <button class="hub-tab-caret" data-fc-key="nav.dropdown-open" aria-label="Toggle submenu">▼</button>
+                            <button class="hub-tab-caret" data-fc-key="nav.dropdown-open" aria-label="Toggle submenu"><span class="menu-editor-icon menu-editor-icon--chevron-down" aria-hidden="true"></span></button>
                         </div>
                         <div class="hub-dropdown-menu">
                             ${navHtml}${sepHtml}${fnHtml}
@@ -1064,14 +1064,14 @@ function createHubMenu(cfg) {
                     <span class="drag-handle">⋮⋮</span>
                     <span class="menu-item-icon">${this._iconHtml(item.id, item.icon)}</span>
                     <span class="menu-item-label">${this._displayLabel(item)}</span>
-                    ${hasChildren ? '<span class="has-children-badge">▼ ' + children.length + '</span>' : ''}
+                    ${hasChildren ? '<span class="has-children-badge" title="' + children.length + ' nested items"><span class="menu-editor-icon menu-editor-icon--chevron-down" aria-hidden="true"></span>' + children.length + '</span>' : ''}
                     <span class="menu-item-page-label" title="Page label (shown when active)">→ ${item.pageLabel || '—'}</span>
                     <div class="menu-item-actions">
-                        <button class="btn-move-item" data-id="${item.id}" data-dir="up" title="Move up"${canMoveTopUp ? '' : ' disabled'}>↑</button>
-                        <button class="btn-move-item" data-id="${item.id}" data-dir="down" title="Move down"${canMoveTopDown ? '' : ' disabled'}>↓</button>
-                        <button class="btn-nest-prev" data-id="${item.id}" title="Nest under previous item"${canNestUnderPrevious ? '' : ' disabled'}>↳</button>
-                        <button class="btn-edit-item" data-id="${item.id}" title="Edit nav label">✏️</button>
-                        <button class="btn-edit-page-label" data-id="${item.id}" title="Edit page label">🏷️</button>
+                        <button type="button" class="btn-move-item" data-id="${item.id}" data-dir="up" title="Move up" aria-label="Move up"${canMoveTopUp ? '' : ' disabled'}><span class="menu-editor-icon menu-editor-icon--move-up" aria-hidden="true"></span></button>
+                        <button type="button" class="btn-move-item" data-id="${item.id}" data-dir="down" title="Move down" aria-label="Move down"${canMoveTopDown ? '' : ' disabled'}><span class="menu-editor-icon menu-editor-icon--move-down" aria-hidden="true"></span></button>
+                        <button type="button" class="btn-nest-prev" data-id="${item.id}" title="Nest under previous item" aria-label="Nest under previous item"${canNestUnderPrevious ? '' : ' disabled'}><span class="menu-editor-icon menu-editor-icon--nest" aria-hidden="true"></span></button>
+                        <button type="button" class="btn-edit-item" data-id="${item.id}" title="Edit nav label" aria-label="Edit nav label"><span class="menu-editor-icon menu-editor-icon--edit-label" aria-hidden="true"></span></button>
+                        <button type="button" class="btn-edit-page-label" data-id="${item.id}" title="Edit page label" aria-label="Edit page label"><span class="menu-editor-icon menu-editor-icon--page-label" aria-hidden="true"></span></button>
                     </div>
                 </div>
                 <div class="menu-editor-children" data-parent="${item.id}">
@@ -1103,10 +1103,10 @@ function createHubMenu(cfg) {
                             : '';
 
                         const rightColHtml = isFn
-                            ? `<span class="menu-fn-badge" title="Function — ${fnKey}">⚡ ${fnKey}</span>${contextBadgeHtml}`
+                            ? `<span class="menu-fn-badge" title="Function — ${fnKey}"><span class="menu-editor-icon menu-editor-icon--function" aria-hidden="true"></span>${fnKey}</span>${contextBadgeHtml}`
                             : `<span class="menu-item-page-label" title="Page label">→ ${child.pageLabel || '—'}</span>`;
                         const editPageBtnHtml = isFn ? ''
-                            : `<button class="btn-edit-page-label" data-id="${child.id}" title="Edit page label">🏷️</button>`;
+                            : `<button type="button" class="btn-edit-page-label" data-id="${child.id}" title="Edit page label" aria-label="Edit page label"><span class="menu-editor-icon menu-editor-icon--page-label" aria-hidden="true"></span></button>`;
                         const inactiveClass = (isFn && !isInContext) ? ' menu-editor-fn-child--inactive' : '';
                         const childIndex = children.findIndex(entry => entry.id === child.id);
                         const canMoveChildUp = childIndex > 0;
@@ -1119,10 +1119,10 @@ function createHubMenu(cfg) {
                                 <span class="menu-item-label">${this._displayLabel(child)}</span>
                                 ${rightColHtml}
                                 <div class="menu-item-actions">
-                                    <button class="btn-move-item" data-id="${child.id}" data-dir="up" title="Move up"${canMoveChildUp ? '' : ' disabled'}>↑</button>
-                                    <button class="btn-move-item" data-id="${child.id}" data-dir="down" title="Move down"${canMoveChildDown ? '' : ' disabled'}>↓</button>
+                                    <button type="button" class="btn-move-item" data-id="${child.id}" data-dir="up" title="Move up" aria-label="Move up"${canMoveChildUp ? '' : ' disabled'}><span class="menu-editor-icon menu-editor-icon--move-up" aria-hidden="true"></span></button>
+                                    <button type="button" class="btn-move-item" data-id="${child.id}" data-dir="down" title="Move down" aria-label="Move down"${canMoveChildDown ? '' : ' disabled'}><span class="menu-editor-icon menu-editor-icon--move-down" aria-hidden="true"></span></button>
                                     ${editPageBtnHtml}
-                                    <button class="btn-promote-item" data-id="${child.id}" title="Promote to top level">⬆️</button>
+                                    <button type="button" class="btn-promote-item" data-id="${child.id}" title="Promote to top level" aria-label="Promote to top level"><span class="menu-editor-icon menu-editor-icon--promote" aria-hidden="true"></span></button>
                                 </div>
                             </div>
                         </div>`;
