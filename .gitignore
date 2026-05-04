@@ -14,3 +14,8 @@
 *.db-shm
 *.db-wal
 *.swo
+
+# Generated test/runtime artifacts
+/Testing/
+/core
+/core.*
