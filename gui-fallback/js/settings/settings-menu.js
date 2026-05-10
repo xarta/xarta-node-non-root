@@ -7,7 +7,7 @@
 // localStorage key: 'blueprintsSettingsMenuConfig'
 //
 // Default groupings:
-//   🗄 PVE Hosts  [▼ 🤝 Nodes]
+//   🗄 PVE Hosts  [▼ 🤝 Nodes, Local Dockge]
 //   🔧 App Config [▼ 🗺 Manual ARP, 🤖 AI Providers]
 //   🗝 Keys       [▼ 🔒 Certs]
 //   📄 Docs       [▼ 📋 Doc List, 🖼️ Images, 🩺 Self Diagnostic]
@@ -34,6 +34,7 @@ const SettingsMenuConfig = createHubMenu({
     defaultMenu: [
         { id: 'pve-hosts',       label: 'PVE Hosts',      icon: 'icons/ui/proxmox-blue.svg', pageLabel: 'PVE Hosts',       parent: null,        order: 0 },
         { id: 'nodes',           label: 'Nodes',          icon: HIEROGLYPHS.crookFlail, pageLabel: 'Fleet Nodes',     parent: 'pve-hosts', order: 0 },
+        { id: 'local-dockge',    label: 'Local Dockge',   icon: HIEROGLYPHS.pyramid,    pageLabel: 'Local Dockge',    parent: 'pve-hosts', order: 1 },
         { id: 'settings',        label: 'App Config',     icon: HIEROGLYPHS.djedPillar, pageLabel: 'App Config',      parent: null,        order: 1 },
         { id: 'arp-manual',      label: 'Manual ARP',     icon: HIEROGLYPHS.obelisk,    pageLabel: 'Manual ARP',      parent: 'settings',  order: 0 },
         { id: 'ai-providers',    label: 'AI Providers',   icon: HIEROGLYPHS.falcon,     pageLabel: 'AI Providers',    parent: 'settings',  order: 1 },
@@ -77,6 +78,9 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'cfg-fn-scroll',   label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'cfg.scroll', activeOn: ['settings'], parent: 'settings-layout', order: 4 },
         { id: 'cfg-fn-autofit',  label: 'Auto Fit Widths',  icon: 'icons/ui/table-columns-blue.svg', fn: 'cfg.autoFit', activeOn: ['settings'], parent: 'settings-layout', order: 5 },
         { id: 'cfg-fn-context',  label: 'Layout Context',   icon: HIEROGLYPHS.eyeOfHorus, fn: 'cfg.context',  activeOn: ['settings'],     parent: 'settings-layout', order: 6 },
+
+        // ── Local Dockge page function items ─────────────────────────────
+        { id: 'ldg-fn-refresh',  label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'ldg.refresh',  activeOn: ['local-dockge'], parent: 'settings-layout', order: 0 },
 
         // ── Manual ARP page function items ────────────────────────────────
         { id: 'arp-fn-add',      label: 'Add entry',        icon: HIEROGLYPHS.obelisk,    fn: 'arp.add',      activeOn: ['arp-manual'],   parent: 'settings-layout', order: 0 },
@@ -162,6 +166,25 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'emg-fn-explore-sounds', label: 'Explore Sounds', icon: 'icons/ui/group-folder-blue.svg', fn: 'em.exploreSounds', activeOn: ['embed-menu-grid'], parent: 'settings-layout', order: 2 },
     ],
 });
+
+// One-time browser-layout migration for the 2026-05-10 Local Dockge placement
+// correction. Existing saved menus would otherwise keep the item under App
+// Config because hub-menu preserves user-edited parent/order fields.
+(function migrateLocalDockgePlacement() {
+    const migrationKey = 'blueprintsSettingsMenuLocalDockgePveMigration';
+    const originalLoadConfig = SettingsMenuConfig.loadConfig.bind(SettingsMenuConfig);
+    SettingsMenuConfig.loadConfig = function loadConfigWithLocalDockgeMigration() {
+        originalLoadConfig();
+        if (localStorage.getItem(migrationKey) === '1') return;
+        const item = this.currentMenu.find(entry => entry.id === 'local-dockge');
+        if (item) {
+            item.parent = 'pve-hosts';
+            item.order = 1;
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentMenu));
+        }
+        localStorage.setItem(migrationKey, '1');
+    };
+})();
 
 function _settingsToggleHorizontalScroll(getController, rerender) {
     const controller = typeof getController === 'function' ? getController() : null;
@@ -564,6 +587,9 @@ SettingsMenuConfig.registerFunctions({
     'cfg.scroll':   () => toggleSettingsHorizontalScroll(),
     'cfg.autoFit':  () => _settingsAutoFitLayout(() => _ensureSettingsLayoutController()),
     'cfg.context':  () => openSettingsLayoutContextModal(),
+
+    // Local Dockge
+    'ldg.refresh':  () => loadLocalDockgeStacks(),
 
     // Manual ARP
     'arp.add':      () => addArpManualEntry(),

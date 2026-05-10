@@ -17,6 +17,9 @@ const _NODE_ACTION_INLINE_WIDTH = 172;
 const _NODE_ACTION_COMPACT_WIDTH = 48;
 
 let _nodesTableView = null;
+let _nodeRestartLongPressTimer = null;
+let _nodeRestartLongPressFiredAt = 0;
+let _nodeRestartSuppressNextClick = false;
 
 document.addEventListener('DOMContentLoaded', () => {
   const retouchBtn = document.getElementById('retouch-btn');
@@ -47,6 +50,16 @@ document.addEventListener('DOMContentLoaded', () => {
     restartConfirmBtn.addEventListener('click', submitNodeRestart);
     restartConfirmBtn.dataset.bound = '1';
   }
+  const lxcRebootConfirmBtn = document.getElementById('node-lxc-reboot-modal-confirm');
+  if (lxcRebootConfirmBtn && !lxcRebootConfirmBtn.dataset.bound) {
+    lxcRebootConfirmBtn.addEventListener('click', submitNodeLxcReboot);
+    lxcRebootConfirmBtn.dataset.bound = '1';
+  }
+  const lxcRebootForceBtn = document.getElementById('node-lxc-reboot-modal-force');
+  if (lxcRebootForceBtn && !lxcRebootForceBtn.dataset.bound) {
+    lxcRebootForceBtn.addEventListener('click', submitNodeLxcForceCycle);
+    lxcRebootForceBtn.dataset.bound = '1';
+  }
   if (typeof HubSelect !== 'undefined') {
     HubSelect.init('retouch-table-select');
   }
@@ -58,6 +71,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('nodes-tbody')?.addEventListener('click', e => {
     const restartBtn = e.target.closest('[data-node-restart]');
     if (restartBtn) {
+      if (_nodeRestartSuppressNextClick || Date.now() - _nodeRestartLongPressFiredAt < 900) {
+        _nodeRestartSuppressNextClick = false;
+        e.preventDefault();
+        return;
+      }
       nodeRestart(restartBtn.dataset.nodeRestart, restartBtn);
       return;
     }
@@ -91,6 +109,28 @@ document.addEventListener('DOMContentLoaded', () => {
       _openNodeRowActions(rowActionsBtn.dataset.nodeActions);
     }
   });
+  const nodesTbody = document.getElementById('nodes-tbody');
+  nodesTbody?.addEventListener('pointerdown', e => {
+    const restartBtn = e.target.closest('[data-node-restart]');
+    if (!restartBtn || restartBtn.disabled) return;
+    clearTimeout(_nodeRestartLongPressTimer);
+    _nodeRestartLongPressTimer = setTimeout(() => {
+      _nodeRestartLongPressFiredAt = Date.now();
+      _nodeRestartSuppressNextClick = true;
+      openNodeLxcRebootModal(restartBtn.dataset.nodeRestart, restartBtn);
+      setTimeout(() => { _nodeRestartSuppressNextClick = false; }, 2500);
+    }, 700);
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(eventName => {
+    nodesTbody?.addEventListener(eventName, () => {
+      clearTimeout(_nodeRestartLongPressTimer);
+      _nodeRestartLongPressTimer = null;
+    });
+  });
+  nodesTbody?.addEventListener('contextmenu', e => {
+    if (!e.target.closest('[data-node-restart]')) return;
+    e.preventDefault();
+  });
   _nodesTableView?.onLayoutChange(() => {
     renderNodes();
   });
@@ -101,6 +141,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
 let _pendingNodeAction = null;
 let _pendingNodeRestart = null;
+let _pendingNodeLxcReboot = null;
+let _nodeLxcRebootTimer = null;
+let _nodeLxcRebootPollTimer = null;
 
 function _ensureNodesTableView() {
   if (_nodesTableView || typeof TableView === 'undefined') return _nodesTableView;
@@ -386,6 +429,12 @@ function _openNodeRowActions(nodeId) {
         onClick: () => nodeRestart(nodeId),
       },
       {
+        label: 'Reboot LXC',
+        detail: 'Ask the parent Proxmox host to reboot this node container',
+        tone: 'danger',
+        onClick: () => openNodeLxcRebootModal(nodeId),
+      },
+      {
         label: 'Pull root repo',
         detail: 'Trigger /root/xarta-node git pull on this node only',
         onClick: () => nodeGitPull(nodeId),
@@ -626,6 +675,208 @@ async function submitNodeRestart() {
       }, 3000);
     }
   }
+}
+
+function _nodeLxcRebootModalEls() {
+  return {
+    dialog: document.getElementById('node-lxc-reboot-modal'),
+    badge: document.getElementById('node-lxc-reboot-modal-badge'),
+    title: document.getElementById('node-lxc-reboot-modal-title'),
+    message: document.getElementById('node-lxc-reboot-modal-message'),
+    note: document.getElementById('node-lxc-reboot-modal-note'),
+    status: document.getElementById('node-lxc-reboot-modal-status'),
+    error: document.getElementById('node-lxc-reboot-modal-error'),
+    closeBtn: document.getElementById('node-lxc-reboot-modal-close-btn'),
+    confirmBtn: document.getElementById('node-lxc-reboot-modal-confirm'),
+    forceBtn: document.getElementById('node-lxc-reboot-modal-force'),
+    closeBtns: Array.from(document.querySelectorAll('#node-lxc-reboot-modal .hub-modal-close')),
+  };
+}
+
+function _clearNodeLxcRebootTimers() {
+  if (_nodeLxcRebootTimer) {
+    clearTimeout(_nodeLxcRebootTimer);
+    _nodeLxcRebootTimer = null;
+  }
+  if (_nodeLxcRebootPollTimer) {
+    clearInterval(_nodeLxcRebootPollTimer);
+    _nodeLxcRebootPollTimer = null;
+  }
+}
+
+function _resetNodeLxcRebootModal() {
+  const { dialog, badge, title, message, note, status, error, confirmBtn, forceBtn, closeBtns } = _nodeLxcRebootModalEls();
+  _clearNodeLxcRebootTimers();
+  if (dialog) dialog.dataset.busy = '0';
+  if (dialog) dialog.dataset.tone = 'warning';
+  if (badge) badge.textContent = 'LXC';
+  if (title) title.textContent = 'Reboot Node LXC';
+  if (message) message.textContent = '';
+  if (note) note.textContent = '';
+  if (status) {
+    status.textContent = '';
+    status.style.color = 'var(--text-dim)';
+  }
+  if (error) error.textContent = '';
+  if (confirmBtn) {
+    confirmBtn.textContent = 'Reboot';
+    confirmBtn.disabled = false;
+    confirmBtn.hidden = false;
+  }
+  if (forceBtn) {
+    forceBtn.hidden = true;
+    forceBtn.disabled = false;
+  }
+  closeBtns.forEach(btn => { btn.disabled = false; });
+  _pendingNodeLxcReboot = null;
+}
+
+function _nodeLxcStatusText(info) {
+  const vmid = info?.vmid ? `LXC ${info.vmid}` : 'LXC';
+  const pveHost = info?.pve_host ? ` on ${info.pve_host}` : '';
+  return `${vmid}${pveHost}: ${info?.status || 'unknown'}`;
+}
+
+function _applyNodeLxcModalStatus(info) {
+  const { message, note, status, confirmBtn, forceBtn } = _nodeLxcRebootModalEls();
+  const pending = _pendingNodeLxcReboot;
+  if (!pending) return;
+  const current = String(info?.status || 'unknown').toLowerCase();
+  pending.info = info || {};
+  pending.status = current;
+
+  if (message) message.textContent = _nodeLxcStatusText(info);
+  if (status) {
+    status.textContent = '';
+    status.style.color = 'var(--text-dim)';
+  }
+  if (current === 'stopped') {
+    pending.action = 'start';
+    if (note) note.textContent = `${pending.nodeId} is stopped. Starting it is available from here.`;
+    if (confirmBtn) confirmBtn.textContent = 'Start';
+    if (forceBtn) forceBtn.hidden = true;
+  } else {
+    pending.action = 'reboot';
+    if (note) note.textContent = `This asks the parent Proxmox host to reboot ${pending.nodeId}'s LXC.`;
+    if (confirmBtn) confirmBtn.textContent = 'Reboot';
+  }
+
+  const node = _nodes.find(x => x.node_id === pending.nodeId);
+  if (node) {
+    node._pct_status = current;
+    node._pct_info = { vmid: info?.vmid, pve_host: info?.pve_host };
+  }
+  if (pending.btn && pending.btn.dataset.nodePct) {
+    _applyNodePctButtonState(pending.btn, current, info);
+  }
+}
+
+async function _fetchNodeLxcStatus(nodeId) {
+  const r = await apiFetch(`/api/v1/nodes/${encodeURIComponent(nodeId)}/pct-status`);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+  return data;
+}
+
+async function openNodeLxcRebootModal(nodeId, btn) {
+  const { dialog, status, error, confirmBtn } = _nodeLxcRebootModalEls();
+  if (!dialog) return;
+  _resetNodeLxcRebootModal();
+  _pendingNodeLxcReboot = { nodeId, btn, status: 'unknown', action: 'reboot' };
+  if (status) {
+    status.textContent = 'Checking current LXC status...';
+    status.style.color = 'var(--text-dim)';
+  }
+  if (confirmBtn) confirmBtn.disabled = true;
+  HubModal.open(dialog, { onClose: _resetNodeLxcRebootModal });
+  try {
+    const info = await _fetchNodeLxcStatus(nodeId);
+    _applyNodeLxcModalStatus(info);
+    if (confirmBtn) confirmBtn.disabled = false;
+  } catch (e) {
+    if (error) error.textContent = `Unable to read LXC status: ${e.message}`;
+    if (confirmBtn) confirmBtn.disabled = false;
+  }
+}
+
+function _startNodeLxcRebootWatch() {
+  const pending = _pendingNodeLxcReboot;
+  const { status, forceBtn } = _nodeLxcRebootModalEls();
+  if (!pending) return;
+  _clearNodeLxcRebootTimers();
+  _nodeLxcRebootPollTimer = setInterval(async () => {
+    if (!_pendingNodeLxcReboot) return;
+    try {
+      const info = await _fetchNodeLxcStatus(pending.nodeId);
+      _applyNodeLxcModalStatus(info);
+    } catch (_) {}
+  }, 3000);
+  _nodeLxcRebootTimer = setTimeout(() => {
+    if (forceBtn) forceBtn.hidden = false;
+    if (status) {
+      status.textContent = '20 second window elapsed. Force stop + start is now available.';
+      status.style.color = 'var(--warn,#e6a817)';
+    }
+  }, 20000);
+}
+
+async function _submitNodeLxcAction(action) {
+  const pending = _pendingNodeLxcReboot;
+  const { dialog, status, error, confirmBtn, forceBtn, closeBtns } = _nodeLxcRebootModalEls();
+  if (!pending || !dialog || dialog.dataset.busy === '1') return;
+
+  dialog.dataset.busy = '1';
+  if (error) error.textContent = '';
+  if (status) {
+    status.textContent = action === 'force-cycle' ? 'Sending force stop + start request...' : `Sending ${action} request...`;
+    status.style.color = 'var(--text-dim)';
+  }
+  if (confirmBtn) confirmBtn.disabled = true;
+  if (forceBtn) forceBtn.disabled = true;
+  closeBtns.forEach(btn => { btn.disabled = true; });
+
+  try {
+    const r = await apiFetch(`/api/v1/nodes/${encodeURIComponent(pending.nodeId)}/pct`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+    if (status) {
+      status.textContent = action === 'force-cycle' ? 'Force stop + start request completed.' : `${action} request sent.`;
+      status.style.color = 'var(--ok,#3fb950)';
+    }
+    setTimeout(async () => {
+      try {
+        const info = await _fetchNodeLxcStatus(pending.nodeId);
+        _applyNodeLxcModalStatus(info);
+        await enrichNodePctStatus();
+      } catch (_) {}
+    }, 1200);
+    if (action === 'reboot') {
+      _startNodeLxcRebootWatch();
+    } else {
+      _clearNodeLxcRebootTimers();
+    }
+  } catch (e) {
+    if (error) error.textContent = `Unable to ${action} LXC: ${e.message}`;
+    if (status) status.textContent = '';
+  } finally {
+    dialog.dataset.busy = '0';
+    if (confirmBtn) confirmBtn.disabled = false;
+    if (forceBtn) forceBtn.disabled = false;
+    closeBtns.forEach(btn => { btn.disabled = false; });
+  }
+}
+
+async function submitNodeLxcReboot() {
+  const action = _pendingNodeLxcReboot?.action || 'reboot';
+  await _submitNodeLxcAction(action);
+}
+
+async function submitNodeLxcForceCycle() {
+  await _submitNodeLxcAction('force-cycle');
 }
 
 async function retouchTable(btn) {

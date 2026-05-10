@@ -309,6 +309,7 @@ function switchTab(tab) {
   if (tab === 'pfsense-dns'    && !_pfsenseDns.length)    loadPfSenseDns();
   if (tab === 'proxmox-config' && !_proxmoxConfig.length) loadProxmoxConfig();
   if (tab === 'dockge-stacks'  && !_dockgeStacks.length)  loadDockgeStacks();
+  if (tab === 'local-dockge'   && !_localDockgeStacks.length) loadLocalDockgeStacks();
   if (tab === 'caddy-configs'  && !_caddyConfigs.length)  loadCaddyConfigs();
   if (tab === 'pve-hosts'      && !_pveHosts.length)      loadPveHosts();
   if (tab === 'vlans'          && !_vlans.length)         loadVlans();

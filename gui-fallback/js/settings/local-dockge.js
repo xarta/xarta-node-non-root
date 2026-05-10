@@ -1,0 +1,434 @@
+/* ── Local Dockge ──────────────────────────────────────────────────────── */
+
+const _LOCAL_DOCKGE_POLL_MS = 7000;
+const _LOCAL_DOCKGE_COLS = ['stack', 'services', 'containers', 'status_health', 'updated', 'actions'];
+const _LOCAL_DOCKGE_FIELD_META = {
+  stack: { label: 'Stack' },
+  services: { label: 'Services' },
+  containers: { label: 'Containers' },
+  status_health: { label: 'Status<br>Health' },
+  updated: { label: 'Updated' },
+  actions: { label: 'Actions' },
+};
+let _localDockgeTableView = null;
+
+function _ensureLocalDockgeTableView() {
+  if (_localDockgeTableView || typeof TableView === 'undefined') return _localDockgeTableView;
+  _localDockgeTableView = TableView.create({
+    storageKey: 'local-dockge-table-widths',
+    columns: _LOCAL_DOCKGE_COLS,
+    meta: _LOCAL_DOCKGE_FIELD_META,
+    getTable: () => document.getElementById('local-dockge-table'),
+    fallbackColumn: 'stack',
+    minWidth: 54,
+    getDefaultWidth: col => {
+      if (col === 'stack') return 150;
+      if (col === 'services') return 230;
+      if (col === 'containers') return 270;
+      if (col === 'status_health') return 104;
+      if (col === 'updated') return 112;
+      if (col === 'actions') return 70;
+      return null;
+    },
+  });
+  return _localDockgeTableView;
+}
+
+function _localDockgeIsActive() {
+  return document.getElementById('tab-local-dockge')?.classList.contains('active');
+}
+
+function _localDockgeStatusTone(status) {
+  const text = String(status || '').toLowerCase();
+  if (text === 'running' || text === 'healthy') return 'var(--ok,#3fb950)';
+  if (text === 'partial' || text === 'starting' || text === 'mixed') return 'var(--warn,#e6a817)';
+  if (text === 'stopped' || text === 'none') return 'var(--text-dim)';
+  if (text === 'unhealthy' || text === 'unknown') return 'var(--err,#f85149)';
+  return 'var(--text-dim)';
+}
+
+function _localDockgeBadge(value) {
+  const label = value || 'unknown';
+  return `<span style="display:inline-block;border:1px solid currentColor;border-radius:6px;padding:2px 7px;font-size:11px;color:${_localDockgeStatusTone(label)}">${esc(label)}</span>`;
+}
+
+function _localDockgeFormatTime(value) {
+  if (!value) return '-';
+  return String(value).replace('T', ' ').replace(/\.\d+.*$/, '').replace('+00:00', '').slice(0, 19);
+}
+
+function _localDockgeFormatUpdatedHtml(value) {
+  const text = _localDockgeFormatTime(value);
+  if (text === '-') return '<span class="local-dockge-updated">-</span>';
+  const [date, time] = text.split(' ');
+  return `<span class="local-dockge-updated"><span>${esc(date || text)}</span>${time ? `<span>${esc(time)}</span>` : ''}</span>`;
+}
+
+function _localDockgeFilterRows(stacks) {
+  const q = (document.getElementById('local-dockge-search')?.value || '').trim().toLowerCase();
+  if (!q) return stacks;
+  return stacks.filter(stack => {
+    const haystack = [
+      stack.stack_name,
+      stack.status,
+      stack.health,
+      ...(stack.services || []),
+      ...Object.values(stack.service_exposures || {}).map(e => `${e.kind || ''} ${e.url || ''} ${e.description || ''}`),
+      ...(stack.containers || []).map(c => `${c.name || ''} ${c.service || ''} ${c.image || ''} ${c.state || ''} ${c.health || ''}`),
+    ].join(' ').toLowerCase();
+    return haystack.includes(q);
+  });
+}
+
+function _localDockgeActionButtons(stack) {
+  const name = esc(stack.stack_name || '');
+  const status = String(stack.status || 'unknown').toLowerCase();
+  const buttons = [];
+  if (status === 'running' || status === 'partial') {
+    buttons.push(`<button class="secondary table-icon-btn table-icon-btn--restart" type="button" title="Restart stack" aria-label="Restart stack" data-local-dockge-action="restart" data-local-dockge-stack="${name}"></button>`);
+    buttons.push(`<button class="secondary table-icon-btn table-icon-btn--power-stop" type="button" title="Stop stack" aria-label="Stop stack" data-local-dockge-action="stop" data-local-dockge-stack="${name}"></button>`);
+  } else if (status === 'stopped') {
+    buttons.push(`<button class="secondary table-icon-btn table-icon-btn--power-start" type="button" title="Start stack" aria-label="Start stack" data-local-dockge-action="start" data-local-dockge-stack="${name}"></button>`);
+  } else {
+    buttons.push(`<button class="secondary table-icon-btn table-icon-btn--restart" type="button" title="Refresh before acting on this stack" aria-label="Stack action unavailable" disabled></button>`);
+  }
+  return `<div class="table-inline-actions">${buttons.join('')}</div>`;
+}
+
+function _localDockgeExposureLabel(kind) {
+  return {
+    'caddy-web': 'web',
+    'caddy-api': 'api',
+    'tailnet-web': 'tailnet web',
+    'tailnet-api': 'tailnet api',
+    'localhost-api': 'local api',
+    'localhost-web': 'local web',
+    internal: 'internal',
+  }[kind] || 'unknown';
+}
+
+function _localDockgeKindClass(kind) {
+  return String(kind || 'unknown').replace(/[^a-z0-9_-]/gi, '-').toLowerCase();
+}
+
+function _localDockgeServicePill(stack, service) {
+  const exposure = (stack.service_exposures || {})[service] || { service, label: service, kind: 'internal' };
+  const kind = exposure.kind || 'internal';
+  const title = exposure.url
+    ? `${exposure.label || service}: ${exposure.url}`
+    : `${exposure.label || service}: ${_localDockgeExposureLabel(kind)}`;
+  return `<button class="local-dockge-service-pill local-dockge-service-pill--${esc(_localDockgeKindClass(kind))}" type="button"
+      title="${esc(title)}"
+      data-local-dockge-service="${esc(service)}"
+      data-local-dockge-service-stack="${esc(stack.stack_name || '')}">
+      ${esc(exposure.label || service)}<span class="local-dockge-service-kind">${esc(_localDockgeExposureLabel(kind))}</span>
+    </button>`;
+}
+
+function _localDockgeModalEls() {
+  return {
+    dialog: document.getElementById('local-dockge-service-modal'),
+    badge: document.getElementById('local-dockge-service-modal-badge'),
+    title: document.getElementById('local-dockge-service-modal-title'),
+    status: document.getElementById('local-dockge-service-modal-status'),
+    body: document.getElementById('local-dockge-service-modal-body'),
+    error: document.getElementById('local-dockge-service-modal-error'),
+    openBtn: document.getElementById('local-dockge-service-modal-open'),
+  };
+}
+
+function _localDockgeResetServiceModal() {
+  const { dialog, badge, title, status, body, error, openBtn } = _localDockgeModalEls();
+  if (dialog) dialog.dataset.tone = 'info';
+  if (badge) badge.textContent = 'SVC';
+  if (title) title.textContent = 'Local Dockge Service';
+  if (status) status.textContent = '';
+  if (body) body.innerHTML = '';
+  if (error) error.textContent = '';
+  if (openBtn) {
+    openBtn.hidden = false;
+    openBtn.disabled = true;
+    openBtn.title = 'No browser-openable URL is available for this service.';
+    openBtn.onclick = null;
+  }
+}
+
+function _localDockgeInfoRow(label, value) {
+  const text = value == null || value === '' ? '-' : String(value);
+  return `<div style="display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px;font-size:12px;line-height:1.6;margin-bottom:6px">
+    <strong style="color:var(--text-dim)">${esc(label)}</strong>
+    <span style="min-width:0;overflow-wrap:anywhere">${esc(text)}</span>
+  </div>`;
+}
+
+function _localDockgeChecksHtml(title, checks) {
+  const rows = (checks || []).map(check => {
+    const ok = check.ok ? 'ok' : 'fail';
+    const color = check.ok ? 'var(--ok,#3fb950)' : 'var(--text-dim)';
+    const status = check.status == null ? '-' : check.status;
+    return `<div class="local-dockge-openapi-row">
+      <span style="color:${color};text-transform:uppercase">${esc(ok)} ${esc(String(status))}</span>
+      <span style="overflow-wrap:anywhere">${esc(check.url || '')}${check.error ? `<br><span style="color:var(--err,#f85149)">${esc(check.error)}</span>` : ''}</span>
+    </div>`;
+  }).join('');
+  return `<h3>${esc(title)}</h3><div class="local-dockge-openapi-paths">${rows || '<span style="color:var(--text-dim);font-size:12px">No checks run.</span>'}</div>`;
+}
+
+function _localDockgeOpenApiHtml(openapi) {
+  if (!openapi) {
+    return `<h3>API schema</h3><p style="color:var(--text-dim);font-size:12px;line-height:1.7;margin:0">No OpenAPI schema was detected from the standard endpoints.</p>`;
+  }
+  const rows = (openapi.paths || []).map(row => `<div class="local-dockge-openapi-row">
+    <span>${esc((row.methods || []).join(', ') || '-')}</span>
+    <code style="overflow-wrap:anywhere">${esc(row.path || '')}</code>
+  </div>`).join('');
+  return `<h3>${esc(openapi.title || 'OpenAPI')}</h3>
+    ${_localDockgeInfoRow('Version', openapi.version || '-')}
+    ${_localDockgeInfoRow('Schema', openapi.url || '-')}
+    ${_localDockgeInfoRow('Paths', openapi.path_count || 0)}
+    ${openapi.description ? `<p style="font-size:12px;line-height:1.7;color:var(--text-dim)">${esc(openapi.description)}</p>` : ''}
+    <div class="local-dockge-openapi-paths">${rows || '<span style="color:var(--text-dim);font-size:12px">No paths listed.</span>'}</div>`;
+}
+
+function _localDockgeRenderServiceInfo(data) {
+  const { body, openBtn } = _localDockgeModalEls();
+  if (!body) return;
+  const exposure = data.exposure || {};
+  const route = exposure.route || {};
+  const ports = (exposure.ports || []).map(port => {
+    const pub = port.published ? `${port.host_ip || 'host'}:${port.published}` : '-';
+    return `${pub} -> ${port.target || '-'} / ${port.protocol || 'tcp'}`;
+  }).join('\n');
+  if (openBtn) {
+    openBtn.hidden = false;
+    openBtn.disabled = !exposure.open_url;
+    openBtn.title = exposure.open_url ? `Open ${exposure.open_url}` : 'No browser-openable URL is available for this service.';
+    openBtn.onclick = exposure.open_url
+      ? () => window.open(exposure.open_url, '_blank', 'noopener,noreferrer')
+      : null;
+  }
+  body.innerHTML = `<div class="local-dockge-service-modal-grid">
+    <div class="local-dockge-service-modal-panel">
+      <h3>Service</h3>
+      ${_localDockgeInfoRow('Stack', data.stack_name)}
+      ${_localDockgeInfoRow('Service', exposure.service || data.service)}
+      ${_localDockgeInfoRow('Kind', _localDockgeExposureLabel(exposure.kind))}
+      ${_localDockgeInfoRow('Source', exposure.source || '-')}
+      ${_localDockgeInfoRow('URL', exposure.url || '-')}
+      ${_localDockgeInfoRow('Open URL', exposure.open_url || '-')}
+      ${_localDockgeInfoRow('Upstream', route.upstream || '-')}
+      ${_localDockgeInfoRow('Ports', ports || '-')}
+      ${exposure.description ? `<p style="font-size:12px;line-height:1.7">${esc(exposure.description)}</p>` : ''}
+      ${exposure.notes ? `<p style="font-size:12px;line-height:1.7;color:var(--text-dim)">${esc(exposure.notes)}</p>` : ''}
+      <h3 style="margin-top:14px">Tests</h3>
+      <p style="font-size:12px;line-height:1.7;color:var(--text-dim);margin:0">${esc(data.tests?.detail || exposure.tests_todo || 'Tests can be added later.')}</p>
+    </div>
+    <div class="local-dockge-service-modal-panel">
+      ${_localDockgeOpenApiHtml(data.openapi)}
+    </div>
+    <div class="local-dockge-service-modal-panel">
+      ${_localDockgeChecksHtml('Endpoint checks', [data.home_check].filter(Boolean))}
+    </div>
+    <div class="local-dockge-service-modal-panel">
+      ${_localDockgeChecksHtml('OpenAPI checks', data.openapi_checks)}
+      <div style="height:12px"></div>
+      ${_localDockgeChecksHtml('Docs checks', data.docs_checks)}
+    </div>
+  </div>`;
+}
+
+async function openLocalDockgeServiceInfo(stackName, serviceName) {
+  const stack = _localDockgeStacks.find(item => item.stack_name === stackName);
+  const exposure = stack?.service_exposures?.[serviceName] || null;
+  if (['caddy-web', 'tailnet-web'].includes(exposure?.kind) && exposure.open_url) {
+    window.open(exposure.open_url, '_blank', 'noopener,noreferrer');
+    return;
+  }
+
+  const { dialog, badge, title, status, error } = _localDockgeModalEls();
+  if (!dialog) return;
+  _localDockgeResetServiceModal();
+  if (badge) badge.textContent = _localDockgeExposureLabel(exposure?.kind || 'internal').toUpperCase();
+  if (title) title.textContent = `${stackName} / ${serviceName}`;
+  if (status) status.textContent = 'Loading service information...';
+  HubModal.open(dialog, { onClose: _localDockgeResetServiceModal });
+  try {
+    const r = await apiFetch(`/api/v1/local-dockge/stacks/${encodeURIComponent(stackName)}/services/${encodeURIComponent(serviceName)}/info`);
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+    if (status) status.textContent = data.openapi ? 'OpenAPI schema detected.' : 'Service information loaded.';
+    _localDockgeRenderServiceInfo(data);
+  } catch (e) {
+    if (status) status.textContent = '';
+    if (error) error.textContent = `Failed to load service information: ${e.message}`;
+  }
+}
+
+function _localDockgeStackErrorButton(stack) {
+  if (!stack.error) return '';
+  return `<button class="local-dockge-stack-error-btn" type="button"
+      title="Show stack error"
+      aria-label="Show ${esc(stack.stack_name || 'stack')} error"
+      data-local-dockge-error-stack="${esc(stack.stack_name || '')}"></button>`;
+}
+
+async function openLocalDockgeStackError(stackName) {
+  const stack = _localDockgeStacks.find(item => item.stack_name === stackName);
+  if (!stack?.error) return;
+  if (typeof HubDialogs !== 'undefined' && typeof HubDialogs.alertError === 'function') {
+    await HubDialogs.alertError({
+      title: `${stackName} stack error`,
+      message: 'Docker Compose could not inspect this stack cleanly.',
+      detail: stack.error,
+      confirmText: 'Close',
+      width: 'min(720px,96vw)',
+    });
+    return;
+  }
+  alert(`${stackName} stack error\n\n${stack.error}`);
+}
+
+function _localDockgeCell(col, stack, rendered) {
+  const value = rendered[col] || '';
+  const className = col === 'actions' ? 'table-action-cell local-dockge-actions-cell' : `local-dockge-col-${col}`;
+  return `<td data-col="${esc(col)}" class="${esc(className)}">${value}</td>`;
+}
+
+function _localDockgeVisibleCols() {
+  return _ensureLocalDockgeTableView()?.getVisibleCols() || _LOCAL_DOCKGE_COLS;
+}
+
+function _renderLocalDockgeStackRows() {
+  const tbody = document.getElementById('local-dockge-tbody');
+  if (!tbody) return;
+  const rows = _localDockgeFilterRows(_localDockgeStacks || []);
+  const visibleCols = _localDockgeVisibleCols();
+  if (!rows.length) {
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="${visibleCols.length || 1}">No local Dockge stacks found.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map(stack => {
+    const services = (stack.services || []).map(service => _localDockgeServicePill(stack, service)).join(' ');
+    const containers = (stack.containers || []).map(container => {
+      const label = container.name || container.service || container.id || '-';
+      const state = container.state || 'unknown';
+      return `<span class="ip-chip local-dockge-container-chip" title="${esc(container.status || '')}">${esc(label)}:${esc(state)}</span>`;
+    }).join('');
+    const count = `${Number(stack.running || 0)}/${Number(stack.total || 0)}`;
+    const rendered = {
+      stack: `<div class="local-dockge-stack-cell"><strong>${esc(stack.stack_name || '-')}</strong>${_localDockgeStackErrorButton(stack)}</div>`,
+      services: services || '<span style="color:var(--text-dim)">-</span>',
+      containers: `<span class="local-dockge-container-count">${esc(count)}</span><div class="local-dockge-container-list">${containers}</div>`,
+      status_health: `<div class="local-dockge-status-stack">${_localDockgeBadge(stack.status)}${_localDockgeBadge(stack.health)}</div>`,
+      updated: _localDockgeFormatUpdatedHtml(stack.updated_at),
+      actions: _localDockgeActionButtons(stack),
+    };
+    return `<tr>${visibleCols.map(col => _localDockgeCell(col, stack, rendered)).join('')}</tr>`;
+  }).join('');
+}
+
+function renderLocalDockgeStacks() {
+  const tableView = _ensureLocalDockgeTableView();
+  if (tableView) {
+    tableView.render(_renderLocalDockgeStackRows);
+    return;
+  }
+  _renderLocalDockgeStackRows();
+}
+
+function _ensureLocalDockgePoll() {
+  if (_localDockgePollInterval) return;
+  _localDockgePollInterval = setInterval(() => {
+    if (_localDockgeIsActive()) loadLocalDockgeStacks({ silent: true });
+  }, _LOCAL_DOCKGE_POLL_MS);
+}
+
+async function loadLocalDockgeStacks(options = {}) {
+  const err = document.getElementById('local-dockge-error');
+  const status = document.getElementById('local-dockge-status');
+  if (err) err.hidden = true;
+  if (status && !options.silent) {
+    status.textContent = 'Loading local Dockge stacks...';
+    status.style.color = 'var(--text-dim)';
+    status.hidden = false;
+  }
+  _ensureLocalDockgePoll();
+  try {
+    const r = await apiFetch('/api/v1/local-dockge/stacks');
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+    _localDockgeStacks = data.stacks || [];
+    renderLocalDockgeStacks();
+    if (status) {
+      status.textContent = `${_localDockgeStacks.length} stack${_localDockgeStacks.length === 1 ? '' : 's'} from ${data.stacks_dir || 'local Dockge'}`;
+      status.style.color = 'var(--text-dim)';
+      status.hidden = false;
+    }
+  } catch (e) {
+    if (err) {
+      err.textContent = `Failed to load local Dockge stacks: ${e.message}`;
+      err.hidden = false;
+    }
+    if (status) status.hidden = true;
+  }
+}
+
+async function localDockgeStackAction(stackName, action, btn) {
+  const status = document.getElementById('local-dockge-status');
+  if (btn) btn.disabled = true;
+  if (status) {
+    status.textContent = `${action} ${stackName}...`;
+    status.style.color = 'var(--text-dim)';
+    status.hidden = false;
+  }
+  try {
+    const r = await apiFetch(`/api/v1/local-dockge/stacks/${encodeURIComponent(stackName)}/action`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+    const next = data.result;
+    if (next) {
+      const idx = _localDockgeStacks.findIndex(stack => stack.stack_name === stackName);
+      if (idx === -1) _localDockgeStacks.push(next);
+      else _localDockgeStacks[idx] = next;
+      renderLocalDockgeStacks();
+    }
+    if (status) {
+      status.textContent = `${action} ${stackName} succeeded.`;
+      status.style.color = 'var(--ok,#3fb950)';
+    }
+    setTimeout(() => loadLocalDockgeStacks({ silent: true }), 1200);
+  } catch (e) {
+    if (status) {
+      status.textContent = `${action} ${stackName} failed: ${e.message}`;
+      status.style.color = 'var(--err,#f85149)';
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('local-dockge-search')?.addEventListener('input', renderLocalDockgeStacks);
+  document.getElementById('local-dockge-tbody')?.addEventListener('click', e => {
+    const errorBtn = e.target.closest('[data-local-dockge-error-stack]');
+    if (errorBtn) {
+      openLocalDockgeStackError(errorBtn.dataset.localDockgeErrorStack);
+      return;
+    }
+    const serviceBtn = e.target.closest('[data-local-dockge-service]');
+    if (serviceBtn) {
+      openLocalDockgeServiceInfo(serviceBtn.dataset.localDockgeServiceStack, serviceBtn.dataset.localDockgeService);
+      return;
+    }
+    const btn = e.target.closest('[data-local-dockge-action]');
+    if (!btn) return;
+    localDockgeStackAction(btn.dataset.localDockgeStack, btn.dataset.localDockgeAction, btn);
+  });
+  if (typeof ResponsiveLayout !== 'undefined') {
+    ResponsiveLayout.registerTabControls('local-dockge', 'pg-ctrl-local-dockge');
+  }
+});
