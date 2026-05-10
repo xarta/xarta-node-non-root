@@ -141,6 +141,10 @@ const BlueprintsModelChangeAnnouncer = (() => {
       : 'Information. Local alias tests completed successfully.';
   }
 
+  function _speechForLocalLlmOffline() {
+    return 'Warning. Local Large Language Model is offline.';
+  }
+
   // ── Queue drain ────────────────────────────────────────────────────────────
 
   /** Central drain function.  Called after every state completion (cooldown done,
@@ -350,6 +354,17 @@ const BlueprintsModelChangeAnnouncer = (() => {
         _pushAndDrain(
           _speechForAliasTests(true),
           { title: 'Alias Tests Failed', message: evt.message || '', severity: 'error' }
+        );
+        break;
+
+      case 'local.llm.offline':
+        _pushAndDrain(
+          _speechForLocalLlmOffline(),
+          {
+            title: evt.title || 'Local LLM Offline',
+            message: evt.message || 'Local Large Language Model is offline.',
+            severity: evt.severity || 'error',
+          }
         );
         break;
 

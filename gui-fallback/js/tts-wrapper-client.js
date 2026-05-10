@@ -230,6 +230,9 @@ const BlueprintsTtsClient = (() => {
       voice: typeof opts.voice === 'string' ? opts.voice : undefined,
       interrupt: typeof opts.interrupt === 'boolean' ? opts.interrupt : true,
       mode: typeof opts.mode === 'string' ? opts.mode : undefined,
+      format: typeof opts.format === 'string' ? opts.format : undefined,
+      timeout_ms: Number.isFinite(Number(opts.timeoutMs)) ? Number(opts.timeoutMs) : undefined,
+      allow_fallback: typeof opts.allowFallback === 'boolean' ? opts.allowFallback : undefined,
       event_kind: typeof opts.eventKind === 'string' ? opts.eventKind : undefined,
       fallback_kind: typeof opts.fallbackKind === 'string' ? opts.fallbackKind : undefined,
       sanitize_text: typeof opts.sanitizeText === 'boolean' ? opts.sanitizeText : undefined,
@@ -295,8 +298,58 @@ const BlueprintsTtsClient = (() => {
     return responsePayload;
   }
 
+  async function synthesize(opts = {}) {
+    const payload = {
+      text: typeof opts.text === 'string' ? opts.text : undefined,
+      voice: typeof opts.voice === 'string' ? opts.voice : undefined,
+      interrupt: typeof opts.interrupt === 'boolean' ? opts.interrupt : false,
+      mode: typeof opts.mode === 'string' ? opts.mode : 'batch',
+      format: typeof opts.format === 'string' ? opts.format : 'mp3',
+      timeout_ms: Number.isFinite(Number(opts.timeoutMs)) ? Number(opts.timeoutMs) : 360000,
+      allow_fallback: typeof opts.allowFallback === 'boolean' ? opts.allowFallback : false,
+      event_kind: typeof opts.eventKind === 'string' ? opts.eventKind : undefined,
+      fallback_kind: typeof opts.fallbackKind === 'string' ? opts.fallbackKind : undefined,
+      sanitize_text: typeof opts.sanitizeText === 'boolean' ? opts.sanitizeText : undefined,
+      transform_profile: typeof opts.transformProfile === 'string' ? opts.transformProfile : undefined,
+    };
+
+    const response = await apiFetch('/api/v1/tts/speak', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(detail || `HTTP ${response.status}`);
+    }
+
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    if (!contentType.startsWith('audio/')) {
+      let responsePayload = null;
+      try {
+        responsePayload = await response.json();
+      } catch (_) {}
+      throw new Error(responsePayload?.detail || `Wrapper returned unsupported content-type: ${contentType || 'unknown'}`);
+    }
+
+    const blob = await response.blob();
+    if (!blob.size) throw new Error('Wrapper returned empty audio payload.');
+    const engine = response.headers.get('x-blueprints-tts-engine') || 'pockettts_batch';
+    if (String(engine).toLowerCase() === 'sound_fallback') {
+      throw new Error('TTS returned fallback audio instead of generated speech.');
+    }
+    return {
+      ok: true,
+      blob,
+      contentType,
+      engine,
+    };
+  }
+
   return {
     speak,
+    synthesize,
     stop,
     pause,
     resume,

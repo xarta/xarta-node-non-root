@@ -11,6 +11,16 @@ const _LOCAL_DOCKGE_FIELD_META = {
   actions: { label: 'Actions' },
 };
 let _localDockgeTableView = null;
+let _localDockgeNarrationState = 'IDLE';
+let _localDockgeNarrationStack = null;
+let _localDockgeNarrationRunId = 0;
+let _localDockgeNarrationClickTimer = null;
+let _localDockgeNarrationLastClickAt = 0;
+let _localDockgeNarrationLongPressTimer = null;
+let _localDockgeNarrationLastLongPressAt = 0;
+let _localDockgeDownloadBusyStack = null;
+const _LOCAL_DOCKGE_NARRATION_DOUBLE_CLICK_MS = 260;
+const _LOCAL_DOCKGE_NARRATION_LONG_PRESS_MS = 650;
 
 function _ensureLocalDockgeTableView() {
   if (_localDockgeTableView || typeof TableView === 'undefined') return _localDockgeTableView;
@@ -27,7 +37,7 @@ function _ensureLocalDockgeTableView() {
       if (col === 'containers') return 270;
       if (col === 'status_health') return 104;
       if (col === 'updated') return 112;
-      if (col === 'actions') return 70;
+      if (col === 'actions') return 136;
       return null;
     },
   });
@@ -92,7 +102,345 @@ function _localDockgeActionButtons(stack) {
   } else {
     buttons.push(`<button class="secondary table-icon-btn table-icon-btn--restart" type="button" title="Refresh before acting on this stack" aria-label="Stack action unavailable" disabled></button>`);
   }
+  buttons.push(`<button class="secondary table-icon-btn table-icon-btn--speaker local-dockge-narration-btn is-idle" type="button"
+      title="Speak stack condition; long press regenerates narration"
+      aria-label="Speak ${name} stack condition"
+      aria-pressed="false"
+      data-local-dockge-narrate-stack="${name}"></button>`);
+  buttons.push(`<button class="secondary table-icon-btn table-icon-btn--speaker local-dockge-download-btn" type="button"
+      title="Generate and download MP3 narration"
+      aria-label="Generate and download ${name} MP3 narration"
+      data-local-dockge-download-stack="${name}"></button>`);
   return `<div class="table-inline-actions">${buttons.join('')}</div>`;
+}
+
+function _localDockgeNarrationButtons() {
+  return Array.from(document.querySelectorAll('[data-local-dockge-narrate-stack]'));
+}
+
+function _localDockgeDownloadButtons() {
+  return Array.from(document.querySelectorAll('[data-local-dockge-download-stack]'));
+}
+
+function _localDockgeNarrationRenderButtons(message = '') {
+  const activeStack = _localDockgeNarrationStack;
+  const state = _localDockgeNarrationState;
+  _localDockgeNarrationButtons().forEach(btn => {
+    const isActive = activeStack && btn.dataset.localDockgeNarrateStack === activeStack;
+    const clean = isActive ? state : 'IDLE';
+    const isSpeaking = clean === 'SPEAKING';
+    const isPaused = clean === 'PAUSED';
+    btn.classList.toggle('is-idle', clean === 'IDLE');
+    btn.classList.toggle('is-speaking', isSpeaking);
+    btn.classList.toggle('is-paused', isPaused);
+    btn.classList.toggle('is-generating', isActive && /generat|prepar/i.test(String(message || '')));
+    btn.setAttribute('aria-pressed', isSpeaking ? 'true' : 'false');
+    const stackName = btn.dataset.localDockgeNarrateStack || 'stack';
+    const label = isPaused
+      ? `Resume ${stackName} stack audio`
+      : (isSpeaking ? `Pause ${stackName} stack audio` : `Speak ${stackName} stack condition`);
+    btn.setAttribute('aria-label', label);
+    btn.title = `${label}; long press regenerates narration`;
+  });
+}
+
+function _localDockgeDownloadRenderButtons() {
+  const busyStack = _localDockgeDownloadBusyStack;
+  _localDockgeDownloadButtons().forEach(btn => {
+    const stackName = btn.dataset.localDockgeDownloadStack || 'stack';
+    const busy = Boolean(busyStack && stackName === busyStack);
+    btn.disabled = busy;
+    btn.classList.toggle('is-generating', busy);
+    btn.setAttribute('aria-busy', busy ? 'true' : 'false');
+    btn.setAttribute('aria-label', busy
+      ? `Generating ${stackName} MP3 narration`
+      : `Generate and download ${stackName} MP3 narration`);
+    btn.title = busy ? 'Generating MP3 narration...' : 'Generate and download MP3 narration';
+  });
+}
+
+function _localDockgeRenderActionButtonStates(message = '') {
+  _localDockgeNarrationRenderButtons(message);
+  _localDockgeDownloadRenderButtons();
+}
+
+function _localDockgeNarrationSetState(stackName, state = 'IDLE', message = '') {
+  const clean = ['IDLE', 'SPEAKING', 'PAUSED'].includes(state) ? state : 'IDLE';
+  _localDockgeNarrationState = clean;
+  _localDockgeNarrationStack = clean === 'IDLE' && !message ? null : stackName;
+  _localDockgeRenderActionButtonStates(message);
+  const status = document.getElementById('local-dockge-status');
+  if (status && message) {
+    status.textContent = message;
+    status.style.color = 'var(--text-dim)';
+    status.hidden = false;
+  }
+}
+
+function _localDockgeNarrationClearClickTimer() {
+  if (!_localDockgeNarrationClickTimer) return;
+  clearTimeout(_localDockgeNarrationClickTimer);
+  _localDockgeNarrationClickTimer = null;
+}
+
+function _localDockgeNarrationClearLongPressTimer() {
+  if (!_localDockgeNarrationLongPressTimer) return;
+  clearTimeout(_localDockgeNarrationLongPressTimer);
+  _localDockgeNarrationLongPressTimer = null;
+}
+
+function _localDockgeNarrationResetClassifiers() {
+  _localDockgeNarrationClearClickTimer();
+  _localDockgeNarrationClearLongPressTimer();
+  _localDockgeNarrationLastClickAt = 0;
+}
+
+async function _localDockgeNarrationStopClient() {
+  if (typeof BlueprintsTtsClient !== 'undefined' && typeof BlueprintsTtsClient.stop === 'function') {
+    try {
+      await BlueprintsTtsClient.stop();
+    } catch (e) {
+      console.warn('local Dockge narration: failed to stop TTS', e);
+    }
+  }
+}
+
+async function _localDockgeNarrationStop() {
+  const stackName = _localDockgeNarrationStack;
+  _localDockgeNarrationResetClassifiers();
+  _localDockgeNarrationRunId += 1;
+  _localDockgeNarrationSetState(stackName, 'IDLE', '');
+  await _localDockgeNarrationStopClient();
+}
+
+async function _localDockgeNarrationPause() {
+  if (typeof BlueprintsTtsClient === 'undefined' || typeof BlueprintsTtsClient.pause !== 'function') {
+    await _localDockgeNarrationStop();
+    return;
+  }
+  try {
+    const result = await BlueprintsTtsClient.pause();
+    if (result?.paused) {
+      _localDockgeNarrationSetState(_localDockgeNarrationStack, 'PAUSED', '');
+      return;
+    }
+  } catch (e) {
+    console.warn('local Dockge narration: failed to pause TTS', e);
+  }
+  await _localDockgeNarrationStop();
+}
+
+async function _localDockgeNarrationResume() {
+  if (typeof BlueprintsTtsClient === 'undefined' || typeof BlueprintsTtsClient.resume !== 'function') {
+    await _localDockgeNarrationStop();
+    return;
+  }
+  try {
+    const result = await BlueprintsTtsClient.resume();
+    if (result?.resumed) {
+      _localDockgeNarrationSetState(_localDockgeNarrationStack, 'SPEAKING', '');
+      return;
+    }
+  } catch (e) {
+    console.warn('local Dockge narration: failed to resume TTS', e);
+  }
+  await _localDockgeNarrationStop();
+}
+
+async function _localDockgeNarrationMarkdown(stackName, force = false) {
+  _localDockgeNarrationSetState(stackName, 'SPEAKING', force ? `Regenerating ${stackName} narration...` : `Preparing ${stackName} narration...`);
+  return _localDockgeFetchNarrationMarkdown(stackName, force);
+}
+
+async function _localDockgeFetchNarrationMarkdown(stackName, force = false) {
+  const r = await apiFetch(`/api/v1/local-dockge/stacks/${encodeURIComponent(stackName)}/speech`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ force }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+  const markdown = String(data.markdown || '').trim();
+  if (!markdown) throw new Error('Narration was empty.');
+  return markdown;
+}
+
+function _localDockgeDownloadFilename(stackName, contentType) {
+  const safe = String(stackName || 'stack').trim().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'stack';
+  const ext = String(contentType || '').includes('wav') ? 'wav' : 'mp3';
+  return `local-dockge-${safe}-narration.${ext}`;
+}
+
+function _localDockgeSetDownloadButtonState(btn, busy) {
+  if (btn) {
+    btn.disabled = busy;
+    btn.classList.toggle('is-generating', busy);
+    btn.setAttribute('aria-busy', busy ? 'true' : 'false');
+    btn.title = busy ? 'Generating MP3 narration...' : 'Generate and download MP3 narration';
+  }
+  _localDockgeDownloadRenderButtons();
+}
+
+async function _localDockgeDownloadNarrationMp3(stackName, btn) {
+  if (!stackName || _localDockgeDownloadBusyStack) return;
+  if (typeof BlueprintsTtsClient === 'undefined' || typeof BlueprintsTtsClient.synthesize !== 'function') {
+    const status = document.getElementById('local-dockge-status');
+    if (status) {
+      status.textContent = 'TTS download unavailable.';
+      status.style.color = 'var(--err,#f85149)';
+      status.hidden = false;
+    }
+    return;
+  }
+
+  _localDockgeDownloadBusyStack = stackName;
+  _localDockgeSetDownloadButtonState(btn, true);
+  const status = document.getElementById('local-dockge-status');
+  if (status) {
+    status.textContent = `Generating ${stackName} MP3 narration...`;
+    status.style.color = 'var(--text-dim)';
+    status.hidden = false;
+  }
+
+  try {
+    const text = await _localDockgeFetchNarrationMarkdown(stackName, false);
+    const result = await BlueprintsTtsClient.synthesize({
+      text,
+      interrupt: false,
+      mode: 'batch',
+      format: 'mp3',
+      timeoutMs: 360000,
+      allowFallback: false,
+      eventKind: 'local_dockge_stack_narration_download',
+      fallbackKind: 'positive',
+      sanitizeText: false,
+      transformProfile: 'none',
+    });
+    const url = URL.createObjectURL(result.blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = _localDockgeDownloadFilename(stackName, result.contentType);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    if (status) {
+      status.textContent = `Downloaded ${stackName} narration.`;
+      status.style.color = 'var(--ok,#3fb950)';
+    }
+  } catch (e) {
+    if (status) {
+      status.textContent = `MP3 generation failed: ${e.message || e}`;
+      status.style.color = 'var(--err,#f85149)';
+      status.hidden = false;
+    }
+  } finally {
+    _localDockgeDownloadBusyStack = null;
+    _localDockgeSetDownloadButtonState(btn, false);
+  }
+}
+
+async function _localDockgeNarrationStart(stackName, force = false) {
+  if (!stackName) return;
+  if (typeof BlueprintsTtsClient === 'undefined' || typeof BlueprintsTtsClient.speak !== 'function') {
+    _localDockgeNarrationSetState(stackName, 'IDLE', 'TTS unavailable.');
+    return;
+  }
+  const runId = _localDockgeNarrationRunId + 1;
+  _localDockgeNarrationRunId = runId;
+  await _localDockgeNarrationStopClient();
+  if (runId !== _localDockgeNarrationRunId) return;
+  _localDockgeNarrationSetState(stackName, 'SPEAKING', force ? `Regenerating ${stackName} narration...` : `Preparing ${stackName} narration...`);
+  try {
+    const text = await _localDockgeNarrationMarkdown(stackName, force);
+    if (runId !== _localDockgeNarrationRunId) return;
+    _localDockgeNarrationSetState(stackName, 'SPEAKING', '');
+    await BlueprintsTtsClient.speak({
+      text,
+      interrupt: true,
+      mode: 'stream',
+      eventKind: 'local_dockge_stack_narration',
+      fallbackKind: 'positive',
+      sanitizeText: false,
+      transformProfile: 'none',
+    });
+  } catch (e) {
+    if (e?.name === 'AbortError') {
+      if (runId === _localDockgeNarrationRunId) _localDockgeNarrationSetState(stackName, 'IDLE', '');
+      return;
+    }
+    console.warn('local Dockge narration: TTS failed', e);
+    const message = e?.message ? `TTS failed: ${e.message}` : 'TTS failed.';
+    if (runId === _localDockgeNarrationRunId) _localDockgeNarrationSetState(stackName, 'IDLE', message);
+    return;
+  }
+  if (runId === _localDockgeNarrationRunId) _localDockgeNarrationSetState(stackName, 'IDLE', '');
+}
+
+const _localDockgeNarrationFsm = (() => {
+  const transitions = {
+    IDLE: {
+      tap: { actions: ['start'] },
+      doubleTap: { actions: ['stop'] },
+      longPress: { actions: ['regenerate'] },
+    },
+    SPEAKING: {
+      tap: { actions: ['pause'] },
+      doubleTap: { actions: ['stop'] },
+      longPress: { actions: ['regenerate'] },
+    },
+    PAUSED: {
+      tap: { actions: ['resume'] },
+      doubleTap: { actions: ['stop'] },
+      longPress: { actions: ['regenerate'] },
+    },
+  };
+
+  async function dispatch(stackName, event) {
+    const state = _localDockgeNarrationStack === stackName ? _localDockgeNarrationState : 'IDLE';
+    const transition = transitions[state]?.[event];
+    if (!transition) return;
+    for (const action of transition.actions) {
+      if (action === 'start') await _localDockgeNarrationStart(stackName, false);
+      else if (action === 'regenerate') await _localDockgeNarrationStart(stackName, true);
+      else if (action === 'pause') await _localDockgeNarrationPause();
+      else if (action === 'resume') await _localDockgeNarrationResume();
+      else if (action === 'stop') await _localDockgeNarrationStop();
+    }
+  }
+
+  return { dispatch };
+})();
+
+function _localDockgeNarrationHandleClick(stackName) {
+  if (Date.now() - _localDockgeNarrationLastLongPressAt < 700) return;
+  _localDockgeNarrationClearClickTimer();
+  const now = Date.now();
+  if (
+    _localDockgeNarrationLastClickAt
+    && (now - _localDockgeNarrationLastClickAt) <= _LOCAL_DOCKGE_NARRATION_DOUBLE_CLICK_MS
+  ) {
+    _localDockgeNarrationLastClickAt = 0;
+    _localDockgeNarrationFsm.dispatch(stackName, 'doubleTap');
+    return;
+  }
+  _localDockgeNarrationLastClickAt = now;
+  _localDockgeNarrationClickTimer = setTimeout(() => {
+    _localDockgeNarrationClickTimer = null;
+    _localDockgeNarrationLastClickAt = 0;
+    _localDockgeNarrationFsm.dispatch(stackName, 'tap');
+  }, _LOCAL_DOCKGE_NARRATION_DOUBLE_CLICK_MS);
+}
+
+function _localDockgeNarrationHandlePointerDown(event, stackName) {
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
+  _localDockgeNarrationClearLongPressTimer();
+  _localDockgeNarrationLongPressTimer = setTimeout(() => {
+    _localDockgeNarrationLongPressTimer = null;
+    _localDockgeNarrationLastLongPressAt = Date.now();
+    _localDockgeNarrationResetClassifiers();
+    _localDockgeNarrationFsm.dispatch(stackName, 'longPress');
+  }, _LOCAL_DOCKGE_NARRATION_LONG_PRESS_MS);
 }
 
 function _localDockgeExposureLabel(kind) {
@@ -325,6 +673,7 @@ function _renderLocalDockgeStackRows() {
     };
     return `<tr>${visibleCols.map(col => _localDockgeCell(col, stack, rendered)).join('')}</tr>`;
   }).join('');
+  _localDockgeRenderActionButtonStates();
 }
 
 function renderLocalDockgeStacks() {
@@ -413,7 +762,41 @@ async function localDockgeStackAction(stackName, action, btn) {
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('local-dockge-search')?.addEventListener('input', renderLocalDockgeStacks);
-  document.getElementById('local-dockge-tbody')?.addEventListener('click', e => {
+  const localDockgeTbody = document.getElementById('local-dockge-tbody');
+  localDockgeTbody?.addEventListener('pointerdown', e => {
+    const btn = e.target.closest('[data-local-dockge-narrate-stack]');
+    if (!btn) return;
+    _localDockgeNarrationHandlePointerDown(e, btn.dataset.localDockgeNarrateStack);
+  });
+  localDockgeTbody?.addEventListener('pointerup', _localDockgeNarrationClearLongPressTimer);
+  localDockgeTbody?.addEventListener('pointercancel', _localDockgeNarrationClearLongPressTimer);
+  localDockgeTbody?.addEventListener('pointerout', e => {
+    const btn = e.target.closest('[data-local-dockge-narrate-stack]');
+    if (btn && !btn.contains(e.relatedTarget)) _localDockgeNarrationClearLongPressTimer();
+  });
+  localDockgeTbody?.addEventListener('contextmenu', e => {
+    if (e.target.closest('[data-local-dockge-narrate-stack]')) e.preventDefault();
+  });
+  localDockgeTbody?.addEventListener('dblclick', e => {
+    const narrationBtn = e.target.closest('[data-local-dockge-narrate-stack]');
+    if (!narrationBtn) return;
+    e.preventDefault();
+    _localDockgeNarrationResetClassifiers();
+    _localDockgeNarrationFsm.dispatch(narrationBtn.dataset.localDockgeNarrateStack, 'doubleTap');
+  });
+  localDockgeTbody?.addEventListener('click', e => {
+    const narrationBtn = e.target.closest('[data-local-dockge-narrate-stack]');
+    if (narrationBtn) {
+      e.preventDefault();
+      _localDockgeNarrationHandleClick(narrationBtn.dataset.localDockgeNarrateStack);
+      return;
+    }
+    const downloadBtn = e.target.closest('[data-local-dockge-download-stack]');
+    if (downloadBtn) {
+      e.preventDefault();
+      _localDockgeDownloadNarrationMp3(downloadBtn.dataset.localDockgeDownloadStack, downloadBtn);
+      return;
+    }
     const errorBtn = e.target.closest('[data-local-dockge-error-stack]');
     if (errorBtn) {
       openLocalDockgeStackError(errorBtn.dataset.localDockgeErrorStack);
