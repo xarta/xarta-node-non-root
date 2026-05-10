@@ -57,6 +57,15 @@
   min-width: 0;
 }
 
+.docs-search-control .hub-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.docs-search-control .hub-select-btn {
+  max-width: none;
+}
+
 .docs-search-mode {
   min-width: 0;
 }

@@ -471,6 +471,10 @@ function _docsSearchHighlightTerms(terms) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  if (typeof HubSelect !== 'undefined') {
+    HubSelect.init('docs-search-mode');
+    HubSelect.init('docs-search-top-k');
+  }
   const form = document.getElementById('docs-search-form');
   if (form) {
     form.addEventListener('submit', e => {

@@ -2759,6 +2759,9 @@ async function _addDocSubmit() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  if (typeof HubSelect !== 'undefined') {
+    HubSelect.init('docs-folder-tree-mode');
+  }
   document.getElementById('docs-preview')?.addEventListener('click', _docsHandlePreviewLinkClick);
 
   // New / Edit doc modal submit

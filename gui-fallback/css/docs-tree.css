@@ -151,6 +151,21 @@
   padding-right: 22px;
 }
 
+.docs-tree-search .hub-select {
+  min-width: 0;
+  width: 100%;
+}
+
+.docs-tree-search .hub-select-btn {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  height: 34px;
+  font-size: 12px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
 .docs-tree-modal .hub-modal-body select.docs-tree-search-mode {
   font-size: 12px;
 }
