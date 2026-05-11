@@ -1702,6 +1702,16 @@
   }
 
   function pickBestCurrent() {
+    const originNode = _nodes.find(nodeMatchesCurrentOrigin);
+    if (originNode) {
+      if (_current !== originNode.id) {
+        _current = originNode.id;
+        lsSet(LS_CURRENT, _current);
+      }
+      rememberPreferredTailnet(originNode.tailnet);
+      return;
+    }
+
     const currentNode = _current ? _nodes.find(n => n.id === _current) : null;
     if (currentNode && Number.isFinite(currentNode.latencyMs)) {
       rememberPreferredTailnet(currentNode.tailnet);
