@@ -1117,6 +1117,7 @@ button.table-icon-btn--play-toggle { font-size: 11px; line-height: 1; }
 .local-dockge-service-pill {
   border: 1px solid rgba(123, 130, 160, 0.42);
   border-radius: 7px;
+  margin: 2px;
   padding: 2px 8px;
   max-width: 100%;
   background: rgba(123, 130, 160, 0.08);
@@ -1126,7 +1127,13 @@ button.table-icon-btn--play-toggle { font-size: 11px; line-height: 1; }
   line-height: 1.5;
   overflow-wrap: anywhere;
   text-align: left;
+  vertical-align: top;
   cursor: pointer;
+}
+
+.local-dockge-col-services {
+  padding-top: 8px;
+  padding-bottom: 8px;
 }
 
 .local-dockge-service-pill:hover,
