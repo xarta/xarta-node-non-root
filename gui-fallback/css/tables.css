@@ -1231,12 +1231,6 @@ button.table-icon-btn--play-toggle { font-size: 11px; line-height: 1; }
   color: #ffd0d0;
 }
 
-.local-dockge-container-count {
-  display: block;
-  white-space: nowrap;
-  margin-bottom: 4px;
-}
-
 .local-dockge-container-list {
   display: grid;
   gap: 4px;
@@ -1244,9 +1238,36 @@ button.table-icon-btn--play-toggle { font-size: 11px; line-height: 1; }
 }
 
 .local-dockge-container-chip {
+  --local-dockge-container-chip-rgb: 148, 163, 184;
+  --local-dockge-container-chip-color: var(--text-dim);
+  background: rgba(var(--local-dockge-container-chip-rgb), 0.10);
+  border-color: rgba(var(--local-dockge-container-chip-rgb), 0.54);
+  color: var(--local-dockge-container-chip-color);
   max-width: 100%;
   overflow-wrap: anywhere;
   white-space: normal;
+}
+
+.local-dockge-container-chip--ok {
+  --local-dockge-container-chip-rgb: 76, 175, 125;
+  --local-dockge-container-chip-color: var(--ok);
+}
+
+.local-dockge-container-chip--warn,
+.local-dockge-container-chip--mixed {
+  --local-dockge-container-chip-rgb: 230, 168, 23;
+  --local-dockge-container-chip-color: var(--warn);
+}
+
+.local-dockge-container-chip--error {
+  --local-dockge-container-chip-rgb: 224, 92, 92;
+  --local-dockge-container-chip-color: var(--err);
+}
+
+.local-dockge-container-chip--stopped,
+.local-dockge-container-chip--unknown {
+  --local-dockge-container-chip-rgb: 148, 163, 184;
+  --local-dockge-container-chip-color: var(--text-dim);
 }
 
 .local-dockge-status-stack {

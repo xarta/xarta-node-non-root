@@ -62,6 +62,34 @@ function _localDockgeBadge(value) {
   return `<span style="display:inline-block;border:1px solid currentColor;border-radius:6px;padding:2px 7px;font-size:11px;color:${_localDockgeStatusTone(label)}">${esc(label)}</span>`;
 }
 
+function _localDockgeContainerTone(container) {
+  const health = String(container?.health || '').toLowerCase();
+  const state = String(container?.state || '').toLowerCase();
+  if (health === 'healthy') return 'ok';
+  if (health === 'unhealthy') return 'error';
+  if (health === 'starting' || state === 'restarting' || state === 'starting') return 'warn';
+  if (state === 'running') return health ? 'warn' : 'unknown';
+  if (state === 'exited' || state === 'dead' || state === 'removing') return 'error';
+  if (state === 'created' || state === 'paused') return 'warn';
+  if (state === 'stopped' || state === 'none') return 'stopped';
+  return 'unknown';
+}
+
+function _localDockgeRenderContainerChip(container) {
+  const label = container.name || container.service || container.id || '-';
+  const state = container.state || 'unknown';
+  const health = container.health || '';
+  const status = container.status || '';
+  const tone = _localDockgeContainerTone(container);
+  const titleParts = [`state: ${state}`];
+  if (health) titleParts.push(`health: ${health}`);
+  if (status) titleParts.push(status);
+  return (
+    `<span class="ip-chip local-dockge-container-chip local-dockge-container-chip--${esc(tone)}" ` +
+    `title="${esc(titleParts.join(' | '))}">${esc(label)}:${esc(state)}</span>`
+  );
+}
+
 function _localDockgeFormatTime(value) {
   if (!value) return '-';
   return String(value).replace('T', ' ').replace(/\.\d+.*$/, '').replace('+00:00', '').slice(0, 19);
@@ -657,16 +685,13 @@ function _renderLocalDockgeStackRows() {
   }
   tbody.innerHTML = rows.map(stack => {
     const services = (stack.services || []).map(service => _localDockgeServicePill(stack, service)).join(' ');
-    const containers = (stack.containers || []).map(container => {
-      const label = container.name || container.service || container.id || '-';
-      const state = container.state || 'unknown';
-      return `<span class="ip-chip local-dockge-container-chip" title="${esc(container.status || '')}">${esc(label)}:${esc(state)}</span>`;
-    }).join('');
-    const count = `${Number(stack.running || 0)}/${Number(stack.total || 0)}`;
+    const containers = (stack.containers || []).map(container => _localDockgeRenderContainerChip(container)).join('');
     const rendered = {
       stack: `<div class="local-dockge-stack-cell"><strong>${esc(stack.stack_name || '-')}</strong>${_localDockgeStackErrorButton(stack)}</div>`,
       services: services || '<span style="color:var(--text-dim)">-</span>',
-      containers: `<span class="local-dockge-container-count">${esc(count)}</span><div class="local-dockge-container-list">${containers}</div>`,
+      containers: containers
+        ? `<div class="local-dockge-container-list">${containers}</div>`
+        : '<span style="color:var(--text-dim)">-</span>',
       status_health: `<div class="local-dockge-status-stack">${_localDockgeBadge(stack.status)}${_localDockgeBadge(stack.health)}</div>`,
       updated: _localDockgeFormatUpdatedHtml(stack.updated_at),
       actions: _localDockgeActionButtons(stack),
