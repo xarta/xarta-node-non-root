@@ -47,12 +47,14 @@
 <header>
   <div class="header-inner">
     <div class="header-left">
-      <span id="header-host" class="brand bp-font-role-host-label">&#9670; —</span>
-      <div class="node-meta">
-        <span class="nm-item"><span class="nm-label">Gen</span>&thinsp;<span class="nm-val" id="nn-gen">—</span></span>
-        <span class="nm-item" id="nn-integrity"><span class="badge">—</span></span>
-        <span class="nm-item" id="nn-keys"><button class="badge badge-btn" id="keys-badge" onclick="switchGroup('settings');switchTab('keys');SettingsMenuConfig.updateActiveTab('keys')" style="display:none">&#9871; —</button></span>
-        <span class="nm-item"><span class="nm-label">Peers</span>&thinsp;<span class="nm-val" id="nn-peers">—</span></span>
+      <div class="node-telemetry-strip" aria-label="Node telemetry">
+        <span id="header-host" class="brand bp-font-role-host-label"><span class="node-sigil" aria-hidden="true"></span><span class="node-host-text">—</span></span>
+        <div class="node-meta">
+          <span class="nm-item nm-item--gen"><span class="nm-label">Gen</span>&thinsp;<span class="nm-val" id="nn-gen">—</span></span>
+          <span class="nm-item nm-item--integrity" id="nn-integrity"><span class="badge">—</span></span>
+          <span class="nm-item nm-item--keys" id="nn-keys"><button class="badge badge-btn" id="keys-badge" onclick="switchGroup('settings');switchTab('keys');SettingsMenuConfig.updateActiveTab('keys')" style="display:none">&#9871; —</button></span>
+          <span class="nm-item nm-item--peers"><span class="nm-label">Peers</span>&thinsp;<span class="nm-val" id="nn-peers">—</span></span>
+        </div>
       </div>
     </div>
     <div class="header-right">
@@ -144,9 +146,11 @@
       <!-- Compact node meta — shown instead of full header-left when header is narrow.
       Values mirrored from full header elements by health.js. -->
       <div id="node-meta-compact" hidden>
-        <span id="nn-host-compact" class="nm-compact-host brand bp-font-role-host-label">&#9670; —</span>
-        <span id="nn-integrity-compact" class="bp-font-role-status-fail"></span>
-        <span id="nn-keys-compact"></span>
+        <div class="node-telemetry-strip node-telemetry-strip--compact" aria-label="Compact node telemetry">
+          <span id="nn-host-compact" class="nm-compact-host brand bp-font-role-host-label"><span class="node-sigil" aria-hidden="true"></span><span class="node-host-text">—</span></span>
+          <span class="nm-compact-readout" id="nn-integrity-compact"></span>
+          <span class="nm-compact-readout" id="nn-keys-compact"></span>
+        </div>
       </div>
 
       <!-- Page controls slot: per-tab control groups shown/hidden by ResponsiveLayout.

@@ -79,7 +79,7 @@
 #node-meta-compact {
     display: none;
     align-items: center;
-    gap: 10px;
+    align-self: flex-start;
     margin-left: auto;
     flex-shrink: 0;
 }
@@ -117,15 +117,12 @@ html.header-compact #page-controls-slot {
    its own line; integrity and keys then share the next row. */
 @media (max-width: 480px) {
     html.header-compact #node-meta-compact {
-        flex-wrap: wrap;
         justify-content: flex-end;
-        gap: 2px 8px;
-        max-width: 100px;
-        margin-top: -5px;
+        max-width: 152px;
+        margin-top: 0;
     }
 
     html.header-compact .nm-compact-host {
-        flex-basis: 100%;
         text-align: right;
     }
 
@@ -186,10 +183,10 @@ html.header-compact .header-inner {
         max-width: none;
     }
 
-    /* Match node-meta-compact height to the hamburger/pinned buttons (40px)
-       so all three line up cleanly on the same menu-zone row. */
+    /* Keep compact telemetry aligned with the hamburger/pinned buttons without
+       clipping its two-row instrument layout. */
     #node-meta-compact {
-        height: 40px;
+        min-height: 40px;
         box-sizing: border-box;
     }
 

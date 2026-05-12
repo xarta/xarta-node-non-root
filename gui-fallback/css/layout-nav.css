@@ -16,7 +16,7 @@ header { background: var(--surface); border-bottom: 1px solid var(--border);
 .header-inner { max-width: var(--app-max-width); margin: 0 auto; padding: 10px 16px;
                 display: flex; align-items: center; gap: 0; flex-wrap: wrap; width: 100%; }
 header .brand { font-size: 15px; font-weight: 700; letter-spacing: .3px; white-space: nowrap;
-                color: var(--text); flex-shrink: 0; margin-right: 14px; }
+                color: var(--text); flex-shrink: 0; margin-right: 0; }
 .header-left  { display: flex; align-items: center; gap: 0; flex: 1; min-width: 180px; }
 .header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: auto; padding-left: 8px; }
 main { max-width: var(--app-max-width); margin: 0 auto; padding: 16px; width: 100%; }
@@ -153,10 +153,75 @@ h2 { font-size: 13px; font-weight: 600; text-transform: uppercase;
              cursor: pointer; transition: all .15s; font-family: var(--font); }
 .group-tab:hover { color: var(--text); background: rgba(91,156,246,.1); }
 .group-tab.active { color: var(--accent); background: rgba(91,156,246,.12); }
-.node-meta { display: flex; gap: 14px; align-items: center; flex-shrink: 0; margin-left: 4px; }
-.nm-item { display: flex; align-items: center; gap: 4px; }
-.nm-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .4px; }
-.nm-val { font-size: 13px; font-weight: 600; }
+.node-telemetry-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid rgba(91, 156, 246, 0.28);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(91, 156, 246, 0.12), rgba(45, 212, 191, 0.05) 44%, rgba(230, 168, 23, 0.08)),
+    rgba(12, 16, 25, 0.54);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035), 0 0 18px rgba(91, 156, 246, 0.09);
+}
+
+#header-host,
+#nn-host-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text);
+  text-shadow: 0 0 10px rgba(143, 197, 255, 0.35);
+}
+
+.node-sigil {
+  --node-sigil-rgb: 91, 156, 246;
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(var(--node-sigil-rgb), 0.9);
+  border-radius: 3px;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(var(--node-sigil-rgb), 0.92) 0 2px, transparent 2.4px),
+    linear-gradient(135deg, transparent 0 36%, rgba(var(--node-sigil-rgb), 0.34) 37% 63%, transparent 64%);
+  box-shadow: 0 0 10px rgba(var(--node-sigil-rgb), 0.42), inset 0 0 5px rgba(var(--node-sigil-rgb), 0.18);
+  transform: rotate(45deg);
+}
+
+html[data-node-integrity="ok"] .node-sigil {
+  --node-sigil-rgb: 45, 212, 191;
+}
+
+html[data-node-integrity="fail"] .node-sigil {
+  --node-sigil-rgb: 224, 92, 92;
+}
+
+.node-host-link {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted currentColor;
+  cursor: pointer;
+}
+
+.node-meta { display: flex; gap: 4px; align-items: center; flex-shrink: 1; min-width: 0; margin-left: 2px; }
+.nm-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 21px;
+  padding: 2px 7px;
+  border: 1px solid rgba(91, 156, 246, 0.18);
+  border-radius: 6px;
+  background: rgba(7, 11, 18, 0.42);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.035);
+  white-space: nowrap;
+}
+.nm-label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .4px; }
+.nm-val { font-size: 13px; font-weight: 700; color: var(--text); }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 3px;
          font-size: 11px; font-weight: 600; text-transform: uppercase; }
 .badge-ok  { background: #1a3d2a; color: var(--ok); }
@@ -164,6 +229,119 @@ h2 { font-size: 13px; font-weight: 600; text-transform: uppercase;
 .badge-btn { font-family: var(--font); border: none; cursor: pointer;
              text-decoration: underline dotted; }
 .badge-btn:hover { filter: brightness(1.3); }
+
+.node-telemetry-strip .badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 17px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-weight: 700;
+}
+
+.node-telemetry-strip .badge-ok {
+  background: rgba(26, 61, 42, 0.84);
+  color: var(--ok);
+  box-shadow: 0 0 10px rgba(76, 175, 125, 0.16);
+}
+
+.node-telemetry-strip .badge-err {
+  background: rgba(61, 26, 26, 0.84);
+  color: var(--err);
+  box-shadow: 0 0 10px rgba(224, 92, 92, 0.18);
+}
+
+.node-key-badge {
+  gap: 5px;
+  text-decoration: none;
+}
+
+.node-key-label {
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: .4px;
+}
+
+.node-key-value {
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+}
+
+.node-key-meter {
+  position: relative;
+  width: 28px;
+  height: 5px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.10);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.node-key-meter::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--node-key-ratio, 0%);
+  background: linear-gradient(90deg, rgba(45, 212, 191, 0.95), rgba(76, 175, 125, 0.9));
+  box-shadow: 0 0 8px rgba(45, 212, 191, 0.36);
+}
+
+.node-key-badge--partial .node-key-meter::before {
+  background: linear-gradient(90deg, rgba(230, 168, 23, 0.95), rgba(255, 205, 92, 0.88));
+  box-shadow: 0 0 8px rgba(230, 168, 23, 0.32);
+}
+
+.nm-item--gen .nm-val,
+.nm-item--peers .nm-val {
+  color: #dceafe;
+  font-variant-numeric: tabular-nums;
+}
+
+.nm-item--integrity::before {
+  content: "DB";
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+}
+
+.node-telemetry-strip--compact {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  justify-content: end;
+  gap: 3px 5px;
+  padding: 4px 5px;
+}
+
+.node-telemetry-strip--compact .nm-compact-host {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.nm-compact-readout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 20px;
+}
+
+#nn-integrity-compact::before {
+  content: none;
+}
+
+.node-telemetry-strip--compact .badge {
+  min-height: 16px;
+  padding: 1px 5px;
+  font-size: 10px;
+}
+
+.node-telemetry-strip--compact .node-key-badge {
+  min-width: 0;
+}
 
 /* ── Table nav tabs ── */
 .table-nav { display: flex; gap: 2px; margin-bottom: 20px;

@@ -12,6 +12,7 @@ async function loadHealth() {
     if (dm && dm.open) dm.close();
     document.getElementById('nn-gen').textContent = d.gen ?? '—';
     const ok = d.integrity_ok;
+    document.documentElement.dataset.nodeIntegrity = ok ? 'ok' : 'fail';
     const integBadge = ok
       ? `<button class="badge badge-ok badge-btn bp-font-role-status-ok">OK</button>`
       : `<button class="badge badge-err badge-btn bp-font-role-status-fail">FAILED</button>`;
@@ -48,13 +49,18 @@ function updateKeyBadge(keys) {
   const badge   = document.getElementById('keys-badge');
   if (!badge) return;
   badge.style.display = '';
-  badge.textContent = `\u2A3F ${present}/${total}`;
+  badge.style.background = '';
+  badge.style.color = '';
+  badge.innerHTML = _keyBadgeInnerHtml(present, total, false);
+  badge.style.setProperty('--node-key-present', present);
+  badge.style.setProperty('--node-key-total', Math.max(total, 1));
+  badge.style.setProperty('--node-key-ratio', `${Math.round((present / Math.max(total, 1)) * 100)}%`);
   if (present === total) {
-    badge.className = 'badge badge-ok badge-btn';
+    badge.className = 'badge badge-ok badge-btn node-key-badge';
   } else if (present === 0) {
-    badge.className = 'badge badge-err badge-btn';
+    badge.className = 'badge badge-err badge-btn node-key-badge';
   } else {
-    badge.className = 'badge badge-btn';
+    badge.className = 'badge badge-btn node-key-badge node-key-badge--partial';
     badge.style.background = '#3d2e10';
     badge.style.color = 'var(--warn)';
   }
@@ -65,6 +71,10 @@ function updateKeyBadge(keys) {
     const compactBtn = keysCompact.querySelector('.badge-btn');
     if (compactBtn) {
       compactBtn.style.display = '';
+      compactBtn.innerHTML = _keyBadgeInnerHtml(present, total, true);
+      compactBtn.style.setProperty('--node-key-present', present);
+      compactBtn.style.setProperty('--node-key-total', Math.max(total, 1));
+      compactBtn.style.setProperty('--node-key-ratio', `${Math.round((present / Math.max(total, 1)) * 100)}%`);
       compactBtn.addEventListener('click', () => {
         switchGroup('settings');
         switchTab('keys');
@@ -72,6 +82,12 @@ function updateKeyBadge(keys) {
       });
     }
   }
+}
+
+function _keyBadgeInnerHtml(present, total, compact = false) {
+  const value = `${present}/${total}`;
+  if (compact) return `<span class="node-key-value">${value}</span>`;
+  return `<span class="node-key-label">Keys</span><span class="node-key-value">${value}</span><span class="node-key-meter" aria-hidden="true"></span>`;
 }
 
 async function openIntegrityModal(isOk = false) {
@@ -140,7 +156,7 @@ function _setHostParentEl(parent) {
   const el = document.getElementById('header-host');
   if (!el) return;
   if (!parent || parent === 'Unknown') {
-    el.innerHTML = `&#9670; ${parent || 'Unknown'}`;
+    el.innerHTML = _nodeHostHtml(parent || 'Unknown', null);
     _setHostCompact(parent || 'Unknown', null);
     return;
   }
@@ -149,22 +165,28 @@ function _setHostParentEl(parent) {
   const parts  = window.location.hostname.split('.');
   const domain = parts.length > 1 ? parts.slice(1).join('.') : window.location.hostname;
   const pveUrl = `https://${parent}.${domain}:8006`;
-  el.innerHTML = `&#9670; <a href="${pveUrl}" target="_blank" rel="noopener"
-    style="color:inherit;text-decoration:none;border-bottom:1px dotted currentColor;cursor:pointer"
-    title="Open Proxmox: ${pveUrl}">${parent}</a>`;
+  el.innerHTML = _nodeHostHtml(parent, pveUrl);
   _setHostCompact(parent, pveUrl);
+}
+
+function _nodeHostHtml(parent, pveUrl) {
+  const text = parent || 'Unknown';
+  const safeText = esc(text);
+  const safeUrl = pveUrl ? esc(pveUrl) : '';
+  const label = pveUrl
+    ? `<a class="node-host-link" href="${safeUrl}" target="_blank" rel="noopener" title="Open Proxmox: ${safeUrl}">${safeText}</a>`
+    : `<span class="node-host-text">${safeText}</span>`;
+  return `<span class="node-sigil" aria-hidden="true"></span>${label}`;
 }
 
 function _setHostCompact(parent, pveUrl) {
   const el = document.getElementById('nn-host-compact');
   if (!el) return;
   if (!pveUrl) {
-    el.innerHTML = `&#9670; ${parent}`;
+    el.innerHTML = _nodeHostHtml(parent, null);
     return;
   }
-  el.innerHTML = `&#9670; <a href="${pveUrl}" target="_blank" rel="noopener"
-    style="color:inherit;text-decoration:none;border-bottom:1px dotted currentColor;cursor:pointer"
-    title="Open Proxmox: ${pveUrl}">${parent}</a>`;
+  el.innerHTML = _nodeHostHtml(parent, pveUrl);
 }
 
 async function lookupHostParent(nodeName) {
