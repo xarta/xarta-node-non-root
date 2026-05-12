@@ -1192,9 +1192,23 @@ button.table-icon-btn--play-toggle { font-size: 11px; line-height: 1; }
   min-width: 0;
 }
 
-.local-dockge-stack-cell strong {
+.local-dockge-stack-cell strong,
+.local-dockge-stack-link {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.local-dockge-stack-link {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.local-dockge-stack-link:hover,
+.local-dockge-stack-link:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .local-dockge-stack-error-btn {

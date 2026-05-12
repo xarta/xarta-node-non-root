@@ -10,6 +10,25 @@ const _LOCAL_DOCKGE_FIELD_META = {
   updated: { label: 'Updated' },
   actions: { label: 'Actions' },
 };
+const _LOCAL_DOCKGE_PROJECT_URLS = Object.freeze({
+  'claude-code': 'https://code.claude.com/docs/en',
+  crawl4ai: 'https://docs.crawl4ai.com/',
+  dockge: 'https://dockge.kuma.pet/',
+  litellm: 'https://www.litellm.ai/',
+  liteparse: 'https://github.com/run-llama/liteparse',
+  markitdown: 'https://github.com/microsoft/markitdown',
+  'matrix-synapse': 'https://element-hq.github.io/synapse/latest/',
+  'nullclaw01': 'https://github.com/nullclaw/nullclaw',
+  'nullclaw-basics': 'https://github.com/nullclaw/nullclaw',
+  'nullclaw-docs-search': 'https://github.com/nullclaw/nullclaw',
+  paperclip: 'https://paperclip.ing/',
+  playwright: 'https://playwright.dev/',
+  'pockettts-openai': 'https://pockettts.org/',
+  scrapling: 'https://github.com/D4Vinci/Scrapling',
+  searxng: 'https://docs.searxng.org/',
+  'turbovec-docs': 'https://github.com/RyanCodrai/turbovec',
+  vikunja: 'https://vikunja.io/',
+});
 let _localDockgeTableView = null;
 let _localDockgeNarrationState = 'IDLE';
 let _localDockgeNarrationStack = null;
@@ -46,6 +65,21 @@ function _ensureLocalDockgeTableView() {
 
 function _localDockgeIsActive() {
   return document.getElementById('tab-local-dockge')?.classList.contains('active');
+}
+
+function _localDockgeProjectUrl(stackName) {
+  const key = String(stackName || '').trim().toLowerCase();
+  return _LOCAL_DOCKGE_PROJECT_URLS[key] || null;
+}
+
+function _localDockgeRenderStackName(stack) {
+  const name = stack?.stack_name || '-';
+  const url = _localDockgeProjectUrl(name);
+  if (!url) return `<strong>${esc(name)}</strong>`;
+  return (
+    `<a class="local-dockge-stack-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer" ` +
+    `title="Open ${esc(name)} project website">${esc(name)}</a>`
+  );
 }
 
 function _localDockgeStatusTone(status) {
@@ -687,7 +721,7 @@ function _renderLocalDockgeStackRows() {
     const services = (stack.services || []).map(service => _localDockgeServicePill(stack, service)).join(' ');
     const containers = (stack.containers || []).map(container => _localDockgeRenderContainerChip(container)).join('');
     const rendered = {
-      stack: `<div class="local-dockge-stack-cell"><strong>${esc(stack.stack_name || '-')}</strong>${_localDockgeStackErrorButton(stack)}</div>`,
+      stack: `<div class="local-dockge-stack-cell">${_localDockgeRenderStackName(stack)}${_localDockgeStackErrorButton(stack)}</div>`,
       services: services || '<span style="color:var(--text-dim)">-</span>',
       containers: containers
         ? `<div class="local-dockge-container-list">${containers}</div>`
