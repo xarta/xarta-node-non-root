@@ -178,6 +178,18 @@ async function _sshTerminalLoadTargets() {
   }
 }
 
+function _sshTerminalEnsureSettingsGroup() {
+  const bridge = window.BlueprintsHubMenuBridge;
+  if (bridge && bridge.activeGroup && bridge.activeGroup !== 'settings') {
+    if (typeof switchGroup === 'function') switchGroup('settings');
+    return;
+  }
+  if (typeof SettingsMenuConfig !== 'undefined') {
+    SettingsMenuConfig.showGroup();
+    SettingsMenuConfig.updateActiveTab('ssh-terminal');
+  }
+}
+
 async function _sshTerminalConnect() {
   const term = _sshTerminalEnsureTerminal();
   const { target } = _sshTerminalEls();
@@ -295,11 +307,7 @@ function openSshTerminalTarget(targetId, options = {}) {
   if (_sshTerminalTerm) {
     _sshTerminalTerm.writeln(`\r\n[Switching to ${nextTargetId}]`);
   }
-  if (typeof _syncActiveMenuForTab === 'function') {
-    _syncActiveMenuForTab('ssh-terminal');
-  } else if (typeof switchGroup === 'function') {
-    switchGroup('settings');
-  }
+  _sshTerminalEnsureSettingsGroup();
   if (typeof switchTab === 'function') switchTab('ssh-terminal');
   if (typeof SettingsMenuConfig !== 'undefined') SettingsMenuConfig.updateActiveTab('ssh-terminal');
   window.setTimeout(() => {
