@@ -29,6 +29,7 @@
     { key: 'horiz-scroll', rank: 66, patterns: [/horiz\s*scroll/, /scroll:\s*is\s*(on|off)/, /\bscroll\b/] },
     { key: 'fullscreen', rank: 67, patterns: [/\bfull\s*screen\b/, /\bfullscreen\b/] },
     { key: 'visibility-filter', rank: 68, patterns: [/\bhide inactive\b/, /\bshow inactive\b/, /\binactive\b/, /\bhide obsolete\b/, /\bshow obsolete\b/, /\bobsolete\b/, /\bshow archived\b/, /\bshow active\b/, /\barchived\b/] },
+    { key: 'terminal-lock', rank: 69, patterns: [/ssh-fn-lock/, /\block\b/, /\bunlock\b/] },
     { key: 'expand-all', rank: 70, patterns: [/\bexpand all\b/] },
     { key: 'collapse-all', rank: 72, patterns: [/\bcollapse all\b/] },
     { key: 'layout-context', rank: 80, patterns: [/\bcontext\b/] },

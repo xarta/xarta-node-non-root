@@ -11,6 +11,7 @@ let _sshTerminalLastSize = { cols: 100, rows: 28 };
 let _sshTerminalHasAutoConnected = false;
 let _sshTerminalManualDisconnect = false;
 let _sshTerminalOpenToken = 0;
+let _sshTerminalLocked = false;
 
 function _sshTerminalEls() {
   return {
@@ -59,6 +60,12 @@ function _sshTerminalSetConnected(connected) {
   if (connect) connect.disabled = !!connected;
   if (disconnect) disconnect.disabled = !connected;
   if (target) target.disabled = !!connected;
+  if (typeof SettingsMenuConfig !== 'undefined') {
+    window.setTimeout(() => SettingsMenuConfig.updateActiveTab('ssh-terminal'), 0);
+  }
+}
+
+function _sshTerminalUpdateMenuState() {
   if (typeof SettingsMenuConfig !== 'undefined') {
     window.setTimeout(() => SettingsMenuConfig.updateActiveTab('ssh-terminal'), 0);
   }
@@ -136,6 +143,62 @@ function _sshTerminalShouldAutoShade() {
 
 function _sshTerminalSyncPortraitMode() {
   document.body.classList.toggle('ssh-terminal-phone-portrait', !!_sshTerminalShouldAutoShade());
+}
+
+function _sshTerminalIsLocked() {
+  return !!_sshTerminalLocked;
+}
+
+function _sshTerminalLockLabel() {
+  return _sshTerminalIsLocked() ? 'Unlock' : 'Lock';
+}
+
+async function _sshTerminalApplyOrientationLock() {
+  const orientation = window.screen?.orientation;
+  if (!orientation || typeof orientation.lock !== 'function') return;
+  const type = String(orientation.type || '');
+  const lockType = type.startsWith('landscape') ? 'landscape' : 'portrait';
+  try {
+    await orientation.lock(lockType);
+  } catch (e) {
+    // Browsers only allow orientation lock in some display modes/fullscreen states.
+  }
+}
+
+function _sshTerminalReleaseOrientationLock() {
+  try {
+    window.screen?.orientation?.unlock?.();
+  } catch (e) {}
+}
+
+function _sshTerminalSetLocked(locked) {
+  const nextLocked = !!locked;
+  if (_sshTerminalLocked === nextLocked) return;
+  _sshTerminalLocked = nextLocked;
+  document.body.classList.toggle('ssh-terminal-locked', _sshTerminalLocked);
+  if (_sshTerminalLocked) {
+    _sshTerminalEnsurePortraitVisibility();
+    _sshTerminalApplyOrientationLock();
+  } else {
+    _sshTerminalReleaseOrientationLock();
+  }
+  _sshTerminalUpdateMenuState();
+}
+
+function _sshTerminalToggleLock() {
+  _sshTerminalSetLocked(!_sshTerminalLocked);
+}
+
+function _sshTerminalShouldBlockNavigation(targetId) {
+  return _sshTerminalIsLocked()
+    && _sshTerminalIsActiveTab()
+    && String(targetId || '') !== 'ssh-terminal';
+}
+
+function _sshTerminalShouldBlockMenuAction(fnKey) {
+  return _sshTerminalIsLocked()
+    && _sshTerminalIsActiveTab()
+    && String(fnKey || '') !== 'ssh.lock';
 }
 
 function _sshTerminalRevealShellIfNeeded() {
@@ -321,6 +384,7 @@ async function _sshTerminalConnect() {
 function _sshTerminalDisconnect() {
   _sshTerminalManualDisconnect = true;
   _sshTerminalHasAutoConnected = true;
+  _sshTerminalSetLocked(false);
   document.body.classList.remove('ssh-terminal-phone-portrait');
   const disconnectedTarget = _sshTerminalTargetId || 'local-hermes-container';
   if (_sshTerminalTerm) {
@@ -380,6 +444,7 @@ async function _sshTerminalOpenTargetNow(targetId, token) {
 }
 
 function openSshTerminalTarget(targetId, options = {}) {
+  if (_sshTerminalShouldBlockNavigation('ssh-target')) return;
   const token = ++_sshTerminalOpenToken;
   const nextTargetId = targetId || 'local-hermes-container';
   const previousTargetId = _sshTerminalTargetId || 'local-hermes-container';
@@ -486,3 +551,8 @@ window._sshTerminalCurrentTargetIsHermes = _sshTerminalCurrentTargetIsHermes;
 window._sshTerminalIsConnected = _sshTerminalIsConnected;
 window._sshTerminalFullscreenLabel = _sshTerminalFullscreenLabel;
 window._sshTerminalResize = _sshTerminalResize;
+window._sshTerminalToggleLock = _sshTerminalToggleLock;
+window._sshTerminalIsLocked = _sshTerminalIsLocked;
+window._sshTerminalLockLabel = _sshTerminalLockLabel;
+window._sshTerminalShouldBlockNavigation = _sshTerminalShouldBlockNavigation;
+window._sshTerminalShouldBlockMenuAction = _sshTerminalShouldBlockMenuAction;

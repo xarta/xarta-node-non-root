@@ -544,8 +544,19 @@ function createHubMenu(cfg) {
             return navChildren[0]?.id || item.id;
         },
 
+        _sshLockBlocksNavigation(targetId) {
+            return typeof window._sshTerminalShouldBlockNavigation === 'function'
+                && window._sshTerminalShouldBlockNavigation(targetId);
+        },
+
+        _sshLockBlocksFunction(fnKey) {
+            return typeof window._sshTerminalShouldBlockMenuAction === 'function'
+                && window._sshTerminalShouldBlockMenuAction(fnKey);
+        },
+
         _navigatePrimaryMenuTarget(targetId) {
             if (!targetId) return;
+            if (this._sshLockBlocksNavigation(targetId)) return;
             this._playItemSound(targetId);
             switchTab(targetId);
             this.updateActiveTab(targetId);
@@ -555,6 +566,7 @@ function createHubMenu(cfg) {
 
         _openSshTerminalMenuItem(item) {
             if (!item || !item.sshTargetId) return false;
+            if (this._sshLockBlocksNavigation(item.sshTargetId)) return true;
             this._playItemSound(item.id);
             if (item.sshTargetEnabled === false) {
                 if (typeof HubDialogs !== 'undefined') {
@@ -667,6 +679,7 @@ function createHubMenu(cfg) {
                     fnBtn.innerHTML = this._iconHtml(item.id, item.icon) + '\u00a0' + this._displayLabel(item);
                     fnBtn.addEventListener('click', (event) => {
                         event.stopPropagation();
+                        if (this._sshLockBlocksFunction(item.fn)) return;
                         this._playItemSound(item.id);
                         const fn = this._fnRegistry[item.fn];
                         if (typeof fn === 'function') fn();
@@ -767,6 +780,7 @@ function createHubMenu(cfg) {
                 btn.innerHTML = this._iconHtml(item.id, item.icon) + '\u00a0' + this._displayLabel(item);
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
+                    if (this._sshLockBlocksFunction(item.fn)) return;
                     this._playItemSound(item.id);
                     const fn = this._fnRegistry[item.fn];
                     if (typeof fn === 'function') fn();
@@ -890,6 +904,7 @@ function createHubMenu(cfg) {
                             ? activeMember.id
                             : (document.getElementById('tab-' + item.id) ? item.id : navChildren[0]?.id);
                         if (targetId) {
+                            if (this._sshLockBlocksNavigation(targetId)) return;
                             this._playItemSound(targetId);
                             switchTab(targetId);
                             this.updateActiveTab(targetId);
@@ -914,6 +929,7 @@ function createHubMenu(cfg) {
                         btn.addEventListener('click', (e) => {
                             e.stopPropagation();
                             if (btn.dataset.sshTerminalTarget) {
+                                if (this._sshLockBlocksNavigation(btn.dataset.sshTerminalTarget)) return;
                                 if (btn.dataset.sshTerminalEnabled === '0') {
                                     if (typeof HubDialogs !== 'undefined') {
                                         HubDialogs.alert({
@@ -933,10 +949,11 @@ function createHubMenu(cfg) {
                                 return;
                             }
                             const destId = btn.dataset.tab;
-                            this._playItemSound(destId);
                             const panel = document.getElementById('tab-' + destId);
                             const destChildren = this.getChildren(destId);
                             const targetId = panel ? destId : (destChildren[0]?.id || destId);
+                            if (this._sshLockBlocksNavigation(targetId)) return;
+                            this._playItemSound(destId);
                             switchTab(targetId);
                             this.updateActiveTab(targetId);
                             this.closeMenu();
@@ -948,6 +965,7 @@ function createHubMenu(cfg) {
                     dropdown.querySelectorAll('.hub-dropdown-fn').forEach(btn => {
                         btn.addEventListener('click', (e) => {
                             e.stopPropagation();
+                            if (this._sshLockBlocksFunction(btn.dataset.fn)) return;
                             this._playItemSound(btn.dataset.itemKey);
                             const fn = this._fnRegistry[btn.dataset.fn];
                             if (typeof fn === 'function') fn();
@@ -967,6 +985,7 @@ function createHubMenu(cfg) {
                     const itemLabel = this._navLabel(item);
                     btn.innerHTML = this._iconHtml(item.id, item.icon) + (itemLabel ? ('\u00a0' + itemLabel) : '');
                     btn.addEventListener('click', () => {
+                        if (this._sshLockBlocksFunction(item.fn)) return;
                         this._playItemSound(item.id);
                         const fn = this._fnRegistry[item.fn];
                         if (typeof fn === 'function') fn();
@@ -985,6 +1004,7 @@ function createHubMenu(cfg) {
                     btn.innerHTML = this._iconHtml(item.id, item.icon) + (itemLabel ? ('\u00a0' + itemLabel) : '');
                     if (isGroupActive) btn.classList.add('active');
                     btn.addEventListener('click', () => {
+                        if (this._sshLockBlocksNavigation(item.id)) return;
                         this._playItemSound(item.id);
                         switchTab(item.id);
                         this.updateActiveTab(item.id);

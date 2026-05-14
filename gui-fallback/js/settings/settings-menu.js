@@ -89,6 +89,7 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'ssh-fn-setup',    label: 'Setup',             icon: HIEROGLYPHS.djedPillar, fn: 'ssh.setup', activeOn: ['ssh-terminal'], parent: 'settings-layout', order: 1 },
         { id: 'ssh-fn-disconnect', label: 'Disconnect',      icon: HIEROGLYPHS.tjet,       fn: 'ssh.disconnect', activeOn: ['ssh-terminal'], parent: 'settings-layout', order: 2 },
         { id: 'ssh-fn-fullscreen', label: 'Full Screen',     icon: HIEROGLYPHS.khaHorizon, fn: 'ssh.fullscreen', activeOn: ['ssh-terminal'], parent: 'settings-layout', order: 3 },
+        { id: 'ssh-fn-lock',     label: 'Lock',              icon: HIEROGLYPHS.shen,       fn: 'ssh.lock', activeOn: ['ssh-terminal'], parent: 'settings-layout', order: 4 },
 
         // ── Manual ARP page function items ────────────────────────────────
         { id: 'arp-fn-add',      label: 'Add entry',        icon: HIEROGLYPHS.obelisk,    fn: 'arp.add',      activeOn: ['arp-manual'],   parent: 'settings-layout', order: 0 },
@@ -234,7 +235,7 @@ const SettingsMenuConfig = createHubMenu({
         if (localStorage.getItem(migrationKey) === '1') return;
         const removeIds = new Set(['ssh-fn-local-hermes', 'ssh-fn-local-hermes-setup', 'ssh-fn-connect']);
         this.currentMenu = this.currentMenu.filter(entry => !removeIds.has(entry.id) && !entry.id.startsWith('ssh-target-'));
-        ['ssh-terminal', 'ssh-fn-agent', 'ssh-fn-setup', 'ssh-fn-disconnect', 'ssh-fn-fullscreen'].forEach(id => {
+        ['ssh-terminal', 'ssh-fn-agent', 'ssh-fn-setup', 'ssh-fn-disconnect', 'ssh-fn-fullscreen', 'ssh-fn-lock'].forEach(id => {
             const def = this.defaultMenu.find(entry => entry.id === id);
             if (!def) return;
             const existing = this.currentMenu.find(entry => entry.id === id);
@@ -335,7 +336,7 @@ async function _settingsLoadSshTerminalTargetMenu() {
         this.currentMenu = this.currentMenu.filter(entry => (
             !['ssh-fn-local-hermes', 'ssh-fn-local-hermes-setup', 'ssh-fn-connect'].includes(entry.id)
         ));
-        ['ssh-fn-agent', 'ssh-fn-setup', 'ssh-fn-disconnect', 'ssh-fn-fullscreen'].forEach(id => {
+        ['ssh-fn-agent', 'ssh-fn-setup', 'ssh-fn-disconnect', 'ssh-fn-fullscreen', 'ssh-fn-lock'].forEach(id => {
             const def = this.defaultMenu.find(entry => entry.id === id);
             if (!def) return;
             const existing = this.currentMenu.find(entry => entry.id === id);
@@ -360,7 +361,7 @@ async function _settingsLoadSshTerminalTargetMenu() {
     SettingsMenuConfig.loadConfig = function loadConfigWithSshTerminalFunctionMigration() {
         originalLoadConfig();
         if (localStorage.getItem(migrationKey) === '1') return;
-        ['ssh-fn-agent', 'ssh-fn-setup', 'ssh-fn-disconnect', 'ssh-fn-fullscreen'].forEach(id => {
+        ['ssh-fn-agent', 'ssh-fn-setup', 'ssh-fn-disconnect', 'ssh-fn-fullscreen', 'ssh-fn-lock'].forEach(id => {
             if (this.currentMenu.some(entry => entry.id === id)) return;
             const def = this.defaultMenu.find(entry => entry.id === id);
             if (def) this.currentMenu.push({ ...def });
@@ -376,7 +377,7 @@ async function _settingsLoadSshTerminalTargetMenu() {
     SettingsMenuConfig.loadConfig = function loadConfigWithSshTerminalSetupFunctionMigration() {
         originalLoadConfig();
         if (localStorage.getItem(migrationKey) === '1') return;
-        ['ssh-fn-agent', 'ssh-fn-setup', 'ssh-fn-disconnect', 'ssh-fn-fullscreen'].forEach(id => {
+        ['ssh-fn-agent', 'ssh-fn-setup', 'ssh-fn-disconnect', 'ssh-fn-fullscreen', 'ssh-fn-lock'].forEach(id => {
             const def = this.defaultMenu.find(entry => entry.id === id);
             if (!def) return;
             const existing = this.currentMenu.find(entry => entry.id === id);
@@ -802,6 +803,7 @@ SettingsMenuConfig.registerFunctions({
     'ssh.setup': () => window._sshTerminalOpenHermesSetup?.(),
     'ssh.disconnect': () => window._sshTerminalDisconnect?.(),
     'ssh.fullscreen': () => window._sshTerminalToggleFullscreen?.(),
+    'ssh.lock': () => window._sshTerminalToggleLock?.(),
 
     // Manual ARP
     'arp.add':      () => addArpManualEntry(),
@@ -896,6 +898,7 @@ SettingsMenuConfig.registerLabelGetters({
     'doc-fn-search': () => 'Search',
     'doc-fn-frontmatter': () => docsFrontmatterToggleLabel(),
     'ssh-fn-fullscreen': () => window._sshTerminalFullscreenLabel?.() || 'Full Screen',
+    'ssh-fn-lock': () => window._sshTerminalLockLabel?.() || 'Lock',
 });
 
 SettingsMenuConfig.registerVisibilityGetters({
@@ -904,6 +907,7 @@ SettingsMenuConfig.registerVisibilityGetters({
     'ssh-fn-agent': () => !!window._sshTerminalCurrentTargetIsHermes?.(),
     'ssh-fn-setup': () => !!window._sshTerminalCurrentTargetIsHermes?.(),
     'ssh-fn-disconnect': () => true,
+    'ssh-fn-lock': () => true,
 });
 
 SettingsMenuConfig.registerLabelGetters({

@@ -295,6 +295,10 @@ function switchGroup(group) {
 }
 
 function switchTab(tab) {
+  if (typeof _sshTerminalShouldBlockNavigation === 'function'
+      && _sshTerminalShouldBlockNavigation(tab)) {
+    return;
+  }
   if (typeof SoundManager !== 'undefined') SoundManager.stopPreview();
   const wasSshTerminalActive = document.getElementById('tab-ssh-terminal')?.classList.contains('active');
   if (wasSshTerminalActive && tab !== 'ssh-terminal' && typeof _sshTerminalDisconnect === 'function') {
