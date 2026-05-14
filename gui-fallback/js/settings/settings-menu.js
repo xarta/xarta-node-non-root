@@ -35,6 +35,7 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'pve-hosts',       label: 'PVE Hosts',      icon: 'icons/ui/proxmox-blue.svg', pageLabel: 'PVE Hosts',       parent: null,        order: 0 },
         { id: 'nodes',           label: 'Nodes',          icon: HIEROGLYPHS.crookFlail, pageLabel: 'Fleet Nodes',     parent: 'pve-hosts', order: 0 },
         { id: 'local-dockge',    label: 'Local Dockge',   icon: HIEROGLYPHS.pyramid,    pageLabel: 'Local Dockge',    parent: 'pve-hosts', order: 1 },
+        { id: 'vps-dockge',      label: 'VPS Dockge',     icon: HIEROGLYPHS.naosShrine, pageLabel: 'VPS Dockge',      parent: 'pve-hosts', order: 2 },
         { id: 'settings',        label: 'App Config',     icon: HIEROGLYPHS.djedPillar, pageLabel: 'App Config',      parent: null,        order: 1 },
         { id: 'arp-manual',      label: 'Manual ARP',     icon: HIEROGLYPHS.obelisk,    pageLabel: 'Manual ARP',      parent: 'settings',  order: 0 },
         { id: 'ai-providers',    label: 'AI Providers',   icon: HIEROGLYPHS.falcon,     pageLabel: 'AI Providers',    parent: 'settings',  order: 1 },
@@ -81,6 +82,7 @@ const SettingsMenuConfig = createHubMenu({
 
         // ── Local Dockge page function items ─────────────────────────────
         { id: 'ldg-fn-refresh',  label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'ldg.refresh',  activeOn: ['local-dockge'], parent: 'settings-layout', order: 0 },
+        { id: 'vdg-fn-refresh',  label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'vdg.refresh',  activeOn: ['vps-dockge'], parent: 'settings-layout', order: 0 },
 
         // ── Manual ARP page function items ────────────────────────────────
         { id: 'arp-fn-add',      label: 'Add entry',        icon: HIEROGLYPHS.obelisk,    fn: 'arp.add',      activeOn: ['arp-manual'],   parent: 'settings-layout', order: 0 },
@@ -167,11 +169,10 @@ const SettingsMenuConfig = createHubMenu({
     ],
 });
 
-// One-time browser-layout migration for the 2026-05-10 Local Dockge placement
-// correction. Existing saved menus would otherwise keep the item under App
-// Config because hub-menu preserves user-edited parent/order fields.
+// Browser-layout migration for Dockge pages under PVE Hosts. Existing saved
+// menus preserve user-edited parent/order fields and can miss new defaults.
 (function migrateLocalDockgePlacement() {
-    const migrationKey = 'blueprintsSettingsMenuLocalDockgePveMigration';
+    const migrationKey = 'blueprintsSettingsMenuDockgePveMigration20260514';
     const originalLoadConfig = SettingsMenuConfig.loadConfig.bind(SettingsMenuConfig);
     SettingsMenuConfig.loadConfig = function loadConfigWithLocalDockgeMigration() {
         originalLoadConfig();
@@ -182,6 +183,20 @@ const SettingsMenuConfig = createHubMenu({
             item.order = 1;
             localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentMenu));
         }
+        if (!this.currentMenu.some(entry => entry.id === 'vps-dockge')) {
+            const def = this.defaultMenu.find(entry => entry.id === 'vps-dockge');
+            if (def) this.currentMenu.push({ ...def });
+        }
+        if (!this.currentMenu.some(entry => entry.id === 'vdg-fn-refresh')) {
+            const def = this.defaultMenu.find(entry => entry.id === 'vdg-fn-refresh');
+            if (def) this.currentMenu.push({ ...def });
+        }
+        const vpsItem = this.currentMenu.find(entry => entry.id === 'vps-dockge');
+        if (vpsItem) {
+            vpsItem.parent = 'pve-hosts';
+            vpsItem.order = 2;
+        }
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentMenu));
         localStorage.setItem(migrationKey, '1');
     };
 })();
@@ -590,6 +605,7 @@ SettingsMenuConfig.registerFunctions({
 
     // Local Dockge
     'ldg.refresh':  () => loadLocalDockgeStacks(),
+    'vdg.refresh':  () => loadVpsDockgeStacks(),
 
     // Manual ARP
     'arp.add':      () => addArpManualEntry(),

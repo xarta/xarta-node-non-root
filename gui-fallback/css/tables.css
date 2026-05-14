@@ -1528,3 +1528,300 @@ tr.table-group-row td.table-group-cell {
   color: var(--text-dim);
   opacity: 0.4;
 }
+.vps-dockge-service-pill {
+  border: 1px solid rgba(123, 130, 160, 0.42);
+  border-radius: 7px;
+  margin: 2px;
+  padding: 2px 8px;
+  max-width: 100%;
+  background: rgba(123, 130, 160, 0.08);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  text-align: left;
+  vertical-align: top;
+  cursor: pointer;
+}
+
+.vps-dockge-col-services {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.vps-dockge-service-pill:hover,
+.vps-dockge-service-pill:focus-visible {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.86);
+  color: var(--text);
+}
+
+.vps-dockge-service-pill--caddy-web {
+  background: rgba(91, 156, 246, 0.12);
+  border-color: rgba(91, 156, 246, 0.72);
+  color: #8fc5ff;
+  animation: vps-dockge-pill-pulse 3.8s ease-in-out infinite;
+}
+
+.vps-dockge-service-pill--caddy-api {
+  background: rgba(76, 175, 125, 0.12);
+  border-color: rgba(76, 175, 125, 0.72);
+  color: #8ee6b4;
+  animation: vps-dockge-pill-pulse 3.8s ease-in-out infinite;
+}
+
+.vps-dockge-service-pill--tailnet-web {
+  background: rgba(45, 212, 191, 0.12);
+  border-color: rgba(45, 212, 191, 0.72);
+  color: #8feee4;
+  animation: vps-dockge-pill-pulse 3.8s ease-in-out infinite;
+}
+
+.vps-dockge-service-pill--tailnet-api {
+  background: rgba(34, 197, 160, 0.12);
+  border-color: rgba(34, 197, 160, 0.72);
+  color: #9bf0d9;
+  animation: vps-dockge-pill-pulse 3.8s ease-in-out infinite;
+}
+
+.vps-dockge-service-pill--localhost-api,
+.vps-dockge-service-pill--localhost-web {
+  background: rgba(230, 168, 23, 0.12);
+  border-color: rgba(230, 168, 23, 0.72);
+  color: #f0c36b;
+}
+
+.vps-dockge-service-pill--internal {
+  background: rgba(123, 130, 160, 0.08);
+  border-color: rgba(123, 130, 160, 0.38);
+  color: var(--text-dim);
+}
+
+.vps-dockge-service-kind {
+  display: inline-block;
+  margin-left: 5px;
+  opacity: 0.72;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.vps-dockge-stack-cell {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.vps-dockge-stack-cell strong,
+.vps-dockge-stack-link {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.vps-dockge-stack-link {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.vps-dockge-stack-link:hover,
+.vps-dockge-stack-link:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.vps-dockge-stack-error-btn {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  border-radius: 7px;
+  border: 1px solid rgba(248, 113, 113, 0.52);
+  background: rgba(248, 113, 113, 0.1);
+  color: #ff9b9b;
+  cursor: pointer;
+  position: relative;
+}
+
+.vps-dockge-stack-error-btn::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  background: currentColor;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M1 21h22L12 2 1 21Zm12-3h-2v-2h2v2Zm0-4h-2v-4h2v4Z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M1 21h22L12 2 1 21Zm12-3h-2v-2h2v2Zm0-4h-2v-4h2v4Z'/%3E%3C/svg%3E");
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+.vps-dockge-stack-error-btn:hover,
+.vps-dockge-stack-error-btn:focus-visible {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.86);
+  color: #ffd0d0;
+}
+
+.vps-dockge-container-list {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+
+.vps-dockge-container-chip {
+  --vps-dockge-container-chip-rgb: 148, 163, 184;
+  --vps-dockge-container-chip-color: var(--text-dim);
+  background: rgba(var(--vps-dockge-container-chip-rgb), 0.10);
+  border-color: rgba(var(--vps-dockge-container-chip-rgb), 0.54);
+  color: var(--vps-dockge-container-chip-color);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.vps-dockge-container-chip--ok {
+  --vps-dockge-container-chip-rgb: 76, 175, 125;
+  --vps-dockge-container-chip-color: var(--ok);
+}
+
+.vps-dockge-container-chip--warn,
+.vps-dockge-container-chip--mixed {
+  --vps-dockge-container-chip-rgb: 230, 168, 23;
+  --vps-dockge-container-chip-color: var(--warn);
+}
+
+.vps-dockge-container-chip--error {
+  --vps-dockge-container-chip-rgb: 224, 92, 92;
+  --vps-dockge-container-chip-color: var(--err);
+}
+
+.vps-dockge-container-chip--stopped,
+.vps-dockge-container-chip--unknown {
+  --vps-dockge-container-chip-rgb: 148, 163, 184;
+  --vps-dockge-container-chip-color: var(--text-dim);
+}
+
+.vps-dockge-status-stack {
+  display: grid;
+  gap: 5px;
+  justify-items: start;
+}
+
+.vps-dockge-updated {
+  display: grid;
+  gap: 2px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.vps-dockge-actions-cell {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.vps-dockge-narration-btn {
+  --table-action-color: var(--accent);
+  --table-action-rgb: 91, 156, 246;
+}
+
+button.secondary.table-icon-btn.vps-dockge-narration-btn {
+  color: #5b9cf6;
+  border-color: rgba(91, 156, 246, 0.42);
+  background: rgba(91, 156, 246, 0.08);
+}
+
+button.secondary.table-icon-btn.vps-dockge-narration-btn:hover,
+button.secondary.table-icon-btn.vps-dockge-narration-btn:focus-visible {
+  color: #8fc5ff;
+  border-color: rgba(91, 156, 246, 0.78);
+  background: rgba(91, 156, 246, 0.16);
+}
+
+.vps-dockge-download-btn {
+  --table-action-color: var(--text-dim);
+  --table-action-rgb: 123, 130, 160;
+}
+
+button.secondary.table-icon-btn.vps-dockge-download-btn {
+  color: var(--text-dim);
+  border-color: rgba(123, 130, 160, 0.36);
+  background: rgba(123, 130, 160, 0.08);
+}
+
+button.secondary.table-icon-btn.vps-dockge-download-btn:hover,
+button.secondary.table-icon-btn.vps-dockge-download-btn:focus-visible {
+  color: var(--text);
+  border-color: rgba(123, 130, 160, 0.72);
+  background: rgba(123, 130, 160, 0.16);
+}
+
+.vps-dockge-narration-btn.is-speaking,
+.vps-dockge-narration-btn.is-generating,
+.vps-dockge-download-btn.is-generating {
+  --table-action-color: var(--warn);
+  --table-action-rgb: 200, 168, 75;
+  opacity: 1;
+}
+
+button.secondary.table-icon-btn.vps-dockge-narration-btn.is-speaking,
+button.secondary.table-icon-btn.vps-dockge-narration-btn.is-generating,
+button.secondary.table-icon-btn.vps-dockge-download-btn.is-generating {
+  color: #c8a84b;
+  border-color: rgba(200, 168, 75, 0.72);
+  background: rgba(200, 168, 75, 0.14);
+}
+
+.vps-dockge-service-modal-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(320px, 1.4fr);
+  gap: 14px;
+  min-height: 0;
+}
+
+.vps-dockge-service-modal-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 12px;
+  min-width: 0;
+}
+
+.vps-dockge-service-modal-panel h3 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.vps-dockge-openapi-paths {
+  max-height: min(52vh, 520px);
+  overflow: auto;
+  display: grid;
+  gap: 5px;
+}
+
+.vps-dockge-openapi-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid rgba(123, 130, 160, 0.2);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .vps-dockge-service-modal-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@keyframes vps-dockge-pill-pulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(255, 255, 255, 0); }
+  50% { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.42); }
+}
