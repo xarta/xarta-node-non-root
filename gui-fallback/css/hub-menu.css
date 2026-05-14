@@ -681,6 +681,24 @@
     opacity: 1;
 }
 
+.hub-dropdown-fn.hub-dropdown-navlike {
+    color: #aaa;
+    opacity: 1;
+}
+
+.hub-dropdown-fn.hub-dropdown-navlike:hover,
+.hub-dropdown-fn.hub-dropdown-navlike.active {
+    color: var(--hub-accent);
+}
+
+.hub-tab-dropdown--ssh-targets .hub-dropdown-menu {
+    min-width: max-content;
+}
+
+.hub-tab-dropdown--ssh-targets .hub-dropdown-item {
+    white-space: nowrap;
+}
+
 /* Separator line between nav items and fn items in a mixed dropdown */
 .hub-dropdown-separator {
     border: none;

@@ -847,13 +847,15 @@ function createHubMenu(cfg) {
                         `<button class="hub-dropdown-item" data-tab="${c.id}">${this._iconHtml(c.id, c.icon)}\u00a0${this._displayLabel(c)}</button>`
                     ).join('');
                     const sepHtml  = hasSeparator ? '<hr class="hub-dropdown-separator">' : '';
-                    const fnHtml   = sortedFnChildren.map(c =>
-                        `<button class="hub-dropdown-item hub-dropdown-fn" data-fn="${c.fn}" data-item-key="${c.id}">${this._iconHtml(c.id, c.icon)}\u00a0${this._displayLabel(c)}</button>`
-                    ).join('');
+                    const fnHtml   = sortedFnChildren.map(c => {
+                        const isTerminalTarget = item.id === 'ssh-terminal' && String(c.id || '').startsWith('ssh-target-');
+                        const extraClass = isTerminalTarget ? ' hub-dropdown-navlike' : '';
+                        return `<button class="hub-dropdown-item hub-dropdown-fn${extraClass}" data-fn="${c.fn}" data-item-key="${c.id}">${this._iconHtml(c.id, c.icon)}\u00a0${this._displayLabel(c)}</button>`;
+                    }).join('');
 
                     const isActive = isGroupActive || (activeId === item.id);
                     const dropdown = document.createElement('div');
-                    dropdown.className = 'hub-tab-dropdown';
+                    dropdown.className = 'hub-tab-dropdown' + (item.id === 'ssh-terminal' ? ' hub-tab-dropdown--ssh-targets' : '');
                     dropdown.innerHTML = `
                         <div class="hub-tab-split">
                             <button class="hub-tab hub-tab-label${isActive ? ' active' : ''}" data-tab="${item.id}">${labelText}</button>
