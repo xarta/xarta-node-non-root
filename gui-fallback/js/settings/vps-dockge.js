@@ -42,6 +42,7 @@ let _vpsDockgeNarrationLastClickAt = 0;
 let _vpsDockgeNarrationLongPressTimer = null;
 let _vpsDockgeNarrationLastLongPressAt = 0;
 let _vpsDockgeDownloadBusyStack = null;
+let _vpsDockgeLoadPromise = null;
 const _VPS_DOCKGE_NARRATION_DOUBLE_CLICK_MS = 260;
 const _VPS_DOCKGE_NARRATION_LONG_PRESS_MS = 650;
 
@@ -772,7 +773,12 @@ function _ensureVpsDockgePoll() {
   }, _VPS_DOCKGE_POLL_MS);
 }
 
+function scheduleVpsDockgeStacksLoad(options = {}) {
+  window.setTimeout(() => loadVpsDockgeStacks(options), 0);
+}
+
 async function loadVpsDockgeStacks(options = {}) {
+  if (_vpsDockgeLoadPromise) return _vpsDockgeLoadPromise;
   const err = document.getElementById('vps-dockge-error');
   const status = document.getElementById('vps-dockge-status');
   if (err) err.hidden = true;
@@ -782,7 +788,7 @@ async function loadVpsDockgeStacks(options = {}) {
     status.hidden = false;
   }
   _ensureVpsDockgePoll();
-  try {
+  _vpsDockgeLoadPromise = (async () => {
     const r = await apiFetch('/api/v1/vps-dockge/stacks');
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
@@ -794,12 +800,17 @@ async function loadVpsDockgeStacks(options = {}) {
       status.style.color = 'var(--text-dim)';
       status.hidden = false;
     }
+  })();
+  try {
+    await _vpsDockgeLoadPromise;
   } catch (e) {
     if (err) {
       err.textContent = `Failed to load VPS Dockge stacks: ${e.message}`;
       err.hidden = false;
     }
     if (status) status.hidden = true;
+  } finally {
+    _vpsDockgeLoadPromise = null;
   }
 }
 

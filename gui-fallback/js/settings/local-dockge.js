@@ -39,6 +39,7 @@ let _localDockgeNarrationLastClickAt = 0;
 let _localDockgeNarrationLongPressTimer = null;
 let _localDockgeNarrationLastLongPressAt = 0;
 let _localDockgeDownloadBusyStack = null;
+let _localDockgeLoadPromise = null;
 const _LOCAL_DOCKGE_NARRATION_DOUBLE_CLICK_MS = 260;
 const _LOCAL_DOCKGE_NARRATION_LONG_PRESS_MS = 650;
 
@@ -776,7 +777,12 @@ function _ensureLocalDockgePoll() {
   }, _LOCAL_DOCKGE_POLL_MS);
 }
 
+function scheduleLocalDockgeStacksLoad(options = {}) {
+  window.setTimeout(() => loadLocalDockgeStacks(options), 0);
+}
+
 async function loadLocalDockgeStacks(options = {}) {
+  if (_localDockgeLoadPromise) return _localDockgeLoadPromise;
   const err = document.getElementById('local-dockge-error');
   const status = document.getElementById('local-dockge-status');
   if (err) err.hidden = true;
@@ -786,7 +792,7 @@ async function loadLocalDockgeStacks(options = {}) {
     status.hidden = false;
   }
   _ensureLocalDockgePoll();
-  try {
+  _localDockgeLoadPromise = (async () => {
     const r = await apiFetch('/api/v1/local-dockge/stacks');
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
@@ -797,12 +803,17 @@ async function loadLocalDockgeStacks(options = {}) {
       status.style.color = 'var(--text-dim)';
       status.hidden = false;
     }
+  })();
+  try {
+    await _localDockgeLoadPromise;
   } catch (e) {
     if (err) {
       err.textContent = `Failed to load local Dockge stacks: ${e.message}`;
       err.hidden = false;
     }
     if (status) status.hidden = true;
+  } finally {
+    _localDockgeLoadPromise = null;
   }
 }
 
