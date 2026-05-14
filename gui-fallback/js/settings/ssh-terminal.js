@@ -46,12 +46,6 @@ function _sshTerminalIsActiveTab() {
 function _sshTerminalApplyShellSize() {
   const { shell } = _sshTerminalEls();
   if (!shell || !_sshTerminalIsActiveTab()) return;
-  if (shell.classList.contains('is-fullscreen')) {
-    shell.style.height = '';
-    shell.style.minHeight = '';
-    shell.style.maxHeight = '';
-    return;
-  }
   const top = Math.max(0, shell.getBoundingClientRect().top);
   const height = Math.max(220, Math.floor(_sshTerminalViewportHeight() - top));
   shell.style.height = `${height}px`;
@@ -265,14 +259,9 @@ function _sshTerminalDisconnect() {
 }
 
 function _sshTerminalToggleFullscreen() {
-  const { shell, fullscreen } = _sshTerminalEls();
-  if (!shell) return;
-  const active = !shell.classList.contains('is-fullscreen');
-  shell.classList.toggle('is-fullscreen', active);
-  if (fullscreen) {
-    fullscreen.textContent = active ? 'Exit Full Screen' : 'Full Screen';
-    fullscreen.setAttribute('aria-pressed', active ? 'true' : 'false');
-  }
+  const isShadeUp = document.body.classList.contains('shade-is-up');
+  if (isShadeUp) window.BodyShade?.snapDown?.();
+  else window.BodyShade?.snapUp?.();
   if (typeof SettingsMenuConfig !== 'undefined') SettingsMenuConfig.updateActiveTab('ssh-terminal');
   _sshTerminalScheduleSettledResize(true);
 }
@@ -355,7 +344,7 @@ function _sshTerminalIsConnected() {
 }
 
 function _sshTerminalFullscreenLabel() {
-  return document.getElementById('ssh-terminal-shell')?.classList.contains('is-fullscreen')
+  return document.body.classList.contains('shade-is-up')
     ? 'Exit Full Screen'
     : 'Full Screen';
 }
@@ -368,6 +357,10 @@ function _sshTerminalInit() {
   fullscreen?.addEventListener('click', _sshTerminalToggleFullscreen);
   window.addEventListener('resize', () => _sshTerminalResize(true), { passive: true });
   window.visualViewport?.addEventListener('resize', () => _sshTerminalResize(true), { passive: true });
+  document.addEventListener('bodyshadechange', () => {
+    if (typeof SettingsMenuConfig !== 'undefined') SettingsMenuConfig.updateActiveTab('ssh-terminal');
+    _sshTerminalScheduleSettledResize(true);
+  });
   const urlTarget = new URLSearchParams(window.location.search).get('terminal');
   if (urlTarget) _sshTerminalTargetId = urlTarget;
 }
