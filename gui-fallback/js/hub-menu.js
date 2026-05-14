@@ -370,6 +370,14 @@ function createHubMenu(cfg) {
         },
 
         _sortFunctionItems(items) {
+            if ((items || []).some(item => item.parent === 'ssh-terminal' && String(item.id || '').startsWith('ssh-target-'))) {
+                return (items || []).slice().sort((a, b) => {
+                    const ao = Number.isFinite(a.order) ? a.order : 0;
+                    const bo = Number.isFinite(b.order) ? b.order : 0;
+                    if (ao !== bo) return ao - bo;
+                    return this._displayLabel(a).localeCompare(this._displayLabel(b));
+                });
+            }
             const api = this._menuActionOrderApi();
             if (!api || typeof api.sortItems !== 'function') {
                 return (items || []).slice().sort((a, b) => a.order - b.order);

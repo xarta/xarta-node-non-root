@@ -159,6 +159,9 @@ async function _sshTerminalLoadTargets() {
   const r = await apiFetch('/api/v1/ssh-terminal/targets');
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   _sshTerminalTargets = await r.json();
+  if (typeof window._settingsSyncSshTerminalTargetMenu === 'function') {
+    window._settingsSyncSshTerminalTargetMenu(_sshTerminalTargets);
+  }
   if (target) {
     target.innerHTML = _sshTerminalTargets.map(item => (
       `<option value="${esc(item.target_id || '')}" ${item.enabled ? '' : 'disabled'}>${esc(item.label || item.target_id || '')}</option>`
@@ -166,8 +169,10 @@ async function _sshTerminalLoadTargets() {
   }
   if (_sshTerminalTargetId && _sshTerminalTargets.some(item => item.target_id === _sshTerminalTargetId)) {
     if (target) target.value = _sshTerminalTargetId;
-  } else if (_sshTerminalTargets[0]) {
-    _sshTerminalTargetId = _sshTerminalTargets[0].target_id;
+  } else {
+    const firstEnabled = _sshTerminalTargets.find(item => item.enabled !== false) || _sshTerminalTargets[0];
+    if (!firstEnabled) return;
+    _sshTerminalTargetId = firstEnabled.target_id;
     if (target) target.value = _sshTerminalTargetId;
   }
 }
@@ -179,6 +184,12 @@ async function _sshTerminalConnect() {
   if (_sshTerminalWs && _sshTerminalWs.readyState === WebSocket.OPEN) return;
 
   _sshTerminalTargetId = target?.value || _sshTerminalTargetId || 'local-hermes';
+  const selected = _sshTerminalTargets.find(item => item.target_id === _sshTerminalTargetId);
+  if (selected && selected.enabled === false) {
+    _sshTerminalSetStatus(`${selected.label || selected.target_id} is pending.`, 'error');
+    _sshTerminalSetConnected(false);
+    return;
+  }
   _sshTerminalLastSize = _sshTerminalMeasure();
   term.clear();
   term.writeln(`Connecting to ${_sshTerminalTargetId}...`);
@@ -258,7 +269,13 @@ async function _sshTerminalLoadTab() {
 }
 
 function openSshTerminalTarget(targetId, options = {}) {
-  _sshTerminalTargetId = targetId || 'local-hermes';
+  const nextTargetId = targetId || 'local-hermes';
+  const previousTargetId = _sshTerminalTargetId || 'local-hermes';
+  if (_sshTerminalWs && previousTargetId !== nextTargetId) {
+    _sshTerminalTargetId = previousTargetId;
+    _sshTerminalDisconnect();
+  }
+  _sshTerminalTargetId = nextTargetId;
   if (options.connect !== false) _sshTerminalHasAutoConnected = false;
   if (typeof switchGroup === 'function') switchGroup('settings');
   if (typeof switchTab === 'function') switchTab('ssh-terminal');

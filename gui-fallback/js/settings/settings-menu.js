@@ -8,6 +8,7 @@
 //
 // Default groupings:
 //   🗄 PVE Hosts  [▼ 🤝 Nodes, Local Dockge]
+//   ⛰ SSH         [▼ target sessions from /api/v1/ssh-terminal/targets]
 //   🔧 App Config [▼ 🗺 Manual ARP, 🤖 AI Providers]
 //   🗝 Keys       [▼ 🔒 Certs]
 //   📄 Docs       [▼ 📋 Doc List, 🖼️ Images, 🩺 Self Diagnostic]
@@ -36,8 +37,8 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'nodes',           label: 'Nodes',          icon: HIEROGLYPHS.crookFlail, pageLabel: 'Fleet Nodes',     parent: 'pve-hosts', order: 0 },
         { id: 'local-dockge',    label: 'Local Dockge',   icon: HIEROGLYPHS.pyramid,    pageLabel: 'Local Dockge',    parent: 'pve-hosts', order: 1 },
         { id: 'vps-dockge',      label: 'VPS Dockge',     icon: HIEROGLYPHS.naosShrine, pageLabel: 'VPS Dockge',      parent: 'pve-hosts', order: 2 },
-        { id: 'ssh-terminal',    label: 'Terminal',       icon: HIEROGLYPHS.khaHorizon, pageLabel: 'SSH Terminal',    parent: 'pve-hosts', order: 3 },
-        { id: 'settings',        label: 'App Config',     icon: HIEROGLYPHS.djedPillar, pageLabel: 'App Config',      parent: null,        order: 1 },
+        { id: 'ssh-terminal',    label: 'SSH',            icon: HIEROGLYPHS.khaHorizon, pageLabel: 'SSH Terminal',    parent: null,        order: 1 },
+        { id: 'settings',        label: 'App Config',     icon: HIEROGLYPHS.djedPillar, pageLabel: 'App Config',      parent: null,        order: 2 },
         { id: 'arp-manual',      label: 'Manual ARP',     icon: HIEROGLYPHS.obelisk,    pageLabel: 'Manual ARP',      parent: 'settings',  order: 0 },
         { id: 'ai-providers',    label: 'AI Providers',   icon: HIEROGLYPHS.falcon,     pageLabel: 'AI Providers',    parent: 'settings',  order: 1 },
         { id: 'mcp-servers',     label: 'MCP Servers',    icon: HIEROGLYPHS.nileWaves,  pageLabel: 'MCP Servers',     parent: 'settings',  order: 2 },
@@ -46,13 +47,13 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'form-controls',   label: 'Form Controls',  icon: HIEROGLYPHS.adze,       pageLabel: 'Form Controls',   parent: 'settings',  order: 5 },
         { id: 'embed-menu',      label: 'Embed Menu',     icon: HIEROGLYPHS.kheper,     pageLabel: 'Embed Menu',      parent: 'settings',  order: 6 },
         { id: 'embed-menu-grid', label: 'Embed Menu Grid', icon: HIEROGLYPHS.cartouche,  pageLabel: 'Embed Menu Grid', parent: 'settings',  order: 7 },
-        { id: 'keys',            label: 'Keys',           icon: HIEROGLYPHS.ankh,       pageLabel: 'SSH Keys',        parent: null,        order: 2 },
+        { id: 'keys',            label: 'Keys',           icon: HIEROGLYPHS.ankh,       pageLabel: 'SSH Keys',        parent: null,        order: 3 },
         { id: 'certs',           label: 'Certs',          icon: HIEROGLYPHS.shen,       pageLabel: 'Certificates',    parent: 'keys',      order: 0 },
-        { id: 'docs',            label: 'Docs',           icon: HIEROGLYPHS.papyrus,    pageLabel: 'Docs',            parent: null,        order: 3 },
+        { id: 'docs',            label: 'Docs',           icon: HIEROGLYPHS.papyrus,    pageLabel: 'Docs',            parent: null,        order: 4 },
         { id: 'docs-list',       label: 'Doc List',       icon: HIEROGLYPHS.papyrus,    pageLabel: 'Doc List',        parent: 'docs',      order: 0 },
         { id: 'docs-images',     label: 'Images',         icon: HIEROGLYPHS.lotus,      pageLabel: 'Doc Images',      parent: 'docs',      order: 1 },
         { id: 'self-diag',       label: 'Self Diagnostic',icon: HIEROGLYPHS.eyeOfHorus, pageLabel: 'Self Diagnostic', parent: 'docs',      order: 2 },
-        { id: 'settings-layout', label: '☰',              icon: HIEROGLYPHS.kheper,     pageLabel: 'Navbar Layout',   parent: null,        order: 4 },
+        { id: 'settings-layout', label: '☰',              icon: HIEROGLYPHS.kheper,     pageLabel: 'Navbar Layout',   parent: null,        order: 5 },
 
         // ── PVE Hosts page function items ─────────────────────────────────
         { id: 'pveh-fn-refresh', label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'pveh.refresh', activeOn: ['pve-hosts'],    parent: 'settings-layout', order: 0 },
@@ -84,11 +85,8 @@ const SettingsMenuConfig = createHubMenu({
         // ── Local Dockge page function items ─────────────────────────────
         { id: 'ldg-fn-refresh',  label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'ldg.refresh',  activeOn: ['local-dockge'], parent: 'settings-layout', order: 0 },
         { id: 'vdg-fn-refresh',  label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'vdg.refresh',  activeOn: ['vps-dockge'], parent: 'settings-layout', order: 0 },
-        { id: 'ssh-fn-local-hermes', label: 'Local Hermes',  icon: HIEROGLYPHS.khaHorizon, fn: 'ssh.localHermes', activeOn: ['ssh-terminal'], parent: 'settings-layout', order: 0 },
-        { id: 'ssh-fn-local-hermes-setup', label: 'Hermes Setup', icon: HIEROGLYPHS.djedPillar, fn: 'ssh.localHermesSetup', activeOn: ['ssh-terminal'], parent: 'settings-layout', order: 1 },
-        { id: 'ssh-fn-connect',  label: 'Connect',           icon: HIEROGLYPHS.nefer,      fn: 'ssh.connect', activeOn: ['ssh-terminal'], parent: 'settings-layout', order: 2 },
-        { id: 'ssh-fn-disconnect', label: 'Disconnect',      icon: HIEROGLYPHS.tjet,       fn: 'ssh.disconnect', activeOn: ['ssh-terminal'], parent: 'settings-layout', order: 3 },
-        { id: 'ssh-fn-fullscreen', label: 'Full Screen',     icon: HIEROGLYPHS.khaHorizon, fn: 'ssh.fullscreen', activeOn: ['ssh-terminal'], parent: 'settings-layout', order: 4 },
+        { id: 'ssh-fn-disconnect', label: 'Disconnect',      icon: HIEROGLYPHS.tjet,       fn: 'ssh.disconnect', activeOn: ['ssh-terminal'], parent: 'settings-layout', order: 0 },
+        { id: 'ssh-fn-fullscreen', label: 'Full Screen',     icon: HIEROGLYPHS.khaHorizon, fn: 'ssh.fullscreen', activeOn: ['ssh-terminal'], parent: 'settings-layout', order: 1 },
 
         // ── Manual ARP page function items ────────────────────────────────
         { id: 'arp-fn-add',      label: 'Add entry',        icon: HIEROGLYPHS.obelisk,    fn: 'arp.add',      activeOn: ['arp-manual'],   parent: 'settings-layout', order: 0 },
@@ -208,11 +206,167 @@ const SettingsMenuConfig = createHubMenu({
         }
         const terminalItem = this.currentMenu.find(entry => entry.id === 'ssh-terminal');
         if (terminalItem) {
-            terminalItem.parent = 'pve-hosts';
-            terminalItem.order = 3;
+            terminalItem.parent = null;
+            terminalItem.order = 1;
+            terminalItem.label = 'SSH';
+            terminalItem.pageLabel = 'SSH Terminal';
         }
+        const settingsItem = this.currentMenu.find(entry => entry.id === 'settings');
+        if (settingsItem && !settingsItem.parent) settingsItem.order = 2;
+        const keysItem = this.currentMenu.find(entry => entry.id === 'keys');
+        if (keysItem && !keysItem.parent) keysItem.order = 3;
+        const docsItem = this.currentMenu.find(entry => entry.id === 'docs');
+        if (docsItem && !docsItem.parent) docsItem.order = 4;
+        const layoutItem = this.currentMenu.find(entry => entry.id === 'settings-layout');
+        if (layoutItem && !layoutItem.parent) layoutItem.order = 5;
         localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentMenu));
         localStorage.setItem(migrationKey, '1');
+    };
+})();
+
+(function migrateSshTerminalTopLevelMenu() {
+    const migrationKey = 'blueprintsSettingsMenuSshTerminalTopLevel20260514';
+    const originalLoadConfig = SettingsMenuConfig.loadConfig.bind(SettingsMenuConfig);
+    SettingsMenuConfig.loadConfig = function loadConfigWithSshTerminalTopLevelMigration() {
+        originalLoadConfig();
+        if (localStorage.getItem(migrationKey) === '1') return;
+        const removeIds = new Set(['ssh-fn-local-hermes', 'ssh-fn-local-hermes-setup', 'ssh-fn-connect']);
+        this.currentMenu = this.currentMenu.filter(entry => !removeIds.has(entry.id) && !entry.id.startsWith('ssh-target-'));
+        ['ssh-terminal', 'ssh-fn-disconnect', 'ssh-fn-fullscreen'].forEach(id => {
+            const def = this.defaultMenu.find(entry => entry.id === id);
+            if (!def) return;
+            const existing = this.currentMenu.find(entry => entry.id === id);
+            if (existing) {
+                existing.label = def.label;
+                existing.icon = def.icon;
+                existing.pageLabel = def.pageLabel;
+                existing.parent = def.parent;
+                existing.order = def.order;
+                if (def.fn !== undefined) existing.fn = def.fn; else delete existing.fn;
+                if (def.activeOn !== undefined) existing.activeOn = def.activeOn; else delete existing.activeOn;
+            } else {
+                this.currentMenu.push({ ...def });
+            }
+        });
+        [
+            ['settings', 2],
+            ['keys', 3],
+            ['docs', 4],
+            ['settings-layout', 5],
+        ].forEach(([id, order]) => {
+            const item = this.currentMenu.find(entry => entry.id === id && !entry.parent);
+            if (item) item.order = order;
+        });
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentMenu));
+        localStorage.setItem(migrationKey, '1');
+    };
+})();
+
+function _settingsSshTargetMenuItemId(targetId) {
+    return `ssh-target-${String(targetId || '').replace(/[^a-zA-Z0-9_.-]/g, '-')}`;
+}
+
+function _settingsSyncSshTerminalTargetMenu(targets) {
+    if (typeof SettingsMenuConfig === 'undefined') return;
+    const menu = SettingsMenuConfig;
+    if (!Array.isArray(menu.currentMenu)) return;
+
+    const visibleTargets = (Array.isArray(targets) ? targets : [])
+        .filter(target => target && target.show_in_menu !== false)
+        .slice()
+        .sort((a, b) => {
+            const ao = Number.isFinite(a.menu_order) ? a.menu_order : 100;
+            const bo = Number.isFinite(b.menu_order) ? b.menu_order : 100;
+            if (ao !== bo) return ao - bo;
+            return String(a.label || a.target_id || '').localeCompare(String(b.label || b.target_id || ''));
+        });
+
+    menu.currentMenu = menu.currentMenu.filter(entry => !String(entry.id || '').startsWith('ssh-target-'));
+    const fnMap = {};
+    visibleTargets.forEach((target, index) => {
+        const targetId = String(target.target_id || '').trim();
+        if (!targetId) return;
+        const itemId = _settingsSshTargetMenuItemId(targetId);
+        const fnKey = `ssh.target.${targetId}`;
+        const label = `${target.label || targetId}${target.enabled ? '' : ' (pending)'}`;
+        menu.currentMenu.push({
+            id: itemId,
+            label,
+            icon: target.kind === 'ssh' ? HIEROGLYPHS.ankh : HIEROGLYPHS.khaHorizon,
+            pageLabel: target.label || targetId,
+            parent: 'ssh-terminal',
+            order: Number.isFinite(target.menu_order) ? target.menu_order : index,
+            fn: fnKey,
+        });
+        fnMap[fnKey] = () => {
+            if (!target.enabled) {
+                if (typeof HubDialogs !== 'undefined') {
+                    HubDialogs.alert({
+                        title: 'Terminal Pending',
+                        message: `${target.label || targetId} is listed but not enabled yet.`,
+                        tone: 'info',
+                        badge: 'SSH',
+                    });
+                }
+                return;
+            }
+            if (typeof window.openSshTerminalTarget === 'function') {
+                window.openSshTerminalTarget(targetId);
+            }
+        };
+    });
+    menu.registerFunctions(fnMap);
+    menu.updateActiveTab(menu._activeId || undefined);
+}
+
+window._settingsSyncSshTerminalTargetMenu = _settingsSyncSshTerminalTargetMenu;
+
+async function _settingsLoadSshTerminalTargetMenu() {
+    if (typeof apiFetch !== 'function') return;
+    const response = await apiFetch('/api/v1/ssh-terminal/targets');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const targets = await response.json();
+    _settingsSyncSshTerminalTargetMenu(targets);
+}
+
+(function loadSshTargetsWhenSettingsMenuOpens() {
+    let loaded = false;
+    const originalShowGroup = SettingsMenuConfig.showGroup.bind(SettingsMenuConfig);
+    SettingsMenuConfig.showGroup = function showGroupWithSshTargets() {
+        originalShowGroup();
+        if (loaded) return;
+        loaded = true;
+        _settingsLoadSshTerminalTargetMenu().catch(error => {
+            loaded = false;
+            console.warn('[SettingsMenu] Unable to load SSH terminal targets:', error);
+        });
+    };
+})();
+
+(function migrateSshTerminalLegacyFunctionItems() {
+    const originalLoadConfig = SettingsMenuConfig.loadConfig.bind(SettingsMenuConfig);
+    SettingsMenuConfig.loadConfig = function loadConfigWithSshTerminalLegacyCleanup() {
+        originalLoadConfig();
+        const before = this.currentMenu.length;
+        this.currentMenu = this.currentMenu.filter(entry => (
+            !['ssh-fn-local-hermes', 'ssh-fn-local-hermes-setup', 'ssh-fn-connect'].includes(entry.id)
+        ));
+        ['ssh-fn-disconnect', 'ssh-fn-fullscreen'].forEach(id => {
+            const def = this.defaultMenu.find(entry => entry.id === id);
+            if (!def) return;
+            const existing = this.currentMenu.find(entry => entry.id === id);
+            if (existing) {
+                existing.parent = def.parent;
+                existing.order = def.order;
+                existing.activeOn = def.activeOn;
+                existing.fn = def.fn;
+            } else {
+                this.currentMenu.push({ ...def });
+            }
+        });
+        if (this.currentMenu.length !== before) {
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentMenu));
+        }
     };
 })();
 
@@ -660,9 +814,6 @@ SettingsMenuConfig.registerFunctions({
     // Local Dockge
     'ldg.refresh':  () => loadLocalDockgeStacks(),
     'vdg.refresh':  () => loadVpsDockgeStacks(),
-    'ssh.localHermes': () => window._sshTerminalSelectLocalHermes?.(),
-    'ssh.localHermesSetup': () => window._sshTerminalSelectLocalHermesSetup?.(),
-    'ssh.connect':  () => window._sshTerminalConnect?.(),
     'ssh.disconnect': () => window._sshTerminalDisconnect?.(),
     'ssh.fullscreen': () => window._sshTerminalToggleFullscreen?.(),
 
