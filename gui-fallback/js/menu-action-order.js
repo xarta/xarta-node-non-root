@@ -8,6 +8,8 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   const RULES = [
     { key: 'terminal-target', rank: 8, patterns: [/ssh-fn-local-hermes/, /\blocal hermes\b/] },
+    { key: 'terminal-agent', rank: 9, patterns: [/ssh-fn-agent/, /\bagent\b/] },
+    { key: 'terminal-setup', rank: 11, patterns: [/ssh-fn-setup/, /\bsetup\b/] },
     { key: 'refresh', rank: 10, patterns: [/\brefresh\b/, /\breload\b/, /refresh ui/] },
     { key: 'connect', rank: 12, patterns: [/\bconnect\b/] },
     { key: 'disconnect', rank: 14, patterns: [/\bdisconnect\b/] },

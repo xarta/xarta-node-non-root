@@ -9,6 +9,7 @@ let _sshTerminalWs = null;
 let _sshTerminalResizeObserver = null;
 let _sshTerminalLastSize = { cols: 100, rows: 28 };
 let _sshTerminalHasAutoConnected = false;
+let _sshTerminalManualDisconnect = false;
 
 function _sshTerminalEls() {
   return {
@@ -183,7 +184,8 @@ async function _sshTerminalConnect() {
   if (!term) return;
   if (_sshTerminalWs && _sshTerminalWs.readyState === WebSocket.OPEN) return;
 
-  _sshTerminalTargetId = target?.value || _sshTerminalTargetId || 'local-hermes';
+  _sshTerminalManualDisconnect = false;
+  _sshTerminalTargetId = target?.value || _sshTerminalTargetId || 'local-hermes-container';
   const selected = _sshTerminalTargets.find(item => item.target_id === _sshTerminalTargetId);
   if (selected && selected.enabled === false) {
     _sshTerminalSetStatus(`${selected.label || selected.target_id} is pending.`, 'error');
@@ -218,7 +220,8 @@ async function _sshTerminalConnect() {
     term.write(String(event.data || ''));
   });
   ws.addEventListener('close', event => {
-    if (_sshTerminalWs === ws) _sshTerminalWs = null;
+    if (_sshTerminalWs !== ws) return;
+    _sshTerminalWs = null;
     _sshTerminalSetConnected(false);
     const clean = event.code === 1000 || event.code === 1001;
     _sshTerminalSetStatus(clean ? 'Disconnected.' : `Disconnected (${event.code}).`, clean ? '' : 'error');
@@ -229,11 +232,16 @@ async function _sshTerminalConnect() {
 }
 
 function _sshTerminalDisconnect() {
+  _sshTerminalManualDisconnect = true;
+  _sshTerminalHasAutoConnected = true;
   if (_sshTerminalWs) {
-    _sshTerminalWs.close(1000, 'closed by browser');
+    const ws = _sshTerminalWs;
     _sshTerminalWs = null;
+    try {
+      ws.close(1000, 'closed by browser');
+    } catch (e) {}
   }
-  const targetId = _sshTerminalTargetId || 'local-hermes';
+  const targetId = _sshTerminalTargetId || 'local-hermes-container';
   apiFetch(`/api/v1/ssh-terminal/targets/${encodeURIComponent(targetId)}/disconnect`, { method: 'POST' })
     .catch(() => {});
   _sshTerminalSetConnected(false);
@@ -259,7 +267,7 @@ async function _sshTerminalLoadTab() {
     await _sshTerminalLoadTargets();
     _sshTerminalSetStatus(_sshTerminalWs ? 'Connected.' : 'Ready.');
     _sshTerminalScheduleSettledResize(true);
-    if (!_sshTerminalWs && !_sshTerminalHasAutoConnected) {
+    if (!_sshTerminalWs && !_sshTerminalHasAutoConnected && !_sshTerminalManualDisconnect) {
       _sshTerminalHasAutoConnected = true;
       window.setTimeout(() => _sshTerminalConnect(), 80);
     }
@@ -269,14 +277,17 @@ async function _sshTerminalLoadTab() {
 }
 
 function openSshTerminalTarget(targetId, options = {}) {
-  const nextTargetId = targetId || 'local-hermes';
-  const previousTargetId = _sshTerminalTargetId || 'local-hermes';
+  const nextTargetId = targetId || 'local-hermes-container';
+  const previousTargetId = _sshTerminalTargetId || 'local-hermes-container';
   if (_sshTerminalWs && previousTargetId !== nextTargetId) {
     _sshTerminalTargetId = previousTargetId;
     _sshTerminalDisconnect();
   }
   _sshTerminalTargetId = nextTargetId;
-  if (options.connect !== false) _sshTerminalHasAutoConnected = false;
+  if (options.connect !== false) {
+    _sshTerminalHasAutoConnected = false;
+    _sshTerminalManualDisconnect = false;
+  }
   if (typeof switchGroup === 'function') switchGroup('settings');
   if (typeof switchTab === 'function') switchTab('ssh-terminal');
   if (typeof SettingsMenuConfig !== 'undefined') SettingsMenuConfig.updateActiveTab('ssh-terminal');
@@ -288,11 +299,36 @@ function openSshTerminalTarget(targetId, options = {}) {
 }
 
 function _sshTerminalSelectLocalHermes() {
-  openSshTerminalTarget('local-hermes');
+  openSshTerminalTarget('local-hermes-container');
 }
 
 function _sshTerminalSelectLocalHermesSetup() {
   openSshTerminalTarget('local-hermes-setup');
+}
+
+function _sshTerminalOpenHermesAgent() {
+  if ((_sshTerminalTargetId || '').startsWith('hermes-vps')) {
+    openSshTerminalTarget('hermes-vps-agent');
+    return;
+  }
+  openSshTerminalTarget('local-hermes');
+}
+
+function _sshTerminalOpenHermesSetup() {
+  if ((_sshTerminalTargetId || '').startsWith('hermes-vps')) {
+    openSshTerminalTarget('hermes-vps-setup');
+    return;
+  }
+  openSshTerminalTarget('local-hermes-setup');
+}
+
+function _sshTerminalCurrentTargetId() {
+  return _sshTerminalTargetId || 'local-hermes-container';
+}
+
+function _sshTerminalCurrentTargetIsHermes() {
+  const targetId = _sshTerminalCurrentTargetId();
+  return targetId.startsWith('local-hermes') || targetId.startsWith('hermes-vps');
 }
 
 function _sshTerminalIsConnected() {
@@ -324,6 +360,10 @@ window._sshTerminalDisconnect = _sshTerminalDisconnect;
 window._sshTerminalToggleFullscreen = _sshTerminalToggleFullscreen;
 window._sshTerminalSelectLocalHermes = _sshTerminalSelectLocalHermes;
 window._sshTerminalSelectLocalHermesSetup = _sshTerminalSelectLocalHermesSetup;
+window._sshTerminalOpenHermesAgent = _sshTerminalOpenHermesAgent;
+window._sshTerminalOpenHermesSetup = _sshTerminalOpenHermesSetup;
+window._sshTerminalCurrentTargetId = _sshTerminalCurrentTargetId;
+window._sshTerminalCurrentTargetIsHermes = _sshTerminalCurrentTargetIsHermes;
 window._sshTerminalIsConnected = _sshTerminalIsConnected;
 window._sshTerminalFullscreenLabel = _sshTerminalFullscreenLabel;
 window._sshTerminalResize = _sshTerminalResize;

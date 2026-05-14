@@ -192,7 +192,7 @@ function _localDockgeActionButtons(stack) {
     buttons.push(`<button class="secondary table-icon-btn table-icon-btn--terminal" type="button"
       title="Open Hermes terminal"
       aria-label="Open ${name} terminal"
-      data-ssh-terminal-target="local-hermes"></button>`);
+      data-ssh-terminal-target="local-hermes-container"></button>`);
   } else {
     buttons.push(`<button class="secondary table-icon-btn table-icon-btn--terminal" type="button"
       title="No terminal target configured"
