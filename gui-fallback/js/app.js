@@ -296,6 +296,10 @@ function switchGroup(group) {
 
 function switchTab(tab) {
   if (typeof SoundManager !== 'undefined') SoundManager.stopPreview();
+  const wasSshTerminalActive = document.getElementById('tab-ssh-terminal')?.classList.contains('active');
+  if (wasSshTerminalActive && tab !== 'ssh-terminal' && typeof _sshTerminalDisconnect === 'function') {
+    _sshTerminalDisconnect();
+  }
   document.querySelectorAll('.table-nav button').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   const btn = document.querySelector(`.table-nav button[onclick*="'${tab}'"]`);
