@@ -418,8 +418,10 @@ document.addEventListener('DOMContentLoaded', () => {
   loadFrontendSettings();
   loadHealth();
   loadManualLinks();
-  SynthesisMenuConfig.showGroup();
-  SynthesisMenuConfig.updateActiveTab('manual-links-' + _manualLinksView);
+  if (!_urlTab && !_urlGroup && !_restoreSshAfterReload) {
+    SynthesisMenuConfig.showGroup();
+    SynthesisMenuConfig.updateActiveTab('manual-links-' + _manualLinksView);
+  }
   _installSelectorOriginMenuBridge();
   _installSpecialUiModeTracking();
   loadSyncStatus();

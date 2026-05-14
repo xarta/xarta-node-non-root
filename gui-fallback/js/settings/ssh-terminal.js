@@ -248,8 +248,18 @@ function _sshTerminalShouldRestoreAfterReload() {
 }
 
 function _sshTerminalApplyReloadParams(url) {
-  if (!url || !_sshTerminalIsActiveTab()) return url;
-  const targetId = _sshTerminalCurrentTargetId();
+  if (!url) return url;
+  const params = new URLSearchParams(window.location.search);
+  const restoredTarget = _sshTerminalReadRestoreTarget();
+  const shouldApply = _sshTerminalIsActiveTab()
+    || _sshTerminalIsLocked()
+    || !!restoredTarget
+    || params.get('tab') === 'ssh-terminal';
+  if (!shouldApply) return url;
+  const visibleTarget = (_sshTerminalIsActiveTab() || _sshTerminalIsLocked() || params.get('tab') === 'ssh-terminal')
+    ? _sshTerminalCurrentTargetId()
+    : '';
+  const targetId = _sshTerminalTargetId || restoredTarget || params.get('terminal') || visibleTarget || '';
   if (!targetId) return url;
   url.searchParams.set('group', 'settings');
   url.searchParams.set('tab', 'ssh-terminal');
