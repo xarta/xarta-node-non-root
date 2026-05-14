@@ -669,13 +669,24 @@
   // recomputing maxTravel from the freshly rendered layout.
   // getBoundingClientRect() inside computeMaxTravel() forces a layout
   // recalculation so values are accurate immediately after a DOM update.
-  function snapUp() {
+  function snapUp(opts) {
     if (!shade || !handle) return;
-    if (isUp) return; // already up — nothing to do
+    if (isUp) {
+      resyncShadeUpPosition();
+      return true;
+    }
     maxTravel = computeMaxTravel();
-    if (maxTravel <= 0) return;
-    applyTranslate(-maxTravel, false); // animate up via CSS transition (300ms)
-    setTimeout(enterUp, TRANSITION);   // lock up state once animation settles
+    if (maxTravel <= 0) return false;
+    var instant = !!(opts && opts.instant);
+    applyTranslate(-maxTravel, instant); // animate up via CSS transition unless instant is requested
+    if (instant) {
+      // Commit the transition-free transform before removing the helper class.
+      shade.getBoundingClientRect();
+      enterUp();
+    } else {
+      setTimeout(enterUp, TRANSITION);   // lock up state once animation settles
+    }
+    return true;
   }
 
   window.BodyShade = window.BodyShade || {};
@@ -685,8 +696,8 @@
   window.BodyShade.sizeDocsPane = sizeDocsPane;
   window.BodyShade.snapDown = snapDown;
   window.BodyShade.snapUp = snapUp;
-  window.BodyShade.syncActiveHandle = function () {
-    return syncActiveHandleFromDom();
+  window.BodyShade.syncActiveHandle = function (opts) {
+    return syncActiveHandleFromDom(opts);
   };
 
   document.readyState === 'loading'

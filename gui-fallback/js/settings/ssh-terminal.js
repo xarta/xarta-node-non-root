@@ -104,6 +104,14 @@ function _sshTerminalScheduleSettledResize(send = true) {
   });
 }
 
+function _sshTerminalWait(ms) {
+  return new Promise(resolve => window.setTimeout(resolve, ms));
+}
+
+function _sshTerminalNextFrame() {
+  return new Promise(resolve => window.requestAnimationFrame(() => resolve()));
+}
+
 function _sshTerminalShouldAutoShade() {
   return _sshTerminalIsActiveTab()
     && window.matchMedia
@@ -128,7 +136,7 @@ function _sshTerminalEnsurePortraitVisibility() {
   _sshTerminalSyncPortraitMode();
   if (!_sshTerminalShouldAutoShade()) return;
   window.BodyShade?.syncActiveHandle?.();
-  if (!document.body.classList.contains('shade-is-up')) window.BodyShade?.snapUp?.();
+  if (!document.body.classList.contains('shade-is-up')) window.BodyShade?.snapUp?.({ instant: true });
   _sshTerminalScheduleSettledResize(true);
   [80, 360, 760].forEach(delay => {
     window.setTimeout(() => {
@@ -136,6 +144,23 @@ function _sshTerminalEnsurePortraitVisibility() {
       _sshTerminalRevealShellIfNeeded();
     }, delay);
   });
+}
+
+async function _sshTerminalPrepareLayoutForOpen() {
+  _sshTerminalSyncPortraitMode();
+  if (!_sshTerminalIsActiveTab()) return;
+
+  if (!_sshTerminalShouldAutoShade()) {
+    await _sshTerminalNextFrame();
+    return;
+  }
+
+  window.BodyShade?.syncActiveHandle?.();
+  if (!document.body.classList.contains('shade-is-up')) window.BodyShade?.snapUp?.({ instant: true });
+  await _sshTerminalNextFrame();
+  await _sshTerminalWait(80);
+  _sshTerminalRevealShellIfNeeded();
+  await _sshTerminalNextFrame();
 }
 
 function _sshTerminalEnsureTerminal() {
@@ -219,6 +244,7 @@ function _sshTerminalEnsureSettingsGroup() {
 }
 
 async function _sshTerminalConnect() {
+  await _sshTerminalPrepareLayoutForOpen();
   const term = _sshTerminalEnsureTerminal();
   const { target } = _sshTerminalEls();
   if (!term) return;
@@ -303,11 +329,12 @@ function _sshTerminalToggleFullscreen() {
 }
 
 async function _sshTerminalLoadTab() {
-  _sshTerminalEnsureTerminal();
   try {
     _sshTerminalSyncPortraitMode();
     await _sshTerminalLoadTargets();
     _sshTerminalSetStatus(_sshTerminalWs ? 'Connected.' : 'Ready.');
+    await _sshTerminalPrepareLayoutForOpen();
+    _sshTerminalEnsureTerminal();
     _sshTerminalScheduleSettledResize(true);
     window.setTimeout(_sshTerminalEnsurePortraitVisibility, 120);
     if (!_sshTerminalWs && !_sshTerminalHasAutoConnected && !_sshTerminalManualDisconnect) {
