@@ -369,6 +369,13 @@ html[data-node-integrity="fail"] .node-sigil {
   .table-nav button { padding: 10px 12px; }
 }
 
+@media (orientation: landscape) and (max-height: 600px) and (pointer: coarse) {
+  .header-left .nm-item--gen,
+  .header-left .nm-item--peers {
+    display: none;
+  }
+}
+
 @media (max-width: 600px) {
   main { padding: 10px; }
   .header-inner { padding: 4px 10px; }
