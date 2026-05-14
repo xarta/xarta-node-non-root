@@ -234,6 +234,10 @@ async function _sshTerminalConnect() {
 function _sshTerminalDisconnect() {
   _sshTerminalManualDisconnect = true;
   _sshTerminalHasAutoConnected = true;
+  const disconnectedTarget = _sshTerminalTargetId || 'local-hermes-container';
+  if (_sshTerminalTerm) {
+    _sshTerminalTerm.writeln(`\r\n[Disconnected from ${disconnectedTarget}]`);
+  }
   if (_sshTerminalWs) {
     const ws = _sshTerminalWs;
     _sshTerminalWs = null;
@@ -241,7 +245,7 @@ function _sshTerminalDisconnect() {
       ws.close(1000, 'closed by browser');
     } catch (e) {}
   }
-  const targetId = _sshTerminalTargetId || 'local-hermes-container';
+  const targetId = disconnectedTarget;
   apiFetch(`/api/v1/ssh-terminal/targets/${encodeURIComponent(targetId)}/disconnect`, { method: 'POST' })
     .catch(() => {});
   _sshTerminalSetConnected(false);
@@ -287,6 +291,9 @@ function openSshTerminalTarget(targetId, options = {}) {
   if (options.connect !== false) {
     _sshTerminalHasAutoConnected = false;
     _sshTerminalManualDisconnect = false;
+  }
+  if (_sshTerminalTerm) {
+    _sshTerminalTerm.writeln(`\r\n[Switching to ${nextTargetId}]`);
   }
   if (typeof switchGroup === 'function') switchGroup('settings');
   if (typeof switchTab === 'function') switchTab('ssh-terminal');

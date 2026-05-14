@@ -681,16 +681,6 @@
     opacity: 1;
 }
 
-.hub-dropdown-fn.hub-dropdown-navlike {
-    color: #aaa;
-    opacity: 1;
-}
-
-.hub-dropdown-fn.hub-dropdown-navlike:hover,
-.hub-dropdown-fn.hub-dropdown-navlike.active {
-    color: var(--hub-accent);
-}
-
 .hub-tab-dropdown--ssh-targets .hub-dropdown-menu {
     min-width: max-content;
 }

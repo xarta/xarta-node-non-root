@@ -370,14 +370,6 @@ function createHubMenu(cfg) {
         },
 
         _sortFunctionItems(items) {
-            if ((items || []).some(item => item.parent === 'ssh-terminal' && String(item.id || '').startsWith('ssh-target-'))) {
-                return (items || []).slice().sort((a, b) => {
-                    const ao = Number.isFinite(a.order) ? a.order : 0;
-                    const bo = Number.isFinite(b.order) ? b.order : 0;
-                    if (ao !== bo) return ao - bo;
-                    return this._displayLabel(a).localeCompare(this._displayLabel(b));
-                });
-            }
             const api = this._menuActionOrderApi();
             if (!api || typeof api.sortItems !== 'function') {
                 return (items || []).slice().sort((a, b) => a.order - b.order);
@@ -843,15 +835,16 @@ function createHubMenu(cfg) {
                 if (allDropdownItems.length > 0) {
                     // ── Split-button with dropdown ────────────────────────────
                     const hasSeparator = dropdownNavItems.length > 0 && sortedFnChildren.length > 0;
-                    const navHtml  = dropdownNavItems.map(c =>
-                        `<button class="hub-dropdown-item" data-tab="${c.id}">${this._iconHtml(c.id, c.icon)}\u00a0${this._displayLabel(c)}</button>`
-                    ).join('');
-                    const sepHtml  = hasSeparator ? '<hr class="hub-dropdown-separator">' : '';
-                    const fnHtml   = sortedFnChildren.map(c => {
-                        const isTerminalTarget = item.id === 'ssh-terminal' && String(c.id || '').startsWith('ssh-target-');
-                        const extraClass = isTerminalTarget ? ' hub-dropdown-navlike' : '';
-                        return `<button class="hub-dropdown-item hub-dropdown-fn${extraClass}" data-fn="${c.fn}" data-item-key="${c.id}">${this._iconHtml(c.id, c.icon)}\u00a0${this._displayLabel(c)}</button>`;
+                    const navHtml  = dropdownNavItems.map(c => {
+                        const targetAttr = c.sshTargetId
+                            ? ` data-ssh-terminal-target="${String(c.sshTargetId).replace(/"/g, '&quot;')}" data-ssh-terminal-enabled="${c.sshTargetEnabled === false ? '0' : '1'}"`
+                            : '';
+                        return `<button class="hub-dropdown-item" data-tab="${c.id}"${targetAttr}>${this._iconHtml(c.id, c.icon)}\u00a0${this._displayLabel(c)}</button>`;
                     }).join('');
+                    const sepHtml  = hasSeparator ? '<hr class="hub-dropdown-separator">' : '';
+                    const fnHtml   = sortedFnChildren.map(c =>
+                        `<button class="hub-dropdown-item hub-dropdown-fn" data-fn="${c.fn}" data-item-key="${c.id}">${this._iconHtml(c.id, c.icon)}\u00a0${this._displayLabel(c)}</button>`
+                    ).join('');
 
                     const isActive = isGroupActive || (activeId === item.id);
                     const dropdown = document.createElement('div');
@@ -896,6 +889,25 @@ function createHubMenu(cfg) {
                     dropdown.querySelectorAll('.hub-dropdown-item:not(.hub-dropdown-fn)').forEach(btn => {
                         btn.addEventListener('click', (e) => {
                             e.stopPropagation();
+                            if (btn.dataset.sshTerminalTarget) {
+                                if (btn.dataset.sshTerminalEnabled === '0') {
+                                    if (typeof HubDialogs !== 'undefined') {
+                                        HubDialogs.alert({
+                                            title: 'Terminal Pending',
+                                            message: `${btn.textContent.trim()} is listed but not enabled yet.`,
+                                            tone: 'info',
+                                            badge: 'SSH',
+                                        });
+                                    }
+                                    return;
+                                }
+                                if (typeof window.openSshTerminalTarget === 'function') {
+                                    window.openSshTerminalTarget(btn.dataset.sshTerminalTarget);
+                                }
+                                this.closeMenu();
+                                this.closeDropdowns();
+                                return;
+                            }
                             const destId = btn.dataset.tab;
                             this._playItemSound(destId);
                             const panel = document.getElementById('tab-' + destId);

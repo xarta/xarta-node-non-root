@@ -284,12 +284,10 @@ function _settingsSyncSshTerminalTargetMenu(targets) {
         });
 
     menu.currentMenu = menu.currentMenu.filter(entry => !String(entry.id || '').startsWith('ssh-target-'));
-    const fnMap = {};
     visibleTargets.forEach((target, index) => {
         const targetId = String(target.target_id || '').trim();
         if (!targetId) return;
         const itemId = _settingsSshTargetMenuItemId(targetId);
-        const fnKey = `ssh.target.${targetId}`;
         const label = `${target.label || targetId}${target.enabled ? '' : ' (pending)'}`;
         menu.currentMenu.push({
             id: itemId,
@@ -298,26 +296,10 @@ function _settingsSyncSshTerminalTargetMenu(targets) {
             pageLabel: target.label || targetId,
             parent: 'ssh-terminal',
             order: Number.isFinite(target.menu_order) ? target.menu_order : index,
-            fn: fnKey,
+            sshTargetId: targetId,
+            sshTargetEnabled: target.enabled !== false,
         });
-        fnMap[fnKey] = () => {
-            if (!target.enabled) {
-                if (typeof HubDialogs !== 'undefined') {
-                    HubDialogs.alert({
-                        title: 'Terminal Pending',
-                        message: `${target.label || targetId} is listed but not enabled yet.`,
-                        tone: 'info',
-                        badge: 'SSH',
-                    });
-                }
-                return;
-            }
-            if (typeof window.openSshTerminalTarget === 'function') {
-                window.openSshTerminalTarget(targetId);
-            }
-        };
     });
-    menu.registerFunctions(fnMap);
     menu.updateActiveTab(menu._activeId || undefined);
 }
 
