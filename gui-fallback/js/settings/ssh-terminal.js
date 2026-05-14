@@ -110,11 +110,32 @@ function _sshTerminalShouldAutoShade() {
     && window.matchMedia('(max-width: 600px) and (orientation: portrait)').matches;
 }
 
+function _sshTerminalSyncPortraitMode() {
+  document.body.classList.toggle('ssh-terminal-phone-portrait', !!_sshTerminalShouldAutoShade());
+}
+
+function _sshTerminalRevealShellIfNeeded() {
+  const { shell } = _sshTerminalEls();
+  if (!shell || !_sshTerminalShouldAutoShade()) return;
+  const rect = shell.getBoundingClientRect();
+  const viewportH = _sshTerminalViewportHeight();
+  if (rect.top >= viewportH || rect.bottom <= 24) {
+    shell.scrollIntoView({ block: 'start', inline: 'nearest' });
+  }
+}
+
 function _sshTerminalEnsurePortraitVisibility() {
+  _sshTerminalSyncPortraitMode();
   if (!_sshTerminalShouldAutoShade()) return;
-  if (document.body.classList.contains('shade-is-up')) return;
-  window.BodyShade?.snapUp?.();
+  window.BodyShade?.syncActiveHandle?.();
+  if (!document.body.classList.contains('shade-is-up')) window.BodyShade?.snapUp?.();
   _sshTerminalScheduleSettledResize(true);
+  [80, 360, 760].forEach(delay => {
+    window.setTimeout(() => {
+      _sshTerminalResize(true, true);
+      _sshTerminalRevealShellIfNeeded();
+    }, delay);
+  });
 }
 
 function _sshTerminalEnsureTerminal() {
@@ -254,6 +275,7 @@ async function _sshTerminalConnect() {
 function _sshTerminalDisconnect() {
   _sshTerminalManualDisconnect = true;
   _sshTerminalHasAutoConnected = true;
+  document.body.classList.remove('ssh-terminal-phone-portrait');
   const disconnectedTarget = _sshTerminalTargetId || 'local-hermes-container';
   if (_sshTerminalTerm) {
     _sshTerminalTerm.writeln(`\r\n[Disconnected from ${disconnectedTarget}]`);
@@ -283,6 +305,7 @@ function _sshTerminalToggleFullscreen() {
 async function _sshTerminalLoadTab() {
   _sshTerminalEnsureTerminal();
   try {
+    _sshTerminalSyncPortraitMode();
     await _sshTerminalLoadTargets();
     _sshTerminalSetStatus(_sshTerminalWs ? 'Connected.' : 'Ready.');
     _sshTerminalScheduleSettledResize(true);
@@ -313,6 +336,7 @@ function openSshTerminalTarget(targetId, options = {}) {
   }
   _sshTerminalEnsureSettingsGroup();
   if (typeof switchTab === 'function') switchTab('ssh-terminal');
+  _sshTerminalSyncPortraitMode();
   if (typeof SettingsMenuConfig !== 'undefined') SettingsMenuConfig.updateActiveTab('ssh-terminal');
   window.setTimeout(() => {
     const { target } = _sshTerminalEls();
@@ -370,8 +394,14 @@ function _sshTerminalInit() {
   connect?.addEventListener('click', _sshTerminalConnect);
   disconnect?.addEventListener('click', _sshTerminalDisconnect);
   fullscreen?.addEventListener('click', _sshTerminalToggleFullscreen);
-  window.addEventListener('resize', () => _sshTerminalResize(true), { passive: true });
-  window.visualViewport?.addEventListener('resize', () => _sshTerminalResize(true), { passive: true });
+  window.addEventListener('resize', () => {
+    _sshTerminalSyncPortraitMode();
+    _sshTerminalResize(true);
+  }, { passive: true });
+  window.visualViewport?.addEventListener('resize', () => {
+    _sshTerminalSyncPortraitMode();
+    _sshTerminalResize(true);
+  }, { passive: true });
   document.addEventListener('bodyshadechange', () => {
     if (typeof SettingsMenuConfig !== 'undefined') SettingsMenuConfig.updateActiveTab('ssh-terminal');
     _sshTerminalScheduleSettledResize(true);

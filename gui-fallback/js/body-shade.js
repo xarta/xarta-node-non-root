@@ -413,6 +413,22 @@
     el.addEventListener('mousedown',   onMouseDown);
   }
 
+  function syncActiveHandleFromDom(opts) {
+    var activePanel = shade ? shade.querySelector('.tab-panel.active') : null;
+    var newHandle   = activePanel ? activePanel.querySelector('.body-shade-handle') : null;
+    if (newHandle === handle) return !!handle;
+    var resetShade = !opts || opts.reset !== false;
+    if (resetShade) {
+      if (isUp) exitUp();
+      shade.classList.remove('is-dragging');
+      applyTranslate(0, false);
+      if (handle) handle.classList.remove('is-up', 'is-grabbing', 'is-dragging');
+    }
+    handle    = newHandle;
+    maxTravel = 0;
+    return !!handle;
+  }
+
   /* ── Update active handle when tab switches ─────────────────────────────── */
   function setActiveHandle(tabId) {
     var panel     = document.getElementById('tab-' + tabId);
@@ -609,16 +625,7 @@
       window.switchTab = function (tab) {
         orig.apply(this, arguments);
         // Find whichever panel is now active and adopt its handle
-        var activePanel = shade.querySelector('.tab-panel.active');
-        var newHandle   = activePanel ? activePanel.querySelector('.body-shade-handle') : null;
-        if (newHandle !== handle) {
-          if (isUp) exitUp();
-          shade.classList.remove('is-dragging');
-          applyTranslate(0, false);
-          if (handle) handle.classList.remove('is-up', 'is-grabbing', 'is-dragging');
-          handle    = newHandle;
-          maxTravel = 0;
-        }
+        syncActiveHandleFromDom();
         // Resize fill table for the newly active panel.
         scheduleSizeFillTable();
       };
@@ -678,6 +685,9 @@
   window.BodyShade.sizeDocsPane = sizeDocsPane;
   window.BodyShade.snapDown = snapDown;
   window.BodyShade.snapUp = snapUp;
+  window.BodyShade.syncActiveHandle = function () {
+    return syncActiveHandleFromDom();
+  };
 
   document.readyState === 'loading'
     ? document.addEventListener('DOMContentLoaded', init)
