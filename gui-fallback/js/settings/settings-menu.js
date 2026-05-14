@@ -293,7 +293,7 @@ function _settingsSyncSshTerminalTargetMenu(targets) {
         menu.currentMenu.push({
             id: itemId,
             label,
-            icon: target.kind === 'ssh' ? HIEROGLYPHS.ankh : HIEROGLYPHS.khaHorizon,
+            icon: ['ssh', 'vps-dockge-ssh'].includes(target.kind) ? HIEROGLYPHS.ankh : HIEROGLYPHS.khaHorizon,
             pageLabel: target.label || targetId,
             parent: 'ssh-terminal',
             order: Number.isFinite(target.menu_order) ? target.menu_order : index,

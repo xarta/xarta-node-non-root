@@ -191,10 +191,17 @@ function _vpsDockgeActionButtons(stack) {
       aria-label="No project repository configured for ${name}"
       disabled></button>`);
   }
-  buttons.push(`<button class="secondary table-icon-btn table-icon-btn--terminal" type="button"
-    title="${String(rawName).toLowerCase() === 'hermes' ? 'VPS Hermes terminal target is not configured yet' : 'No terminal target configured'}"
-    aria-label="No terminal target configured for ${name}"
-    disabled></button>`);
+  if (String(rawName).toLowerCase() === 'hermes') {
+    buttons.push(`<button class="secondary table-icon-btn table-icon-btn--terminal" type="button"
+      title="Open VPS Hermes terminal"
+      aria-label="Open VPS Hermes terminal"
+      data-ssh-terminal-target="hermes-vps-container"></button>`);
+  } else {
+    buttons.push(`<button class="secondary table-icon-btn table-icon-btn--terminal" type="button"
+      title="No terminal target configured"
+      aria-label="No terminal target configured for ${name}"
+      disabled></button>`);
+  }
   return `<div class="table-inline-actions table-inline-actions--stacked">${buttons.join('')}</div>`;
 }
 
@@ -893,6 +900,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (projectBtn && projectBtn.dataset.vpsDockgeProjectUrl) {
       e.preventDefault();
       window.open(projectBtn.dataset.vpsDockgeProjectUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    const terminalBtn = e.target.closest('[data-ssh-terminal-target]');
+    if (terminalBtn) {
+      e.preventDefault();
+      if (typeof openSshTerminalTarget === 'function') {
+        openSshTerminalTarget(terminalBtn.dataset.sshTerminalTarget);
+      }
       return;
     }
     const errorBtn = e.target.closest('[data-vps-dockge-error-stack]');
