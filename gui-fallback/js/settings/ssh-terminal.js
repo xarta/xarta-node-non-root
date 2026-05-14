@@ -172,11 +172,23 @@ function _sshTerminalReleaseOrientationLock() {
   } catch (e) {}
 }
 
+function _sshTerminalSyncLockUrlParam() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('tab') !== 'ssh-terminal' && !params.get('terminal')) return;
+  try {
+    const url = new URL(window.location.href);
+    if (_sshTerminalIsLocked()) url.searchParams.set('terminal_lock', '1');
+    else url.searchParams.delete('terminal_lock');
+    window.history.replaceState(window.history.state, '', url.toString());
+  } catch (e) {}
+}
+
 function _sshTerminalSetLocked(locked) {
   const nextLocked = !!locked;
   if (_sshTerminalLocked === nextLocked) return;
   _sshTerminalLocked = nextLocked;
   document.body.classList.toggle('ssh-terminal-locked', _sshTerminalLocked);
+  _sshTerminalSyncLockUrlParam();
   if (_sshTerminalLocked) {
     _sshTerminalEnsurePortraitVisibility();
     _sshTerminalApplyOrientationLock();
@@ -201,24 +213,32 @@ function _sshTerminalWriteRestoreState(targetId = _sshTerminalCurrentTargetId(),
   try {
     sessionStorage.setItem(_SSH_TERMINAL_RESTORE_KEY, JSON.stringify({
       targetId: cleanTargetId,
+      locked: _sshTerminalIsLocked(),
       ts: Date.now(),
     }));
   } catch (e) {}
 }
 
-function _sshTerminalReadRestoreTarget() {
+function _sshTerminalReadRestoreState() {
   try {
     const raw = sessionStorage.getItem(_SSH_TERMINAL_RESTORE_KEY);
-    if (!raw) return '';
+    if (!raw) return null;
     const parsed = JSON.parse(raw);
     const targetId = String(parsed?.targetId || '').trim();
     const ts = Number(parsed?.ts || 0);
-    if (!targetId || !Number.isFinite(ts)) return '';
-    if (Date.now() - ts > 10 * 60 * 1000) return '';
-    return targetId;
+    if (!targetId || !Number.isFinite(ts)) return null;
+    if (Date.now() - ts > 10 * 60 * 1000) return null;
+    return {
+      targetId,
+      locked: parsed?.locked === true,
+    };
   } catch (e) {
-    return '';
+    return null;
   }
+}
+
+function _sshTerminalReadRestoreTarget() {
+  return _sshTerminalReadRestoreState()?.targetId || '';
 }
 
 function _sshTerminalClearRestoreState() {
@@ -239,6 +259,13 @@ function _sshTerminalApplyInitialTarget() {
   if (!restoredTarget) return false;
   _sshTerminalTargetId = restoredTarget;
   return true;
+}
+
+function _sshTerminalInitialLockWanted() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.has('terminal_lock')) return params.get('terminal_lock') === '1';
+  if (_sshTerminalNavigationType() !== 'reload') return false;
+  return _sshTerminalReadRestoreState()?.locked === true;
 }
 
 function _sshTerminalShouldRestoreAfterReload() {
@@ -264,6 +291,8 @@ function _sshTerminalApplyReloadParams(url) {
   url.searchParams.set('group', 'settings');
   url.searchParams.set('tab', 'ssh-terminal');
   url.searchParams.set('terminal', targetId);
+  if (_sshTerminalIsLocked()) url.searchParams.set('terminal_lock', '1');
+  else url.searchParams.delete('terminal_lock');
   return url;
 }
 
@@ -619,6 +648,7 @@ function _sshTerminalInit() {
     _sshTerminalScheduleSettledResize(true);
   });
   _sshTerminalApplyInitialTarget();
+  if (_sshTerminalInitialLockWanted()) _sshTerminalSetLocked(true);
   window.addEventListener('beforeunload', () => _sshTerminalWriteRestoreState());
   window.addEventListener('pagehide', () => _sshTerminalWriteRestoreState());
 }
