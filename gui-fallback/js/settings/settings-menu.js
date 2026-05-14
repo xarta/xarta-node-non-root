@@ -36,6 +36,7 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'nodes',           label: 'Nodes',          icon: HIEROGLYPHS.crookFlail, pageLabel: 'Fleet Nodes',     parent: 'pve-hosts', order: 0 },
         { id: 'local-dockge',    label: 'Local Dockge',   icon: HIEROGLYPHS.pyramid,    pageLabel: 'Local Dockge',    parent: 'pve-hosts', order: 1 },
         { id: 'vps-dockge',      label: 'VPS Dockge',     icon: HIEROGLYPHS.naosShrine, pageLabel: 'VPS Dockge',      parent: 'pve-hosts', order: 2 },
+        { id: 'ssh-terminal',    label: 'Terminal',       icon: HIEROGLYPHS.khaHorizon, pageLabel: 'SSH Terminal',    parent: 'pve-hosts', order: 3 },
         { id: 'settings',        label: 'App Config',     icon: HIEROGLYPHS.djedPillar, pageLabel: 'App Config',      parent: null,        order: 1 },
         { id: 'arp-manual',      label: 'Manual ARP',     icon: HIEROGLYPHS.obelisk,    pageLabel: 'Manual ARP',      parent: 'settings',  order: 0 },
         { id: 'ai-providers',    label: 'AI Providers',   icon: HIEROGLYPHS.falcon,     pageLabel: 'AI Providers',    parent: 'settings',  order: 1 },
@@ -191,10 +192,19 @@ const SettingsMenuConfig = createHubMenu({
             const def = this.defaultMenu.find(entry => entry.id === 'vdg-fn-refresh');
             if (def) this.currentMenu.push({ ...def });
         }
+        if (!this.currentMenu.some(entry => entry.id === 'ssh-terminal')) {
+            const def = this.defaultMenu.find(entry => entry.id === 'ssh-terminal');
+            if (def) this.currentMenu.push({ ...def });
+        }
         const vpsItem = this.currentMenu.find(entry => entry.id === 'vps-dockge');
         if (vpsItem) {
             vpsItem.parent = 'pve-hosts';
             vpsItem.order = 2;
+        }
+        const terminalItem = this.currentMenu.find(entry => entry.id === 'ssh-terminal');
+        if (terminalItem) {
+            terminalItem.parent = 'pve-hosts';
+            terminalItem.order = 3;
         }
         localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentMenu));
         localStorage.setItem(migrationKey, '1');

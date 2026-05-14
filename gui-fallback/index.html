@@ -37,6 +37,8 @@
   <link rel="stylesheet" href="css/hub-dialogs.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/embed-menu-grid.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/tts-pool.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="vendor/xterm/xterm.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/ssh-terminal.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="embed/clock-overlay.css?v={{$assetVersion}}" />
 </head>
 <body class="bp-font-role-root">
@@ -840,6 +842,20 @@
       </table>
     </div>
     <p id="vps-dockge-error" class="error-msg" hidden></p>
+  </section>
+
+  <!-- SSH Terminal -->
+  <section id="tab-ssh-terminal" class="tab-panel tab-panel--fill">
+    <div class="ssh-terminal-toolbar">
+      <select class="ssh-terminal-target" id="ssh-terminal-target" aria-label="Terminal target"></select>
+      <button type="button" id="ssh-terminal-connect">Connect</button>
+      <button type="button" class="secondary" id="ssh-terminal-disconnect" disabled>Disconnect</button>
+      <button type="button" class="secondary" id="ssh-terminal-fullscreen" aria-pressed="false">Full Screen</button>
+      <span class="ssh-terminal-status" id="ssh-terminal-status" aria-live="polite"></span>
+    </div>
+    <div class="ssh-terminal-shell" id="ssh-terminal-shell">
+      <div class="ssh-terminal-xterm" id="ssh-terminal-xterm"></div>
+    </div>
   </section>
 
   <!-- VLANs -->
@@ -3706,6 +3722,8 @@
 <script src="js/settings/pve-hosts.js?v={{$assetVersion}}"></script>
 <script src="js/settings/local-dockge.js?v={{$assetVersion}}"></script>
 <script src="js/settings/vps-dockge.js?v={{$assetVersion}}"></script>
+<script src="vendor/xterm/xterm.js?v={{$assetVersion}}"></script>
+<script src="js/settings/ssh-terminal.js?v={{$assetVersion}}"></script>
 <script src="js/settings/arp-manual.js?v={{$assetVersion}}"></script>
 <script src="js/settings/ai-providers.js?v={{$assetVersion}}"></script>
 <script src="js/settings/nav-items.js?v={{$assetVersion}}"></script>

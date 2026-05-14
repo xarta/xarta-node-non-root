@@ -311,6 +311,7 @@ function switchTab(tab) {
   if (tab === 'dockge-stacks'  && !_dockgeStacks.length)  loadDockgeStacks();
   if (tab === 'local-dockge'   && !_localDockgeStacks.length) loadLocalDockgeStacks();
   if (tab === 'vps-dockge'     && !_vpsDockgeStacks.length)   loadVpsDockgeStacks();
+  if (tab === 'ssh-terminal')  { if (typeof _sshTerminalLoadTab === 'function') _sshTerminalLoadTab(); }
   if (tab === 'caddy-configs'  && !_caddyConfigs.length)  loadCaddyConfigs();
   if (tab === 'pve-hosts'      && !_pveHosts.length)      loadPveHosts();
   if (tab === 'vlans'          && !_vlans.length)         loadVlans();

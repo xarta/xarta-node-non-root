@@ -158,7 +158,9 @@ function _vpsDockgeFilterRows(stacks) {
 
 function _vpsDockgeActionButtons(stack) {
   const name = esc(stack.stack_name || '');
+  const rawName = stack.stack_name || '';
   const status = String(stack.status || 'unknown').toLowerCase();
+  const projectUrl = _vpsDockgeProjectUrl(rawName);
   const buttons = [];
   if (status === 'running' || status === 'partial') {
     buttons.push(`<button class="secondary table-icon-btn table-icon-btn--restart" type="button" title="Restart stack" aria-label="Restart stack" data-vps-dockge-action="restart" data-vps-dockge-stack="${name}"></button>`);
@@ -177,7 +179,22 @@ function _vpsDockgeActionButtons(stack) {
       title="Generate and download MP3 narration"
       aria-label="Generate and download ${name} MP3 narration"
       data-vps-dockge-download-stack="${name}"></button>`);
-  return `<div class="table-inline-actions">${buttons.join('')}</div>`;
+  if (projectUrl) {
+    buttons.push(`<button class="secondary table-icon-btn table-icon-btn--external" type="button"
+      title="Open project repository or website"
+      aria-label="Open ${name} project repository or website"
+      data-vps-dockge-project-url="${esc(projectUrl)}"></button>`);
+  } else {
+    buttons.push(`<button class="secondary table-icon-btn table-icon-btn--external" type="button"
+      title="No project repository configured"
+      aria-label="No project repository configured for ${name}"
+      disabled></button>`);
+  }
+  buttons.push(`<button class="secondary table-icon-btn table-icon-btn--terminal" type="button"
+    title="${String(rawName).toLowerCase() === 'hermes' ? 'VPS Hermes terminal target is not configured yet' : 'No terminal target configured'}"
+    aria-label="No terminal target configured for ${name}"
+    disabled></button>`);
+  return `<div class="table-inline-actions table-inline-actions--stacked">${buttons.join('')}</div>`;
 }
 
 function _vpsDockgeNarrationButtons() {
@@ -859,6 +876,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (downloadBtn) {
       e.preventDefault();
       _vpsDockgeDownloadNarrationMp3(downloadBtn.dataset.vpsDockgeDownloadStack, downloadBtn);
+      return;
+    }
+    const projectBtn = e.target.closest('[data-vps-dockge-project-url]');
+    if (projectBtn && projectBtn.dataset.vpsDockgeProjectUrl) {
+      e.preventDefault();
+      window.open(projectBtn.dataset.vpsDockgeProjectUrl, '_blank', 'noopener,noreferrer');
       return;
     }
     const errorBtn = e.target.closest('[data-vps-dockge-error-stack]');

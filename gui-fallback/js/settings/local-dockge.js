@@ -18,6 +18,7 @@ const _LOCAL_DOCKGE_PROJECT_URLS = Object.freeze({
   liteparse: 'https://github.com/run-llama/liteparse',
   markitdown: 'https://github.com/microsoft/markitdown',
   'matrix-synapse': 'https://element-hq.github.io/synapse/latest/',
+  'hermes-local': 'https://github.com/NousResearch/hermes-agent',
   'nullclaw01': 'https://github.com/nullclaw/nullclaw',
   'nullclaw-basics': 'https://github.com/nullclaw/nullclaw',
   'nullclaw-docs-search': 'https://github.com/nullclaw/nullclaw',
@@ -154,7 +155,9 @@ function _localDockgeFilterRows(stacks) {
 
 function _localDockgeActionButtons(stack) {
   const name = esc(stack.stack_name || '');
+  const rawName = stack.stack_name || '';
   const status = String(stack.status || 'unknown').toLowerCase();
+  const projectUrl = _localDockgeProjectUrl(rawName);
   const buttons = [];
   if (status === 'running' || status === 'partial') {
     buttons.push(`<button class="secondary table-icon-btn table-icon-btn--restart" type="button" title="Restart stack" aria-label="Restart stack" data-local-dockge-action="restart" data-local-dockge-stack="${name}"></button>`);
@@ -173,7 +176,29 @@ function _localDockgeActionButtons(stack) {
       title="Generate and download MP3 narration"
       aria-label="Generate and download ${name} MP3 narration"
       data-local-dockge-download-stack="${name}"></button>`);
-  return `<div class="table-inline-actions">${buttons.join('')}</div>`;
+  if (projectUrl) {
+    buttons.push(`<button class="secondary table-icon-btn table-icon-btn--external" type="button"
+      title="Open project repository or website"
+      aria-label="Open ${name} project repository or website"
+      data-local-dockge-project-url="${esc(projectUrl)}"></button>`);
+  } else {
+    buttons.push(`<button class="secondary table-icon-btn table-icon-btn--external" type="button"
+      title="No project repository configured"
+      aria-label="No project repository configured for ${name}"
+      disabled></button>`);
+  }
+  if (String(rawName).toLowerCase() === 'hermes-local') {
+    buttons.push(`<button class="secondary table-icon-btn table-icon-btn--terminal" type="button"
+      title="Open Hermes terminal"
+      aria-label="Open ${name} terminal"
+      data-ssh-terminal-target="local-hermes"></button>`);
+  } else {
+    buttons.push(`<button class="secondary table-icon-btn table-icon-btn--terminal" type="button"
+      title="No terminal target configured"
+      aria-label="No terminal target configured for ${name}"
+      disabled></button>`);
+  }
+  return `<div class="table-inline-actions table-inline-actions--stacked">${buttons.join('')}</div>`;
 }
 
 function _localDockgeNarrationButtons() {
@@ -854,6 +879,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (downloadBtn) {
       e.preventDefault();
       _localDockgeDownloadNarrationMp3(downloadBtn.dataset.localDockgeDownloadStack, downloadBtn);
+      return;
+    }
+    const projectBtn = e.target.closest('[data-local-dockge-project-url]');
+    if (projectBtn && projectBtn.dataset.localDockgeProjectUrl) {
+      e.preventDefault();
+      window.open(projectBtn.dataset.localDockgeProjectUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    const terminalBtn = e.target.closest('[data-ssh-terminal-target]');
+    if (terminalBtn && terminalBtn.dataset.sshTerminalTarget && typeof openSshTerminalTarget === 'function') {
+      e.preventDefault();
+      openSshTerminalTarget(terminalBtn.dataset.sshTerminalTarget);
       return;
     }
     const errorBtn = e.target.closest('[data-local-dockge-error-stack]');
