@@ -222,6 +222,9 @@ function _sshTerminalDisconnect() {
     _sshTerminalWs.close(1000, 'closed by browser');
     _sshTerminalWs = null;
   }
+  const targetId = _sshTerminalTargetId || 'local-hermes';
+  apiFetch(`/api/v1/ssh-terminal/targets/${encodeURIComponent(targetId)}/disconnect`, { method: 'POST' })
+    .catch(() => {});
   _sshTerminalSetConnected(false);
   _sshTerminalSetStatus('Disconnected.');
 }
@@ -271,6 +274,10 @@ function _sshTerminalSelectLocalHermes() {
   openSshTerminalTarget('local-hermes');
 }
 
+function _sshTerminalSelectLocalHermesSetup() {
+  openSshTerminalTarget('local-hermes-setup');
+}
+
 function _sshTerminalIsConnected() {
   return !!(_sshTerminalWs && _sshTerminalWs.readyState === WebSocket.OPEN);
 }
@@ -299,6 +306,7 @@ window._sshTerminalConnect = _sshTerminalConnect;
 window._sshTerminalDisconnect = _sshTerminalDisconnect;
 window._sshTerminalToggleFullscreen = _sshTerminalToggleFullscreen;
 window._sshTerminalSelectLocalHermes = _sshTerminalSelectLocalHermes;
+window._sshTerminalSelectLocalHermesSetup = _sshTerminalSelectLocalHermesSetup;
 window._sshTerminalIsConnected = _sshTerminalIsConnected;
 window._sshTerminalFullscreenLabel = _sshTerminalFullscreenLabel;
 window._sshTerminalResize = _sshTerminalResize;
