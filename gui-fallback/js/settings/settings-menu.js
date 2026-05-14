@@ -84,6 +84,10 @@ const SettingsMenuConfig = createHubMenu({
         // ── Local Dockge page function items ─────────────────────────────
         { id: 'ldg-fn-refresh',  label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'ldg.refresh',  activeOn: ['local-dockge'], parent: 'settings-layout', order: 0 },
         { id: 'vdg-fn-refresh',  label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'vdg.refresh',  activeOn: ['vps-dockge'], parent: 'settings-layout', order: 0 },
+        { id: 'ssh-fn-local-hermes', label: 'Local Hermes',  icon: HIEROGLYPHS.khaHorizon, fn: 'ssh.localHermes', activeOn: ['ssh-terminal'], parent: 'settings-layout', order: 0 },
+        { id: 'ssh-fn-connect',  label: 'Connect',           icon: HIEROGLYPHS.nefer,      fn: 'ssh.connect', activeOn: ['ssh-terminal'], parent: 'settings-layout', order: 1 },
+        { id: 'ssh-fn-disconnect', label: 'Disconnect',      icon: HIEROGLYPHS.tjet,       fn: 'ssh.disconnect', activeOn: ['ssh-terminal'], parent: 'settings-layout', order: 2 },
+        { id: 'ssh-fn-fullscreen', label: 'Full Screen',     icon: HIEROGLYPHS.khaHorizon, fn: 'ssh.fullscreen', activeOn: ['ssh-terminal'], parent: 'settings-layout', order: 3 },
 
         // ── Manual ARP page function items ────────────────────────────────
         { id: 'arp-fn-add',      label: 'Add entry',        icon: HIEROGLYPHS.obelisk,    fn: 'arp.add',      activeOn: ['arp-manual'],   parent: 'settings-layout', order: 0 },
@@ -206,6 +210,22 @@ const SettingsMenuConfig = createHubMenu({
             terminalItem.parent = 'pve-hosts';
             terminalItem.order = 3;
         }
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentMenu));
+        localStorage.setItem(migrationKey, '1');
+    };
+})();
+
+(function migrateSshTerminalFunctionItems() {
+    const migrationKey = 'blueprintsSettingsMenuSshTerminalFunctions20260514';
+    const originalLoadConfig = SettingsMenuConfig.loadConfig.bind(SettingsMenuConfig);
+    SettingsMenuConfig.loadConfig = function loadConfigWithSshTerminalFunctionMigration() {
+        originalLoadConfig();
+        if (localStorage.getItem(migrationKey) === '1') return;
+        ['ssh-fn-local-hermes', 'ssh-fn-connect', 'ssh-fn-disconnect', 'ssh-fn-fullscreen'].forEach(id => {
+            if (this.currentMenu.some(entry => entry.id === id)) return;
+            const def = this.defaultMenu.find(entry => entry.id === id);
+            if (def) this.currentMenu.push({ ...def });
+        });
         localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentMenu));
         localStorage.setItem(migrationKey, '1');
     };
@@ -616,6 +636,10 @@ SettingsMenuConfig.registerFunctions({
     // Local Dockge
     'ldg.refresh':  () => loadLocalDockgeStacks(),
     'vdg.refresh':  () => loadVpsDockgeStacks(),
+    'ssh.localHermes': () => window._sshTerminalSelectLocalHermes?.(),
+    'ssh.connect':  () => window._sshTerminalConnect?.(),
+    'ssh.disconnect': () => window._sshTerminalDisconnect?.(),
+    'ssh.fullscreen': () => window._sshTerminalToggleFullscreen?.(),
 
     // Manual ARP
     'arp.add':      () => addArpManualEntry(),
@@ -709,11 +733,14 @@ SettingsMenuConfig.registerFunctions({
 SettingsMenuConfig.registerLabelGetters({
     'doc-fn-search': () => 'Search',
     'doc-fn-frontmatter': () => docsFrontmatterToggleLabel(),
+    'ssh-fn-fullscreen': () => window._sshTerminalFullscreenLabel?.() || 'Full Screen',
 });
 
 SettingsMenuConfig.registerVisibilityGetters({
     'doc-fn-expand-search': () => false,
     'doc-fn-collapse-search': () => false,
+    'ssh-fn-connect': () => !window._sshTerminalIsConnected?.(),
+    'ssh-fn-disconnect': () => !!window._sshTerminalIsConnected?.(),
 });
 
 SettingsMenuConfig.registerLabelGetters({

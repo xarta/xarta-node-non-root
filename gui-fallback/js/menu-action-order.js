@@ -7,7 +7,10 @@
   root.MenuActionOrder = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   const RULES = [
+    { key: 'terminal-target', rank: 8, patterns: [/ssh-fn-local-hermes/, /\blocal hermes\b/] },
     { key: 'refresh', rank: 10, patterns: [/\brefresh\b/, /\breload\b/, /refresh ui/] },
+    { key: 'connect', rank: 12, patterns: [/\bconnect\b/] },
+    { key: 'disconnect', rank: 14, patterns: [/\bdisconnect\b/] },
     { key: 'run-probe', rank: 20, patterns: [/\bscan\b/, /\bprobe\b/, /\bsweep\b/, /\brebuild\b/, /\brun\b/, /\bsteps\b/, /fleet update/] },
     { key: 'add-create-import', rank: 30, patterns: [/\badd\b/, /\bnew\b/, /\bcreate\b/, /\bimport\b/, /download extension/] },
     { key: 'search', rank: 35, patterns: [/\bsearch\b/, /\bfind\b/] },
@@ -22,6 +25,7 @@
     { key: 'grouping', rank: 64, patterns: [/\bgroup:\b/, /\bgroup\b/] },
     { key: 'page-switch', rank: 65, patterns: [/\bpage\s*\d+\b/, /\bsub\s*page\b/, /\bview\s*\d+\b/] },
     { key: 'horiz-scroll', rank: 66, patterns: [/horiz\s*scroll/, /scroll:\s*is\s*(on|off)/, /\bscroll\b/] },
+    { key: 'fullscreen', rank: 67, patterns: [/\bfull\s*screen\b/, /\bfullscreen\b/] },
     { key: 'visibility-filter', rank: 68, patterns: [/\bhide inactive\b/, /\bshow inactive\b/, /\binactive\b/, /\bhide obsolete\b/, /\bshow obsolete\b/, /\bobsolete\b/, /\bshow archived\b/, /\bshow active\b/, /\barchived\b/] },
     { key: 'expand-all', rank: 70, patterns: [/\bexpand all\b/] },
     { key: 'collapse-all', rank: 72, patterns: [/\bcollapse all\b/] },

@@ -846,13 +846,7 @@
 
   <!-- SSH Terminal -->
   <section id="tab-ssh-terminal" class="tab-panel tab-panel--fill">
-    <div class="ssh-terminal-toolbar">
-      <select class="ssh-terminal-target" id="ssh-terminal-target" aria-label="Terminal target"></select>
-      <button type="button" id="ssh-terminal-connect">Connect</button>
-      <button type="button" class="secondary" id="ssh-terminal-disconnect" disabled>Disconnect</button>
-      <button type="button" class="secondary" id="ssh-terminal-fullscreen" aria-pressed="false">Full Screen</button>
-      <span class="ssh-terminal-status" id="ssh-terminal-status" aria-live="polite"></span>
-    </div>
+    <span class="ssh-terminal-status" id="ssh-terminal-status" aria-live="polite" hidden></span>
     <div class="ssh-terminal-shell" id="ssh-terminal-shell">
       <div class="ssh-terminal-xterm" id="ssh-terminal-xterm"></div>
     </div>
