@@ -295,7 +295,11 @@ function openSshTerminalTarget(targetId, options = {}) {
   if (_sshTerminalTerm) {
     _sshTerminalTerm.writeln(`\r\n[Switching to ${nextTargetId}]`);
   }
-  if (typeof switchGroup === 'function') switchGroup('settings');
+  if (typeof _syncActiveMenuForTab === 'function') {
+    _syncActiveMenuForTab('ssh-terminal');
+  } else if (typeof switchGroup === 'function') {
+    switchGroup('settings');
+  }
   if (typeof switchTab === 'function') switchTab('ssh-terminal');
   if (typeof SettingsMenuConfig !== 'undefined') SettingsMenuConfig.updateActiveTab('ssh-terminal');
   window.setTimeout(() => {
