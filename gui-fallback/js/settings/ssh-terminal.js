@@ -10,6 +10,7 @@ let _sshTerminalResizeObserver = null;
 let _sshTerminalLastSize = { cols: 100, rows: 28 };
 let _sshTerminalHasAutoConnected = false;
 let _sshTerminalManualDisconnect = false;
+let _sshTerminalOpenToken = 0;
 
 function _sshTerminalEls() {
   return {
@@ -102,6 +103,21 @@ function _sshTerminalScheduleSettledResize(send = true) {
   [0, 40, 180, 500, 1000, 1800].forEach(delay => {
     window.setTimeout(() => _sshTerminalResize(send, true), delay);
   });
+}
+
+function _sshTerminalForcePaint() {
+  if (!_sshTerminalTerm || !_sshTerminalIsActiveTab()) return;
+  const { xterm } = _sshTerminalEls();
+  _sshTerminalResize(true, true);
+  if (xterm) {
+    xterm.classList.add('ssh-terminal-xterm--reflow');
+    xterm.getBoundingClientRect();
+    window.requestAnimationFrame(() => xterm.classList.remove('ssh-terminal-xterm--reflow'));
+  }
+  try {
+    _sshTerminalTerm.clearTextureAtlas?.();
+    _sshTerminalTerm.refresh(0, Math.max(0, _sshTerminalTerm.rows - 1));
+  } catch (e) {}
 }
 
 function _sshTerminalWait(ms) {
@@ -197,6 +213,7 @@ function _sshTerminalEnsureTerminal() {
     },
   });
   _sshTerminalTerm.open(xterm);
+  _sshTerminalForcePaint();
   _sshTerminalTerm.onData(data => {
     if (_sshTerminalWs && _sshTerminalWs.readyState === WebSocket.OPEN) {
       _sshTerminalWs.send(JSON.stringify({ type: 'input', data }));
@@ -282,9 +299,12 @@ async function _sshTerminalConnect() {
     _sshTerminalSetStatus('Connected.', 'ok');
     _sshTerminalEnsurePortraitVisibility();
     _sshTerminalScheduleSettledResize(true);
+    _sshTerminalForcePaint();
   });
   ws.addEventListener('message', event => {
-    term.write(String(event.data || ''));
+    term.write(String(event.data || ''), () => {
+      _sshTerminalForcePaint();
+    });
   });
   ws.addEventListener('close', event => {
     if (_sshTerminalWs !== ws) return;
@@ -346,7 +366,21 @@ async function _sshTerminalLoadTab() {
   }
 }
 
+async function _sshTerminalOpenTargetNow(targetId, token) {
+  try {
+    _sshTerminalTargetId = targetId || _sshTerminalTargetId || 'local-hermes-container';
+    await _sshTerminalLoadTargets();
+    if (token !== _sshTerminalOpenToken) return;
+    const { target } = _sshTerminalEls();
+    if (target && _sshTerminalTargetId) target.value = _sshTerminalTargetId;
+    await _sshTerminalConnect();
+  } catch (e) {
+    _sshTerminalSetStatus(`Unable to open terminal target: ${e.message}`, 'error');
+  }
+}
+
 function openSshTerminalTarget(targetId, options = {}) {
+  const token = ++_sshTerminalOpenToken;
   const nextTargetId = targetId || 'local-hermes-container';
   const previousTargetId = _sshTerminalTargetId || 'local-hermes-container';
   if (_sshTerminalWs && previousTargetId !== nextTargetId) {
@@ -355,7 +389,7 @@ function openSshTerminalTarget(targetId, options = {}) {
   }
   _sshTerminalTargetId = nextTargetId;
   if (options.connect !== false) {
-    _sshTerminalHasAutoConnected = false;
+    _sshTerminalHasAutoConnected = true;
     _sshTerminalManualDisconnect = false;
   }
   if (_sshTerminalTerm) {
@@ -368,7 +402,8 @@ function openSshTerminalTarget(targetId, options = {}) {
   window.setTimeout(() => {
     const { target } = _sshTerminalEls();
     if (target && _sshTerminalTargetId) target.value = _sshTerminalTargetId;
-    _sshTerminalLoadTab();
+    if (options.connect === false) _sshTerminalLoadTab();
+    else _sshTerminalOpenTargetNow(nextTargetId, token);
   }, 0);
 }
 

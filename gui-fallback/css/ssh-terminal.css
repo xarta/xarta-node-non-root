@@ -53,6 +53,10 @@
   box-sizing: border-box;
 }
 
+.ssh-terminal-xterm--reflow {
+  transform: translateZ(0);
+}
+
 .ssh-terminal-xterm .xterm {
   height: 100%;
 }
