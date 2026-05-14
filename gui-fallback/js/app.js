@@ -255,6 +255,10 @@ window.BlueprintsHubMenuBridge = {
 
 /* ── Group + tab switching ───────────────────────────────────────────── */
 function switchGroup(group) {
+  if (typeof _sshTerminalShouldBlockNavigation === 'function'
+      && _sshTerminalShouldBlockNavigation(group)) {
+    return;
+  }
   _selectorOriginMenuGroup = group;
   _closeActiveOriginMenus();
   _activeGroup = group;
@@ -394,7 +398,17 @@ document.addEventListener('DOMContentLoaded', () => {
   if (typeof HubModal !== 'undefined') HubModal.init();
   const _urlGroup = new URLSearchParams(window.location.search).get('group');
   const _urlTab = new URLSearchParams(window.location.search).get('tab');
-  if (_urlGroup && ['synthesis', 'probes', 'settings'].includes(_urlGroup)) switchGroup(_urlGroup);
+  const _restoreSshAfterReload = !_urlGroup
+    && !_urlTab
+    && typeof _sshTerminalShouldRestoreAfterReload === 'function'
+    && _sshTerminalShouldRestoreAfterReload();
+  if (_restoreSshAfterReload) {
+    switchGroup('settings');
+    switchTab('ssh-terminal');
+    if (typeof SettingsMenuConfig !== 'undefined') SettingsMenuConfig.updateActiveTab('ssh-terminal');
+  } else if (_urlGroup && ['synthesis', 'probes', 'settings'].includes(_urlGroup)) {
+    switchGroup(_urlGroup);
+  }
   if (_urlTab) {
     switchTab(_urlTab);
     if (_urlGroup === 'synthesis' && typeof SynthesisMenuConfig !== 'undefined') SynthesisMenuConfig.updateActiveTab(_urlTab);
@@ -425,7 +439,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // On mobile form factor, open the clock on every fresh page load / web app launch.
   // Only fires when no ?tab= or ?group= URL param is directing to a specific page.
   // Tab navigation inside the SPA never reloads the page so this never interferes.
-  if (!_urlTab && !_urlGroup && _isMobileFormFactor()) {
+  if (!_urlTab && !_urlGroup && !_restoreSshAfterReload && _isMobileFormFactor()) {
     window.setTimeout(() => {
       if (typeof window.openClockOverlay === 'function') window.openClockOverlay();
     }, 0);

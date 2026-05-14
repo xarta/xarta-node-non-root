@@ -12,6 +12,7 @@ let _sshTerminalHasAutoConnected = false;
 let _sshTerminalManualDisconnect = false;
 let _sshTerminalOpenToken = 0;
 let _sshTerminalLocked = false;
+const _SSH_TERMINAL_RESTORE_KEY = 'blueprintsSshTerminalRestore';
 
 function _sshTerminalEls() {
   return {
@@ -183,6 +184,77 @@ function _sshTerminalSetLocked(locked) {
     _sshTerminalReleaseOrientationLock();
   }
   _sshTerminalUpdateMenuState();
+}
+
+function _sshTerminalNavigationType() {
+  try {
+    return String(performance.getEntriesByType('navigation')?.[0]?.type || '');
+  } catch (e) {
+    return '';
+  }
+}
+
+function _sshTerminalWriteRestoreState(targetId = _sshTerminalCurrentTargetId(), force = false) {
+  const cleanTargetId = String(targetId || '').trim();
+  if (!cleanTargetId) return;
+  if (!force && !_sshTerminalIsActiveTab()) return;
+  try {
+    sessionStorage.setItem(_SSH_TERMINAL_RESTORE_KEY, JSON.stringify({
+      targetId: cleanTargetId,
+      ts: Date.now(),
+    }));
+  } catch (e) {}
+}
+
+function _sshTerminalReadRestoreTarget() {
+  try {
+    const raw = sessionStorage.getItem(_SSH_TERMINAL_RESTORE_KEY);
+    if (!raw) return '';
+    const parsed = JSON.parse(raw);
+    const targetId = String(parsed?.targetId || '').trim();
+    const ts = Number(parsed?.ts || 0);
+    if (!targetId || !Number.isFinite(ts)) return '';
+    if (Date.now() - ts > 10 * 60 * 1000) return '';
+    return targetId;
+  } catch (e) {
+    return '';
+  }
+}
+
+function _sshTerminalClearRestoreState() {
+  try {
+    sessionStorage.removeItem(_SSH_TERMINAL_RESTORE_KEY);
+  } catch (e) {}
+}
+
+function _sshTerminalApplyInitialTarget() {
+  const params = new URLSearchParams(window.location.search);
+  const urlTarget = params.get('terminal');
+  if (urlTarget) {
+    _sshTerminalTargetId = urlTarget;
+    return true;
+  }
+  if (_sshTerminalNavigationType() !== 'reload') return false;
+  const restoredTarget = _sshTerminalReadRestoreTarget();
+  if (!restoredTarget) return false;
+  _sshTerminalTargetId = restoredTarget;
+  return true;
+}
+
+function _sshTerminalShouldRestoreAfterReload() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('terminal')) return true;
+  return _sshTerminalNavigationType() === 'reload' && !!_sshTerminalReadRestoreTarget();
+}
+
+function _sshTerminalApplyReloadParams(url) {
+  if (!url || !_sshTerminalIsActiveTab()) return url;
+  const targetId = _sshTerminalCurrentTargetId();
+  if (!targetId) return url;
+  url.searchParams.set('group', 'settings');
+  url.searchParams.set('tab', 'ssh-terminal');
+  url.searchParams.set('terminal', targetId);
+  return url;
 }
 
 function _sshTerminalToggleLock() {
@@ -359,6 +431,7 @@ async function _sshTerminalConnect() {
   ws.addEventListener('open', () => {
     term.clear();
     term.focus();
+    _sshTerminalWriteRestoreState(_sshTerminalTargetId, true);
     _sshTerminalSetStatus('Connected.', 'ok');
     _sshTerminalEnsurePortraitVisibility();
     _sshTerminalScheduleSettledResize(true);
@@ -385,6 +458,7 @@ function _sshTerminalDisconnect() {
   _sshTerminalManualDisconnect = true;
   _sshTerminalHasAutoConnected = true;
   _sshTerminalSetLocked(false);
+  _sshTerminalClearRestoreState();
   document.body.classList.remove('ssh-terminal-phone-portrait');
   const disconnectedTarget = _sshTerminalTargetId || 'local-hermes-container';
   if (_sshTerminalTerm) {
@@ -453,6 +527,7 @@ function openSshTerminalTarget(targetId, options = {}) {
     _sshTerminalDisconnect();
   }
   _sshTerminalTargetId = nextTargetId;
+  _sshTerminalWriteRestoreState(nextTargetId, true);
   if (options.connect !== false) {
     _sshTerminalHasAutoConnected = true;
     _sshTerminalManualDisconnect = false;
@@ -533,8 +608,9 @@ function _sshTerminalInit() {
     if (typeof SettingsMenuConfig !== 'undefined') SettingsMenuConfig.updateActiveTab('ssh-terminal');
     _sshTerminalScheduleSettledResize(true);
   });
-  const urlTarget = new URLSearchParams(window.location.search).get('terminal');
-  if (urlTarget) _sshTerminalTargetId = urlTarget;
+  _sshTerminalApplyInitialTarget();
+  window.addEventListener('beforeunload', () => _sshTerminalWriteRestoreState());
+  window.addEventListener('pagehide', () => _sshTerminalWriteRestoreState());
 }
 
 document.addEventListener('DOMContentLoaded', _sshTerminalInit);
@@ -556,3 +632,5 @@ window._sshTerminalIsLocked = _sshTerminalIsLocked;
 window._sshTerminalLockLabel = _sshTerminalLockLabel;
 window._sshTerminalShouldBlockNavigation = _sshTerminalShouldBlockNavigation;
 window._sshTerminalShouldBlockMenuAction = _sshTerminalShouldBlockMenuAction;
+window._sshTerminalShouldRestoreAfterReload = _sshTerminalShouldRestoreAfterReload;
+window._sshTerminalApplyReloadParams = _sshTerminalApplyReloadParams;

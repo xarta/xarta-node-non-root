@@ -782,6 +782,9 @@ async function forceRefreshUiAssets() {
     const reloadUrl = new URL(window.location.href);
     if (pageState.group) reloadUrl.searchParams.set('group', pageState.group);
     if (pageState.tab) reloadUrl.searchParams.set('tab', pageState.tab);
+    if (typeof window._sshTerminalApplyReloadParams === 'function') {
+      window._sshTerminalApplyReloadParams(reloadUrl);
+    }
     try { localStorage.removeItem('bp_fe_settings'); } catch (_) {}
     if ('serviceWorker' in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
