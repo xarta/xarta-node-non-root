@@ -553,6 +553,28 @@ function createHubMenu(cfg) {
             this.closeAnchoredMenus();
         },
 
+        _openSshTerminalMenuItem(item) {
+            if (!item || !item.sshTargetId) return false;
+            this._playItemSound(item.id);
+            if (item.sshTargetEnabled === false) {
+                if (typeof HubDialogs !== 'undefined') {
+                    HubDialogs.alert({
+                        title: 'Terminal Pending',
+                        message: `${this._displayLabel(item)} is listed but not enabled yet.`,
+                        tone: 'info',
+                        badge: 'SSH',
+                    });
+                }
+                return true;
+            }
+            if (typeof window.openSshTerminalTarget === 'function') {
+                window.openSshTerminalTarget(item.sshTargetId);
+            }
+            this.closeMenu();
+            this.closeAnchoredMenus();
+            return true;
+        },
+
         openPrimaryMenuAt(anchorEl) {
             if (!anchorEl || typeof anchorEl.getBoundingClientRect !== 'function') return false;
             const topItems = this.getTopLevelItems().filter(item => item.id !== cfg.mobilePinnedId);
@@ -615,6 +637,7 @@ function createHubMenu(cfg) {
                         childBtn.innerHTML = this._iconHtml(child.id, child.icon) + '\u00a0' + this._displayLabel(child);
                         childBtn.addEventListener('click', (event) => {
                             event.stopPropagation();
+                            if (this._openSshTerminalMenuItem(child)) return;
                             const childPanel = document.getElementById('tab-' + child.id);
                             const childChildren = this.getChildren(child.id);
                             const targetId = childPanel ? child.id : (childChildren[0]?.id || child.id);
@@ -659,6 +682,7 @@ function createHubMenu(cfg) {
                     btn.innerHTML = this._iconHtml(item.id, item.icon) + '\u00a0' + (item.pageLabel || this._displayLabel(item));
                     btn.addEventListener('click', (event) => {
                         event.stopPropagation();
+                        if (this._openSshTerminalMenuItem(item)) return;
                         this._navigatePrimaryMenuTarget(item.id);
                     });
                     row.appendChild(btn);

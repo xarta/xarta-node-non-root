@@ -106,3 +106,32 @@ button.table-icon-btn--terminal::before {
     margin: 0 -10px -10px;
   }
 }
+
+@media (max-width: 600px) and (orientation: portrait) {
+  body.ssh-terminal-phone-portrait.shade-is-up header {
+    visibility: visible;
+  }
+
+  body.ssh-terminal-phone-portrait.shade-is-up #body-shade {
+    transform: none !important;
+    transition: none !important;
+  }
+
+  body.ssh-terminal-phone-portrait.shade-is-up #tab-ssh-terminal.active {
+    position: fixed;
+    inset: var(--header-h, 0px) 0 0 0;
+    z-index: 4;
+    margin: 0;
+    padding: 0 10px 10px;
+    background: var(--bg);
+  }
+
+  body.ssh-terminal-phone-portrait.shade-is-up #tab-ssh-terminal.active .body-shade-handle {
+    flex: 0 0 20px;
+  }
+
+  body.ssh-terminal-phone-portrait.shade-is-up #tab-ssh-terminal.active .ssh-terminal-shell {
+    flex: 1 1 auto;
+    min-height: 0 !important;
+  }
+}
