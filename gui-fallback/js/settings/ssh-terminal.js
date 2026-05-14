@@ -104,6 +104,19 @@ function _sshTerminalScheduleSettledResize(send = true) {
   });
 }
 
+function _sshTerminalShouldAutoShade() {
+  return _sshTerminalIsActiveTab()
+    && window.matchMedia
+    && window.matchMedia('(max-width: 600px) and (orientation: portrait)').matches;
+}
+
+function _sshTerminalEnsurePortraitVisibility() {
+  if (!_sshTerminalShouldAutoShade()) return;
+  if (document.body.classList.contains('shade-is-up')) return;
+  window.BodyShade?.snapUp?.();
+  _sshTerminalScheduleSettledResize(true);
+}
+
 function _sshTerminalEnsureTerminal() {
   if (_sshTerminalTerm) return _sshTerminalTerm;
   if (typeof Terminal === 'undefined') {
@@ -220,6 +233,7 @@ async function _sshTerminalConnect() {
     term.clear();
     term.focus();
     _sshTerminalSetStatus('Connected.', 'ok');
+    _sshTerminalEnsurePortraitVisibility();
     _sshTerminalScheduleSettledResize(true);
   });
   ws.addEventListener('message', event => {
@@ -272,6 +286,7 @@ async function _sshTerminalLoadTab() {
     await _sshTerminalLoadTargets();
     _sshTerminalSetStatus(_sshTerminalWs ? 'Connected.' : 'Ready.');
     _sshTerminalScheduleSettledResize(true);
+    window.setTimeout(_sshTerminalEnsurePortraitVisibility, 120);
     if (!_sshTerminalWs && !_sshTerminalHasAutoConnected && !_sshTerminalManualDisconnect) {
       _sshTerminalHasAutoConnected = true;
       window.setTimeout(() => _sshTerminalConnect(), 80);
