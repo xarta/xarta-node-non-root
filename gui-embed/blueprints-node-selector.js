@@ -591,6 +591,11 @@
           if (tab) nextUrl.searchParams.set('tab', tab);
         }
       } catch (_e) { /* non-fallback-UI context — skip silently */ }
+      try {
+        if (typeof window._sshTerminalApplyReloadParams === 'function') {
+          window._sshTerminalApplyReloadParams(nextUrl);
+        }
+      } catch (_e) { /* page-specific reload state is optional */ }
 
       window.location.replace(nextUrl.toString());
     } catch (error) {
