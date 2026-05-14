@@ -1,11 +1,76 @@
 /* ── API authentication (TOTP) ──────────────────────────────────────── */
 const _LS_SECRET_KEY    = 'blueprints_api_secret';
 const _LS_FE_SETTINGS   = 'bp_fe_settings';
+const _LS_TIME_OFFSETS  = 'blueprints_api_time_offsets_v1';
+const _API_TIME_TTL_MS  = 5 * 60 * 1000;
+const _apiTimeSyncInflight = new Map();
 
-async function _computeApiToken(secretHex) {
+function _apiOriginFor(url) {
+  try {
+    return new URL(url || window.location.href, window.location.href).origin;
+  } catch {
+    return window.location.origin;
+  }
+}
+
+function _loadApiTimeOffsets() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(_LS_TIME_OFFSETS) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function _storedApiTimeOffset(origin) {
+  const entry = _loadApiTimeOffsets()[origin];
+  if (!entry || typeof entry.offsetMs !== 'number' || typeof entry.syncedAt !== 'number') return null;
+  if ((Date.now() - entry.syncedAt) > _API_TIME_TTL_MS) return null;
+  return entry.offsetMs;
+}
+
+function _saveApiTimeOffset(origin, offsetMs) {
+  const offsets = _loadApiTimeOffsets();
+  offsets[origin] = { offsetMs, syncedAt: Date.now() };
+  try { localStorage.setItem(_LS_TIME_OFFSETS, JSON.stringify(offsets)); } catch (_) {}
+}
+
+async function _syncApiTime(url = window.location.href, opts = {}) {
+  const origin = _apiOriginFor(url);
+  const cached = _storedApiTimeOffset(origin);
+  if (!opts.force && cached !== null) return cached;
+  if (_apiTimeSyncInflight.has(origin)) return _apiTimeSyncInflight.get(origin);
+
+  const promise = (async () => {
+    const timeUrl = `${origin}/api/v1/auth/time`;
+    const startedAt = Date.now();
+    try {
+      const resp = await fetch(timeUrl, { cache: 'no-store' });
+      const endedAt = Date.now();
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      const serverMs = Number(data && data.server_epoch_ms);
+      if (!Number.isFinite(serverMs)) throw new Error('missing server_epoch_ms');
+      const offsetMs = Math.round((serverMs + ((endedAt - startedAt) / 2)) - endedAt);
+      _saveApiTimeOffset(origin, offsetMs);
+      return offsetMs;
+    } catch (_) {
+      const stale = _loadApiTimeOffsets()[origin];
+      return stale && typeof stale.offsetMs === 'number' ? stale.offsetMs : 0;
+    } finally {
+      _apiTimeSyncInflight.delete(origin);
+    }
+  })();
+
+  _apiTimeSyncInflight.set(origin, promise);
+  return promise;
+}
+
+async function _computeApiToken(secretHex, url = window.location.href, opts = {}) {
   if (!secretHex) return '';
   try {
-    const windowNum = Math.floor(Date.now() / 5000);
+    const offsetMs = await _syncApiTime(url, { force: !!opts.forceTimeSync });
+    const windowNum = Math.floor((Date.now() + offsetMs) / 5000);
     const keyBytes  = Uint8Array.from(secretHex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
     const msgBytes  = new TextEncoder().encode(String(windowNum));
     const key = await crypto.subtle.importKey(
@@ -68,7 +133,7 @@ async function apiFetch(url, options = {}) {
     await _waitForColumnResizeToEnd();
   }
   const secret = localStorage.getItem(_LS_SECRET_KEY) || '';
-  const token  = await _computeApiToken(secret);
+  const token  = await _computeApiToken(secret, url);
   const hadToken = !!token;
   const fetchOptions = { ...options };
   delete fetchOptions.deferDuringColumnResize;
@@ -90,7 +155,7 @@ async function apiFetch(url, options = {}) {
 
     // Retry once before showing auth-failed UI to avoid false alarms on
     // occasional boundary timing and transient 401 responses.
-    const retryToken = await _computeApiToken(secret);
+    const retryToken = await _computeApiToken(secret, url, { forceTimeSync: true });
     if (retryToken) {
       const retryResp = await fetch(url, {
         ...fetchOptions,

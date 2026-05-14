@@ -270,6 +270,70 @@
    * GUI), otherwise derives a TOTP token from localStorage itself so the
    * selector works self-contained on any page — no supporting scripts needed.
    * Same HMAC-SHA256 / 5-second window scheme as api.js. */
+  const LS_TIME_OFFSETS = 'blueprints_api_time_offsets_v1';
+  const API_TIME_TTL_MS = 5 * 60 * 1000;
+  const apiTimeSyncInflight = new Map();
+
+  function _authOriginFor(url) {
+    try {
+      return new URL(url || window.location.href, window.location.href).origin;
+    } catch {
+      return window.location.origin;
+    }
+  }
+
+  function _loadTimeOffsets() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(LS_TIME_OFFSETS) || '{}');
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function _storedTimeOffset(origin) {
+    const entry = _loadTimeOffsets()[origin];
+    if (!entry || typeof entry.offsetMs !== 'number' || typeof entry.syncedAt !== 'number') return null;
+    if ((Date.now() - entry.syncedAt) > API_TIME_TTL_MS) return null;
+    return entry.offsetMs;
+  }
+
+  function _saveTimeOffset(origin, offsetMs) {
+    const offsets = _loadTimeOffsets();
+    offsets[origin] = { offsetMs, syncedAt: Date.now() };
+    try { localStorage.setItem(LS_TIME_OFFSETS, JSON.stringify(offsets)); } catch (_) {}
+  }
+
+  async function _syncAuthTime(url, opts = {}) {
+    const origin = _authOriginFor(url);
+    const cached = _storedTimeOffset(origin);
+    if (!opts.force && cached !== null) return cached;
+    if (apiTimeSyncInflight.has(origin)) return apiTimeSyncInflight.get(origin);
+
+    const promise = (async () => {
+      const startedAt = Date.now();
+      try {
+        const resp = await fetch(`${origin}/api/v1/auth/time`, { cache: 'no-store' });
+        const endedAt = Date.now();
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        const serverMs = Number(data && data.server_epoch_ms);
+        if (!Number.isFinite(serverMs)) throw new Error('missing server_epoch_ms');
+        const offsetMs = Math.round((serverMs + ((endedAt - startedAt) / 2)) - endedAt);
+        _saveTimeOffset(origin, offsetMs);
+        return offsetMs;
+      } catch (_) {
+        const stale = _loadTimeOffsets()[origin];
+        return stale && typeof stale.offsetMs === 'number' ? stale.offsetMs : 0;
+      } finally {
+        apiTimeSyncInflight.delete(origin);
+      }
+    })();
+
+    apiTimeSyncInflight.set(origin, promise);
+    return promise;
+  }
+
   async function _authFetch(url, options = {}) {
     if (typeof window !== 'undefined' && typeof window.apiFetch === 'function') {
       return window.apiFetch(url, options);
@@ -278,12 +342,17 @@
     try {
       const secretHex = (typeof localStorage !== 'undefined' && localStorage.getItem('blueprints_api_secret')) || '';
       if (secretHex) {
-        const w  = Math.floor(Date.now() / 5000);
-        const kb = Uint8Array.from(secretHex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
-        const mb = new TextEncoder().encode(String(w));
-        const k  = await crypto.subtle.importKey('raw', kb, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-        const s  = await crypto.subtle.sign('HMAC', k, mb);
-        token = Array.from(new Uint8Array(s)).map(b => b.toString(16).padStart(2, '0')).join('');
+        if (typeof window !== 'undefined' && typeof window._computeApiToken === 'function') {
+          token = await window._computeApiToken(secretHex, url);
+        } else {
+          const offsetMs = await _syncAuthTime(url);
+          const w  = Math.floor((Date.now() + offsetMs) / 5000);
+          const kb = Uint8Array.from(secretHex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+          const mb = new TextEncoder().encode(String(w));
+          const k  = await crypto.subtle.importKey('raw', kb, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+          const s  = await crypto.subtle.sign('HMAC', k, mb);
+          token = Array.from(new Uint8Array(s)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
       }
     } catch {}
     return fetch(url, {

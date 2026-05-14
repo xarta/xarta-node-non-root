@@ -250,10 +250,75 @@
     };
   }
 
-  async function _computeApiToken(secretHex) {
+  const LS_TIME_OFFSETS = 'blueprints_api_time_offsets_v1';
+  const API_TIME_TTL_MS = 5 * 60 * 1000;
+  const apiTimeSyncInflight = new Map();
+
+  function _apiOriginFor(url) {
+    try {
+      return new URL(url || window.location.href, window.location.href).origin;
+    } catch {
+      return window.location.origin;
+    }
+  }
+
+  function _loadTimeOffsets() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(LS_TIME_OFFSETS) || '{}');
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function _storedTimeOffset(origin) {
+    const entry = _loadTimeOffsets()[origin];
+    if (!entry || typeof entry.offsetMs !== 'number' || typeof entry.syncedAt !== 'number') return null;
+    if ((Date.now() - entry.syncedAt) > API_TIME_TTL_MS) return null;
+    return entry.offsetMs;
+  }
+
+  function _saveTimeOffset(origin, offsetMs) {
+    const offsets = _loadTimeOffsets();
+    offsets[origin] = { offsetMs, syncedAt: Date.now() };
+    try { localStorage.setItem(LS_TIME_OFFSETS, JSON.stringify(offsets)); } catch (_) {}
+  }
+
+  async function _syncApiTime(url = window.location.href, opts = {}) {
+    const origin = _apiOriginFor(url);
+    const cached = _storedTimeOffset(origin);
+    if (!opts.force && cached !== null) return cached;
+    if (apiTimeSyncInflight.has(origin)) return apiTimeSyncInflight.get(origin);
+
+    const promise = (async () => {
+      const startedAt = Date.now();
+      try {
+        const resp = await fetch(`${origin}/api/v1/auth/time`, { cache: 'no-store' });
+        const endedAt = Date.now();
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        const serverMs = Number(data && data.server_epoch_ms);
+        if (!Number.isFinite(serverMs)) throw new Error('missing server_epoch_ms');
+        const offsetMs = Math.round((serverMs + ((endedAt - startedAt) / 2)) - endedAt);
+        _saveTimeOffset(origin, offsetMs);
+        return offsetMs;
+      } catch (_) {
+        const stale = _loadTimeOffsets()[origin];
+        return stale && typeof stale.offsetMs === 'number' ? stale.offsetMs : 0;
+      } finally {
+        apiTimeSyncInflight.delete(origin);
+      }
+    })();
+
+    apiTimeSyncInflight.set(origin, promise);
+    return promise;
+  }
+
+  async function _computeApiToken(secretHex, url = window.location.href, opts = {}) {
     if (!secretHex) return '';
     try {
-      const windowNum = Math.floor(Date.now() / 5000);
+      const offsetMs = await _syncApiTime(url, { force: !!opts.forceTimeSync });
+      const windowNum = Math.floor((Date.now() + offsetMs) / 5000);
       const keyBytes  = Uint8Array.from(secretHex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
       const msgBytes  = new TextEncoder().encode(String(windowNum));
       const key = await crypto.subtle.importKey(
@@ -291,7 +356,7 @@
 
   async function apiFetch(url, options = {}) {
     const secret = localStorage.getItem(LS_SECRET) || '';
-    const token  = await _computeApiToken(secret);
+    const token  = await _computeApiToken(secret, url);
     const hadToken = !!token;
     const merged = {
       ...options,
@@ -303,7 +368,7 @@
         const enteredNoToken = await window.openBlueprintsEmbedApiKeyModal({ authFailed: false });
         if (enteredNoToken && enteredNoToken.trim()) {
           localStorage.setItem(LS_SECRET, enteredNoToken.trim());
-          const token2 = await _computeApiToken(enteredNoToken.trim());
+          const token2 = await _computeApiToken(enteredNoToken.trim(), url);
           return fetch(url, {
             ...options,
             headers: { ...(options.headers || {}), ...(token2 ? { 'X-API-Token': token2 } : {}) },
@@ -316,7 +381,7 @@
       if (!likelyAuthFailure) return r;
 
       // Retry once before prompting to avoid false auth-failure alarms.
-      const retryToken = await _computeApiToken(secret);
+      const retryToken = await _computeApiToken(secret, url, { forceTimeSync: true });
       let promptSourceResp = r;
       if (retryToken) {
         const retryResp = await fetch(url, {
@@ -332,7 +397,7 @@
       const entered = await window.openBlueprintsEmbedApiKeyModal({ authFailed: true });
       if (entered && entered.trim()) {
         localStorage.setItem(LS_SECRET, entered.trim());
-        const token2  = await _computeApiToken(entered.trim());
+        const token2  = await _computeApiToken(entered.trim(), url);
         const merged2 = {
           ...options,
           headers: { ...(options.headers || {}), ...(token2 ? { 'X-API-Token': token2 } : {}) },

@@ -64,7 +64,7 @@ function _preferredReachablePeers(peerResults, targetTailnet) {
 // Like apiFetch but does NOT trigger openApiKeyModal on 401 (for cross-node diagnostic calls)
 async function _diagFetch(url, options = {}) {
   const secret = localStorage.getItem(_LS_SECRET_KEY) || '';
-  const token  = await _computeApiToken(secret);
+  const token  = await _computeApiToken(secret, url);
   const headers = { ...(options.headers || {}), ...(token ? { 'X-API-Token': token } : {}) };
   return fetch(url, { cache: 'no-store', ...options, headers });
 }

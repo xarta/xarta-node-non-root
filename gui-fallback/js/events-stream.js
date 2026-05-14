@@ -161,7 +161,7 @@ const BlueprintsEventStream = (() => {
     let token = '';
     if (secret && typeof _computeApiToken === 'function') {
       // _computeApiToken is defined at global scope in api.js (loaded first).
-      token = await _computeApiToken(secret);
+      token = await _computeApiToken(secret, '/api/v1/events/stream');
     }
     const params = new URLSearchParams();
     if (token)       params.set('token', token);

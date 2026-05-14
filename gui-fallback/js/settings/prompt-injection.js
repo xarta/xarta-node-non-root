@@ -376,16 +376,13 @@ Please explain:
 // ── Auth header helper ────────────────────────────────────────────────────────
 
 async function _piAuthHeaders() {
-  // Derive TOTP token the same way apiFetch does — but for raw fetch calls
-  // We need the HMAC token for the streaming injection-test POST
+  // Derive TOTP token the same way apiFetch does for raw fetch calls.
   const secretHex = localStorage.getItem('blueprints_api_secret');
   if (!secretHex) return {};
   try {
-    const keyBytes = Uint8Array.from(secretHex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
-    const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-    const msg = new TextEncoder().encode(String(Math.floor(Date.now() / 5000)));
-    const sig = await crypto.subtle.sign('HMAC', key, msg);
-    const token = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+    const token = typeof _computeApiToken === 'function'
+      ? await _computeApiToken(secretHex, '/api/v1/litellm/chat')
+      : '';
     return { 'X-API-Token': token, 'Content-Type': 'application/json' };
   } catch (_) {
     return {};
