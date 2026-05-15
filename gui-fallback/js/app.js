@@ -106,6 +106,13 @@ function _showOnlyGroupWrapper(group) {
   });
 }
 
+function _getSynthesisDefaultTab() {
+  if (typeof BlueprintsSplashScreens !== 'undefined') {
+    return BlueprintsSplashScreens.getDefault();
+  }
+  return 'manual-links';
+}
+
 function _syncActiveMenuForTab(tab) {
   const group = _inferGroupForTab(tab);
   if (!group) return;
@@ -273,10 +280,11 @@ function switchGroup(group) {
   // wrapper visible when switching away from it.
   _showOnlyGroupWrapper(group);
   if (group === 'synthesis') {
+    const synthesisDefaultTab = _getSynthesisDefaultTab();
     SynthesisMenuConfig.showGroup();
-    switchTab('manual-links');
-    manualLinksShowView(_manualLinksView);
-    SynthesisMenuConfig.updateActiveTab('manual-links-' + _manualLinksView);
+    switchTab(synthesisDefaultTab);
+    if (synthesisDefaultTab === 'manual-links') manualLinksShowView(_manualLinksView);
+    SynthesisMenuConfig.updateActiveTab(synthesisDefaultTab);
     return;
   }
   if (group === 'probes') {
@@ -340,6 +348,7 @@ function switchTab(tab) {
   if (tab === 'manual-links-rendered') { switchTab('manual-links'); manualLinksShowView('rendered'); return; }
   if (tab === 'manual-links-tree')     { switchTab('manual-links'); manualLinksShowView('tree');     return; }
   if (tab === 'manual-links-pretext')  { switchTab('manual-links'); manualLinksShowView('pretext');  return; }
+  if (tab === 'splash-dont-panic')     { if (typeof BlueprintsSplashScreens !== 'undefined') BlueprintsSplashScreens.initDontPanic(); }
   if (tab === 'settings'       && !_settings.length)      loadSettings();
   if (tab === 'settings')                                  { initSoundToggle(); initVolumeSlider(); initTtsSettingsPanel(); }
   if (tab === 'keys')                                      loadKeys();
@@ -396,6 +405,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (typeof SoundManager !== 'undefined') SoundManager.init();
   if (typeof FormControlManager !== 'undefined') { FormControlManager.init(); FormControlManager.load(); }
   if (typeof HubModal !== 'undefined') HubModal.init();
+  if (typeof BlueprintsSplashScreens !== 'undefined') BlueprintsSplashScreens.init();
   const _urlGroup = new URLSearchParams(window.location.search).get('group');
   const _urlTab = new URLSearchParams(window.location.search).get('tab');
   const _restoreSshAfterReload = !_urlGroup
@@ -419,8 +429,10 @@ document.addEventListener('DOMContentLoaded', () => {
   loadHealth();
   loadManualLinks();
   if (!_urlTab && !_urlGroup && !_restoreSshAfterReload) {
+    const synthesisDefaultTab = _getSynthesisDefaultTab();
     SynthesisMenuConfig.showGroup();
-    SynthesisMenuConfig.updateActiveTab('manual-links-' + _manualLinksView);
+    switchTab(synthesisDefaultTab);
+    SynthesisMenuConfig.updateActiveTab(synthesisDefaultTab);
   }
   _installSelectorOriginMenuBridge();
   _installSpecialUiModeTracking();

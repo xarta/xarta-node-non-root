@@ -23,6 +23,7 @@
   <link rel="stylesheet" href="css/probes-menu.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/settings-menu.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/synthesis-menu.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/splash-screens.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/hub-controls.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/hub-checkbox.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/responsive-header.css?v={{$assetVersion}}" />
@@ -528,6 +529,20 @@
       </div>
       <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
       <div id="synthesisMenuEditorList"></div>
+    </div>
+  </section>
+
+  <!-- Splash Screens — Don't Panic -->
+  <section id="tab-splash-dont-panic" class="tab-panel tab-panel--splash">
+    <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
+    <div class="splash-screen splash-screen--dont-panic" id="dont-panic-fit-shell" aria-label="Don't Panic splash screen">
+      <div class="dp-scanline" aria-hidden="true"></div>
+      <div class="dp-default-badge" data-splash-default-for="splash-dont-panic" hidden>Default</div>
+      <div class="dp-art-wrap" aria-hidden="true">
+        <div class="dp-word dp-word--dont" data-dp-word="dont"></div>
+        <div class="dp-word dp-word--panic" data-dp-word="panic"></div>
+      </div>
+      <p class="dp-accessible-title">Don't Panic</p>
     </div>
   </section>
 
@@ -3692,6 +3707,7 @@
 <script src="js/synthesis/manual-links.js?v={{$assetVersion}}"></script>
 <script src="js/synthesis/services.js?v={{$assetVersion}}"></script>
 <script src="js/synthesis/machines.js?v={{$assetVersion}}"></script>
+<script src="js/synthesis/splash-screens.js?v={{$assetVersion}}"></script>
 <script src="js/sound-manager.js?v={{$assetVersion}}"></script>
 <script src="js/tts-wrapper-client.js?v={{$assetVersion}}"></script>
 <script src="js/events-stream.js?v={{$assetVersion}}"></script>

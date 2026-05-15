@@ -29,14 +29,19 @@ const SynthesisMenuConfig = createHubMenu({
     mobilePinnedId:  'synthesis-layout',
     pinnedTabsId:    'synthesisHubTabsPinned',
     defaultMenu: [
-        { id: 'manual-links',          label: 'Manual',    icon: HIEROGLYPHS.ropeCoil,   pageLabel: 'Manual Links',          parent: null,              order: 0 },
+        { id: 'splash-screens',        label: 'Splash Screens', icon: HIEROGLYPHS.starDuat, pageLabel: 'Splash Screens',     parent: null,              order: -1 },
+        { id: 'splash-dont-panic',     label: "Don't Panic", icon: HIEROGLYPHS.starDuat, pageLabel: "Don't Panic",           parent: 'splash-screens',  order: 0 },
+        { id: 'manual-links',          label: 'Manual',    icon: HIEROGLYPHS.ropeCoil,   pageLabel: 'Manual Links',          parent: null,              order: 1 },
         { id: 'manual-links-rendered', label: 'Page 1',    icon: HIEROGLYPHS.khaHorizon, pageLabel: 'Manual Links - Page 1', parent: 'manual-links',    order: 0 },
         { id: 'manual-links-tree',     label: 'Page 2',    icon: HIEROGLYPHS.papyrus,    pageLabel: 'Manual Links - Page 2', parent: 'manual-links',    order: 1 },
         { id: 'manual-links-pretext',  label: 'Page 3',    icon: HIEROGLYPHS.starDuat,   pageLabel: 'Manual Links - Page 3', parent: 'manual-links',    order: 2 },
         { id: 'manual-links-table',    label: 'Table',     icon: HIEROGLYPHS.cartouche,  pageLabel: 'Manual Links (Table)',  parent: 'manual-links',    order: 3 },
-        { id: 'services',              label: 'Services',  icon: HIEROGLYPHS.sekhem,     pageLabel: 'Services',              parent: null,              order: 1 },
-        { id: 'machines',              label: 'Machines',  icon: HIEROGLYPHS.nemesCrown, pageLabel: 'Machines',              parent: null,              order: 2 },
-        { id: 'synthesis-layout',      label: '☰',         icon: HIEROGLYPHS.kheper,     pageLabel: 'Navbar Layout',         parent: null,              order: 3 },
+        { id: 'services',              label: 'Services',  icon: HIEROGLYPHS.sekhem,     pageLabel: 'Services',              parent: null,              order: 2 },
+        { id: 'machines',              label: 'Machines',  icon: HIEROGLYPHS.nemesCrown, pageLabel: 'Machines',              parent: null,              order: 3 },
+        { id: 'synthesis-layout',      label: '☰',         icon: HIEROGLYPHS.kheper,     pageLabel: 'Navbar Layout',         parent: null,              order: 4 },
+
+        // ── Splash screen function items ──────────────────────────────────
+        { id: 'splash-fn-set-default', label: 'Set as default', icon: HIEROGLYPHS.starDuat, fn: 'splash.setDefault', activeOn: ['splash-dont-panic'], parent: 'synthesis-layout', order: 0 },
 
         // ── Services page function items ──────────────────────────────────
         { id: 'svc-fn-add',     label: 'Add service', icon: HIEROGLYPHS.sekhem,     fn: 'svc.add',     activeOn: ['services'], parent: 'synthesis-layout', order: 0 },
@@ -110,6 +115,7 @@ SynthesisMenuConfig.registerFunctions({
     'ml.page1':     () => switchTab('manual-links-rendered'),
     'ml.page2':     () => switchTab('manual-links-tree'),
     'ml.page3':     () => switchTab('manual-links-pretext'),
+    'splash.setDefault': () => BlueprintsSplashScreens.setActiveAsDefault(),
 });
 
 SynthesisMenuConfig.registerLabelGetters({
