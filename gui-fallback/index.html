@@ -40,6 +40,7 @@
   <link rel="stylesheet" href="css/tts-pool.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="vendor/xterm/xterm.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/ssh-terminal.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/agent-pages.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="embed/clock-overlay.css?v={{$assetVersion}}" />
 </head>
 <body class="bp-font-role-root">
@@ -878,6 +879,33 @@
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="ssh-terminal-shell" id="ssh-terminal-shell">
       <div class="ssh-terminal-xterm" id="ssh-terminal-xterm"></div>
+    </div>
+  </section>
+
+  <!-- Agent Pages: Hermes Local -->
+  <section id="tab-hermes-local" class="tab-panel tab-panel--fill">
+    <div class="agent-page-shell">
+      <div class="agent-page-toolbar">
+        <div class="agent-page-title">
+          <strong>Hermes Local</strong>
+          <span id="agent-hermes-status" class="agent-page-status" aria-live="polite">Dashboard not loaded</span>
+        </div>
+        <div class="agent-page-actions" aria-label="Hermes Local actions">
+          <button type="button" class="secondary" id="agent-hermes-refresh-btn">Refresh</button>
+          <button type="button" id="agent-hermes-open-btn">Open</button>
+          <button type="button" class="secondary" id="agent-hermes-terminal-btn">Shell</button>
+          <button type="button" class="secondary" id="agent-hermes-tui-btn">TUI</button>
+          <button type="button" class="secondary" id="agent-hermes-setup-btn">Setup</button>
+        </div>
+      </div>
+      <div class="agent-page-frame-wrap table-wrap--fill">
+        <iframe
+          id="agent-hermes-frame"
+          class="agent-page-frame"
+          title="Hermes Local dashboard"
+          referrerpolicy="no-referrer"
+        ></iframe>
+      </div>
     </div>
   </section>
 
@@ -3748,6 +3776,7 @@
 <script src="js/settings/vps-dockge.js?v={{$assetVersion}}"></script>
 <script src="vendor/xterm/xterm.js?v={{$assetVersion}}"></script>
 <script src="js/settings/ssh-terminal.js?v={{$assetVersion}}"></script>
+<script src="js/settings/agent-pages.js?v={{$assetVersion}}"></script>
 <script src="js/settings/arp-manual.js?v={{$assetVersion}}"></script>
 <script src="js/settings/ai-providers.js?v={{$assetVersion}}"></script>
 <script src="js/settings/nav-items.js?v={{$assetVersion}}"></script>

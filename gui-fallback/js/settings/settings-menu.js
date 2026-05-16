@@ -8,7 +8,8 @@
 //
 // Default groupings:
 //   🗄 PVE Hosts  [▼ 🤝 Nodes, Local Dockge]
-//   ⛰ SSH         [▼ target sessions from /api/v1/ssh-terminal/targets]
+//   SSH Terminal [▼ target sessions from /api/v1/ssh-terminal/targets]
+//   Agents        [▼ Hermes Local]
 //   🔧 App Config [▼ 🗺 Manual ARP, 🤖 AI Providers]
 //   🗝 Keys       [▼ 🔒 Certs]
 //   📄 Docs       [▼ 📋 Doc List, 🖼️ Images, 🩺 Self Diagnostic]
@@ -37,8 +38,10 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'nodes',           label: 'Nodes',          icon: HIEROGLYPHS.crookFlail, pageLabel: 'Fleet Nodes',     parent: 'pve-hosts', order: 0 },
         { id: 'local-dockge',    label: 'Local Dockge',   icon: HIEROGLYPHS.pyramid,    pageLabel: 'Local Dockge',    parent: 'pve-hosts', order: 1 },
         { id: 'vps-dockge',      label: 'VPS Dockge',     icon: HIEROGLYPHS.naosShrine, pageLabel: 'VPS Dockge',      parent: 'pve-hosts', order: 2 },
-        { id: 'ssh-terminal',    label: 'SSH',            icon: HIEROGLYPHS.khaHorizon, pageLabel: 'SSH Terminal',    parent: null,        order: 1 },
-        { id: 'settings',        label: 'App Config',     icon: HIEROGLYPHS.djedPillar, pageLabel: 'App Config',      parent: null,        order: 2 },
+        { id: 'ssh-terminal',    label: 'SSH Terminal',   icon: HIEROGLYPHS.khaHorizon, pageLabel: 'SSH Terminal',    parent: null,        order: 1 },
+        { id: 'agent-pages',     label: 'Agents',         icon: HIEROGLYPHS.falcon,     pageLabel: 'Agent Pages',     parent: null,        order: 2 },
+        { id: 'hermes-local',    label: 'Hermes Local',   icon: HIEROGLYPHS.khaHorizon, pageLabel: 'Hermes Local',    parent: 'agent-pages', order: 0 },
+        { id: 'settings',        label: 'App Config',     icon: HIEROGLYPHS.djedPillar, pageLabel: 'App Config',      parent: null,        order: 3 },
         { id: 'arp-manual',      label: 'Manual ARP',     icon: HIEROGLYPHS.obelisk,    pageLabel: 'Manual ARP',      parent: 'settings',  order: 0 },
         { id: 'ai-providers',    label: 'AI Providers',   icon: HIEROGLYPHS.falcon,     pageLabel: 'AI Providers',    parent: 'settings',  order: 1 },
         { id: 'mcp-servers',     label: 'MCP Servers',    icon: HIEROGLYPHS.nileWaves,  pageLabel: 'MCP Servers',     parent: 'settings',  order: 2 },
@@ -47,13 +50,13 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'form-controls',   label: 'Form Controls',  icon: HIEROGLYPHS.adze,       pageLabel: 'Form Controls',   parent: 'settings',  order: 5 },
         { id: 'embed-menu',      label: 'Embed Menu',     icon: HIEROGLYPHS.kheper,     pageLabel: 'Embed Menu',      parent: 'settings',  order: 6 },
         { id: 'embed-menu-grid', label: 'Embed Menu Grid', icon: HIEROGLYPHS.cartouche,  pageLabel: 'Embed Menu Grid', parent: 'settings',  order: 7 },
-        { id: 'keys',            label: 'Keys',           icon: HIEROGLYPHS.ankh,       pageLabel: 'SSH Keys',        parent: null,        order: 3 },
+        { id: 'keys',            label: 'Keys',           icon: HIEROGLYPHS.ankh,       pageLabel: 'SSH Keys',        parent: null,        order: 4 },
         { id: 'certs',           label: 'Certs',          icon: HIEROGLYPHS.shen,       pageLabel: 'Certificates',    parent: 'keys',      order: 0 },
-        { id: 'docs',            label: 'Docs',           icon: HIEROGLYPHS.papyrus,    pageLabel: 'Docs',            parent: null,        order: 4 },
+        { id: 'docs',            label: 'Docs',           icon: HIEROGLYPHS.papyrus,    pageLabel: 'Docs',            parent: null,        order: 5 },
         { id: 'docs-list',       label: 'Doc List',       icon: HIEROGLYPHS.papyrus,    pageLabel: 'Doc List',        parent: 'docs',      order: 0 },
         { id: 'docs-images',     label: 'Images',         icon: HIEROGLYPHS.lotus,      pageLabel: 'Doc Images',      parent: 'docs',      order: 1 },
         { id: 'self-diag',       label: 'Self Diagnostic',icon: HIEROGLYPHS.eyeOfHorus, pageLabel: 'Self Diagnostic', parent: 'docs',      order: 2 },
-        { id: 'settings-layout', label: '☰',              icon: HIEROGLYPHS.kheper,     pageLabel: 'Navbar Layout',   parent: null,        order: 5 },
+        { id: 'settings-layout', label: '☰',              icon: HIEROGLYPHS.kheper,     pageLabel: 'Navbar Layout',   parent: null,        order: 6 },
 
         // ── PVE Hosts page function items ─────────────────────────────────
         { id: 'pveh-fn-refresh', label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'pveh.refresh', activeOn: ['pve-hosts'],    parent: 'settings-layout', order: 0 },
@@ -90,6 +93,13 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'ssh-fn-disconnect', label: 'Disconnect',      icon: HIEROGLYPHS.tjet,       fn: 'ssh.disconnect', activeOn: ['ssh-terminal'], parent: 'settings-layout', order: 2 },
         { id: 'ssh-fn-fullscreen', label: 'Full Screen',     icon: HIEROGLYPHS.khaHorizon, fn: 'ssh.fullscreen', activeOn: ['ssh-terminal'], parent: 'settings-layout', order: 3 },
         { id: 'ssh-fn-lock',     label: 'Lock',              icon: HIEROGLYPHS.shen,       fn: 'ssh.lock', activeOn: ['ssh-terminal'], parent: 'settings-layout', order: 4 },
+
+        // ── Agent Pages function items ────────────────────────────────────
+        { id: 'agent-fn-refresh', label: 'Refresh Page',      icon: HIEROGLYPHS.nefer,      fn: 'agent.refresh', activeOn: ['hermes-local'], parent: 'settings-layout', order: 0 },
+        { id: 'agent-fn-open',    label: 'Open Dashboard',    icon: HIEROGLYPHS.khaHorizon, fn: 'agent.open',    activeOn: ['hermes-local'], parent: 'settings-layout', order: 1 },
+        { id: 'agent-fn-terminal',label: 'Container Shell',   icon: HIEROGLYPHS.ankh,       fn: 'agent.terminal',activeOn: ['hermes-local'], parent: 'settings-layout', order: 2 },
+        { id: 'agent-fn-tui',     label: 'Agent TUI',         icon: HIEROGLYPHS.falcon,     fn: 'agent.tui',     activeOn: ['hermes-local'], parent: 'settings-layout', order: 3 },
+        { id: 'agent-fn-setup',   label: 'Setup',             icon: HIEROGLYPHS.djedPillar, fn: 'agent.setup',   activeOn: ['hermes-local'], parent: 'settings-layout', order: 4 },
 
         // ── Manual ARP page function items ────────────────────────────────
         { id: 'arp-fn-add',      label: 'Add entry',        icon: HIEROGLYPHS.obelisk,    fn: 'arp.add',      activeOn: ['arp-manual'],   parent: 'settings-layout', order: 0 },
@@ -211,17 +221,27 @@ const SettingsMenuConfig = createHubMenu({
         if (terminalItem) {
             terminalItem.parent = null;
             terminalItem.order = 1;
-            terminalItem.label = 'SSH';
+            terminalItem.label = 'SSH Terminal';
             terminalItem.pageLabel = 'SSH Terminal';
         }
+        const agentItem = this.currentMenu.find(entry => entry.id === 'agent-pages');
+        if (agentItem) {
+            agentItem.parent = null;
+            agentItem.order = 2;
+        }
+        const hermesItem = this.currentMenu.find(entry => entry.id === 'hermes-local');
+        if (hermesItem) {
+            hermesItem.parent = 'agent-pages';
+            hermesItem.order = 0;
+        }
         const settingsItem = this.currentMenu.find(entry => entry.id === 'settings');
-        if (settingsItem && !settingsItem.parent) settingsItem.order = 2;
+        if (settingsItem && !settingsItem.parent) settingsItem.order = 3;
         const keysItem = this.currentMenu.find(entry => entry.id === 'keys');
-        if (keysItem && !keysItem.parent) keysItem.order = 3;
+        if (keysItem && !keysItem.parent) keysItem.order = 4;
         const docsItem = this.currentMenu.find(entry => entry.id === 'docs');
-        if (docsItem && !docsItem.parent) docsItem.order = 4;
+        if (docsItem && !docsItem.parent) docsItem.order = 5;
         const layoutItem = this.currentMenu.find(entry => entry.id === 'settings-layout');
-        if (layoutItem && !layoutItem.parent) layoutItem.order = 5;
+        if (layoutItem && !layoutItem.parent) layoutItem.order = 6;
         localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentMenu));
         localStorage.setItem(migrationKey, '1');
     };
@@ -252,14 +272,70 @@ const SettingsMenuConfig = createHubMenu({
             }
         });
         [
-            ['settings', 2],
-            ['keys', 3],
-            ['docs', 4],
-            ['settings-layout', 5],
+            ['agent-pages', 2],
+            ['settings', 3],
+            ['keys', 4],
+            ['docs', 5],
+            ['settings-layout', 6],
         ].forEach(([id, order]) => {
             const item = this.currentMenu.find(entry => entry.id === id && !entry.parent);
             if (item) item.order = order;
         });
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentMenu));
+        localStorage.setItem(migrationKey, '1');
+    };
+})();
+
+(function migrateAgentPagesMenuPlacement() {
+    const migrationKey = 'blueprintsSettingsMenuAgentPages20260516';
+    const originalLoadConfig = SettingsMenuConfig.loadConfig.bind(SettingsMenuConfig);
+    SettingsMenuConfig.loadConfig = function loadConfigWithAgentPagesPlacement() {
+        originalLoadConfig();
+        if (localStorage.getItem(migrationKey) === '1') return;
+        [
+            'agent-pages',
+            'hermes-local',
+            'agent-fn-refresh',
+            'agent-fn-open',
+            'agent-fn-terminal',
+            'agent-fn-tui',
+            'agent-fn-setup',
+        ].forEach(id => {
+            const def = this.defaultMenu.find(entry => entry.id === id);
+            if (!def) return;
+            const existing = this.currentMenu.find(entry => entry.id === id);
+            if (existing) {
+                existing.label = def.label;
+                existing.icon = def.icon;
+                existing.pageLabel = def.pageLabel;
+                existing.parent = def.parent;
+                existing.order = def.order;
+                if (def.fn !== undefined) existing.fn = def.fn; else delete existing.fn;
+                if (def.activeOn !== undefined) existing.activeOn = def.activeOn; else delete existing.activeOn;
+            } else {
+                this.currentMenu.push({ ...def });
+            }
+        });
+        [
+            ['pve-hosts', 0],
+            ['ssh-terminal', 1],
+            ['agent-pages', 2],
+            ['settings', 3],
+            ['keys', 4],
+            ['docs', 5],
+            ['settings-layout', 6],
+        ].forEach(([id, order]) => {
+            const item = this.currentMenu.find(entry => entry.id === id);
+            if (item) {
+                item.parent = null;
+                item.order = order;
+            }
+        });
+        const hermesItem = this.currentMenu.find(entry => entry.id === 'hermes-local');
+        if (hermesItem) {
+            hermesItem.parent = 'agent-pages';
+            hermesItem.order = 0;
+        }
         localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentMenu));
         localStorage.setItem(migrationKey, '1');
     };
@@ -804,6 +880,13 @@ SettingsMenuConfig.registerFunctions({
     'ssh.disconnect': () => window._sshTerminalDisconnect?.(),
     'ssh.fullscreen': () => window._sshTerminalToggleFullscreen?.(),
     'ssh.lock': () => window._sshTerminalToggleLock?.(),
+
+    // Agent Pages
+    'agent.refresh':  () => window._agentPagesRefreshHermes?.(),
+    'agent.open':     () => window._agentPagesOpenHermes?.(),
+    'agent.terminal': () => window.openSshTerminalTarget?.('local-hermes-container'),
+    'agent.tui':      () => window.openSshTerminalTarget?.('local-hermes'),
+    'agent.setup':    () => window.openSshTerminalTarget?.('local-hermes-setup'),
 
     // Manual ARP
     'arp.add':      () => addArpManualEntry(),
