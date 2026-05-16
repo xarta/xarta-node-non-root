@@ -30,7 +30,9 @@ const SynthesisMenuConfig = createHubMenu({
     pinnedTabsId:    'synthesisHubTabsPinned',
     defaultMenu: [
         { id: 'splash-screens',        label: 'Splash Screens', icon: HIEROGLYPHS.starDuat, pageLabel: 'Splash Screens',     parent: null,              order: -1 },
-        { id: 'splash-dont-panic',     label: "Don't Panic", icon: HIEROGLYPHS.starDuat, pageLabel: "Don't Panic",           parent: 'splash-screens',  order: 0 },
+        { id: 'splash-dont-panic-1',   label: "Don't Panic 1", icon: HIEROGLYPHS.starDuat, pageLabel: "Don't Panic 1",       parent: 'splash-screens',  order: 0 },
+        { id: 'splash-dont-panic-2',   label: "Don't Panic 2", icon: HIEROGLYPHS.starDuat, pageLabel: "Don't Panic 2",       parent: 'splash-screens',  order: 1 },
+        { id: 'splash-dont-panic-3',   label: "Don't Panic 3", icon: HIEROGLYPHS.starDuat, pageLabel: "Don't Panic 3",       parent: 'splash-screens',  order: 2 },
         { id: 'manual-links',          label: 'Manual',    icon: HIEROGLYPHS.ropeCoil,   pageLabel: 'Manual Links',          parent: null,              order: 1 },
         { id: 'manual-links-rendered', label: 'Page 1',    icon: HIEROGLYPHS.khaHorizon, pageLabel: 'Manual Links - Page 1', parent: 'manual-links',    order: 0 },
         { id: 'manual-links-tree',     label: 'Page 2',    icon: HIEROGLYPHS.papyrus,    pageLabel: 'Manual Links - Page 2', parent: 'manual-links',    order: 1 },
@@ -41,7 +43,7 @@ const SynthesisMenuConfig = createHubMenu({
         { id: 'synthesis-layout',      label: '☰',         icon: HIEROGLYPHS.kheper,     pageLabel: 'Navbar Layout',         parent: null,              order: 4 },
 
         // ── Splash screen function items ──────────────────────────────────
-        { id: 'splash-fn-set-default', label: 'Set as default', icon: HIEROGLYPHS.starDuat, fn: 'splash.setDefault', activeOn: ['splash-dont-panic'], parent: 'synthesis-layout', order: 0 },
+        { id: 'splash-fn-set-default', label: 'Set as default', icon: HIEROGLYPHS.starDuat, fn: 'splash.setDefault', activeOn: ['splash-dont-panic-1', 'splash-dont-panic-2', 'splash-dont-panic-3'], parent: 'synthesis-layout', order: 0 },
 
         // ── Services page function items ──────────────────────────────────
         { id: 'svc-fn-add',     label: 'Add service', icon: HIEROGLYPHS.sekhem,     fn: 'svc.add',     activeOn: ['services'], parent: 'synthesis-layout', order: 0 },

@@ -311,6 +311,10 @@ function switchTab(tab) {
       && _sshTerminalShouldBlockNavigation(tab)) {
     return;
   }
+  if (tab === 'splash-dont-panic') {
+    switchTab('splash-dont-panic-2');
+    return;
+  }
   if (typeof SoundManager !== 'undefined') SoundManager.stopPreview();
   const wasSshTerminalActive = document.getElementById('tab-ssh-terminal')?.classList.contains('active');
   if (wasSshTerminalActive && tab !== 'ssh-terminal' && typeof _sshTerminalDisconnect === 'function') {
@@ -348,7 +352,7 @@ function switchTab(tab) {
   if (tab === 'manual-links-rendered') { switchTab('manual-links'); manualLinksShowView('rendered'); return; }
   if (tab === 'manual-links-tree')     { switchTab('manual-links'); manualLinksShowView('tree');     return; }
   if (tab === 'manual-links-pretext')  { switchTab('manual-links'); manualLinksShowView('pretext');  return; }
-  if (tab === 'splash-dont-panic')     { if (typeof BlueprintsSplashScreens !== 'undefined') BlueprintsSplashScreens.initDontPanic(); }
+  if (tab && tab.indexOf('splash-dont-panic') === 0) { if (typeof BlueprintsSplashScreens !== 'undefined') BlueprintsSplashScreens.initDontPanic(tab); }
   if (tab === 'settings'       && !_settings.length)      loadSettings();
   if (tab === 'settings')                                  { initSoundToggle(); initVolumeSlider(); initTtsSettingsPanel(); }
   if (tab === 'keys')                                      loadKeys();
