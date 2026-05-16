@@ -7,6 +7,8 @@ const BlueprintsSplashScreens = (() => {
   const DEFAULT_KEY = 'blueprintsDefaultSplashScreen';
   const LEGACY_ID = 'splash-dont-panic';
   const FALLBACK_ID = 'splash-dont-panic-2';
+  const RENDERER_IMPORT_VERSION = '20260516-braille-mono-2';
+  const DEBUG_KEY = 'blueprintsDontPanic3DebugTelemetry';
 
   const SCREENS = {
     'splash-dont-panic-1': {
@@ -45,6 +47,28 @@ const BlueprintsSplashScreens = (() => {
     return SCREENS[normalizeId(id)]?.label || 'Splash Screen';
   }
 
+  function isDebugTelemetryEnabled() {
+    return localStorage.getItem(DEBUG_KEY) === '1';
+  }
+
+  function debugTelemetryLabel() {
+    return isDebugTelemetryEnabled() ? 'Debug Off' : 'Debug On';
+  }
+
+  function rendererOptionsFor(screenId) {
+    const screen = SCREENS[normalizeId(screenId)];
+    const options = { ...(screen?.rendererOptions || {}) };
+    if (normalizeId(screenId) === 'splash-dont-panic-3') {
+      options.telemetryDebug = isDebugTelemetryEnabled();
+      options.telemetryContext = {
+        source: 'blueprints-synthesis',
+        activeTab: normalizeId(screenId),
+        defaultTab: getDefault(),
+      };
+    }
+    return options;
+  }
+
   function updateDefaultBadges() {
     const activeDefault = getDefault();
     document.querySelectorAll('[data-splash-default-for]').forEach((el) => {
@@ -77,9 +101,28 @@ const BlueprintsSplashScreens = (() => {
     return setDefault(activeSplashId());
   }
 
+  function toggleDebugTelemetry() {
+    const enabled = !isDebugTelemetryEnabled();
+    localStorage.setItem(DEBUG_KEY, enabled ? '1' : '0');
+    const mount = document.getElementById(SCREENS['splash-dont-panic-3'].mountId);
+    const api = mount?.__xartaDontPanicSplash;
+    if (api && typeof api.setDebug === 'function') {
+      api.setDebug(enabled);
+    }
+    if (typeof HubDialogs !== 'undefined') {
+      HubDialogs.alert({
+        title: "Don't Panic 3 Debug",
+        message: `Telemetry debug is now ${enabled ? 'on' : 'off'}.`,
+        tone: enabled ? 'success' : 'info',
+        badge: 'Splash',
+      });
+    }
+    return enabled;
+  }
+
   function loadRenderer() {
     if (!_rendererPromise) {
-      _rendererPromise = import('/splash-renderer/embed.js')
+      _rendererPromise = import(`/splash-renderer/embed.js?v=${RENDERER_IMPORT_VERSION}`)
         .catch((err) => {
           _rendererPromise = null;
           throw err;
@@ -131,7 +174,7 @@ const BlueprintsSplashScreens = (() => {
       .then((mod) => {
         const renderer = mod.mountDontPanicSplash || mod.m || window.XartaSplashRenderer?.mountDontPanicSplash;
         if (typeof renderer === 'function') {
-          renderer(mount, screen.rendererOptions || {});
+          renderer(mount, rendererOptionsFor(screenId));
           scheduleSplashShadeUp();
         }
       })
@@ -148,8 +191,11 @@ const BlueprintsSplashScreens = (() => {
 
   return {
     getDefault,
+    isDebugTelemetryEnabled,
+    debugTelemetryLabel,
     setDefault,
     setActiveAsDefault,
+    toggleDebugTelemetry,
     init,
     initDontPanic,
   };

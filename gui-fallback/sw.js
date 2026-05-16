@@ -1,4 +1,4 @@
-const BP_CACHE_VERSION = 'bp-fallback-v87';
+const BP_CACHE_VERSION = 'bp-fallback-v88';
 const STATIC_CACHE = `${BP_CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${BP_CACHE_VERSION}-runtime`;
 
@@ -44,6 +44,10 @@ self.addEventListener('fetch', event => {
 
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith('/splash-renderer/')) {
+    event.respondWith(fetch(req));
+    return;
+  }
   if (url.pathname.startsWith('/api/')) return;
   if (url.pathname === '/health') return;
   if (url.pathname.endsWith('/manifest.webmanifest') || url.pathname.endsWith('/sw.js')) {

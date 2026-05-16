@@ -19,6 +19,7 @@
     { key: 'edit-preview', rank: 40, patterns: [/\bedit\b/, /\bpreview\b/] },
     { key: 'preview-visibility', rank: 45, patterns: [/\bfrontmatter\b/] },
     { key: 'set-default', rank: 48, patterns: [/\bset as default\b/, /\bdefault\b/] },
+    { key: 'debug', rank: 49, patterns: [/\bdebug\b/] },
     { key: 'save', rank: 50, patterns: [/\bsave\b/] },
     { key: 'meta', rank: 55, patterns: [/\bmeta\b/] },
     { key: 'columns', rank: 60, patterns: [/\bcolumns\b/] },

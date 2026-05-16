@@ -44,6 +44,7 @@ const SynthesisMenuConfig = createHubMenu({
 
         // ── Splash screen function items ──────────────────────────────────
         { id: 'splash-fn-set-default', label: 'Set as default', icon: HIEROGLYPHS.starDuat, fn: 'splash.setDefault', activeOn: ['splash-dont-panic-1', 'splash-dont-panic-2', 'splash-dont-panic-3'], parent: 'synthesis-layout', order: 0 },
+        { id: 'splash-fn-debug',       label: 'Debug On', icon: HIEROGLYPHS.eyeOfHorus, fn: 'splash.debugTelemetry', activeOn: ['splash-dont-panic-3'], parent: 'synthesis-layout', order: 1 },
 
         // ── Services page function items ──────────────────────────────────
         { id: 'svc-fn-add',     label: 'Add service', icon: HIEROGLYPHS.sekhem,     fn: 'svc.add',     activeOn: ['services'], parent: 'synthesis-layout', order: 0 },
@@ -118,10 +119,12 @@ SynthesisMenuConfig.registerFunctions({
     'ml.page2':     () => switchTab('manual-links-tree'),
     'ml.page3':     () => switchTab('manual-links-pretext'),
     'splash.setDefault': () => BlueprintsSplashScreens.setActiveAsDefault(),
+    'splash.debugTelemetry': () => BlueprintsSplashScreens.toggleDebugTelemetry(),
 });
 
 SynthesisMenuConfig.registerLabelGetters({
     'svc-fn-scroll': () => _synthesisHorizontalScrollLabel('Horiz Scroll', () => _ensureServicesLayoutController()),
     'mch-fn-scroll': () => _synthesisHorizontalScrollLabel('Horiz Scroll', () => _ensureMachinesLayoutController()),
     'ml-fn-scroll':  () => _synthesisHorizontalScrollLabel('Horiz Scroll', () => _ensureManualLinksLayoutController()),
+    'splash-fn-debug': () => BlueprintsSplashScreens.debugTelemetryLabel(),
 });
