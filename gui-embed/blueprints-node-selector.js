@@ -561,8 +561,110 @@
     }
   }
 
+  function hardRefreshCurrentPageState() {
+    if (typeof window._currentPageState === 'function') {
+      try {
+        const state = window._currentPageState() || {};
+        return { group: state.group || '', tab: state.tab || '' };
+      } catch (_e) {}
+    }
+    const bridge = window.BlueprintsHubMenuBridge;
+    if (!bridge) return {};
+    const group = bridge.activeGroup || '';
+    const menuConfig = typeof bridge.getActiveMenuConfig === 'function' && bridge.getActiveMenuConfig();
+    const tab = menuConfig && typeof menuConfig._activeTabId === 'function' && menuConfig._activeTabId();
+    return { group, tab };
+  }
+
+  function hardRefreshApplyPageState(url, pageState) {
+    if (!url || !pageState) return url;
+    if (pageState.group) url.searchParams.set('group', pageState.group);
+    if (pageState.tab) url.searchParams.set('tab', pageState.tab);
+    if (pageState.tab !== 'ssh-terminal') {
+      url.searchParams.delete('terminal');
+      url.searchParams.delete('terminal_lock');
+    }
+    return url;
+  }
+
+  const HardRefreshStateMachine = (() => {
+    const STATE = {
+      PAGE: 'page',
+      SSH_ACTIVE: 'ssh-active',
+      BLOCKED_LOCKED: 'blocked-locked',
+    };
+
+    function sshSnapshot() {
+      if (typeof window._sshTerminalRefreshSnapshot === 'function') {
+        try {
+          return window._sshTerminalRefreshSnapshot() || {};
+        } catch (_e) {
+          return {};
+        }
+      }
+      return {};
+    }
+
+    function transition(input) {
+      const ssh = input?.ssh || {};
+      if (ssh.active && ssh.locked) return STATE.BLOCKED_LOCKED;
+      if (ssh.active) return STATE.SSH_ACTIVE;
+      return STATE.PAGE;
+    }
+
+    function prepareReloadUrl() {
+      const url = new URL(window.location.href);
+      url.searchParams.set('_fresh', String(Date.now()));
+      const pageState = hardRefreshCurrentPageState();
+      hardRefreshApplyPageState(url, pageState);
+
+      const ssh = sshSnapshot();
+      const state = transition({ pageState, ssh });
+      if (state === STATE.BLOCKED_LOCKED) {
+        return {
+          ok: false,
+          state,
+          reason: 'ssh_terminal_locked',
+          message: 'Unlock the SSH terminal before using hard refresh.',
+        };
+      }
+
+      if (state === STATE.SSH_ACTIVE && typeof window._sshTerminalApplyReloadParams === 'function') {
+        const applied = window._sshTerminalApplyReloadParams(url, { source: 'hard-refresh' });
+        if (applied === false) {
+          return {
+            ok: false,
+            state,
+            reason: 'ssh_terminal_refresh_blocked',
+            message: 'Unlock the SSH terminal before using hard refresh.',
+          };
+        }
+      }
+
+      return { ok: true, state, url, pageState, ssh };
+    }
+
+    return { STATE, prepareReloadUrl };
+  })();
+
+  window.BlueprintsHardRefreshStateMachine = HardRefreshStateMachine;
+
   async function hardRefreshClientAssets() {
     try {
+      const refreshIntent = HardRefreshStateMachine.prepareReloadUrl();
+      if (!refreshIntent.ok) {
+        window.alert(refreshIntent.message || 'Hard refresh is blocked for the current page state.');
+        return;
+      }
+      if (refreshIntent.state === HardRefreshStateMachine.STATE.SSH_ACTIVE
+          && typeof window._sshTerminalPrepareHardRefresh === 'function') {
+        const prepared = await window._sshTerminalPrepareHardRefresh(refreshIntent.ssh);
+        if (prepared === false) {
+          window.alert('Unlock the SSH terminal before using hard refresh.');
+          return;
+        }
+      }
+
       if ('serviceWorker' in navigator) {
         const regs = await navigator.serviceWorker.getRegistrations();
         await Promise.all(regs.map(reg => reg.unregister().catch(() => false)));
@@ -573,31 +675,7 @@
         await Promise.all(keys.map(key => caches.delete(key).catch(() => false)));
       }
 
-      const nextUrl = new URL(window.location.href);
-      nextUrl.searchParams.set('_fresh', String(Date.now()));
-
-      // Preserve the current group/tab so the page reloads on the same view.
-      // BlueprintsHubMenuBridge is only present on pages that load app.js (e.g. fallback UI).
-      try {
-        const bridge = window.BlueprintsHubMenuBridge;
-        if (bridge) {
-          const group = bridge.activeGroup;
-          if (group && group !== 'synthesis') {
-            // synthesis is the default — no need to encode it
-            nextUrl.searchParams.set('group', group);
-          }
-          const menuConfig = typeof bridge.getActiveMenuConfig === 'function' && bridge.getActiveMenuConfig();
-          const tab = menuConfig && typeof menuConfig._activeTabId === 'function' && menuConfig._activeTabId();
-          if (tab) nextUrl.searchParams.set('tab', tab);
-        }
-      } catch (_e) { /* non-fallback-UI context — skip silently */ }
-      try {
-        if (typeof window._sshTerminalApplyReloadParams === 'function') {
-          window._sshTerminalApplyReloadParams(nextUrl);
-        }
-      } catch (_e) { /* page-specific reload state is optional */ }
-
-      window.location.replace(nextUrl.toString());
+      window.location.replace(refreshIntent.url.toString());
     } catch (error) {
       const message = error && error.message ? error.message : 'Client refresh failed.';
       window.alert(message);

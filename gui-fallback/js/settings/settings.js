@@ -778,12 +778,54 @@ async function forceRefreshUiAssets() {
   _setUiRefreshStatus('Clearing app-controlled caches and reopening the page...');
 
   try {
-    const pageState = (typeof _currentPageState === 'function') ? _currentPageState() : {};
-    const reloadUrl = new URL(window.location.href);
-    if (pageState.group) reloadUrl.searchParams.set('group', pageState.group);
-    if (pageState.tab) reloadUrl.searchParams.set('tab', pageState.tab);
-    if (typeof window._sshTerminalApplyReloadParams === 'function') {
-      window._sshTerminalApplyReloadParams(reloadUrl);
+    let reloadUrl = null;
+    const hardRefreshFsm = window.BlueprintsHardRefreshStateMachine;
+    if (hardRefreshFsm && typeof hardRefreshFsm.prepareReloadUrl === 'function') {
+      const prepared = hardRefreshFsm.prepareReloadUrl();
+      if (!prepared.ok) {
+        _setUiRefreshStatus(prepared.message || 'Hard refresh is blocked for the current page state.', 'warn');
+        _setUiRefreshButtonsDisabled(false);
+        return;
+      }
+      reloadUrl = prepared.url;
+      if (prepared.state === hardRefreshFsm.STATE?.SSH_ACTIVE
+          && typeof window._sshTerminalPrepareHardRefresh === 'function') {
+        const ready = await window._sshTerminalPrepareHardRefresh(prepared.ssh);
+        if (ready === false) {
+          _setUiRefreshStatus('Unlock the SSH terminal before using hard refresh.', 'warn');
+          _setUiRefreshButtonsDisabled(false);
+          return;
+        }
+      }
+    } else {
+      const pageState = (typeof _currentPageState === 'function') ? _currentPageState() : {};
+      reloadUrl = new URL(window.location.href);
+      reloadUrl.searchParams.set('_fresh', String(Date.now()));
+      if (pageState.group) reloadUrl.searchParams.set('group', pageState.group);
+      if (pageState.tab) reloadUrl.searchParams.set('tab', pageState.tab);
+      if (pageState.tab !== 'ssh-terminal') {
+        reloadUrl.searchParams.delete('terminal');
+        reloadUrl.searchParams.delete('terminal_lock');
+      }
+      const sshSnapshot = (typeof window._sshTerminalRefreshSnapshot === 'function')
+        ? window._sshTerminalRefreshSnapshot()
+        : null;
+      if (sshSnapshot?.active && sshSnapshot?.locked) {
+        _setUiRefreshStatus('Unlock the SSH terminal before using hard refresh.', 'warn');
+        _setUiRefreshButtonsDisabled(false);
+        return;
+      }
+      if (sshSnapshot?.active && typeof window._sshTerminalApplyReloadParams === 'function') {
+        const applied = window._sshTerminalApplyReloadParams(reloadUrl, { source: 'hard-refresh' });
+        if (applied === false) {
+          _setUiRefreshStatus('Unlock the SSH terminal before using hard refresh.', 'warn');
+          _setUiRefreshButtonsDisabled(false);
+          return;
+        }
+        if (typeof window._sshTerminalPrepareHardRefresh === 'function') {
+          await window._sshTerminalPrepareHardRefresh(sshSnapshot);
+        }
+      }
     }
     try { localStorage.removeItem('bp_fe_settings'); } catch (_) {}
     if ('serviceWorker' in navigator) {

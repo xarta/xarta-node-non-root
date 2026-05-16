@@ -247,6 +247,10 @@ function _sshTerminalClearRestoreState() {
   } catch (e) {}
 }
 
+function _sshTerminalForgetRestoreForNonTerminalPage() {
+  if (!_sshTerminalIsActiveTab()) _sshTerminalClearRestoreState();
+}
+
 function _sshTerminalApplyInitialTarget() {
   const params = new URLSearchParams(window.location.search);
   const urlTarget = params.get('terminal');
@@ -274,19 +278,35 @@ function _sshTerminalShouldRestoreAfterReload() {
   return _sshTerminalNavigationType() === 'reload' && !!_sshTerminalReadRestoreTarget();
 }
 
-function _sshTerminalApplyReloadParams(url) {
+function _sshTerminalRefreshSnapshot() {
+  const params = new URLSearchParams(window.location.search);
+  const urlSshContext = params.get('tab') === 'ssh-terminal' || params.has('terminal');
+  const pageState = (typeof _currentPageState === 'function') ? _currentPageState() : {};
+  const currentTab = String(pageState?.tab || '');
+  const activeTab = _sshTerminalIsActiveTab() || currentTab === 'ssh-terminal';
+  const active = activeTab || (!currentTab && urlSshContext);
+  const locked = _sshTerminalIsLocked();
+  const restoredTarget = active ? _sshTerminalReadRestoreTarget() : '';
+  const targetId = active
+    ? (_sshTerminalTargetId || params.get('terminal') || restoredTarget || _sshTerminalCurrentTargetId())
+    : '';
+  return {
+    state: active ? (locked ? 'locked' : 'active') : 'inactive',
+    active,
+    locked,
+    targetId,
+    urlSshContext,
+    activeTab,
+  };
+}
+
+function _sshTerminalApplyReloadParams(url, options = {}) {
   if (!url) return url;
   const params = new URLSearchParams(window.location.search);
-  const restoredTarget = _sshTerminalReadRestoreTarget();
-  const shouldApply = _sshTerminalIsActiveTab()
-    || _sshTerminalIsLocked()
-    || !!restoredTarget
-    || params.get('tab') === 'ssh-terminal';
-  if (!shouldApply) return url;
-  const visibleTarget = (_sshTerminalIsActiveTab() || _sshTerminalIsLocked() || params.get('tab') === 'ssh-terminal')
-    ? _sshTerminalCurrentTargetId()
-    : '';
-  const targetId = _sshTerminalTargetId || restoredTarget || params.get('terminal') || visibleTarget || '';
+  const snapshot = _sshTerminalRefreshSnapshot();
+  if (snapshot.locked && snapshot.active && options.source === 'hard-refresh') return false;
+  if (!snapshot.active) return url;
+  const targetId = _sshTerminalTargetId || params.get('terminal') || snapshot.targetId || _sshTerminalCurrentTargetId();
   if (!targetId) return url;
   url.searchParams.set('group', 'settings');
   url.searchParams.set('tab', 'ssh-terminal');
@@ -294,6 +314,30 @@ function _sshTerminalApplyReloadParams(url) {
   if (_sshTerminalIsLocked()) url.searchParams.set('terminal_lock', '1');
   else url.searchParams.delete('terminal_lock');
   return url;
+}
+
+async function _sshTerminalPrepareHardRefresh(snapshot = null) {
+  const state = snapshot || _sshTerminalRefreshSnapshot();
+  if (!state.active) return true;
+  if (state.locked) return false;
+  const targetId = state.targetId || _sshTerminalTargetId || _sshTerminalCurrentTargetId();
+  if (!targetId) return true;
+
+  _sshTerminalWriteRestoreState(targetId, true);
+  if (_sshTerminalWs) {
+    const ws = _sshTerminalWs;
+    _sshTerminalWs = null;
+    try {
+      ws.close(1000, 'hard refresh');
+    } catch (e) {}
+  }
+  try {
+    await Promise.race([
+      apiFetch(`/api/v1/ssh-terminal/targets/${encodeURIComponent(targetId)}/disconnect`, { method: 'POST' }),
+      _sshTerminalWait(1500),
+    ]);
+  } catch (e) {}
+  return true;
 }
 
 function _sshTerminalToggleLock() {
@@ -673,4 +717,7 @@ window._sshTerminalLockLabel = _sshTerminalLockLabel;
 window._sshTerminalShouldBlockNavigation = _sshTerminalShouldBlockNavigation;
 window._sshTerminalShouldBlockMenuAction = _sshTerminalShouldBlockMenuAction;
 window._sshTerminalShouldRestoreAfterReload = _sshTerminalShouldRestoreAfterReload;
+window._sshTerminalRefreshSnapshot = _sshTerminalRefreshSnapshot;
 window._sshTerminalApplyReloadParams = _sshTerminalApplyReloadParams;
+window._sshTerminalPrepareHardRefresh = _sshTerminalPrepareHardRefresh;
+window._sshTerminalForgetRestoreForNonTerminalPage = _sshTerminalForgetRestoreForNonTerminalPage;
