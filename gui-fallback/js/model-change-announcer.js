@@ -145,6 +145,10 @@ const BlueprintsModelChangeAnnouncer = (() => {
     return 'Warning. Local Large Language Model is offline.';
   }
 
+  function _speechForMemoryWarning(evt) {
+    return String(evt?.payload?.speech || evt?.message || 'Warning. Xarta node RAM usage is high.');
+  }
+
   // ── Queue drain ────────────────────────────────────────────────────────────
 
   /** Central drain function.  Called after every state completion (cooldown done,
@@ -364,6 +368,17 @@ const BlueprintsModelChangeAnnouncer = (() => {
             title: evt.title || 'Local LLM Offline',
             message: evt.message || 'Local Large Language Model is offline.',
             severity: evt.severity || 'error',
+          }
+        );
+        break;
+
+      case 'system.memory.warning':
+        _pushAndDrain(
+          _speechForMemoryWarning(evt),
+          {
+            title: evt.title || 'RAM Warning',
+            message: evt.message || '',
+            severity: evt.severity || 'warn',
           }
         );
         break;
