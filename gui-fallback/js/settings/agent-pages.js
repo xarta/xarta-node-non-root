@@ -10,22 +10,7 @@ let _agentHermesUrl = '';
 function _agentPagesEls() {
   return {
     frame: document.getElementById('agent-hermes-frame'),
-    status: document.getElementById('agent-hermes-status'),
-    refresh: document.getElementById('agent-hermes-refresh-btn'),
-    open: document.getElementById('agent-hermes-open-btn'),
-    terminal: document.getElementById('agent-hermes-terminal-btn'),
-    tui: document.getElementById('agent-hermes-tui-btn'),
-    setup: document.getElementById('agent-hermes-setup-btn'),
   };
-}
-
-function _agentPagesSetStatus(message, tone = '') {
-  const { status } = _agentPagesEls();
-  if (!status) return;
-  status.textContent = message || '';
-  status.style.color = tone === 'ok'
-    ? 'var(--ok,#3fb950)'
-    : (tone === 'error' ? 'var(--err,#f85149)' : 'var(--text-dim)');
 }
 
 function _agentPagesScheduleViewportFit() {
@@ -63,17 +48,30 @@ async function _agentPagesResolveHermesUrl() {
   return '';
 }
 
+async function _agentPagesEstablishHermesSession() {
+  if (typeof apiFetch !== 'function') return false;
+  try {
+    const r = await apiFetch('/api/v1/dashboard-auth/hermes-local/session', { method: 'POST' });
+    return r.ok;
+  } catch (e) {
+    return false;
+  }
+}
+
 async function _agentPagesLoadHermes() {
   const { frame } = _agentPagesEls();
   if (!frame) return;
   const url = await _agentPagesResolveHermesUrl();
   if (!url) {
-    _agentPagesSetStatus('Dashboard URL is not configured', 'error');
     _agentPagesScheduleViewportFit();
     return;
   }
   if (!_agentHermesLoaded || !frame.src) {
-    _agentPagesSetStatus('Loading dashboard...');
+    const ok = await _agentPagesEstablishHermesSession();
+    if (!ok) {
+      _agentPagesScheduleViewportFit();
+      return;
+    }
     frame.src = url;
     _agentHermesLoaded = true;
   }
@@ -85,11 +83,10 @@ async function _agentPagesRefreshHermes() {
   if (!frame) return;
   const url = await _agentPagesResolveHermesUrl();
   if (!url) {
-    _agentPagesSetStatus('Dashboard URL is not configured', 'error');
     _agentPagesScheduleViewportFit();
     return;
   }
-  _agentPagesSetStatus('Refreshing dashboard...');
+  await _agentPagesEstablishHermesSession();
   if (frame.src) {
     try {
       frame.contentWindow?.location?.reload();
@@ -103,7 +100,6 @@ async function _agentPagesRefreshHermes() {
 async function _agentPagesOpenHermes() {
   const url = _agentHermesUrl || await _agentPagesResolveHermesUrl();
   if (!url) {
-    _agentPagesSetStatus('Dashboard URL is not configured', 'error');
     return;
   }
   window.open(url, '_blank', 'noopener,noreferrer');
@@ -112,14 +108,8 @@ async function _agentPagesOpenHermes() {
 function _agentPagesBindHermesControls() {
   const els = _agentPagesEls();
   els.frame?.addEventListener('load', () => {
-    _agentPagesSetStatus('Dashboard loaded', 'ok');
     _agentPagesScheduleViewportFit();
   });
-  els.refresh?.addEventListener('click', _agentPagesRefreshHermes);
-  els.open?.addEventListener('click', _agentPagesOpenHermes);
-  els.terminal?.addEventListener('click', () => window.openSshTerminalTarget?.('local-hermes-container'));
-  els.tui?.addEventListener('click', () => window.openSshTerminalTarget?.('local-hermes'));
-  els.setup?.addEventListener('click', () => window.openSshTerminalTarget?.('local-hermes-setup'));
 }
 
 document.addEventListener('DOMContentLoaded', _agentPagesBindHermesControls);
