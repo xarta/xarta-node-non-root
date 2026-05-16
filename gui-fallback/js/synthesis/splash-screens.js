@@ -1,4 +1,4 @@
-// splash-screens.js — Synthesis splash screen registry and responsive ASCII fitting.
+// splash-screens.js — Synthesis splash screen registry and default selection.
 // xarta-node Blueprints GUI
 
 'use strict';
@@ -6,46 +6,7 @@
 const BlueprintsSplashScreens = (() => {
   const DEFAULT_KEY = 'blueprintsDefaultSplashScreen';
   const FALLBACK_ID = 'splash-dont-panic';
-  const ASCII_FONT_FAMILY = '"Cascadia Mono", "Fira Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace';
-  const ART = {
-    wide: {
-      dont: [
-        '██████╗  ██████╗ ███╗   ██╗╻████████╗',
-        '██╔══██╗██╔═══██╗████╗  ██║║╚══██╔══╝',
-        '██║  ██║██║   ██║██╔██╗ ██║║   ██║   ',
-        '██║  ██║██║   ██║██║╚██╗██║    ██║   ',
-        '██████╔╝╚██████╔╝██║ ╚████║    ██║   ',
-        '╚═════╝  ╚═════╝ ╚═╝  ╚═══╝    ╚═╝   ',
-      ],
-      panic: [
-        '██████╗  █████╗ ███╗   ██╗██╗ ██████╗',
-        '██╔══██╗██╔══██╗████╗  ██║██║██╔════╝',
-        '██████╔╝███████║██╔██╗ ██║██║██║     ',
-        '██╔═══╝ ██╔══██║██║╚██╗██║██║██║     ',
-        '██║     ██║  ██║██║ ╚████║██║╚██████╗',
-        '╚═╝     ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝ ╚═════╝',
-      ],
-    },
-    compact: {
-      dont: [
-        '████▄  ▄████  █▄  █ ╻▀█▀',
-        '██  ██ ██  ██ ███▄█ ║ █ ',
-        '██  ██ ██  ██ ██▀██ ║ █ ',
-        '████▀  ▀████  █  ██   █ ',
-        '▀▀▀     ▀▀▀   ▀  ▀▀   ▀ ',
-      ],
-      panic: [
-        '████▄  ▄███▄  █▄  █ █ ▄████',
-        '██  ██ ██ ██ ███▄█ █ ██    ',
-        '████▀  █████ ██▀██ █ ██ ▀█ ',
-        '██     ██ ██ █  ██ █ ▀████ ',
-        '▀      ▀  ▀▀ ▀  ▀▀ ▀  ▀▀▀▀ ',
-      ],
-    },
-  };
-
-  let _resizeObserver = null;
-  let _renderMode = '';
+  let _rendererPromise = null;
 
   function getDefault() {
     return localStorage.getItem(DEFAULT_KEY) || FALLBACK_ID;
@@ -88,70 +49,63 @@ const BlueprintsSplashScreens = (() => {
     return setDefault(activeSplashId());
   }
 
-  function lineCellWidth(lines, mode) {
-    const glyphCellEm = mode === 'compact' ? 0.88 : 1.05;
-    return lines.reduce((max, line) => Math.max(max, line.length), 0) * glyphCellEm;
+  function loadRenderer() {
+    if (!_rendererPromise) {
+      _rendererPromise = import('/splash-renderer/embed.js')
+        .catch((err) => {
+          _rendererPromise = null;
+          throw err;
+        });
+    }
+    return _rendererPromise;
   }
 
-  function fitDontPanic() {
-    const shell = document.getElementById('dont-panic-fit-shell');
-    if (!shell) return;
-    const rect = shell.getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
-    const mobileStack = window.matchMedia && window.matchMedia('(max-width: 680px)').matches;
-    const mode = mobileStack ? 'compact' : 'wide';
-    renderDontPanic(mode);
-    const lineHeight = 0.92;
-    const gapEm = mobileStack ? 0.62 : 1.55;
-    const maxDont = lineCellWidth(ART[mode].dont, mode);
-    const maxPanic = lineCellWidth(ART[mode].panic, mode);
-    const widthUnits = mobileStack ? Math.max(maxDont, maxPanic) : maxDont + maxPanic + gapEm;
-    const lineCount = mobileStack
-      ? ART[mode].dont.length + ART[mode].panic.length
-      : Math.max(ART[mode].dont.length, ART[mode].panic.length);
-    const heightUnits = (lineCount * lineHeight) + gapEm;
-    const widthFit = (rect.width * 0.92) / widthUnits;
-    const heightFit = (rect.height * 0.86) / heightUnits;
-    const next = Math.max(7, Math.min(86, Math.floor(Math.min(widthFit, heightFit))));
-    shell.style.setProperty('--dp-font-size', `${next}px`);
+  function splashPanelIsActive() {
+    const panel = document.getElementById('tab-splash-dont-panic');
+    return !!(panel && panel.classList.contains('active'));
   }
 
-  function renderWord(root, key, mode) {
-    if (!root) return;
-    const text = ART[mode][key].join('\n');
-    root.innerHTML = `
-      <pre class="dp-ascii dp-ascii--shadow" aria-hidden="true"></pre>
-      <pre class="dp-ascii dp-ascii--fill"></pre>
-    `;
-    root.querySelectorAll('.dp-ascii').forEach(pre => { pre.textContent = text; });
+  function raiseShadeForSplash() {
+    if (!splashPanelIsActive()) return;
+    const bodyShade = window.BodyShade;
+    if (!bodyShade || typeof bodyShade.snapUp !== 'function') return;
+    if (typeof bodyShade.syncActiveHandle === 'function') {
+      bodyShade.syncActiveHandle({ reset: false });
+    }
+    bodyShade.snapUp({ instant: true });
+    const mount = document.getElementById('dont-panic-renderer');
+    if (mount && mount.__xartaDontPanicSplash && typeof mount.__xartaDontPanicSplash.refresh === 'function') {
+      mount.__xartaDontPanicSplash.refresh();
+    }
   }
 
-  function renderDontPanic(mode) {
-    if (_renderMode === mode) return;
-    renderWord(document.querySelector('[data-dp-word="dont"]'), 'dont', mode);
-    renderWord(document.querySelector('[data-dp-word="panic"]'), 'panic', mode);
-    _renderMode = mode;
+  function scheduleSplashShadeUp() {
+    window.requestAnimationFrame(raiseShadeForSplash);
+    window.setTimeout(raiseShadeForSplash, 120);
   }
 
   function initDontPanic() {
-    const mobileStack = window.matchMedia && window.matchMedia('(max-width: 680px)').matches;
-    renderDontPanic(mobileStack ? 'compact' : 'wide');
     updateDefaultBadges();
-    fitDontPanic();
-    const shell = document.getElementById('dont-panic-fit-shell');
-    if (shell && typeof ResizeObserver !== 'undefined' && !_resizeObserver) {
-      _resizeObserver = new ResizeObserver(fitDontPanic);
-      _resizeObserver.observe(shell);
-    }
+    const mount = document.getElementById('dont-panic-renderer');
+    scheduleSplashShadeUp();
+    if (!mount || mount.dataset.splashMounted === 'true') return;
+    mount.dataset.splashMounted = 'true';
+    loadRenderer()
+      .then((mod) => {
+        const renderer = mod.mountDontPanicSplash || mod.m || window.XartaSplashRenderer?.mountDontPanicSplash;
+        if (typeof renderer === 'function') {
+          renderer(mount);
+          scheduleSplashShadeUp();
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load splash renderer', err);
+        mount.dataset.splashMounted = 'false';
+      });
   }
 
   function init() {
     initDontPanic();
-    window.addEventListener('resize', fitDontPanic, { passive: true });
-    window.addEventListener('orientationchange', fitDontPanic, { passive: true });
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', fitDontPanic, { passive: true });
-    }
   }
 
   return {
@@ -160,6 +114,5 @@ const BlueprintsSplashScreens = (() => {
     setActiveAsDefault,
     init,
     initDontPanic,
-    fitDontPanic,
   };
 })();
