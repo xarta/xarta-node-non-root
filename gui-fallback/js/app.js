@@ -344,7 +344,9 @@ function switchTab(tab) {
     else loadVpsDockgeStacks();
   }
   if (tab === 'ssh-terminal')  { if (typeof _sshTerminalLoadTab === 'function') _sshTerminalLoadTab(); }
-  if (tab === 'hermes-local')   { if (typeof _agentPagesLoadHermes === 'function') _agentPagesLoadHermes(); }
+  if (tab === 'hermes-local' || tab === 'hermes-vps') {
+    if (typeof _agentPagesLoadHermes === 'function') _agentPagesLoadHermes(tab);
+  }
   if (tab === 'caddy-configs'  && !_caddyConfigs.length)  loadCaddyConfigs();
   if (tab === 'pve-hosts'      && !_pveHosts.length)      loadPveHosts();
   if (tab === 'vlans'          && !_vlans.length)         loadVlans();

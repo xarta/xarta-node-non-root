@@ -2,14 +2,49 @@
 
 'use strict';
 
-const AGENT_HERMES_LOCAL_SETTING_KEY = 'agent_pages.hermes_local_url';
+const AGENT_PAGE_CONFIGS = {
+  'hermes-local': {
+    settingKey: 'agent_pages.hermes_local_url',
+    runtimeKey: 'hermesLocalUrl',
+    sessionEndpoint: '/api/v1/dashboard-auth/hermes-local/session',
+    frameId: 'agent-hermes-local-frame',
+    targets: {
+      terminal: 'local-hermes-container',
+      tui: 'local-hermes',
+      setup: 'local-hermes-setup',
+    },
+  },
+  'hermes-vps': {
+    settingKey: 'agent_pages.hermes_vps_url',
+    runtimeKey: 'hermesVpsUrl',
+    sessionEndpoint: '/api/v1/dashboard-auth/hermes-vps/session',
+    frameId: 'agent-hermes-vps-frame',
+    targets: {
+      terminal: 'hermes-vps-container',
+      tui: 'hermes-vps-agent',
+      setup: 'hermes-vps-setup',
+    },
+  },
+};
 
-let _agentHermesLoaded = false;
-let _agentHermesUrl = '';
+const _agentPageState = Object.fromEntries(Object.keys(AGENT_PAGE_CONFIGS).map(pageId => [
+  pageId,
+  { loaded: false, url: '' },
+]));
 
-function _agentPagesEls() {
+function _agentPagesConfig(pageId) {
+  return AGENT_PAGE_CONFIGS[pageId] || AGENT_PAGE_CONFIGS['hermes-local'];
+}
+
+function _agentPagesState(pageId) {
+  const key = AGENT_PAGE_CONFIGS[pageId] ? pageId : 'hermes-local';
+  return _agentPageState[key];
+}
+
+function _agentPagesEls(pageId) {
+  const config = _agentPagesConfig(pageId);
   return {
-    frame: document.getElementById('agent-hermes-frame'),
+    frame: document.getElementById(config.frameId),
   };
 }
 
@@ -25,68 +60,79 @@ function _agentPagesScheduleViewportFit() {
   setTimeout(schedule, 420);
 }
 
-async function _agentPagesResolveHermesUrl() {
-  const configured = window.BLUEPRINTS_AGENT_PAGES?.hermesLocalUrl
+function _agentPagesCurrentPageId() {
+  return document.getElementById('tab-hermes-vps')?.classList.contains('active')
+    ? 'hermes-vps'
+    : 'hermes-local';
+}
+
+async function _agentPagesResolveUrl(pageId = _agentPagesCurrentPageId()) {
+  const config = _agentPagesConfig(pageId);
+  const state = _agentPagesState(pageId);
+  const configured = window.BLUEPRINTS_AGENT_PAGES?.[config.runtimeKey]
     || (typeof getFrontendSetting === 'function'
-      ? getFrontendSetting(AGENT_HERMES_LOCAL_SETTING_KEY, '')
+      ? getFrontendSetting(config.settingKey, '')
       : '');
   if (configured) {
-    _agentHermesUrl = configured;
+    state.url = configured;
     return configured;
   }
   if (typeof loadFrontendSettings === 'function') {
     await loadFrontendSettings();
     const refreshed = typeof getFrontendSetting === 'function'
-      ? getFrontendSetting(AGENT_HERMES_LOCAL_SETTING_KEY, '')
+      ? getFrontendSetting(config.settingKey, '')
       : '';
     if (refreshed) {
-      _agentHermesUrl = refreshed;
+      state.url = refreshed;
       return refreshed;
     }
   }
-  _agentHermesUrl = '';
+  state.url = '';
   return '';
 }
 
-async function _agentPagesEstablishHermesSession() {
+async function _agentPagesEstablishSession(pageId = _agentPagesCurrentPageId()) {
+  const config = _agentPagesConfig(pageId);
   if (typeof apiFetch !== 'function') return false;
   try {
-    const r = await apiFetch('/api/v1/dashboard-auth/hermes-local/session', { method: 'POST' });
+    const r = await apiFetch(config.sessionEndpoint, { method: 'POST' });
     return r.ok;
   } catch (e) {
     return false;
   }
 }
 
-async function _agentPagesLoadHermes() {
-  const { frame } = _agentPagesEls();
+async function _agentPagesLoadHermes(pageId = _agentPagesCurrentPageId()) {
+  const state = _agentPagesState(pageId);
+  const { frame } = _agentPagesEls(pageId);
   if (!frame) return;
-  const url = await _agentPagesResolveHermesUrl();
+  const url = await _agentPagesResolveUrl(pageId);
   if (!url) {
     _agentPagesScheduleViewportFit();
     return;
   }
-  if (!_agentHermesLoaded || !frame.src) {
-    const ok = await _agentPagesEstablishHermesSession();
+  if (!state.loaded || !frame.src) {
+    const ok = await _agentPagesEstablishSession(pageId);
     if (!ok) {
       _agentPagesScheduleViewportFit();
       return;
     }
     frame.src = url;
-    _agentHermesLoaded = true;
+    state.loaded = true;
   }
   _agentPagesScheduleViewportFit();
 }
 
-async function _agentPagesRefreshHermes() {
-  const { frame } = _agentPagesEls();
+async function _agentPagesRefreshHermes(pageId = _agentPagesCurrentPageId()) {
+  const state = _agentPagesState(pageId);
+  const { frame } = _agentPagesEls(pageId);
   if (!frame) return;
-  const url = await _agentPagesResolveHermesUrl();
+  const url = await _agentPagesResolveUrl(pageId);
   if (!url) {
     _agentPagesScheduleViewportFit();
     return;
   }
-  await _agentPagesEstablishHermesSession();
+  await _agentPagesEstablishSession(pageId);
   if (frame.src) {
     try {
       frame.contentWindow?.location?.reload();
@@ -94,21 +140,29 @@ async function _agentPagesRefreshHermes() {
     } catch (e) {}
   }
   frame.src = url;
-  _agentHermesLoaded = true;
+  state.loaded = true;
 }
 
-async function _agentPagesOpenHermes() {
-  const url = _agentHermesUrl || await _agentPagesResolveHermesUrl();
+async function _agentPagesOpenHermes(pageId = _agentPagesCurrentPageId()) {
+  const state = _agentPagesState(pageId);
+  const url = state.url || await _agentPagesResolveUrl(pageId);
   if (!url) {
     return;
   }
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
+function _agentPagesOpenTerminal(kind, pageId = _agentPagesCurrentPageId()) {
+  const targetId = _agentPagesConfig(pageId).targets[kind];
+  if (targetId) window.openSshTerminalTarget?.(targetId);
+}
+
 function _agentPagesBindHermesControls() {
-  const els = _agentPagesEls();
-  els.frame?.addEventListener('load', () => {
-    _agentPagesScheduleViewportFit();
+  Object.keys(AGENT_PAGE_CONFIGS).forEach(pageId => {
+    const els = _agentPagesEls(pageId);
+    els.frame?.addEventListener('load', () => {
+      _agentPagesScheduleViewportFit();
+    });
   });
 }
 
@@ -116,3 +170,4 @@ document.addEventListener('DOMContentLoaded', _agentPagesBindHermesControls);
 window._agentPagesLoadHermes = _agentPagesLoadHermes;
 window._agentPagesRefreshHermes = _agentPagesRefreshHermes;
 window._agentPagesOpenHermes = _agentPagesOpenHermes;
+window._agentPagesOpenTerminal = _agentPagesOpenTerminal;
