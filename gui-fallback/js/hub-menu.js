@@ -182,6 +182,7 @@ function createHubMenu(cfg) {
                             // fn and activeOn are always developer-controlled — always sync from defaultMenu
                             if (def.fn !== undefined) existing.fn = def.fn; else delete existing.fn;
                             if (def.activeOn !== undefined) existing.activeOn = def.activeOn; else delete existing.activeOn;
+                            if (def.defaultTargetFn !== undefined) existing.defaultTargetFn = def.defaultTargetFn; else delete existing.defaultTargetFn;
                         }
                     });
                 } catch (e) {
@@ -240,6 +241,19 @@ function createHubMenu(cfg) {
                     return;   // _seedDefaultsToDb will call loadNavItemsFromDB again
                 }
 
+                // DB values are authoritative for existing rows, but new default
+                // function/page rows still need to be inserted when an older DB was
+                // seeded before the item existed.
+                if (!this._dbSeeded) {
+                    const keys = new Set(items.map(item => item.item_key));
+                    const missing = this.defaultMenu.filter(item => !keys.has(item.id));
+                    if (missing.length) {
+                        this._dbSeeded = true;
+                        await this._seedDefaultsToDb(missing);
+                        return;
+                    }
+                }
+
                 this._dbItems = {};
                 for (const dbRow of items) {
                     this._dbItems[dbRow.item_key] = dbRow;
@@ -265,8 +279,8 @@ function createHubMenu(cfg) {
             }
         },
 
-        async _seedDefaultsToDb() {
-            const payload = this.defaultMenu.map(item => ({
+        async _seedDefaultsToDb(items = this.defaultMenu) {
+            const payload = items.map(item => ({
                 menu_group:  cfg.group,
                 item_key:    item.id,
                 label:       item.label.replace(item.icon || '', '').trim(),
@@ -305,17 +319,9 @@ function createHubMenu(cfg) {
                 const url = `/fallback-ui/assets/${db.icon_asset}?v=${ts}`;
                 return `<span class="menu-icon" style="--_icon-url:url('${url}')" aria-hidden="true"></span>`;
             }
-            // When the JS default is an inline HIEROGLYPHS SVG (data: URL), it wins over any
-            // stale text emoji left in the DB from the initial seed (e.g. old '↺' or '🔗').
-            // If the admin has explicitly stored a data: URL in icon_emoji (via CMS), that
-            // is respected instead. For plain-text emoji JS defaults, DB still takes priority.
-            let emoji;
-            if (emojiIcon && emojiIcon.startsWith('data:')) {
-                emoji = (db && db.icon_emoji && db.icon_emoji.startsWith('data:'))
-                    ? db.icon_emoji : emojiIcon;
-            } else {
-                emoji = (db && db.icon_emoji) || emojiIcon;
-            }
+            // DB-loaded values are authoritative. JS defaults are only a fallback
+            // for menus/items that have not yet been seeded or configured.
+            const emoji = (db && db.icon_emoji) || emojiIcon;
             if (emoji) {
                 // data: URL (inline SVG from HIEROGLYPHS constants) or icons/ path
                 if (emoji.startsWith('data:') || emoji.startsWith('icons/')) {
@@ -434,6 +440,18 @@ function createHubMenu(cfg) {
         _activeTabId() {
             const activePanel = document.querySelector('.tab-panel.active');
             const domActiveId = activePanel ? activePanel.id.replace('tab-', '') : null;
+            if (domActiveId === 'manual-links'
+                    && typeof BlueprintsManualLinks !== 'undefined'
+                    && typeof BlueprintsManualLinks.getCurrentTabId === 'function') {
+                const manualTabId = BlueprintsManualLinks.getCurrentTabId();
+                if (manualTabId) {
+                    this._activeId = manualTabId;
+                    return manualTabId;
+                }
+            }
+            if (domActiveId === 'manual-links' && this._activeId && this._activeId.indexOf('manual-links-') === 0) {
+                return this._activeId;
+            }
             if (domActiveId) {
                 const ownsDomTab = this.defaultMenu.some(item =>
                     (!item.fn && item.id === domActiveId)
@@ -451,7 +469,15 @@ function createHubMenu(cfg) {
         _contextMenuFunctionItems(activeId) {
             const parentId = cfg.mobilePinnedId;
             if (!parentId) return [];
-            const children = this.getChildren(parentId);
+            const merged = new Map();
+            this.getChildren(parentId).forEach(item => merged.set(item.id, item));
+            this.defaultMenu
+                .filter(item => item.parent === parentId && item.fn)
+                .forEach(def => {
+                    const current = merged.get(def.id);
+                    merged.set(def.id, current ? { ...current, fn: def.fn, activeOn: def.activeOn } : { ...def });
+                });
+            const children = [...merged.values()];
             const fnChildren = children.filter(item => !!item.fn);
             const visibleFnChildren = fnChildren.filter(item =>
                 (!item.activeOn || (activeId && item.activeOn.includes(activeId)))
@@ -539,9 +565,24 @@ function createHubMenu(cfg) {
         },
 
         _primaryMenuTargetId(item, activeMember, navChildren) {
+            const configuredTarget = this._configuredDefaultTarget(item);
+            if (configuredTarget) return configuredTarget;
             if (activeMember) return activeMember.id;
             if (document.getElementById('tab-' + item.id)) return item.id;
             return navChildren[0]?.id || item.id;
+        },
+
+        _configuredDefaultTarget(item) {
+            if (!item || !item.defaultTargetFn) return null;
+            const fn = this._fnRegistry[item.defaultTargetFn];
+            if (typeof fn !== 'function') return null;
+            try {
+                const targetId = fn();
+                return typeof targetId === 'string' && targetId.trim() ? targetId.trim() : null;
+            } catch (e) {
+                console.warn('[HubMenu] default target failed for:', item.id, e);
+                return null;
+            }
         },
 
         _sshLockBlocksNavigation(targetId) {
@@ -901,8 +942,8 @@ function createHubMenu(cfg) {
                     dropdown.querySelector('.hub-tab-label').addEventListener('click', (e) => {
                         e.stopPropagation();
                         const targetId = isGroupActive
-                            ? activeMember.id
-                            : (document.getElementById('tab-' + item.id) ? item.id : navChildren[0]?.id);
+                            ? (this._configuredDefaultTarget(item) || activeMember.id)
+                            : (this._configuredDefaultTarget(item) || (document.getElementById('tab-' + item.id) ? item.id : navChildren[0]?.id));
                         if (targetId) {
                             if (this._sshLockBlocksNavigation(targetId)) return;
                             this._playItemSound(targetId);

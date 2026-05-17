@@ -1,5 +1,6 @@
 let _selectorOriginMenuGroup = 'synthesis';
 const SPECIAL_UI_MODE_S25_STARGATE_TOUCH_NAV = 's25-stargate-touch-nav';
+let _manualLinksBaseNavigation = false;
 
 function _isS25StargateOriginMenuMode() {
   if (!window.matchMedia) return false;
@@ -111,6 +112,16 @@ function _getSynthesisDefaultTab() {
     return BlueprintsSplashScreens.getDefault();
   }
   return 'manual-links';
+}
+
+function _switchManualLinksView(view) {
+  _manualLinksBaseNavigation = true;
+  try {
+    switchTab('manual-links');
+  } finally {
+    _manualLinksBaseNavigation = false;
+  }
+  manualLinksShowView(view);
 }
 
 function _syncActiveMenuForTab(tab) {
@@ -315,6 +326,15 @@ function switchTab(tab) {
     switchTab('splash-dont-panic-2');
     return;
   }
+  if (tab === 'manual-links' && !_manualLinksBaseNavigation
+      && typeof BlueprintsManualLinks !== 'undefined'
+      && typeof BlueprintsManualLinks.getDefaultTabId === 'function') {
+    const target = BlueprintsManualLinks.getDefaultTabId();
+    if (target && target !== 'manual-links') {
+      switchTab(target);
+      return;
+    }
+  }
   if (typeof SoundManager !== 'undefined') SoundManager.stopPreview();
   const wasSshTerminalActive = document.getElementById('tab-ssh-terminal')?.classList.contains('active');
   if (wasSshTerminalActive && tab !== 'ssh-terminal' && typeof _sshTerminalDisconnect === 'function') {
@@ -328,6 +348,10 @@ function switchTab(tab) {
   if (btn) btn.classList.add('active');
   const panel = document.getElementById(`tab-${tab}`);
   if (panel) panel.classList.add('active');
+  if (!String(tab || '').startsWith('manual-links')) {
+    document.body.classList.remove('manual-links-grid-active');
+    document.getElementById('tab-manual-links')?.classList.remove('ml-grid-active');
+  }
   // Lazy-load data on first view
   if (tab === 'services'       && !_services.length)      loadServices();
   if (tab === 'machines'       && !_machines.length)      loadMachines();
@@ -353,10 +377,11 @@ function switchTab(tab) {
   if (tab === 'arp-manual'     && !_arpManual.length)     loadArpManual();
   if (tab === 'ssh-targets'    && !_sshTargets.length)    loadSshTargets();
   if (tab === 'manual-links'   && !_manualLinks.length)   loadManualLinks();
-  if (tab === 'manual-links-table')    { switchTab('manual-links'); manualLinksShowView('table');    return; }
-  if (tab === 'manual-links-rendered') { switchTab('manual-links'); manualLinksShowView('rendered'); return; }
-  if (tab === 'manual-links-tree')     { switchTab('manual-links'); manualLinksShowView('tree');     return; }
-  if (tab === 'manual-links-pretext')  { switchTab('manual-links'); manualLinksShowView('pretext');  return; }
+  if (tab === 'manual-links-table')    { _switchManualLinksView('table');    return; }
+  if (tab === 'manual-links-rendered') { _switchManualLinksView('rendered'); return; }
+  if (tab === 'manual-links-tree')     { _switchManualLinksView('tree');     return; }
+  if (tab === 'manual-links-pretext')  { _switchManualLinksView('pretext');  return; }
+  if (tab === 'manual-links-grid')     { _switchManualLinksView('grid');     return; }
   if (tab && tab.indexOf('splash-dont-panic') === 0) { if (typeof BlueprintsSplashScreens !== 'undefined') BlueprintsSplashScreens.initDontPanic(tab); }
   if (tab === 'settings'       && !_settings.length)      loadSettings();
   if (tab === 'settings')                                  { initSoundToggle(); initVolumeSlider(); initTtsSettingsPanel(); }

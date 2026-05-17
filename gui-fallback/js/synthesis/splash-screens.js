@@ -29,6 +29,8 @@ const BlueprintsSplashScreens = (() => {
   };
 
   let _rendererPromise = null;
+  let _dismissPointer = null;
+  let _lastTap = { time: 0, x: 0, y: 0 };
 
   function normalizeId(id) {
     if (id === LEGACY_ID) return FALLBACK_ID;
@@ -184,8 +186,64 @@ const BlueprintsSplashScreens = (() => {
       });
   }
 
+  function dismissToManualDefault() {
+    if (typeof BlueprintsManualLinks !== 'undefined' && typeof BlueprintsManualLinks.openDefault === 'function') {
+      BlueprintsManualLinks.openDefault();
+    } else if (typeof switchTab === 'function') {
+      switchTab('manual-links-rendered');
+    }
+  }
+
+  function isSplashEvent(event) {
+    if (!(event.target && event.target.closest)) return false;
+    if (event.target.closest('.body-shade-handle')) return false;
+    return !!event.target.closest('.tab-panel--splash.active .splash-screen');
+  }
+
+  function installDismissGestures() {
+    document.addEventListener('dblclick', (event) => {
+      if (!isSplashEvent(event)) return;
+      event.preventDefault();
+      dismissToManualDefault();
+    });
+    document.addEventListener('pointerdown', (event) => {
+      if (!isSplashEvent(event)) return;
+      _dismissPointer = {
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        time: Date.now(),
+      };
+    }, { passive: true });
+    document.addEventListener('pointerup', (event) => {
+      if (!_dismissPointer || _dismissPointer.pointerId !== event.pointerId) return;
+      const dx = event.clientX - _dismissPointer.x;
+      const dy = event.clientY - _dismissPointer.y;
+      const dist = Math.hypot(dx, dy);
+      const now = Date.now();
+      const elapsed = now - _dismissPointer.time;
+      const isSwipe = dist > 64 && elapsed < 900;
+      const isTap = dist < 18 && elapsed < 350;
+      const isDoubleTap = isTap
+        && now - _lastTap.time < 420
+        && Math.hypot(event.clientX - _lastTap.x, event.clientY - _lastTap.y) < 32;
+      _dismissPointer = null;
+      if (isSwipe || isDoubleTap) {
+        event.preventDefault();
+        _lastTap = { time: 0, x: 0, y: 0 };
+        dismissToManualDefault();
+      } else if (isTap) {
+        _lastTap = { time: now, x: event.clientX, y: event.clientY };
+      }
+    });
+    document.addEventListener('pointercancel', () => {
+      _dismissPointer = null;
+    }, { passive: true });
+  }
+
   function init() {
     updateDefaultBadges();
+    installDismissGestures();
     initDontPanic(activeSplashId());
   }
 

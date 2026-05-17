@@ -1,11 +1,51 @@
 /* ── Manual Links ────────────────────────────────────────────────────────── */
 
-let _manualLinksView = 'rendered';   // 'table' | 'rendered' | 'tree' | 'pretext'
+let _manualLinksView = 'rendered';   // 'table' | 'rendered' | 'tree' | 'pretext' | 'grid'
 let _editingLinkId   = null;         // null = add mode, string = edit mode
 let _mlFilter    = '';               // table filter text
 let _mlGroupBy   = 'none';          // 'none' | 'group' | 'host'
 let _mlCollapsed = new Set();       // collapsed group keys
 let _mlFilterTimer = null;          // debounce handle for ml-filter input
+let _manualLinkCategories = [];
+let _manualLinkCategoryItems = [];
+let _mlGridOpen = new Set();
+let _mlExpandedRoutes = new Set();
+let _mlGridDragId = null;
+let _mlGridDragKind = null;
+let _mlGridDragSourceParent = null;
+let _mlGridDragOffsetX = null;
+let _mlGridDragOffsetY = null;
+let _mlGridCategoryNestIntent = null;
+let _mlPanelResizeState = null;
+let _mlTouchCategoryDrag = null;
+let _mlTouchCategoryDragFallbackId = null;
+let _mlPickedCategory = null;
+let _mlSuppressNextCategoryToggle = false;
+let _mlCurrentGridLayoutBucket = null;
+let _mlManagingCategoryId = null;
+let _mlLeafClickState = { timer: null, mappingId: null };
+let _mlSuppressNextLeafClick = false;
+let _mlShadeViewportObserver = null;
+const _ML_DEFAULT_PAGE_KEY = 'blueprintsDefaultManualLinksPage';
+const _ML_GRID_ORDER_KEY = 'blueprintsManualLinksPage4GridOrder';
+const _ML_GRID_LAYOUT_KEY = 'blueprintsManualLinksInterfaceLayout';
+const _ML_GRID_ROW_HEIGHT = 42;
+const _ML_DEFAULT_TAB = 'manual-links-rendered';
+const _ML_DEFAULT_ICON = 'icons/hieroglyphs/eye-of-horus-blue.svg';
+const _ML_PAGE_TO_VIEW = {
+  'manual-links-table': 'table',
+  'manual-links-rendered': 'rendered',
+  'manual-links-tree': 'tree',
+  'manual-links-pretext': 'pretext',
+  'manual-links-grid': 'grid',
+};
+const _ML_VIEW_TO_PAGE = {
+  table: 'manual-links-table',
+  rendered: 'manual-links-rendered',
+  tree: 'manual-links-tree',
+  pretext: 'manual-links-pretext',
+  grid: 'manual-links-grid',
+};
 const _ML_TABLE_COLS = ['link_id', 'label', 'addresses', 'group_name', 'sort_order', 'host', 'notes', '_actions'];
 const _ML_TABLE_FIELD_META = {
   link_id: {
@@ -15,7 +55,7 @@ const _ML_TABLE_FIELD_META = {
   label: {
     label: 'Label',
     sortKey: 'label',
-    render: lnk => `<td style="max-width:160px">${lnk.icon ? `<span style="margin-right:4px">${esc(lnk.icon)}</span>` : ''}${lnk.label ? `<strong>${esc(lnk.label)}</strong>` : '<span style="color:var(--text-dim)">—</span>'}</td>`,
+    render: lnk => `<td style="max-width:160px">${lnk.icon ? _mlIconHtml(lnk.icon, 'ml-inline-icon') : ''}${lnk.label ? `<strong>${esc(lnk.label)}</strong>` : '<span style="color:var(--text-dim)">—</span>'}</td>`,
   },
   addresses: {
     label: 'Addresses',
@@ -236,25 +276,92 @@ async function openManualLinksLayoutContextModal() {
   await controller.openLayoutContextModal();
 }
 
+function _mlNormalizeDefaultTab(tabId) {
+  if (tabId === 'manual-links') return _ML_DEFAULT_TAB;
+  return _ML_PAGE_TO_VIEW[tabId] ? tabId : _ML_DEFAULT_TAB;
+}
+
+function _mlCurrentManualTabId() {
+  return _ML_VIEW_TO_PAGE[_manualLinksView] || _ML_DEFAULT_TAB;
+}
+
+function _mlGetDefaultTabId() {
+  const current = _mlNormalizeDefaultTab(localStorage.getItem(_ML_DEFAULT_PAGE_KEY) || _ML_DEFAULT_TAB);
+  if (current !== localStorage.getItem(_ML_DEFAULT_PAGE_KEY)) {
+    localStorage.setItem(_ML_DEFAULT_PAGE_KEY, current);
+  }
+  return current;
+}
+
+function _mlLabelForTab(tabId) {
+  switch (_mlNormalizeDefaultTab(tabId)) {
+    case 'manual-links-table': return 'Table';
+    case 'manual-links-tree': return 'Page 2';
+    case 'manual-links-pretext': return 'Page 3';
+    case 'manual-links-grid': return 'Interface';
+    case 'manual-links-rendered':
+    default:
+      return 'Page 1';
+  }
+}
+
+function _mlSetDefaultTab(tabId) {
+  const next = _mlNormalizeDefaultTab(tabId);
+  localStorage.setItem(_ML_DEFAULT_PAGE_KEY, next);
+  if (typeof HubDialogs !== 'undefined') {
+    HubDialogs.alert({
+      title: 'Default Manual Links Page',
+      message: `${_mlLabelForTab(next)} is now the default Manual Links page.`,
+      tone: 'success',
+      badge: 'Manual',
+    });
+  }
+  return next;
+}
+
+function _mlSetActiveAsDefault() {
+  return _mlSetDefaultTab(_mlCurrentManualTabId());
+}
+
+function _mlOpenDefaultPage() {
+  switchTab(_mlGetDefaultTabId());
+}
+
+const BlueprintsManualLinks = {
+  getCurrentTabId: _mlCurrentManualTabId,
+  getDefaultTabId: _mlGetDefaultTabId,
+  setDefaultTab: _mlSetDefaultTab,
+  setActiveAsDefault: _mlSetActiveAsDefault,
+  openDefault: _mlOpenDefaultPage,
+  autoFitInterface: _mlAutoFitInterface,
+};
+
 /* ── View toggle ─────────────────────────────────────────────────────────── */
 
 function manualLinksShowView(view) {
   _manualLinksView = view;
+  const isGrid = view === 'grid';
+  document.body.classList.toggle('manual-links-grid-active', isGrid);
+  document.getElementById('tab-manual-links')?.classList.toggle('ml-grid-active', isGrid);
   document.getElementById('ml-table-view').style.display    = view === 'table'    ? '' : 'none';
   document.getElementById('ml-rendered-view').style.display = view === 'rendered' ? '' : 'none';
   document.getElementById('ml-tree-view').style.display     = view === 'tree'     ? '' : 'none';
   document.getElementById('ml-pretext-view').style.display  = view === 'pretext'  ? '' : 'none';
+  document.getElementById('ml-grid-view').style.display     = isGrid             ? '' : 'none';
   if (typeof SynthesisMenuConfig !== 'undefined') SynthesisMenuConfig.updateActiveTab('manual-links-' + view);
   // Show/hide the header filter input for the table sub-view
   if (typeof ResponsiveLayout !== 'undefined') ResponsiveLayout.updateControlsForTab('manual-links-' + view);
   if (view === 'table') renderManualLinksTable();
+  else if (isGrid) renderManualLinksGrid();
   else renderManualLinksStoryViews();
+  if (isGrid) _mlScheduleGridViewportFit();
 }
 
 function renderManualLinksStoryViews() {
   renderManualLinksRendered();
   renderManualLinksTree();
   renderManualLinksPretext();
+  renderManualLinksGrid();
 }
 
 /* ── Load + render table ─────────────────────────────────────────────────── */
@@ -266,11 +373,20 @@ async function loadManualLinks() {
     const r = await apiFetch('/api/v1/manual-links');
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     _manualLinks = await r.json();
+    await loadManualLinkCategories();
     renderManualLinksTable();
     renderManualLinksStoryViews();
   } catch (e) {
     if (err) { err.textContent = `Failed to load manual links: ${e.message}`; err.hidden = false; }
   }
+}
+
+async function loadManualLinkCategories() {
+  const r = await apiFetch('/api/v1/manual-link-categories');
+  if (!r.ok) throw new Error(`categories HTTP ${r.status}`);
+  const payload = await r.json();
+  _manualLinkCategories = Array.isArray(payload.categories) ? payload.categories : [];
+  _manualLinkCategoryItems = Array.isArray(payload.items) ? payload.items : [];
 }
 
 function renderManualLinksTable() {
@@ -398,7 +514,7 @@ function renderManualLinksRendered() {
     [...arr].sort((a, b) => (a.sort_order - b.sort_order) || (a.label || '').localeCompare(b.label || ''));
 
   function renderLink(lnk) {
-    const icon = lnk.icon ? `<span style="margin-right:6px;font-size:1.1em">${esc(lnk.icon)}</span>` : '';
+    const icon = lnk.icon ? _mlIconHtml(lnk.icon, 'ml-inline-icon') : '';
     const labelHtml = lnk.label ? `<span style="font-weight:600">${icon}${esc(lnk.label)}</span>` : `${icon}<span style="color:var(--text-dim);font-style:italic">untitled</span>`;
 
     // Tooltip detail rows shared by all address chips on this item
@@ -585,7 +701,1899 @@ function renderManualLinksPretext() {
   container.innerHTML = `<div class="ml-pretext-grid">${segments}</div>`;
 }
 
+/* ── Grid view (Page 4) ─────────────────────────────────────────────────── */
+
+function _mlPrimaryRoute(lnk) {
+  return lnk?.vlan_uri || lnk?.vlan_ip || lnk?.tailnet_uri || lnk?.tailnet_ip || '';
+}
+
+function _mlHref(addr) {
+  if (!addr) return '';
+  return /^https?:\/\//i.test(addr) ? addr : `http://${addr}`;
+}
+
+function _mlCategoryMaps() {
+  const byParent = {};
+  const byId = {};
+  _manualLinkCategories.forEach(cat => {
+    byId[cat.category_id] = cat;
+    const parent = cat.parent_category_id || '__root__';
+    if (!byParent[parent]) byParent[parent] = [];
+    byParent[parent].push(cat);
+  });
+  return { byParent, byId };
+}
+
+function _mlItemsByCategory() {
+  const byCategory = {};
+  _manualLinkCategoryItems.forEach(item => {
+    if (!byCategory[item.category_id]) byCategory[item.category_id] = [];
+    byCategory[item.category_id].push(item);
+  });
+  return byCategory;
+}
+
+function _mlLinkTreeForCategory(categoryId, itemsByCategory) {
+  const items = (itemsByCategory[categoryId] || []).filter(item => item.link);
+  const byMappingId = new Map(items.map(item => [item.mapping_id, item]));
+  const byLinkId = new Map(items.map(item => [item.link.link_id, item]));
+  const childrenByParent = new Map();
+  const roots = [];
+  items.forEach(item => {
+    const explicitParentId = item.parent_mapping_id;
+    const fallbackParent = item.link.parent_id ? byLinkId.get(item.link.parent_id) : null;
+    const parentMappingId = explicitParentId && byMappingId.has(explicitParentId)
+      ? explicitParentId
+      : (fallbackParent ? fallbackParent.mapping_id : null);
+    if (parentMappingId) {
+      if (!childrenByParent.has(parentMappingId)) childrenByParent.set(parentMappingId, []);
+      childrenByParent.get(parentMappingId).push(item);
+    } else {
+      roots.push(item);
+    }
+  });
+  const sortItems = arr => [...arr].sort((a, b) => {
+    const ao = a.link?.sort_order ?? a.sort_order ?? 0;
+    const bo = b.link?.sort_order ?? b.sort_order ?? 0;
+    if (ao !== bo) return ao - bo;
+    return (a.label_override || a.link?.label || '').localeCompare(b.label_override || b.link?.label || '');
+  });
+  return { roots: sortItems(roots), childrenByParent, sortItems };
+}
+
+function _mlSortCategories(cats) {
+  return [...cats].sort((a, b) => (a.sort_order - b.sort_order) || (a.label || '').localeCompare(b.label || ''));
+}
+
+function _mlSavedGridOrder() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(_ML_GRID_ORDER_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function _mlOrderRootCategories(cats) {
+  const saved = _mlSavedGridOrder();
+  const pos = new Map(saved.map((id, idx) => [id, idx]));
+  return _mlSortCategories(cats).sort((a, b) => {
+    const ap = pos.has(a.category_id) ? pos.get(a.category_id) : Number.MAX_SAFE_INTEGER;
+    const bp = pos.has(b.category_id) ? pos.get(b.category_id) : Number.MAX_SAFE_INTEGER;
+    if (ap !== bp) return ap - bp;
+    return (a.sort_order - b.sort_order) || (a.label || '').localeCompare(b.label || '');
+  });
+}
+
+function _mlSaveGridOrderFromDom() {
+  const ids = [...document.querySelectorAll('#ml-grid-body .ml-grid-board > [data-ml-grid-card]')]
+    .map(card => card.dataset.categoryId)
+    .filter(Boolean);
+  localStorage.setItem(_ML_GRID_ORDER_KEY, JSON.stringify(ids));
+}
+
+function _mlSavedGridLayout() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(_ML_GRID_LAYOUT_KEY) || '{}');
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const bucket = _mlGridLayoutBucket();
+    if (parsed[bucket] && typeof parsed[bucket] === 'object' && !Array.isArray(parsed[bucket])) return parsed[bucket];
+    if (!parsed.mobile && !parsed.tablet && !parsed.desktop && bucket === 'desktop') return parsed;
+    return {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function _mlSaveGridLayout(layout) {
+  let store = {};
+  try {
+    const parsed = JSON.parse(localStorage.getItem(_ML_GRID_LAYOUT_KEY) || '{}');
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) store = parsed;
+  } catch (_) {
+    store = {};
+  }
+  if (!store.mobile && !store.tablet && !store.desktop) {
+    store = { desktop: store };
+  }
+  store[_mlGridLayoutBucket()] = layout || {};
+  localStorage.setItem(_ML_GRID_LAYOUT_KEY, JSON.stringify(store));
+}
+
+function _mlGridLayoutBucket() {
+  const width = (window.visualViewport && Number.isFinite(window.visualViewport.width) && window.visualViewport.width > 0)
+    ? window.visualViewport.width
+    : (window.innerWidth || document.documentElement.clientWidth || 0);
+  if (width <= 760) return 'mobile';
+  if (width <= 1180) return 'tablet';
+  return 'desktop';
+}
+
+function _mlRootGridLayoutFor(categoryId) {
+  const layout = _mlSavedGridLayout()[categoryId];
+  return layout && typeof layout === 'object' ? layout : {};
+}
+
+function _mlPanelCellCount(categoryId) {
+  const maps = _mlCategoryMaps();
+  const itemsByCategory = _mlItemsByCategory();
+  const tree = _mlLinkTreeForCategory(categoryId, itemsByCategory);
+  return 1 + _mlSortCategories(maps.byParent[categoryId] || []).length + tree.roots.length;
+}
+
+function _mlClampGridSpan(value, min, max = 6) {
+  return Math.max(min, Math.min(max, Math.round(Number(value) || min)));
+}
+
+function _mlGridPlacementStyles(category, shape = { cols: 1, rows: 1 }, { inPanel = false, cells = 1 } = {}) {
+  if (inPanel) return [];
+  const layout = _mlRootGridLayoutFor(category.category_id);
+  const manualSize = layout.manualSize === true || Number.isFinite(Number(layout.w)) || Number.isFinite(Number(layout.h));
+  const cols = _mlClampGridSpan(manualSize ? (layout.w || 1) : (layout.w || shape.cols || 1), 1, 6);
+  const minRows = _mlCategoryIsPanel(category) ? Math.max(1, Math.ceil(Math.max(1, cells) / cols)) : 1;
+  const rows = _mlClampGridSpan(manualSize ? Math.max(layout.h || 1, minRows) : (layout.h || shape.rows || minRows), minRows, 12);
+  const styles = [];
+  if (cols > 1) styles.push(`grid-column:span ${cols}`);
+  if (rows > 1) styles.push(`grid-row:span ${rows}`);
+  return styles;
+}
+
+function _mlStyleAttr(styles) {
+  return styles.length ? ` style="${styles.join(';')}"` : '';
+}
+
+function _mlRootLayoutSlot(categoryId, fallbackIndex) {
+  const layout = _mlRootGridLayoutFor(categoryId);
+  if (Number.isFinite(Number(layout.slot))) return Math.max(0, Math.round(Number(layout.slot)));
+  if (Number.isFinite(Number(layout.col)) && Number.isFinite(Number(layout.row))) {
+    return Math.max(0, ((Math.round(Number(layout.row)) - 1) * 6) + (Math.round(Number(layout.col)) - 1));
+  }
+  return fallbackIndex;
+}
+
+function _mlRenderRootGridChildren(roots, renderRoot) {
+  const slotted = roots
+    .map((cat, index) => ({ cat, index, slot: _mlRootLayoutSlot(cat.category_id, index) }))
+    .sort((a, b) => (a.slot - b.slot) || (a.index - b.index));
+  const usedSlots = new Set();
+  const parts = [];
+  let cursor = 0;
+  slotted.forEach(item => {
+    const slot = Math.max(cursor, item.slot);
+    while (cursor < slot) {
+      parts.push(`<i class="ml-grid-placeholder" aria-hidden="true" data-ml-grid-placeholder="${cursor}"></i>`);
+      cursor += 1;
+    }
+    parts.push(renderRoot(item.cat));
+    usedSlots.add(slot);
+    cursor = slot + 1;
+  });
+  return parts.join('');
+}
+
+function _mlCategoryPath(categoryId) {
+  const { byId } = _mlCategoryMaps();
+  const parts = [];
+  const seen = new Set();
+  let current = byId[categoryId];
+  while (current && !seen.has(current.category_id)) {
+    seen.add(current.category_id);
+    parts.unshift(current.label);
+    current = current.parent_category_id ? byId[current.parent_category_id] : null;
+  }
+  return parts.join(' / ');
+}
+
+function _mlCategoryIcon(category) {
+  return category?.icon || _ML_DEFAULT_ICON;
+}
+
+function _mlLinkIcon(link) {
+  return link?.icon || _ML_DEFAULT_ICON;
+}
+
+function _mlCategoryIsPanel(category) {
+  return Number(category?.show_panel || 0) === 1;
+}
+
+function _mlCssString(value) {
+  return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '');
+}
+
+function _mlPanelGridShape(cellCount) {
+  const total = Math.max(1, Number(cellCount) || 1);
+  const rows = Math.max(1, Math.ceil(Math.sqrt(total)));
+  const cols = Math.max(1, Math.ceil(total / rows));
+  return { cols: Math.min(6, cols), rows };
+}
+
+function _mlPanelStyle(category, shape = null, extraStyles = []) {
+  const styles = [];
+  if (shape?.cols) styles.push(`--ml-panel-cols:${Math.max(1, Math.min(6, shape.cols))}`);
+  if (shape?.rows) styles.push(`--ml-panel-rows:${Math.max(1, shape.rows)}`);
+  const color = (category?.panel_color || '').trim();
+  const background = (category?.panel_background || '').trim();
+  if (/^#[0-9a-f]{6}$/i.test(color)) {
+    styles.push(`--ml-panel-accent:${esc(color)}`);
+  }
+  if (background) {
+    const src = background.startsWith('icons/') ? `/fallback-ui/assets/${background}` : background;
+    styles.push(`--ml-panel-bg:url("${_mlCssString(src)}")`);
+  }
+  return _mlStyleAttr([...styles, ...extraStyles]);
+}
+
+function _mlCategoryDescendsFrom(categoryId, possibleAncestorId) {
+  const { byId } = _mlCategoryMaps();
+  const seen = new Set();
+  let current = byId[categoryId];
+  while (current?.parent_category_id && !seen.has(current.category_id)) {
+    seen.add(current.category_id);
+    if (current.parent_category_id === possibleAncestorId) return true;
+    current = byId[current.parent_category_id];
+  }
+  return false;
+}
+
+function _mlUniqueCategoryLabel(label, parentCategoryId, categoryId) {
+  const base = (label || 'Category').trim();
+  const siblings = _manualLinkCategories.filter(cat =>
+    cat.category_id !== categoryId &&
+    (cat.parent_category_id || '') === (parentCategoryId || '')
+  );
+  if (!siblings.some(cat => (cat.label || '').trim().toLowerCase() === base.toLowerCase())) return base;
+  let n = 2;
+  let candidate = `${base} (${n})`;
+  while (siblings.some(cat => (cat.label || '').trim().toLowerCase() === candidate.toLowerCase())) {
+    n += 1;
+    candidate = `${base} (${n})`;
+  }
+  return candidate;
+}
+
+async function _mlUpdateCategory(categoryId, patch, { reopenManage = false } = {}) {
+  const r = await apiFetch(`/api/v1/manual-link-categories/${encodeURIComponent(categoryId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
+  await loadManualLinks();
+  if (reopenManage && _mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+}
+
+async function _mlMoveCategory(categoryId, parentCategoryId) {
+  const category = _manualLinkCategories.find(cat => cat.category_id === categoryId);
+  if (!category) return;
+  const nextParent = parentCategoryId || null;
+  if (nextParent === categoryId || (nextParent && _mlCategoryDescendsFrom(nextParent, categoryId))) {
+    throw new Error('Cannot move a category into itself or one of its children.');
+  }
+  const patch = { parent_category_id: nextParent };
+  const uniqueLabel = _mlUniqueCategoryLabel(category.label, nextParent, categoryId);
+  if (uniqueLabel !== category.label) patch.label = uniqueLabel;
+  await _mlUpdateCategory(categoryId, patch);
+}
+
+function _mlNextCategorySort(parentCategoryId = null) {
+  const siblings = _manualLinkCategories.filter(cat => (cat.parent_category_id || '') === (parentCategoryId || ''));
+  return siblings.length ? Math.max(...siblings.map(cat => Number(cat.sort_order || 0))) + 1 : 0;
+}
+
+async function _mlCreateCategoryFromMapping(mapping, parentCategoryId = null) {
+  const label = mapping?.label_override || mapping?.link?.label || 'Category';
+  const r = await apiFetch('/api/v1/manual-link-categories', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      label: _mlUniqueCategoryLabel(label, parentCategoryId || null, null),
+      icon: _mlLinkIcon(mapping?.link),
+      parent_category_id: parentCategoryId || null,
+      sort_order: _mlNextCategorySort(parentCategoryId || null),
+      show_panel: 0,
+      notes: `Promoted from Manual Links placement ${mapping?.mapping_id || ''}`.trim(),
+    }),
+  });
+  if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
+  return r.json();
+}
+
+async function _mlPromoteOrMoveMapping(mappingId, parentCategoryId = null) {
+  const source = _manualLinkCategoryItems.find(item => item.mapping_id === mappingId);
+  if (!source) throw new Error(`mapping ${mappingId} not found`);
+  const itemsByCategory = _mlItemsByCategory();
+  const tree = _mlLinkTreeForCategory(source.category_id, itemsByCategory);
+  const children = tree.sortItems(tree.childrenByParent.get(mappingId) || []);
+  const hasPrimaryRoute = !!_mlPrimaryRoute(source.link);
+
+  async function moveSubtree(item, nextCategoryId, nextParentMappingId) {
+    const r = await apiFetch(`/api/v1/manual-link-categories/items/${encodeURIComponent(item.mapping_id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category_id: nextCategoryId, parent_mapping_id: nextParentMappingId }),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
+    const branchChildren = tree.sortItems(tree.childrenByParent.get(item.mapping_id) || []);
+    for (const child of branchChildren) {
+      await moveSubtree(child, nextCategoryId, item.mapping_id);
+    }
+  }
+
+  if (children.length && !hasPrimaryRoute) {
+    const category = await _mlCreateCategoryFromMapping(source, parentCategoryId || null);
+    for (const child of children) {
+      await moveSubtree(child, category.category_id, null);
+    }
+    const del = await apiFetch(`/api/v1/manual-link-categories/items/${encodeURIComponent(mappingId)}`, { method: 'DELETE' });
+    if (!del.ok) throw new Error((await del.json()).detail || `HTTP ${del.status}`);
+    await loadManualLinks();
+    return;
+  }
+
+  if (parentCategoryId) {
+    await _mlMoveCategoryItem(mappingId, parentCategoryId, null);
+    return;
+  }
+
+  const category = await _mlCreateCategoryFromMapping(source, null);
+  await moveSubtree(source, category.category_id, null);
+  await loadManualLinks();
+}
+
+function _mlCategoryDestinationPickerHtml(sourceCategoryId) {
+  const maps = _mlCategoryMaps();
+  const renderCategory = (cat, depth) => {
+    if (depth > 12) return '';
+    const label = cat.label || cat.category_id.slice(0, 8);
+    const disabled = cat.category_id === sourceCategoryId || _mlCategoryDescendsFrom(cat.category_id, sourceCategoryId)
+      ? ' disabled aria-disabled="true"'
+      : '';
+    const choice = `<button class="ml-dest-choice" type="button" data-ml-category-dest-choice="${esc(cat.category_id)}" data-ml-category-dest-label="${esc(_mlCategoryPath(cat.category_id) || label)}"${disabled}>
+      ${_mlIconHtml(_mlCategoryIcon(cat), 'ml-grid-icon ml-grid-icon--small')}<span>${esc(label)}</span>
+    </button>`;
+    const children = _mlSortCategories(maps.byParent[cat.category_id] || []);
+    if (!children.length) return `<div class="ml-dest-leaf">${choice}</div>`;
+    return `<details class="ml-dest-node">
+      <summary>${_mlIconHtml(_mlCategoryIcon(cat), 'ml-grid-icon ml-grid-icon--small')}<span>${esc(label)}</span></summary>
+      <div class="ml-dest-node-body">
+        ${choice}
+        ${children.map(child => renderCategory(child, depth + 1)).join('')}
+      </div>
+    </details>`;
+  };
+  const roots = _mlSortCategories(maps.byParent.__root__ || []);
+  return `<div class="ml-dest-picker" data-ml-category-dest-panel="${esc(sourceCategoryId)}" hidden>
+    <button class="ml-dest-choice" type="button" data-ml-category-dest-choice="" data-ml-category-dest-label="Top categories">
+      ${_mlIconHtml(_ML_DEFAULT_ICON, 'ml-grid-icon ml-grid-icon--small')}<span>Top categories</span>
+    </button>
+    ${roots.map(cat => renderCategory(cat, 1)).join('') || '<p class="ml-page-empty">No destination categories.</p>'}
+  </div>`;
+}
+
+function _mlDestinationPickerHtml(mappingId) {
+  const maps = _mlCategoryMaps();
+  const itemsByCategory = _mlItemsByCategory();
+  const labelForItem = item => item.label_override || item.link?.label || item.link_id;
+  const renderPosition = (category, item, tree, depth) => {
+    if (!item?.link || depth > 12) return '';
+    const children = tree.sortItems(tree.childrenByParent.get(item.mapping_id) || []);
+    const label = labelForItem(item);
+    const path = `${_mlCategoryPath(category.category_id) || category.label} / ${label}`;
+    const disabled = item.mapping_id === mappingId ? ' disabled aria-disabled="true"' : '';
+    const choice = `<button class="ml-dest-choice" type="button" data-ml-dest-choice="${esc(category.category_id)}" data-ml-dest-parent="${esc(item.mapping_id)}" data-ml-dest-label="${esc(path)}"${disabled}>
+      ${_mlIconHtml(_mlLinkIcon(item.link), 'ml-grid-icon ml-grid-icon--small')}<span>Under ${esc(label)}</span>
+    </button>`;
+    if (!children.length) return `<div class="ml-dest-leaf">${choice}</div>`;
+    return `<details class="ml-dest-node">
+      <summary>${_mlIconHtml(_mlLinkIcon(item.link), 'ml-grid-icon ml-grid-icon--small')}<span>${esc(label)}</span></summary>
+      <div class="ml-dest-node-body">
+        ${choice}
+        ${children.map(child => renderPosition(category, child, tree, depth + 1)).join('')}
+      </div>
+    </details>`;
+  };
+  const renderCategory = (cat, depth) => {
+    if (depth > 12) return '';
+    const children = _mlSortCategories(maps.byParent[cat.category_id] || []);
+    const label = cat.label || cat.category_id.slice(0, 8);
+    const tree = _mlLinkTreeForCategory(cat.category_id, itemsByCategory);
+    const choice = `<button class="ml-dest-choice" type="button" data-ml-dest-choice="${esc(cat.category_id)}" data-ml-dest-parent="" data-ml-dest-label="${esc(_mlCategoryPath(cat.category_id) || label)}">
+      ${_mlIconHtml(_mlCategoryIcon(cat), 'ml-grid-icon ml-grid-icon--small')}<span>Category root</span>
+    </button>`;
+    const body = [
+      choice,
+      ...tree.roots.map(item => renderPosition(cat, item, tree, depth + 1)),
+      ...children.map(child => renderCategory(child, depth + 1)),
+    ].join('');
+    if (!children.length && !tree.roots.length) return `<div class="ml-dest-leaf">${choice}</div>`;
+    return `<details class="ml-dest-node">
+      <summary>${_mlIconHtml(_mlCategoryIcon(cat), 'ml-grid-icon ml-grid-icon--small')}<span>${esc(label)}</span></summary>
+      <div class="ml-dest-node-body">${body}</div>
+    </details>`;
+  };
+  const roots = _mlSortCategories(maps.byParent.__root__ || []);
+  return `<div class="ml-dest-picker" data-ml-dest-panel="${esc(mappingId)}" hidden>
+    ${roots.map(cat => renderCategory(cat, 1)).join('') || '<p class="ml-page-empty">No destination categories.</p>'}
+  </div>`;
+}
+
+function _mlIconHtml(icon, className = 'ml-grid-icon') {
+  const value = icon || _ML_DEFAULT_ICON;
+  if (typeof value === 'string' && (/^(data:image\/|icons\/|\/|https?:\/\/)/i.test(value) || /\.svg($|\?)/i.test(value))) {
+    const src = value.startsWith('icons/') ? `/fallback-ui/assets/${value}` : value;
+    return `<img class="${esc(className)}" src="${esc(src)}" alt="" aria-hidden="true" />`;
+  }
+  return `<span class="${esc(className)}" aria-hidden="true">${esc(value)}</span>`;
+}
+
+function _mlRenderLinkMenuItem(item) {
+  const lnk = item.link;
+  if (!lnk) return '';
+  const label = item.label_override || lnk.label || lnk.link_id.slice(0, 8);
+  const route = _mlPrimaryRoute(lnk);
+  const href = _mlHref(route);
+  const expanded = _mlExpandedRoutes.has(item.mapping_id);
+  const routeHtml = expanded
+    ? (route ? `<span class="ml-grid-link-route">${esc(route)}</span>` : '<span class="ml-grid-link-route ml-grid-link-route--empty">No route</span>')
+    : '';
+  const attrs = `data-ml-grid-link="${esc(lnk.link_id)}" data-ml-grid-mapping="${esc(item.mapping_id)}" data-ml-grid-mapping-drag="${esc(item.mapping_id)}" data-ml-grid-href="${esc(href)}"`;
+  return `<button type="button" class="ml-grid-link${expanded ? ' is-route-open' : ''}" draggable="true" ${attrs} title="Click to open, double-click to show route, long-press for alternatives">
+    <span class="ml-grid-link-label">${esc(label)}</span>${routeHtml}
+  </button>`;
+}
+
+function _mlRenderLinkTreeItem(item, tree, depth) {
+  if (depth > 12) return '';
+  const lnk = item.link;
+  const children = tree.sortItems(tree.childrenByParent.get(item.mapping_id) || []);
+  if (!children.length) return _mlRenderLinkMenuItem(item);
+  const label = item.label_override || lnk.label || lnk.link_id.slice(0, 8);
+  return `<details class="ml-grid-subcategory ml-grid-link-branch" data-ml-grid-mapping="${esc(item.mapping_id)}">
+    <summary draggable="true" data-ml-grid-mapping-drag="${esc(item.mapping_id)}">${_mlIconHtml(_mlLinkIcon(lnk), 'ml-grid-icon ml-grid-icon--small')}<span class="ml-grid-summary-label">${esc(label)}</span></summary>
+    <div class="ml-grid-subcategory-body">${children.map(child => _mlRenderLinkTreeItem(child, tree, depth + 1)).join('')}</div>
+  </details>`;
+}
+
+function _mlRenderCategoryMenu(category, depth, maps, itemsByCategory) {
+  if (depth > 12) return '';
+  const children = _mlSortCategories(maps.byParent[category.category_id] || []);
+  const tree = _mlLinkTreeForCategory(category.category_id, itemsByCategory);
+  const body = [
+    ...tree.roots.map(item => _mlRenderLinkTreeItem(item, tree, depth + 1)),
+    ...children.map(child => _mlRenderCategoryMenu(child, depth + 1, maps, itemsByCategory)),
+  ].filter(Boolean).join('');
+  if (depth === 1) return body || '<p class="ml-grid-empty">No links mapped yet.</p>';
+  return `<details class="ml-grid-subcategory" data-ml-drop-zone data-ml-drop-parent="${esc(category.category_id)}">
+    <summary>${_mlIconHtml(_mlCategoryIcon(category), 'ml-grid-icon ml-grid-icon--small')}${esc(category.label)}</summary>
+    <div class="ml-grid-subcategory-body" data-ml-drop-zone data-ml-drop-parent="${esc(category.category_id)}">${body || '<span class="ml-grid-empty">Empty</span>'}</div>
+  </details>`;
+}
+
+function renderManualLinksGrid() {
+  const container = document.getElementById('ml-grid-body');
+  if (!container) return;
+  _mlCurrentGridLayoutBucket = _mlGridLayoutBucket();
+  if (!_manualLinkCategories.length) {
+    container.innerHTML = '<p class="ml-page-empty">No categories defined yet.</p>';
+    return;
+  }
+
+  const maps = _mlCategoryMaps();
+  const itemsByCategory = _mlItemsByCategory();
+  const roots = _mlOrderRootCategories(maps.byParent.__root__ || []);
+  const renderCard = (cat, { inPanel = false } = {}) => {
+    const open = _mlGridOpen.has(cat.category_id);
+    const placement = _mlGridPlacementStyles(cat, { cols: 1, rows: 1 }, { inPanel });
+    return `<article class="ml-grid-card${open ? ' is-open' : ''}${inPanel ? ' ml-grid-card--in-panel' : ''}" data-ml-grid-card data-category-id="${esc(cat.category_id)}" draggable="true"${_mlStyleAttr(placement)}>
+      <div class="ml-grid-card-head">
+        <button class="ml-grid-card-label" type="button" data-ml-grid-toggle="${esc(cat.category_id)}">
+          ${_mlIconHtml(_mlCategoryIcon(cat), 'ml-grid-card-icon')}
+          <span class="ml-grid-card-title">${esc(cat.label)}</span>
+        </button>
+        <button class="ml-grid-manage" type="button" title="Manage category" aria-label="Manage category" data-ml-grid-manage="${esc(cat.category_id)}">${_mlIconHtml(HIEROGLYPHS.kheper, 'ml-grid-manage-icon')}</button>
+      </div>
+      <div class="ml-grid-menu" data-ml-drop-zone data-ml-drop-parent="${esc(cat.category_id)}" ${open ? '' : 'hidden'}>
+        ${_mlRenderCategoryMenu(cat, 1, maps, itemsByCategory)}
+      </div>
+    </article>`;
+  };
+  const renderPanel = (cat) => {
+    const children = _mlSortCategories(maps.byParent[cat.category_id] || []);
+    const tree = _mlLinkTreeForCategory(cat.category_id, itemsByCategory);
+    const directLinks = tree.roots.map(item => _mlRenderLinkTreeItem(item, tree, 1)).join('');
+    const cellCount = _mlPanelCellCount(cat.category_id);
+    const saved = _mlRootGridLayoutFor(cat.category_id);
+    const manualSize = saved.manualSize === true || Number.isFinite(Number(saved.w)) || Number.isFinite(Number(saved.h));
+    const defaultShape = _mlPanelGridShape(cellCount);
+    const cols = _mlClampGridSpan(manualSize ? (saved.w || 1) : (saved.w || defaultShape.cols), 1, 6);
+    const shape = {
+      cols,
+      rows: _mlClampGridSpan(
+        manualSize ? Math.max(saved.h || 1, Math.ceil(cellCount / cols)) : (saved.h || defaultShape.rows),
+        Math.max(1, Math.ceil(cellCount / cols)),
+        12
+      ),
+    };
+    const placement = _mlGridPlacementStyles(cat, shape, { cells: cellCount });
+    return `<section class="ml-grid-panel ml-grid-panel--cols-${shape.cols}" data-ml-grid-card data-ml-grid-panel data-category-id="${esc(cat.category_id)}" data-ml-panel-cells="${esc(cellCount)}"${_mlPanelStyle(cat, shape, placement)}>
+      <div class="ml-grid-panel-body" data-ml-drop-zone data-ml-drop-parent="${esc(cat.category_id)}">
+        <div class="ml-grid-panel-label-cell">
+          <div class="ml-grid-panel-title" draggable="true" data-ml-panel-drag-handle>
+            ${_mlIconHtml(_mlCategoryIcon(cat), 'ml-grid-card-icon')}
+            <span>${esc(cat.label)}</span>
+          </div>
+          <button class="ml-grid-manage" type="button" title="Manage category" aria-label="Manage category" data-ml-grid-manage="${esc(cat.category_id)}">${_mlIconHtml(HIEROGLYPHS.kheper, 'ml-grid-manage-icon')}</button>
+        </div>
+        ${children.map(child => renderCard(child, { inPanel: true })).join('')}
+        ${directLinks ? `<div class="ml-grid-panel-direct">${directLinks}</div>` : ''}
+        ${!children.length && !directLinks ? '<p class="ml-grid-empty">Empty panel</p>' : ''}
+      </div>
+      <span class="ml-panel-resize ml-panel-resize--nw" data-ml-panel-resize="nw" aria-hidden="true"></span>
+      <span class="ml-panel-resize ml-panel-resize--ne" data-ml-panel-resize="ne" aria-hidden="true"></span>
+      <span class="ml-panel-resize ml-panel-resize--sw" data-ml-panel-resize="sw" aria-hidden="true"></span>
+      <span class="ml-panel-resize ml-panel-resize--se" data-ml-panel-resize="se" aria-hidden="true"></span>
+    </section>`;
+  };
+  container.innerHTML = `<div class="ml-grid-board" data-ml-drop-zone data-ml-drop-parent="">
+    ${_mlRenderRootGridChildren(roots, cat => _mlCategoryIsPanel(cat) ? renderPanel(cat) : renderCard(cat))}
+  </div>`;
+  _mlScheduleGridViewportFit();
+  _mlAlignOpenGridMenus();
+}
+
+function _mlScheduleGridViewportFit() {
+  window.requestAnimationFrame(_mlFitGridViewport);
+  window.requestAnimationFrame(_mlAlignOpenGridMenus);
+  window.setTimeout(_mlFitGridViewport, 120);
+  window.setTimeout(_mlAlignOpenGridMenus, 120);
+  window.setTimeout(_mlFitGridViewport, 320);
+  window.setTimeout(_mlAlignOpenGridMenus, 320);
+}
+
+function _mlHandleGridViewportChange() {
+  if (_manualLinksView === 'grid') {
+    const bucket = _mlGridLayoutBucket();
+    if (_mlCurrentGridLayoutBucket && bucket !== _mlCurrentGridLayoutBucket) {
+      renderManualLinksGrid();
+      return;
+    }
+  }
+  _mlScheduleGridViewportFit();
+}
+
+function _mlFitGridViewport() {
+  const shell = document.querySelector('#ml-grid-view .ml-page-shell--grid');
+  if (!shell || document.getElementById('ml-grid-view')?.style.display === 'none') return;
+  const viewportH = (window.visualViewport && Number.isFinite(window.visualViewport.height) && window.visualViewport.height > 0)
+    ? window.visualViewport.height
+    : (window.innerHeight || document.documentElement.clientHeight || 0);
+  if (!viewportH) return;
+  const rect = shell.getBoundingClientRect();
+  const bottomPad = document.body.classList.contains('shade-is-up') ? 4 : 16;
+  const h = Math.max(160, Math.floor(viewportH - rect.top - bottomPad));
+  shell.style.setProperty('--ml-grid-height', `${h}px`);
+}
+
+function _mlAlignOpenGridMenus() {
+  if (document.getElementById('ml-grid-view')?.style.display === 'none') return;
+  const board = document.querySelector('#ml-grid-body .ml-grid-board');
+  if (!board) return;
+  const cards = [...board.querySelectorAll('[data-ml-grid-card]')];
+  cards.forEach(card => card.classList.remove('ml-grid-card--align-right', 'ml-grid-card--align-center'));
+  const lefts = [];
+  cards.forEach(card => {
+    const rect = card.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    if (!lefts.some(left => Math.abs(left - rect.left) < 8)) lefts.push(rect.left);
+  });
+  lefts.sort((a, b) => a - b);
+  cards.forEach(card => {
+    const rect = card.getBoundingClientRect();
+    if (!card.classList.contains('is-open') || rect.width <= 0) return;
+    const colIndex = lefts.reduce((best, left, idx) => (
+      Math.abs(left - rect.left) < Math.abs(lefts[best] - rect.left) ? idx : best
+    ), 0);
+    if (lefts.length === 1) {
+      card.classList.add('ml-grid-card--align-center');
+    } else if (lefts.length === 2) {
+      if (colIndex === 1) card.classList.add('ml-grid-card--align-right');
+    } else if (colIndex >= lefts.length - 2) {
+      card.classList.add('ml-grid-card--align-right');
+    }
+  });
+}
+
+function _mlPositionDestinationPicker(trigger, panel) {
+  if (!trigger || !panel || panel.hidden) return;
+  const viewportW = window.innerWidth || document.documentElement.clientWidth || 0;
+  const viewportH = (window.visualViewport && window.visualViewport.height) || window.innerHeight || document.documentElement.clientHeight || 0;
+  const rect = trigger.getBoundingClientRect();
+  const width = Math.min(360, Math.max(240, viewportW - 24));
+  const left = Math.max(12, Math.min(rect.right - width, viewportW - width - 12));
+  const below = viewportH - rect.bottom - 12;
+  const above = rect.top - 12;
+  const openAbove = below < 220 && above > below;
+  const maxHeight = Math.max(160, Math.min(460, (openAbove ? above : below) - 6));
+  panel.classList.add('is-fixed');
+  panel.style.width = `${Math.round(width)}px`;
+  panel.style.left = `${Math.round(left)}px`;
+  panel.style.top = openAbove
+    ? `${Math.max(12, Math.round(rect.top - maxHeight - 6))}px`
+    : `${Math.round(rect.bottom + 6)}px`;
+  panel.style.maxHeight = `${Math.round(maxHeight)}px`;
+}
+
+function _mlInstallShadeViewportBinding() {
+  if (_mlShadeViewportObserver) return;
+  const schedule = () => {
+    if (_manualLinksView !== 'grid') return;
+    _mlScheduleGridViewportFit();
+  };
+  document.addEventListener('bodyshadechange', schedule);
+  const shade = document.getElementById('body-shade');
+  if (shade && window.MutationObserver) {
+    _mlShadeViewportObserver = new MutationObserver(schedule);
+    _mlShadeViewportObserver.observe(shade, {
+      attributes: true,
+      attributeFilter: ['style', 'class'],
+    });
+  } else {
+    _mlShadeViewportObserver = { disconnect() {} };
+  }
+}
+
+function _mlHandleLeafClick(button) {
+  if (_mlSuppressNextLeafClick) {
+    _mlSuppressNextLeafClick = false;
+    return;
+  }
+  const mappingId = button.dataset.mlGridMapping;
+  const href = button.dataset.mlGridHref || '';
+  if (!mappingId) return;
+  if (_mlLeafClickState.timer && _mlLeafClickState.mappingId === mappingId) {
+    clearTimeout(_mlLeafClickState.timer);
+    _mlLeafClickState = { timer: null, mappingId: null };
+    if (_mlExpandedRoutes.has(mappingId)) _mlExpandedRoutes.delete(mappingId);
+    else _mlExpandedRoutes.add(mappingId);
+    renderManualLinksGrid();
+    return;
+  }
+  if (_mlLeafClickState.timer) clearTimeout(_mlLeafClickState.timer);
+  _mlLeafClickState = {
+    mappingId,
+    timer: setTimeout(() => {
+      _mlLeafClickState = { timer: null, mappingId: null };
+      if (href) window.open(href, '_blank', 'noopener,noreferrer');
+    }, 240),
+  };
+}
+
+function _mlSuppressLeafClickBriefly() {
+  _mlSuppressNextLeafClick = true;
+  window.setTimeout(() => {
+    _mlSuppressNextLeafClick = false;
+  }, 700);
+}
+
+function _mlSuppressCategoryToggleBriefly() {
+  _mlSuppressNextCategoryToggle = true;
+  window.setTimeout(() => {
+    _mlSuppressNextCategoryToggle = false;
+  }, 700);
+}
+
+function _mlClearCategoryNestIntent() {
+  if (_mlGridCategoryNestIntent?.timer) clearTimeout(_mlGridCategoryNestIntent.timer);
+  document.querySelectorAll('.ml-grid-card.is-nest-pending, .ml-grid-card.is-nest-ready').forEach(card => {
+    card.classList.remove('is-nest-pending', 'is-nest-ready');
+  });
+  _mlGridCategoryNestIntent = null;
+}
+
+function _mlClearPickedCategory() {
+  document.querySelectorAll('.ml-grid-card.is-touch-picked').forEach(card => card.classList.remove('is-touch-picked'));
+  _mlPickedCategory = null;
+}
+
+function _mlPickCategoryForTouchPlacement(state) {
+  _mlClearPickedCategory();
+  _mlPickedCategory = {
+    categoryId: state.categoryId,
+    sourceParent: state.sourceParent || '',
+    offsetX: Number.isFinite(Number(state.offsetX)) ? state.offsetX : 8,
+    offsetY: Number.isFinite(Number(state.offsetY)) ? state.offsetY : 8,
+  };
+  document.querySelector(`[data-category-id="${CSS.escape(state.categoryId)}"]`)?.classList.add('is-touch-picked');
+}
+
+async function _mlPlacePickedCategory(event) {
+  if (!_mlPickedCategory) return false;
+  if (event.target.closest('[data-ml-grid-manage], [data-ml-panel-resize], [data-ml-grid-link]')) return false;
+  event.preventDefault();
+  event.stopPropagation();
+  const picked = _mlPickedCategory;
+  const target = event.target;
+  const targetCard = target.closest?.('[data-ml-grid-card]');
+  const dropZone = target.closest?.('[data-ml-drop-zone]');
+  const board = target.closest?.('.ml-grid-board') || document.querySelector('#ml-grid-body .ml-grid-board');
+  _mlGridDragId = picked.categoryId;
+  _mlGridDragKind = 'category';
+  _mlGridDragSourceParent = picked.sourceParent || '';
+  _mlGridDragOffsetX = picked.offsetX;
+  _mlGridDragOffsetY = picked.offsetY;
+  try {
+    await _mlHandleCategoryDrop(picked.categoryId, targetCard, dropZone, board, {
+      clientX: event.clientX,
+      clientY: event.clientY,
+      placementClientX: event.clientX - picked.offsetX + 2,
+      placementClientY: event.clientY - picked.offsetY + 2,
+    });
+  } catch (err) {
+    await HubDialogs.alertError({
+      title: 'Category move failed',
+      message: err.message,
+    });
+  } finally {
+    _mlGridDragId = null;
+    _mlGridDragKind = null;
+    _mlGridDragSourceParent = null;
+    _mlGridDragOffsetX = null;
+    _mlGridDragOffsetY = null;
+    _mlClearCategoryNestIntent();
+    _mlClearPickedCategory();
+  }
+  return true;
+}
+
+function _mlUpdateCategoryNestIntent(sourceCategoryId, targetCard) {
+  if (_mlGridDragKind !== 'category') {
+    _mlClearCategoryNestIntent();
+    return;
+  }
+  const targetCategoryId = targetCard?.dataset.categoryId || '';
+  if (!sourceCategoryId || !targetCategoryId || sourceCategoryId === targetCategoryId) {
+    _mlClearCategoryNestIntent();
+    return;
+  }
+  if (_mlCategoryDescendsFrom(targetCategoryId, sourceCategoryId)) {
+    _mlClearCategoryNestIntent();
+    return;
+  }
+  if (_mlGridCategoryNestIntent?.sourceId === sourceCategoryId && _mlGridCategoryNestIntent?.targetId === targetCategoryId) {
+    return;
+  }
+  _mlClearCategoryNestIntent();
+  targetCard.classList.add('is-nest-pending');
+  const intent = {
+    sourceId: sourceCategoryId,
+    targetId: targetCategoryId,
+    ready: false,
+    timer: window.setTimeout(() => {
+      intent.ready = true;
+      targetCard.classList.remove('is-nest-pending');
+      targetCard.classList.add('is-nest-ready');
+    }, 5000),
+  };
+  _mlGridCategoryNestIntent = intent;
+}
+
+function _mlCategoryNestTargetForDrop(sourceCategoryId, targetCard) {
+  const targetCategoryId = targetCard?.dataset.categoryId || '';
+  if (!_mlGridCategoryNestIntent?.ready) return '';
+  if (_mlGridCategoryNestIntent.sourceId !== sourceCategoryId) return '';
+  if (_mlGridCategoryNestIntent.targetId !== targetCategoryId) return '';
+  return targetCategoryId;
+}
+
+function _mlGridBoardMetrics(board) {
+  if (!board) return null;
+  const style = window.getComputedStyle(board);
+  const cols = style.gridTemplateColumns
+    .split(' ')
+    .map(part => parseFloat(part))
+    .filter(value => Number.isFinite(value) && value > 0);
+  const gap = parseFloat(style.columnGap || style.gap || '10') || 10;
+  const rowGap = parseFloat(style.rowGap || style.gap || '10') || gap;
+  return {
+    rect: board.getBoundingClientRect(),
+    cols: Math.max(1, cols.length || 1),
+    colWidth: cols[0] || 180,
+    rowHeight: _ML_GRID_ROW_HEIGHT,
+    gap,
+    rowGap,
+  };
+}
+
+function _mlPointerGridCell(board, event) {
+  const metrics = _mlGridBoardMetrics(board);
+  if (!metrics) return null;
+  const clientX = Number.isFinite(Number(event?.placementClientX)) ? Number(event.placementClientX) : event.clientX;
+  const clientY = Number.isFinite(Number(event?.placementClientY)) ? Number(event.placementClientY) : event.clientY;
+  const x = Math.max(0, clientX - metrics.rect.left);
+  const y = Math.max(0, clientY - metrics.rect.top);
+  return {
+    col: Math.max(1, Math.min(metrics.cols, Math.floor(x / (metrics.colWidth + metrics.gap)) + 1)),
+    row: Math.max(1, Math.floor(y / (metrics.rowHeight + metrics.rowGap)) + 1),
+    metrics,
+  };
+}
+
+function _mlGridDropPlacementEvent(event) {
+  const hasPlacement = Number.isFinite(Number(event?.placementClientX)) && Number.isFinite(Number(event?.placementClientY));
+  if (hasPlacement) return event;
+  if (Number.isFinite(Number(_mlGridDragOffsetX)) && Number.isFinite(Number(_mlGridDragOffsetY))) {
+    return {
+      clientX: event.clientX,
+      clientY: event.clientY,
+      placementClientX: event.clientX - _mlGridDragOffsetX + 2,
+      placementClientY: event.clientY - _mlGridDragOffsetY + 2,
+    };
+  }
+  return event;
+}
+
+function _mlElementGridCell(element, board) {
+  const metrics = _mlGridBoardMetrics(board);
+  if (!element || !metrics) return { col: 1, row: 1, metrics };
+  const rect = element.getBoundingClientRect();
+  return {
+    col: Math.max(1, Math.min(metrics.cols, Math.floor(Math.max(0, rect.left - metrics.rect.left) / (metrics.colWidth + metrics.gap)) + 1)),
+    row: Math.max(1, Math.floor(Math.max(0, rect.top - metrics.rect.top) / (metrics.rowHeight + metrics.rowGap)) + 1),
+    metrics,
+  };
+}
+
+function _mlSaveRootCategoryCell(categoryId, cell, patch = {}) {
+  if (!categoryId || !cell) return;
+  const layout = _mlSavedGridLayout();
+  const current = layout[categoryId] || {};
+  const slot = Math.max(0, ((Math.round(cell.row) - 1) * Math.max(1, cell.metrics?.cols || 1)) + (Math.round(cell.col) - 1));
+  const next = {
+    ...current,
+    slot,
+    ...patch,
+  };
+  delete next.col;
+  delete next.row;
+  Object.keys(layout).forEach(otherId => {
+    if (otherId === categoryId) return;
+    const other = layout[otherId];
+    if (other?.slot === next.slot) {
+      delete other.slot;
+    }
+  });
+  layout[categoryId] = next;
+  _mlSaveGridLayout(layout);
+}
+
+function _mlCategoryShapeForPacking(category) {
+  if (!_mlCategoryIsPanel(category)) return { w: 1, h: 1 };
+  const saved = _mlRootGridLayoutFor(category.category_id);
+  const cellCount = _mlPanelCellCount(category.category_id);
+  const fallback = _mlPanelGridShape(cellCount);
+  const manualSize = saved.manualSize === true || Number.isFinite(Number(saved.w)) || Number.isFinite(Number(saved.h));
+  const w = _mlClampGridSpan(manualSize ? (saved.w || fallback.cols) : fallback.cols, 1, 6);
+  return {
+    w,
+    h: _mlClampGridSpan(
+      manualSize ? Math.max(saved.h || 1, Math.ceil(cellCount / w)) : fallback.rows,
+      Math.max(1, Math.ceil(cellCount / w)),
+      12
+    ),
+  };
+}
+
+function _mlAutoFitInterface() {
+  const board = document.querySelector('#ml-grid-body .ml-grid-board');
+  const metrics = _mlGridBoardMetrics(board);
+  const cols = Math.max(1, metrics?.cols || (_mlGridLayoutBucket() === 'mobile' ? 2 : 5));
+  const maps = _mlCategoryMaps();
+  const roots = _mlOrderRootCategories(maps.byParent.__root__ || []);
+  const occupied = new Set();
+  const layout = {};
+  const fits = (col, row, w, h) => {
+    if (col + w - 1 > cols) return false;
+    for (let y = row; y < row + h; y += 1) {
+      for (let x = col; x < col + w; x += 1) {
+        if (occupied.has(`${x}:${y}`)) return false;
+      }
+    }
+    return true;
+  };
+  const mark = (col, row, w, h) => {
+    for (let y = row; y < row + h; y += 1) {
+      for (let x = col; x < col + w; x += 1) occupied.add(`${x}:${y}`);
+    }
+  };
+  roots.forEach(cat => {
+    const existing = _mlRootGridLayoutFor(cat.category_id);
+    const shape = _mlCategoryShapeForPacking(cat);
+    const w = Math.min(cols, Math.max(1, shape.w));
+    const h = Math.max(1, shape.h);
+    let placed = null;
+    for (let row = 1; !placed && row < 200; row += 1) {
+      for (let col = 1; col <= cols - w + 1; col += 1) {
+        if (!fits(col, row, w, h)) continue;
+        placed = { col, row };
+        break;
+      }
+    }
+    const col = placed?.col || 1;
+    const row = placed?.row || 1;
+    mark(col, row, w, h);
+    const slot = ((row - 1) * cols) + (col - 1);
+    layout[cat.category_id] = {
+      ...existing,
+      slot,
+      ...(existing.manualSize || Number.isFinite(Number(existing.w)) || Number.isFinite(Number(existing.h))
+        ? { w, h, manualSize: true }
+        : {}),
+    };
+  });
+  _mlSaveGridLayout(layout);
+  renderManualLinksGrid();
+  if (typeof HubDialogs !== 'undefined') HubDialogs.alert?.({
+    title: 'Interface Auto Fit',
+    message: 'Manual Links Interface items have been reflowed for this viewport.',
+    tone: 'success',
+    badge: 'Manual',
+  });
+}
+
+function _mlPanelMinRows(card, width) {
+  const cells = Math.max(1, Number(card?.dataset.mlPanelCells || 1));
+  return Math.max(1, Math.ceil(cells / Math.max(1, width)));
+}
+
+function _mlApplyPanelResize(card, next) {
+  if (!card || !next) return;
+  card.style.gridColumn = `span ${next.w}`;
+  card.style.gridRow = `span ${next.h}`;
+  card.style.setProperty('--ml-panel-cols', next.w);
+  card.style.setProperty('--ml-panel-rows', next.h);
+}
+
+function _mlStartPanelResize(event, handle) {
+  const card = handle.closest('[data-ml-grid-panel]');
+  const board = card?.closest('.ml-grid-board');
+  if (!card || !board) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const categoryId = card.dataset.categoryId;
+  const layout = _mlSavedGridLayout();
+  const saved = layout[categoryId] || {};
+  const cell = _mlElementGridCell(card, board);
+  const metrics = cell.metrics;
+  const rect = card.getBoundingClientRect();
+  const widthFromRect = Math.max(1, Math.round((rect.width + metrics.gap) / (metrics.colWidth + metrics.gap)));
+  const heightFromRect = Math.max(1, Math.round((rect.height + metrics.rowGap) / (metrics.rowHeight + metrics.rowGap)));
+  const start = {
+    col: Math.max(1, Math.round(cell.col || 1)),
+    row: Math.max(1, Math.round(cell.row || 1)),
+    w: _mlClampGridSpan(saved.w || widthFromRect || 1, 1, metrics.cols),
+    h: _mlClampGridSpan(saved.h || heightFromRect || 1, _mlPanelMinRows(card, saved.w || widthFromRect || 1), 12),
+  };
+  _mlPanelResizeState = {
+    categoryId,
+    card,
+    board,
+    handle: handle.dataset.mlPanelResize || 'se',
+    startX: event.clientX,
+    startY: event.clientY,
+    start,
+    metrics,
+    next: start,
+  };
+  card.classList.add('is-resizing');
+  handle.setPointerCapture?.(event.pointerId);
+}
+
+function _mlUpdatePanelResize(event) {
+  if (!_mlPanelResizeState) return;
+  event.preventDefault();
+  const { card, handle, start, metrics } = _mlPanelResizeState;
+  const dx = Math.round((event.clientX - _mlPanelResizeState.startX) / (metrics.colWidth + metrics.gap));
+  const dy = Math.round((event.clientY - _mlPanelResizeState.startY) / (metrics.rowHeight + metrics.rowGap));
+  let col = start.col;
+  let row = start.row;
+  let w = start.w;
+  let h = start.h;
+  if (handle.includes('e')) w = start.w + dx;
+  if (handle.includes('s')) h = start.h + dy;
+  if (handle.includes('w')) {
+    w = start.w - dx;
+  }
+  if (handle.includes('n')) {
+    h = start.h - dy;
+  }
+  w = _mlClampGridSpan(w, 1, metrics.cols);
+  h = _mlClampGridSpan(h, _mlPanelMinRows(card, w), 12);
+  const next = { col, row, w, h };
+  _mlPanelResizeState.next = next;
+  _mlApplyPanelResize(card, next);
+}
+
+function _mlFinishPanelResize() {
+  if (!_mlPanelResizeState) return;
+  const { categoryId, card, next } = _mlPanelResizeState;
+  card?.classList.remove('is-resizing');
+  const layout = _mlSavedGridLayout();
+  const current = layout[categoryId] || {};
+  layout[categoryId] = { ...current, slot: current.slot, w: next.w, h: next.h, manualSize: true };
+  _mlSaveGridLayout(layout);
+  _mlPanelResizeState = null;
+  _mlScheduleGridViewportFit();
+}
+
+async function _mlHandleCategoryDrop(draggedId, targetCard, dropZone, board, event) {
+  const sourceParent = _mlGridDragSourceParent || '';
+  const dropZoneParent = dropZone?.dataset.mlDropParent || '';
+  const placementEvent = _mlGridDropPlacementEvent(event);
+  const nestTargetId = _mlCategoryNestTargetForDrop(draggedId, targetCard);
+  if (nestTargetId) {
+    await _mlMoveCategory(draggedId, nestTargetId);
+    return;
+  }
+  if (board && dropZone?.classList.contains('ml-grid-board') && !targetCard) {
+    const cell = _mlPointerGridCell(board, placementEvent);
+    _mlSaveRootCategoryCell(draggedId, cell);
+    if (sourceParent) await _mlMoveCategory(draggedId, null);
+    else renderManualLinksGrid();
+    return;
+  }
+  if (dropZone && dropZoneParent !== sourceParent && dropZoneParent !== draggedId) {
+    if (dropZoneParent === '') {
+      const cell = _mlPointerGridCell(board || dropZone, placementEvent);
+      _mlSaveRootCategoryCell(draggedId, cell);
+    }
+    await _mlMoveCategory(draggedId, dropZoneParent || null);
+    return;
+  }
+  if (targetCard && targetCard.dataset.categoryId && targetCard.dataset.categoryId !== draggedId) {
+    const targetParent = targetCard.parentElement?.closest('[data-ml-grid-panel]')?.dataset.categoryId || '';
+    const sameContainer = targetCard.parentElement === document.querySelector(`[data-category-id="${CSS.escape(draggedId)}"]`)?.parentElement;
+    if (sameContainer || sourceParent === targetParent) {
+      const dragged = targetCard.parentElement?.querySelector(`[data-category-id="${CSS.escape(draggedId)}"]`);
+      if (dragged) {
+        const rect = targetCard.getBoundingClientRect();
+        const after = event.clientY > rect.top + (rect.height / 2);
+        targetCard.parentElement.insertBefore(dragged, after ? targetCard.nextSibling : targetCard);
+        if (!targetParent) _mlSaveGridOrderFromDom();
+      }
+    } else {
+      await _mlMoveCategory(draggedId, targetParent || null);
+    }
+    return;
+  }
+  _mlSaveGridOrderFromDom();
+}
+
+function _mlTouchDragHandle(event) {
+  if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return null;
+  const handle = event.target.closest('[data-ml-panel-drag-handle], [data-ml-grid-toggle]');
+  if (!handle) return null;
+  if (event.target.closest('[data-ml-grid-manage], [data-ml-panel-resize], [data-ml-grid-link]')) return null;
+  return handle;
+}
+
+function _mlStartTouchCategoryDrag(event) {
+  const handle = _mlTouchDragHandle(event);
+  if (!handle) return;
+  const card = handle.closest('[data-ml-grid-card]');
+  if (!card) return;
+  if (card.matches('[data-ml-grid-panel]') && !handle.matches('[data-ml-panel-drag-handle]')) return;
+  event.preventDefault();
+  const categoryId = card.dataset.categoryId;
+  try {
+    handle.setPointerCapture?.(event.pointerId);
+  } catch (_) {}
+  _mlTouchCategoryDrag = {
+    kind: 'pressing',
+    pointerId: event.pointerId,
+    categoryId,
+    card,
+    handle,
+    captureEl: handle,
+    startX: event.clientX,
+    startY: event.clientY,
+    x: event.clientX,
+    y: event.clientY,
+    timer: window.setTimeout(() => {
+      if (!_mlTouchCategoryDrag || _mlTouchCategoryDrag.pointerId !== event.pointerId) return;
+      _mlPromoteTouchCategoryDrag();
+    }, 520),
+  };
+}
+
+function _mlPromoteTouchCategoryDrag() {
+  const state = _mlTouchCategoryDrag;
+  if (!state || state.kind !== 'pressing') return;
+  state.kind = 'dragging';
+  const card = state.card;
+  const rect = card.getBoundingClientRect();
+  const ghost = card.cloneNode(true);
+  ghost.removeAttribute('id');
+  ghost.classList.add('ml-grid-touch-ghost');
+  ghost.style.width = `${Math.min(rect.width, window.innerWidth - 24)}px`;
+  ghost.style.left = `${rect.left}px`;
+  ghost.style.top = `${rect.top}px`;
+  document.body.appendChild(ghost);
+  state.ghost = ghost;
+  state.offsetX = state.x - rect.left;
+  state.offsetY = state.y - rect.top;
+  state.placementX = rect.left;
+  state.placementY = rect.top;
+  _mlGridDragId = state.categoryId;
+  _mlGridDragKind = 'category';
+  _mlGridDragSourceParent = card.parentElement?.closest('[data-ml-grid-panel]')?.dataset.categoryId || '';
+  state.sourceParent = _mlGridDragSourceParent;
+  _mlGridDragOffsetX = state.offsetX;
+  _mlGridDragOffsetY = state.offsetY;
+  _mlClearCategoryNestIntent();
+  _mlSuppressCategoryToggleBriefly();
+  card.classList.add('is-touch-dragging');
+}
+
+function _mlMoveTouchCategoryDrag(event) {
+  if (!_mlTouchCategoryDrag || _mlTouchCategoryDrag.pointerId !== event.pointerId) return;
+  _mlTouchCategoryDrag.x = event.clientX;
+  _mlTouchCategoryDrag.y = event.clientY;
+  if (_mlTouchCategoryDrag.kind === 'pressing') {
+    const moved = Math.abs(event.clientX - _mlTouchCategoryDrag.startX) > 8 || Math.abs(event.clientY - _mlTouchCategoryDrag.startY) > 8;
+    if (!moved) return;
+    _mlPromoteTouchCategoryDrag();
+  }
+  event.preventDefault();
+  const ghost = _mlTouchCategoryDrag.ghost;
+  if (ghost) {
+    const left = event.clientX - (_mlTouchCategoryDrag.offsetX || 0);
+    const top = event.clientY - (_mlTouchCategoryDrag.offsetY || 0);
+    _mlTouchCategoryDrag.placementX = left;
+    _mlTouchCategoryDrag.placementY = top;
+    ghost.style.transform = `translate(${Math.round(left - parseFloat(ghost.style.left || '0'))}px, ${Math.round(top - parseFloat(ghost.style.top || '0'))}px) scale(0.985)`;
+  }
+  const target = document.elementFromPoint(event.clientX, event.clientY);
+  const targetCard = target?.closest?.('[data-ml-grid-card]');
+  const dropZone = target?.closest?.('[data-ml-drop-zone]');
+  const explicitStructuralDrop = !!dropZone && (!targetCard || targetCard.contains(dropZone));
+  _mlUpdateCategoryNestIntent(_mlTouchCategoryDrag.categoryId, explicitStructuralDrop ? null : targetCard);
+}
+
+async function _mlFinishTouchCategoryDrag(event) {
+  if (!_mlTouchCategoryDrag || _mlTouchCategoryDrag.pointerId !== event.pointerId) return;
+  const state = _mlTouchCategoryDrag;
+  clearTimeout(state.timer);
+  _mlTouchCategoryDrag = null;
+  _mlTouchCategoryDragFallbackId = null;
+  try {
+    state.captureEl?.releasePointerCapture?.(event.pointerId);
+  } catch (_) {}
+  state.card?.classList.remove('is-touch-dragging');
+  state.ghost?.remove();
+  if (state.kind !== 'dragging') {
+    if (event.type === 'pointercancel') return;
+    if (state.handle?.matches?.('[data-ml-grid-toggle]')) {
+      _mlSuppressCategoryToggleBriefly();
+      if (_mlGridOpen.has(state.categoryId)) _mlGridOpen.delete(state.categoryId);
+      else {
+        _mlGridOpen.clear();
+        _mlGridOpen.add(state.categoryId);
+      }
+      renderManualLinksGrid();
+    }
+    return;
+  }
+  event.preventDefault();
+  _mlSuppressCategoryToggleBriefly();
+  const x = Number.isFinite(event.clientX) ? event.clientX : state.x;
+  const y = Number.isFinite(event.clientY) ? event.clientY : state.y;
+  const moved = Math.abs(x - state.startX) > 12 || Math.abs(y - state.startY) > 12;
+  if (!moved && (event.pointerType === 'touch' || String(event.pointerId || '').startsWith('touch-'))) {
+    _mlGridDragId = null;
+    _mlGridDragKind = null;
+    _mlGridDragSourceParent = null;
+    _mlGridDragOffsetX = null;
+    _mlGridDragOffsetY = null;
+    _mlClearCategoryNestIntent();
+    _mlPickCategoryForTouchPlacement(state);
+    return;
+  }
+  const target = document.elementFromPoint(x, y);
+  const targetCard = target?.closest?.('[data-ml-grid-card]');
+  const dropZone = target?.closest?.('[data-ml-drop-zone]');
+  const board = target?.closest?.('.ml-grid-board') || document.querySelector('#ml-grid-body .ml-grid-board');
+  try {
+    await _mlHandleCategoryDrop(state.categoryId, targetCard, dropZone, board, {
+      clientX: x,
+      clientY: y,
+      placementClientX: Number.isFinite(Number(state.placementX)) ? state.placementX + 2 : x,
+      placementClientY: Number.isFinite(Number(state.placementY)) ? state.placementY + 2 : y,
+    });
+  } catch (err) {
+    await HubDialogs.alertError({
+      title: 'Category move failed',
+      message: err.message,
+    });
+  } finally {
+    _mlGridDragId = null;
+    _mlGridDragKind = null;
+    _mlGridDragSourceParent = null;
+    _mlGridDragOffsetX = null;
+    _mlGridDragOffsetY = null;
+    _mlClearCategoryNestIntent();
+  }
+}
+
+function _mlTouchEventPoint(event, changed = false) {
+  const list = changed ? event.changedTouches : event.touches;
+  if (!list || !list.length) return null;
+  if (_mlTouchCategoryDragFallbackId !== null) {
+    return [...list].find(touch => touch.identifier === _mlTouchCategoryDragFallbackId) || null;
+  }
+  return list[0];
+}
+
+function _mlTouchFallbackEvent(event, touch) {
+  return {
+    type: event.type,
+    pointerType: 'touch',
+    pointerId: `touch-${touch.identifier}`,
+    target: event.target,
+    clientX: touch.clientX,
+    clientY: touch.clientY,
+    preventDefault: () => {
+      if (event.cancelable) event.preventDefault();
+    },
+  };
+}
+
+function _mlStartTouchCategoryDragFallback(event) {
+  if (_mlTouchCategoryDrag) return;
+  const touch = _mlTouchEventPoint(event);
+  if (!touch) return;
+  const pseudo = _mlTouchFallbackEvent(event, touch);
+  if (!_mlTouchDragHandle(pseudo)) return;
+  _mlTouchCategoryDragFallbackId = touch.identifier;
+  _mlStartTouchCategoryDrag(pseudo);
+  if (!_mlTouchCategoryDrag) _mlTouchCategoryDragFallbackId = null;
+}
+
+function _mlMoveTouchCategoryDragFallback(event) {
+  if (!_mlTouchCategoryDrag || _mlTouchCategoryDragFallbackId === null) return;
+  const touch = _mlTouchEventPoint(event);
+  if (!touch) return;
+  _mlMoveTouchCategoryDrag(_mlTouchFallbackEvent(event, touch));
+}
+
+function _mlFinishTouchCategoryDragFallback(event) {
+  if (!_mlTouchCategoryDrag || _mlTouchCategoryDragFallbackId === null) return;
+  const touch = _mlTouchEventPoint(event, true) || _mlTouchEventPoint(event);
+  if (!touch) return;
+  void _mlFinishTouchCategoryDrag(_mlTouchFallbackEvent(event, touch));
+}
+
+function _mlExtractDroppedUrl(dataTransfer) {
+  if (!dataTransfer) return '';
+  const uriList = dataTransfer.getData('text/uri-list') || '';
+  const uri = uriList
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .find(line => line && !line.startsWith('#'));
+  const text = dataTransfer.getData('text/plain') || dataTransfer.getData('text') || '';
+  const candidate = uri || text.trim();
+  return /^https?:\/\//i.test(candidate) ? candidate : '';
+}
+
+function _mlMayContainDroppedUrl(dataTransfer) {
+  const types = Array.from(dataTransfer?.types || []);
+  return types.includes('text/uri-list') || types.includes('text/plain') || types.includes('text');
+}
+
+async function _mlIntakeDroppedUrl(url, targetCategoryId) {
+  const r = await apiFetch('/api/v1/manual-links/intake-url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, category_id: targetCategoryId || null }),
+  });
+  if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
+  const result = await r.json();
+  await loadManualLinks();
+  if (typeof HubDialogs !== 'undefined') {
+    const aiHint = result.ai_used ? `AI: ${result.ai_project || 'local'}` : 'AI fallback was not used';
+    const title = result.created
+      ? 'Link added'
+      : (result.updated_existing_label ? 'Link label improved' : 'Link already existed');
+    HubDialogs.alert({
+      title,
+      message: `${result.label || url} -> ${result.category_label || 'Unsorted'}\n${aiHint}`,
+      tone: result.created ? 'success' : 'info',
+      badge: 'Manual',
+    });
+  }
+}
+
+function _mlOpenLinkDetail(linkId, mappingId = null) {
+  const lnk = _manualLinks.find(item => item.link_id === linkId);
+  if (!lnk) return;
+  const mapping = mappingId ? _manualLinkCategoryItems.find(item => item.mapping_id === mappingId) : null;
+  const modal = document.getElementById('ml-link-detail-modal');
+  const title = document.getElementById('ml-link-detail-title');
+  const body = document.getElementById('ml-link-detail-body');
+  if (!modal || !title || !body) return;
+  const displayLabel = mapping?.label_override || lnk.label || 'Manual link';
+  title.textContent = displayLabel;
+  const routes = [
+    ['VLAN URI', lnk.vlan_uri],
+    ['VLAN IP', lnk.vlan_ip],
+    ['Tailnet URI', lnk.tailnet_uri],
+    ['Tailnet IP', lnk.tailnet_ip],
+  ].filter(([, value]) => value);
+  body.innerHTML = `
+    <div class="ml-detail-routes">
+      ${routes.map(([label, value]) => `<a class="ml-detail-route" href="${esc(_mlHref(value))}" target="_blank" rel="noopener noreferrer"><span>${esc(label)}</span><strong>${esc(value)}</strong></a>`).join('') || '<p class="ml-page-empty">No routes recorded.</p>'}
+    </div>
+    <div class="ml-detail-editor" data-ml-detail-editor data-link-id="${esc(linkId)}"${mapping ? ` data-mapping-id="${esc(mapping.mapping_id)}"` : ''}>
+      <div class="ml-detail-editor-head">
+        <span>Edit</span>
+        <button class="hub-action-btn" type="button" data-ml-detail-full-edit="${esc(linkId)}">Full Edit</button>
+      </div>
+      <div class="ml-detail-form-grid">
+        <label class="ml-detail-field">
+          <span>Menu display name</span>
+          <input type="text" data-ml-detail-field="label_override" value="${esc(mapping?.label_override || '')}" placeholder="${esc(lnk.label || '')}" ${mapping ? '' : 'disabled'} />
+        </label>
+        <label class="ml-detail-field">
+          <span>Canonical label</span>
+          <input type="text" data-ml-detail-field="label" value="${esc(lnk.label || '')}" />
+        </label>
+        <label class="ml-detail-field">
+          <span>Icon</span>
+          <input type="text" data-ml-detail-field="icon" value="${esc(lnk.icon || '')}" />
+        </label>
+        <label class="ml-detail-field">
+          <span>VLAN URI</span>
+          <input type="text" data-ml-detail-field="vlan_uri" value="${esc(lnk.vlan_uri || '')}" />
+        </label>
+        <label class="ml-detail-field">
+          <span>Tailnet URI</span>
+          <input type="text" data-ml-detail-field="tailnet_uri" value="${esc(lnk.tailnet_uri || '')}" />
+        </label>
+        <label class="ml-detail-field">
+          <span>VLAN IP</span>
+          <input type="text" data-ml-detail-field="vlan_ip" value="${esc(lnk.vlan_ip || '')}" />
+        </label>
+        <label class="ml-detail-field">
+          <span>Tailnet IP</span>
+          <input type="text" data-ml-detail-field="tailnet_ip" value="${esc(lnk.tailnet_ip || '')}" />
+        </label>
+        <label class="ml-detail-field ml-detail-field--wide">
+          <span>Notes</span>
+          <textarea rows="3" data-ml-detail-field="notes">${esc(lnk.notes || '')}</textarea>
+        </label>
+      </div>
+      ${mapping ? '<p class="ml-detail-help">Menu display name changes only this placement. Canonical label changes the link everywhere that has no override.</p>' : '<p class="ml-detail-help">Open this from an Interface menu item to edit that placement display name.</p>'}
+      <p class="hub-modal-error" data-ml-detail-error></p>
+      <div class="ml-detail-actions">
+        <button class="hub-action-btn" type="button" data-ml-detail-save>Save</button>
+      </div>
+    </div>
+    <dl class="ml-detail-meta">
+      ${lnk.group_name ? `<dt>Group</dt><dd>${esc(lnk.group_name)}</dd>` : ''}
+      ${lnk.pve_host ? `<dt>PVE host</dt><dd>${esc(lnk.pve_host)}</dd>` : ''}
+      ${lnk.vm_id || lnk.vm_name ? `<dt>VM</dt><dd>${esc([lnk.vm_id, lnk.vm_name].filter(Boolean).join(' / '))}</dd>` : ''}
+      ${lnk.lxc_id || lnk.lxc_name ? `<dt>LXC</dt><dd>${esc([lnk.lxc_id, lnk.lxc_name].filter(Boolean).join(' / '))}</dd>` : ''}
+      ${lnk.location ? `<dt>Location</dt><dd>${esc(lnk.location)}</dd>` : ''}
+      ${lnk.notes ? `<dt>Notes</dt><dd>${esc(lnk.notes)}</dd>` : ''}
+    </dl>`;
+  HubModal.open(modal);
+}
+
+async function _mlSaveLinkDetail(editor) {
+  const linkId = editor?.dataset.linkId;
+  if (!linkId) return;
+  const err = editor.querySelector('[data-ml-detail-error]');
+  if (err) err.textContent = '';
+  const field = name => editor.querySelector(`[data-ml-detail-field="${name}"]`)?.value?.trim() ?? '';
+  const linkBody = {
+    label: field('label') || null,
+    icon: field('icon') || null,
+    vlan_uri: field('vlan_uri') || null,
+    tailnet_uri: field('tailnet_uri') || null,
+    vlan_ip: field('vlan_ip') || null,
+    tailnet_ip: field('tailnet_ip') || null,
+    notes: field('notes') || null,
+  };
+  try {
+    const linkResp = await apiFetch(`/api/v1/manual-links/${encodeURIComponent(linkId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(linkBody),
+    });
+    if (!linkResp.ok) throw new Error((await linkResp.json()).detail || `HTTP ${linkResp.status}`);
+    const mappingId = editor.dataset.mappingId;
+    if (mappingId) {
+      const rawOverride = field('label_override');
+      const mappingResp = await apiFetch(`/api/v1/manual-link-categories/items/${encodeURIComponent(mappingId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label_override: rawOverride || null }),
+      });
+      if (!mappingResp.ok) throw new Error((await mappingResp.json()).detail || `HTTP ${mappingResp.status}`);
+    }
+    await loadManualLinks();
+    _mlOpenLinkDetail(linkId, mappingId || null);
+  } catch (e) {
+    if (err) err.textContent = e.message;
+  }
+}
+
+function _mlOpenCategoryManage(categoryId) {
+  _mlManagingCategoryId = categoryId;
+  const category = _manualLinkCategories.find(cat => cat.category_id === categoryId);
+  const modal = document.getElementById('ml-category-manage-modal');
+  const title = document.getElementById('ml-category-manage-title');
+  const body = document.getElementById('ml-category-manage-body');
+  if (!category || !modal || !title || !body) return;
+  title.textContent = category.label;
+  const itemsByCategory = _mlItemsByCategory();
+  const maps = _mlCategoryMaps();
+  const tree = _mlLinkTreeForCategory(categoryId, itemsByCategory);
+  const renderCategoryRow = (cat, depth) => {
+    const children = _mlSortCategories(maps.byParent[cat.category_id] || []);
+    const currentParent = cat.parent_category_id ? (_mlCategoryPath(cat.parent_category_id) || 'Top categories') : 'Top categories';
+    const controls = `<div class="ml-manage-row-actions">
+      <div class="ml-dest-control">
+        <button class="hub-action-btn ml-dest-trigger" type="button" data-ml-category-dest-trigger="${esc(cat.category_id)}">
+          <span data-ml-category-dest-label>${esc(currentParent)}</span>
+        </button>
+        ${_mlCategoryDestinationPickerHtml(cat.category_id)}
+      </div>
+      <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-open-category-manage="${esc(cat.category_id)}" title="Manage category">MG</button>
+      <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-move-category="${esc(cat.category_id)}" title="Move category">MV</button>
+      <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-move-category-top="${esc(cat.category_id)}" title="Move to top categories">TOP</button>
+    </div>`;
+    const rowInner = children.length
+      ? `<button class="ml-manage-twist" type="button" data-ml-category-manage-toggle="${esc(cat.category_id)}" aria-label="Toggle ${esc(cat.label)}"></button>`
+      : '<span class="ml-manage-twist ml-manage-twist--empty" aria-hidden="true"></span>';
+    const main = `<div class="ml-manage-row-main"${children.length ? ` data-ml-category-manage-toggle="${esc(cat.category_id)}"` : ''}>
+        ${_mlIconHtml(_mlCategoryIcon(cat), 'ml-manage-row-icon')}
+        <strong>${esc(cat.label || cat.category_id.slice(0, 8))}</strong>
+        <span>${esc(_mlCategoryIsPanel(cat) ? 'Panel category' : 'Category')}</span>
+      </div>`;
+    if (!children.length) {
+      return `<div class="ml-manage-row ml-manage-row--category" data-category-id="${esc(cat.category_id)}" data-ml-category-destination-id="${esc(cat.parent_category_id || '')}" style="--ml-manage-depth:${depth}">
+        ${rowInner}${main}${controls}
+      </div>`;
+    }
+    return `<div class="ml-manage-node ml-manage-node--category" data-ml-category-manage-node data-category-id="${esc(cat.category_id)}" data-ml-category-destination-id="${esc(cat.parent_category_id || '')}" style="--ml-manage-depth:${depth}">
+      <div class="ml-manage-row ml-manage-row--summary">${rowInner}${main}${controls}</div>
+      <div class="ml-manage-node-panel" hidden>
+        <div class="ml-manage-children">
+          ${children.map(child => renderCategoryRow(child, depth + 1)).join('')}
+        </div>
+      </div>
+    </div>`;
+  };
+  const renderManageRow = (item, depth) => {
+    if (!item?.link || depth > 12) return '';
+    const children = tree.sortItems(tree.childrenByParent.get(item.mapping_id) || []);
+    const label = item.label_override || item.link?.label || item.link_id;
+    const route = _mlPrimaryRoute(item.link) || 'No route';
+    const currentPath = _mlCategoryPath(categoryId) || category.label;
+    const controls = `<div class="ml-manage-row-actions">
+      <div class="ml-dest-control">
+        <button class="hub-action-btn ml-dest-trigger" type="button" data-ml-dest-trigger="${esc(item.mapping_id)}">
+          <span data-ml-dest-label>${esc(currentPath)}</span>
+        </button>
+        ${_mlDestinationPickerHtml(item.mapping_id)}
+      </div>
+      <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-link-icon="${esc(item.link.link_id)}" title="Choose icon">IC</button>
+      <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-copy-item="${esc(item.mapping_id)}" title="Copy mapping">CP</button>
+      <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-move-item="${esc(item.mapping_id)}" title="Move mapping">MV</button>
+      <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-remove-item="${esc(item.mapping_id)}" title="Remove mapping">RM</button>
+    </div>`;
+    const rowInner = children.length
+      ? `<button class="ml-manage-twist" type="button" data-ml-manage-toggle="${esc(item.mapping_id)}" aria-label="Toggle ${esc(label)}"></button>`
+      : '<span class="ml-manage-twist ml-manage-twist--empty" aria-hidden="true"></span>';
+    const main = `<div class="ml-manage-row-main"${children.length ? ` data-ml-manage-toggle="${esc(item.mapping_id)}"` : ''}>
+        ${_mlIconHtml(_mlLinkIcon(item.link), 'ml-manage-row-icon')}
+        <strong>${esc(label)}</strong>
+        <span>${esc(route)}</span>
+      </div>`;
+    if (!children.length) {
+      return `<div class="ml-manage-row ml-manage-row--leaf" data-mapping-id="${esc(item.mapping_id)}" data-ml-destination-id="${esc(categoryId)}" style="--ml-manage-depth:${depth}">
+        ${rowInner}${main}${controls}
+      </div>`;
+    }
+    return `<div class="ml-manage-node" data-ml-manage-node data-mapping-id="${esc(item.mapping_id)}" data-ml-destination-id="${esc(categoryId)}" style="--ml-manage-depth:${depth}">
+      <div class="ml-manage-row ml-manage-row--summary">${rowInner}${main}${controls}</div>
+      <div class="ml-manage-node-panel" hidden>
+        <div class="ml-manage-children">
+          ${children.map(child => renderManageRow(child, depth + 1)).join('')}
+        </div>
+      </div>
+    </div>`;
+  };
+  const childCategories = _mlSortCategories(maps.byParent[categoryId] || []);
+  const categoryHtml = childCategories.map(cat => renderCategoryRow(cat, 0)).join('');
+  const treeHtml = tree.roots.map(item => renderManageRow(item, 0)).join('');
+  const icon = _mlCategoryIcon(category);
+  const canDeleteCategory = childCategories.length === 0 && tree.roots.length === 0;
+  body.innerHTML = `<div class="ml-manage-category-tools">
+      ${_mlIconHtml(icon, 'ml-manage-category-icon')}
+      <span class="ml-manage-category-icon-text" title="${esc(icon)}">${esc(icon)}</span>
+      <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-category-icon="${esc(categoryId)}" title="Choose category icon">Icon</button>
+      <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-category-icon-default="${esc(categoryId)}" title="Use default category icon">Default</button>
+      ${canDeleteCategory ? `<button class="hub-action-btn ml-manage-mini-action ml-manage-delete-category" type="button" data-ml-delete-category="${esc(categoryId)}" title="Delete empty category">Delete</button>` : ''}
+    </div>
+    <div class="ml-manage-category-edit">
+      <label class="ml-manage-panel-field">
+        <span>Name</span>
+        <input type="text" data-ml-category-label="${esc(categoryId)}" value="${esc(category.label || '')}" />
+      </label>
+      <label class="ml-manage-panel-field ml-manage-panel-field--wide">
+        <span>Notes</span>
+        <input type="text" data-ml-category-notes="${esc(categoryId)}" value="${esc(category.notes || '')}" placeholder="optional category notes" />
+      </label>
+      <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-category-details-save="${esc(categoryId)}">Apply</button>
+    </div>
+    <div class="ml-manage-panel-tools">
+      <label class="hub-checkbox ml-manage-panel-check">
+        <input class="hub-checkbox__input" type="checkbox" data-ml-category-show-panel="${esc(categoryId)}"${_mlCategoryIsPanel(category) ? ' checked' : ''} />
+        <span class="hub-checkbox__box" aria-hidden="true"></span>
+        <span class="hub-checkbox__label">Show Panel</span>
+      </label>
+      <label class="ml-manage-panel-field">
+        <span>Colour</span>
+        <input type="color" data-ml-category-panel-color="${esc(categoryId)}" value="${esc(category.panel_color || '#5b9cf6')}" />
+      </label>
+      <label class="ml-manage-panel-field ml-manage-panel-field--wide">
+        <span>Background</span>
+        <input type="text" data-ml-category-panel-background="${esc(categoryId)}" value="${esc(category.panel_background || '')}" placeholder="asset path or URL" />
+      </label>
+      <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-category-panel-bg-pick="${esc(categoryId)}">Pick</button>
+      <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-category-panel-bg-import="${esc(categoryId)}">Save</button>
+      <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-category-panel-save="${esc(categoryId)}">Apply</button>
+    </div>
+    <p class="ml-manage-path">${esc(_mlCategoryPath(categoryId))}</p>
+    <div class="ml-manage-list">
+      ${categoryHtml ? `<p class="ml-manage-section-label">Child categories</p>${categoryHtml}` : ''}
+    </div>
+    <div class="ml-manage-list">
+      ${treeHtml ? `<p class="ml-manage-section-label">Link mappings</p>${treeHtml}` : '<p class="ml-page-empty">No links mapped directly to this category.</p>'}
+    </div>`;
+  HubModal.open(modal);
+}
+
+async function _mlDeleteCategory(categoryId) {
+  const category = _manualLinkCategories.find(cat => cat.category_id === categoryId);
+  const label = category?.label || 'this category';
+  const ok = await HubDialogs.confirmDelete({
+    title: 'Delete empty category?',
+    message: `Delete ${label} from Manual Links?`,
+    detail: 'Only empty categories can be deleted. Links and mappings stay untouched.',
+  });
+  if (!ok) return;
+  const r = await apiFetch(`/api/v1/manual-link-categories/${encodeURIComponent(categoryId)}`, {
+    method: 'DELETE',
+  });
+  if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
+  HubModal.close(document.getElementById('ml-category-manage-modal'));
+  _mlManagingCategoryId = null;
+  await loadManualLinks();
+}
+
+async function _mlUpdateCategoryIcon(categoryId, iconPath) {
+  await _mlUpdateCategory(categoryId, { icon: iconPath }, { reopenManage: true });
+}
+
+function _mlOpenCategoryIconPicker(categoryId) {
+  if (typeof AssetPicker === 'undefined') return;
+  AssetPicker.open({
+    title: 'Choose category icon',
+    kind: 'icon',
+    browseUrl: '/api/v1/nav-items/assets?type=icons',
+    emptyMessage: 'No icons uploaded yet.',
+    onSelect: async (assetPath) => {
+      await _mlUpdateCategoryIcon(categoryId, assetPath);
+    },
+  });
+}
+
+async function _mlUpdateLinkIcon(linkId, iconPath) {
+  const r = await apiFetch(`/api/v1/manual-links/${encodeURIComponent(linkId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ icon: iconPath }),
+  });
+  if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
+  await loadManualLinks();
+  if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+}
+
+function _mlOpenLinkIconPicker(linkId) {
+  if (typeof AssetPicker === 'undefined') return;
+  AssetPicker.open({
+    title: 'Choose link icon',
+    kind: 'icon',
+    browseUrl: '/api/v1/nav-items/assets?type=icons',
+    emptyMessage: 'No icons uploaded yet.',
+    onSelect: async (assetPath) => {
+      await _mlUpdateLinkIcon(linkId, assetPath);
+    },
+  });
+}
+
+function _mlOpenIconPickerForInput(inputId) {
+  if (typeof AssetPicker === 'undefined') return;
+  const input = document.getElementById(inputId);
+  AssetPicker.open({
+    title: 'Choose icon',
+    kind: 'icon',
+    browseUrl: '/api/v1/nav-items/assets?type=icons',
+    emptyMessage: 'No icons uploaded yet.',
+    onSelect: async (assetPath) => {
+      if (input) input.value = assetPath;
+    },
+  });
+}
+
+async function _mlImportIconUrlForInput(inputId, errorId = 'ml-modal-error') {
+  const input = document.getElementById(inputId);
+  const err = document.getElementById(errorId);
+  if (err) err.textContent = '';
+  const url = (input?.value || '').trim();
+  if (!/^https?:\/\//i.test(url)) {
+    if (err) err.textContent = 'Enter an http(s) icon URL first.';
+    return;
+  }
+  try {
+    const r = await apiFetch('/api/v1/nav-items/import-asset-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, asset_type: 'icons' }),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
+    const result = await r.json();
+    if (input) input.value = result.path;
+  } catch (e) {
+    if (err) err.textContent = e.message;
+    else throw e;
+  }
+}
+
+function openManualLinkCategoryModal() {
+  const dlg = document.getElementById('ml-category-modal');
+  const err = document.getElementById('ml-category-modal-error');
+  if (!dlg) return;
+  if (err) err.textContent = '';
+  const roots = _manualLinkCategories.filter(cat => !cat.parent_category_id);
+  const nextSort = roots.length ? Math.max(...roots.map(cat => cat.sort_order || 0)) + 1 : 0;
+  const values = {
+    'ml-category-label': '',
+    'ml-category-icon': _ML_DEFAULT_ICON,
+    'ml-category-sort-order': String(nextSort),
+    'ml-category-panel-color': '#5b9cf6',
+    'ml-category-panel-background': '',
+    'ml-category-notes': '',
+  };
+  Object.entries(values).forEach(([id, value]) => {
+    const el = document.getElementById(id);
+    if (el) el.value = value;
+  });
+  const showPanel = document.getElementById('ml-category-show-panel');
+  if (showPanel) showPanel.checked = false;
+  HubModal.open(dlg);
+}
+
+async function submitManualLinkCategory() {
+  const err = document.getElementById('ml-category-modal-error');
+  if (err) err.textContent = '';
+  const label = document.getElementById('ml-category-label')?.value.trim() || '';
+  if (!label) {
+    if (err) err.textContent = 'Label is required.';
+    return;
+  }
+  const body = {
+    label,
+    icon: document.getElementById('ml-category-icon')?.value.trim() || _ML_DEFAULT_ICON,
+    parent_category_id: null,
+    sort_order: parseInt(document.getElementById('ml-category-sort-order')?.value || '0', 10),
+    show_panel: document.getElementById('ml-category-show-panel')?.checked ? 1 : 0,
+    panel_color: document.getElementById('ml-category-panel-color')?.value.trim() || null,
+    panel_background: document.getElementById('ml-category-panel-background')?.value.trim() || null,
+    notes: document.getElementById('ml-category-notes')?.value.trim() || null,
+  };
+  try {
+    const r = await apiFetch('/api/v1/manual-link-categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
+    HubModal.close(document.getElementById('ml-category-modal'));
+    await loadManualLinks();
+  } catch (e) {
+    if (err) err.textContent = e.message;
+  }
+}
+
+async function _mlRemoveCategoryItem(mappingId) {
+  const ok = await HubDialogs.confirm({
+    title: 'Remove mapping?',
+    message: 'Remove this link from the selected category?',
+    detail: 'The canonical manual link record will stay intact.',
+    tone: 'warning',
+    badge: 'Manual',
+    confirmText: 'Remove',
+  });
+  if (!ok) return;
+  const r = await apiFetch(`/api/v1/manual-link-categories/items/${encodeURIComponent(mappingId)}`, { method: 'DELETE' });
+  if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
+  await loadManualLinks();
+  if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+}
+
+async function _mlMoveCategoryItem(mappingId, categoryId, parentMappingId = null) {
+  const source = _manualLinkCategoryItems.find(item => item.mapping_id === mappingId);
+  if (!source) throw new Error(`mapping ${mappingId} not found`);
+  const itemsByCategory = _mlItemsByCategory();
+  const tree = _mlLinkTreeForCategory(source.category_id, itemsByCategory);
+  async function moveOne(item, nextParentMappingId) {
+    const r = await apiFetch(`/api/v1/manual-link-categories/items/${encodeURIComponent(item.mapping_id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category_id: categoryId, parent_mapping_id: nextParentMappingId }),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
+    const children = tree.sortItems(tree.childrenByParent.get(item.mapping_id) || []);
+    for (const child of children) {
+      await moveOne(child, item.mapping_id);
+    }
+  }
+  await moveOne(source, parentMappingId);
+  await loadManualLinks();
+  if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+}
+
+async function _mlCopyCategoryItem(mappingId, categoryId, parentMappingId = null) {
+  const source = _manualLinkCategoryItems.find(item => item.mapping_id === mappingId);
+  if (!source) throw new Error(`mapping ${mappingId} not found`);
+  const itemsByCategory = _mlItemsByCategory();
+  const tree = _mlLinkTreeForCategory(source.category_id, itemsByCategory);
+  async function copyOne(item, nextCategoryId, nextParentMappingId) {
+    const r = await apiFetch('/api/v1/manual-link-categories/items', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        category_id: nextCategoryId,
+        link_id: item.link_id,
+        parent_mapping_id: nextParentMappingId,
+        sort_order: item.sort_order ?? 0,
+        label_override: item.label_override || null,
+        notes: item.notes || null,
+      }),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
+    const copied = await r.json();
+    const children = tree.sortItems(tree.childrenByParent.get(item.mapping_id) || []);
+    for (const child of children) {
+      await copyOne(child, nextCategoryId, copied.mapping_id);
+    }
+    return copied;
+  }
+  await copyOne(source, categoryId, parentMappingId);
+  await loadManualLinks();
+  if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+}
+
+const _mlGridPress = (() => {
+  let state = { kind: 'idle' };
+  const reset = () => {
+    if (state.timer) clearTimeout(state.timer);
+    state = { kind: 'idle' };
+  };
+  return {
+    pointerDown(event) {
+      const link = event.target.closest('[data-ml-grid-link]');
+      if (!link) return;
+      reset();
+      state = {
+        kind: 'pressing',
+        linkId: link.dataset.mlGridLink,
+        mappingId: link.dataset.mlGridMapping || null,
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        timer: setTimeout(() => {
+          const linkId = state.linkId;
+          const mappingId = state.mappingId;
+          _mlSuppressLeafClickBriefly();
+          reset();
+          _mlOpenLinkDetail(linkId, mappingId);
+        }, 560),
+      };
+    },
+    pointerMove(event) {
+      if (state.kind !== 'pressing') return;
+      if (Math.abs(event.clientX - state.x) > 10 || Math.abs(event.clientY - state.y) > 10) reset();
+    },
+    pointerUp() { reset(); },
+    pointerCancel() { reset(); },
+  };
+})();
+
 /* ── Modal: Add / Edit ───────────────────────────────────────────────────── */
+
+function _mlManualLinkTree(excludeLinkId = null) {
+  const childrenByParent = new Map();
+  const roots = [];
+  const sorted = [..._manualLinks]
+    .filter(link => link.link_id !== excludeLinkId)
+    .sort((a, b) => (a.sort_order - b.sort_order) || (a.label || '').localeCompare(b.label || ''));
+  sorted.forEach(link => {
+    const parentId = link.parent_id && link.parent_id !== excludeLinkId ? link.parent_id : '';
+    if (!parentId || !_manualLinks.some(candidate => candidate.link_id === parentId && candidate.link_id !== excludeLinkId)) {
+      roots.push(link);
+      return;
+    }
+    if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
+    childrenByParent.get(parentId).push(link);
+  });
+  return { roots, childrenByParent };
+}
+
+function _mlManualLinkLabel(linkId) {
+  if (!linkId) return '— none —';
+  const link = _manualLinks.find(item => item.link_id === linkId);
+  return link ? (link.label || link.link_id.slice(0, 8)) : '— none —';
+}
+
+function _mlSetParentSelection(linkId) {
+  const input = document.getElementById('ml-parent-id');
+  const label = document.getElementById('ml-parent-picker-label');
+  if (input) input.value = linkId || '';
+  if (label) label.textContent = _mlManualLinkLabel(linkId);
+}
+
+function _mlParentPickerHtml(selectedId, excludeLinkId) {
+  const { roots, childrenByParent } = _mlManualLinkTree(excludeLinkId);
+  const renderLink = (link, depth) => {
+    if (depth > 12) return '';
+    const children = childrenByParent.get(link.link_id) || [];
+    const active = selectedId === link.link_id ? ' is-selected' : '';
+    const button = `<button class="ml-parent-choice${active}" type="button" data-ml-parent-choice="${esc(link.link_id)}" style="--ml-parent-depth:${depth}">
+      ${_mlIconHtml(_mlLinkIcon(link), 'ml-grid-icon ml-grid-icon--small')}<span>${esc(link.label || link.link_id.slice(0, 8))}</span>
+    </button>`;
+    if (!children.length) return button;
+    return `<details class="ml-parent-node" open>
+      <summary style="--ml-parent-depth:${depth}">${_mlIconHtml(_mlLinkIcon(link), 'ml-grid-icon ml-grid-icon--small')}<span>${esc(link.label || link.link_id.slice(0, 8))}</span></summary>
+      <div>${button}${children.map(child => renderLink(child, depth + 1)).join('')}</div>
+    </details>`;
+  };
+  return `<button class="ml-parent-choice${!selectedId ? ' is-selected' : ''}" type="button" data-ml-parent-choice="" style="--ml-parent-depth:0">— none —</button>
+    ${roots.map(link => renderLink(link, 0)).join('') || '<p class="ml-page-empty">No parent links available.</p>'}`;
+}
 
 function openManualLinkModal(linkId) {
   _editingLinkId = linkId || null;
@@ -603,13 +2611,8 @@ function openManualLinkModal(linkId) {
   };
   const lnk = linkId ? (_manualLinks.find(l => l.link_id === linkId) || defaults) : defaults;
 
-  // Populate parent dropdown
-  const parentSel = document.getElementById('ml-parent-id');
-  parentSel.innerHTML = '<option value="">— none —</option>' +
-    _manualLinks
-      .filter(l => l.link_id !== linkId)
-      .map(l => `<option value="${esc(l.link_id)}"${lnk.parent_id === l.link_id ? ' selected' : ''}>${esc(l.label || l.link_id.slice(0,8))}</option>`)
-      .join('');
+  const parentPanel = document.getElementById('ml-parent-picker-panel');
+  if (parentPanel) parentPanel.innerHTML = _mlParentPickerHtml(lnk.parent_id || '', linkId);
 
   const fields = ['vlan_ip','vlan_uri','tailnet_ip','tailnet_uri','label','icon','group_name','sort_order','pve_host','vm_id','vm_name','lxc_id','lxc_name','location','notes'];
   fields.forEach(f => {
@@ -617,7 +2620,7 @@ function openManualLinkModal(linkId) {
     if (el) el.value = lnk[f] !== null && lnk[f] !== undefined ? lnk[f] : '';
   });
   document.getElementById('ml-is-internet').checked = !!lnk.is_internet;
-  parentSel.value = lnk.parent_id || '';
+  _mlSetParentSelection(lnk.parent_id || '');
 
   HubModal.open(dlg);
 }
@@ -704,6 +2707,27 @@ document.addEventListener('DOMContentLoaded', () => {
   _ensureManualLinksTableView();
   _ensureManualLinksLayoutController()?.init();
   document.getElementById('ml-modal-save-btn')?.addEventListener('click', submitManualLink);
+  document.getElementById('ml-icon-pick-btn')?.addEventListener('click', () => _mlOpenIconPickerForInput('ml-icon'));
+  document.getElementById('ml-icon-import-btn')?.addEventListener('click', () => { void _mlImportIconUrlForInput('ml-icon', 'ml-modal-error'); });
+  document.getElementById('ml-parent-picker-btn')?.addEventListener('click', () => {
+    const panel = document.getElementById('ml-parent-picker-panel');
+    const btn = document.getElementById('ml-parent-picker-btn');
+    if (!panel) return;
+    panel.hidden = !panel.hidden;
+    if (btn) btn.setAttribute('aria-expanded', String(!panel.hidden));
+  });
+  document.getElementById('ml-parent-picker-panel')?.addEventListener('click', e => {
+    const choice = e.target.closest('[data-ml-parent-choice]');
+    if (!choice) return;
+    _mlSetParentSelection(choice.dataset.mlParentChoice || '');
+    document.getElementById('ml-parent-picker-panel').hidden = true;
+    document.getElementById('ml-parent-picker-btn')?.setAttribute('aria-expanded', 'false');
+  });
+  document.getElementById('ml-category-modal-save-btn')?.addEventListener('click', submitManualLinkCategory);
+  document.getElementById('ml-category-icon-pick-btn')?.addEventListener('click', () => _mlOpenIconPickerForInput('ml-category-icon'));
+  document.getElementById('ml-category-icon-import-btn')?.addEventListener('click', () => { void _mlImportIconUrlForInput('ml-category-icon', 'ml-category-modal-error'); });
+  document.getElementById('ml-category-panel-bg-pick-btn')?.addEventListener('click', () => _mlOpenIconPickerForInput('ml-category-panel-background'));
+  document.getElementById('ml-category-panel-bg-import-btn')?.addEventListener('click', () => { void _mlImportIconUrlForInput('ml-category-panel-background', 'ml-category-modal-error'); });
   document.getElementById('ml-cols-modal-apply')?.addEventListener('click', _mlApplyColsModal);
 
   const mlFilter = document.getElementById('ml-filter');
@@ -734,7 +2758,430 @@ document.addEventListener('DOMContentLoaded', () => {
       _mlOpenRowActions(actionsBtn.dataset.mlRowActions);
     }
   });
+  document.getElementById('ml-grid-body')?.addEventListener('click', e => {
+    if (_mlPickedCategory) {
+      void _mlPlacePickedCategory(e);
+      return;
+    }
+    const link = e.target.closest('[data-ml-grid-link]');
+    if (link) {
+      e.preventDefault();
+      e.stopPropagation();
+      _mlHandleLeafClick(link);
+      return;
+    }
+    const toggle = e.target.closest('[data-ml-grid-toggle]');
+    if (toggle) {
+      if (_mlSuppressNextCategoryToggle) {
+        _mlSuppressNextCategoryToggle = false;
+        return;
+      }
+      const categoryId = toggle.dataset.mlGridToggle;
+      if (_mlGridOpen.has(categoryId)) _mlGridOpen.delete(categoryId);
+      else {
+        _mlGridOpen.clear();
+        _mlGridOpen.add(categoryId);
+      }
+      renderManualLinksGrid();
+      return;
+    }
+    const manage = e.target.closest('[data-ml-grid-manage]');
+    if (manage) {
+      _mlOpenCategoryManage(manage.dataset.mlGridManage);
+    }
+  });
+  document.getElementById('ml-grid-body')?.addEventListener('dblclick', e => {
+    const link = e.target.closest('[data-ml-grid-link]');
+    if (!link) return;
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  document.getElementById('ml-grid-body')?.addEventListener('dragstart', e => {
+    const mappingDrag = e.target.closest('[data-ml-grid-mapping-drag]');
+    if (mappingDrag) {
+      _mlGridDragId = mappingDrag.dataset.mlGridMappingDrag;
+      const mapping = _manualLinkCategoryItems.find(item => item.mapping_id === _mlGridDragId);
+      _mlGridDragKind = 'mapping';
+      _mlGridDragSourceParent = mapping?.category_id || '';
+      _mlGridDragOffsetX = null;
+      _mlGridDragOffsetY = null;
+      _mlSuppressLeafClickBriefly();
+      if (_mlLeafClickState.timer) clearTimeout(_mlLeafClickState.timer);
+      _mlLeafClickState = { timer: null, mappingId: null };
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', _mlGridDragId);
+      return;
+    }
+    const card = e.target.closest('[data-ml-grid-card]');
+    if (!card) return;
+    if (card.matches('[data-ml-grid-panel]') && !e.target.closest('[data-ml-panel-drag-handle]')) {
+      e.preventDefault();
+      return;
+    }
+    _mlGridDragId = card.dataset.categoryId;
+    _mlGridDragKind = 'category';
+    _mlGridDragSourceParent = card.parentElement?.closest('[data-ml-grid-panel]')?.dataset.categoryId || '';
+    const rect = card.getBoundingClientRect();
+    _mlGridDragOffsetX = Number.isFinite(Number(e.clientX)) && e.clientX > 0 ? e.clientX - rect.left : Math.min(rect.width / 2, 40);
+    _mlGridDragOffsetY = Number.isFinite(Number(e.clientY)) && e.clientY > 0 ? e.clientY - rect.top : Math.min(rect.height / 2, 24);
+    _mlClearCategoryNestIntent();
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', _mlGridDragId);
+  });
+  document.getElementById('ml-grid-body')?.addEventListener('dragover', e => {
+    const droppedUrl = _mlExtractDroppedUrl(e.dataTransfer);
+    if (!_mlGridDragId && !droppedUrl && !_mlMayContainDroppedUrl(e.dataTransfer)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = _mlGridDragId ? 'move' : 'copy';
+    if (_mlGridDragKind !== 'category') {
+      _mlClearCategoryNestIntent();
+      return;
+    }
+    const targetCard = e.target.closest('[data-ml-grid-card]');
+    const dropZone = e.target.closest('[data-ml-drop-zone]');
+    const explicitStructuralDrop = !!dropZone && (!targetCard || targetCard.contains(dropZone));
+    _mlUpdateCategoryNestIntent(_mlGridDragId, explicitStructuralDrop ? null : targetCard);
+  });
+  document.getElementById('ml-grid-body')?.addEventListener('drop', async e => {
+    e.preventDefault();
+    const droppedUrl = _mlExtractDroppedUrl(e.dataTransfer);
+    if (!_mlGridDragId && droppedUrl) {
+      const targetCard = e.target.closest('[data-ml-grid-card]');
+      const dropZone = e.target.closest('[data-ml-drop-zone]');
+      const targetCategoryId = dropZone?.dataset.mlDropParent || targetCard?.dataset.categoryId || '';
+      try {
+        await _mlIntakeDroppedUrl(droppedUrl, targetCategoryId);
+      } catch (err) {
+        await HubDialogs.alertError({ title: 'URL intake failed', message: err.message });
+      }
+      return;
+    }
+    if (!_mlGridDragId) return;
+    const draggedId = _mlGridDragId;
+    const targetCard = e.target.closest('[data-ml-grid-card]');
+    const dropZone = e.target.closest('[data-ml-drop-zone]');
+    const board = e.target.closest('.ml-grid-board');
+    try {
+      if (_mlGridDragKind === 'mapping') {
+        const targetCategoryId = dropZone?.dataset.mlDropParent || targetCard?.dataset.categoryId || '';
+        await _mlPromoteOrMoveMapping(draggedId, targetCategoryId || null);
+        _mlGridDragId = null;
+        _mlGridDragKind = null;
+        _mlGridDragSourceParent = null;
+        _mlGridDragOffsetX = null;
+        _mlGridDragOffsetY = null;
+        _mlClearCategoryNestIntent();
+        return;
+      }
+      await _mlHandleCategoryDrop(draggedId, targetCard, dropZone, board, e);
+    } catch (err) {
+      await HubDialogs.alertError({
+        title: 'Category move failed',
+        message: err.message,
+      });
+    }
+    _mlGridDragId = null;
+    _mlGridDragKind = null;
+    _mlGridDragSourceParent = null;
+    _mlGridDragOffsetX = null;
+    _mlGridDragOffsetY = null;
+    _mlClearCategoryNestIntent();
+  });
+  document.getElementById('ml-grid-body')?.addEventListener('dragend', () => {
+    _mlGridDragId = null;
+    _mlGridDragKind = null;
+    _mlGridDragSourceParent = null;
+    _mlGridDragOffsetX = null;
+    _mlGridDragOffsetY = null;
+    _mlClearCategoryNestIntent();
+  });
+  document.getElementById('ml-grid-body')?.addEventListener('pointerdown', _mlGridPress.pointerDown);
+  document.getElementById('ml-grid-body')?.addEventListener('pointerdown', e => {
+    const handle = e.target.closest('[data-ml-panel-resize]');
+    if (handle) _mlStartPanelResize(e, handle);
+  });
+  document.getElementById('ml-grid-body')?.addEventListener('pointerdown', _mlStartTouchCategoryDrag);
+  document.getElementById('ml-grid-body')?.addEventListener('pointermove', _mlGridPress.pointerMove);
+  document.getElementById('ml-grid-body')?.addEventListener('pointermove', _mlUpdatePanelResize);
+  document.getElementById('ml-grid-body')?.addEventListener('pointermove', _mlMoveTouchCategoryDrag);
+  document.getElementById('ml-grid-body')?.addEventListener('pointerup', _mlGridPress.pointerUp);
+  document.getElementById('ml-grid-body')?.addEventListener('pointerup', _mlFinishPanelResize);
+  document.getElementById('ml-grid-body')?.addEventListener('pointerup', e => { void _mlFinishTouchCategoryDrag(e); });
+  document.getElementById('ml-grid-body')?.addEventListener('pointercancel', _mlGridPress.pointerCancel);
+  document.getElementById('ml-grid-body')?.addEventListener('pointercancel', _mlFinishPanelResize);
+  document.getElementById('ml-grid-body')?.addEventListener('pointercancel', e => { void _mlFinishTouchCategoryDrag(e); });
+  document.addEventListener('pointermove', _mlMoveTouchCategoryDrag, { passive: false });
+  document.addEventListener('pointerup', e => { void _mlFinishTouchCategoryDrag(e); }, { passive: false });
+  document.addEventListener('pointercancel', e => { void _mlFinishTouchCategoryDrag(e); }, { passive: false });
+  document.getElementById('ml-grid-body')?.addEventListener('touchstart', _mlStartTouchCategoryDragFallback, { passive: false });
+  document.addEventListener('touchmove', _mlMoveTouchCategoryDragFallback, { passive: false });
+  document.addEventListener('touchend', _mlFinishTouchCategoryDragFallback, { passive: false });
+  document.addEventListener('touchcancel', _mlFinishTouchCategoryDragFallback, { passive: false });
+  document.getElementById('ml-link-detail-body')?.addEventListener('click', async e => {
+    const fullEdit = e.target.closest('[data-ml-detail-full-edit]');
+    if (fullEdit) {
+      e.preventDefault();
+      HubModal.close(document.getElementById('ml-link-detail-modal'));
+      openManualLinkModal(fullEdit.dataset.mlDetailFullEdit);
+      return;
+    }
+    const save = e.target.closest('[data-ml-detail-save]');
+    if (save) {
+      e.preventDefault();
+      const editor = save.closest('[data-ml-detail-editor]');
+      await _mlSaveLinkDetail(editor);
+    }
+  });
+  document.getElementById('ml-category-manage-body')?.addEventListener('click', async e => {
+    try {
+      const deleteCategory = e.target.closest('[data-ml-delete-category]');
+      if (deleteCategory) {
+        e.preventDefault();
+        e.stopPropagation();
+        await _mlDeleteCategory(deleteCategory.dataset.mlDeleteCategory);
+        return;
+      }
+      const openCategoryManage = e.target.closest('[data-ml-open-category-manage]');
+      if (openCategoryManage) {
+        e.preventDefault();
+        e.stopPropagation();
+        _mlOpenCategoryManage(openCategoryManage.dataset.mlOpenCategoryManage);
+        return;
+      }
+      const categoryToggle = e.target.closest('[data-ml-category-manage-toggle]');
+      if (categoryToggle) {
+        e.preventDefault();
+        e.stopPropagation();
+        const node = categoryToggle.closest('[data-ml-category-manage-node]');
+        const panel = node?.querySelector(':scope > .ml-manage-node-panel');
+        if (node && panel) {
+          const open = panel.hidden;
+          panel.hidden = !open;
+          node.classList.toggle('is-open', open);
+        }
+        return;
+      }
+      const categoryDestTrigger = e.target.closest('[data-ml-category-dest-trigger]');
+      if (categoryDestTrigger) {
+        e.preventDefault();
+        e.stopPropagation();
+        const row = categoryDestTrigger.closest('[data-category-id]');
+        const panel = row?.querySelector(`[data-ml-category-dest-panel="${CSS.escape(categoryDestTrigger.dataset.mlCategoryDestTrigger)}"]`);
+        if (!panel) return;
+        row.closest('#ml-category-manage-body')?.querySelectorAll('.ml-dest-picker').forEach(other => {
+          if (other !== panel) other.hidden = true;
+        });
+        panel.hidden = !panel.hidden;
+        _mlPositionDestinationPicker(categoryDestTrigger, panel);
+        return;
+      }
+      const categoryChoice = e.target.closest('[data-ml-category-dest-choice]');
+      if (categoryChoice) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (categoryChoice.disabled) return;
+        const row = categoryChoice.closest('[data-category-id]');
+        if (!row) return;
+        row.dataset.mlCategoryDestinationId = categoryChoice.dataset.mlCategoryDestChoice || '';
+        const label = row.querySelector('[data-ml-category-dest-label]');
+        if (label) label.textContent = categoryChoice.dataset.mlCategoryDestLabel || 'Top categories';
+        const panel = categoryChoice.closest('.ml-dest-picker');
+        if (panel) panel.hidden = true;
+        return;
+      }
+      const moveCategoryTop = e.target.closest('[data-ml-move-category-top]');
+      if (moveCategoryTop) {
+        e.preventDefault();
+        e.stopPropagation();
+        await _mlMoveCategory(moveCategoryTop.dataset.mlMoveCategoryTop, null);
+        if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+        return;
+      }
+      const moveCategory = e.target.closest('[data-ml-move-category]');
+      if (moveCategory) {
+        e.preventDefault();
+        e.stopPropagation();
+        const row = moveCategory.closest('[data-category-id]');
+        await _mlMoveCategory(moveCategory.dataset.mlMoveCategory, row?.dataset.mlCategoryDestinationId || null);
+        if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+        return;
+      }
+      const linkIcon = e.target.closest('[data-ml-link-icon]');
+      if (linkIcon) {
+        e.preventDefault();
+        e.stopPropagation();
+        _mlOpenLinkIconPicker(linkIcon.dataset.mlLinkIcon);
+        return;
+      }
+      const categoryIcon = e.target.closest('[data-ml-category-icon]');
+      if (categoryIcon) {
+        e.preventDefault();
+        e.stopPropagation();
+        _mlOpenCategoryIconPicker(categoryIcon.dataset.mlCategoryIcon);
+        return;
+      }
+      const categoryIconDefault = e.target.closest('[data-ml-category-icon-default]');
+      if (categoryIconDefault) {
+        e.preventDefault();
+        e.stopPropagation();
+        await _mlUpdateCategoryIcon(categoryIconDefault.dataset.mlCategoryIconDefault, _ML_DEFAULT_ICON);
+        return;
+      }
+      const categoryDetailsSave = e.target.closest('[data-ml-category-details-save]');
+      if (categoryDetailsSave) {
+        e.preventDefault();
+        e.stopPropagation();
+        const categoryId = categoryDetailsSave.dataset.mlCategoryDetailsSave;
+        const label = document.querySelector(`[data-ml-category-label="${CSS.escape(categoryId)}"]`)?.value?.trim();
+        if (!label) {
+          await HubDialogs.alertError({ title: 'Category save failed', message: 'Category name cannot be blank.' });
+          return;
+        }
+        await _mlUpdateCategory(categoryId, {
+          label,
+          notes: document.querySelector(`[data-ml-category-notes="${CSS.escape(categoryId)}"]`)?.value?.trim() || null,
+        }, { reopenManage: true });
+        const updated = _manualLinkCategories.find(cat => cat.category_id === categoryId);
+        if (updated && document.getElementById('ml-category-manage-title')) {
+          document.getElementById('ml-category-manage-title').textContent = updated.label;
+        }
+        return;
+      }
+      const panelPick = e.target.closest('[data-ml-category-panel-bg-pick]');
+      if (panelPick) {
+        e.preventDefault();
+        e.stopPropagation();
+        const categoryId = panelPick.dataset.mlCategoryPanelBgPick;
+        const input = document.querySelector(`[data-ml-category-panel-background="${CSS.escape(categoryId)}"]`);
+        if (typeof AssetPicker !== 'undefined') {
+          AssetPicker.open({
+            title: 'Choose panel background',
+            kind: 'icon',
+            browseUrl: '/api/v1/nav-items/assets?type=icons',
+            emptyMessage: 'No images uploaded yet.',
+            onSelect: async (assetPath) => {
+              if (input) input.value = assetPath;
+            },
+          });
+        }
+        return;
+      }
+      const panelImport = e.target.closest('[data-ml-category-panel-bg-import]');
+      if (panelImport) {
+        e.preventDefault();
+        e.stopPropagation();
+        const categoryId = panelImport.dataset.mlCategoryPanelBgImport;
+        const input = document.querySelector(`[data-ml-category-panel-background="${CSS.escape(categoryId)}"]`);
+        const url = (input?.value || '').trim();
+        if (!/^https?:\/\//i.test(url)) {
+          await HubDialogs.alertError({ title: 'Panel background import failed', message: 'Enter an http(s) image URL first.' });
+          return;
+        }
+        const r = await apiFetch('/api/v1/nav-items/import-asset-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, asset_type: 'icons' }),
+        });
+        if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
+        const result = await r.json();
+        if (input) input.value = result.path;
+        return;
+      }
+      const panelSave = e.target.closest('[data-ml-category-panel-save]');
+      if (panelSave) {
+        e.preventDefault();
+        e.stopPropagation();
+        const categoryId = panelSave.dataset.mlCategoryPanelSave;
+        await _mlUpdateCategory(categoryId, {
+          show_panel: document.querySelector(`[data-ml-category-show-panel="${CSS.escape(categoryId)}"]`)?.checked ? 1 : 0,
+          panel_color: document.querySelector(`[data-ml-category-panel-color="${CSS.escape(categoryId)}"]`)?.value || null,
+          panel_background: document.querySelector(`[data-ml-category-panel-background="${CSS.escape(categoryId)}"]`)?.value?.trim() || null,
+        }, { reopenManage: true });
+        return;
+      }
+      const manageToggle = e.target.closest('[data-ml-manage-toggle]');
+      if (manageToggle) {
+        e.preventDefault();
+        e.stopPropagation();
+        const node = manageToggle.closest('[data-ml-manage-node]');
+        const panel = node?.querySelector(':scope > .ml-manage-node-panel');
+        if (node && panel) {
+          const open = panel.hidden;
+          panel.hidden = !open;
+          node.classList.toggle('is-open', open);
+        }
+        return;
+      }
+      const destTrigger = e.target.closest('[data-ml-dest-trigger]');
+      if (destTrigger) {
+        e.preventDefault();
+        e.stopPropagation();
+        const row = destTrigger.closest('[data-mapping-id]');
+        const panel = row?.querySelector(`[data-ml-dest-panel="${CSS.escape(destTrigger.dataset.mlDestTrigger)}"]`);
+        if (!panel) return;
+        row.closest('#ml-category-manage-body')?.querySelectorAll('.ml-dest-picker').forEach(other => {
+          if (other !== panel) other.hidden = true;
+        });
+        panel.hidden = !panel.hidden;
+        _mlPositionDestinationPicker(destTrigger, panel);
+        return;
+      }
+      const choice = e.target.closest('[data-ml-dest-choice]');
+      if (choice) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (choice.disabled) return;
+        const row = choice.closest('[data-mapping-id]');
+        if (!row) return;
+        row.dataset.mlDestinationId = choice.dataset.mlDestChoice;
+        row.dataset.mlDestinationParentId = choice.dataset.mlDestParent || '';
+        const label = row.querySelector('[data-ml-dest-label]');
+        if (label) label.textContent = choice.dataset.mlDestLabel || choice.textContent.trim();
+        const panel = choice.closest('.ml-dest-picker');
+        if (panel) panel.hidden = true;
+        return;
+      }
+      const remove = e.target.closest('[data-ml-remove-item]');
+      if (remove) {
+        e.preventDefault();
+        e.stopPropagation();
+        await _mlRemoveCategoryItem(remove.dataset.mlRemoveItem);
+        return;
+      }
+      const copy = e.target.closest('[data-ml-copy-item]');
+      if (copy) {
+        e.preventDefault();
+        e.stopPropagation();
+        const row = copy.closest('[data-mapping-id]');
+        const categoryId = row?.dataset.mlDestinationId;
+        const parentMappingId = row?.dataset.mlDestinationParentId || null;
+        if (categoryId) await _mlCopyCategoryItem(copy.dataset.mlCopyItem, categoryId, parentMappingId);
+        return;
+      }
+      const move = e.target.closest('[data-ml-move-item]');
+      if (move) {
+        e.preventDefault();
+        e.stopPropagation();
+        const row = move.closest('[data-mapping-id]');
+        const categoryId = row?.dataset.mlDestinationId;
+        const parentMappingId = row?.dataset.mlDestinationParentId || null;
+        if (categoryId) await _mlMoveCategoryItem(move.dataset.mlMoveItem, categoryId, parentMappingId);
+      }
+    } catch (err) {
+      await HubDialogs.alertError({
+        title: 'Manual Links update failed',
+        message: err.message,
+      });
+    }
+  });
   if (typeof ResponsiveLayout !== 'undefined') {
     ResponsiveLayout.registerTabControls('manual-links-table', 'pg-ctrl-manual-links-table');
+  }
+  _mlInstallShadeViewportBinding();
+  window.addEventListener('resize', _mlHandleGridViewportChange, { passive: true });
+  window.addEventListener('orientationchange', _mlHandleGridViewportChange, { passive: true });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', _mlHandleGridViewportChange, { passive: true });
+    window.visualViewport.addEventListener('scroll', _mlScheduleGridViewportFit, { passive: true });
   }
 });

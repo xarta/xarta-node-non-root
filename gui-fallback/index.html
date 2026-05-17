@@ -600,6 +600,13 @@
       </div>
     </div>
 
+    <!-- PAGE 4 (draggable category grid) -->
+    <div id="ml-grid-view" style="display:none">
+      <div class="ml-page-shell ml-page-shell--grid">
+        <div id="ml-grid-body"></div>
+      </div>
+    </div>
+
     <p id="ml-error" class="error-msg" hidden></p>
     </div><!-- /tab-scroll-shell -->
   </section>
@@ -2621,7 +2628,11 @@
       </div>
       <div class="field">
         <label for="ml-icon">Icon <span class="field-hint" style="display:inline">(emoji / URL / SVG)</span></label>
-        <input type="text" id="ml-icon" placeholder="e.g. &#x1F30E; or https://…/favicon.ico" />
+        <div class="ml-icon-input-row">
+          <input type="text" id="ml-icon" placeholder="e.g. icons/foo.svg or https://…/favicon.ico" />
+          <button class="hub-action-btn ml-icon-tool-btn" type="button" id="ml-icon-pick-btn">Pick</button>
+          <button class="hub-action-btn ml-icon-tool-btn" type="button" id="ml-icon-import-btn">Save</button>
+        </div>
       </div>
 
       <div class="field">
@@ -2635,7 +2646,13 @@
 
       <div class="field">
         <label for="ml-parent-id">Parent link</label>
-        <select id="ml-parent-id"><option value="">— none —</option></select>
+        <input type="hidden" id="ml-parent-id" value="" />
+        <div class="ml-nested-picker">
+          <button class="hub-action-btn ml-nested-picker-trigger" type="button" id="ml-parent-picker-btn" aria-haspopup="tree" aria-expanded="false">
+            <span id="ml-parent-picker-label">— none —</span>
+          </button>
+          <div class="ml-nested-picker-panel" id="ml-parent-picker-panel" hidden></div>
+        </div>
       </div>
       <div class="field" style="justify-content:flex-end;padding-bottom:2px">
         <label class="hub-checkbox" style="text-transform:none;letter-spacing:normal;font-size:0.9em;font-weight:400;color:var(--hub-text,#e0e0e0);">
@@ -2685,6 +2702,86 @@
   <div class="hub-modal-footer">
     <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Cancel</button>
     <button class="hub-modal-btn" type="button" id="ml-modal-save-btn">Save</button>
+  </div>
+</dialog>
+
+<dialog class="hub-modal hub-dialog ml-full-modal" data-tone="info" id="ml-link-detail-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">LINK</span>
+      <span class="hub-dialog-title-text" id="ml-link-detail-title">Manual link</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body" id="ml-link-detail-body"></div>
+</dialog>
+
+<dialog class="hub-modal hub-dialog ml-full-modal" data-tone="info" id="ml-category-manage-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">MANAGE</span>
+      <span class="hub-dialog-title-text" id="ml-category-manage-title">Category</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body" id="ml-category-manage-body"></div>
+</dialog>
+
+<dialog class="hub-modal hub-dialog" data-tone="info" id="ml-category-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">ADD</span>
+      <span class="hub-dialog-title-text">Add category</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body">
+    <div class="modal-grid">
+      <div class="field">
+        <label for="ml-category-label">Label</label>
+        <input type="text" id="ml-category-label" placeholder="e.g. Network" />
+      </div>
+      <div class="field">
+        <label for="ml-category-sort-order">Sort order</label>
+        <input type="number" id="ml-category-sort-order" value="0" />
+      </div>
+      <div class="field" style="grid-column:1/-1">
+        <label for="ml-category-icon">Icon <span class="field-hint" style="display:inline">(asset path or URL)</span></label>
+        <div class="ml-icon-input-row">
+          <input type="text" id="ml-category-icon" placeholder="icons/hieroglyphs/eye-of-horus-blue.svg" />
+          <button class="hub-action-btn ml-icon-tool-btn" type="button" id="ml-category-icon-pick-btn">Pick</button>
+          <button class="hub-action-btn ml-icon-tool-btn" type="button" id="ml-category-icon-import-btn">Save</button>
+        </div>
+      </div>
+      <div class="field" style="justify-content:flex-end;padding-bottom:2px">
+        <label class="hub-checkbox" style="text-transform:none;letter-spacing:normal;font-size:0.9em;font-weight:400;color:var(--hub-text,#e0e0e0);">
+          <input class="hub-checkbox__input" type="checkbox" id="ml-category-show-panel" />
+          <span class="hub-checkbox__box" aria-hidden="true"></span>
+          <span class="hub-checkbox__label">Show Panel</span>
+        </label>
+      </div>
+      <div class="field">
+        <label for="ml-category-panel-color">Panel colour</label>
+        <input type="color" id="ml-category-panel-color" value="#5b9cf6" />
+      </div>
+      <div class="field" style="grid-column:1/-1">
+        <label for="ml-category-panel-background">Panel background <span class="field-hint" style="display:inline">(asset path or URL)</span></label>
+        <div class="ml-icon-input-row">
+          <input type="text" id="ml-category-panel-background" placeholder="optional image URL or icons/foo.svg" />
+          <button class="hub-action-btn ml-icon-tool-btn" type="button" id="ml-category-panel-bg-pick-btn">Pick</button>
+          <button class="hub-action-btn ml-icon-tool-btn" type="button" id="ml-category-panel-bg-import-btn">Save</button>
+        </div>
+      </div>
+      <div class="field" style="grid-column:1/-1">
+        <label for="ml-category-notes">Notes</label>
+        <textarea id="ml-category-notes" rows="3" placeholder="Optional notes"></textarea>
+      </div>
+    </div>
+    <p class="hub-modal-error" id="ml-category-modal-error"></p>
+  </div>
+  <div class="hub-modal-footer">
+    <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
+    <button class="hub-modal-btn" type="button" id="ml-category-modal-save-btn">Save</button>
   </div>
 </dialog>
 
