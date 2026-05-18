@@ -94,6 +94,8 @@ const NavLayoutDialogs = (() => {
 //   notificationId  : string  — toast notification element ID
 //   resetConfirmMsg : string  — message shown in the reset confirm dialog
 //   defaultMenu     : Array   — default menu item definitions
+//   dbDrivenParentIds : Array — optional parent item IDs whose children come from nav_items only
+//   onDbItemsLoaded : fn     — optional callback(rows, menu) after nav_items load
 // }
 function createHubMenu(cfg) {
     return {
@@ -196,6 +198,45 @@ function createHubMenu(cfg) {
             }
         },
 
+        _dbDrivenParentIds() {
+            return new Set(Array.isArray(cfg.dbDrivenParentIds) ? cfg.dbDrivenParentIds : []);
+        },
+
+        _menuItemFromDbRow(row) {
+            const item = {
+                id: row.item_key,
+                label: row.label || row.item_key,
+                icon: row.icon_asset || row.icon_emoji || '',
+                pageLabel: row.page_label || row.label || row.item_key,
+                parent: row.parent_key || null,
+                order: Number(row.sort_order) || 0,
+            };
+            if (Number(row.is_fn) === 1 && row.fn_key) {
+                item.fn = row.fn_key;
+                try {
+                    const activeOn = JSON.parse(row.active_on || '[]');
+                    if (Array.isArray(activeOn)) item.activeOn = activeOn;
+                } catch (_e) {}
+            }
+            return item;
+        },
+
+        _syncDbDrivenMenuItems(rows) {
+            const parentIds = this._dbDrivenParentIds();
+            if (!parentIds.size) return;
+            const dbItems = (Array.isArray(rows) ? rows : [])
+                .filter(row => row && row.item_key && parentIds.has(row.parent_key || null));
+            const dbItemIds = new Set(dbItems.map(row => row.item_key));
+            this.currentMenu = (this.currentMenu || [])
+                .filter(item => !(item && parentIds.has(item.parent || null) && !dbItemIds.has(item.id)));
+            dbItems.forEach(row => {
+                const next = this._menuItemFromDbRow(row);
+                const existing = this.currentMenu.find(item => item.id === next.id);
+                if (existing) Object.assign(existing, next);
+                else this.currentMenu.push(next);
+            });
+        },
+
         saveConfig(syncFromDOM = true) {
             if (syncFromDOM) this.updateOrderFromDOM();
             localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentMenu));
@@ -264,6 +305,10 @@ function createHubMenu(cfg) {
                         const ts = dbRow.updated_at ? new Date(dbRow.updated_at).getTime() : 0;
                         SoundManager.preload(`/fallback-ui/assets/${dbRow.sound_asset}?v=${ts}`);
                     }
+                }
+                this._syncDbDrivenMenuItems(items);
+                if (typeof cfg.onDbItemsLoaded === 'function') {
+                    cfg.onDbItemsLoaded(items, this);
                 }
                 // DB is the source of truth for label text; apply its fields to the in-memory menu.
                 for (const m of this.currentMenu) {

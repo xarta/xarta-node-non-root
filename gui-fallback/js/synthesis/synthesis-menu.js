@@ -28,9 +28,18 @@ const SynthesisMenuConfig = createHubMenu({
     // Mobile: the layout/context button is pinned outside the hamburger menu
     mobilePinnedId:  'synthesis-layout',
     pinnedTabsId:    'synthesisHubTabsPinned',
+    dbDrivenParentIds: ['splash-screens'],
+    onDbItemsLoaded: (items) => {
+        if (typeof BlueprintsSplashScreens === 'undefined') return;
+        const splashIds = (Array.isArray(items) ? items : [])
+            .filter(item => item && item.parent_key === 'splash-screens')
+            .map(item => item.item_key);
+        if (typeof BlueprintsSplashScreens.setAvailableScreens === 'function') {
+            BlueprintsSplashScreens.setAvailableScreens(splashIds);
+        }
+    },
     defaultMenu: [
         { id: 'splash-screens',        label: 'Splash Screens', icon: HIEROGLYPHS.starDuat, pageLabel: 'Splash Screens',     parent: null,              order: -1 },
-        { id: 'splash-dont-panic-3',   label: "Don't Panic", icon: HIEROGLYPHS.starDuat, pageLabel: "Don't Panic",       parent: 'splash-screens',  order: 0 },
         { id: 'manual-links',          label: 'Manual',    icon: HIEROGLYPHS.eyeOfHorus, pageLabel: 'Manual Links',          parent: null,              order: 1, defaultTargetFn: 'ml.defaultTarget' },
         { id: 'manual-links-table',    label: 'Table',     icon: HIEROGLYPHS.cartouche,  pageLabel: 'Manual Links (Table)',  parent: 'manual-links',    order: 0 },
         { id: 'manual-links-rendered', label: 'Rendered',  icon: HIEROGLYPHS.khaHorizon, pageLabel: 'Manual Links - Rendered', parent: 'manual-links',    order: 1 },

@@ -20,21 +20,45 @@ const BlueprintsSplashScreens = (() => {
   let _rendererPromise = null;
   let _dismissPointer = null;
   let _lastTap = { time: 0, x: 0, y: 0 };
+  let _availableScreenIds = null;
+
+  function screenIds() {
+    return Object.keys(SCREENS);
+  }
+
+  function isAvailable(id) {
+    if (!SCREENS[id]) return false;
+    return _availableScreenIds === null || _availableScreenIds.has(id);
+  }
 
   function normalizeId(id) {
-    return SCREENS[id] ? id : DEFAULT_ID;
+    if (isAvailable(id)) return id;
+    if (_availableScreenIds !== null) {
+      return screenIds().find(screenId => _availableScreenIds.has(screenId)) || '';
+    }
+    return DEFAULT_ID;
   }
 
   function getDefault() {
     const current = normalizeId(localStorage.getItem(DEFAULT_KEY) || DEFAULT_ID);
     if (current !== localStorage.getItem(DEFAULT_KEY)) {
-      localStorage.setItem(DEFAULT_KEY, current);
+      if (current) localStorage.setItem(DEFAULT_KEY, current);
+      else localStorage.removeItem(DEFAULT_KEY);
     }
     return current;
   }
 
   function labelFor(id) {
     return SCREENS[normalizeId(id)]?.label || 'Splash Screen';
+  }
+
+  function setAvailableScreens(ids) {
+    _availableScreenIds = new Set((Array.isArray(ids) ? ids : []).filter(id => SCREENS[id]));
+    const panel = activeSplashPanel();
+    const activeId = panel ? panel.id.replace(/^tab-/, '') : '';
+    if (activeId && !isAvailable(activeId)) {
+      dismissToManualDefault();
+    }
   }
 
   function isDebugTelemetryEnabled() {
@@ -69,6 +93,7 @@ const BlueprintsSplashScreens = (() => {
 
   function setDefault(id) {
     const nextId = normalizeId(id || DEFAULT_ID);
+    if (!nextId) return '';
     localStorage.setItem(DEFAULT_KEY, nextId);
     updateDefaultBadges();
     if (typeof HubDialogs !== 'undefined') {
@@ -237,6 +262,7 @@ const BlueprintsSplashScreens = (() => {
 
   return {
     getDefault,
+    setAvailableScreens,
     isDebugTelemetryEnabled,
     debugTelemetryLabel,
     setDefault,

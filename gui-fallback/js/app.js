@@ -88,7 +88,10 @@ function _groupMenuEntries() {
 function _menuOwnsTab(menu, tab) {
   if (!menu || !tab) return false;
   if (String(tab).startsWith('manual-links-page:') && menu === (typeof SynthesisMenuConfig !== 'undefined' ? SynthesisMenuConfig : null)) return true;
-  const items = Array.isArray(menu.defaultMenu) ? menu.defaultMenu : [];
+  const items = [
+    ...(Array.isArray(menu.defaultMenu) ? menu.defaultMenu : []),
+    ...(Array.isArray(menu.currentMenu) ? menu.currentMenu : []),
+  ];
   return items.some(item => {
     if (!item) return false;
     if (!item.fn && item.id === tab) return true;
