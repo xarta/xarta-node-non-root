@@ -55,7 +55,30 @@ const MatrixChat = (() => {
   }
 
   function roomTitle(room) {
-    return room?.name || room?.canonical_alias || room?.room_id || 'Room';
+    return room?.display_name || room?.name || room?.canonical_alias || room?.room_id || 'Room';
+  }
+
+  function isRoomIdLike(value) {
+    return typeof value === 'string' && value.startsWith('!') && value.includes(':');
+  }
+
+  function hasUsefulRoomTitle(room) {
+    if (!room) return false;
+    const title = room.display_name || room.name || room.canonical_alias || '';
+    return Boolean(title && !isRoomIdLike(title) && room.name_source !== 'fallback_room_id');
+  }
+
+  function mergeRoomSummary(existing, incoming) {
+    if (!existing) return incoming;
+    const merged = { ...existing, ...incoming };
+    const incomingIsFallback = incoming?.name_source === 'fallback_room_id' || isRoomIdLike(incoming?.name);
+    if (incomingIsFallback && hasUsefulRoomTitle(existing)) {
+      merged.name = existing.name;
+      merged.display_name = existing.display_name;
+      merged.name_source = existing.name_source;
+      merged.canonical_alias = existing.canonical_alias;
+    }
+    return merged;
   }
 
   function activeRoom() {
@@ -115,6 +138,7 @@ const MatrixChat = (() => {
         btn.className = 'matrix-chat-room';
         btn.classList.toggle('active', room.room_id === state.activeRoomId);
         btn.dataset.roomId = room.room_id;
+        btn.title = room.room_id;
 
         const name = document.createElement('span');
         name.className = 'matrix-chat-room-name';
@@ -261,6 +285,7 @@ const MatrixChat = (() => {
 
   async function selectRoom(roomId) {
     rememberActiveRoom(roomId);
+    closeRailOnMobile();
     renderRooms();
     renderMessages();
     await loadMessages(roomId);
@@ -278,6 +303,7 @@ const MatrixChat = (() => {
       });
       if (input) input.value = '';
       if (data.room_id) rememberActiveRoom(data.room_id);
+      closeRailOnMobile();
       await refreshAll();
     } catch (error) {
       setStatus(`Create room failed: ${error.message}`, 'error');
@@ -296,6 +322,7 @@ const MatrixChat = (() => {
       });
       if (input) input.value = '';
       if (data.room_id) rememberActiveRoom(data.room_id);
+      closeRailOnMobile();
       await refreshAll();
     } catch (error) {
       setStatus(`Join room failed: ${error.message}`, 'error');
@@ -360,7 +387,7 @@ const MatrixChat = (() => {
       state.nextBatch = data.next_batch || state.nextBatch;
       if (Array.isArray(data.joined) && data.joined.length) {
         const byId = new Map(state.joined.map(room => [room.room_id, room]));
-        data.joined.forEach(room => byId.set(room.room_id, { ...(byId.get(room.room_id) || {}), ...room }));
+        data.joined.forEach(room => byId.set(room.room_id, mergeRoomSummary(byId.get(room.room_id), room)));
         state.joined = Array.from(byId.values()).sort((a, b) => (b.last_event_ts || 0) - (a.last_event_ts || 0));
         renderRooms();
       }
@@ -381,10 +408,52 @@ const MatrixChat = (() => {
     }
   }
 
+  function isMobileLayout() {
+    return window.matchMedia?.('(max-width: 820px)').matches;
+  }
+
+  function setRailOpen(open) {
+    const shell = el('matrix-chat-shell');
+    const toggle = el('matrix-chat-mobile-rail-toggle');
+    if (!shell) return;
+    shell.classList.toggle('rail-open', Boolean(open));
+    shell.classList.toggle('rail-collapsed', !open);
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      toggle.textContent = open ? 'Close' : 'Rooms';
+    }
+  }
+
+  function closeRailOnMobile() {
+    if (isMobileLayout()) setRailOpen(false);
+  }
+
+  function syncRailForViewport() {
+    setRailOpen(!isMobileLayout());
+  }
+
   function bind() {
     if (state.bound) return;
     state.bound = true;
+    let lastRailPointerToggle = 0;
+    const toggleRail = event => {
+      if (event?.type === 'click' && Date.now() - lastRailPointerToggle < 500) return;
+      if (event?.type === 'pointerup' || event?.type === 'touchend') lastRailPointerToggle = Date.now();
+      event?.preventDefault?.();
+      const shell = el('matrix-chat-shell');
+      setRailOpen(!shell?.classList.contains('rail-open'));
+    };
+    const closeRail = event => {
+      event?.preventDefault?.();
+      setRailOpen(false);
+    };
     el('matrix-chat-refresh')?.addEventListener('click', refreshAll);
+    el('matrix-chat-rail-close')?.addEventListener('pointerup', closeRail);
+    el('matrix-chat-rail-close')?.addEventListener('touchend', closeRail);
+    el('matrix-chat-rail-close')?.addEventListener('click', closeRail);
+    el('matrix-chat-mobile-rail-toggle')?.addEventListener('pointerup', toggleRail);
+    el('matrix-chat-mobile-rail-toggle')?.addEventListener('touchend', toggleRail);
+    el('matrix-chat-mobile-rail-toggle')?.addEventListener('click', toggleRail);
     el('matrix-chat-create')?.addEventListener('click', createRoom);
     el('matrix-chat-join')?.addEventListener('click', () => joinRoom());
     el('matrix-chat-invite')?.addEventListener('click', inviteUser);
@@ -396,6 +465,8 @@ const MatrixChat = (() => {
         sendMessage();
       }
     });
+    window.addEventListener('resize', syncRailForViewport);
+    syncRailForViewport();
   }
 
   async function loadTab() {

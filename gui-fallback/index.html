@@ -905,14 +905,15 @@
   <!-- Agent Pages: Matrix Chat -->
   <section id="tab-matrix-chat" class="tab-panel tab-panel--fill">
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
-    <div class="matrix-chat-shell">
-      <aside class="matrix-chat-rail" aria-label="Matrix rooms">
+    <div id="matrix-chat-shell" class="matrix-chat-shell">
+      <aside id="matrix-chat-rail" class="matrix-chat-rail" aria-label="Matrix rooms">
         <div class="matrix-chat-rail-header">
           <div class="matrix-chat-rail-title">
             <strong>Matrix Chat</strong>
             <span id="matrix-chat-user">Loading...</span>
           </div>
           <button id="matrix-chat-refresh" class="matrix-chat-icon-btn" type="button" title="Refresh Matrix chat" aria-label="Refresh Matrix chat">R</button>
+          <button id="matrix-chat-rail-close" class="matrix-chat-icon-btn matrix-chat-rail-close" type="button" title="Hide room list" aria-label="Hide room list">x</button>
         </div>
         <div class="matrix-chat-rooms-wrap">
           <div class="matrix-chat-subhead">Rooms</div>
@@ -937,6 +938,7 @@
       </aside>
       <div class="matrix-chat-main" aria-label="Matrix room timeline">
         <div class="matrix-chat-room-header">
+          <button id="matrix-chat-mobile-rail-toggle" class="matrix-chat-mobile-rail-toggle" type="button" aria-expanded="false" aria-controls="matrix-chat-rail">Rooms</button>
           <div class="matrix-chat-room-title">
             <strong id="matrix-chat-room-title">No room selected</strong>
             <span id="matrix-chat-room-id"></span>
