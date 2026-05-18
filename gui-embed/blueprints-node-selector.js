@@ -561,27 +561,47 @@
     }
   }
 
+  function hardRefreshVisibleManualLinksTab() {
+    const manualPanel = document.getElementById('tab-manual-links');
+    if (!manualPanel?.classList.contains('active')) return '';
+    const views = [
+      ['manual-links-grid', 'ml-grid-view'],
+      ['manual-links-table', 'ml-table-view'],
+      ['manual-links-rendered', 'ml-rendered-view'],
+      ['manual-links-tree', 'ml-tree-view'],
+      ['manual-links-pretext', 'ml-pretext-view'],
+    ];
+    for (const [tab, id] of views) {
+      const view = document.getElementById(id);
+      if (!view) continue;
+      const style = window.getComputedStyle(view);
+      if (style.display !== 'none' && style.visibility !== 'hidden') return tab;
+    }
+    if (document.body.classList.contains('manual-links-grid-active')) return 'manual-links-grid';
+    try {
+      return sessionStorage.getItem('blueprintsManualLinksActiveTab') || '';
+    } catch (_e) {
+      return '';
+    }
+  }
+
   function hardRefreshNormalizePageState(state) {
     const next = {
       group: state?.group || '',
       tab: state?.tab || '',
     };
-    const manualPanelActive = document.getElementById('tab-manual-links')?.classList.contains('active');
+    const visibleManualTab = hardRefreshVisibleManualLinksTab();
     const manualLinksApi = window.BlueprintsManualLinks
       || (typeof BlueprintsManualLinks !== 'undefined' ? BlueprintsManualLinks : null);
+    if (visibleManualTab) {
+      next.group = 'synthesis';
+      next.tab = visibleManualTab;
+      return next;
+    }
     if (next.tab === 'manual-links'
         && manualLinksApi
         && typeof manualLinksApi.getCurrentTabId === 'function') {
       next.tab = manualLinksApi.getCurrentTabId() || next.tab;
-    }
-    if (manualPanelActive && (!next.tab || next.tab === 'manual-links')) {
-      if (document.body.classList.contains('manual-links-grid-active')) next.tab = 'manual-links-grid';
-      else {
-        try {
-          const storedManualTab = sessionStorage.getItem('blueprintsManualLinksActiveTab');
-          if (storedManualTab) next.tab = storedManualTab;
-        } catch (_e) {}
-      }
     }
     if (next.tab && String(next.tab).startsWith('manual-links')) next.group = next.group || 'synthesis';
     return next;

@@ -147,8 +147,28 @@ function _currentActiveTabId() {
   return activePanel ? activePanel.id.replace(/^tab-/, '') : null;
 }
 
+function _currentManualLinksVisibleTabId() {
+  const manualPanel = document.getElementById('tab-manual-links');
+  if (!manualPanel?.classList.contains('active')) return '';
+  const views = [
+    ['manual-links-grid', 'ml-grid-view'],
+    ['manual-links-table', 'ml-table-view'],
+    ['manual-links-rendered', 'ml-rendered-view'],
+    ['manual-links-tree', 'ml-tree-view'],
+    ['manual-links-pretext', 'ml-pretext-view'],
+  ];
+  for (const [tab, id] of views) {
+    const view = document.getElementById(id);
+    if (!view) continue;
+    const style = window.getComputedStyle(view);
+    if (style.display !== 'none' && style.visibility !== 'hidden') return tab;
+  }
+  return '';
+}
+
 function _currentPageState() {
   let activeTab = _currentActiveTabId();
+  activeTab = _currentManualLinksVisibleTabId() || activeTab;
   if (activeTab === 'manual-links'
       && typeof BlueprintsManualLinks !== 'undefined'
       && typeof BlueprintsManualLinks.getCurrentTabId === 'function') {
