@@ -517,6 +517,7 @@
 }
 
 .ml-grid-panel:hover .ml-panel-resize,
+.ml-grid-panel.is-resize-ready .ml-panel-resize,
 .ml-grid-panel.is-resizing .ml-panel-resize {
   opacity: 1;
   pointer-events: auto;
@@ -550,8 +551,6 @@
   .ml-panel-resize {
     width: 22px;
     height: 22px;
-    opacity: 0.78;
-    pointer-events: auto;
   }
 
   .ml-panel-resize--nw {
