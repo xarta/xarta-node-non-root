@@ -30,9 +30,7 @@ const SynthesisMenuConfig = createHubMenu({
     pinnedTabsId:    'synthesisHubTabsPinned',
     defaultMenu: [
         { id: 'splash-screens',        label: 'Splash Screens', icon: HIEROGLYPHS.starDuat, pageLabel: 'Splash Screens',     parent: null,              order: -1 },
-        { id: 'splash-dont-panic-1',   label: "Don't Panic 1", icon: HIEROGLYPHS.starDuat, pageLabel: "Don't Panic 1",       parent: 'splash-screens',  order: 0 },
-        { id: 'splash-dont-panic-2',   label: "Don't Panic 2", icon: HIEROGLYPHS.starDuat, pageLabel: "Don't Panic 2",       parent: 'splash-screens',  order: 1 },
-        { id: 'splash-dont-panic-3',   label: "Don't Panic 3", icon: HIEROGLYPHS.starDuat, pageLabel: "Don't Panic 3",       parent: 'splash-screens',  order: 2 },
+        { id: 'splash-dont-panic-3',   label: "Don't Panic", icon: HIEROGLYPHS.starDuat, pageLabel: "Don't Panic",       parent: 'splash-screens',  order: 0 },
         { id: 'manual-links',          label: 'Manual',    icon: HIEROGLYPHS.eyeOfHorus, pageLabel: 'Manual Links',          parent: null,              order: 1, defaultTargetFn: 'ml.defaultTarget' },
         { id: 'manual-links-table',    label: 'Table',     icon: HIEROGLYPHS.cartouche,  pageLabel: 'Manual Links (Table)',  parent: 'manual-links',    order: 0 },
         { id: 'manual-links-rendered', label: 'Rendered',  icon: HIEROGLYPHS.khaHorizon, pageLabel: 'Manual Links - Rendered', parent: 'manual-links',    order: 1 },
@@ -42,7 +40,7 @@ const SynthesisMenuConfig = createHubMenu({
         { id: 'synthesis-layout',      label: '☰',         icon: HIEROGLYPHS.kheper,     pageLabel: 'Navbar Layout',         parent: null,              order: 4 },
 
         // ── Splash screen function items ──────────────────────────────────
-        { id: 'splash-fn-set-default', label: 'Set as default', icon: HIEROGLYPHS.starDuat, fn: 'splash.setDefault', activeOn: ['splash-dont-panic-1', 'splash-dont-panic-2', 'splash-dont-panic-3'], parent: 'synthesis-layout', order: 0 },
+        { id: 'splash-fn-set-default', label: 'Set as default', icon: HIEROGLYPHS.starDuat, fn: 'splash.setDefault', activeOn: ['splash-dont-panic-3'], parent: 'synthesis-layout', order: 0 },
         { id: 'splash-fn-debug',       label: 'Debug On', icon: HIEROGLYPHS.eyeOfHorus, fn: 'splash.debugTelemetry', activeOn: ['splash-dont-panic-3'], parent: 'synthesis-layout', order: 1 },
 
         // ── Services page function items ──────────────────────────────────
@@ -93,7 +91,33 @@ async function _synthesisAutoFitLayout(getController) {
 
 const _SYNTHESIS_MANUAL_DYNAMIC_PREFIX = 'manual-links-page:';
 const _SYNTHESIS_MANUAL_RETIRED_PAGE_IDS = new Set(['manual-links-tree', 'manual-links-pretext']);
+const _SYNTHESIS_RETIRED_SPLASH_IDS = new Set(['splash-dont-panic-1', 'splash-dont-panic-2']);
 let _synthesisManualLastPageCategories = [];
+
+function _synthesisNormalizeSplashMenuLabels(items) {
+    (items || []).forEach(item => {
+        if (!item || item.id !== 'splash-dont-panic-3') return;
+        item.label = "Don't Panic";
+        item.pageLabel = "Don't Panic";
+        item.order = 0;
+    });
+}
+
+_synthesisNormalizeSplashMenuLabels(SynthesisMenuConfig.defaultMenu);
+_synthesisNormalizeSplashMenuLabels(SynthesisMenuConfig.currentMenu);
+
+const _synthesisOriginalLoadNavItemsFromDB = SynthesisMenuConfig.loadNavItemsFromDB.bind(SynthesisMenuConfig);
+SynthesisMenuConfig.loadNavItemsFromDB = async function loadSynthesisNavItemsFromDBWithSplashRename() {
+    const result = await _synthesisOriginalLoadNavItemsFromDB();
+    _synthesisNormalizeSplashMenuLabels(SynthesisMenuConfig.defaultMenu);
+    _synthesisNormalizeSplashMenuLabels(SynthesisMenuConfig.currentMenu);
+    if (SynthesisMenuConfig._initialized) {
+        SynthesisMenuConfig.renderNavbar(SynthesisMenuConfig._activeId);
+        SynthesisMenuConfig.renderEditor();
+        SynthesisMenuConfig.updateActiveTab(SynthesisMenuConfig._activeId);
+    }
+    return result;
+};
 
 function _synthesisManualPageId(categoryId) {
     return _SYNTHESIS_MANUAL_DYNAMIC_PREFIX + categoryId;
@@ -133,7 +157,8 @@ function syncSynthesisManualLinksPageMenu(pageCategories) {
         && (!String(item.id || '').startsWith(_SYNTHESIS_MANUAL_DYNAMIC_PREFIX) || dynamicIds.has(item.id));
 
     const syncItems = (items) => {
-        const retained = (items || []).filter(keepItem);
+        const retained = (items || []).filter(item => keepItem(item) && !_SYNTHESIS_RETIRED_SPLASH_IDS.has(item.id));
+        _synthesisNormalizeSplashMenuLabels(retained);
         pages.forEach(page => {
             const existing = retained.find(item => item.id === page.id);
             if (existing) Object.assign(existing, page);

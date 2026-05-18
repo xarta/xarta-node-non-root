@@ -6,23 +6,13 @@
 const BlueprintsSplashScreens = (() => {
   const DEFAULT_KEY = 'blueprintsDefaultSplashScreen';
   const LEGACY_ID = 'splash-dont-panic';
-  const FALLBACK_ID = 'splash-dont-panic-2';
+  const FALLBACK_ID = 'splash-dont-panic-3';
   const RENDERER_IMPORT_VERSION = '20260516-braille-mono-2';
   const DEBUG_KEY = 'blueprintsDontPanic3DebugTelemetry';
 
   const SCREENS = {
-    'splash-dont-panic-1': {
-      label: "Don't Panic 1",
-      mountId: 'dont-panic-renderer-1',
-      rendererOptions: { logoMode: 'braille-system' },
-    },
-    'splash-dont-panic-2': {
-      label: "Don't Panic 2",
-      mountId: 'dont-panic-renderer-2',
-      rendererOptions: { logoMode: 'svg-dot-runs' },
-    },
     'splash-dont-panic-3': {
-      label: "Don't Panic 3",
+      label: "Don't Panic",
       mountId: 'dont-panic-renderer-3',
       rendererOptions: { logoMode: 'braille-pretext' },
     },
@@ -34,6 +24,7 @@ const BlueprintsSplashScreens = (() => {
 
   function normalizeId(id) {
     if (id === LEGACY_ID) return FALLBACK_ID;
+    if (id === 'splash-dont-panic-1' || id === 'splash-dont-panic-2') return FALLBACK_ID;
     return SCREENS[id] ? id : FALLBACK_ID;
   }
 
@@ -113,7 +104,7 @@ const BlueprintsSplashScreens = (() => {
     }
     if (typeof HubDialogs !== 'undefined') {
       HubDialogs.alert({
-        title: "Don't Panic 3 Debug",
+        title: "Don't Panic Debug",
         message: `Telemetry debug is now ${enabled ? 'on' : 'off'}.`,
         tone: enabled ? 'success' : 'info',
         badge: 'Splash',

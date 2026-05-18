@@ -704,7 +704,7 @@
     } catch (_e) {}
     try {
       const params = new URL(window.location.href).searchParams;
-      return params.get('hard_refresh_telemetry') === '1' || params.has('_fresh');
+      return params.get('hard_refresh_telemetry') === '1';
     } catch (_e) {
       return false;
     }
