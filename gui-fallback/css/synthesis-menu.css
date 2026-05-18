@@ -1643,6 +1643,11 @@ dialog.hub-modal.ml-full-modal .hub-modal-body {
   border-left: 1px solid rgba(var(--hub-accent-rgb), 0.18);
 }
 
+.ml-dest-divider {
+  margin: 8px 4px;
+  border-top: 1px solid rgba(var(--hub-accent-rgb), 0.22);
+}
+
 .ml-dest-choice {
   display: flex;
   align-items: center;

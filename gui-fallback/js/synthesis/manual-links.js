@@ -1367,6 +1367,14 @@ async function _mlPromoteOrMoveMapping(mappingId, parentCategoryId = null, { cop
 
 function _mlCategoryDestinationPickerHtml(sourceCategoryId) {
   const maps = _mlCategoryMaps();
+  const pageCategories = _manualLinkCategories
+    .filter(cat => _mlCategoryIsPage(cat))
+    .sort((a, b) => {
+      const ao = Number(a.page_sort_order ?? a.sort_order ?? 0);
+      const bo = Number(b.page_sort_order ?? b.sort_order ?? 0);
+      if (ao !== bo) return ao - bo;
+      return (a.page_label || a.label || '').localeCompare(b.page_label || b.label || '');
+    });
   const renderCategory = (cat, depth) => {
     if (depth > 12) return '';
     const label = _mlCategoryDisplayLabel(cat);
@@ -1389,11 +1397,13 @@ function _mlCategoryDestinationPickerHtml(sourceCategoryId) {
   const rootParent = _mlRootParentCategoryId();
   const roots = _mlSortCategories((maps.byParent[rootParent || '__root__'] || []).filter(cat => !_mlCategoryIsPage(cat)));
   const topLabel = rootParent ? 'Page top categories' : 'Top categories';
+  const pageChoices = pageCategories.map(page => renderCategory(page, 1)).join('');
   return `<div class="ml-dest-picker" data-ml-category-dest-panel="${esc(sourceCategoryId)}" hidden>
     <button class="ml-dest-choice" type="button" data-ml-category-dest-choice="${esc(rootParent || '')}" data-ml-category-dest-label="${esc(topLabel)}">
       ${_mlIconHtml(_ML_DEFAULT_ICON, 'ml-grid-icon ml-grid-icon--small')}<span>${esc(topLabel)}</span>
     </button>
     ${roots.map(cat => renderCategory(cat, 1)).join('') || '<p class="ml-page-empty">No destination categories.</p>'}
+    ${pageChoices ? `<div class="ml-dest-divider" role="separator"></div>${pageChoices}` : ''}
   </div>`;
 }
 
@@ -1659,26 +1669,20 @@ function _mlAlignOpenGridMenus() {
   if (document.getElementById('ml-grid-view')?.style.display === 'none') return;
   const board = document.querySelector('#ml-grid-body .ml-grid-board');
   if (!board) return;
+  const metrics = _mlGridBoardMetrics(board);
+  const colCount = Math.max(1, metrics?.cols || 1);
+  const colStep = Math.max(1, (metrics?.colWidth || 180) + (metrics?.gap || 10));
   const cards = [...board.querySelectorAll('[data-ml-grid-card]')];
   cards.forEach(card => card.classList.remove('ml-grid-card--align-right', 'ml-grid-card--align-center'));
-  const lefts = [];
-  cards.forEach(card => {
-    const rect = card.getBoundingClientRect();
-    if (rect.width <= 0) return;
-    if (!lefts.some(left => Math.abs(left - rect.left) < 8)) lefts.push(rect.left);
-  });
-  lefts.sort((a, b) => a - b);
   cards.forEach(card => {
     const rect = card.getBoundingClientRect();
     if (!card.classList.contains('is-open') || rect.width <= 0) return;
-    const colIndex = lefts.reduce((best, left, idx) => (
-      Math.abs(left - rect.left) < Math.abs(lefts[best] - rect.left) ? idx : best
-    ), 0);
-    if (lefts.length === 1) {
+    const colIndex = Math.max(0, Math.min(colCount - 1, Math.round((rect.left - metrics.rect.left) / colStep)));
+    if (colCount === 1) {
       card.classList.add('ml-grid-card--align-center');
-    } else if (lefts.length === 2) {
+    } else if (colCount === 2) {
       if (colIndex === 1) card.classList.add('ml-grid-card--align-right');
-    } else if (colIndex >= lefts.length - 2) {
+    } else if (colIndex >= colCount - 2) {
       card.classList.add('ml-grid-card--align-right');
     }
   });
@@ -2517,7 +2521,9 @@ function _mlAutoFitInterface() {
   const metrics = _mlGridBoardMetrics(board);
   const cols = Math.max(1, metrics?.cols || (_mlGridLayoutBucket() === 'mobile' ? 2 : 5));
   const maps = _mlCategoryMaps();
-  const roots = _mlOrderRootCategories(maps.byParent.__root__ || []);
+  const rootParentId = _mlRootParentCategoryId();
+  const rootKey = rootParentId || '__root__';
+  const roots = _mlOrderRootCategories((maps.byParent[rootKey] || []).filter(cat => !_mlCategoryIsPage(cat)));
   const layout = {};
   const occupied = new Set();
   roots.forEach(cat => {
@@ -2537,9 +2543,10 @@ function _mlAutoFitInterface() {
   });
   _mlSaveGridLayout(layout);
   renderManualLinksGrid();
+  const pageName = rootParentId ? (_mlLabelForTab(_mlPageTabId(rootParentId)) || 'this page') : 'Interface';
   if (typeof HubDialogs !== 'undefined') HubDialogs.alert?.({
     title: 'Interface Auto Fit',
-    message: 'Manual Links Interface items have been reflowed for this viewport.',
+    message: `Manual Links ${pageName} items have been reflowed for this viewport.`,
     tone: 'success',
     badge: 'Manual',
   });

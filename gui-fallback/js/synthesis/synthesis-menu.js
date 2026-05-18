@@ -103,14 +103,8 @@ function _synthesisManualGridContextIds(pageItems) {
     return ['manual-links-grid', ...pageItems.map(item => item.id)];
 }
 
-function _synthesisManualMentionsPageCategory(label) {
-    const value = String(label || '');
-    return /\bpage[\s-]*category\b/i.test(value) || /\[page-category\]/i.test(value);
-}
-
 function _synthesisManualPageCategoryLabel(cat) {
-    const label = cat?.page_label || cat?.label || 'Interface Page';
-    return _synthesisManualMentionsPageCategory(label) ? label : `${label} [page-category]`;
+    return cat?.page_label || cat?.label || 'Interface Page';
 }
 
 function syncSynthesisManualLinksPageMenu(pageCategories) {
