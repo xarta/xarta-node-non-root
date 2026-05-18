@@ -148,7 +148,20 @@ function _currentActiveTabId() {
 }
 
 function _currentPageState() {
-  const activeTab = _currentActiveTabId();
+  let activeTab = _currentActiveTabId();
+  if (activeTab === 'manual-links'
+      && typeof BlueprintsManualLinks !== 'undefined'
+      && typeof BlueprintsManualLinks.getCurrentTabId === 'function') {
+    activeTab = BlueprintsManualLinks.getCurrentTabId() || activeTab;
+  }
+  if (activeTab === 'manual-links' && document.body.classList.contains('manual-links-grid-active')) {
+    activeTab = 'manual-links-grid';
+  }
+  if (activeTab === 'manual-links') {
+    try {
+      activeTab = sessionStorage.getItem('blueprintsManualLinksActiveTab') || activeTab;
+    } catch (_) {}
+  }
   const group = _inferGroupForTab(activeTab) || _selectorOriginMenuGroup || _activeGroup || 'synthesis';
   return { group, tab: activeTab };
 }
@@ -265,11 +278,13 @@ window.BlueprintsHubMenuBridge = {
     return _selectorOriginMenuGroup;
   },
   getActiveMenuConfig: _getActiveGroupMenuConfig,
+  getCurrentPageState: _currentPageState,
   getActiveGroupLayoutTabId: _getActiveGroupLayoutTabId,
   isS25StargateOriginMenuMode: _isS25StargateOriginMenuMode,
   closeAnchoredMenus: _closeActiveOriginMenus,
   switchGroup,
 };
+window._currentPageState = _currentPageState;
 
 /* ── Group + tab switching ───────────────────────────────────────────── */
 function switchGroup(group) {

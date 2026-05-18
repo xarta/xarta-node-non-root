@@ -15,6 +15,7 @@ let _mlGridDragKind = null;
 let _mlGridDragSourceParent = null;
 let _mlGridDragOffsetX = null;
 let _mlGridDragOffsetY = null;
+let _mlGridDropCell = null;
 let _mlGridCategoryNestIntent = null;
 let _mlPanelResizeState = null;
 let _mlTouchCategoryDrag = null;
@@ -29,8 +30,22 @@ let _mlShadeViewportObserver = null;
 const _ML_DEFAULT_PAGE_KEY = 'blueprintsDefaultManualLinksPage';
 const _ML_GRID_ORDER_KEY = 'blueprintsManualLinksPage4GridOrder';
 const _ML_GRID_LAYOUT_KEY = 'blueprintsManualLinksInterfaceLayout';
+const _ML_GRID_DEBUG_KEY = 'blueprintsManualLinksInterfaceDebugCells';
 const _ML_GRID_ROW_HEIGHT = 42;
+const _ML_TOUCH_DRAG_HOLD_MS = 320;
+const _ML_TOUCH_DRAG_MOVE_PX = 6;
+const _ML_TOUCH_DRAG_SCROLL_EDGE = 72;
 const _ML_DEFAULT_TAB = 'manual-links-rendered';
+const _ML_TOUCH_DRAG_STATES = Object.freeze({
+  IDLE: 'idle',
+  PRESSING: 'pressing',
+  DRAGGING: 'dragging',
+});
+const _ML_TOUCH_DRAG_TRANSITIONS = Object.freeze({
+  idle: Object.freeze({ press: 'pressing' }),
+  pressing: Object.freeze({ hold: 'dragging', release: 'idle', cancel: 'idle' }),
+  dragging: Object.freeze({ release: 'idle', cancel: 'idle' }),
+});
 const _ML_DEFAULT_ICON = 'icons/hieroglyphs/eye-of-horus-blue.svg';
 const _ML_PAGE_TO_VIEW = {
   'manual-links-table': 'table',
@@ -327,6 +342,29 @@ function _mlOpenDefaultPage() {
   switchTab(_mlGetDefaultTabId());
 }
 
+function _mlGridDebugEnabled() {
+  return localStorage.getItem(_ML_GRID_DEBUG_KEY) === '1';
+}
+
+function _mlSetGridDebugEnabled(enabled) {
+  localStorage.setItem(_ML_GRID_DEBUG_KEY, enabled ? '1' : '0');
+  _mlApplyGridDebugState();
+  return enabled;
+}
+
+function _mlToggleGridDebugCells() {
+  const enabled = _mlSetGridDebugEnabled(!_mlGridDebugEnabled());
+  if (typeof HubDialogs !== 'undefined') {
+    HubDialogs.alert({
+      title: 'Interface Debug Cells',
+      message: `Virtual cell borders are now ${enabled ? 'visible' : 'hidden'}.`,
+      tone: enabled ? 'success' : 'info',
+      badge: 'Manual',
+    });
+  }
+  return enabled;
+}
+
 const BlueprintsManualLinks = {
   getCurrentTabId: _mlCurrentManualTabId,
   getDefaultTabId: _mlGetDefaultTabId,
@@ -334,12 +372,23 @@ const BlueprintsManualLinks = {
   setActiveAsDefault: _mlSetActiveAsDefault,
   openDefault: _mlOpenDefaultPage,
   autoFitInterface: _mlAutoFitInterface,
+  toggleDebugCells: _mlToggleGridDebugCells,
+  debugCellsEnabled: _mlGridDebugEnabled,
 };
+window.BlueprintsManualLinks = BlueprintsManualLinks;
 
 /* ── View toggle ─────────────────────────────────────────────────────────── */
 
 function manualLinksShowView(view) {
   _manualLinksView = view;
+  try {
+    const tabId = _mlCurrentManualTabId();
+    sessionStorage.setItem('blueprintsManualLinksActiveTab', tabId);
+    const url = new URL(window.location.href);
+    url.searchParams.set('group', 'synthesis');
+    url.searchParams.set('tab', tabId);
+    window.history.replaceState(window.history.state, '', url.toString());
+  } catch (_) {}
   const isGrid = view === 'grid';
   document.body.classList.toggle('manual-links-grid-active', isGrid);
   document.getElementById('tab-manual-links')?.classList.toggle('ml-grid-active', isGrid);
@@ -841,16 +890,32 @@ function _mlPanelCellCount(categoryId) {
   return 1 + _mlSortCategories(maps.byParent[categoryId] || []).length + tree.roots.length;
 }
 
+function _mlPanelContentRows(categoryId, cols = 1) {
+  const maps = _mlCategoryMaps();
+  const itemsByCategory = _mlItemsByCategory();
+  const tree = _mlLinkTreeForCategory(categoryId, itemsByCategory);
+  const childCount = _mlSortCategories(maps.byParent[categoryId] || []).length;
+  const directCount = tree.roots.length;
+  const width = Math.max(1, Number(cols) || 1);
+  const labelRows = 1;
+  const childRows = childCount ? Math.ceil(childCount / width) : 0;
+  const directRows = directCount ? directCount : 0;
+  const emptyRows = !childCount && !directCount ? 1 : 0;
+  return Math.max(1, labelRows + childRows + directRows + emptyRows);
+}
+
 function _mlClampGridSpan(value, min, max = 6) {
   return Math.max(min, Math.min(max, Math.round(Number(value) || min)));
 }
 
-function _mlGridPlacementStyles(category, shape = { cols: 1, rows: 1 }, { inPanel = false, cells = 1 } = {}) {
+function _mlGridPlacementStyles(category, shape = { cols: 1, rows: 1 }, { inPanel = false, cells = 1, panelRows = null } = {}) {
   if (inPanel) return [];
   const layout = _mlRootGridLayoutFor(category.category_id);
   const manualSize = layout.manualSize === true || Number.isFinite(Number(layout.w)) || Number.isFinite(Number(layout.h));
   const cols = _mlClampGridSpan(manualSize ? (layout.w || 1) : (layout.w || shape.cols || 1), 1, 6);
-  const minRows = _mlCategoryIsPanel(category) ? Math.max(1, Math.ceil(Math.max(1, cells) / cols)) : 1;
+  const minRows = _mlCategoryIsPanel(category)
+    ? Math.max(1, Number(panelRows) || 0, Math.ceil(Math.max(1, cells) / cols))
+    : 1;
   const rows = _mlClampGridSpan(manualSize ? Math.max(layout.h || 1, minRows) : (layout.h || shape.rows || minRows), minRows, 12);
   const styles = [];
   if (cols > 1) styles.push(`grid-column:span ${cols}`);
@@ -1226,16 +1291,17 @@ function renderManualLinksGrid() {
     const manualSize = saved.manualSize === true || Number.isFinite(Number(saved.w)) || Number.isFinite(Number(saved.h));
     const defaultShape = _mlPanelGridShape(cellCount);
     const cols = _mlClampGridSpan(manualSize ? (saved.w || 1) : (saved.w || defaultShape.cols), 1, 6);
+    const minRows = _mlPanelContentRows(cat.category_id, cols);
     const shape = {
       cols,
       rows: _mlClampGridSpan(
-        manualSize ? Math.max(saved.h || 1, Math.ceil(cellCount / cols)) : (saved.h || defaultShape.rows),
-        Math.max(1, Math.ceil(cellCount / cols)),
+        manualSize ? Math.max(saved.h || 1, minRows) : (saved.h || Math.max(defaultShape.rows, minRows)),
+        minRows,
         12
       ),
     };
-    const placement = _mlGridPlacementStyles(cat, shape, { cells: cellCount });
-    return `<section class="ml-grid-panel ml-grid-panel--cols-${shape.cols}" data-ml-grid-card data-ml-grid-panel data-category-id="${esc(cat.category_id)}" data-ml-panel-cells="${esc(cellCount)}"${_mlPanelStyle(cat, shape, placement)}>
+    const placement = _mlGridPlacementStyles(cat, shape, { cells: cellCount, panelRows: minRows });
+    return `<section class="ml-grid-panel ml-grid-panel--cols-${shape.cols}" data-ml-grid-card data-ml-grid-panel data-category-id="${esc(cat.category_id)}" data-ml-panel-cells="${esc(cellCount)}" data-ml-panel-min-rows="${esc(minRows)}"${_mlPanelStyle(cat, shape, placement)}>
       <div class="ml-grid-panel-body" data-ml-drop-zone data-ml-drop-parent="${esc(cat.category_id)}">
         <div class="ml-grid-panel-label-cell">
           <div class="ml-grid-panel-title" draggable="true" data-ml-panel-drag-handle>
@@ -1257,17 +1323,24 @@ function renderManualLinksGrid() {
   container.innerHTML = `<div class="ml-grid-board" data-ml-drop-zone data-ml-drop-parent="">
     ${_mlRenderRootGridChildren(roots, cat => _mlCategoryIsPanel(cat) ? renderPanel(cat) : renderCard(cat))}
   </div>`;
+  _mlApplyExplicitRootGridPlacements();
   _mlScheduleGridViewportFit();
   _mlAlignOpenGridMenus();
 }
 
 function _mlScheduleGridViewportFit() {
+  window.requestAnimationFrame(_mlApplyExplicitRootGridPlacements);
   window.requestAnimationFrame(_mlFitGridViewport);
   window.requestAnimationFrame(_mlAlignOpenGridMenus);
+  window.requestAnimationFrame(_mlApplyGridDebugState);
+  window.setTimeout(_mlApplyExplicitRootGridPlacements, 120);
   window.setTimeout(_mlFitGridViewport, 120);
   window.setTimeout(_mlAlignOpenGridMenus, 120);
+  window.setTimeout(_mlApplyGridDebugState, 120);
+  window.setTimeout(_mlApplyExplicitRootGridPlacements, 320);
   window.setTimeout(_mlFitGridViewport, 320);
   window.setTimeout(_mlAlignOpenGridMenus, 320);
+  window.setTimeout(_mlApplyGridDebugState, 320);
 }
 
 function _mlHandleGridViewportChange() {
@@ -1524,11 +1597,25 @@ function _mlGridBoardMetrics(board) {
   };
 }
 
+function _mlApplyGridDebugState() {
+  const board = document.querySelector('#ml-grid-body .ml-grid-board');
+  if (!board) return;
+  const enabled = _mlGridDebugEnabled();
+  board.classList.toggle('is-debug-cells', enabled);
+  if (!enabled) return;
+  const metrics = _mlGridBoardMetrics(board);
+  if (!metrics) return;
+  board.style.setProperty('--ml-debug-col-width', `${Math.round(metrics.colWidth)}px`);
+  board.style.setProperty('--ml-debug-col-step', `${Math.round(metrics.colWidth + metrics.gap)}px`);
+  board.style.setProperty('--ml-debug-row-height', `${Math.round(metrics.rowHeight)}px`);
+  board.style.setProperty('--ml-debug-row-step', `${Math.round(metrics.rowHeight + metrics.rowGap)}px`);
+}
+
 function _mlPointerGridCell(board, event) {
   const metrics = _mlGridBoardMetrics(board);
   if (!metrics) return null;
-  const clientX = Number.isFinite(Number(event?.placementClientX)) ? Number(event.placementClientX) : event.clientX;
-  const clientY = Number.isFinite(Number(event?.placementClientY)) ? Number(event.placementClientY) : event.clientY;
+  const clientX = Number.isFinite(Number(event?.clientX)) ? Number(event.clientX) : metrics.rect.left;
+  const clientY = Number.isFinite(Number(event?.clientY)) ? Number(event.clientY) : metrics.rect.top;
   const x = Math.max(0, clientX - metrics.rect.left);
   const y = Math.max(0, clientY - metrics.rect.top);
   return {
@@ -1539,17 +1626,88 @@ function _mlPointerGridCell(board, event) {
 }
 
 function _mlGridDropPlacementEvent(event) {
-  const hasPlacement = Number.isFinite(Number(event?.placementClientX)) && Number.isFinite(Number(event?.placementClientY));
-  if (hasPlacement) return event;
-  if (Number.isFinite(Number(_mlGridDragOffsetX)) && Number.isFinite(Number(_mlGridDragOffsetY))) {
-    return {
-      clientX: event.clientX,
-      clientY: event.clientY,
-      placementClientX: event.clientX - _mlGridDragOffsetX + 2,
-      placementClientY: event.clientY - _mlGridDragOffsetY + 2,
-    };
-  }
   return event;
+}
+
+function _mlGridCellSlot(cell) {
+  if (!cell) return null;
+  return Math.max(0, ((Math.round(cell.row) - 1) * Math.max(1, cell.metrics?.cols || 1)) + (Math.round(cell.col) - 1));
+}
+
+function _mlSlotGridPosition(slot, cols) {
+  const safeCols = Math.max(1, Math.round(Number(cols) || 1));
+  const safeSlot = Math.max(0, Math.round(Number(slot) || 0));
+  return {
+    col: (safeSlot % safeCols) + 1,
+    row: Math.floor(safeSlot / safeCols) + 1,
+  };
+}
+
+function _mlElementSpan(element, axis) {
+  if (!element) return 1;
+  const style = window.getComputedStyle(element);
+  const value = axis === 'row' ? style.gridRowEnd : style.gridColumnEnd;
+  const match = String(value || '').match(/span\s+(\d+)/i);
+  return match ? Math.max(1, Number(match[1]) || 1) : 1;
+}
+
+function _mlApplyExplicitRootGridPlacements() {
+  const board = document.querySelector('#ml-grid-body .ml-grid-board');
+  const metrics = _mlGridBoardMetrics(board);
+  if (!board || !metrics) return;
+  board.querySelectorAll(':scope > [data-ml-grid-card]').forEach(card => {
+    const categoryId = card.dataset.categoryId;
+    const layout = _mlRootGridLayoutFor(categoryId);
+    if (!Number.isFinite(Number(layout.slot))) return;
+    const pos = _mlSlotGridPosition(layout.slot, metrics.cols);
+    const colSpan = Math.max(1, Math.min(metrics.cols, Math.round(Number(layout.w) || _mlElementSpan(card, 'column') || 1)));
+    const rowSpan = Math.max(1, Math.round(Number(layout.h) || _mlElementSpan(card, 'row') || 1));
+    card.style.gridColumn = `${pos.col} / span ${colSpan}`;
+    card.style.gridRow = `${pos.row} / span ${rowSpan}`;
+  });
+}
+
+function _mlGridDropTargetElement(board) {
+  if (!board) return null;
+  let el = board.querySelector(':scope > .ml-grid-drop-target');
+  if (!el) {
+    el = document.createElement('i');
+    el.className = 'ml-grid-drop-target';
+    el.setAttribute('aria-hidden', 'true');
+    board.appendChild(el);
+  }
+  return el;
+}
+
+function _mlShowGridDropTarget(board, event) {
+  const cell = _mlPointerGridCell(board, event);
+  if (!board || !cell?.metrics) return null;
+  const el = _mlGridDropTargetElement(board);
+  if (!el) return cell;
+  const { col, row, metrics } = cell;
+  const left = (Math.round(col) - 1) * (metrics.colWidth + metrics.gap);
+  const top = (Math.round(row) - 1) * (metrics.rowHeight + metrics.rowGap);
+  el.style.left = `${Math.round(left)}px`;
+  el.style.top = `${Math.round(top)}px`;
+  el.style.width = `${Math.round(metrics.colWidth)}px`;
+  el.style.height = `${Math.round(metrics.rowHeight)}px`;
+  el.dataset.mlGridDropSlot = String(_mlGridCellSlot(cell));
+  _mlGridDropCell = cell;
+  return cell;
+}
+
+function _mlClearGridDropTarget() {
+  document.querySelectorAll('.ml-grid-drop-target').forEach(el => el.remove());
+  _mlGridDropCell = null;
+}
+
+function _mlGridDropCellForEvent(board, event) {
+  if (!board) return null;
+  const liveCell = _mlPointerGridCell(board, event);
+  if (!liveCell) return _mlGridDropCell;
+  const liveSlot = _mlGridCellSlot(liveCell);
+  const highlightedSlot = _mlGridCellSlot(_mlGridDropCell);
+  return highlightedSlot === liveSlot ? _mlGridDropCell : liveCell;
 }
 
 function _mlElementGridCell(element, board) {
@@ -1567,7 +1725,7 @@ function _mlSaveRootCategoryCell(categoryId, cell, patch = {}) {
   if (!categoryId || !cell) return;
   const layout = _mlSavedGridLayout();
   const current = layout[categoryId] || {};
-  const slot = Math.max(0, ((Math.round(cell.row) - 1) * Math.max(1, cell.metrics?.cols || 1)) + (Math.round(cell.col) - 1));
+  const slot = _mlGridCellSlot(cell);
   const next = {
     ...current,
     slot,
@@ -1593,11 +1751,12 @@ function _mlCategoryShapeForPacking(category) {
   const fallback = _mlPanelGridShape(cellCount);
   const manualSize = saved.manualSize === true || Number.isFinite(Number(saved.w)) || Number.isFinite(Number(saved.h));
   const w = _mlClampGridSpan(manualSize ? (saved.w || fallback.cols) : fallback.cols, 1, 6);
+  const minRows = _mlPanelContentRows(category.category_id, w);
   return {
     w,
     h: _mlClampGridSpan(
-      manualSize ? Math.max(saved.h || 1, Math.ceil(cellCount / w)) : fallback.rows,
-      Math.max(1, Math.ceil(cellCount / w)),
+      manualSize ? Math.max(saved.h || 1, minRows) : Math.max(fallback.rows, minRows),
+      minRows,
       12
     ),
   };
@@ -1609,43 +1768,17 @@ function _mlAutoFitInterface() {
   const cols = Math.max(1, metrics?.cols || (_mlGridLayoutBucket() === 'mobile' ? 2 : 5));
   const maps = _mlCategoryMaps();
   const roots = _mlOrderRootCategories(maps.byParent.__root__ || []);
-  const occupied = new Set();
   const layout = {};
-  const fits = (col, row, w, h) => {
-    if (col + w - 1 > cols) return false;
-    for (let y = row; y < row + h; y += 1) {
-      for (let x = col; x < col + w; x += 1) {
-        if (occupied.has(`${x}:${y}`)) return false;
-      }
-    }
-    return true;
-  };
-  const mark = (col, row, w, h) => {
-    for (let y = row; y < row + h; y += 1) {
-      for (let x = col; x < col + w; x += 1) occupied.add(`${x}:${y}`);
-    }
-  };
-  roots.forEach(cat => {
+  roots.forEach((cat, index) => {
     const existing = _mlRootGridLayoutFor(cat.category_id);
     const shape = _mlCategoryShapeForPacking(cat);
+    const manualSize = existing.manualSize || Number.isFinite(Number(existing.w)) || Number.isFinite(Number(existing.h));
     const w = Math.min(cols, Math.max(1, shape.w));
-    const h = Math.max(1, shape.h);
-    let placed = null;
-    for (let row = 1; !placed && row < 200; row += 1) {
-      for (let col = 1; col <= cols - w + 1; col += 1) {
-        if (!fits(col, row, w, h)) continue;
-        placed = { col, row };
-        break;
-      }
-    }
-    const col = placed?.col || 1;
-    const row = placed?.row || 1;
-    mark(col, row, w, h);
-    const slot = ((row - 1) * cols) + (col - 1);
+    const h = Math.max(1, shape.h, _mlCategoryIsPanel(cat) ? _mlPanelContentRows(cat.category_id, w) : 1);
     layout[cat.category_id] = {
       ...existing,
-      slot,
-      ...(existing.manualSize || Number.isFinite(Number(existing.w)) || Number.isFinite(Number(existing.h))
+      slot: index,
+      ...(manualSize
         ? { w, h, manualSize: true }
         : {}),
     };
@@ -1662,7 +1795,9 @@ function _mlAutoFitInterface() {
 
 function _mlPanelMinRows(card, width) {
   const cells = Math.max(1, Number(card?.dataset.mlPanelCells || 1));
-  return Math.max(1, Math.ceil(cells / Math.max(1, width)));
+  const categoryId = card?.dataset.categoryId;
+  const contentRows = categoryId ? _mlPanelContentRows(categoryId, width) : Number(card?.dataset.mlPanelMinRows || 0);
+  return Math.max(1, contentRows || 0, Math.ceil(cells / Math.max(1, width)));
 }
 
 function _mlApplyPanelResize(card, next) {
@@ -1754,8 +1889,16 @@ async function _mlHandleCategoryDrop(draggedId, targetCard, dropZone, board, eve
     await _mlMoveCategory(draggedId, nestTargetId);
     return;
   }
+  if (board && sourceParent === '') {
+    const cell = _mlGridDropCellForEvent(board, placementEvent);
+    if (cell) {
+      _mlSaveRootCategoryCell(draggedId, cell);
+      renderManualLinksGrid();
+      return;
+    }
+  }
   if (board && dropZone?.classList.contains('ml-grid-board') && !targetCard) {
-    const cell = _mlPointerGridCell(board, placementEvent);
+    const cell = _mlGridDropCellForEvent(board, placementEvent);
     _mlSaveRootCategoryCell(draggedId, cell);
     if (sourceParent) await _mlMoveCategory(draggedId, null);
     else renderManualLinksGrid();
@@ -1763,8 +1906,15 @@ async function _mlHandleCategoryDrop(draggedId, targetCard, dropZone, board, eve
   }
   if (dropZone && dropZoneParent !== sourceParent && dropZoneParent !== draggedId) {
     if (dropZoneParent === '') {
-      const cell = _mlPointerGridCell(board || dropZone, placementEvent);
+      const cell = _mlGridDropCellForEvent(board || dropZone, placementEvent);
       _mlSaveRootCategoryCell(draggedId, cell);
+    } else if (sourceParent === '' && board) {
+      const cell = _mlGridDropCellForEvent(board, placementEvent);
+      if (cell) {
+        _mlSaveRootCategoryCell(draggedId, cell);
+        renderManualLinksGrid();
+        return;
+      }
     }
     await _mlMoveCategory(draggedId, dropZoneParent || null);
     return;
@@ -1773,12 +1923,19 @@ async function _mlHandleCategoryDrop(draggedId, targetCard, dropZone, board, eve
     const targetParent = targetCard.parentElement?.closest('[data-ml-grid-panel]')?.dataset.categoryId || '';
     const sameContainer = targetCard.parentElement === document.querySelector(`[data-category-id="${CSS.escape(draggedId)}"]`)?.parentElement;
     if (sameContainer || sourceParent === targetParent) {
-      const dragged = targetCard.parentElement?.querySelector(`[data-category-id="${CSS.escape(draggedId)}"]`);
-      if (dragged) {
-        const rect = targetCard.getBoundingClientRect();
-        const after = event.clientY > rect.top + (rect.height / 2);
-        targetCard.parentElement.insertBefore(dragged, after ? targetCard.nextSibling : targetCard);
-        if (!targetParent) _mlSaveGridOrderFromDom();
+      if (!targetParent && board) {
+        const cell = _mlGridDropCellForEvent(board, placementEvent);
+        if (cell) {
+          _mlSaveRootCategoryCell(draggedId, cell);
+          renderManualLinksGrid();
+        }
+      } else {
+        const dragged = targetCard.parentElement?.querySelector(`[data-category-id="${CSS.escape(draggedId)}"]`);
+        if (dragged) {
+          const rect = targetCard.getBoundingClientRect();
+          const after = placementEvent.clientY > rect.top + (rect.height / 2);
+          targetCard.parentElement.insertBefore(dragged, after ? targetCard.nextSibling : targetCard);
+        }
       }
     } else {
       await _mlMoveCategory(draggedId, targetParent || null);
@@ -1788,32 +1945,142 @@ async function _mlHandleCategoryDrop(draggedId, targetCard, dropZone, board, eve
   _mlSaveGridOrderFromDom();
 }
 
-function _mlTouchDragHandle(event) {
+function _mlTouchDragSource(event) {
   if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return null;
+  if (event.target.closest('[data-ml-grid-manage], [data-ml-panel-resize]')) return null;
+  const mappingHandle = event.target.closest('[data-ml-grid-mapping-drag]');
+  if (mappingHandle) {
+    const mappingId = mappingHandle.dataset.mlGridMappingDrag;
+    const mapping = _manualLinkCategoryItems.find(item => item.mapping_id === mappingId);
+    return {
+      kind: 'mapping',
+      id: mappingId,
+      sourceParent: mapping?.category_id || '',
+      handle: mappingHandle,
+      element: mappingHandle.closest('.ml-grid-link-branch, .ml-grid-link') || mappingHandle,
+    };
+  }
   const handle = event.target.closest('[data-ml-panel-drag-handle], [data-ml-grid-toggle]');
   if (!handle) return null;
-  if (event.target.closest('[data-ml-grid-manage], [data-ml-panel-resize], [data-ml-grid-link]')) return null;
+  if (event.target.closest('[data-ml-grid-link]')) return null;
+  const card = handle.closest('[data-ml-grid-card]');
+  if (!card) return null;
+  if (card.matches('[data-ml-grid-panel]') && !handle.matches('[data-ml-panel-drag-handle]')) return null;
   return handle;
 }
 
+function _mlTouchDragTransition(current, input) {
+  return _ML_TOUCH_DRAG_TRANSITIONS[current]?.[input] || current || _ML_TOUCH_DRAG_STATES.IDLE;
+}
+
+function _mlSuppressNativeDraggable(root, suppress) {
+  if (!root) return [];
+  const elements = [];
+  if (root.matches?.('[draggable="true"]')) elements.push(root);
+  root.querySelectorAll?.('[draggable="true"]').forEach(el => elements.push(el));
+  elements.forEach(el => {
+    if (suppress) {
+      el.dataset.mlTouchDraggableRestore = 'true';
+      el.setAttribute('draggable', 'false');
+    } else if (el.dataset.mlTouchDraggableRestore === 'true') {
+      el.setAttribute('draggable', 'true');
+      delete el.dataset.mlTouchDraggableRestore;
+    }
+  });
+  return elements;
+}
+
+function _mlRestoreNativeDraggable(elements) {
+  (elements || []).forEach(el => {
+    if (el?.dataset?.mlTouchDraggableRestore === 'true') {
+      el.setAttribute('draggable', 'true');
+      delete el.dataset.mlTouchDraggableRestore;
+    }
+  });
+}
+
+function _mlStopTouchAutoScroll() {
+  if (!_mlTouchCategoryDrag) return;
+  if (_mlTouchCategoryDrag.autoScrollFrame) cancelAnimationFrame(_mlTouchCategoryDrag.autoScrollFrame);
+  _mlTouchCategoryDrag.autoScrollFrame = null;
+  _mlTouchCategoryDrag.autoScrollSpeed = 0;
+}
+
+function _mlTouchScrollTarget() {
+  const shell = document.querySelector('#tab-manual-links.active .tab-scroll-shell');
+  if (shell && shell.scrollHeight > shell.clientHeight + 2) return shell;
+  return document.scrollingElement || document.documentElement;
+}
+
+function _mlRunTouchAutoScroll() {
+  const state = _mlTouchCategoryDrag;
+  if (!state || state.kind !== _ML_TOUCH_DRAG_STATES.DRAGGING || !state.autoScrollSpeed) {
+    if (state) state.autoScrollFrame = null;
+    return;
+  }
+  const target = state.scrollTarget || _mlTouchScrollTarget();
+  if (target === document.scrollingElement || target === document.documentElement || target === document.body) {
+    window.scrollBy(0, state.autoScrollSpeed);
+  } else {
+    target.scrollTop += state.autoScrollSpeed;
+  }
+  state.autoScrollFrame = requestAnimationFrame(_mlRunTouchAutoScroll);
+}
+
+function _mlUpdateTouchAutoScroll(clientY) {
+  const state = _mlTouchCategoryDrag;
+  if (!state || state.kind !== _ML_TOUCH_DRAG_STATES.DRAGGING) return;
+  const viewportH = (window.visualViewport && Number.isFinite(window.visualViewport.height) && window.visualViewport.height > 0)
+    ? window.visualViewport.height
+    : (window.innerHeight || document.documentElement.clientHeight || 0);
+  if (!viewportH) return;
+  let speed = 0;
+  if (clientY < _ML_TOUCH_DRAG_SCROLL_EDGE) {
+    speed = -Math.ceil((_ML_TOUCH_DRAG_SCROLL_EDGE - clientY) / 6);
+  } else if (clientY > viewportH - _ML_TOUCH_DRAG_SCROLL_EDGE) {
+    speed = Math.ceil((clientY - (viewportH - _ML_TOUCH_DRAG_SCROLL_EDGE)) / 6);
+  }
+  speed = Math.max(-18, Math.min(18, speed));
+  state.autoScrollSpeed = speed;
+  if (speed && !state.autoScrollFrame) {
+    state.autoScrollFrame = requestAnimationFrame(_mlRunTouchAutoScroll);
+  } else if (!speed && state.autoScrollFrame) {
+    cancelAnimationFrame(state.autoScrollFrame);
+    state.autoScrollFrame = null;
+  }
+}
+
 function _mlStartTouchCategoryDrag(event) {
-  const handle = _mlTouchDragHandle(event);
-  if (!handle) return;
-  const card = handle.closest('[data-ml-grid-card]');
-  if (!card) return;
-  if (card.matches('[data-ml-grid-panel]') && !handle.matches('[data-ml-panel-drag-handle]')) return;
+  const source = _mlTouchDragSource(event);
+  if (!source) return;
+  const handle = source.handle || source;
+  const card = source.kind === 'mapping' ? null : handle.closest('[data-ml-grid-card]');
+  const dragElement = source.kind === 'mapping' ? source.element : card;
+  if (!dragElement) return;
   event.preventDefault();
-  const categoryId = card.dataset.categoryId;
+  event.stopPropagation?.();
+  if (source.kind === 'mapping') {
+    _mlSuppressLeafClickBriefly();
+    if (_mlLeafClickState.timer) clearTimeout(_mlLeafClickState.timer);
+    _mlLeafClickState = { timer: null, mappingId: null };
+  }
   try {
     handle.setPointerCapture?.(event.pointerId);
   } catch (_) {}
   _mlTouchCategoryDrag = {
-    kind: 'pressing',
+    kind: _mlTouchDragTransition(_ML_TOUCH_DRAG_STATES.IDLE, 'press'),
+    dragKind: source.kind || 'category',
     pointerId: event.pointerId,
-    categoryId,
+    id: source.kind === 'mapping' ? source.id : card.dataset.categoryId,
+    categoryId: source.kind === 'mapping' ? null : card.dataset.categoryId,
+    mappingId: source.kind === 'mapping' ? source.id : null,
     card,
+    element: dragElement,
     handle,
     captureEl: handle,
+    sourceParent: source.sourceParent || '',
+    nativeDraggables: _mlSuppressNativeDraggable(dragElement, true),
+    scrollTarget: _mlTouchScrollTarget(),
     startX: event.clientX,
     startY: event.clientY,
     x: event.clientX,
@@ -1821,17 +2088,18 @@ function _mlStartTouchCategoryDrag(event) {
     timer: window.setTimeout(() => {
       if (!_mlTouchCategoryDrag || _mlTouchCategoryDrag.pointerId !== event.pointerId) return;
       _mlPromoteTouchCategoryDrag();
-    }, 520),
+    }, _ML_TOUCH_DRAG_HOLD_MS),
   };
 }
 
 function _mlPromoteTouchCategoryDrag() {
   const state = _mlTouchCategoryDrag;
-  if (!state || state.kind !== 'pressing') return;
-  state.kind = 'dragging';
-  const card = state.card;
-  const rect = card.getBoundingClientRect();
-  const ghost = card.cloneNode(true);
+  if (!state || state.kind !== _ML_TOUCH_DRAG_STATES.PRESSING) return;
+  const element = state.element || state.card;
+  if (!element) return;
+  state.kind = _mlTouchDragTransition(state.kind, 'hold');
+  const rect = element.getBoundingClientRect();
+  const ghost = element.cloneNode(true);
   ghost.removeAttribute('id');
   ghost.classList.add('ml-grid-touch-ghost');
   ghost.style.width = `${Math.min(rect.width, window.innerWidth - 24)}px`;
@@ -1839,31 +2107,42 @@ function _mlPromoteTouchCategoryDrag() {
   ghost.style.top = `${rect.top}px`;
   document.body.appendChild(ghost);
   state.ghost = ghost;
+  state.sourceDisplay = element.style.display;
+  element.style.display = 'none';
   state.offsetX = state.x - rect.left;
   state.offsetY = state.y - rect.top;
   state.placementX = rect.left;
   state.placementY = rect.top;
-  _mlGridDragId = state.categoryId;
-  _mlGridDragKind = 'category';
-  _mlGridDragSourceParent = card.parentElement?.closest('[data-ml-grid-panel]')?.dataset.categoryId || '';
+  _mlGridDragId = state.id;
+  _mlGridDragKind = state.dragKind;
+  _mlGridDragSourceParent = state.dragKind === 'mapping'
+    ? (state.sourceParent || '')
+    : (state.card?.parentElement?.closest('[data-ml-grid-panel]')?.dataset.categoryId || '');
   state.sourceParent = _mlGridDragSourceParent;
   _mlGridDragOffsetX = state.offsetX;
   _mlGridDragOffsetY = state.offsetY;
   _mlClearCategoryNestIntent();
-  _mlSuppressCategoryToggleBriefly();
-  card.classList.add('is-touch-dragging');
+  if (state.dragKind === 'category') _mlSuppressCategoryToggleBriefly();
+  else _mlSuppressLeafClickBriefly();
+  element.classList.add('is-touch-dragging');
 }
 
 function _mlMoveTouchCategoryDrag(event) {
   if (!_mlTouchCategoryDrag || _mlTouchCategoryDrag.pointerId !== event.pointerId) return;
   _mlTouchCategoryDrag.x = event.clientX;
   _mlTouchCategoryDrag.y = event.clientY;
-  if (_mlTouchCategoryDrag.kind === 'pressing') {
-    const moved = Math.abs(event.clientX - _mlTouchCategoryDrag.startX) > 8 || Math.abs(event.clientY - _mlTouchCategoryDrag.startY) > 8;
-    if (!moved) return;
+  if (_mlTouchCategoryDrag.kind === _ML_TOUCH_DRAG_STATES.PRESSING) {
+    event.preventDefault();
+    event.stopPropagation?.();
+    const dx = Math.abs(event.clientX - _mlTouchCategoryDrag.startX);
+    const dy = Math.abs(event.clientY - _mlTouchCategoryDrag.startY);
+    if (Math.max(dx, dy) < _ML_TOUCH_DRAG_MOVE_PX) return;
+    clearTimeout(_mlTouchCategoryDrag.timer);
     _mlPromoteTouchCategoryDrag();
+    if (!_mlTouchCategoryDrag || _mlTouchCategoryDrag.kind !== _ML_TOUCH_DRAG_STATES.DRAGGING) return;
   }
   event.preventDefault();
+  event.stopPropagation?.();
   const ghost = _mlTouchCategoryDrag.ghost;
   if (ghost) {
     const left = event.clientX - (_mlTouchCategoryDrag.offsetX || 0);
@@ -1873,10 +2152,19 @@ function _mlMoveTouchCategoryDrag(event) {
     ghost.style.transform = `translate(${Math.round(left - parseFloat(ghost.style.left || '0'))}px, ${Math.round(top - parseFloat(ghost.style.top || '0'))}px) scale(0.985)`;
   }
   const target = document.elementFromPoint(event.clientX, event.clientY);
-  const targetCard = target?.closest?.('[data-ml-grid-card]');
-  const dropZone = target?.closest?.('[data-ml-drop-zone]');
-  const explicitStructuralDrop = !!dropZone && (!targetCard || targetCard.contains(dropZone));
-  _mlUpdateCategoryNestIntent(_mlTouchCategoryDrag.categoryId, explicitStructuralDrop ? null : targetCard);
+  if (_mlTouchCategoryDrag.dragKind === 'category') {
+    const targetCard = target?.closest?.('[data-ml-grid-card]');
+    const dropZone = target?.closest?.('[data-ml-drop-zone]');
+    const board = target?.closest?.('.ml-grid-board') || document.querySelector('#ml-grid-body .ml-grid-board');
+    if (board) _mlShowGridDropTarget(board, event);
+    else _mlClearGridDropTarget();
+    const explicitStructuralDrop = !!dropZone && (!targetCard || targetCard.contains(dropZone));
+    _mlUpdateCategoryNestIntent(_mlTouchCategoryDrag.categoryId, explicitStructuralDrop ? null : targetCard);
+  } else {
+    _mlClearCategoryNestIntent();
+    _mlClearGridDropTarget();
+  }
+  _mlUpdateTouchAutoScroll(event.clientY);
 }
 
 async function _mlFinishTouchCategoryDrag(event) {
@@ -1885,14 +2173,31 @@ async function _mlFinishTouchCategoryDrag(event) {
   clearTimeout(state.timer);
   _mlTouchCategoryDrag = null;
   _mlTouchCategoryDragFallbackId = null;
+  if (state.autoScrollFrame) cancelAnimationFrame(state.autoScrollFrame);
   try {
     state.captureEl?.releasePointerCapture?.(event.pointerId);
   } catch (_) {}
+  _mlRestoreNativeDraggable(state.nativeDraggables);
   state.card?.classList.remove('is-touch-dragging');
+  state.element?.classList.remove('is-touch-dragging');
   state.ghost?.remove();
-  if (state.kind !== 'dragging') {
+  const releaseKind = state.kind;
+  state.kind = _mlTouchDragTransition(state.kind, event.type === 'pointercancel' ? 'cancel' : 'release');
+  if (releaseKind !== _ML_TOUCH_DRAG_STATES.DRAGGING) {
+    _mlClearGridDropTarget();
+    if (state.element) state.element.style.display = state.sourceDisplay || '';
     if (event.type === 'pointercancel') return;
-    if (state.handle?.matches?.('[data-ml-grid-toggle]')) {
+    if (state.dragKind === 'mapping') {
+      if (state.handle?.matches?.('[data-ml-grid-link]')) {
+        _mlSuppressNextLeafClick = false;
+        _mlHandleLeafClick(state.handle);
+      } else {
+        const details = state.handle?.closest?.('.ml-grid-link-branch');
+        if (details) details.open = !details.open;
+      }
+      return;
+    }
+    if (state.dragKind === 'category' && state.handle?.matches?.('[data-ml-grid-toggle]')) {
       _mlSuppressCategoryToggleBriefly();
       if (_mlGridOpen.has(state.categoryId)) _mlGridOpen.delete(state.categoryId);
       else {
@@ -1904,17 +2209,32 @@ async function _mlFinishTouchCategoryDrag(event) {
     return;
   }
   event.preventDefault();
-  _mlSuppressCategoryToggleBriefly();
+  event.stopPropagation?.();
+  if (state.dragKind === 'category') _mlSuppressCategoryToggleBriefly();
+  else _mlSuppressLeafClickBriefly();
   const x = Number.isFinite(event.clientX) ? event.clientX : state.x;
   const y = Number.isFinite(event.clientY) ? event.clientY : state.y;
   const moved = Math.abs(x - state.startX) > 12 || Math.abs(y - state.startY) > 12;
-  if (!moved && (event.pointerType === 'touch' || String(event.pointerId || '').startsWith('touch-'))) {
+  if (state.dragKind === 'mapping' && !moved) {
     _mlGridDragId = null;
     _mlGridDragKind = null;
     _mlGridDragSourceParent = null;
     _mlGridDragOffsetX = null;
     _mlGridDragOffsetY = null;
     _mlClearCategoryNestIntent();
+    _mlClearGridDropTarget();
+    if (state.element) state.element.style.display = state.sourceDisplay || '';
+    return;
+  }
+  if (state.dragKind === 'category' && !moved && (event.pointerType === 'touch' || String(event.pointerId || '').startsWith('touch-'))) {
+    _mlGridDragId = null;
+    _mlGridDragKind = null;
+    _mlGridDragSourceParent = null;
+    _mlGridDragOffsetX = null;
+    _mlGridDragOffsetY = null;
+    _mlClearCategoryNestIntent();
+    _mlClearGridDropTarget();
+    if (state.element) state.element.style.display = state.sourceDisplay || '';
     _mlPickCategoryForTouchPlacement(state);
     return;
   }
@@ -1923,15 +2243,23 @@ async function _mlFinishTouchCategoryDrag(event) {
   const dropZone = target?.closest?.('[data-ml-drop-zone]');
   const board = target?.closest?.('.ml-grid-board') || document.querySelector('#ml-grid-body .ml-grid-board');
   try {
-    await _mlHandleCategoryDrop(state.categoryId, targetCard, dropZone, board, {
-      clientX: x,
-      clientY: y,
-      placementClientX: Number.isFinite(Number(state.placementX)) ? state.placementX + 2 : x,
-      placementClientY: Number.isFinite(Number(state.placementY)) ? state.placementY + 2 : y,
-    });
+    if (state.dragKind === 'mapping') {
+      const targetCategoryId = dropZone?.dataset.mlDropParent || targetCard?.dataset.categoryId || '';
+      await _mlPromoteOrMoveMapping(state.mappingId, targetCategoryId || null);
+    } else {
+      const placement = { clientX: x, clientY: y };
+      const targetParent = targetCard?.parentElement?.closest('[data-ml-grid-panel]')?.dataset.categoryId || '';
+      const dropParent = dropZone?.dataset.mlDropParent || '';
+      if (!state.sourceParent && board && !targetParent && !dropParent) {
+        _mlSaveRootCategoryCell(state.categoryId, _mlGridDropCellForEvent(board, placement));
+        renderManualLinksGrid();
+      } else {
+        await _mlHandleCategoryDrop(state.categoryId, targetCard, dropZone, board, placement);
+      }
+    }
   } catch (err) {
     await HubDialogs.alertError({
-      title: 'Category move failed',
+      title: state.dragKind === 'mapping' ? 'Link move failed' : 'Category move failed',
       message: err.message,
     });
   } finally {
@@ -1941,6 +2269,8 @@ async function _mlFinishTouchCategoryDrag(event) {
     _mlGridDragOffsetX = null;
     _mlGridDragOffsetY = null;
     _mlClearCategoryNestIntent();
+    _mlClearGridDropTarget();
+    if (state.element) state.element.style.display = state.sourceDisplay || '';
   }
 }
 
@@ -1964,6 +2294,7 @@ function _mlTouchFallbackEvent(event, touch) {
     preventDefault: () => {
       if (event.cancelable) event.preventDefault();
     },
+    stopPropagation: () => event.stopPropagation(),
   };
 }
 
@@ -1972,7 +2303,7 @@ function _mlStartTouchCategoryDragFallback(event) {
   const touch = _mlTouchEventPoint(event);
   if (!touch) return;
   const pseudo = _mlTouchFallbackEvent(event, touch);
-  if (!_mlTouchDragHandle(pseudo)) return;
+  if (!_mlTouchDragSource(pseudo)) return;
   _mlTouchCategoryDragFallbackId = touch.identifier;
   _mlStartTouchCategoryDrag(pseudo);
   if (!_mlTouchCategoryDrag) _mlTouchCategoryDragFallbackId = null;
@@ -2515,6 +2846,7 @@ const _mlGridPress = (() => {
   };
   return {
     pointerDown(event) {
+      if (event.pointerType === 'touch' || event.pointerType === 'pen') return;
       const link = event.target.closest('[data-ml-grid-link]');
       if (!link) return;
       reset();
@@ -2796,6 +3128,10 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     e.stopPropagation();
   });
+  document.getElementById('ml-grid-body')?.addEventListener('contextmenu', e => {
+    if (!e.target.closest('[data-ml-grid-mapping-drag], [data-ml-panel-drag-handle], [data-ml-grid-toggle]')) return;
+    e.preventDefault();
+  });
   document.getElementById('ml-grid-body')?.addEventListener('dragstart', e => {
     const mappingDrag = e.target.closest('[data-ml-grid-mapping-drag]');
     if (mappingDrag) {
@@ -2824,6 +3160,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const rect = card.getBoundingClientRect();
     _mlGridDragOffsetX = Number.isFinite(Number(e.clientX)) && e.clientX > 0 ? e.clientX - rect.left : Math.min(rect.width / 2, 40);
     _mlGridDragOffsetY = Number.isFinite(Number(e.clientY)) && e.clientY > 0 ? e.clientY - rect.top : Math.min(rect.height / 2, 24);
+    // For panels, show the whole panel as the drag ghost rather than just the title
+    // handle, so the user sees exactly what they are moving and where it will land.
+    if (card.matches('[data-ml-grid-panel]')) {
+      try { e.dataTransfer.setDragImage(card, Math.round(_mlGridDragOffsetX), Math.round(_mlGridDragOffsetY)); } catch (_) {}
+    }
     _mlClearCategoryNestIntent();
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', _mlGridDragId);
@@ -2835,10 +3176,14 @@ document.addEventListener('DOMContentLoaded', () => {
     e.dataTransfer.dropEffect = _mlGridDragId ? 'move' : 'copy';
     if (_mlGridDragKind !== 'category') {
       _mlClearCategoryNestIntent();
+      _mlClearGridDropTarget();
       return;
     }
     const targetCard = e.target.closest('[data-ml-grid-card]');
     const dropZone = e.target.closest('[data-ml-drop-zone]');
+    const board = e.target.closest('.ml-grid-board') || document.querySelector('#ml-grid-body .ml-grid-board');
+    if (board) _mlShowGridDropTarget(board, e);
+    else _mlClearGridDropTarget();
     const explicitStructuralDrop = !!dropZone && (!targetCard || targetCard.contains(dropZone));
     _mlUpdateCategoryNestIntent(_mlGridDragId, explicitStructuralDrop ? null : targetCard);
   });
@@ -2871,6 +3216,7 @@ document.addEventListener('DOMContentLoaded', () => {
         _mlGridDragOffsetX = null;
         _mlGridDragOffsetY = null;
         _mlClearCategoryNestIntent();
+        _mlClearGridDropTarget();
         return;
       }
       await _mlHandleCategoryDrop(draggedId, targetCard, dropZone, board, e);
@@ -2886,6 +3232,7 @@ document.addEventListener('DOMContentLoaded', () => {
     _mlGridDragOffsetX = null;
     _mlGridDragOffsetY = null;
     _mlClearCategoryNestIntent();
+    _mlClearGridDropTarget();
   });
   document.getElementById('ml-grid-body')?.addEventListener('dragend', () => {
     _mlGridDragId = null;
@@ -2894,6 +3241,7 @@ document.addEventListener('DOMContentLoaded', () => {
     _mlGridDragOffsetX = null;
     _mlGridDragOffsetY = null;
     _mlClearCategoryNestIntent();
+    _mlClearGridDropTarget();
   });
   document.getElementById('ml-grid-body')?.addEventListener('pointerdown', _mlGridPress.pointerDown);
   document.getElementById('ml-grid-body')?.addEventListener('pointerdown', e => {

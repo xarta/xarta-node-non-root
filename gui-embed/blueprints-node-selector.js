@@ -561,19 +561,51 @@
     }
   }
 
+  function hardRefreshNormalizePageState(state) {
+    const next = {
+      group: state?.group || '',
+      tab: state?.tab || '',
+    };
+    const manualPanelActive = document.getElementById('tab-manual-links')?.classList.contains('active');
+    const manualLinksApi = window.BlueprintsManualLinks
+      || (typeof BlueprintsManualLinks !== 'undefined' ? BlueprintsManualLinks : null);
+    if (next.tab === 'manual-links'
+        && manualLinksApi
+        && typeof manualLinksApi.getCurrentTabId === 'function') {
+      next.tab = manualLinksApi.getCurrentTabId() || next.tab;
+    }
+    if (manualPanelActive && (!next.tab || next.tab === 'manual-links')) {
+      if (document.body.classList.contains('manual-links-grid-active')) next.tab = 'manual-links-grid';
+      else {
+        try {
+          const storedManualTab = sessionStorage.getItem('blueprintsManualLinksActiveTab');
+          if (storedManualTab) next.tab = storedManualTab;
+        } catch (_e) {}
+      }
+    }
+    if (next.tab && String(next.tab).startsWith('manual-links')) next.group = next.group || 'synthesis';
+    return next;
+  }
+
   function hardRefreshCurrentPageState() {
     if (typeof window._currentPageState === 'function') {
       try {
         const state = window._currentPageState() || {};
-        return { group: state.group || '', tab: state.tab || '' };
+        return hardRefreshNormalizePageState(state);
       } catch (_e) {}
     }
     const bridge = window.BlueprintsHubMenuBridge;
     if (!bridge) return {};
+    if (typeof bridge.getCurrentPageState === 'function') {
+      try {
+        const state = bridge.getCurrentPageState() || {};
+        return hardRefreshNormalizePageState(state);
+      } catch (_e) {}
+    }
     const group = bridge.activeGroup || '';
     const menuConfig = typeof bridge.getActiveMenuConfig === 'function' && bridge.getActiveMenuConfig();
     const tab = menuConfig && typeof menuConfig._activeTabId === 'function' && menuConfig._activeTabId();
-    return { group, tab };
+    return hardRefreshNormalizePageState({ group, tab });
   }
 
   function hardRefreshApplyPageState(url, pageState) {
@@ -2633,9 +2665,9 @@
             }
             return;
           }
-          // Synthesis double-tap: force a full page reload (navigates to /fallback-ui/
-          // with no query params, which triggers openClockOverlay on mobile).
-          navigateToNodePath(def.buildPath());
+          // Synthesis double-tap uses the same hard-refresh path as the menu action
+          // so pseudo-tabs such as Manual Links - Interface survive the reload.
+          hardRefreshClientAssets();
         }
 
         if (isTouch) {
