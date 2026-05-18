@@ -14,6 +14,7 @@ let _mlExpandedRoutes = new Set();
 let _mlGridDragId = null;
 let _mlGridDragKind = null;
 let _mlGridDragSourceParent = null;
+let _mlGridDragSourceMappingParent = null;
 let _mlGridDragOffsetX = null;
 let _mlGridDragOffsetY = null;
 let _mlGridDropCell = null;
@@ -823,8 +824,8 @@ function _mlLinkTreeForCategory(categoryId, itemsByCategory) {
     }
   });
   const sortItems = arr => [...arr].sort((a, b) => {
-    const ao = a.link?.sort_order ?? a.sort_order ?? 0;
-    const bo = b.link?.sort_order ?? b.sort_order ?? 0;
+    const ao = a.sort_order ?? a.link?.sort_order ?? 0;
+    const bo = b.sort_order ?? b.link?.sort_order ?? 0;
     if (ao !== bo) return ao - bo;
     return (a.label_override || a.link?.label || '').localeCompare(b.label_override || b.link?.label || '');
   });
@@ -1058,14 +1059,19 @@ function _mlUniqueCategoryLabel(label, parentCategoryId, categoryId) {
 }
 
 async function _mlUpdateCategory(categoryId, patch, { reopenManage = false } = {}) {
+  await _mlPatchCategory(categoryId, patch);
+  await loadManualLinks();
+  if (reopenManage && _mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+}
+
+async function _mlPatchCategory(categoryId, patch) {
   const r = await apiFetch(`/api/v1/manual-link-categories/${encodeURIComponent(categoryId)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
   });
   if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
-  await loadManualLinks();
-  if (reopenManage && _mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+  return r.json();
 }
 
 async function _mlMoveCategory(categoryId, parentCategoryId) {
@@ -1079,6 +1085,50 @@ async function _mlMoveCategory(categoryId, parentCategoryId) {
   const uniqueLabel = _mlUniqueCategoryLabel(category.label, nextParent, categoryId);
   if (uniqueLabel !== category.label) patch.label = uniqueLabel;
   await _mlUpdateCategory(categoryId, patch);
+}
+
+function _mlReorderedIds(ids, movingId, targetId, position = 'after') {
+  const ordered = [...new Set((ids || []).filter(Boolean).filter(id => id !== movingId))];
+  if (!targetId || !ordered.includes(targetId)) {
+    ordered.push(movingId);
+    return ordered;
+  }
+  const targetIndex = ordered.indexOf(targetId);
+  ordered.splice(position === 'before' ? targetIndex : targetIndex + 1, 0, movingId);
+  return ordered;
+}
+
+async function _mlPersistCategoryOrder(parentCategoryId, orderedIds) {
+  const parent = parentCategoryId || null;
+  for (let index = 0; index < orderedIds.length; index += 1) {
+    const category = _manualLinkCategories.find(cat => cat.category_id === orderedIds[index]);
+    const patch = { sort_order: index };
+    if (category && (category.parent_category_id || '') !== (parentCategoryId || '')) {
+      patch.parent_category_id = parent;
+      const uniqueLabel = _mlUniqueCategoryLabel(category.label, parent, category.category_id);
+      if (uniqueLabel !== category.label) patch.label = uniqueLabel;
+    }
+    await _mlPatchCategory(orderedIds[index], patch);
+  }
+}
+
+async function _mlApplyCategoryOrderIntent(intent, { action = 'move' } = {}) {
+  const copy = action === 'copy';
+  const parentId = intent.parentId || null;
+  let categoryId = intent.draggedId;
+  if (copy) {
+    const copied = await _mlCopyCategory(intent.draggedId, parentId, { reload: false });
+    categoryId = copied.category_id;
+  } else {
+    const category = _manualLinkCategories.find(cat => cat.category_id === categoryId);
+    if (!category) return;
+    if (parentId === categoryId || (parentId && _mlCategoryDescendsFrom(parentId, categoryId))) {
+      throw new Error('Cannot move a category into itself or one of its children.');
+    }
+  }
+  const orderedIds = _mlReorderedIds(intent.siblingIds, categoryId, intent.targetId, intent.position);
+  await _mlPersistCategoryOrder(intent.parentId || '', orderedIds);
+  await loadManualLinks();
 }
 
 function _mlNextCategorySort(parentCategoryId = null) {
@@ -1294,7 +1344,7 @@ function _mlRenderLinkMenuItem(item) {
   const routeHtml = expanded
     ? (route ? `<span class="ml-grid-link-route">${esc(route)}</span>` : '<span class="ml-grid-link-route ml-grid-link-route--empty">No route</span>')
     : '';
-  const attrs = `data-ml-grid-link="${esc(lnk.link_id)}" data-ml-grid-mapping="${esc(item.mapping_id)}" data-ml-grid-mapping-drag="${esc(item.mapping_id)}" data-ml-grid-href="${esc(href)}"`;
+  const attrs = `data-ml-grid-link="${esc(lnk.link_id)}" data-ml-grid-mapping="${esc(item.mapping_id)}" data-ml-grid-mapping-drag="${esc(item.mapping_id)}" data-ml-grid-mapping-row="${esc(item.mapping_id)}" data-ml-grid-href="${esc(href)}"`;
   return `<button type="button" class="ml-grid-link${expanded ? ' is-route-open' : ''}" draggable="true" ${attrs} title="Click to open, double-click to show route, long-press for alternatives">
     <span class="ml-grid-link-label">${esc(label)}</span>${routeHtml}
   </button>`;
@@ -1307,7 +1357,7 @@ function _mlRenderLinkTreeItem(item, tree, depth) {
   if (!children.length) return _mlRenderLinkMenuItem(item);
   const label = item.label_override || lnk.label || lnk.link_id.slice(0, 8);
   const open = _mlGridOpenLinkBranches.has(item.mapping_id) ? ' open' : '';
-  return `<details class="ml-grid-subcategory ml-grid-link-branch" data-ml-grid-mapping="${esc(item.mapping_id)}"${open}>
+  return `<details class="ml-grid-subcategory ml-grid-link-branch" data-ml-grid-mapping="${esc(item.mapping_id)}" data-ml-grid-mapping-row="${esc(item.mapping_id)}"${open}>
     <summary draggable="true" data-ml-grid-mapping-drag="${esc(item.mapping_id)}">${_mlIconHtml(_mlLinkIcon(lnk), 'ml-grid-icon ml-grid-icon--small')}<span class="ml-grid-summary-label">${esc(label)}</span></summary>
     <div class="ml-grid-subcategory-body">${children.map(child => _mlRenderLinkTreeItem(child, tree, depth + 1)).join('')}</div>
   </details>`;
@@ -1516,6 +1566,7 @@ const _mlGridInteractionFsm = (() => {
   let desktopPress = null;
   let lastRouteToggle = null;
   let categoryNestIntent = null;
+  let dragOrderIntent = null;
   let dragCopyIntent = false;
 
   const clearPending = () => {
@@ -1533,6 +1584,24 @@ const _mlGridInteractionFsm = (() => {
     if (categoryNestIntent?.timer) window.clearTimeout(categoryNestIntent.timer);
     categoryNestIntent = null;
     _mlClearCategoryNestMarkers();
+  };
+
+  const clearDragOrderIntent = () => {
+    dragOrderIntent = null;
+    _mlClearDragOrderMarkers();
+  };
+
+  const updateDragOrderIntent = intent => {
+    const key = intent
+      ? `${intent.kind}:${intent.draggedId}:${intent.parentId || intent.parentMappingId || intent.categoryId || ''}:${intent.targetId || ''}:${intent.position || ''}`
+      : '';
+    const currentKey = dragOrderIntent
+      ? `${dragOrderIntent.kind}:${dragOrderIntent.draggedId}:${dragOrderIntent.parentId || dragOrderIntent.parentMappingId || dragOrderIntent.categoryId || ''}:${dragOrderIntent.targetId || ''}:${dragOrderIntent.position || ''}`
+      : '';
+    if (key === currentKey) return;
+    clearDragOrderIntent();
+    dragOrderIntent = intent || null;
+    _mlMarkDragOrderIntent(dragOrderIntent);
   };
 
   const updateCategoryNestIntent = (sourceCategoryId, targetCard) => {
@@ -1644,12 +1713,14 @@ const _mlGridInteractionFsm = (() => {
       clearPending();
       clearDesktopPress();
       clearCategoryNestIntent();
+      clearDragOrderIntent();
       dragCopyIntent = false;
       state = _ML_GRID_INTERACTION_STATES.DRAGGING;
       if (dragKind !== 'category') clearCategoryNestIntent();
     },
     endNativeDrag() {
       clearCategoryNestIntent();
+      clearDragOrderIntent();
       dragCopyIntent = false;
       if (state === _ML_GRID_INTERACTION_STATES.DRAGGING) state = _ML_GRID_INTERACTION_STATES.IDLE;
     },
@@ -1660,6 +1731,11 @@ const _mlGridInteractionFsm = (() => {
     updateCategoryNestIntent,
     categoryNestTargetForDrop,
     clearCategoryNestIntent,
+    updateDragOrderIntent,
+    dragOrderIntentForDrop() {
+      return dragOrderIntent;
+    },
+    clearDragOrderIntent,
     pointerDown(event) {
       if (event.pointerType === 'touch' || event.pointerType === 'pen') {
         state = _ML_GRID_INTERACTION_TRANSITIONS[state]?.press?.next || _ML_GRID_INTERACTION_STATES.PRESSING;
@@ -1774,6 +1850,93 @@ function _mlClearCategoryNestMarkers() {
   });
 }
 
+function _mlClearDragOrderMarkers() {
+  document.querySelectorAll('.is-order-before, .is-order-after, .is-order-append').forEach(el => {
+    el.classList.remove('is-order-before', 'is-order-after', 'is-order-append');
+  });
+}
+
+function _mlMappingRowElement(target) {
+  return target?.closest?.('[data-ml-grid-mapping-row]');
+}
+
+function _mlMappingIdForRow(row) {
+  return row?.dataset?.mlGridMappingRow || row?.dataset?.mlGridMapping || row?.dataset?.mlGridMappingDrag || '';
+}
+
+function _mlVisibleParentMappingIdForRow(row) {
+  const parentBranch = row?.parentElement?.closest?.('.ml-grid-link-branch[data-ml-grid-mapping]');
+  return parentBranch?.dataset?.mlGridMapping || null;
+}
+
+function _mlMappingSiblingIds(container) {
+  return [...(container?.children || [])]
+    .map(child => _mlMappingIdForRow(child))
+    .filter(Boolean);
+}
+
+function _mlCategorySiblingIds(container) {
+  return [...(container?.children || [])]
+    .filter(child => child.matches?.('[data-ml-grid-card]'))
+    .map(child => child.dataset.categoryId)
+    .filter(Boolean);
+}
+
+function _mlOrderPositionFromEvent(event, element) {
+  const rect = element?.getBoundingClientRect?.();
+  if (!rect) return 'after';
+  return event.clientY < rect.top + (rect.height / 2) ? 'before' : 'after';
+}
+
+function _mlResolveDragOrderIntent(dragKind, draggedId, target, event) {
+  if (!dragKind || !draggedId || !target || !event) return null;
+  if (dragKind === 'category') {
+    const targetCard = target.closest?.('[data-ml-grid-card]');
+    if (!targetCard || targetCard.dataset.categoryId === draggedId) return null;
+    const targetParent = targetCard.parentElement?.closest?.('[data-ml-grid-panel]')?.dataset.categoryId || '';
+    const sourceParent = _mlGridDragSourceParent || '';
+    if (!targetParent || targetParent !== sourceParent) return null;
+    return {
+      kind: 'category',
+      draggedId,
+      targetId: targetCard.dataset.categoryId,
+      parentId: targetParent,
+      position: _mlOrderPositionFromEvent(event, targetCard),
+      siblingIds: _mlCategorySiblingIds(targetCard.parentElement),
+      marker: targetCard,
+    };
+  }
+  if (dragKind === 'mapping') {
+    const row = _mlMappingRowElement(target);
+    if (!row) return null;
+    const targetId = _mlMappingIdForRow(row);
+    if (!targetId || targetId === draggedId) return null;
+    const source = _manualLinkCategoryItems.find(item => item.mapping_id === draggedId);
+    const targetItem = _manualLinkCategoryItems.find(item => item.mapping_id === targetId);
+    if (!source || !targetItem) return null;
+    const parentMappingId = _mlVisibleParentMappingIdForRow(row);
+    const sourceParent = _mlGridDragSourceMappingParent || source.parent_mapping_id || null;
+    if (targetItem.category_id !== source.category_id) return null;
+    if ((parentMappingId || null) !== sourceParent) return null;
+    return {
+      kind: 'mapping',
+      draggedId,
+      targetId,
+      categoryId: targetItem.category_id,
+      parentMappingId,
+      position: _mlOrderPositionFromEvent(event, row),
+      siblingIds: _mlMappingSiblingIds(row.parentElement),
+      marker: row,
+    };
+  }
+  return null;
+}
+
+function _mlMarkDragOrderIntent(intent) {
+  if (!intent?.marker) return;
+  intent.marker.classList.add(intent.position === 'before' ? 'is-order-before' : 'is-order-after');
+}
+
 function _mlCategoryNestCandidateId(sourceCategoryId, targetCard) {
   const targetCategoryId = targetCard?.dataset.categoryId || '';
   if (!sourceCategoryId || !targetCategoryId || sourceCategoryId === targetCategoryId) return '';
@@ -1832,6 +1995,7 @@ async function _mlPlacePickedCategory(event) {
     _mlGridDragId = null;
     _mlGridDragKind = null;
     _mlGridDragSourceParent = null;
+    _mlGridDragSourceMappingParent = null;
     _mlGridDragOffsetX = null;
     _mlGridDragOffsetY = null;
     _mlClearCategoryNestIntent();
@@ -2216,6 +2380,11 @@ async function _mlHandleCategoryDrop(draggedId, targetCard, dropZone, board, eve
     else await _mlMoveCategory(draggedId, nestTargetId);
     return;
   }
+  const orderIntent = _mlGridInteractionFsm.dragOrderIntentForDrop();
+  if (orderIntent?.kind === 'category' && orderIntent.draggedId === draggedId) {
+    await _mlApplyCategoryOrderIntent(orderIntent, { action });
+    return;
+  }
   if (board && sourceParent === '') {
     const cell = _mlGridDropCellForEvent(board, placementEvent);
     if (cell) {
@@ -2460,6 +2629,9 @@ function _mlPromoteTouchCategoryDrag() {
   _mlGridDragSourceParent = state.dragKind === 'mapping'
     ? (state.sourceParent || '')
     : (state.card?.parentElement?.closest('[data-ml-grid-panel]')?.dataset.categoryId || '');
+  _mlGridDragSourceMappingParent = state.dragKind === 'mapping'
+    ? (_mlVisibleParentMappingIdForRow(state.element?.closest?.('[data-ml-grid-mapping-row]')) || null)
+    : null;
   state.sourceParent = _mlGridDragSourceParent;
   _mlGridDragOffsetX = state.offsetX;
   _mlGridDragOffsetY = state.offsetY;
@@ -2498,12 +2670,16 @@ function _mlMoveTouchCategoryDrag(event) {
   const dropZone = target?.closest?.('[data-ml-drop-zone]');
   const board = target?.closest?.('.ml-grid-board') || document.querySelector('#ml-grid-body .ml-grid-board');
   const targetCategoryId = _mlDropTargetCategoryId(targetCard, dropZone);
+  const orderIntent = _mlResolveDragOrderIntent(_mlGridInteractionActive.dragKind, _mlGridInteractionActive.id, target, event);
+  _mlGridInteractionFsm.updateDragOrderIntent(orderIntent);
   if (_mlGridInteractionActive.dragKind === 'category') {
-    if (board) _mlShowGridDropTarget(board, event);
+    if (orderIntent) _mlClearGridDropTarget();
+    else if (board) _mlShowGridDropTarget(board, event);
     else _mlClearGridDropTarget();
     _mlUpdateCategoryNestIntent(_mlGridInteractionActive.categoryId, targetCard);
   } else if (_mlGridInteractionActive.dragKind === 'mapping' && board && !targetCategoryId) {
-    _mlShowGridDropTarget(board, event);
+    if (orderIntent) _mlClearGridDropTarget();
+    else _mlShowGridDropTarget(board, event);
     _mlClearCategoryNestIntent();
   } else {
     _mlClearCategoryNestIntent();
@@ -2571,6 +2747,7 @@ async function _mlFinishTouchCategoryDrag(event) {
     _mlGridDragId = null;
     _mlGridDragKind = null;
     _mlGridDragSourceParent = null;
+    _mlGridDragSourceMappingParent = null;
     _mlGridDragOffsetX = null;
     _mlGridDragOffsetY = null;
     _mlClearCategoryNestIntent();
@@ -2582,6 +2759,7 @@ async function _mlFinishTouchCategoryDrag(event) {
     _mlGridDragId = null;
     _mlGridDragKind = null;
     _mlGridDragSourceParent = null;
+    _mlGridDragSourceMappingParent = null;
     _mlGridDragOffsetX = null;
     _mlGridDragOffsetY = null;
     _mlClearCategoryNestIntent();
@@ -2597,6 +2775,11 @@ async function _mlFinishTouchCategoryDrag(event) {
   const action = _mlGridInteractionFsm.dragAction(event);
   try {
     if (state.dragKind === 'mapping') {
+      const orderIntent = _mlGridInteractionFsm.dragOrderIntentForDrop();
+      if (orderIntent?.kind === 'mapping' && orderIntent.draggedId === state.mappingId) {
+        await _mlApplyMappingOrderIntent(orderIntent, { action });
+        return;
+      }
       const targetCategoryId = _mlDropTargetCategoryId(targetCard, dropZone);
       const rootCell = board && !targetCategoryId ? _mlGridDropCellForEvent(board, { clientX: x, clientY: y }) : null;
       await _mlPromoteOrMoveMapping(state.mappingId, targetCategoryId || null, {
@@ -2625,6 +2808,7 @@ async function _mlFinishTouchCategoryDrag(event) {
     _mlGridDragId = null;
     _mlGridDragKind = null;
     _mlGridDragSourceParent = null;
+    _mlGridDragSourceMappingParent = null;
     _mlGridDragOffsetX = null;
     _mlGridDragOffsetY = null;
     _mlClearCategoryNestIntent();
@@ -3182,26 +3366,36 @@ async function _mlRemoveCategoryItem(mappingId) {
   if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
 }
 
-async function _mlMoveCategoryItem(mappingId, categoryId, parentMappingId = null) {
+async function _mlPatchCategoryItem(mappingId, patch) {
+  const r = await apiFetch(`/api/v1/manual-link-categories/items/${encodeURIComponent(mappingId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
+  return r.json();
+}
+
+async function _mlMoveCategoryItem(mappingId, categoryId, parentMappingId = null, { reload = true } = {}) {
   const source = _manualLinkCategoryItems.find(item => item.mapping_id === mappingId);
   if (!source) throw new Error(`mapping ${mappingId} not found`);
   const itemsByCategory = _mlItemsByCategory();
   const tree = _mlLinkTreeForCategory(source.category_id, itemsByCategory);
   async function moveOne(item, nextParentMappingId) {
-    const r = await apiFetch(`/api/v1/manual-link-categories/items/${encodeURIComponent(item.mapping_id)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ category_id: categoryId, parent_mapping_id: nextParentMappingId }),
+    await _mlPatchCategoryItem(item.mapping_id, {
+      category_id: categoryId,
+      parent_mapping_id: nextParentMappingId,
     });
-    if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
     const children = tree.sortItems(tree.childrenByParent.get(item.mapping_id) || []);
     for (const child of children) {
       await moveOne(child, item.mapping_id);
     }
   }
   await moveOne(source, parentMappingId);
+  if (!reload) return source;
   await loadManualLinks();
   if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+  return source;
 }
 
 async function _mlCopyCategoryItem(mappingId, categoryId, parentMappingId = null, { reload = true } = {}) {
@@ -3230,8 +3424,30 @@ async function _mlCopyCategoryItem(mappingId, categoryId, parentMappingId = null
     }
     return copied;
   }
-  await copyOne(source, categoryId, parentMappingId);
-  if (!reload) return;
+  const copied = await copyOne(source, categoryId, parentMappingId);
+  if (!reload) return copied;
+  await loadManualLinks();
+  if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+  return copied;
+}
+
+async function _mlPersistMappingOrder(orderedIds) {
+  for (let index = 0; index < orderedIds.length; index += 1) {
+    await _mlPatchCategoryItem(orderedIds[index], { sort_order: index });
+  }
+}
+
+async function _mlApplyMappingOrderIntent(intent, { action = 'move' } = {}) {
+  const copy = action === 'copy';
+  let mappingId = intent.draggedId;
+  if (copy) {
+    const copied = await _mlCopyCategoryItem(intent.draggedId, intent.categoryId, intent.parentMappingId || null, { reload: false });
+    mappingId = copied.mapping_id;
+  } else {
+    await _mlMoveCategoryItem(intent.draggedId, intent.categoryId, intent.parentMappingId || null, { reload: false });
+  }
+  const orderedIds = _mlReorderedIds(intent.siblingIds, mappingId, intent.targetId, intent.position);
+  await _mlPersistMappingOrder(orderedIds);
   await loadManualLinks();
   if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
 }
@@ -3520,6 +3736,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const mapping = _manualLinkCategoryItems.find(item => item.mapping_id === _mlGridDragId);
       _mlGridDragKind = 'mapping';
       _mlGridDragSourceParent = mapping?.category_id || '';
+      _mlGridDragSourceMappingParent = _mlVisibleParentMappingIdForRow(mappingDrag.closest('[data-ml-grid-mapping-row]')) || mapping?.parent_mapping_id || null;
       _mlGridDragOffsetX = null;
       _mlGridDragOffsetY = null;
       _mlSuppressLeafClickBriefly();
@@ -3559,12 +3776,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const dropZone = e.target.closest('[data-ml-drop-zone]');
     const board = e.target.closest('.ml-grid-board') || document.querySelector('#ml-grid-body .ml-grid-board');
     const targetCategoryId = _mlDropTargetCategoryId(targetCard, dropZone);
+    const orderIntent = _mlResolveDragOrderIntent(_mlGridDragKind, _mlGridDragId, e.target, e);
+    _mlGridInteractionFsm.updateDragOrderIntent(orderIntent);
     if (_mlGridDragKind === 'category') {
-      if (board) _mlShowGridDropTarget(board, e);
+      if (orderIntent) _mlClearGridDropTarget();
+      else if (board) _mlShowGridDropTarget(board, e);
       else _mlClearGridDropTarget();
       _mlUpdateCategoryNestIntent(_mlGridDragId, targetCard);
     } else if (_mlGridDragKind === 'mapping' && board && !targetCategoryId) {
-      _mlShowGridDropTarget(board, e);
+      if (orderIntent) _mlClearGridDropTarget();
+      else _mlShowGridDropTarget(board, e);
       _mlClearCategoryNestIntent();
     } else {
       _mlClearCategoryNestIntent();
@@ -3593,6 +3814,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const action = _mlGridInteractionFsm.dragAction(e);
     try {
       if (_mlGridDragKind === 'mapping') {
+        const orderIntent = _mlGridInteractionFsm.dragOrderIntentForDrop();
+        if (orderIntent?.kind === 'mapping' && orderIntent.draggedId === draggedId) {
+          await _mlApplyMappingOrderIntent(orderIntent, { action });
+          _mlGridDragId = null;
+          _mlGridDragKind = null;
+          _mlGridDragSourceParent = null;
+          _mlGridDragSourceMappingParent = null;
+          _mlGridDragOffsetX = null;
+          _mlGridDragOffsetY = null;
+          _mlGridInteractionFsm.endNativeDrag();
+          _mlClearGridDropTarget();
+          return;
+        }
         const targetCategoryId = _mlDropTargetCategoryId(targetCard, dropZone);
         const rootCell = board && !targetCategoryId ? _mlGridDropCellForEvent(board, e) : null;
         await _mlPromoteOrMoveMapping(draggedId, targetCategoryId || null, {
@@ -3602,6 +3836,7 @@ document.addEventListener('DOMContentLoaded', () => {
         _mlGridDragId = null;
         _mlGridDragKind = null;
         _mlGridDragSourceParent = null;
+        _mlGridDragSourceMappingParent = null;
         _mlGridDragOffsetX = null;
         _mlGridDragOffsetY = null;
         _mlGridInteractionFsm.endNativeDrag();
@@ -3618,6 +3853,7 @@ document.addEventListener('DOMContentLoaded', () => {
     _mlGridDragId = null;
     _mlGridDragKind = null;
     _mlGridDragSourceParent = null;
+    _mlGridDragSourceMappingParent = null;
     _mlGridDragOffsetX = null;
     _mlGridDragOffsetY = null;
     _mlGridInteractionFsm.endNativeDrag();
@@ -3627,6 +3863,7 @@ document.addEventListener('DOMContentLoaded', () => {
     _mlGridDragId = null;
     _mlGridDragKind = null;
     _mlGridDragSourceParent = null;
+    _mlGridDragSourceMappingParent = null;
     _mlGridDragOffsetX = null;
     _mlGridDragOffsetY = null;
     _mlGridInteractionFsm.endNativeDrag();

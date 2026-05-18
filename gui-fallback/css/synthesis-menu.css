@@ -378,6 +378,19 @@
   box-shadow: 0 0 0 2px rgba(72, 211, 159, 0.38), 0 0 26px rgba(72, 211, 159, 0.18);
 }
 
+.ml-grid-card.is-order-before,
+.ml-grid-card.is-order-after {
+  border-color: rgba(var(--glyph-gold-rgb, 200, 168, 75), 0.88);
+}
+
+.ml-grid-card.is-order-before {
+  box-shadow: inset 0 3px 0 var(--glyph-gold, #c8a84b), 0 0 18px rgba(var(--glyph-gold-rgb, 200, 168, 75), 0.20);
+}
+
+.ml-grid-card.is-order-after {
+  box-shadow: inset 0 -3px 0 var(--glyph-gold, #c8a84b), 0 0 18px rgba(var(--glyph-gold-rgb, 200, 168, 75), 0.20);
+}
+
 .ml-grid-card.is-touch-dragging {
   opacity: 0.62;
   pointer-events: none;
@@ -389,6 +402,16 @@
 .ml-grid-link-branch.is-touch-dragging > summary {
   opacity: 0.58;
   pointer-events: none;
+}
+
+.ml-grid-link.is-order-before,
+.ml-grid-link-branch.is-order-before > summary {
+  box-shadow: inset 0 2px 0 var(--glyph-gold, #c8a84b);
+}
+
+.ml-grid-link.is-order-after,
+.ml-grid-link-branch.is-order-after > summary {
+  box-shadow: inset 0 -2px 0 var(--glyph-gold, #c8a84b);
 }
 
 .ml-grid-card.is-touch-picked {
