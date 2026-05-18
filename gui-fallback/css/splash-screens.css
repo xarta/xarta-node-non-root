@@ -10,6 +10,7 @@
   place-items: center;
   min-height: calc(var(--bp-vh, 1vh) * 100 - 190px);
   overflow: hidden;
+  touch-action: none;
   background:
     linear-gradient(90deg, rgba(255, 231, 18, 0.06) 0 1px, transparent 1px 18px),
     linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0 1px, transparent 1px 11px),
@@ -23,6 +24,7 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
+  touch-action: none;
 }
 
 .dp-accessible-title {
