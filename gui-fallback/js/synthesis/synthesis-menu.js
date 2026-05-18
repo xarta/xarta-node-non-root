@@ -73,7 +73,7 @@ const SynthesisMenuConfig = createHubMenu({
         { id: 'ml-fn-autofit',  label: 'Auto Fit Widths', icon: 'icons/ui/table-columns-blue.svg', fn: 'ml.autoFit', activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 8 },
         { id: 'ml-fn-context',  label: 'Layout Context', icon: HIEROGLYPHS.eyeOfHorus, fn: 'ml.context', activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 9 },
         { id: 'ml-fn-grp-none', label: 'Group: None',  icon: 'icons/ui/minus-box-blue.svg',    fn: 'ml.grpNone',  activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 8 },
-        { id: 'ml-fn-grp-grp',  label: 'Group: Group', icon: 'icons/ui/group-folder-blue.svg', fn: 'ml.grpGroup', activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 9 },
+        { id: 'ml-fn-grp-grp',  label: 'Group: Placement', icon: 'icons/ui/group-folder-blue.svg', fn: 'ml.grpGroup', activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 9 },
         { id: 'ml-fn-grp-host', label: 'Group: Host',  icon: 'icons/ui/monitor-blue.svg',      fn: 'ml.grpHost',  activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 10 },
     ],
 });

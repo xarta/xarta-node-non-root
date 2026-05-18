@@ -102,9 +102,9 @@ const _ML_TABLE_FIELD_META = {
     render: lnk => `<td style="max-width:200px">${_mlAddressParts(lnk).join(' ') || '<span style="color:var(--text-dim)">—</span>'}</td>`,
   },
   group_name: {
-    label: 'Group',
+    label: 'Placement',
     sortKey: 'group',
-    render: lnk => `<td>${lnk.group_name ? esc(lnk.group_name) : '<span style="color:var(--text-dim)">—</span>'}</td>`,
+    render: lnk => `<td>${_mlLinkPlacementGroupLabel(lnk) ? esc(_mlLinkPlacementGroupLabel(lnk)) : '<span style="color:var(--text-dim)">—</span>'}</td>`,
   },
   sort_order: {
     label: 'Order',
@@ -171,7 +171,7 @@ function _mlColumnSeed(col) {
     case 'addresses':
       return { sqlite_column: null, data_type: 'TEXT', sample_max_length: 36, min_width_px: 140, max_width_px: 720 };
     case 'group_name':
-      return { sqlite_column: 'group_name', data_type: 'TEXT', sample_max_length: 24, min_width_px: 100, max_width_px: 360 };
+      return { sqlite_column: null, data_type: 'TEXT', sample_max_length: 36, min_width_px: 100, max_width_px: 520 };
     case 'sort_order':
       return { sqlite_column: 'sort_order', data_type: 'INTEGER', sample_max_length: 4, min_width_px: 64, max_width_px: 120 };
     case 'host':
@@ -255,7 +255,7 @@ function _mlOpenRowActions(linkId) {
   if (!link) return;
   TableRowActions.open({
     title: link.label || link.link_id.slice(0, 8),
-    subtitle: link.group_name || '',
+    subtitle: _mlLinkPlacementGroupLabel(link) || '',
     actions: [
       {
         label: 'Edit link',
@@ -523,6 +523,29 @@ async function loadManualLinkCategories() {
   }
 }
 
+function _mlLinkPlacementGroups(lnk) {
+  const linkId = typeof lnk === 'string' ? lnk : lnk?.link_id;
+  if (!linkId) return [];
+  const seen = new Set();
+  const groups = [];
+  _manualLinkCategoryItems.forEach(item => {
+    if (item.link_id !== linkId) return;
+    const label = _mlCategoryPath(item.category_id);
+    if (!label || seen.has(label)) return;
+    seen.add(label);
+    groups.push(label);
+  });
+  return groups.sort((a, b) => a.localeCompare(b));
+}
+
+function _mlLinkPlacementGroupLabel(lnk) {
+  return _mlLinkPlacementGroups(lnk).join(', ');
+}
+
+function _mlLinkPrimaryPlacementGroup(lnk) {
+  return _mlLinkPlacementGroups(lnk)[0] || '';
+}
+
 function renderManualLinksTable() {
   const view = _ensureManualLinksTableView();
 
@@ -534,7 +557,7 @@ function renderManualLinksTable() {
   let rows = q
     ? _manualLinks.filter(l => [
         l.label, l.vlan_ip, l.vlan_uri, l.tailnet_ip, l.tailnet_uri,
-        l.group_name, l.pve_host, l.vm_name, l.lxc_name, l.location, l.notes
+        _mlLinkPlacementGroupLabel(l), l.pve_host, l.vm_name, l.lxc_name, l.location, l.notes
       ].some(v => v && v.toLowerCase().includes(q)))
     : [..._manualLinks];
 
@@ -600,7 +623,7 @@ function _mlGetSortVal(lnk, col) {
   switch (col) {
     case 'label': return (lnk.label || '').toLowerCase();
     case 'addr':  return (lnk.vlan_uri || lnk.vlan_ip || lnk.tailnet_uri || lnk.tailnet_ip || '').toLowerCase();
-    case 'group': return (lnk.group_name || '').toLowerCase();
+    case 'group': return _mlLinkPrimaryPlacementGroup(lnk).toLowerCase();
     case 'order': return lnk.sort_order ?? 0;
     case 'host':  return (lnk.pve_host || lnk.vm_name || lnk.lxc_name || lnk.location || '').toLowerCase();
     case 'notes': return (lnk.notes || '').toLowerCase();
@@ -609,7 +632,7 @@ function _mlGetSortVal(lnk, col) {
 }
 
 function _mlGroupKey(lnk) {
-  if (_mlGroupBy === 'group') return lnk.group_name || '(no group)';
+  if (_mlGroupBy === 'group') return _mlLinkPlacementGroupLabel(lnk) || '(no placement)';
   if (_mlGroupBy === 'host')  return lnk.pve_host || lnk.vm_name || lnk.lxc_name || lnk.location || '(no host)';
   return '';
 }
@@ -636,9 +659,10 @@ function renderManualLinksRendered() {
   const groups = {};
   const ungrouped = [];
   topLevel.forEach(l => {
-    if (l.group_name) {
-      if (!groups[l.group_name]) groups[l.group_name] = [];
-      groups[l.group_name].push(l);
+    const placementGroup = _mlLinkPlacementGroupLabel(l);
+    if (placementGroup) {
+      if (!groups[placementGroup]) groups[placementGroup] = [];
+      groups[placementGroup].push(l);
     } else {
       ungrouped.push(l);
     }
@@ -771,7 +795,8 @@ function renderManualLinksTree() {
   function renderNode(lnk) {
     const children = sortLinks(childrenByParent[lnk.link_id] || []);
     const title = lnk.label || lnk.link_id.slice(0, 8);
-    const subtitle = lnk.group_name ? `<span class="ml-tree-subtitle">${esc(lnk.group_name)}</span>` : '';
+    const placementGroup = _mlLinkPlacementGroupLabel(lnk);
+    const subtitle = placementGroup ? `<span class="ml-tree-subtitle">${esc(placementGroup)}</span>` : '';
     const notes = lnk.notes ? `<div class="ml-tree-notes">${esc(lnk.notes)}</div>` : '';
     return `<li>
       <div class="ml-tree-row">
@@ -803,8 +828,8 @@ function renderManualLinksPretext() {
   }
 
   const records = [..._manualLinks].sort((a, b) => {
-    const ag = (a.group_name || '').toLowerCase();
-    const bg = (b.group_name || '').toLowerCase();
+    const ag = _mlLinkPrimaryPlacementGroup(a).toLowerCase();
+    const bg = _mlLinkPrimaryPlacementGroup(b).toLowerCase();
     if (ag !== bg) return ag.localeCompare(bg);
     return (a.sort_order - b.sort_order) || (a.label || '').localeCompare(b.label || '');
   });
@@ -818,7 +843,7 @@ function renderManualLinksPretext() {
     const chip = primary
       ? `<a class="ml-pretext-route" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(primary)}</a>`
       : '<span class="ml-pretext-route ml-pretext-route--dim">No route</span>';
-    const meta = [lnk.group_name || 'no-group', host].join(' · ');
+    const meta = [_mlLinkPlacementGroupLabel(lnk) || 'no placement', host].join(' · ');
     const notes = lnk.notes ? `<p class="ml-pretext-notes">${esc(lnk.notes)}</p>` : '';
     const trail = secondary ? `<p class="ml-pretext-trail">${esc(secondary)}</p>` : '';
     return `<article class="ml-pretext-card">
@@ -3231,7 +3256,7 @@ function _mlOpenLinkDetail(linkId, mappingId = null) {
     ['Tailnet URI', lnk.tailnet_uri],
     ['Tailnet IP', lnk.tailnet_ip],
   ].filter(([, value]) => value);
-  body.innerHTML = `
+	  body.innerHTML = `
     <div class="ml-detail-routes">
       ${routes.map(([label, value]) => `<a class="ml-detail-route" href="${esc(_mlHref(value))}" target="_blank" rel="noopener noreferrer"><span>${esc(label)}</span><strong>${esc(value)}</strong></a>`).join('') || '<p class="ml-page-empty">No routes recorded.</p>'}
     </div>
@@ -3279,9 +3304,9 @@ function _mlOpenLinkDetail(linkId, mappingId = null) {
       <div class="ml-detail-actions">
         <button class="hub-action-btn" type="button" data-ml-detail-save>Save</button>
       </div>
-    </div>
-    <dl class="ml-detail-meta">
-      ${lnk.group_name ? `<dt>Group</dt><dd>${esc(lnk.group_name)}</dd>` : ''}
+	    </div>
+	    <dl class="ml-detail-meta">
+	      ${_mlLinkPlacementGroupLabel(lnk) ? `<dt>Placement</dt><dd>${esc(_mlLinkPlacementGroupLabel(lnk))}</dd>` : ''}
       ${lnk.pve_host ? `<dt>PVE host</dt><dd>${esc(lnk.pve_host)}</dd>` : ''}
       ${lnk.vm_id || lnk.vm_name ? `<dt>VM</dt><dd>${esc([lnk.vm_id, lnk.vm_name].filter(Boolean).join(' / '))}</dd>` : ''}
       ${lnk.lxc_id || lnk.lxc_name ? `<dt>LXC</dt><dd>${esc([lnk.lxc_id, lnk.lxc_name].filter(Boolean).join(' / '))}</dd>` : ''}
@@ -3952,7 +3977,7 @@ function openManualLinkModal(linkId) {
 
   const defaults = {
     link_id: '', vlan_ip: '', vlan_uri: '', tailnet_ip: '', tailnet_uri: '',
-    label: '', icon: '', group_name: '', parent_id: '', sort_order: 0,
+    label: '', icon: '', parent_id: '', sort_order: 0,
     pve_host: '', is_internet: 0, vm_id: '', vm_name: '', lxc_id: '', lxc_name: '', notes: '',
   };
   const lnk = linkId ? (_manualLinks.find(l => l.link_id === linkId) || defaults) : defaults;
@@ -3960,7 +3985,7 @@ function openManualLinkModal(linkId) {
   const parentPanel = document.getElementById('ml-parent-picker-panel');
   if (parentPanel) parentPanel.innerHTML = _mlParentPickerHtml(lnk.parent_id || '', linkId);
 
-  const fields = ['vlan_ip','vlan_uri','tailnet_ip','tailnet_uri','label','icon','group_name','sort_order','pve_host','vm_id','vm_name','lxc_id','lxc_name','location','notes'];
+  const fields = ['vlan_ip','vlan_uri','tailnet_ip','tailnet_uri','label','icon','sort_order','pve_host','vm_id','vm_name','lxc_id','lxc_name','location','notes'];
   fields.forEach(f => {
     const el = document.getElementById(`ml-${f.replace(/_/g,'-')}`);
     if (el) el.value = lnk[f] !== null && lnk[f] !== undefined ? lnk[f] : '';
@@ -3982,7 +4007,6 @@ async function submitManualLink() {
     tailnet_uri: get('ml-tailnet-uri') || null,
     label:       get('ml-label')       || null,
     icon:        get('ml-icon')        || null,
-    group_name:  get('ml-group-name')  || null,
     parent_id:   get('ml-parent-id')   || null,
     sort_order:  parseInt(get('ml-sort-order') || '0', 10),
     pve_host:    get('ml-pve-host')    || null,
