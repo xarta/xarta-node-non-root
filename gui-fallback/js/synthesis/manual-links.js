@@ -3379,12 +3379,16 @@ function _mlCreateStackedCategoryManageModal() {
       <span class="hub-dialog-badge">MANAGE</span>
       <span class="hub-dialog-title-text" data-ml-category-manage-title>Category</span>
     </h2>
-    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Back">&#8592; Back</button>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body" data-ml-category-manage-body></div>`;
-  modal.addEventListener('close', () => modal.remove(), { once: true });
+  modal.addEventListener('close', () => {
+    modal.remove();
+    const open = _mlCategoryManageDialogs().filter(dlg => dlg.open && dlg.dataset.mlManagingCategoryId);
+    _mlManagingCategoryId = open.length ? open[open.length - 1].dataset.mlManagingCategoryId : null;
+  }, { once: true });
   document.body.appendChild(modal);
-  if (typeof HubModal !== 'undefined') HubModal.init(modal);
+  if (typeof HubModal !== 'undefined') HubModal.init(document.body);
   return modal;
 }
 
