@@ -25,6 +25,7 @@ let _mlGridInteractionTouchFallbackId = null;
 let _mlPickedCategory = null;
 let _mlCurrentGridLayoutBucket = null;
 let _mlManagingCategoryId = null;
+let _mlCategoryManageStackSeq = 0;
 let _mlActivePageCategoryId = null;
 let _mlShadeViewportObserver = null;
 const _ML_DEFAULT_PAGE_KEY = 'blueprintsDefaultManualLinksPage';
@@ -1088,10 +1089,21 @@ function _mlCategoryPath(categoryId) {
   let current = byId[categoryId];
   while (current && !seen.has(current.category_id)) {
     seen.add(current.category_id);
-    parts.unshift(current.label);
+    parts.unshift(_mlCategoryDisplayLabel(current));
     current = current.parent_category_id ? byId[current.parent_category_id] : null;
   }
   return parts.join(' / ');
+}
+
+function _mlLabelMentionsPageCategory(label) {
+  return /\bpage[\s-]*category\b/i.test(String(label || '')) || /\[page-category\]/i.test(String(label || ''));
+}
+
+function _mlCategoryDisplayLabel(category, { preferPageLabel = false } = {}) {
+  if (!category) return '';
+  const base = (preferPageLabel ? (category.page_label || category.label) : category.label) || category.category_id?.slice(0, 8) || '';
+  if (!_mlCategoryIsPage(category) || _mlLabelMentionsPageCategory(base)) return base;
+  return `${base} [page-category]`;
 }
 
 function _mlCategoryIcon(category) {
@@ -1164,7 +1176,7 @@ function _mlUniqueCategoryLabel(label, parentCategoryId, categoryId) {
 async function _mlUpdateCategory(categoryId, patch, { reopenManage = false } = {}) {
   await _mlPatchCategory(categoryId, patch);
   await loadManualLinks();
-  if (reopenManage && _mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+  if (reopenManage) _mlRefreshManagingCategoryViews();
 }
 
 async function _mlPatchCategory(categoryId, patch) {
@@ -1357,7 +1369,7 @@ function _mlCategoryDestinationPickerHtml(sourceCategoryId) {
   const maps = _mlCategoryMaps();
   const renderCategory = (cat, depth) => {
     if (depth > 12) return '';
-    const label = cat.label || cat.category_id.slice(0, 8);
+    const label = _mlCategoryDisplayLabel(cat);
     const disabled = cat.category_id === sourceCategoryId || _mlCategoryDescendsFrom(cat.category_id, sourceCategoryId)
       ? ' disabled aria-disabled="true"'
       : '';
@@ -1395,7 +1407,7 @@ function _mlPageDestinationPickerHtml(sourceCategoryId) {
       return (a.page_label || a.label || '').localeCompare(b.page_label || b.label || '');
     });
   const choices = pages.map(page => {
-    const label = page.page_label || page.label || page.category_id.slice(0, 8);
+    const label = _mlCategoryDisplayLabel(page, { preferPageLabel: true });
     const disabled = page.category_id === sourceCategoryId || _mlCategoryDescendsFrom(page.category_id, sourceCategoryId)
       ? ' disabled aria-disabled="true"'
       : '';
@@ -1416,7 +1428,7 @@ function _mlDestinationPickerHtml(mappingId) {
     if (!item?.link || depth > 12) return '';
     const children = tree.sortItems(tree.childrenByParent.get(item.mapping_id) || []);
     const label = labelForItem(item);
-    const path = `${_mlCategoryPath(category.category_id) || category.label} / ${label}`;
+    const path = `${_mlCategoryPath(category.category_id) || _mlCategoryDisplayLabel(category)} / ${label}`;
     const disabled = item.mapping_id === mappingId ? ' disabled aria-disabled="true"' : '';
     const choice = `<button class="ml-dest-choice" type="button" data-ml-dest-choice="${esc(category.category_id)}" data-ml-dest-parent="${esc(item.mapping_id)}" data-ml-dest-label="${esc(path)}"${disabled}>
       ${_mlIconHtml(_mlLinkIcon(item.link), 'ml-grid-icon ml-grid-icon--small')}<span>Under ${esc(label)}</span>
@@ -1433,7 +1445,7 @@ function _mlDestinationPickerHtml(mappingId) {
   const renderCategory = (cat, depth) => {
     if (depth > 12) return '';
     const children = _mlSortCategories(maps.byParent[cat.category_id] || []);
-    const label = cat.label || cat.category_id.slice(0, 8);
+    const label = _mlCategoryDisplayLabel(cat);
     const tree = _mlLinkTreeForCategory(cat.category_id, itemsByCategory);
     const choice = `<button class="ml-dest-choice" type="button" data-ml-dest-choice="${esc(cat.category_id)}" data-ml-dest-parent="" data-ml-dest-label="${esc(_mlCategoryPath(cat.category_id) || label)}">
       ${_mlIconHtml(_mlCategoryIcon(cat), 'ml-grid-icon ml-grid-icon--small')}<span>Category root</span>
@@ -3355,13 +3367,72 @@ async function _mlSaveLinkDetail(editor) {
   }
 }
 
-function _mlOpenCategoryManage(categoryId) {
+function _mlCreateStackedCategoryManageModal() {
+  _mlCategoryManageStackSeq += 1;
+  const modal = document.createElement('dialog');
+  modal.className = 'hub-modal hub-dialog ml-full-modal ml-category-manage-stack';
+  modal.dataset.tone = 'info';
+  modal.dataset.mlCategoryManageDialog = 'true';
+  modal.dataset.mlCategoryManageStack = String(_mlCategoryManageStackSeq);
+  modal.innerHTML = `<div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">MANAGE</span>
+      <span class="hub-dialog-title-text" data-ml-category-manage-title>Category</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Back">&#8592; Back</button>
+  </div>
+  <div class="hub-modal-body" data-ml-category-manage-body></div>`;
+  modal.addEventListener('close', () => modal.remove(), { once: true });
+  document.body.appendChild(modal);
+  if (typeof HubModal !== 'undefined') HubModal.init(modal);
+  return modal;
+}
+
+function _mlCategoryManageDialogs() {
+  return Array.from(document.querySelectorAll('dialog[data-ml-category-manage-dialog], #ml-category-manage-modal'))
+    .filter((modal, index, list) => modal && list.indexOf(modal) === index);
+}
+
+function _mlRefreshManagingCategoryViews() {
+  const openDialogs = _mlCategoryManageDialogs().filter(modal => modal.open && modal.dataset.mlManagingCategoryId);
+  if (!openDialogs.length) {
+    if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+    return;
+  }
+  for (const modal of openDialogs) {
+    const categoryId = modal.dataset.mlManagingCategoryId;
+    if (_manualLinkCategories.some(cat => cat.category_id === categoryId)) {
+      _mlOpenCategoryManage(categoryId, { modal });
+    } else if (typeof HubModal !== 'undefined') {
+      HubModal.close(modal);
+    }
+  }
+}
+
+function _mlCloseCategoryManageFor(categoryId) {
+  const dialogs = _mlCategoryManageDialogs()
+    .filter(modal => modal.open && modal.dataset.mlManagingCategoryId === categoryId);
+  const modal = dialogs[dialogs.length - 1] || document.getElementById('ml-category-manage-modal');
+  if (typeof HubModal !== 'undefined') HubModal.close(modal);
+}
+
+function _mlCloseCategoryManageDialogs() {
+  if (typeof HubModal === 'undefined') return;
+  _mlCategoryManageDialogs()
+    .filter(modal => modal.open)
+    .forEach(modal => HubModal.close(modal));
+}
+
+function _mlOpenCategoryManage(categoryId, { stack = false, modal: suppliedModal = null } = {}) {
   _mlManagingCategoryId = categoryId;
   const category = _manualLinkCategories.find(cat => cat.category_id === categoryId);
-  const modal = document.getElementById('ml-category-manage-modal');
-  const title = document.getElementById('ml-category-manage-title');
-  const body = document.getElementById('ml-category-manage-body');
+  const modal = suppliedModal || (stack ? _mlCreateStackedCategoryManageModal() : document.getElementById('ml-category-manage-modal'));
+  const title = modal?.querySelector('[data-ml-category-manage-title], #ml-category-manage-title');
+  const body = modal?.querySelector('[data-ml-category-manage-body], #ml-category-manage-body');
   if (!category || !modal || !title || !body) return;
+  modal.dataset.mlCategoryManageDialog = 'true';
+  modal.dataset.mlManagingCategoryId = categoryId;
+  body.dataset.mlCategoryManageBody = 'true';
   title.textContent = category.label;
   const itemsByCategory = _mlItemsByCategory();
   const maps = _mlCategoryMaps();
@@ -3369,23 +3440,27 @@ function _mlOpenCategoryManage(categoryId) {
   const renderCategoryRow = (cat, depth) => {
     const children = _mlSortCategories(maps.byParent[cat.category_id] || []);
     const currentParent = cat.parent_category_id ? (_mlCategoryPath(cat.parent_category_id) || 'Top categories') : 'Top categories';
-    const controls = `<div class="ml-manage-row-actions">
+    const displayLabel = _mlCategoryDisplayLabel(cat);
+    const controls = `<div class="ml-manage-row-actions ml-manage-row-actions--category">
       <div class="ml-dest-control">
         <button class="hub-action-btn ml-dest-trigger" type="button" data-ml-category-dest-trigger="${esc(cat.category_id)}">
           <span data-ml-category-dest-label>${esc(currentParent)}</span>
         </button>
         ${_mlCategoryDestinationPickerHtml(cat.category_id)}
       </div>
-      <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-open-category-manage="${esc(cat.category_id)}" title="Manage category">MG</button>
+      <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-copy-category="${esc(cat.category_id)}" title="Copy category">CP</button>
       <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-move-category="${esc(cat.category_id)}" title="Move category">MV</button>
       <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-move-category-top="${esc(cat.category_id)}" title="Move to top categories">TOP</button>
+      <button class="ml-manage-scarab" type="button" data-ml-open-category-manage="${esc(cat.category_id)}" title="Manage category" aria-label="Manage ${esc(displayLabel)}">
+        ${_mlIconHtml(HIEROGLYPHS.kheper, 'ml-manage-scarab-icon')}
+      </button>
     </div>`;
     const rowInner = children.length
-      ? `<button class="ml-manage-twist" type="button" data-ml-category-manage-toggle="${esc(cat.category_id)}" aria-label="Toggle ${esc(cat.label)}"></button>`
+      ? `<button class="ml-manage-twist" type="button" data-ml-category-manage-toggle="${esc(cat.category_id)}" aria-label="Toggle ${esc(displayLabel)}"></button>`
       : '<span class="ml-manage-twist ml-manage-twist--empty" aria-hidden="true"></span>';
     const main = `<div class="ml-manage-row-main"${children.length ? ` data-ml-category-manage-toggle="${esc(cat.category_id)}"` : ''}>
         ${_mlIconHtml(_mlCategoryIcon(cat), 'ml-manage-row-icon')}
-        <strong>${esc(cat.label || cat.category_id.slice(0, 8))}</strong>
+        <strong>${esc(displayLabel)}</strong>
         <span>${esc(_mlCategoryIsPanel(cat) ? 'Panel category' : 'Category')}</span>
       </div>`;
     if (!children.length) {
@@ -3449,23 +3524,25 @@ function _mlOpenCategoryManage(categoryId) {
   const deleteImpact = _mlCategoryDeleteImpact(categoryId);
   const deleteTitle = deleteImpact.isEmpty ? 'Delete empty category' : 'Delete non-empty category';
   const pageTools = _mlCategoryIsPage(category)
-    ? `<div class="ml-manage-panel-tools ml-manage-page-tools">
+    ? `<div class="ml-manage-panel-tools ml-manage-page-tools ml-manage-page-tools--page">
         <label class="ml-manage-panel-field">
           <span>Menu label</span>
           <input type="text" data-ml-category-page-label="${esc(categoryId)}" value="${esc(category.page_label || category.label || '')}" />
         </label>
         <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-demote-page-category="${esc(categoryId)}">Demote</button>
       </div>`
-    : `<div class="ml-manage-panel-tools ml-manage-page-tools" data-ml-category-page-tools="${esc(categoryId)}">
+    : `<div class="ml-manage-panel-tools ml-manage-page-tools ml-manage-page-tools--promote" data-ml-category-page-tools="${esc(categoryId)}">
         <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-promote-page-category="${esc(categoryId)}">Promote to Page</button>
-        <div class="ml-dest-control">
-          <button class="hub-action-btn ml-dest-trigger" type="button" data-ml-page-dest-trigger="${esc(categoryId)}">
-            <span data-ml-page-dest-label>Existing page</span>
-          </button>
-          ${_mlPageDestinationPickerHtml(categoryId)}
+        <div class="ml-page-target-tools" aria-label="Copy or move category to an existing page">
+          <div class="ml-dest-control">
+            <button class="hub-action-btn ml-dest-trigger" type="button" data-ml-page-dest-trigger="${esc(categoryId)}">
+              <span data-ml-page-dest-label>Existing page</span>
+            </button>
+            ${_mlPageDestinationPickerHtml(categoryId)}
+          </div>
+          <button class="hub-action-btn ml-manage-mini-action ml-page-target-action" type="button" data-ml-copy-category-page="${esc(categoryId)}" title="Copy category to selected page">CP</button>
+          <button class="hub-action-btn ml-manage-mini-action ml-page-target-action" type="button" data-ml-move-category-page="${esc(categoryId)}" title="Move category to selected page">MV</button>
         </div>
-        <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-copy-category-page="${esc(categoryId)}" title="Copy category to selected page">CP</button>
-        <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-move-category-page="${esc(categoryId)}" title="Move category to selected page">MV</button>
       </div>`;
   body.innerHTML = `<div class="ml-manage-category-tools">
       ${_mlIconHtml(icon, 'ml-manage-category-icon')}
@@ -3475,41 +3552,44 @@ function _mlOpenCategoryManage(categoryId) {
       <button class="hub-action-btn ml-manage-mini-action ml-manage-delete-category${deleteImpact.isEmpty ? '' : ' ml-manage-delete-category--nonempty'}" type="button" data-ml-delete-category="${esc(categoryId)}" title="${esc(deleteTitle)}">Delete</button>
     </div>
     <div class="ml-manage-category-edit">
-      <label class="ml-manage-panel-field">
+      <label class="ml-manage-panel-field ml-manage-category-name-field">
         <span>Name</span>
         <input type="text" data-ml-category-label="${esc(categoryId)}" value="${esc(category.label || '')}" />
       </label>
-      <label class="ml-manage-panel-field ml-manage-panel-field--wide">
+      <label class="ml-manage-panel-field ml-manage-panel-field--wide ml-manage-category-notes-field">
         <span>Notes</span>
         <input type="text" data-ml-category-notes="${esc(categoryId)}" value="${esc(category.notes || '')}" placeholder="optional category notes" />
       </label>
-      <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-category-details-save="${esc(categoryId)}">Apply</button>
+      <button class="hub-action-btn ml-manage-mini-action ml-manage-category-apply" type="button" data-ml-category-details-save="${esc(categoryId)}">Apply</button>
     </div>
     ${pageTools}
-    <div class="ml-manage-panel-tools">
-      <label class="hub-checkbox ml-manage-panel-check">
-        <input class="hub-checkbox__input" type="checkbox" data-ml-category-show-panel="${esc(categoryId)}"${_mlCategoryIsPanel(category) ? ' checked' : ''} />
-        <span class="hub-checkbox__box" aria-hidden="true"></span>
-        <span class="hub-checkbox__label">Show Panel</span>
-      </label>
-      <label class="ml-manage-panel-field">
+    <div class="ml-manage-panel-tools ml-manage-panel-tools--panel">
+      <div class="ml-manage-panel-check-wrap">
+        <span class="ml-manage-panel-check-title">Show Panel</span>
+        <label class="hub-checkbox ml-manage-panel-check">
+          <input class="hub-checkbox__input" type="checkbox" data-ml-category-show-panel="${esc(categoryId)}"${_mlCategoryIsPanel(category) ? ' checked' : ''} />
+          <span class="hub-checkbox__box" aria-hidden="true"></span>
+          <span class="hub-checkbox__label">Show Panel</span>
+        </label>
+      </div>
+      <label class="ml-manage-panel-field ml-manage-panel-field--color">
         <span>Colour</span>
         <input type="color" data-ml-category-panel-color="${esc(categoryId)}" value="${esc(category.panel_color || '#5b9cf6')}" />
       </label>
-      <label class="ml-manage-panel-field ml-manage-panel-field--wide">
+      <label class="ml-manage-panel-field ml-manage-panel-field--wide ml-manage-panel-field--background">
         <span>Background</span>
         <input type="text" data-ml-category-panel-background="${esc(categoryId)}" value="${esc(category.panel_background || '')}" placeholder="asset path or URL" />
       </label>
-      <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-category-panel-bg-pick="${esc(categoryId)}">Pick</button>
-      <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-category-panel-bg-import="${esc(categoryId)}">Save</button>
-      <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-category-panel-save="${esc(categoryId)}">Apply</button>
+      <button class="hub-action-btn ml-manage-mini-action ml-manage-panel-action" type="button" data-ml-category-panel-bg-pick="${esc(categoryId)}">Pick</button>
+      <button class="hub-action-btn ml-manage-mini-action ml-manage-panel-action" type="button" data-ml-category-panel-bg-import="${esc(categoryId)}">Save</button>
+      <button class="hub-action-btn ml-manage-mini-action ml-manage-panel-action" type="button" data-ml-category-panel-save="${esc(categoryId)}">Apply</button>
     </div>
     <p class="ml-manage-path">${esc(_mlCategoryPath(categoryId))}</p>
     <div class="ml-manage-list">
-      ${categoryHtml ? `<p class="ml-manage-section-label">Child categories</p>${categoryHtml}` : ''}
+      ${categoryHtml ? `<p class="ml-manage-section-label ml-manage-section-label--children">Child categories</p>${categoryHtml}` : ''}
     </div>
-    <div class="ml-manage-list">
-      ${treeHtml ? `<p class="ml-manage-section-label">Link mappings</p>${treeHtml}` : '<p class="ml-page-empty">No links mapped directly to this category.</p>'}
+    <div class="ml-manage-list ml-manage-list--links">
+      ${treeHtml ? `<p class="ml-manage-section-label ml-manage-section-label--links">Link mappings</p>${treeHtml}` : '<p class="ml-page-empty">No links mapped directly to this category.</p>'}
     </div>`;
   HubModal.open(modal);
 }
@@ -3563,7 +3643,7 @@ async function _mlPromoteCategoryToPage(categoryId) {
     parent_category_id: null,
   });
   await loadManualLinks();
-  HubModal.close(document.getElementById('ml-category-manage-modal'));
+  _mlCloseCategoryManageDialogs();
   _mlManagingCategoryId = null;
   switchTab(_mlPageTabId(categoryId));
 }
@@ -3588,7 +3668,7 @@ async function _mlDemotePageCategory(categoryId) {
     parent_category_id: null,
   });
   await loadManualLinks();
-  HubModal.close(document.getElementById('ml-category-manage-modal'));
+  _mlCloseCategoryManageDialogs();
   _mlManagingCategoryId = null;
   _mlActivePageCategoryId = null;
   switchTab('manual-links-grid');
@@ -3609,7 +3689,7 @@ async function _mlCopyCategoryToPage(categoryId, pageCategoryId) {
     tone: 'success',
     badge: 'Manual',
   });
-  if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+  _mlRefreshManagingCategoryViews();
 }
 
 async function _mlMoveCategoryToPage(categoryId, pageCategoryId) {
@@ -3638,7 +3718,7 @@ async function _mlMoveCategoryToPage(categoryId, pageCategoryId) {
   if (!ok) return;
   _mlForgetRootCategoryCell(categoryId);
   await _mlMoveCategory(categoryId, pageCategoryId);
-  if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+  _mlRefreshManagingCategoryViews();
 }
 
 async function _mlDeleteCategory(categoryId) {
@@ -3667,9 +3747,10 @@ async function _mlDeleteCategory(categoryId) {
     method: 'DELETE',
   });
   if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
-  HubModal.close(document.getElementById('ml-category-manage-modal'));
+  _mlCloseCategoryManageFor(categoryId);
   _mlManagingCategoryId = null;
   await loadManualLinks();
+  _mlRefreshManagingCategoryViews();
 }
 
 async function _mlUpdateCategoryIcon(categoryId, iconPath) {
@@ -3697,7 +3778,7 @@ async function _mlUpdateLinkIcon(linkId, iconPath) {
   });
   if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
   await loadManualLinks();
-  if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+  _mlRefreshManagingCategoryViews();
 }
 
 function _mlOpenLinkIconPicker(linkId) {
@@ -3821,7 +3902,7 @@ async function _mlRemoveCategoryItem(mappingId) {
   const r = await apiFetch(`/api/v1/manual-link-categories/items/${encodeURIComponent(mappingId)}`, { method: 'DELETE' });
   if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
   await loadManualLinks();
-  if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+  _mlRefreshManagingCategoryViews();
 }
 
 async function _mlPatchCategoryItem(mappingId, patch) {
@@ -3854,7 +3935,7 @@ async function _mlMoveCategoryItem(mappingId, categoryId, parentMappingId = null
   await moveOne(source, nextRootParentMappingId);
   if (!reload) return source;
   await loadManualLinks();
-  if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+  _mlRefreshManagingCategoryViews();
   return source;
 }
 
@@ -3889,7 +3970,7 @@ async function _mlCopyCategoryItem(mappingId, categoryId, parentMappingId = null
   const copied = await copyOne(source, nextCategoryId, nextRootParentMappingId);
   if (!reload) return copied;
   await loadManualLinks();
-  if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+  _mlRefreshManagingCategoryViews();
   return copied;
 }
 
@@ -3911,7 +3992,7 @@ async function _mlApplyMappingOrderIntent(intent, { action = 'move' } = {}) {
   const orderedIds = _mlReorderedIds(intent.siblingIds, mappingId, intent.targetId, intent.position);
   await _mlPersistMappingOrder(orderedIds);
   await loadManualLinks();
-  if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+  _mlRefreshManagingCategoryViews();
 }
 
 /* ── Modal: Add / Edit ───────────────────────────────────────────────────── */
@@ -4375,7 +4456,9 @@ document.addEventListener('DOMContentLoaded', () => {
       await _mlSaveLinkDetail(editor);
     }
   });
-  document.getElementById('ml-category-manage-body')?.addEventListener('click', async e => {
+  document.addEventListener('click', async e => {
+    const manageBody = e.target.closest('[data-ml-category-manage-body]');
+    if (!manageBody) return;
     try {
       const promotePageCategory = e.target.closest('[data-ml-promote-page-category]');
       if (promotePageCategory) {
@@ -4402,7 +4485,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (openCategoryManage) {
         e.preventDefault();
         e.stopPropagation();
-        _mlOpenCategoryManage(openCategoryManage.dataset.mlOpenCategoryManage);
+        _mlOpenCategoryManage(openCategoryManage.dataset.mlOpenCategoryManage, { stack: true });
         return;
       }
       const categoryToggle = e.target.closest('[data-ml-category-manage-toggle]');
@@ -4425,7 +4508,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const row = categoryDestTrigger.closest('[data-category-id]');
         const panel = row?.querySelector(`[data-ml-category-dest-panel="${CSS.escape(categoryDestTrigger.dataset.mlCategoryDestTrigger)}"]`);
         if (!panel) return;
-        row.closest('#ml-category-manage-body')?.querySelectorAll('.ml-dest-picker').forEach(other => {
+        row.closest('[data-ml-category-manage-body]')?.querySelectorAll('.ml-dest-picker').forEach(other => {
           if (other !== panel) other.hidden = true;
         });
         panel.hidden = !panel.hidden;
@@ -4453,7 +4536,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const row = pageDestTrigger.closest('[data-ml-category-page-tools]');
         const panel = row?.querySelector(`[data-ml-page-dest-panel="${CSS.escape(pageDestTrigger.dataset.mlPageDestTrigger)}"]`);
         if (!panel) return;
-        row.closest('#ml-category-manage-body')?.querySelectorAll('.ml-dest-picker').forEach(other => {
+        row.closest('[data-ml-category-manage-body]')?.querySelectorAll('.ml-dest-picker').forEach(other => {
           if (other !== panel) other.hidden = true;
         });
         panel.hidden = !panel.hidden;
@@ -4495,7 +4578,16 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         e.stopPropagation();
         await _mlMoveCategory(moveCategoryTop.dataset.mlMoveCategoryTop, _mlRootParentCategoryId());
-        if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+        _mlRefreshManagingCategoryViews();
+        return;
+      }
+      const copyCategory = e.target.closest('[data-ml-copy-category]');
+      if (copyCategory) {
+        e.preventDefault();
+        e.stopPropagation();
+        const row = copyCategory.closest('[data-category-id]');
+        await _mlCopyCategory(copyCategory.dataset.mlCopyCategory, row?.dataset.mlCategoryDestinationId || _mlRootParentCategoryId());
+        _mlRefreshManagingCategoryViews();
         return;
       }
       const moveCategory = e.target.closest('[data-ml-move-category]');
@@ -4504,7 +4596,7 @@ document.addEventListener('DOMContentLoaded', () => {
         e.stopPropagation();
         const row = moveCategory.closest('[data-category-id]');
         await _mlMoveCategory(moveCategory.dataset.mlMoveCategory, row?.dataset.mlCategoryDestinationId || _mlRootParentCategoryId());
-        if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+        _mlRefreshManagingCategoryViews();
         return;
       }
       const linkIcon = e.target.closest('[data-ml-link-icon]');
@@ -4533,19 +4625,20 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         e.stopPropagation();
         const categoryId = categoryDetailsSave.dataset.mlCategoryDetailsSave;
-        const label = document.querySelector(`[data-ml-category-label="${CSS.escape(categoryId)}"]`)?.value?.trim();
+        const label = manageBody.querySelector(`[data-ml-category-label="${CSS.escape(categoryId)}"]`)?.value?.trim();
         if (!label) {
           await HubDialogs.alertError({ title: 'Category save failed', message: 'Category name cannot be blank.' });
           return;
         }
         await _mlUpdateCategory(categoryId, {
           label,
-          page_label: document.querySelector(`[data-ml-category-page-label="${CSS.escape(categoryId)}"]`)?.value?.trim() || null,
-          notes: document.querySelector(`[data-ml-category-notes="${CSS.escape(categoryId)}"]`)?.value?.trim() || null,
+          page_label: manageBody.querySelector(`[data-ml-category-page-label="${CSS.escape(categoryId)}"]`)?.value?.trim() || null,
+          notes: manageBody.querySelector(`[data-ml-category-notes="${CSS.escape(categoryId)}"]`)?.value?.trim() || null,
         }, { reopenManage: true });
         const updated = _manualLinkCategories.find(cat => cat.category_id === categoryId);
-        if (updated && document.getElementById('ml-category-manage-title')) {
-          document.getElementById('ml-category-manage-title').textContent = updated.label;
+        const currentTitle = manageBody.closest('dialog')?.querySelector('[data-ml-category-manage-title], #ml-category-manage-title');
+        if (updated && currentTitle) {
+          currentTitle.textContent = updated.label;
         }
         return;
       }
@@ -4554,7 +4647,7 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         e.stopPropagation();
         const categoryId = panelPick.dataset.mlCategoryPanelBgPick;
-        const input = document.querySelector(`[data-ml-category-panel-background="${CSS.escape(categoryId)}"]`);
+        const input = manageBody.querySelector(`[data-ml-category-panel-background="${CSS.escape(categoryId)}"]`);
         if (typeof AssetPicker !== 'undefined') {
           AssetPicker.open({
             title: 'Choose panel background',
@@ -4573,7 +4666,7 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         e.stopPropagation();
         const categoryId = panelImport.dataset.mlCategoryPanelBgImport;
-        const input = document.querySelector(`[data-ml-category-panel-background="${CSS.escape(categoryId)}"]`);
+        const input = manageBody.querySelector(`[data-ml-category-panel-background="${CSS.escape(categoryId)}"]`);
         const url = (input?.value || '').trim();
         if (!/^https?:\/\//i.test(url)) {
           await HubDialogs.alertError({ title: 'Panel background import failed', message: 'Enter an http(s) image URL first.' });
@@ -4595,9 +4688,9 @@ document.addEventListener('DOMContentLoaded', () => {
         e.stopPropagation();
         const categoryId = panelSave.dataset.mlCategoryPanelSave;
         await _mlUpdateCategory(categoryId, {
-          show_panel: document.querySelector(`[data-ml-category-show-panel="${CSS.escape(categoryId)}"]`)?.checked ? 1 : 0,
-          panel_color: document.querySelector(`[data-ml-category-panel-color="${CSS.escape(categoryId)}"]`)?.value || null,
-          panel_background: document.querySelector(`[data-ml-category-panel-background="${CSS.escape(categoryId)}"]`)?.value?.trim() || null,
+          show_panel: manageBody.querySelector(`[data-ml-category-show-panel="${CSS.escape(categoryId)}"]`)?.checked ? 1 : 0,
+          panel_color: manageBody.querySelector(`[data-ml-category-panel-color="${CSS.escape(categoryId)}"]`)?.value || null,
+          panel_background: manageBody.querySelector(`[data-ml-category-panel-background="${CSS.escape(categoryId)}"]`)?.value?.trim() || null,
         }, { reopenManage: true });
         return;
       }
@@ -4621,7 +4714,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const row = destTrigger.closest('[data-mapping-id]');
         const panel = row?.querySelector(`[data-ml-dest-panel="${CSS.escape(destTrigger.dataset.mlDestTrigger)}"]`);
         if (!panel) return;
-        row.closest('#ml-category-manage-body')?.querySelectorAll('.ml-dest-picker').forEach(other => {
+        row.closest('[data-ml-category-manage-body]')?.querySelectorAll('.ml-dest-picker').forEach(other => {
           if (other !== panel) other.hidden = true;
         });
         panel.hidden = !panel.hidden;

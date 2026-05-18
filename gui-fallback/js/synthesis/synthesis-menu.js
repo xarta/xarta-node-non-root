@@ -103,6 +103,16 @@ function _synthesisManualGridContextIds(pageItems) {
     return ['manual-links-grid', ...pageItems.map(item => item.id)];
 }
 
+function _synthesisManualMentionsPageCategory(label) {
+    const value = String(label || '');
+    return /\bpage[\s-]*category\b/i.test(value) || /\[page-category\]/i.test(value);
+}
+
+function _synthesisManualPageCategoryLabel(cat) {
+    const label = cat?.page_label || cat?.label || 'Interface Page';
+    return _synthesisManualMentionsPageCategory(label) ? label : `${label} [page-category]`;
+}
+
 function syncSynthesisManualLinksPageMenu(pageCategories) {
     _synthesisManualLastPageCategories = Array.isArray(pageCategories) ? pageCategories : [];
     const pages = (Array.isArray(pageCategories) ? pageCategories : [])
@@ -115,9 +125,9 @@ function syncSynthesisManualLinksPageMenu(pageCategories) {
         })
         .map((cat, index) => ({
             id: _synthesisManualPageId(cat.category_id),
-            label: cat.page_label || cat.label || 'Interface Page',
+            label: _synthesisManualPageCategoryLabel(cat),
             icon: cat.icon || HIEROGLYPHS.eyeOfHorus,
-            pageLabel: `Manual Links - ${cat.page_label || cat.label || 'Interface Page'}`,
+            pageLabel: `Manual Links - ${_synthesisManualPageCategoryLabel(cat)}`,
             parent: 'manual-links',
             order: 10 + index,
             manualLinksPageCategoryId: cat.category_id,
