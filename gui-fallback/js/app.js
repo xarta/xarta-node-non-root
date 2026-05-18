@@ -87,6 +87,7 @@ function _groupMenuEntries() {
 
 function _menuOwnsTab(menu, tab) {
   if (!menu || !tab) return false;
+  if (String(tab).startsWith('manual-links-page:') && menu === (typeof SynthesisMenuConfig !== 'undefined' ? SynthesisMenuConfig : null)) return true;
   const items = Array.isArray(menu.defaultMenu) ? menu.defaultMenu : [];
   return items.some(item => {
     if (!item) return false;
@@ -161,7 +162,14 @@ function _currentManualLinksVisibleTabId() {
     const view = document.getElementById(id);
     if (!view) continue;
     const style = window.getComputedStyle(view);
-    if (style.display !== 'none' && style.visibility !== 'hidden') return tab;
+    if (style.display !== 'none' && style.visibility !== 'hidden') {
+      if (tab === 'manual-links-grid'
+          && typeof BlueprintsManualLinks !== 'undefined'
+          && typeof BlueprintsManualLinks.getCurrentTabId === 'function') {
+        return BlueprintsManualLinks.getCurrentTabId() || tab;
+      }
+      return tab;
+    }
   }
   return '';
 }
@@ -416,7 +424,34 @@ function switchTab(tab) {
   if (tab === 'manual-links-rendered') { _switchManualLinksView('rendered'); return; }
   if (tab === 'manual-links-tree')     { _switchManualLinksView('tree');     return; }
   if (tab === 'manual-links-pretext')  { _switchManualLinksView('pretext');  return; }
-  if (tab === 'manual-links-grid')     { _switchManualLinksView('grid');     return; }
+  if (tab === 'manual-links-grid') {
+    _manualLinksBaseNavigation = true;
+    try {
+      switchTab('manual-links');
+    } finally {
+      _manualLinksBaseNavigation = false;
+    }
+    if (typeof BlueprintsManualLinks !== 'undefined' && typeof BlueprintsManualLinks.showMainInterface === 'function') {
+      BlueprintsManualLinks.showMainInterface();
+    } else {
+      manualLinksShowView('grid');
+    }
+    return;
+  }
+  if (String(tab || '').startsWith('manual-links-page:')) {
+    _manualLinksBaseNavigation = true;
+    try {
+      switchTab('manual-links');
+    } finally {
+      _manualLinksBaseNavigation = false;
+    }
+    if (typeof BlueprintsManualLinks !== 'undefined' && typeof BlueprintsManualLinks.showPage === 'function') {
+      BlueprintsManualLinks.showPage(String(tab).slice('manual-links-page:'.length));
+    } else {
+      manualLinksShowView('grid');
+    }
+    return;
+  }
   if (tab && tab.indexOf('splash-dont-panic') === 0) { if (typeof BlueprintsSplashScreens !== 'undefined') BlueprintsSplashScreens.initDontPanic(tab); }
   if (tab === 'settings'       && !_settings.length)      loadSettings();
   if (tab === 'settings')                                  { initSoundToggle(); initVolumeSlider(); initTtsSettingsPanel(); }

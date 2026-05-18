@@ -6,8 +6,8 @@
 //
 // localStorage key: 'blueprintsSynthesisMenuConfig'
 //
-// Note: 'manual-links-rendered', 'manual-links-tree', 'manual-links-pretext',
-// 'manual-links-grid', and 'manual-links-table' are pseudo-tab IDs.
+// Note: 'manual-links-rendered', 'manual-links-grid', 'manual-links-table',
+// and dynamic 'manual-links-page:<category_id>' entries are pseudo-tab IDs.
 // switchTab() intercepts them to show #tab-manual-links and call manualLinksShowView().
 //
 // No inline event handlers — all event wiring via addEventListener.
@@ -35,10 +35,8 @@ const SynthesisMenuConfig = createHubMenu({
         { id: 'splash-dont-panic-3',   label: "Don't Panic 3", icon: HIEROGLYPHS.starDuat, pageLabel: "Don't Panic 3",       parent: 'splash-screens',  order: 2 },
         { id: 'manual-links',          label: 'Manual',    icon: HIEROGLYPHS.eyeOfHorus, pageLabel: 'Manual Links',          parent: null,              order: 1, defaultTargetFn: 'ml.defaultTarget' },
         { id: 'manual-links-table',    label: 'Table',     icon: HIEROGLYPHS.cartouche,  pageLabel: 'Manual Links (Table)',  parent: 'manual-links',    order: 0 },
-        { id: 'manual-links-rendered', label: 'Page 1',    icon: HIEROGLYPHS.khaHorizon, pageLabel: 'Manual Links - Page 1', parent: 'manual-links',    order: 1 },
-        { id: 'manual-links-tree',     label: 'Page 2',    icon: HIEROGLYPHS.papyrus,    pageLabel: 'Manual Links - Page 2', parent: 'manual-links',    order: 2 },
-        { id: 'manual-links-pretext',  label: 'Page 3',    icon: HIEROGLYPHS.starDuat,   pageLabel: 'Manual Links - Page 3', parent: 'manual-links',    order: 3 },
-        { id: 'manual-links-grid',     label: 'Interface', icon: HIEROGLYPHS.eyeOfHorus, pageLabel: 'Manual Links - Interface', parent: 'manual-links',    order: 4 },
+        { id: 'manual-links-rendered', label: 'Rendered',  icon: HIEROGLYPHS.khaHorizon, pageLabel: 'Manual Links - Rendered', parent: 'manual-links',    order: 1 },
+        { id: 'manual-links-grid',     label: 'Interface', icon: HIEROGLYPHS.eyeOfHorus, pageLabel: 'Manual Links - Interface', parent: 'manual-links',    order: 2 },
         { id: 'services',              label: 'Services',  icon: HIEROGLYPHS.sekhem,     pageLabel: 'Services',              parent: null,              order: 2 },
         { id: 'machines',              label: 'Machines',  icon: HIEROGLYPHS.nemesCrown, pageLabel: 'Machines',              parent: null,              order: 3 },
         { id: 'synthesis-layout',      label: '☰',         icon: HIEROGLYPHS.kheper,     pageLabel: 'Navbar Layout',         parent: null,              order: 4 },
@@ -65,10 +63,11 @@ const SynthesisMenuConfig = createHubMenu({
         // ── Manual Links function items ───────────────────────────────────
         { id: 'ml-fn-add',      label: 'Add link',     icon: HIEROGLYPHS.eyeOfHorus, fn: 'ml.add',      activeOn: ['manual-links-grid', 'manual-links-table'], parent: 'synthesis-layout', order: 0 },
         { id: 'ml-fn-add-category', label: 'Add Category', icon: HIEROGLYPHS.eyeOfHorus, fn: 'ml.addCategory', activeOn: ['manual-links-grid'], parent: 'synthesis-layout', order: 1 },
-        { id: 'ml-fn-refresh',  label: 'Refresh',      icon: HIEROGLYPHS.nefer,    fn: 'ml.refresh',  activeOn: ['manual-links', 'manual-links-rendered', 'manual-links-tree', 'manual-links-pretext', 'manual-links-grid', 'manual-links-table'], parent: 'synthesis-layout', order: 2 },
-        { id: 'ml-fn-set-default', label: 'Set as default', icon: HIEROGLYPHS.starDuat, fn: 'ml.setDefault', activeOn: ['manual-links', 'manual-links-rendered', 'manual-links-tree', 'manual-links-pretext', 'manual-links-grid', 'manual-links-table'], parent: 'synthesis-layout', order: 3 },
+        { id: 'ml-fn-refresh',  label: 'Refresh',      icon: HIEROGLYPHS.nefer,    fn: 'ml.refresh',  activeOn: ['manual-links', 'manual-links-rendered', 'manual-links-grid', 'manual-links-table'], parent: 'synthesis-layout', order: 2 },
+        { id: 'ml-fn-set-default', label: 'Set as default', icon: HIEROGLYPHS.starDuat, fn: 'ml.setDefault', activeOn: ['manual-links', 'manual-links-rendered', 'manual-links-grid', 'manual-links-table'], parent: 'synthesis-layout', order: 3 },
         { id: 'ml-fn-grid-autofit', label: 'Auto Fit Interface', icon: 'icons/ui/table-columns-blue.svg', fn: 'ml.gridAutoFit', activeOn: ['manual-links-grid'], parent: 'synthesis-layout', order: 4 },
         { id: 'ml-fn-grid-debug', label: 'Debug Cells: Off', icon: HIEROGLYPHS.eyeOfHorus, fn: 'ml.gridDebug', activeOn: ['manual-links-grid'], parent: 'synthesis-layout', order: 5 },
+        { id: 'ml-fn-demote-page', label: 'Demote', icon: HIEROGLYPHS.kheper, fn: 'ml.demotePage', activeOn: [], parent: 'synthesis-layout', order: 6 },
         { id: 'ml-fn-cols',     label: 'Columns',      icon: HIEROGLYPHS.khaHorizon, fn: 'ml.columns', activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 6 },
         { id: 'ml-fn-scroll',   label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'ml.scroll', activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 7 },
         { id: 'ml-fn-autofit',  label: 'Auto Fit Widths', icon: 'icons/ui/table-columns-blue.svg', fn: 'ml.autoFit', activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 8 },
@@ -76,9 +75,6 @@ const SynthesisMenuConfig = createHubMenu({
         { id: 'ml-fn-grp-none', label: 'Group: None',  icon: 'icons/ui/minus-box-blue.svg',    fn: 'ml.grpNone',  activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 8 },
         { id: 'ml-fn-grp-grp',  label: 'Group: Group', icon: 'icons/ui/group-folder-blue.svg', fn: 'ml.grpGroup', activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 9 },
         { id: 'ml-fn-grp-host', label: 'Group: Host',  icon: 'icons/ui/monitor-blue.svg',      fn: 'ml.grpHost',  activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 10 },
-        { id: 'ml-fn-page-1',   label: 'Page 1',       icon: HIEROGLYPHS.khaHorizon, fn: 'ml.page1', activeOn: [], parent: 'synthesis-layout', order: 9 },
-        { id: 'ml-fn-page-2',   label: 'Page 2',       icon: HIEROGLYPHS.papyrus,    fn: 'ml.page2', activeOn: [], parent: 'synthesis-layout', order: 10 },
-        { id: 'ml-fn-page-3',   label: 'Page 3',       icon: HIEROGLYPHS.starDuat,   fn: 'ml.page3', activeOn: [], parent: 'synthesis-layout', order: 11 },
     ],
 });
 
@@ -94,6 +90,89 @@ async function _synthesisAutoFitLayout(getController) {
     if (typeof controller.autoFitLayout !== 'function') return null;
     return controller.autoFitLayout({ percentile: 1 });
 }
+
+const _SYNTHESIS_MANUAL_DYNAMIC_PREFIX = 'manual-links-page:';
+const _SYNTHESIS_MANUAL_RETIRED_PAGE_IDS = new Set(['manual-links-tree', 'manual-links-pretext']);
+let _synthesisManualLastPageCategories = [];
+
+function _synthesisManualPageId(categoryId) {
+    return _SYNTHESIS_MANUAL_DYNAMIC_PREFIX + categoryId;
+}
+
+function _synthesisManualGridContextIds(pageItems) {
+    return ['manual-links-grid', ...pageItems.map(item => item.id)];
+}
+
+function syncSynthesisManualLinksPageMenu(pageCategories) {
+    _synthesisManualLastPageCategories = Array.isArray(pageCategories) ? pageCategories : [];
+    const pages = (Array.isArray(pageCategories) ? pageCategories : [])
+        .filter(cat => cat && cat.category_id)
+        .sort((a, b) => {
+            const ao = Number(a.page_sort_order ?? a.sort_order ?? 0);
+            const bo = Number(b.page_sort_order ?? b.sort_order ?? 0);
+            if (ao !== bo) return ao - bo;
+            return (a.page_label || a.label || '').localeCompare(b.page_label || b.label || '');
+        })
+        .map((cat, index) => ({
+            id: _synthesisManualPageId(cat.category_id),
+            label: cat.page_label || cat.label || 'Interface Page',
+            icon: cat.icon || HIEROGLYPHS.eyeOfHorus,
+            pageLabel: `Manual Links - ${cat.page_label || cat.label || 'Interface Page'}`,
+            parent: 'manual-links',
+            order: 10 + index,
+            manualLinksPageCategoryId: cat.category_id,
+        }));
+
+    const dynamicIds = new Set(pages.map(item => item.id));
+    const keepItem = item => item
+        && !_SYNTHESIS_MANUAL_RETIRED_PAGE_IDS.has(item.id)
+        && (!String(item.id || '').startsWith(_SYNTHESIS_MANUAL_DYNAMIC_PREFIX) || dynamicIds.has(item.id));
+
+    const syncItems = (items) => {
+        const retained = (items || []).filter(keepItem);
+        pages.forEach(page => {
+            const existing = retained.find(item => item.id === page.id);
+            if (existing) Object.assign(existing, page);
+            else retained.push({ ...page });
+        });
+        return retained;
+    };
+
+    SynthesisMenuConfig.defaultMenu = syncItems(SynthesisMenuConfig.defaultMenu);
+    SynthesisMenuConfig.currentMenu = syncItems(SynthesisMenuConfig.currentMenu);
+
+    const dynamicPageIds = pages.map(item => item.id);
+    const gridContextIds = _synthesisManualGridContextIds(pages);
+    const refreshContextIds = ['manual-links', 'manual-links-rendered', 'manual-links-grid', 'manual-links-table', ...dynamicPageIds];
+    const setActiveOn = (id, activeOn) => {
+        [SynthesisMenuConfig.defaultMenu, SynthesisMenuConfig.currentMenu].forEach(items => {
+            const item = (items || []).find(entry => entry.id === id);
+            if (item) item.activeOn = [...activeOn];
+        });
+    };
+    setActiveOn('ml-fn-add', ['manual-links-grid', 'manual-links-table', ...dynamicPageIds]);
+    setActiveOn('ml-fn-add-category', gridContextIds);
+    setActiveOn('ml-fn-refresh', refreshContextIds);
+    setActiveOn('ml-fn-set-default', refreshContextIds);
+    setActiveOn('ml-fn-grid-autofit', gridContextIds);
+    setActiveOn('ml-fn-grid-debug', gridContextIds);
+    setActiveOn('ml-fn-demote-page', dynamicPageIds);
+
+    if (SynthesisMenuConfig._initialized) {
+        SynthesisMenuConfig.renderNavbar(SynthesisMenuConfig._activeId);
+        SynthesisMenuConfig.renderEditor();
+        SynthesisMenuConfig.updateActiveTab(SynthesisMenuConfig._activeId);
+    }
+}
+window.syncSynthesisManualLinksPageMenu = syncSynthesisManualLinksPageMenu;
+syncSynthesisManualLinksPageMenu([]);
+
+const _synthesisOriginalShowGroup = SynthesisMenuConfig.showGroup.bind(SynthesisMenuConfig);
+SynthesisMenuConfig.showGroup = function showSynthesisGroupWithManualPageSync() {
+    const result = _synthesisOriginalShowGroup();
+    syncSynthesisManualLinksPageMenu(_synthesisManualLastPageCategories);
+    return result;
+};
 
 // ── Function registrations ───────────────────────────────────────────────────
 // synthesis-menu.js loads after services.js, machines.js, and manual-links.js
@@ -120,14 +199,12 @@ SynthesisMenuConfig.registerFunctions({
     'ml.autoFit':   () => _synthesisAutoFitLayout(() => _ensureManualLinksLayoutController()),
     'ml.gridAutoFit': () => BlueprintsManualLinks.autoFitInterface(),
     'ml.gridDebug': () => BlueprintsManualLinks.toggleDebugCells(),
+    'ml.demotePage': () => BlueprintsManualLinks.demoteActivePage(),
     'ml.grpNone':   () => mlSetGroupBy('none'),
     'ml.grpGroup':  () => mlSetGroupBy('group'),
     'ml.grpHost':   () => mlSetGroupBy('host'),
     'ml.defaultTarget': () => BlueprintsManualLinks.getDefaultTabId(),
     'ml.setDefault': () => BlueprintsManualLinks.setActiveAsDefault(),
-    'ml.page1':     () => switchTab('manual-links-rendered'),
-    'ml.page2':     () => switchTab('manual-links-tree'),
-    'ml.page3':     () => switchTab('manual-links-pretext'),
     'splash.setDefault': () => BlueprintsSplashScreens.setActiveAsDefault(),
     'splash.debugTelemetry': () => BlueprintsSplashScreens.toggleDebugTelemetry(),
 });

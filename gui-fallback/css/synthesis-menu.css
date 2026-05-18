@@ -280,13 +280,13 @@
 .ml-grid-board {
   display: grid;
   position: relative;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   grid-auto-rows: 42px;
   grid-auto-flow: row dense;
   gap: 10px;
   align-items: start;
   align-content: start;
-  min-height: 0;
+  min-height: calc(max(160px, var(--ml-grid-height, 160px)) - 28px);
   overflow: visible;
 }
 

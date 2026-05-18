@@ -25,11 +25,13 @@ let _mlGridInteractionTouchFallbackId = null;
 let _mlPickedCategory = null;
 let _mlCurrentGridLayoutBucket = null;
 let _mlManagingCategoryId = null;
+let _mlActivePageCategoryId = null;
 let _mlShadeViewportObserver = null;
 const _ML_DEFAULT_PAGE_KEY = 'blueprintsDefaultManualLinksPage';
 const _ML_GRID_ORDER_KEY = 'blueprintsManualLinksPage4GridOrder';
 const _ML_GRID_LAYOUT_KEY = 'blueprintsManualLinksInterfaceLayout';
 const _ML_GRID_DEBUG_KEY = 'blueprintsManualLinksInterfaceDebugCells';
+const _ML_DYNAMIC_PAGE_PREFIX = 'manual-links-page:';
 const _ML_GRID_ROW_HEIGHT = 42;
 const _ML_TOUCH_DRAG_HOLD_MS = 320;
 const _ML_TOUCH_DRAG_MOVE_PX = 6;
@@ -315,11 +317,40 @@ async function openManualLinksLayoutContextModal() {
 
 function _mlNormalizeDefaultTab(tabId) {
   if (tabId === 'manual-links') return _ML_DEFAULT_TAB;
+  if (String(tabId || '').startsWith(_ML_DYNAMIC_PAGE_PREFIX)) return tabId;
   return _ML_PAGE_TO_VIEW[tabId] ? tabId : _ML_DEFAULT_TAB;
 }
 
 function _mlCurrentManualTabId() {
+  if (_manualLinksView === 'grid' && _mlActivePageCategoryId) {
+    return _ML_DYNAMIC_PAGE_PREFIX + _mlActivePageCategoryId;
+  }
   return _ML_VIEW_TO_PAGE[_manualLinksView] || _ML_DEFAULT_TAB;
+}
+
+function _mlCategoryIsPage(category) {
+  return Number(category?.is_page || 0) === 1;
+}
+
+function _mlPageCategoryById(categoryId) {
+  return _manualLinkCategories.find(cat => cat.category_id === categoryId && _mlCategoryIsPage(cat)) || null;
+}
+
+function _mlPageTabId(categoryId) {
+  return categoryId ? _ML_DYNAMIC_PAGE_PREFIX + categoryId : 'manual-links-grid';
+}
+
+function _mlCategoryIdFromPageTab(tabId) {
+  const value = String(tabId || '');
+  return value.startsWith(_ML_DYNAMIC_PAGE_PREFIX) ? value.slice(_ML_DYNAMIC_PAGE_PREFIX.length) : null;
+}
+
+function _mlRootParentCategoryId() {
+  return _mlActivePageCategoryId || null;
+}
+
+function _mlStorageKeyForPage(baseKey) {
+  return _mlActivePageCategoryId ? `${baseKey}:${_mlActivePageCategoryId}` : baseKey;
 }
 
 function _mlGetDefaultTabId() {
@@ -331,7 +362,13 @@ function _mlGetDefaultTabId() {
 }
 
 function _mlLabelForTab(tabId) {
-  switch (_mlNormalizeDefaultTab(tabId)) {
+  const normalized = _mlNormalizeDefaultTab(tabId);
+  const pageCategoryId = _mlCategoryIdFromPageTab(normalized);
+  if (pageCategoryId) {
+    const page = _mlPageCategoryById(pageCategoryId);
+    return page?.page_label || page?.label || 'Interface Page';
+  }
+  switch (normalized) {
     case 'manual-links-table': return 'Table';
     case 'manual-links-tree': return 'Page 2';
     case 'manual-links-pretext': return 'Page 3';
@@ -364,12 +401,17 @@ function _mlOpenDefaultPage() {
   switchTab(_mlGetDefaultTabId());
 }
 
+function _mlDemoteActivePage() {
+  if (!_mlActivePageCategoryId) return null;
+  return _mlDemotePageCategory(_mlActivePageCategoryId);
+}
+
 function _mlGridDebugEnabled() {
-  return localStorage.getItem(_ML_GRID_DEBUG_KEY) === '1';
+  return localStorage.getItem(_mlStorageKeyForPage(_ML_GRID_DEBUG_KEY)) === '1';
 }
 
 function _mlSetGridDebugEnabled(enabled) {
-  localStorage.setItem(_ML_GRID_DEBUG_KEY, enabled ? '1' : '0');
+  localStorage.setItem(_mlStorageKeyForPage(_ML_GRID_DEBUG_KEY), enabled ? '1' : '0');
   _mlApplyGridDebugState();
   return enabled;
 }
@@ -393,6 +435,9 @@ const BlueprintsManualLinks = {
   setDefaultTab: _mlSetDefaultTab,
   setActiveAsDefault: _mlSetActiveAsDefault,
   openDefault: _mlOpenDefaultPage,
+  showPage: manualLinksShowPage,
+  showMainInterface: manualLinksShowMainInterface,
+  demoteActivePage: _mlDemoteActivePage,
   autoFitInterface: _mlAutoFitInterface,
   toggleDebugCells: _mlToggleGridDebugCells,
   debugCellsEnabled: _mlGridDebugEnabled,
@@ -402,6 +447,7 @@ window.BlueprintsManualLinks = BlueprintsManualLinks;
 /* ── View toggle ─────────────────────────────────────────────────────────── */
 
 function manualLinksShowView(view) {
+  if (view !== 'grid') _mlActivePageCategoryId = null;
   _manualLinksView = view;
   try {
     const tabId = _mlCurrentManualTabId();
@@ -426,6 +472,17 @@ function manualLinksShowView(view) {
   else if (isGrid) renderManualLinksGrid();
   else renderManualLinksStoryViews();
   if (isGrid) _mlScheduleGridViewportFit();
+}
+
+function manualLinksShowPage(categoryId) {
+  const page = _mlPageCategoryById(categoryId);
+  _mlActivePageCategoryId = page ? page.category_id : (categoryId && !_manualLinkCategories.length ? categoryId : null);
+  manualLinksShowView('grid');
+}
+
+function manualLinksShowMainInterface() {
+  _mlActivePageCategoryId = null;
+  manualLinksShowView('grid');
 }
 
 function renderManualLinksStoryViews() {
@@ -458,6 +515,12 @@ async function loadManualLinkCategories() {
   const payload = await r.json();
   _manualLinkCategories = Array.isArray(payload.categories) ? payload.categories : [];
   _manualLinkCategoryItems = Array.isArray(payload.items) ? payload.items : [];
+  if (_mlActivePageCategoryId && !_mlPageCategoryById(_mlActivePageCategoryId)) {
+    _mlActivePageCategoryId = null;
+  }
+  if (typeof syncSynthesisManualLinksPageMenu === 'function') {
+    syncSynthesisManualLinksPageMenu(_manualLinkCategories.filter(_mlCategoryIsPage));
+  }
 }
 
 function renderManualLinksTable() {
@@ -853,7 +916,7 @@ function _mlSortCategories(cats) {
 
 function _mlSavedGridOrder() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(_ML_GRID_ORDER_KEY) || '[]');
+    const parsed = JSON.parse(localStorage.getItem(_mlStorageKeyForPage(_ML_GRID_ORDER_KEY)) || '[]');
     return Array.isArray(parsed) ? parsed : [];
   } catch (_) {
     return [];
@@ -875,12 +938,12 @@ function _mlSaveGridOrderFromDom() {
   const ids = [...document.querySelectorAll('#ml-grid-body .ml-grid-board > [data-ml-grid-card]')]
     .map(card => card.dataset.categoryId)
     .filter(Boolean);
-  localStorage.setItem(_ML_GRID_ORDER_KEY, JSON.stringify(ids));
+  localStorage.setItem(_mlStorageKeyForPage(_ML_GRID_ORDER_KEY), JSON.stringify(ids));
 }
 
 function _mlSavedGridLayout() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(_ML_GRID_LAYOUT_KEY) || '{}');
+    const parsed = JSON.parse(localStorage.getItem(_mlStorageKeyForPage(_ML_GRID_LAYOUT_KEY)) || '{}');
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
     const bucket = _mlGridLayoutBucket();
     if (parsed[bucket] && typeof parsed[bucket] === 'object' && !Array.isArray(parsed[bucket])) return parsed[bucket];
@@ -894,7 +957,7 @@ function _mlSavedGridLayout() {
 function _mlSaveGridLayout(layout) {
   let store = {};
   try {
-    const parsed = JSON.parse(localStorage.getItem(_ML_GRID_LAYOUT_KEY) || '{}');
+    const parsed = JSON.parse(localStorage.getItem(_mlStorageKeyForPage(_ML_GRID_LAYOUT_KEY)) || '{}');
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) store = parsed;
   } catch (_) {
     store = {};
@@ -903,7 +966,7 @@ function _mlSaveGridLayout(layout) {
     store = { desktop: store };
   }
   store[_mlGridLayoutBucket()] = layout || {};
-  localStorage.setItem(_ML_GRID_LAYOUT_KEY, JSON.stringify(store));
+  localStorage.setItem(_mlStorageKeyForPage(_ML_GRID_LAYOUT_KEY), JSON.stringify(store));
 }
 
 function _mlGridLayoutBucket() {
@@ -1129,7 +1192,7 @@ async function _mlPersistCategoryOrder(parentCategoryId, orderedIds) {
 
 async function _mlApplyCategoryOrderIntent(intent, { action = 'move' } = {}) {
   const copy = action === 'copy';
-  const parentId = intent.parentId || null;
+  const parentId = intent.parentId || _mlRootParentCategoryId();
   let categoryId = intent.draggedId;
   if (copy) {
     const copied = await _mlCopyCategory(intent.draggedId, parentId, { reload: false });
@@ -1142,7 +1205,7 @@ async function _mlApplyCategoryOrderIntent(intent, { action = 'move' } = {}) {
     }
   }
   const orderedIds = _mlReorderedIds(intent.siblingIds, categoryId, intent.targetId, intent.position);
-  await _mlPersistCategoryOrder(intent.parentId || '', orderedIds);
+  await _mlPersistCategoryOrder(parentId || '', orderedIds);
   await loadManualLinks();
 }
 
@@ -1196,7 +1259,7 @@ async function _mlCreateCategoryCopy(sourceCategoryId, parentCategoryId = null) 
 
 async function _mlCopyCategory(categoryId, parentCategoryId = null, { rootCell = null, reload = true } = {}) {
   const copied = await _mlCreateCategoryCopy(categoryId, parentCategoryId);
-  if (!parentCategoryId && rootCell) _mlSaveRootCategoryCell(copied.category_id, rootCell);
+  if (rootCell) _mlSaveRootCategoryCell(copied.category_id, rootCell);
   const itemsByCategory = _mlItemsByCategory();
   const tree = _mlLinkTreeForCategory(categoryId, itemsByCategory);
   for (const item of tree.roots) {
@@ -1214,6 +1277,8 @@ async function _mlCopyCategory(categoryId, parentCategoryId = null, { rootCell =
 async function _mlPromoteOrMoveMapping(mappingId, parentCategoryId = null, { copy = false, rootCell = null } = {}) {
   const source = _manualLinkCategoryItems.find(item => item.mapping_id === mappingId);
   if (!source) throw new Error(`mapping ${mappingId} not found`);
+  const rootParent = _mlRootParentCategoryId();
+  const targetParentCategoryId = parentCategoryId || rootParent;
   const itemsByCategory = _mlItemsByCategory();
   const tree = _mlLinkTreeForCategory(source.category_id, itemsByCategory);
   const children = tree.sortItems(tree.childrenByParent.get(mappingId) || []);
@@ -1233,8 +1298,8 @@ async function _mlPromoteOrMoveMapping(mappingId, parentCategoryId = null, { cop
   }
 
   if (children.length && !hasPrimaryRoute) {
-    const category = await _mlCreateCategoryFromMapping(source, parentCategoryId || null);
-    if (!parentCategoryId && rootCell) _mlSaveRootCategoryCell(category.category_id, rootCell);
+    const category = await _mlCreateCategoryFromMapping(source, targetParentCategoryId || null);
+    if (rootCell) _mlSaveRootCategoryCell(category.category_id, rootCell);
     for (const child of children) {
       if (copy) await _mlCopyCategoryItem(child.mapping_id, category.category_id, null, { reload: false });
       else await moveSubtree(child, category.category_id, null);
@@ -1256,7 +1321,7 @@ async function _mlPromoteOrMoveMapping(mappingId, parentCategoryId = null, { cop
     return;
   }
 
-  const category = await _mlCreateCategoryFromMapping(source, null);
+  const category = await _mlCreateCategoryFromMapping(source, targetParentCategoryId || null);
   if (rootCell) _mlSaveRootCategoryCell(category.category_id, rootCell);
   if (copy) await _mlCopyCategoryItem(mappingId, category.category_id, null, { reload: false });
   else await moveSubtree(source, category.category_id, null);
@@ -1284,12 +1349,37 @@ function _mlCategoryDestinationPickerHtml(sourceCategoryId) {
       </div>
     </details>`;
   };
-  const roots = _mlSortCategories(maps.byParent.__root__ || []);
+  const rootParent = _mlRootParentCategoryId();
+  const roots = _mlSortCategories((maps.byParent[rootParent || '__root__'] || []).filter(cat => !_mlCategoryIsPage(cat)));
+  const topLabel = rootParent ? 'Page top categories' : 'Top categories';
   return `<div class="ml-dest-picker" data-ml-category-dest-panel="${esc(sourceCategoryId)}" hidden>
-    <button class="ml-dest-choice" type="button" data-ml-category-dest-choice="" data-ml-category-dest-label="Top categories">
-      ${_mlIconHtml(_ML_DEFAULT_ICON, 'ml-grid-icon ml-grid-icon--small')}<span>Top categories</span>
+    <button class="ml-dest-choice" type="button" data-ml-category-dest-choice="${esc(rootParent || '')}" data-ml-category-dest-label="${esc(topLabel)}">
+      ${_mlIconHtml(_ML_DEFAULT_ICON, 'ml-grid-icon ml-grid-icon--small')}<span>${esc(topLabel)}</span>
     </button>
     ${roots.map(cat => renderCategory(cat, 1)).join('') || '<p class="ml-page-empty">No destination categories.</p>'}
+  </div>`;
+}
+
+function _mlPageDestinationPickerHtml(sourceCategoryId) {
+  const pages = _manualLinkCategories
+    .filter(cat => _mlCategoryIsPage(cat))
+    .sort((a, b) => {
+      const ao = Number(a.page_sort_order ?? a.sort_order ?? 0);
+      const bo = Number(b.page_sort_order ?? b.sort_order ?? 0);
+      if (ao !== bo) return ao - bo;
+      return (a.page_label || a.label || '').localeCompare(b.page_label || b.label || '');
+    });
+  const choices = pages.map(page => {
+    const label = page.page_label || page.label || page.category_id.slice(0, 8);
+    const disabled = page.category_id === sourceCategoryId || _mlCategoryDescendsFrom(page.category_id, sourceCategoryId)
+      ? ' disabled aria-disabled="true"'
+      : '';
+    return `<button class="ml-dest-choice" type="button" data-ml-page-dest-choice="${esc(page.category_id)}" data-ml-page-dest-label="${esc(label)}"${disabled}>
+      ${_mlIconHtml(_mlCategoryIcon(page), 'ml-grid-icon ml-grid-icon--small')}<span>${esc(label)}</span>
+    </button>`;
+  }).join('');
+  return `<div class="ml-dest-picker" data-ml-page-dest-panel="${esc(sourceCategoryId)}" hidden>
+    ${choices || '<p class="ml-page-empty">No page categories yet.</p>'}
   </div>`;
 }
 
@@ -1397,6 +1487,10 @@ function renderManualLinksGrid() {
   const container = document.getElementById('ml-grid-body');
   if (!container) return;
   _mlCurrentGridLayoutBucket = _mlGridLayoutBucket();
+  const activePage = _mlActivePageCategoryId ? _mlPageCategoryById(_mlActivePageCategoryId) : null;
+  if (_mlActivePageCategoryId && !activePage && _manualLinkCategories.length) {
+    _mlActivePageCategoryId = null;
+  }
   if (!_manualLinkCategories.length) {
     container.innerHTML = '<p class="ml-page-empty">No categories defined yet.</p>';
     return;
@@ -1404,7 +1498,11 @@ function renderManualLinksGrid() {
 
   const maps = _mlCategoryMaps();
   const itemsByCategory = _mlItemsByCategory();
-  const roots = _mlOrderRootCategories(maps.byParent.__root__ || []);
+  const rootParentId = _mlRootParentCategoryId();
+  const rootKey = rootParentId || '__root__';
+  const roots = _mlOrderRootCategories((maps.byParent[rootKey] || []).filter(cat => !_mlCategoryIsPage(cat)));
+  const pageTree = rootParentId ? _mlLinkTreeForCategory(rootParentId, itemsByCategory) : null;
+  const pageDirectLinks = pageTree ? pageTree.roots.map(item => _mlRenderLinkTreeItem(item, pageTree, 1)).join('') : '';
   const renderCard = (cat, { inPanel = false } = {}) => {
     const open = _mlGridOpen.has(cat.category_id);
     const placement = _mlGridPlacementStyles(cat, { cols: 1, rows: 1 }, { inPanel });
@@ -1459,8 +1557,22 @@ function renderManualLinksGrid() {
       <span class="ml-panel-resize ml-panel-resize--se" data-ml-panel-resize="se" aria-hidden="true"></span>
     </section>`;
   };
+  const pageDirectHtml = pageDirectLinks ? `<section class="ml-grid-panel ml-grid-page-root-links" data-ml-drop-zone data-ml-drop-parent="${esc(rootParentId || '')}">
+    <div class="ml-grid-panel-body" data-ml-drop-zone data-ml-drop-parent="${esc(rootParentId || '')}">
+      <div class="ml-grid-panel-label-cell">
+        <div class="ml-grid-panel-title" title="${esc(activePage?.label || 'Page Links')}" aria-label="${esc(activePage?.label || 'Page Links')}">
+          ${_mlIconHtml(_mlCategoryIcon(activePage), 'ml-grid-card-icon')}
+          <span title="${esc(activePage?.label || 'Page Links')}">Page Links</span>
+        </div>
+      </div>
+      <div class="ml-grid-panel-direct">${pageDirectLinks}</div>
+    </div>
+  </section>` : '';
+  const emptyHtml = (!roots.length && !pageDirectLinks) ? '<p class="ml-page-empty">No categories defined on this page yet.</p>' : '';
   container.innerHTML = `<div class="ml-grid-board" data-ml-drop-zone data-ml-drop-parent="">
+    ${pageDirectHtml}
     ${_mlRenderRootGridChildren(roots, cat => _mlCategoryIsPanel(cat) ? renderPanel(cat) : renderCard(cat))}
+    ${emptyHtml}
   </div>`;
   _mlApplyExplicitRootGridPlacements();
   _mlScheduleGridViewportFit();
@@ -2050,6 +2162,7 @@ function _mlResolveUrlDropIntent(target, event) {
   if (!cell) return null;
   return {
     kind: 'root-cell',
+    categoryId: _mlRootParentCategoryId(),
     cell,
     board,
     event,
@@ -2297,6 +2410,17 @@ function _mlSaveRootCategoryCell(categoryId, cell, patch = {}) {
   _mlSaveGridLayout(layout);
 }
 
+function _mlForgetRootCategoryCell(categoryId) {
+  if (!categoryId) return;
+  const layout = _mlSavedGridLayout();
+  if (Object.prototype.hasOwnProperty.call(layout, categoryId)) {
+    delete layout[categoryId];
+    _mlSaveGridLayout(layout);
+  }
+  const order = _mlSavedGridOrder().filter(id => id !== categoryId);
+  localStorage.setItem(_mlStorageKeyForPage(_ML_GRID_ORDER_KEY), JSON.stringify(order));
+}
+
 function _mlCategoryShapeForPacking(category) {
   if (!_mlCategoryIsPanel(category)) return { w: 1, h: 1 };
   const saved = _mlRootGridLayoutFor(category.category_id);
@@ -2491,6 +2615,7 @@ function _mlIsRootPageDrop(board, targetCard, dropZone) {
 async function _mlHandleCategoryDrop(draggedId, targetCard, dropZone, board, event, { action = 'move' } = {}) {
   const sourceParent = _mlGridDragSourceParent || '';
   const dropZoneParent = dropZone?.dataset.mlDropParent || '';
+  const rootParent = _mlRootParentCategoryId();
   const placementEvent = _mlGridDropPlacementEvent(event);
   const copy = action === 'copy';
   const nestTargetId = _mlCategoryNestTargetForDrop(draggedId, targetCard);
@@ -2507,7 +2632,7 @@ async function _mlHandleCategoryDrop(draggedId, targetCard, dropZone, board, eve
   if (board && sourceParent === '') {
     const cell = _mlGridDropCellForEvent(board, placementEvent);
     if (cell) {
-      if (copy) await _mlCopyCategory(draggedId, null, { rootCell: cell });
+      if (copy) await _mlCopyCategory(draggedId, rootParent, { rootCell: cell });
       else {
         _mlSaveRootCategoryCell(draggedId, cell);
         renderManualLinksGrid();
@@ -2517,10 +2642,10 @@ async function _mlHandleCategoryDrop(draggedId, targetCard, dropZone, board, eve
   }
   if (_mlIsRootPageDrop(board, targetCard, dropZone)) {
     const cell = _mlGridDropCellForEvent(board, placementEvent);
-    if (copy) await _mlCopyCategory(draggedId, null, { rootCell: cell });
+    if (copy) await _mlCopyCategory(draggedId, rootParent, { rootCell: cell });
     else if (sourceParent) {
       _mlSaveRootCategoryCell(draggedId, cell);
-      await _mlMoveCategory(draggedId, null);
+      await _mlMoveCategory(draggedId, rootParent);
     }
     else renderManualLinksGrid();
     return;
@@ -2529,14 +2654,14 @@ async function _mlHandleCategoryDrop(draggedId, targetCard, dropZone, board, eve
     if (dropZoneParent === '') {
       const cell = _mlGridDropCellForEvent(board || dropZone, placementEvent);
       if (copy) {
-        await _mlCopyCategory(draggedId, null, { rootCell: cell });
+        await _mlCopyCategory(draggedId, rootParent, { rootCell: cell });
         return;
       }
       _mlSaveRootCategoryCell(draggedId, cell);
     } else if (sourceParent === '' && board) {
       const cell = _mlGridDropCellForEvent(board, placementEvent);
       if (cell) {
-        if (copy) await _mlCopyCategory(draggedId, null, { rootCell: cell });
+        if (copy) await _mlCopyCategory(draggedId, rootParent, { rootCell: cell });
         else {
           _mlSaveRootCategoryCell(draggedId, cell);
           renderManualLinksGrid();
@@ -2552,7 +2677,7 @@ async function _mlHandleCategoryDrop(draggedId, targetCard, dropZone, board, eve
     const targetParent = targetCard.parentElement?.closest('[data-ml-grid-panel]')?.dataset.categoryId || '';
     if (copy) {
       const cell = !targetParent && board ? _mlGridDropCellForEvent(board, placementEvent) : null;
-      await _mlCopyCategory(draggedId, targetParent || null, { rootCell: cell });
+      await _mlCopyCategory(draggedId, targetParent || rootParent, { rootCell: cell });
       return;
     }
     const sameContainer = targetCard.parentElement === document.querySelector(`[data-category-id="${CSS.escape(draggedId)}"]`)?.parentElement;
@@ -2572,7 +2697,7 @@ async function _mlHandleCategoryDrop(draggedId, targetCard, dropZone, board, eve
         }
       }
     } else {
-      await _mlMoveCategory(draggedId, targetParent || null);
+      await _mlMoveCategory(draggedId, targetParent || rootParent);
     }
     return;
   }
@@ -3048,8 +3173,13 @@ async function _mlEnsureUrlDropMappingPlacement(result, targetCategoryId, parent
 async function _mlApplyUrlDropIntent(result, intent) {
   if (!result || !intent) return;
   if (intent.kind === 'root-cell') {
+    if (intent.categoryId) {
+      await _mlEnsureUrlDropMappingPlacement(result, intent.categoryId, null);
+      await loadManualLinks();
+      return;
+    }
     const category = _manualLinkCategories.find(cat => cat.category_id === result.category_id);
-    if (category && !category.parent_category_id && intent.cell) {
+    if (category && (category.parent_category_id || '') === (_mlRootParentCategoryId() || '') && intent.cell) {
       _mlSaveRootCategoryCell(category.category_id, intent.cell);
     }
     renderManualLinksGrid();
@@ -3293,6 +3423,25 @@ function _mlOpenCategoryManage(categoryId) {
   const icon = _mlCategoryIcon(category);
   const deleteImpact = _mlCategoryDeleteImpact(categoryId);
   const deleteTitle = deleteImpact.isEmpty ? 'Delete empty category' : 'Delete non-empty category';
+  const pageTools = _mlCategoryIsPage(category)
+    ? `<div class="ml-manage-panel-tools ml-manage-page-tools">
+        <label class="ml-manage-panel-field">
+          <span>Menu label</span>
+          <input type="text" data-ml-category-page-label="${esc(categoryId)}" value="${esc(category.page_label || category.label || '')}" />
+        </label>
+        <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-demote-page-category="${esc(categoryId)}">Demote</button>
+      </div>`
+    : `<div class="ml-manage-panel-tools ml-manage-page-tools" data-ml-category-page-tools="${esc(categoryId)}">
+        <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-promote-page-category="${esc(categoryId)}">Promote to Page</button>
+        <div class="ml-dest-control">
+          <button class="hub-action-btn ml-dest-trigger" type="button" data-ml-page-dest-trigger="${esc(categoryId)}">
+            <span data-ml-page-dest-label>Existing page</span>
+          </button>
+          ${_mlPageDestinationPickerHtml(categoryId)}
+        </div>
+        <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-copy-category-page="${esc(categoryId)}" title="Copy category to selected page">CP</button>
+        <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-move-category-page="${esc(categoryId)}" title="Move category to selected page">MV</button>
+      </div>`;
   body.innerHTML = `<div class="ml-manage-category-tools">
       ${_mlIconHtml(icon, 'ml-manage-category-icon')}
       <span class="ml-manage-category-icon-text" title="${esc(icon)}">${esc(icon)}</span>
@@ -3311,6 +3460,7 @@ function _mlOpenCategoryManage(categoryId) {
       </label>
       <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-category-details-save="${esc(categoryId)}">Apply</button>
     </div>
+    ${pageTools}
     <div class="ml-manage-panel-tools">
       <label class="hub-checkbox ml-manage-panel-check">
         <input class="hub-checkbox__input" type="checkbox" data-ml-category-show-panel="${esc(categoryId)}"${_mlCategoryIsPanel(category) ? ' checked' : ''} />
@@ -3361,6 +3511,109 @@ function _mlCategoryDeleteImpact(categoryId) {
 
 function _mlPlural(count, singular, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function _mlNextPageSort() {
+  const pages = _manualLinkCategories.filter(_mlCategoryIsPage);
+  return pages.length ? Math.max(...pages.map(cat => Number(cat.page_sort_order ?? cat.sort_order ?? 0))) + 1 : 1;
+}
+
+async function _mlPromoteCategoryToPage(categoryId) {
+  const category = _manualLinkCategories.find(cat => cat.category_id === categoryId);
+  if (!category) return;
+  const ok = await HubDialogs.confirm({
+    title: 'Promote to page?',
+    message: `Promote ${category.label || 'this category'} into a Manual Links page?`,
+    detail: 'It will disappear from this Interface root and appear as a Manual Links submenu page. Its child categories and link mappings stay attached to the same durable category id.',
+    tone: 'info',
+    badge: 'Manual',
+    confirmText: 'Promote',
+  });
+  if (!ok) return;
+  _mlForgetRootCategoryCell(categoryId);
+  await _mlPatchCategory(categoryId, {
+    is_page: 1,
+    page_label: category.page_label || category.label,
+    page_sort_order: Number(category.page_sort_order ?? 0) || _mlNextPageSort(),
+    parent_category_id: null,
+  });
+  await loadManualLinks();
+  HubModal.close(document.getElementById('ml-category-manage-modal'));
+  _mlManagingCategoryId = null;
+  switchTab(_mlPageTabId(categoryId));
+}
+
+async function _mlDemotePageCategory(categoryId) {
+  const category = _manualLinkCategories.find(cat => cat.category_id === categoryId);
+  if (!category) return;
+  const impact = _mlCategoryDeleteImpact(categoryId);
+  const ok = await HubDialogs.confirm({
+    title: 'Demote page?',
+    message: `Demote ${category.page_label || category.label || 'this page'} back to the main Interface?`,
+    detail: `The category returns as a top category on Interface. It currently contains ${_mlPlural(impact.childCategoryCount, 'child category', 'child categories')} and ${_mlPlural(impact.mappingCount, 'link mapping')}; direct page-root mappings may not fit the main root perfectly.`,
+    tone: 'warning',
+    badge: 'Manual',
+    confirmText: 'Demote',
+  });
+  if (!ok) return;
+  await _mlPatchCategory(categoryId, {
+    is_page: 0,
+    page_label: null,
+    page_sort_order: 0,
+    parent_category_id: null,
+  });
+  await loadManualLinks();
+  HubModal.close(document.getElementById('ml-category-manage-modal'));
+  _mlManagingCategoryId = null;
+  _mlActivePageCategoryId = null;
+  switchTab('manual-links-grid');
+}
+
+async function _mlCopyCategoryToPage(categoryId, pageCategoryId) {
+  if (!pageCategoryId) {
+    await HubDialogs.alertError({ title: 'Copy to page failed', message: 'Choose an existing page first.' });
+    return;
+  }
+  const source = _manualLinkCategories.find(cat => cat.category_id === categoryId);
+  const page = _mlPageCategoryById(pageCategoryId);
+  if (!source || !page) return;
+  await _mlCopyCategory(categoryId, pageCategoryId);
+  await HubDialogs.alert({
+    title: 'Copied to page',
+    message: `${source.label || 'Category'} was copied to ${page.page_label || page.label || 'the selected page'}.`,
+    tone: 'success',
+    badge: 'Manual',
+  });
+  if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
+}
+
+async function _mlMoveCategoryToPage(categoryId, pageCategoryId) {
+  if (!pageCategoryId) {
+    await HubDialogs.alertError({ title: 'Move to page failed', message: 'Choose an existing page first.' });
+    return;
+  }
+  const source = _manualLinkCategories.find(cat => cat.category_id === categoryId);
+  const page = _mlPageCategoryById(pageCategoryId);
+  if (!source || !page) return;
+  if (_mlCategoryIsPage(source)) {
+    await HubDialogs.alertError({
+      title: 'Move to page blocked',
+      message: 'Demote this page before moving it under another page.',
+    });
+    return;
+  }
+  const ok = await HubDialogs.confirm({
+    title: 'Move category to page?',
+    message: `Move ${source.label || 'this category'} to ${page.page_label || page.label || 'the selected page'}?`,
+    detail: 'The category keeps the same durable id and will disappear from its current page/root.',
+    tone: 'warning',
+    badge: 'Manual',
+    confirmText: 'Move',
+  });
+  if (!ok) return;
+  _mlForgetRootCategoryCell(categoryId);
+  await _mlMoveCategory(categoryId, pageCategoryId);
+  if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
 }
 
 async function _mlDeleteCategory(categoryId) {
@@ -3478,7 +3731,8 @@ function openManualLinkCategoryModal() {
   const err = document.getElementById('ml-category-modal-error');
   if (!dlg) return;
   if (err) err.textContent = '';
-  const roots = _manualLinkCategories.filter(cat => !cat.parent_category_id);
+  const parentCategoryId = _mlRootParentCategoryId();
+  const roots = _manualLinkCategories.filter(cat => (cat.parent_category_id || '') === (parentCategoryId || '') && !_mlCategoryIsPage(cat));
   const nextSort = roots.length ? Math.max(...roots.map(cat => cat.sort_order || 0)) + 1 : 0;
   const values = {
     'ml-category-label': '',
@@ -3508,7 +3762,7 @@ async function submitManualLinkCategory() {
   const body = {
     label,
     icon: document.getElementById('ml-category-icon')?.value.trim() || _ML_DEFAULT_ICON,
-    parent_category_id: null,
+    parent_category_id: _mlRootParentCategoryId(),
     sort_order: parseInt(document.getElementById('ml-category-sort-order')?.value || '0', 10),
     show_panel: document.getElementById('ml-category-show-panel')?.checked ? 1 : 0,
     panel_color: document.getElementById('ml-category-panel-color')?.value.trim() || null,
@@ -3984,7 +4238,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const droppedUrl = _mlExtractDroppedUrl(e.dataTransfer);
     if (!_mlGridDragId && droppedUrl) {
       const intent = _mlGridInteractionFsm.urlDropIntentForDrop() || _mlResolveUrlDropIntent(e.target, e);
-      const targetCategoryId = (intent?.kind === 'mapping-order' || intent?.kind === 'category-target') ? intent.categoryId : '';
+      const targetCategoryId = (intent?.kind === 'mapping-order' || intent?.kind === 'category-target' || intent?.kind === 'root-cell') ? intent.categoryId : '';
       try {
         const result = await _mlIntakeDroppedUrl(droppedUrl, targetCategoryId);
         await _mlApplyUrlDropIntent(result, intent);
@@ -4099,6 +4353,20 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('ml-category-manage-body')?.addEventListener('click', async e => {
     try {
+      const promotePageCategory = e.target.closest('[data-ml-promote-page-category]');
+      if (promotePageCategory) {
+        e.preventDefault();
+        e.stopPropagation();
+        await _mlPromoteCategoryToPage(promotePageCategory.dataset.mlPromotePageCategory);
+        return;
+      }
+      const demotePageCategory = e.target.closest('[data-ml-demote-page-category]');
+      if (demotePageCategory) {
+        e.preventDefault();
+        e.stopPropagation();
+        await _mlDemotePageCategory(demotePageCategory.dataset.mlDemotePageCategory);
+        return;
+      }
       const deleteCategory = e.target.closest('[data-ml-delete-category]');
       if (deleteCategory) {
         e.preventDefault();
@@ -4154,11 +4422,55 @@ document.addEventListener('DOMContentLoaded', () => {
         if (panel) panel.hidden = true;
         return;
       }
+      const pageDestTrigger = e.target.closest('[data-ml-page-dest-trigger]');
+      if (pageDestTrigger) {
+        e.preventDefault();
+        e.stopPropagation();
+        const row = pageDestTrigger.closest('[data-ml-category-page-tools]');
+        const panel = row?.querySelector(`[data-ml-page-dest-panel="${CSS.escape(pageDestTrigger.dataset.mlPageDestTrigger)}"]`);
+        if (!panel) return;
+        row.closest('#ml-category-manage-body')?.querySelectorAll('.ml-dest-picker').forEach(other => {
+          if (other !== panel) other.hidden = true;
+        });
+        panel.hidden = !panel.hidden;
+        _mlPositionDestinationPicker(pageDestTrigger, panel);
+        return;
+      }
+      const pageChoice = e.target.closest('[data-ml-page-dest-choice]');
+      if (pageChoice) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (pageChoice.disabled) return;
+        const row = pageChoice.closest('[data-ml-category-page-tools]');
+        if (!row) return;
+        row.dataset.mlPageDestinationId = pageChoice.dataset.mlPageDestChoice || '';
+        const label = row.querySelector('[data-ml-page-dest-label]');
+        if (label) label.textContent = pageChoice.dataset.mlPageDestLabel || 'Existing page';
+        const panel = pageChoice.closest('.ml-dest-picker');
+        if (panel) panel.hidden = true;
+        return;
+      }
+      const copyCategoryPage = e.target.closest('[data-ml-copy-category-page]');
+      if (copyCategoryPage) {
+        e.preventDefault();
+        e.stopPropagation();
+        const row = copyCategoryPage.closest('[data-ml-category-page-tools]');
+        await _mlCopyCategoryToPage(copyCategoryPage.dataset.mlCopyCategoryPage, row?.dataset.mlPageDestinationId || '');
+        return;
+      }
+      const moveCategoryPage = e.target.closest('[data-ml-move-category-page]');
+      if (moveCategoryPage) {
+        e.preventDefault();
+        e.stopPropagation();
+        const row = moveCategoryPage.closest('[data-ml-category-page-tools]');
+        await _mlMoveCategoryToPage(moveCategoryPage.dataset.mlMoveCategoryPage, row?.dataset.mlPageDestinationId || '');
+        return;
+      }
       const moveCategoryTop = e.target.closest('[data-ml-move-category-top]');
       if (moveCategoryTop) {
         e.preventDefault();
         e.stopPropagation();
-        await _mlMoveCategory(moveCategoryTop.dataset.mlMoveCategoryTop, null);
+        await _mlMoveCategory(moveCategoryTop.dataset.mlMoveCategoryTop, _mlRootParentCategoryId());
         if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
         return;
       }
@@ -4167,7 +4479,7 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         e.stopPropagation();
         const row = moveCategory.closest('[data-category-id]');
-        await _mlMoveCategory(moveCategory.dataset.mlMoveCategory, row?.dataset.mlCategoryDestinationId || null);
+        await _mlMoveCategory(moveCategory.dataset.mlMoveCategory, row?.dataset.mlCategoryDestinationId || _mlRootParentCategoryId());
         if (_mlManagingCategoryId) _mlOpenCategoryManage(_mlManagingCategoryId);
         return;
       }
@@ -4204,6 +4516,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         await _mlUpdateCategory(categoryId, {
           label,
+          page_label: document.querySelector(`[data-ml-category-page-label="${CSS.escape(categoryId)}"]`)?.value?.trim() || null,
           notes: document.querySelector(`[data-ml-category-notes="${CSS.escape(categoryId)}"]`)?.value?.trim() || null,
         }, { reopenManage: true });
         const updated = _manualLinkCategories.find(cat => cat.category_id === categoryId);

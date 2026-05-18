@@ -585,7 +585,15 @@
       const view = document.getElementById(id);
       if (!view) continue;
       const style = window.getComputedStyle(view);
-      if (style.display !== 'none' && style.visibility !== 'hidden') return tab;
+      if (style.display !== 'none' && style.visibility !== 'hidden') {
+        if (tab === 'manual-links-grid') {
+          const manualLinksApi = hardRefreshManualLinksApi();
+          if (manualLinksApi && typeof manualLinksApi.getCurrentTabId === 'function') {
+            return manualLinksApi.getCurrentTabId() || tab;
+          }
+        }
+        return tab;
+      }
     }
     if (document.body.classList.contains('manual-links-grid-active')) return 'manual-links-grid';
     try {
