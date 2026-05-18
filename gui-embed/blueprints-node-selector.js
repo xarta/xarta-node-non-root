@@ -561,6 +561,13 @@
     }
   }
 
+  const HARD_REFRESH_TELEMETRY_KEY = 'blueprintsHardRefreshTelemetry';
+
+  function hardRefreshManualLinksApi() {
+    return window.BlueprintsManualLinks
+      || (typeof BlueprintsManualLinks !== 'undefined' ? BlueprintsManualLinks : null);
+  }
+
   function hardRefreshVisibleManualLinksTab() {
     const manualPanel = document.getElementById('tab-manual-links');
     if (!manualPanel?.classList.contains('active')) return '';
@@ -585,17 +592,109 @@
     }
   }
 
+  function hardRefreshCaptureManualLinksViews() {
+    return [
+      ['manual-links-grid', 'ml-grid-view'],
+      ['manual-links-table', 'ml-table-view'],
+      ['manual-links-rendered', 'ml-rendered-view'],
+      ['manual-links-tree', 'ml-tree-view'],
+      ['manual-links-pretext', 'ml-pretext-view'],
+    ].map(([tab, id]) => {
+      const el = document.getElementById(id);
+      if (!el) return { tab, id, present: false };
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return {
+        tab,
+        id,
+        present: true,
+        display: style.display,
+        visibility: style.visibility,
+        hidden: el.hidden === true,
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      };
+    });
+  }
+
+  function hardRefreshTelemetrySnapshot(extra = {}) {
+    const bridge = window.BlueprintsHubMenuBridge || null;
+    const manualApi = hardRefreshManualLinksApi();
+    let apiTab = '';
+    let sessionTab = '';
+    let bridgeTab = '';
+    try { apiTab = manualApi?.getCurrentTabId?.() || ''; } catch (_e) {}
+    try { sessionTab = sessionStorage.getItem('blueprintsManualLinksActiveTab') || ''; } catch (_e) {}
+    try {
+      const menuConfig = bridge && typeof bridge.getActiveMenuConfig === 'function' && bridge.getActiveMenuConfig();
+      bridgeTab = menuConfig && typeof menuConfig._activeTabId === 'function' ? menuConfig._activeTabId() : '';
+    } catch (_e) {}
+    return {
+      at: new Date().toISOString(),
+      href: window.location.href,
+      search: window.location.search,
+      activePanels: [...document.querySelectorAll('.tab-panel.active[id^="tab-"]')].map(el => el.id),
+      bodyClasses: document.body?.className || '',
+      manual: {
+        panelActive: document.getElementById('tab-manual-links')?.classList.contains('active') || false,
+        bodyGridActive: document.body?.classList.contains('manual-links-grid-active') || false,
+        visibleTab: hardRefreshVisibleManualLinksTab(),
+        apiTab,
+        sessionTab,
+        views: hardRefreshCaptureManualLinksViews(),
+      },
+      bridge: {
+        activeGroup: bridge?.activeGroup || '',
+        menuActiveTab: bridgeTab || '',
+      },
+      ...extra,
+    };
+  }
+
+  function hardRefreshRecordTelemetry(event, detail = {}) {
+    const entry = {
+      event,
+      detail,
+      snapshot: hardRefreshTelemetrySnapshot(),
+    };
+    try {
+      const existing = JSON.parse(localStorage.getItem(HARD_REFRESH_TELEMETRY_KEY) || '[]');
+      const next = Array.isArray(existing) ? existing : [];
+      next.push(entry);
+      localStorage.setItem(HARD_REFRESH_TELEMETRY_KEY, JSON.stringify(next.slice(-80)));
+    } catch (_e) {}
+    window.__lastBlueprintsHardRefreshTelemetry = entry;
+    if (window.console && typeof window.console.warn === 'function') {
+      window.console.warn('[Blueprints hard refresh telemetry]', entry);
+    }
+    return entry;
+  }
+
+  window.BlueprintsHardRefreshTelemetry = {
+    dump() {
+      try { return JSON.parse(localStorage.getItem(HARD_REFRESH_TELEMETRY_KEY) || '[]'); }
+      catch (_e) { return []; }
+    },
+    clear() {
+      try { localStorage.removeItem(HARD_REFRESH_TELEMETRY_KEY); } catch (_e) {}
+    },
+    capture(label = 'manual-capture') {
+      return hardRefreshRecordTelemetry(label);
+    },
+  };
+
   function hardRefreshNormalizePageState(state) {
     const next = {
       group: state?.group || '',
       tab: state?.tab || '',
     };
     const visibleManualTab = hardRefreshVisibleManualLinksTab();
-    const manualLinksApi = window.BlueprintsManualLinks
-      || (typeof BlueprintsManualLinks !== 'undefined' ? BlueprintsManualLinks : null);
+    const manualLinksApi = hardRefreshManualLinksApi();
+    hardRefreshRecordTelemetry('normalize-page-state:start', { input: state || {}, visibleManualTab });
     if (visibleManualTab) {
       next.group = 'synthesis';
       next.tab = visibleManualTab;
+      hardRefreshRecordTelemetry('normalize-page-state:visible-manual-tab', { output: next });
       return next;
     }
     if (next.tab === 'manual-links'
@@ -604,6 +703,7 @@
       next.tab = manualLinksApi.getCurrentTabId() || next.tab;
     }
     if (next.tab && String(next.tab).startsWith('manual-links')) next.group = next.group || 'synthesis';
+    hardRefreshRecordTelemetry('normalize-page-state:output', { output: next });
     return next;
   }
 
@@ -611,20 +711,30 @@
     if (typeof window._currentPageState === 'function') {
       try {
         const state = window._currentPageState() || {};
+        hardRefreshRecordTelemetry('current-page-state:window-fn', { state });
         return hardRefreshNormalizePageState(state);
-      } catch (_e) {}
+      } catch (error) {
+        hardRefreshRecordTelemetry('current-page-state:window-fn-error', { message: error.message });
+      }
     }
     const bridge = window.BlueprintsHubMenuBridge;
-    if (!bridge) return {};
+    if (!bridge) {
+      hardRefreshRecordTelemetry('current-page-state:no-bridge');
+      return {};
+    }
     if (typeof bridge.getCurrentPageState === 'function') {
       try {
         const state = bridge.getCurrentPageState() || {};
+        hardRefreshRecordTelemetry('current-page-state:bridge-fn', { state });
         return hardRefreshNormalizePageState(state);
-      } catch (_e) {}
+      } catch (error) {
+        hardRefreshRecordTelemetry('current-page-state:bridge-fn-error', { message: error.message });
+      }
     }
     const group = bridge.activeGroup || '';
     const menuConfig = typeof bridge.getActiveMenuConfig === 'function' && bridge.getActiveMenuConfig();
     const tab = menuConfig && typeof menuConfig._activeTabId === 'function' && menuConfig._activeTabId();
+    hardRefreshRecordTelemetry('current-page-state:bridge-menu', { group, tab });
     return hardRefreshNormalizePageState({ group, tab });
   }
 
@@ -665,6 +775,7 @@
     }
 
     function prepareReloadUrl() {
+      hardRefreshRecordTelemetry('prepare-reload:start');
       const url = new URL(window.location.href);
       url.searchParams.set('_fresh', String(Date.now()));
       const pageState = hardRefreshCurrentPageState();
@@ -673,6 +784,7 @@
       const ssh = sshSnapshot();
       const state = transition({ pageState, ssh });
       if (state === STATE.BLOCKED_LOCKED) {
+        hardRefreshRecordTelemetry('prepare-reload:blocked-locked', { pageState, url: url.toString(), ssh });
         return {
           ok: false,
           state,
@@ -684,6 +796,7 @@
       if (state === STATE.SSH_ACTIVE && typeof window._sshTerminalApplyReloadParams === 'function') {
         const applied = window._sshTerminalApplyReloadParams(url, { source: 'hard-refresh' });
         if (applied === false) {
+          hardRefreshRecordTelemetry('prepare-reload:ssh-blocked', { pageState, url: url.toString(), ssh });
           return {
             ok: false,
             state,
@@ -693,6 +806,7 @@
         }
       }
 
+      hardRefreshRecordTelemetry('prepare-reload:ok', { pageState, url: url.toString(), state });
       return { ok: true, state, url, pageState, ssh };
     }
 
@@ -703,8 +817,10 @@
 
   async function hardRefreshClientAssets() {
     try {
+      hardRefreshRecordTelemetry('client-assets:start');
       const refreshIntent = HardRefreshStateMachine.prepareReloadUrl();
       if (!refreshIntent.ok) {
+        hardRefreshRecordTelemetry('client-assets:not-ok', { refreshIntent });
         window.alert(refreshIntent.message || 'Hard refresh is blocked for the current page state.');
         return;
       }
@@ -712,6 +828,7 @@
           && typeof window._sshTerminalPrepareHardRefresh === 'function') {
         const prepared = await window._sshTerminalPrepareHardRefresh(refreshIntent.ssh);
         if (prepared === false) {
+          hardRefreshRecordTelemetry('client-assets:ssh-prepare-false', { refreshIntent });
           window.alert('Unlock the SSH terminal before using hard refresh.');
           return;
         }
@@ -727,8 +844,13 @@
         await Promise.all(keys.map(key => caches.delete(key).catch(() => false)));
       }
 
+      hardRefreshRecordTelemetry('client-assets:replace', {
+        pageState: refreshIntent.pageState,
+        url: refreshIntent.url.toString(),
+      });
       window.location.replace(refreshIntent.url.toString());
     } catch (error) {
+      hardRefreshRecordTelemetry('client-assets:error', { message: error.message });
       const message = error && error.message ? error.message : 'Client refresh failed.';
       window.alert(message);
     }
@@ -2636,11 +2758,25 @@
         const isNav   = !!(def && def.bridgeGroup);
         const now     = Date.now();
         const isTouch = lastPointerType === 'touch' || lastPointerType === 'pen';
+        hardRefreshRecordTelemetry('action-button:click', {
+          action,
+          label: def?.label || '',
+          isNav,
+          isTouch,
+          pointerType: lastPointerType,
+        });
 
         function dispatchSingle() {
           lastClickAt = 0;
           const delayMs  = playDbActionSound(meta);
           const runAction = () => {
+            hardRefreshRecordTelemetry('action-button:run-single', {
+              action,
+              label: def?.label || '',
+              isNav,
+              hasDoAction: typeof def?.doAction === 'function',
+              buildPath: typeof def?.buildPath === 'function' ? def.buildPath() : '',
+            });
             if (action === 'paging-button') {
               _buttonPage = (_buttonPage + 1) % pageCount;
               renderActionButtons();
@@ -2672,6 +2808,11 @@
           // the mobile clock on cold start).  All other buttons — including probes and
           // settings — are no-ops with TTS/sound feedback so the event is still audible.
           const hasDoubleTapAction = def && def.bridgeGroup === 'synthesis';
+          hardRefreshRecordTelemetry('action-button:run-double', {
+            action,
+            label: def?.label || '',
+            hasDoubleTapAction,
+          });
           if (!hasDoubleTapAction) {
             if (typeof window.BlueprintsTtsClient !== 'undefined') {
               const _dtLabel = def ? def.label : action;
