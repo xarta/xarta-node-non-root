@@ -1802,8 +1802,8 @@ function _mlPanelMinRows(card, width) {
 
 function _mlApplyPanelResize(card, next) {
   if (!card || !next) return;
-  card.style.gridColumn = `span ${next.w}`;
-  card.style.gridRow = `span ${next.h}`;
+  card.style.gridColumn = `${Math.max(1, Math.round(next.col || 1))} / span ${next.w}`;
+  card.style.gridRow = `${Math.max(1, Math.round(next.row || 1))} / span ${next.h}`;
   card.style.setProperty('--ml-panel-cols', next.w);
   card.style.setProperty('--ml-panel-rows', next.h);
 }
@@ -1817,15 +1817,20 @@ function _mlStartPanelResize(event, handle) {
   const categoryId = card.dataset.categoryId;
   const layout = _mlSavedGridLayout();
   const saved = layout[categoryId] || {};
-  const cell = _mlElementGridCell(card, board);
-  const metrics = cell.metrics;
+  const metrics = _mlGridBoardMetrics(board);
+  if (!metrics) return;
+  const savedSlot = Number.isFinite(Number(saved.slot)) ? Math.max(0, Math.round(Number(saved.slot))) : null;
+  const savedPos = savedSlot !== null ? _mlSlotGridPosition(savedSlot, metrics.cols) : null;
+  const cell = savedPos ? { ...savedPos, metrics } : _mlElementGridCell(card, board);
   const rect = card.getBoundingClientRect();
   const widthFromRect = Math.max(1, Math.round((rect.width + metrics.gap) / (metrics.colWidth + metrics.gap)));
   const heightFromRect = Math.max(1, Math.round((rect.height + metrics.rowGap) / (metrics.rowHeight + metrics.rowGap)));
+  const startCol = Math.max(1, Math.round(cell.col || 1));
   const start = {
-    col: Math.max(1, Math.round(cell.col || 1)),
+    col: startCol,
     row: Math.max(1, Math.round(cell.row || 1)),
-    w: _mlClampGridSpan(saved.w || widthFromRect || 1, 1, metrics.cols),
+    slot: savedSlot !== null ? savedSlot : _mlGridCellSlot(cell),
+    w: _mlClampGridSpan(saved.w || widthFromRect || 1, 1, Math.max(1, metrics.cols - startCol + 1)),
     h: _mlClampGridSpan(saved.h || heightFromRect || 1, _mlPanelMinRows(card, saved.w || widthFromRect || 1), 12),
   };
   _mlPanelResizeState = {
@@ -1861,7 +1866,7 @@ function _mlUpdatePanelResize(event) {
   if (handle.includes('n')) {
     h = start.h - dy;
   }
-  w = _mlClampGridSpan(w, 1, metrics.cols);
+  w = _mlClampGridSpan(w, 1, Math.max(1, metrics.cols - col + 1));
   h = _mlClampGridSpan(h, _mlPanelMinRows(card, w), 12);
   const next = { col, row, w, h };
   _mlPanelResizeState.next = next;
@@ -1870,11 +1875,12 @@ function _mlUpdatePanelResize(event) {
 
 function _mlFinishPanelResize() {
   if (!_mlPanelResizeState) return;
-  const { categoryId, card, next } = _mlPanelResizeState;
+  const { categoryId, card, start, next } = _mlPanelResizeState;
   card?.classList.remove('is-resizing');
   const layout = _mlSavedGridLayout();
   const current = layout[categoryId] || {};
-  layout[categoryId] = { ...current, slot: current.slot, w: next.w, h: next.h, manualSize: true };
+  const slot = Number.isFinite(Number(current.slot)) ? current.slot : start.slot;
+  layout[categoryId] = { ...current, slot, w: next.w, h: next.h, manualSize: true };
   _mlSaveGridLayout(layout);
   _mlPanelResizeState = null;
   _mlScheduleGridViewportFit();
