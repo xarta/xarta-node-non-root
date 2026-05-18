@@ -2925,10 +2925,10 @@
           lastClickAt = 0;
           clearTimeout(clickTimer);
           clickTimer = null;
-          // Only synthesis has an assigned double-tap action (full reload → triggers
-          // the mobile clock on cold start).  All other buttons — including probes and
-          // settings — are no-ops with TTS/sound feedback so the event is still audible.
-          const hasDoubleTapAction = def && def.bridgeGroup === 'synthesis';
+          // Only the synthesis action has an assigned double-tap action: open the
+          // clock overlay. All other buttons are no-ops with TTS/sound feedback so
+          // the event is still audible without changing tabs.
+          const hasDoubleTapAction = action === 'synthesis';
           hardRefreshRecordTelemetry('action-button:run-double', {
             action,
             label: def?.label || '',
@@ -2947,9 +2947,10 @@
             }
             return;
           }
-          // Synthesis double-tap uses the same hard-refresh path as the menu action
-          // so pseudo-tabs such as Manual Links - Interface survive the reload.
-          hardRefreshClientAssets();
+          const clockDef = BUTTON_DEFS.clock;
+          if (clockDef && typeof clockDef.doAction === 'function') {
+            clockDef.doAction();
+          }
         }
 
         if (isTouch) {
