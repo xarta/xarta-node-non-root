@@ -1582,6 +1582,7 @@ const _mlGridInteractionFsm = (() => {
   let lastRouteToggle = null;
   let categoryNestIntent = null;
   let dragOrderIntent = null;
+  let urlDropIntent = null;
   let dragCopyIntent = false;
 
   const clearPending = () => {
@@ -1606,6 +1607,12 @@ const _mlGridInteractionFsm = (() => {
     _mlClearDragOrderMarkers();
   };
 
+  const clearUrlDropIntent = () => {
+    urlDropIntent = null;
+    _mlClearDragOrderMarkers();
+    _mlClearGridDropTarget();
+  };
+
   const updateDragOrderIntent = intent => {
     const key = intent
       ? `${intent.kind}:${intent.draggedId}:${intent.parentId || intent.parentMappingId || intent.categoryId || ''}:${intent.targetId || ''}:${intent.position || ''}`
@@ -1617,6 +1624,23 @@ const _mlGridInteractionFsm = (() => {
     clearDragOrderIntent();
     dragOrderIntent = intent || null;
     _mlMarkDragOrderIntent(dragOrderIntent);
+  };
+
+  const updateUrlDropIntent = intent => {
+    const key = intent
+      ? `${intent.kind}:${intent.categoryId || ''}:${intent.parentMappingId || ''}:${intent.targetId || ''}:${intent.position || ''}:${intent.cell?.col || ''}:${intent.cell?.row || ''}`
+      : '';
+    const currentKey = urlDropIntent
+      ? `${urlDropIntent.kind}:${urlDropIntent.categoryId || ''}:${urlDropIntent.parentMappingId || ''}:${urlDropIntent.targetId || ''}:${urlDropIntent.position || ''}:${urlDropIntent.cell?.col || ''}:${urlDropIntent.cell?.row || ''}`
+      : '';
+    if (key === currentKey) return;
+    clearUrlDropIntent();
+    urlDropIntent = intent || null;
+    if (urlDropIntent?.kind === 'root-cell' && urlDropIntent.board && urlDropIntent.event) {
+      _mlShowGridDropTarget(urlDropIntent.board, urlDropIntent.event);
+      return;
+    }
+    _mlMarkDragOrderIntent(urlDropIntent);
   };
 
   const updateCategoryNestIntent = (sourceCategoryId, targetCard) => {
@@ -1736,6 +1760,7 @@ const _mlGridInteractionFsm = (() => {
     endNativeDrag() {
       clearCategoryNestIntent();
       clearDragOrderIntent();
+      clearUrlDropIntent();
       dragCopyIntent = false;
       if (state === _ML_GRID_INTERACTION_STATES.DRAGGING) state = _ML_GRID_INTERACTION_STATES.IDLE;
     },
@@ -1751,6 +1776,11 @@ const _mlGridInteractionFsm = (() => {
       return dragOrderIntent;
     },
     clearDragOrderIntent,
+    updateUrlDropIntent,
+    urlDropIntentForDrop() {
+      return urlDropIntent;
+    },
+    clearUrlDropIntent,
     pointerDown(event) {
       if (event.pointerType === 'touch' || event.pointerType === 'pen') {
         state = _ML_GRID_INTERACTION_TRANSITIONS[state]?.press?.next || _ML_GRID_INTERACTION_STATES.PRESSING;
@@ -1975,6 +2005,55 @@ function _mlMarkDragOrderIntent(intent) {
     return;
   }
   intent.marker.classList.add(intent.position === 'before' ? 'is-order-before' : 'is-order-after');
+}
+
+function _mlResolveUrlDropIntent(target, event) {
+  if (!target || !event) return null;
+  const mappingRow = _mlMappingRowElement(target);
+  if (mappingRow) {
+    const targetId = _mlMappingIdForRow(mappingRow);
+    const targetItem = _mlMappingItemById(targetId);
+    if (targetItem) {
+      return {
+        kind: 'mapping-order',
+        categoryId: targetItem.category_id,
+        parentMappingId: _mlVisibleParentMappingIdForRow(mappingRow),
+        targetId,
+        position: _mlOrderPositionFromEvent(event, mappingRow),
+        siblingIds: _mlMappingSiblingIds(mappingRow.parentElement),
+        marker: mappingRow,
+      };
+    }
+  }
+  const dropZoneContainer = _mlCategoryDropZoneContainer(target);
+  let targetCard = target.closest?.('[data-ml-grid-card]');
+  if (dropZoneContainer && targetCard?.matches?.('[data-ml-grid-panel]')) targetCard = null;
+  if (targetCard?.dataset?.categoryId) {
+    return {
+      kind: 'category-target',
+      categoryId: targetCard.dataset.categoryId,
+      marker: targetCard,
+      position: 'append',
+    };
+  }
+  if (dropZoneContainer?.dataset?.mlDropParent) {
+    return {
+      kind: 'category-target',
+      categoryId: dropZoneContainer.dataset.mlDropParent,
+      marker: dropZoneContainer,
+      position: 'append',
+    };
+  }
+  const board = target.closest?.('.ml-grid-board') || document.querySelector('#ml-grid-body .ml-grid-board');
+  if (!board) return null;
+  const cell = _mlGridDropCellForEvent(board, event);
+  if (!cell) return null;
+  return {
+    kind: 'root-cell',
+    cell,
+    board,
+    event,
+  };
 }
 
 function _mlCategoryNestCandidateId(sourceCategoryId, targetCard) {
@@ -2932,6 +3011,66 @@ async function _mlIntakeDroppedUrl(url, targetCategoryId) {
   if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
   const result = await r.json();
   await loadManualLinks();
+  return result;
+}
+
+function _mlMappingForLinkInCategory(linkId, categoryId) {
+  return _manualLinkCategoryItems.find(item => item.link_id === linkId && item.category_id === categoryId) || null;
+}
+
+function _mlMappingForIntakeResult(result) {
+  if (!result?.link_id) return null;
+  const expectedId = result.category_id ? `${result.category_id}:${result.link_id}` : '';
+  return _manualLinkCategoryItems.find(item => item.mapping_id === expectedId) ||
+    _manualLinkCategoryItems.find(item => item.link_id === result.link_id && item.category_id === result.category_id) ||
+    null;
+}
+
+async function _mlEnsureUrlDropMappingPlacement(result, targetCategoryId, parentMappingId = null) {
+  if (!result?.link_id || !targetCategoryId) return null;
+  const existingTarget = _mlMappingForLinkInCategory(result.link_id, targetCategoryId);
+  if (existingTarget) {
+    const normalizedParent = _mlNormalizedMappingParent(existingTarget, targetCategoryId);
+    if ((normalizedParent || null) !== (parentMappingId || null)) {
+      await _mlMoveCategoryItem(existingTarget.mapping_id, targetCategoryId, parentMappingId || null, { reload: false });
+      await loadManualLinks();
+      return _mlMappingForLinkInCategory(result.link_id, targetCategoryId) || existingTarget;
+    }
+    return existingTarget;
+  }
+  const source = _mlMappingForIntakeResult(result);
+  if (!source) return null;
+  await _mlMoveCategoryItem(source.mapping_id, targetCategoryId, parentMappingId || null, { reload: false });
+  await loadManualLinks();
+  return _mlMappingForLinkInCategory(result.link_id, targetCategoryId) || source;
+}
+
+async function _mlApplyUrlDropIntent(result, intent) {
+  if (!result || !intent) return;
+  if (intent.kind === 'root-cell') {
+    const category = _manualLinkCategories.find(cat => cat.category_id === result.category_id);
+    if (category && !category.parent_category_id && intent.cell) {
+      _mlSaveRootCategoryCell(category.category_id, intent.cell);
+    }
+    renderManualLinksGrid();
+    return;
+  }
+  if (intent.kind === 'category-target') {
+    await _mlEnsureUrlDropMappingPlacement(result, intent.categoryId, null);
+    await loadManualLinks();
+    return;
+  }
+  if (intent.kind === 'mapping-order') {
+    const mapping = await _mlEnsureUrlDropMappingPlacement(result, intent.categoryId, intent.parentMappingId || null);
+    if (!mapping) return;
+    const orderedIds = _mlReorderedIds(intent.siblingIds, mapping.mapping_id, intent.targetId, intent.position);
+    await _mlPersistMappingOrder(orderedIds);
+    await loadManualLinks();
+  }
+}
+
+function _mlShowDroppedUrlResult(result, url) {
+  if (!result || typeof HubDialogs === 'undefined') return;
   if (typeof HubDialogs !== 'undefined') {
     const aiHint = result.ai_used ? `AI: ${result.ai_project || 'local'}` : 'AI fallback was not used';
     const title = result.created
@@ -3819,6 +3958,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const targetCard = e.target.closest('[data-ml-grid-card]');
     const dropZone = e.target.closest('[data-ml-drop-zone]');
     const board = e.target.closest('.ml-grid-board') || document.querySelector('#ml-grid-body .ml-grid-board');
+    if (!_mlGridDragId) {
+      _mlGridInteractionFsm.updateUrlDropIntent(_mlResolveUrlDropIntent(e.target, e));
+      return;
+    }
     const targetCategoryId = _mlDropTargetCategoryId(targetCard, dropZone);
     const orderIntent = _mlResolveDragOrderIntent(_mlGridDragKind, _mlGridDragId, e.target, e);
     _mlGridInteractionFsm.updateDragOrderIntent(orderIntent);
@@ -3840,13 +3983,16 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     const droppedUrl = _mlExtractDroppedUrl(e.dataTransfer);
     if (!_mlGridDragId && droppedUrl) {
-      const targetCard = e.target.closest('[data-ml-grid-card]');
-      const dropZone = e.target.closest('[data-ml-drop-zone]');
-      const targetCategoryId = dropZone?.dataset.mlDropParent || targetCard?.dataset.categoryId || '';
+      const intent = _mlGridInteractionFsm.urlDropIntentForDrop() || _mlResolveUrlDropIntent(e.target, e);
+      const targetCategoryId = (intent?.kind === 'mapping-order' || intent?.kind === 'category-target') ? intent.categoryId : '';
       try {
-        await _mlIntakeDroppedUrl(droppedUrl, targetCategoryId);
+        const result = await _mlIntakeDroppedUrl(droppedUrl, targetCategoryId);
+        await _mlApplyUrlDropIntent(result, intent);
+        _mlShowDroppedUrlResult(result, droppedUrl);
       } catch (err) {
         await HubDialogs.alertError({ title: 'URL intake failed', message: err.message });
+      } finally {
+        _mlGridInteractionFsm.clearUrlDropIntent();
       }
       return;
     }
@@ -3912,6 +4058,11 @@ document.addEventListener('DOMContentLoaded', () => {
     _mlGridDragOffsetY = null;
     _mlGridInteractionFsm.endNativeDrag();
     _mlClearGridDropTarget();
+  });
+  document.getElementById('ml-grid-body')?.addEventListener('dragleave', e => {
+    const body = document.getElementById('ml-grid-body');
+    if (!body || (e.relatedTarget && body.contains(e.relatedTarget))) return;
+    if (!_mlGridDragId) _mlGridInteractionFsm.clearUrlDropIntent();
   });
   document.getElementById('ml-grid-body')?.addEventListener('pointerdown', e => _mlGridInteractionFsm.pointerDown(e));
   document.getElementById('ml-grid-body')?.addEventListener('pointerdown', e => {

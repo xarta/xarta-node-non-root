@@ -391,6 +391,13 @@
   box-shadow: inset 0 -3px 0 var(--glyph-gold, #c8a84b), 0 0 18px rgba(var(--glyph-gold-rgb, 200, 168, 75), 0.20);
 }
 
+.ml-grid-card.is-order-append {
+  border-color: rgba(var(--glyph-gold-rgb, 200, 168, 75), 0.88);
+  box-shadow:
+    inset 0 0 0 2px rgba(var(--glyph-gold-rgb, 200, 168, 75), 0.70),
+    0 0 18px rgba(var(--glyph-gold-rgb, 200, 168, 75), 0.20);
+}
+
 .ml-grid-panel-body.is-order-append {
   border-radius: 6px;
   outline: 2px solid rgba(var(--glyph-gold-rgb, 200, 168, 75), 0.88);
