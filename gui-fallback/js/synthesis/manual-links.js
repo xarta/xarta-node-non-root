@@ -17,7 +17,6 @@ let _mlGridDragSourceParent = null;
 let _mlGridDragOffsetX = null;
 let _mlGridDragOffsetY = null;
 let _mlGridDropCell = null;
-let _mlGridCategoryNestIntent = null;
 let _mlPanelResizeState = null;
 let _mlPanelResizeRevealTimer = null;
 let _mlGridInteractionActive = null;
@@ -35,6 +34,7 @@ const _ML_TOUCH_DRAG_HOLD_MS = 320;
 const _ML_TOUCH_DRAG_MOVE_PX = 6;
 const _ML_TOUCH_DRAG_SCROLL_EDGE = 72;
 const _ML_LEAF_DOUBLE_TAP_MS = 520;
+const _ML_CATEGORY_NEST_HOLD_MS = 5000;
 const _ML_DEFAULT_TAB = 'manual-links-rendered';
 const _ML_GRID_INTERACTION_STATES = Object.freeze({
   IDLE: 'idle',
@@ -1463,6 +1463,7 @@ const _mlGridInteractionFsm = (() => {
   let suppressClickUntil = 0;
   let desktopPress = null;
   let lastRouteToggle = null;
+  let categoryNestIntent = null;
 
   const clearPending = () => {
     if (pending?.timer) window.clearTimeout(pending.timer);
@@ -1473,6 +1474,48 @@ const _mlGridInteractionFsm = (() => {
     if (desktopPress?.timer) window.clearTimeout(desktopPress.timer);
     desktopPress = null;
     if (state === _ML_GRID_INTERACTION_STATES.PRESSING) state = _ML_GRID_INTERACTION_STATES.IDLE;
+  };
+
+  const clearCategoryNestIntent = () => {
+    if (categoryNestIntent?.timer) window.clearTimeout(categoryNestIntent.timer);
+    categoryNestIntent = null;
+    _mlClearCategoryNestMarkers();
+  };
+
+  const updateCategoryNestIntent = (sourceCategoryId, targetCard) => {
+    if (state !== _ML_GRID_INTERACTION_STATES.DRAGGING || _mlGridDragKind !== 'category') {
+      clearCategoryNestIntent();
+      return;
+    }
+    const targetCategoryId = _mlCategoryNestCandidateId(sourceCategoryId, targetCard);
+    if (!targetCategoryId) {
+      clearCategoryNestIntent();
+      return;
+    }
+    if (categoryNestIntent?.sourceId === sourceCategoryId && categoryNestIntent?.targetId === targetCategoryId) {
+      return;
+    }
+    clearCategoryNestIntent();
+    targetCard.classList.add('is-nest-pending');
+    const intent = {
+      sourceId: sourceCategoryId,
+      targetId: targetCategoryId,
+      ready: false,
+      timer: window.setTimeout(() => {
+        intent.ready = true;
+        targetCard.classList.remove('is-nest-pending');
+        targetCard.classList.add('is-nest-ready');
+      }, _ML_CATEGORY_NEST_HOLD_MS),
+    };
+    categoryNestIntent = intent;
+  };
+
+  const categoryNestTargetForDrop = (sourceCategoryId, targetCard) => {
+    const targetCategoryId = _mlCategoryNestCandidateId(sourceCategoryId, targetCard);
+    if (!categoryNestIntent?.ready) return '';
+    if (categoryNestIntent.sourceId !== sourceCategoryId) return '';
+    if (categoryNestIntent.targetId !== targetCategoryId) return '';
+    return targetCategoryId;
   };
 
   const toggleRoute = input => {
@@ -1544,8 +1587,23 @@ const _mlGridInteractionFsm = (() => {
   return {
     dispatch,
     getState: () => state,
+    beginNativeDrag(dragKind) {
+      clearPending();
+      clearDesktopPress();
+      clearCategoryNestIntent();
+      state = _ML_GRID_INTERACTION_STATES.DRAGGING;
+      if (dragKind !== 'category') clearCategoryNestIntent();
+    },
+    endNativeDrag() {
+      clearCategoryNestIntent();
+      if (state === _ML_GRID_INTERACTION_STATES.DRAGGING) state = _ML_GRID_INTERACTION_STATES.IDLE;
+    },
+    updateCategoryNestIntent,
+    categoryNestTargetForDrop,
+    clearCategoryNestIntent,
     pointerDown(event) {
       if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+        state = _ML_GRID_INTERACTION_TRANSITIONS[state]?.press?.next || _ML_GRID_INTERACTION_STATES.PRESSING;
         _mlStartTouchCategoryDrag(event);
         return;
       }
@@ -1651,12 +1709,21 @@ function _mlRememberOpenLinkBranches() {
   });
 }
 
-function _mlClearCategoryNestIntent() {
-  if (_mlGridCategoryNestIntent?.timer) clearTimeout(_mlGridCategoryNestIntent.timer);
+function _mlClearCategoryNestMarkers() {
   document.querySelectorAll('.ml-grid-card.is-nest-pending, .ml-grid-card.is-nest-ready').forEach(card => {
     card.classList.remove('is-nest-pending', 'is-nest-ready');
   });
-  _mlGridCategoryNestIntent = null;
+}
+
+function _mlCategoryNestCandidateId(sourceCategoryId, targetCard) {
+  const targetCategoryId = targetCard?.dataset.categoryId || '';
+  if (!sourceCategoryId || !targetCategoryId || sourceCategoryId === targetCategoryId) return '';
+  if (_mlCategoryDescendsFrom(targetCategoryId, sourceCategoryId)) return '';
+  return targetCategoryId;
+}
+
+function _mlClearCategoryNestIntent() {
+  _mlGridInteractionFsm.clearCategoryNestIntent();
 }
 
 function _mlClearPickedCategory() {
@@ -1715,43 +1782,11 @@ async function _mlPlacePickedCategory(event) {
 }
 
 function _mlUpdateCategoryNestIntent(sourceCategoryId, targetCard) {
-  if (_mlGridDragKind !== 'category') {
-    _mlClearCategoryNestIntent();
-    return;
-  }
-  const targetCategoryId = targetCard?.dataset.categoryId || '';
-  if (!sourceCategoryId || !targetCategoryId || sourceCategoryId === targetCategoryId) {
-    _mlClearCategoryNestIntent();
-    return;
-  }
-  if (_mlCategoryDescendsFrom(targetCategoryId, sourceCategoryId)) {
-    _mlClearCategoryNestIntent();
-    return;
-  }
-  if (_mlGridCategoryNestIntent?.sourceId === sourceCategoryId && _mlGridCategoryNestIntent?.targetId === targetCategoryId) {
-    return;
-  }
-  _mlClearCategoryNestIntent();
-  targetCard.classList.add('is-nest-pending');
-  const intent = {
-    sourceId: sourceCategoryId,
-    targetId: targetCategoryId,
-    ready: false,
-    timer: window.setTimeout(() => {
-      intent.ready = true;
-      targetCard.classList.remove('is-nest-pending');
-      targetCard.classList.add('is-nest-ready');
-    }, 5000),
-  };
-  _mlGridCategoryNestIntent = intent;
+  _mlGridInteractionFsm.updateCategoryNestIntent(sourceCategoryId, targetCard);
 }
 
 function _mlCategoryNestTargetForDrop(sourceCategoryId, targetCard) {
-  const targetCategoryId = targetCard?.dataset.categoryId || '';
-  if (!_mlGridCategoryNestIntent?.ready) return '';
-  if (_mlGridCategoryNestIntent.sourceId !== sourceCategoryId) return '';
-  if (_mlGridCategoryNestIntent.targetId !== targetCategoryId) return '';
-  return targetCategoryId;
+  return _mlGridInteractionFsm.categoryNestTargetForDrop(sourceCategoryId, targetCard);
 }
 
 function _mlGridBoardMetrics(board) {
@@ -2313,6 +2348,7 @@ function _mlPromoteTouchCategoryDrag() {
   const element = state.element || state.card;
   if (!element) return;
   state.kind = _mlGridInteractionTransition(state.kind, 'hold');
+  _mlGridInteractionFsm.dispatch('hold');
   const rect = element.getBoundingClientRect();
   const ghost = element.cloneNode(true);
   ghost.removeAttribute('id');
@@ -2369,12 +2405,10 @@ function _mlMoveTouchCategoryDrag(event) {
   const target = document.elementFromPoint(event.clientX, event.clientY);
   if (_mlGridInteractionActive.dragKind === 'category') {
     const targetCard = target?.closest?.('[data-ml-grid-card]');
-    const dropZone = target?.closest?.('[data-ml-drop-zone]');
     const board = target?.closest?.('.ml-grid-board') || document.querySelector('#ml-grid-body .ml-grid-board');
     if (board) _mlShowGridDropTarget(board, event);
     else _mlClearGridDropTarget();
-    const explicitStructuralDrop = !!dropZone && (!targetCard || targetCard.contains(dropZone));
-    _mlUpdateCategoryNestIntent(_mlGridInteractionActive.categoryId, explicitStructuralDrop ? null : targetCard);
+    _mlUpdateCategoryNestIntent(_mlGridInteractionActive.categoryId, targetCard);
   } else {
     _mlClearCategoryNestIntent();
     _mlClearGridDropTarget();
@@ -2398,6 +2432,7 @@ async function _mlFinishTouchCategoryDrag(event) {
   state.ghost?.remove();
   const releaseKind = state.kind;
   state.kind = _mlGridInteractionTransition(state.kind, event.type === 'pointercancel' ? 'cancel' : 'release');
+  _mlGridInteractionFsm.dispatch(event.type === 'pointercancel' ? 'cancel' : 'release');
   if (releaseKind !== _ML_GRID_INTERACTION_STATES.DRAGGING) {
     _mlClearGridDropTarget();
     if (state.element) state.element.style.display = state.sourceDisplay || '';
@@ -3346,6 +3381,7 @@ document.addEventListener('DOMContentLoaded', () => {
       _mlGridDragOffsetX = null;
       _mlGridDragOffsetY = null;
       _mlSuppressLeafClickBriefly();
+      _mlGridInteractionFsm.beginNativeDrag('mapping');
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', _mlGridDragId);
       return;
@@ -3367,7 +3403,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (card.matches('[data-ml-grid-panel]')) {
       try { e.dataTransfer.setDragImage(card, Math.round(_mlGridDragOffsetX), Math.round(_mlGridDragOffsetY)); } catch (_) {}
     }
-    _mlClearCategoryNestIntent();
+    _mlGridInteractionFsm.beginNativeDrag('category');
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', _mlGridDragId);
   });
@@ -3382,12 +3418,10 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     const targetCard = e.target.closest('[data-ml-grid-card]');
-    const dropZone = e.target.closest('[data-ml-drop-zone]');
     const board = e.target.closest('.ml-grid-board') || document.querySelector('#ml-grid-body .ml-grid-board');
     if (board) _mlShowGridDropTarget(board, e);
     else _mlClearGridDropTarget();
-    const explicitStructuralDrop = !!dropZone && (!targetCard || targetCard.contains(dropZone));
-    _mlUpdateCategoryNestIntent(_mlGridDragId, explicitStructuralDrop ? null : targetCard);
+    _mlUpdateCategoryNestIntent(_mlGridDragId, targetCard);
   });
   document.getElementById('ml-grid-body')?.addEventListener('drop', async e => {
     e.preventDefault();
@@ -3417,7 +3451,7 @@ document.addEventListener('DOMContentLoaded', () => {
         _mlGridDragSourceParent = null;
         _mlGridDragOffsetX = null;
         _mlGridDragOffsetY = null;
-        _mlClearCategoryNestIntent();
+        _mlGridInteractionFsm.endNativeDrag();
         _mlClearGridDropTarget();
         return;
       }
@@ -3433,7 +3467,7 @@ document.addEventListener('DOMContentLoaded', () => {
     _mlGridDragSourceParent = null;
     _mlGridDragOffsetX = null;
     _mlGridDragOffsetY = null;
-    _mlClearCategoryNestIntent();
+    _mlGridInteractionFsm.endNativeDrag();
     _mlClearGridDropTarget();
   });
   document.getElementById('ml-grid-body')?.addEventListener('dragend', () => {
@@ -3442,7 +3476,7 @@ document.addEventListener('DOMContentLoaded', () => {
     _mlGridDragSourceParent = null;
     _mlGridDragOffsetX = null;
     _mlGridDragOffsetY = null;
-    _mlClearCategoryNestIntent();
+    _mlGridInteractionFsm.endNativeDrag();
     _mlClearGridDropTarget();
   });
   document.getElementById('ml-grid-body')?.addEventListener('pointerdown', e => _mlGridInteractionFsm.pointerDown(e));
