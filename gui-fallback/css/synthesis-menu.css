@@ -1586,12 +1586,24 @@ dialog.hub-modal.ml-full-modal .hub-modal-body {
 }
 
 .ml-dest-trigger {
+  display: flex;
+  align-items: center;
   width: 100%;
+  min-width: 0;
+  overflow: hidden;
   justify-content: space-between;
+}
+
+.ml-dest-trigger > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ml-dest-trigger::after {
   content: 'v';
+  flex: 0 0 auto;
   margin-left: 8px;
   color: var(--hub-accent);
 }
@@ -1713,6 +1725,13 @@ dialog.hub-modal.ml-full-modal .hub-modal-body {
   .ml-manage-row-actions .ml-dest-trigger {
     height: 34px;
     min-height: 34px;
+  }
+
+  .ml-manage-row-actions .ml-dest-picker {
+    left: auto;
+    right: 0;
+    width: min(280px, calc(100vw - 32px));
+    max-height: min(42vh, 360px);
   }
 
   .ml-manage-row-actions .ml-manage-mini-action {

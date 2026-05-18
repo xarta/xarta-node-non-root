@@ -1690,6 +1690,13 @@ function _mlAlignOpenGridMenus() {
 
 function _mlPositionDestinationPicker(trigger, panel) {
   if (!trigger || !panel || panel.hidden) return;
+  const mobile = _mlGridLayoutBucket() === 'mobile';
+  panel.classList.toggle('is-fixed', !mobile);
+  panel.style.width = '';
+  panel.style.left = '';
+  panel.style.top = '';
+  panel.style.maxHeight = '';
+  if (mobile) return;
   const viewportW = window.innerWidth || document.documentElement.clientWidth || 0;
   const viewportH = (window.visualViewport && window.visualViewport.height) || window.innerHeight || document.documentElement.clientHeight || 0;
   const rect = trigger.getBoundingClientRect();
@@ -1699,7 +1706,6 @@ function _mlPositionDestinationPicker(trigger, panel) {
   const above = rect.top - 12;
   const openAbove = below < 220 && above > below;
   const maxHeight = Math.max(160, Math.min(460, (openAbove ? above : below) - 6));
-  panel.classList.add('is-fixed');
   panel.style.width = `${Math.round(width)}px`;
   panel.style.left = `${Math.round(left)}px`;
   panel.style.top = openAbove
@@ -3454,8 +3460,8 @@ function _mlOpenCategoryManage(categoryId, { stack = false, modal: suppliedModal
     const displayLabel = _mlCategoryDisplayLabel(cat);
     const controls = `<div class="ml-manage-row-actions ml-manage-row-actions--category">
       <div class="ml-dest-control">
-        <button class="hub-action-btn ml-dest-trigger" type="button" data-ml-category-dest-trigger="${esc(cat.category_id)}">
-          <span data-ml-category-dest-label>${esc(currentParent)}</span>
+        <button class="hub-action-btn ml-dest-trigger" type="button" data-ml-category-dest-trigger="${esc(cat.category_id)}" title="${esc(currentParent)}">
+          <span data-ml-category-dest-label title="${esc(currentParent)}">${esc(currentParent)}</span>
         </button>
         ${_mlCategoryDestinationPickerHtml(cat.category_id)}
       </div>
@@ -3496,8 +3502,8 @@ function _mlOpenCategoryManage(categoryId, { stack = false, modal: suppliedModal
     const currentPath = _mlCategoryPath(categoryId) || category.label;
     const controls = `<div class="ml-manage-row-actions">
       <div class="ml-dest-control">
-        <button class="hub-action-btn ml-dest-trigger" type="button" data-ml-dest-trigger="${esc(item.mapping_id)}">
-          <span data-ml-dest-label>${esc(currentPath)}</span>
+        <button class="hub-action-btn ml-dest-trigger" type="button" data-ml-dest-trigger="${esc(item.mapping_id)}" title="${esc(currentPath)}">
+          <span data-ml-dest-label title="${esc(currentPath)}">${esc(currentPath)}</span>
         </button>
         ${_mlDestinationPickerHtml(item.mapping_id)}
       </div>
@@ -3546,8 +3552,8 @@ function _mlOpenCategoryManage(categoryId, { stack = false, modal: suppliedModal
         <button class="hub-action-btn ml-manage-mini-action" type="button" data-ml-promote-page-category="${esc(categoryId)}">Promote to Page</button>
         <div class="ml-page-target-tools" aria-label="Copy or move category to an existing page">
           <div class="ml-dest-control">
-            <button class="hub-action-btn ml-dest-trigger" type="button" data-ml-page-dest-trigger="${esc(categoryId)}">
-              <span data-ml-page-dest-label>Existing page</span>
+            <button class="hub-action-btn ml-dest-trigger" type="button" data-ml-page-dest-trigger="${esc(categoryId)}" title="Existing page">
+              <span data-ml-page-dest-label title="Existing page">Existing page</span>
             </button>
             ${_mlPageDestinationPickerHtml(categoryId)}
           </div>
@@ -4535,7 +4541,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!row) return;
         row.dataset.mlCategoryDestinationId = categoryChoice.dataset.mlCategoryDestChoice || '';
         const label = row.querySelector('[data-ml-category-dest-label]');
-        if (label) label.textContent = categoryChoice.dataset.mlCategoryDestLabel || 'Top categories';
+        const nextLabel = categoryChoice.dataset.mlCategoryDestLabel || 'Top categories';
+        if (label) {
+          label.textContent = nextLabel;
+          label.title = nextLabel;
+        }
+        const trigger = row.querySelector('[data-ml-category-dest-trigger]');
+        if (trigger) trigger.title = nextLabel;
         const panel = categoryChoice.closest('.ml-dest-picker');
         if (panel) panel.hidden = true;
         return;
@@ -4563,7 +4575,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!row) return;
         row.dataset.mlPageDestinationId = pageChoice.dataset.mlPageDestChoice || '';
         const label = row.querySelector('[data-ml-page-dest-label]');
-        if (label) label.textContent = pageChoice.dataset.mlPageDestLabel || 'Existing page';
+        const nextLabel = pageChoice.dataset.mlPageDestLabel || 'Existing page';
+        if (label) {
+          label.textContent = nextLabel;
+          label.title = nextLabel;
+        }
+        const trigger = row.querySelector('[data-ml-page-dest-trigger]');
+        if (trigger) trigger.title = nextLabel;
         const panel = pageChoice.closest('.ml-dest-picker');
         if (panel) panel.hidden = true;
         return;
@@ -4742,7 +4760,13 @@ document.addEventListener('DOMContentLoaded', () => {
         row.dataset.mlDestinationId = choice.dataset.mlDestChoice;
         row.dataset.mlDestinationParentId = choice.dataset.mlDestParent || '';
         const label = row.querySelector('[data-ml-dest-label]');
-        if (label) label.textContent = choice.dataset.mlDestLabel || choice.textContent.trim();
+        const nextLabel = choice.dataset.mlDestLabel || choice.textContent.trim();
+        if (label) {
+          label.textContent = nextLabel;
+          label.title = nextLabel;
+        }
+        const trigger = row.querySelector('[data-ml-dest-trigger]');
+        if (trigger) trigger.title = nextLabel;
         const panel = choice.closest('.ml-dest-picker');
         if (panel) panel.hidden = true;
         return;
