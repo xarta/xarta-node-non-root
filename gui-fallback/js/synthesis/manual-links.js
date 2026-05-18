@@ -1897,6 +1897,12 @@ function _mlCategorySiblingIds(container) {
     .filter(Boolean);
 }
 
+function _mlCategoryDropZoneContainer(target) {
+  const dropZone = target?.closest?.('[data-ml-drop-zone]');
+  if (!dropZone?.classList?.contains('ml-grid-panel-body')) return null;
+  return dropZone;
+}
+
 function _mlOrderPositionFromEvent(event, element) {
   const rect = element?.getBoundingClientRect?.();
   if (!rect) return 'after';
@@ -1906,18 +1912,33 @@ function _mlOrderPositionFromEvent(event, element) {
 function _mlResolveDragOrderIntent(dragKind, draggedId, target, event) {
   if (!dragKind || !draggedId || !target || !event) return null;
   if (dragKind === 'category') {
-    const targetCard = target.closest?.('[data-ml-grid-card]');
-    if (!targetCard || targetCard.dataset.categoryId === draggedId) return null;
-    const targetParent = targetCard.parentElement?.closest?.('[data-ml-grid-panel]')?.dataset.categoryId || '';
-    const sourceParent = _mlGridDragSourceParent || '';
-    if (!targetParent || targetParent !== sourceParent) return null;
+    const dropZoneContainer = _mlCategoryDropZoneContainer(target);
+    let targetCard = target.closest?.('[data-ml-grid-card]');
+    if (dropZoneContainer && targetCard?.matches?.('[data-ml-grid-panel]')) targetCard = null;
+    if (targetCard?.dataset.categoryId === draggedId) return null;
+    const targetContainer = targetCard?.parentElement || dropZoneContainer;
+    const targetParent = targetContainer?.closest?.('[data-ml-grid-panel]')?.dataset.categoryId || '';
+    if (!targetParent) return null;
+    if (targetParent === draggedId || _mlCategoryDescendsFrom(targetParent, draggedId)) return null;
+    const siblingIds = _mlCategorySiblingIds(targetContainer);
+    if (!targetCard) {
+      return {
+        kind: 'category',
+        draggedId,
+        targetId: '',
+        parentId: targetParent,
+        position: 'append',
+        siblingIds,
+        marker: targetContainer,
+      };
+    }
     return {
       kind: 'category',
       draggedId,
       targetId: targetCard.dataset.categoryId,
       parentId: targetParent,
       position: _mlOrderPositionFromEvent(event, targetCard),
-      siblingIds: _mlCategorySiblingIds(targetCard.parentElement),
+      siblingIds,
       marker: targetCard,
     };
   }
@@ -1949,6 +1970,10 @@ function _mlResolveDragOrderIntent(dragKind, draggedId, target, event) {
 
 function _mlMarkDragOrderIntent(intent) {
   if (!intent?.marker) return;
+  if (intent.position === 'append') {
+    intent.marker.classList.add('is-order-append');
+    return;
+  }
   intent.marker.classList.add(intent.position === 'before' ? 'is-order-before' : 'is-order-after');
 }
 
