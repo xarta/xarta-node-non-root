@@ -1111,8 +1111,7 @@ function createHubMenu(cfg) {
         // Update active visual state. Accepts an explicit tabId or derives from DOM.
         updateActiveTab(activeId) {
             if (!activeId) {
-                const activePanel = document.querySelector('.tab-panel.active');
-                if (activePanel) activeId = activePanel.id.replace('tab-', '');
+                activeId = this._activeTabId();
             }
             if (activeId) this._activeId = activeId;
 

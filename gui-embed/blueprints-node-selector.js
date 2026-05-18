@@ -562,6 +562,9 @@
   }
 
   const HARD_REFRESH_TELEMETRY_KEY = 'blueprintsHardRefreshTelemetry';
+  const HARD_REFRESH_SERVER_TELEMETRY_TYPE = 'hard_refresh_telemetry';
+  const HARD_REFRESH_SERVER_TELEMETRY_SOURCE = 'gui-embed-hard-refresh';
+  const hardRefreshTelemetrySends = new Set();
 
   function hardRefreshManualLinksApi() {
     return window.BlueprintsManualLinks
@@ -623,11 +626,38 @@
     let apiTab = '';
     let sessionTab = '';
     let bridgeTab = '';
+    let bridgeRawActiveId = '';
+    let bridgeContextItems = [];
+    let bridgeCurrentLabel = '';
+    let bridgeActiveButtons = [];
+    let debugCells = false;
     try { apiTab = manualApi?.getCurrentTabId?.() || ''; } catch (_e) {}
+    try { debugCells = manualApi?.debugCellsEnabled?.() === true; } catch (_e) {}
     try { sessionTab = sessionStorage.getItem('blueprintsManualLinksActiveTab') || ''; } catch (_e) {}
     try {
       const menuConfig = bridge && typeof bridge.getActiveMenuConfig === 'function' && bridge.getActiveMenuConfig();
-      bridgeTab = menuConfig && typeof menuConfig._activeTabId === 'function' ? menuConfig._activeTabId() : '';
+      if (menuConfig) {
+        bridgeRawActiveId = menuConfig._activeId || '';
+        bridgeTab = typeof menuConfig._activeTabId === 'function' ? menuConfig._activeTabId() : '';
+        if (typeof menuConfig._contextMenuFunctionItems === 'function') {
+          bridgeContextItems = menuConfig._contextMenuFunctionItems(bridgeTab)
+            .map(item => ({
+              id: item.id || '',
+              fn: item.fn || '',
+              label: item.label || '',
+              activeOn: Array.isArray(item.activeOn) ? item.activeOn : [],
+            }));
+        }
+      }
+    } catch (_e) {}
+    try {
+      bridgeCurrentLabel = document.getElementById('synthesisCurrentTabLabel')?.textContent?.trim() || '';
+      bridgeActiveButtons = [...document.querySelectorAll('#synthesisHubTabs .hub-tab.active, #synthesisHubTabsPinned .hub-tab.active, #synthesisHubTabs .hub-tab-label.active, #synthesisHubTabsPinned .hub-tab-label.active')]
+        .map(el => ({
+          text: el.textContent.trim(),
+          tab: el.dataset?.tab || '',
+          fn: el.dataset?.fn || '',
+        }));
     } catch (_e) {}
     return {
       at: new Date().toISOString(),
@@ -641,14 +671,68 @@
         visibleTab: hardRefreshVisibleManualLinksTab(),
         apiTab,
         sessionTab,
+        debugCells,
         views: hardRefreshCaptureManualLinksViews(),
       },
       bridge: {
         activeGroup: bridge?.activeGroup || '',
         menuActiveTab: bridgeTab || '',
+        rawActiveIdBeforeNormalize: bridgeRawActiveId || '',
+        currentLabel: bridgeCurrentLabel || '',
+        activeButtons: bridgeActiveButtons,
+        contextItems: bridgeContextItems,
       },
       ...extra,
     };
+  }
+
+  function hardRefreshServerTelemetryEnabled() {
+    const manualApi = hardRefreshManualLinksApi();
+    try {
+      if (manualApi?.debugCellsEnabled?.() === true) return true;
+    } catch (_e) {}
+    try {
+      if (localStorage.getItem('blueprintsHardRefreshServerTelemetry') === '1') return true;
+    } catch (_e) {}
+    try {
+      const params = new URL(window.location.href).searchParams;
+      return params.get('hard_refresh_telemetry') === '1' || params.has('_fresh');
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  function hardRefreshQueueServerTelemetry(entry) {
+    if (!hardRefreshServerTelemetryEnabled()) return;
+    const body = JSON.stringify({
+      event_type: HARD_REFRESH_SERVER_TELEMETRY_TYPE,
+      severity: 'info',
+      title: 'Hard refresh telemetry',
+      message: entry.event || 'hard-refresh',
+      source: HARD_REFRESH_SERVER_TELEMETRY_SOURCE,
+      payload: entry,
+    });
+    const send = _authFetch('/api/v1/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      cache: 'no-store',
+      keepalive: true,
+    }).catch((error) => {
+      if (window.console && typeof window.console.warn === 'function') {
+        window.console.warn('[Blueprints hard refresh telemetry server send failed]', error);
+      }
+    });
+    hardRefreshTelemetrySends.add(send);
+    send.finally(() => hardRefreshTelemetrySends.delete(send));
+  }
+
+  async function hardRefreshFlushServerTelemetry(timeoutMs = 800) {
+    if (!hardRefreshTelemetrySends.size) return;
+    await Promise.race([
+      Promise.allSettled([...hardRefreshTelemetrySends]),
+      new Promise(resolve => window.setTimeout(resolve, timeoutMs)),
+    ]);
   }
 
   function hardRefreshRecordTelemetry(event, detail = {}) {
@@ -667,6 +751,7 @@
     if (window.console && typeof window.console.warn === 'function') {
       window.console.warn('[Blueprints hard refresh telemetry]', entry);
     }
+    hardRefreshQueueServerTelemetry(entry);
     return entry;
   }
 
@@ -681,7 +766,33 @@
     capture(label = 'manual-capture') {
       return hardRefreshRecordTelemetry(label);
     },
+    serverEnabled() {
+      return hardRefreshServerTelemetryEnabled();
+    },
   };
+
+  function hardRefreshSchedulePostLoadTelemetry() {
+    if (!hardRefreshServerTelemetryEnabled()) return;
+    const capture = label => {
+      hardRefreshRecordTelemetry(label, {
+        readyState: document.readyState,
+      });
+    };
+    const run = () => {
+      capture('post-load:dom-ready');
+      window.setTimeout(() => capture('post-load:after-250ms'), 250);
+      window.setTimeout(() => capture('post-load:after-1000ms'), 1000);
+      window.setTimeout(() => {
+        capture('post-load:after-2000ms');
+        void hardRefreshFlushServerTelemetry();
+      }, 2000);
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', run, { once: true });
+    } else {
+      window.setTimeout(run, 0);
+    }
+  }
 
   function hardRefreshNormalizePageState(state) {
     const next = {
@@ -814,6 +925,7 @@
   })();
 
   window.BlueprintsHardRefreshStateMachine = HardRefreshStateMachine;
+  hardRefreshSchedulePostLoadTelemetry();
 
   async function hardRefreshClientAssets() {
     try {
@@ -848,6 +960,7 @@
         pageState: refreshIntent.pageState,
         url: refreshIntent.url.toString(),
       });
+      await hardRefreshFlushServerTelemetry();
       window.location.replace(refreshIntent.url.toString());
     } catch (error) {
       hardRefreshRecordTelemetry('client-assets:error', { message: error.message });
