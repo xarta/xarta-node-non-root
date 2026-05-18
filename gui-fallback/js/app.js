@@ -413,6 +413,9 @@ function switchTab(tab) {
   if (tab === 'hermes-local' || tab === 'hermes-vps') {
     if (typeof _agentPagesLoadHermes === 'function') _agentPagesLoadHermes(tab);
   }
+  if (tab === 'matrix-chat') {
+    if (typeof _matrixChatLoadTab === 'function') _matrixChatLoadTab();
+  }
   if (tab === 'caddy-configs'  && !_caddyConfigs.length)  loadCaddyConfigs();
   if (tab === 'pve-hosts'      && !_pveHosts.length)      loadPveHosts();
   if (tab === 'vlans'          && !_vlans.length)         loadVlans();

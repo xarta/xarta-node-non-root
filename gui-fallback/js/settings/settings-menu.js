@@ -42,6 +42,7 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'agent-pages',     label: 'Agents',         icon: HIEROGLYPHS.falcon,     pageLabel: 'Agent Pages',     parent: null,        order: 2 },
         { id: 'hermes-local',    label: 'Hermes Local',   icon: HIEROGLYPHS.khaHorizon, pageLabel: 'Hermes Local',    parent: 'agent-pages', order: 0 },
         { id: 'hermes-vps',      label: 'Hermes VPS',     icon: HIEROGLYPHS.falcon,     pageLabel: 'Hermes VPS',      parent: 'agent-pages', order: 1 },
+        { id: 'matrix-chat',     label: 'Chat',           icon: HIEROGLYPHS.papyrus,    pageLabel: 'Chat',            parent: 'agent-pages', order: 2 },
         { id: 'settings',        label: 'App Config',     icon: HIEROGLYPHS.djedPillar, pageLabel: 'App Config',      parent: null,        order: 3 },
         { id: 'arp-manual',      label: 'Manual ARP',     icon: HIEROGLYPHS.obelisk,    pageLabel: 'Manual ARP',      parent: 'settings',  order: 0 },
         { id: 'ai-providers',    label: 'AI Providers',   icon: HIEROGLYPHS.falcon,     pageLabel: 'AI Providers',    parent: 'settings',  order: 1 },
@@ -101,6 +102,9 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'agent-fn-terminal',label: 'Container Shell',   icon: HIEROGLYPHS.ankh,       fn: 'agent.terminal',activeOn: ['hermes-local', 'hermes-vps'], parent: 'settings-layout', order: 2 },
         { id: 'agent-fn-tui',     label: 'Agent TUI',         icon: HIEROGLYPHS.falcon,     fn: 'agent.tui',     activeOn: ['hermes-local', 'hermes-vps'], parent: 'settings-layout', order: 3 },
         { id: 'agent-fn-setup',   label: 'Setup',             icon: HIEROGLYPHS.djedPillar, fn: 'agent.setup',   activeOn: ['hermes-local', 'hermes-vps'], parent: 'settings-layout', order: 4 },
+        { id: 'chat-fn-refresh',  label: 'Refresh Chat',      icon: HIEROGLYPHS.nefer,      fn: 'chat.refresh',  activeOn: ['matrix-chat'], parent: 'settings-layout', order: 0 },
+        { id: 'chat-fn-mention',  label: 'Mention Hermes',    icon: HIEROGLYPHS.falcon,     fn: 'chat.mention',  activeOn: ['matrix-chat'], parent: 'settings-layout', order: 1 },
+        { id: 'chat-fn-send',     label: 'Send Message',      icon: HIEROGLYPHS.khaHorizon, fn: 'chat.send',     activeOn: ['matrix-chat'], parent: 'settings-layout', order: 2 },
 
         // ── Manual ARP page function items ────────────────────────────────
         { id: 'arp-fn-add',      label: 'Add entry',        icon: HIEROGLYPHS.obelisk,    fn: 'arp.add',      activeOn: ['arp-manual'],   parent: 'settings-layout', order: 0 },
@@ -935,6 +939,9 @@ SettingsMenuConfig.registerFunctions({
     'agent.terminal': () => window._agentPagesOpenTerminal?.('terminal'),
     'agent.tui':      () => window._agentPagesOpenTerminal?.('tui'),
     'agent.setup':    () => window._agentPagesOpenTerminal?.('setup'),
+    'chat.refresh':   () => window.MatrixChat?.refresh?.(),
+    'chat.mention':   () => window.MatrixChat?.insertHermesMention?.(),
+    'chat.send':      () => window.MatrixChat?.sendMessage?.(),
 
     // Manual ARP
     'arp.add':      () => addArpManualEntry(),

@@ -11,6 +11,8 @@
     { key: 'terminal-agent', rank: 9, patterns: [/ssh-fn-agent/, /\bagent\b/] },
     { key: 'terminal-setup', rank: 11, patterns: [/ssh-fn-setup/, /\bsetup\b/] },
     { key: 'refresh', rank: 10, patterns: [/\brefresh\b/, /\breload\b/, /refresh ui/] },
+    { key: 'chat-mention', rank: 16, patterns: [/chat-fn-mention/, /\bmention\b/] },
+    { key: 'chat-send', rank: 18, patterns: [/chat-fn-send/, /\bsend message\b/] },
     { key: 'connect', rank: 12, patterns: [/\bconnect\b/] },
     { key: 'disconnect', rank: 14, patterns: [/\bdisconnect\b/] },
     { key: 'run-probe', rank: 20, patterns: [/\bscan\b/, /\bprobe\b/, /\bsweep\b/, /\brebuild\b/, /\brun\b/, /\bsteps\b/, /fleet update/] },

@@ -41,6 +41,7 @@
   <link rel="stylesheet" href="vendor/xterm/xterm.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/ssh-terminal.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/agent-pages.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/matrix-chat.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="embed/clock-overlay.css?v={{$assetVersion}}" />
 </head>
 <body class="bp-font-role-root">
@@ -897,6 +898,61 @@
           title="Hermes VPS dashboard"
           referrerpolicy="no-referrer"
         ></iframe>
+      </div>
+    </div>
+  </section>
+
+  <!-- Agent Pages: Matrix Chat -->
+  <section id="tab-matrix-chat" class="tab-panel tab-panel--fill">
+    <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
+    <div class="matrix-chat-shell">
+      <aside class="matrix-chat-rail" aria-label="Matrix rooms">
+        <div class="matrix-chat-rail-header">
+          <div class="matrix-chat-rail-title">
+            <strong>Matrix Chat</strong>
+            <span id="matrix-chat-user">Loading...</span>
+          </div>
+          <button id="matrix-chat-refresh" class="matrix-chat-icon-btn" type="button" title="Refresh Matrix chat" aria-label="Refresh Matrix chat">R</button>
+        </div>
+        <div class="matrix-chat-rooms-wrap">
+          <div class="matrix-chat-subhead">Rooms</div>
+          <div id="matrix-chat-rooms"></div>
+          <div class="matrix-chat-subhead">Invites</div>
+          <div id="matrix-chat-invites" hidden></div>
+        </div>
+        <div class="matrix-chat-forms">
+          <div class="matrix-chat-inline-form">
+            <input id="matrix-chat-create-name" type="text" placeholder="New room name" autocomplete="off" />
+            <button id="matrix-chat-create" class="matrix-chat-icon-btn" type="button" title="Create room" aria-label="Create room">+</button>
+          </div>
+          <div class="matrix-chat-inline-form">
+            <input id="matrix-chat-join-id" type="text" placeholder="Room ID or alias" autocomplete="off" />
+            <button id="matrix-chat-join" class="matrix-chat-icon-btn" type="button" title="Join room" aria-label="Join room">J</button>
+          </div>
+          <div class="matrix-chat-inline-form">
+            <input id="matrix-chat-invite-user" type="text" placeholder="@user:homeserver" autocomplete="off" />
+            <button id="matrix-chat-invite" class="matrix-chat-icon-btn" type="button" title="Invite user" aria-label="Invite user">@</button>
+          </div>
+        </div>
+      </aside>
+      <div class="matrix-chat-main" aria-label="Matrix room timeline">
+        <div class="matrix-chat-room-header">
+          <div class="matrix-chat-room-title">
+            <strong id="matrix-chat-room-title">No room selected</strong>
+            <span id="matrix-chat-room-id"></span>
+          </div>
+          <div class="matrix-chat-meta-line">
+            <span id="matrix-chat-homeserver"></span>
+            <span id="matrix-chat-features"></span>
+          </div>
+        </div>
+        <p id="matrix-chat-status" class="matrix-chat-status" aria-live="polite" hidden></p>
+        <div id="matrix-chat-timeline" class="matrix-chat-timeline" aria-live="polite"></div>
+        <div class="matrix-chat-composer">
+          <button id="matrix-chat-mention-hermes" class="matrix-chat-icon-btn" type="button" title="Mention Hermes" aria-label="Mention Hermes">@H</button>
+          <textarea id="matrix-chat-composer" placeholder="Message Matrix room" autocomplete="off"></textarea>
+          <button id="matrix-chat-send" class="matrix-chat-icon-btn" type="button" title="Send message" aria-label="Send message">Send</button>
+        </div>
       </div>
     </div>
   </section>
@@ -3859,6 +3915,7 @@
 <script src="vendor/xterm/xterm.js?v={{$assetVersion}}"></script>
 <script src="js/settings/ssh-terminal.js?v={{$assetVersion}}"></script>
 <script src="js/settings/agent-pages.js?v={{$assetVersion}}"></script>
+<script src="js/settings/matrix-chat.js?v={{$assetVersion}}"></script>
 <script src="js/settings/arp-manual.js?v={{$assetVersion}}"></script>
 <script src="js/settings/ai-providers.js?v={{$assetVersion}}"></script>
 <script src="js/settings/nav-items.js?v={{$assetVersion}}"></script>
