@@ -365,12 +365,6 @@ function switchTab(tab) {
       && _sshTerminalShouldBlockNavigation(tab)) {
     return;
   }
-  if (tab === 'splash-dont-panic'
-      || tab === 'splash-dont-panic-1'
-      || tab === 'splash-dont-panic-2') {
-    switchTab('splash-dont-panic-3');
-    return;
-  }
   if (tab === 'manual-links' && !_manualLinksBaseNavigation
       && typeof BlueprintsManualLinks !== 'undefined'
       && typeof BlueprintsManualLinks.getDefaultTabId === 'function') {

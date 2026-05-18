@@ -5,8 +5,7 @@
 
 const BlueprintsSplashScreens = (() => {
   const DEFAULT_KEY = 'blueprintsDefaultSplashScreen';
-  const LEGACY_ID = 'splash-dont-panic';
-  const FALLBACK_ID = 'splash-dont-panic-3';
+  const DEFAULT_ID = 'splash-dont-panic-3';
   const RENDERER_IMPORT_VERSION = '20260516-braille-mono-2';
   const DEBUG_KEY = 'blueprintsDontPanic3DebugTelemetry';
 
@@ -23,13 +22,11 @@ const BlueprintsSplashScreens = (() => {
   let _lastTap = { time: 0, x: 0, y: 0 };
 
   function normalizeId(id) {
-    if (id === LEGACY_ID) return FALLBACK_ID;
-    if (id === 'splash-dont-panic-1' || id === 'splash-dont-panic-2') return FALLBACK_ID;
-    return SCREENS[id] ? id : FALLBACK_ID;
+    return SCREENS[id] ? id : DEFAULT_ID;
   }
 
   function getDefault() {
-    const current = normalizeId(localStorage.getItem(DEFAULT_KEY) || FALLBACK_ID);
+    const current = normalizeId(localStorage.getItem(DEFAULT_KEY) || DEFAULT_ID);
     if (current !== localStorage.getItem(DEFAULT_KEY)) {
       localStorage.setItem(DEFAULT_KEY, current);
     }
@@ -71,7 +68,7 @@ const BlueprintsSplashScreens = (() => {
   }
 
   function setDefault(id) {
-    const nextId = normalizeId(id || FALLBACK_ID);
+    const nextId = normalizeId(id || DEFAULT_ID);
     localStorage.setItem(DEFAULT_KEY, nextId);
     updateDefaultBadges();
     if (typeof HubDialogs !== 'undefined') {

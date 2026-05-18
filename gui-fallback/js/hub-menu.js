@@ -171,6 +171,8 @@ function createHubMenu(cfg) {
             if (saved) {
                 try {
                     this.currentMenu = JSON.parse(saved);
+                    const defaultIds = new Set(this.defaultMenu.map(def => def.id));
+                    this.currentMenu = this.currentMenu.filter(item => defaultIds.has(item.id));
                     // Upgrade migration: auto-add items missing from older saves, and back-fill new fields
                     this.defaultMenu.forEach(def => {
                         const existing = this.currentMenu.find(m => m.id === def.id);
@@ -225,7 +227,7 @@ function createHubMenu(cfg) {
             }
         },
 
-        // ── DB-driven icon/sound overlay ────────────────────────────
+        // ── DB-driven icon/sound fields ─────────────────────────────
 
         async loadNavItemsFromDB() {
             if (!cfg.group) return;
@@ -263,7 +265,7 @@ function createHubMenu(cfg) {
                         SoundManager.preload(`/fallback-ui/assets/${dbRow.sound_asset}?v=${ts}`);
                     }
                 }
-                // DB is the source of truth for label text — overlay clean labels onto currentMenu
+                // DB is the source of truth for label text; apply its fields to the in-memory menu.
                 for (const m of this.currentMenu) {
                     const db = this._dbItems[m.id];
                     if (!db) continue;

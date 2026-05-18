@@ -91,33 +91,7 @@ async function _synthesisAutoFitLayout(getController) {
 
 const _SYNTHESIS_MANUAL_DYNAMIC_PREFIX = 'manual-links-page:';
 const _SYNTHESIS_MANUAL_RETIRED_PAGE_IDS = new Set(['manual-links-tree', 'manual-links-pretext']);
-const _SYNTHESIS_RETIRED_SPLASH_IDS = new Set(['splash-dont-panic-1', 'splash-dont-panic-2']);
 let _synthesisManualLastPageCategories = [];
-
-function _synthesisNormalizeSplashMenuLabels(items) {
-    (items || []).forEach(item => {
-        if (!item || item.id !== 'splash-dont-panic-3') return;
-        item.label = "Don't Panic";
-        item.pageLabel = "Don't Panic";
-        item.order = 0;
-    });
-}
-
-_synthesisNormalizeSplashMenuLabels(SynthesisMenuConfig.defaultMenu);
-_synthesisNormalizeSplashMenuLabels(SynthesisMenuConfig.currentMenu);
-
-const _synthesisOriginalLoadNavItemsFromDB = SynthesisMenuConfig.loadNavItemsFromDB.bind(SynthesisMenuConfig);
-SynthesisMenuConfig.loadNavItemsFromDB = async function loadSynthesisNavItemsFromDBWithSplashRename() {
-    const result = await _synthesisOriginalLoadNavItemsFromDB();
-    _synthesisNormalizeSplashMenuLabels(SynthesisMenuConfig.defaultMenu);
-    _synthesisNormalizeSplashMenuLabels(SynthesisMenuConfig.currentMenu);
-    if (SynthesisMenuConfig._initialized) {
-        SynthesisMenuConfig.renderNavbar(SynthesisMenuConfig._activeId);
-        SynthesisMenuConfig.renderEditor();
-        SynthesisMenuConfig.updateActiveTab(SynthesisMenuConfig._activeId);
-    }
-    return result;
-};
 
 function _synthesisManualPageId(categoryId) {
     return _SYNTHESIS_MANUAL_DYNAMIC_PREFIX + categoryId;
@@ -157,8 +131,7 @@ function syncSynthesisManualLinksPageMenu(pageCategories) {
         && (!String(item.id || '').startsWith(_SYNTHESIS_MANUAL_DYNAMIC_PREFIX) || dynamicIds.has(item.id));
 
     const syncItems = (items) => {
-        const retained = (items || []).filter(item => keepItem(item) && !_SYNTHESIS_RETIRED_SPLASH_IDS.has(item.id));
-        _synthesisNormalizeSplashMenuLabels(retained);
+        const retained = (items || []).filter(keepItem);
         pages.forEach(page => {
             const existing = retained.find(item => item.id === page.id);
             if (existing) Object.assign(existing, page);
