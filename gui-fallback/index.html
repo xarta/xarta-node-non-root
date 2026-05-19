@@ -1148,14 +1148,14 @@
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-top:16px;">
       <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);margin-bottom:6px;">Key store</h3>
       <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">Your password never leaves this browser. Content is encrypted with AES-256-GCM (PBKDF2, 600k iterations) before being stored on this node. Load to edit, then save back &mdash; or paste a bundle directly and save.</p>
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+      <form style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px;" autocomplete="off" onsubmit="return false;">
         <input id="keys-store-password" type="password" autocomplete="new-password" spellcheck="false"
           autocorrect="off" autocapitalize="off"
           placeholder="Minimum 10 characters"
           style="width:260px;font-family:monospace;font-size:13px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px;"
           oninput="onStorePasswordInput()">
-        <button class="secondary" style="padding:4px 8px;font-size:13px;" onclick="toggleStorePasswordVisibility()" id="keys-store-pw-toggle" title="Show password">&#128065;</button>
-      </div>
+        <button class="secondary" type="button" style="padding:4px 8px;font-size:13px;" onclick="toggleStorePasswordVisibility()" id="keys-store-pw-toggle" title="Show password">&#128065;</button>
+      </form>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
         <button id="keys-store-load-btn" disabled onclick="loadFromStore()">&#128275; Load from store</button>
         <button id="keys-store-save-btn" disabled onclick="saveToStore()">&#128274; Save to store</button>
@@ -4156,12 +4156,12 @@
       <code>.env</code> file. It is stored only in this browser's localStorage and
       never transmitted - only a derived time-based token is sent with each request.
     </p>
-    <div class="field">
+    <form class="field" autocomplete="off" onsubmit="return false;">
       <label for="api-key-input">BLUEPRINTS_API_SECRET</label>
       <input id="api-key-input" type="password" placeholder="64-char hex secret"
         autocomplete="new-password" spellcheck="false" autocorrect="off" autocapitalize="off"
         style="font-family:monospace;font-size:13px;" />
-    </div>
+    </form>
     <p class="hub-modal-error" id="api-key-modal-error"></p>
   </div>
   <div class="hub-modal-footer">

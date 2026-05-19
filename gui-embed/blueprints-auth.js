@@ -157,10 +157,12 @@
         </div>
         <div class="bp-auth-modal-body">
           <p class="bp-auth-copy">Paste your BLUEPRINTS_API_SECRET from the Blueprints node .env file. It is stored only in this browser's localStorage and never transmitted directly - only a derived time-based token is sent with requests.</p>
-          <label class="bp-auth-field">
-            <span class="bp-auth-field-label">BLUEPRINTS_API_SECRET</span>
-            <input class="bp-auth-input" id="bp-embed-api-key-input" type="password" placeholder="64-char hex secret" autocomplete="new-password" spellcheck="false" autocorrect="off" autocapitalize="off" />
-          </label>
+          <form autocomplete="off" onsubmit="return false;">
+            <label class="bp-auth-field">
+              <span class="bp-auth-field-label">BLUEPRINTS_API_SECRET</span>
+              <input class="bp-auth-input" id="bp-embed-api-key-input" type="password" placeholder="64-char hex secret" autocomplete="new-password" spellcheck="false" autocorrect="off" autocapitalize="off" />
+            </label>
+          </form>
           <p class="bp-auth-error" id="bp-embed-api-key-error"></p>
         </div>
         <div class="bp-auth-modal-footer">

@@ -172,10 +172,12 @@
         </div>
         <div class="bp-auth-modal-body">
           <p class="bp-auth-copy">Paste your BLUEPRINTS_API_SECRET from the Blueprints node .env file. It is stored only in this browser's localStorage and never transmitted directly - only a derived time-based token is sent with requests.</p>
-          <label class="bp-auth-field">
-            <span class="bp-auth-field-label">BLUEPRINTS_API_SECRET</span>
-            <input class="bp-auth-input" id="bp-embed-api-key-input" type="password" placeholder="64-char hex secret" autocomplete="new-password" spellcheck="false" autocorrect="off" autocapitalize="off" />
-          </label>
+          <form autocomplete="off" onsubmit="return false;">
+            <label class="bp-auth-field">
+              <span class="bp-auth-field-label">BLUEPRINTS_API_SECRET</span>
+              <input class="bp-auth-input" id="bp-embed-api-key-input" type="password" placeholder="64-char hex secret" autocomplete="new-password" spellcheck="false" autocorrect="off" autocapitalize="off" />
+            </label>
+          </form>
           <p class="bp-auth-error" id="bp-embed-api-key-error"></p>
         </div>
         <div class="bp-auth-modal-footer">
@@ -727,9 +729,7 @@
       cache: 'no-store',
       keepalive: true,
     }).catch((error) => {
-      if (window.console && typeof window.console.warn === 'function') {
-        window.console.warn('[Blueprints hard refresh telemetry server send failed]', error);
-      }
+      window.__lastBlueprintsHardRefreshTelemetrySendError = error;
     });
     hardRefreshTelemetrySends.add(send);
     send.finally(() => hardRefreshTelemetrySends.delete(send));
@@ -756,9 +756,6 @@
       localStorage.setItem(HARD_REFRESH_TELEMETRY_KEY, JSON.stringify(next.slice(-80)));
     } catch (_e) {}
     window.__lastBlueprintsHardRefreshTelemetry = entry;
-    if (window.console && typeof window.console.warn === 'function') {
-      window.console.warn('[Blueprints hard refresh telemetry]', entry);
-    }
     hardRefreshQueueServerTelemetry(entry);
     return entry;
   }
