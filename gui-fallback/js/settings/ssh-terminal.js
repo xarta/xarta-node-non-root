@@ -12,6 +12,7 @@ let _sshTerminalHasAutoConnected = false;
 let _sshTerminalManualDisconnect = false;
 let _sshTerminalOpenToken = 0;
 let _sshTerminalLocked = false;
+let _sshTerminalPaintRaf = 0;
 const _SSH_TERMINAL_RESTORE_KEY = 'blueprintsSshTerminalRestore';
 
 function _sshTerminalEls() {
@@ -126,6 +127,17 @@ function _sshTerminalForcePaint() {
     _sshTerminalTerm.clearTextureAtlas?.();
     _sshTerminalTerm.refresh(0, Math.max(0, _sshTerminalTerm.rows - 1));
   } catch (e) {}
+}
+
+function _sshTerminalScheduleOutputPaint() {
+  if (!_sshTerminalTerm || !_sshTerminalIsActiveTab() || _sshTerminalPaintRaf) return;
+  _sshTerminalPaintRaf = window.requestAnimationFrame(() => {
+    _sshTerminalPaintRaf = 0;
+    if (!_sshTerminalTerm || !_sshTerminalIsActiveTab()) return;
+    try {
+      _sshTerminalTerm.refresh(0, Math.max(0, _sshTerminalTerm.rows - 1));
+    } catch (e) {}
+  });
 }
 
 function _sshTerminalWait(ms) {
@@ -522,7 +534,7 @@ async function _sshTerminalConnect() {
   });
   ws.addEventListener('message', event => {
     term.write(String(event.data || ''), () => {
-      _sshTerminalForcePaint();
+      _sshTerminalScheduleOutputPaint();
     });
   });
   ws.addEventListener('close', event => {
