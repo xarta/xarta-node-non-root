@@ -175,7 +175,12 @@
   function isSettingsLandscapeResyncMode() {
     if (!handle || !window.matchMedia) return false;
     var panel = handle.closest ? handle.closest('.tab-panel') : null;
-    if (!panel || panel.id !== 'tab-settings') return false;
+    if (!panel || ![
+      'tab-settings',
+      'tab-keys',
+      'tab-certs',
+      'tab-docs',
+    ].includes(panel.id)) return false;
     if (!window.matchMedia('(orientation: landscape)').matches) return false;
     return window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(hover: none)').matches;
   }
