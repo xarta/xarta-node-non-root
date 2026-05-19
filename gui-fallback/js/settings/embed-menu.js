@@ -642,9 +642,18 @@ function _wireEmGrid() {
     let _touchDrag = null;
     let _touchLastTapTime = 0;
     let _touchLastTapCell = null;
+    const TOUCH_DRAG_ARM_MS = 180;
+    const TOUCH_SCROLL_CANCEL_PX = 10;
+
+    function _touchDragArmTimer() {
+        return setTimeout(() => {
+            if (_touchDrag) _touchDrag.armed = true;
+        }, TOUCH_DRAG_ARM_MS);
+    }
 
     function _touchDragCleanup() {
         if (!_touchDrag) return;
+        if (_touchDrag.armTimer) clearTimeout(_touchDrag.armTimer);
         if (_touchDrag.ghost) _touchDrag.ghost.remove();
         if (_touchDrag.sourceCell) _touchDrag.sourceCell.classList.remove('is-dragging');
         if (_touchDrag.lastTarget) _touchDrag.lastTarget.classList.remove('em-grid-cell--drag-over');
@@ -659,8 +668,9 @@ function _wireEmGrid() {
             isPalette: true, isEmptySlot: false, sourceCell: null,
             group: null, flatIdx: null, itemId: 'placeholder',
             startX: touch.clientX, startY: touch.clientY,
-            dragging: false, ghost: null, lastTarget: null,
+            armed: false, dragging: false, ghost: null, lastTarget: null,
         };
+        _touchDrag.armTimer = _touchDragArmTimer();
     }
 
     if (palette) {
@@ -690,8 +700,9 @@ function _wireEmGrid() {
             flatIdx: Number.parseInt(cell.getAttribute('data-em-flat-idx') || '0', 10),
             itemId: cell.classList.contains('em-grid-cell--empty') ? 'placeholder' : cell.getAttribute('data-em-grid-id'),
             startX: touch.clientX, startY: touch.clientY,
-            dragging: false, ghost: null, lastTarget: null,
+            armed: false, dragging: false, ghost: null, lastTarget: null,
         };
+        _touchDrag.armTimer = _touchDragArmTimer();
     }, { passive: true });
 
     editor.addEventListener('touchmove', (e) => {
@@ -699,7 +710,12 @@ function _wireEmGrid() {
         const touch = e.touches[0];
         const dx = touch.clientX - _touchDrag.startX;
         const dy = touch.clientY - _touchDrag.startY;
-        if (!_touchDrag.dragging && Math.sqrt(dx * dx + dy * dy) > 8) {
+        const moved = Math.sqrt(dx * dx + dy * dy);
+        if (!_touchDrag.armed) {
+            if (moved > TOUCH_SCROLL_CANCEL_PX) _touchDragCleanup();
+            return;
+        }
+        if (!_touchDrag.dragging && moved > 8) {
             _touchDrag.dragging = true;
             // Create ghost
             const src = _touchDrag.sourceCell || document.getElementById('em-grid-palette-placeholder');

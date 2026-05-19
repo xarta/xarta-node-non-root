@@ -4,6 +4,10 @@
     margin-top: 24px;
 }
 
+#tab-embed-menu-grid .tab-scroll-shell {
+    -webkit-overflow-scrolling: touch;
+}
+
 .em-grid-hdr {
     display: flex;
     align-items: center;

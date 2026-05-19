@@ -1675,23 +1675,25 @@
       <p style="font-size:12px;color:var(--text-dim);margin-bottom:8px">Visual drag-and-drop layout editor for embedded selector pages. Drag tiles to reorder, drop an empty slot onto a tile to insert a gap.</p>
     </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
-    <div id="em-grid-editor">
-      <div class="em-grid-hdr">
-        <h3 class="em-grid-hdr__title">Page Grid</h3>
-        <div class="em-grid-toolbar">
-          <div class="em-grid-cell em-grid-cell--palette" draggable="true" id="em-grid-palette-placeholder" title="Drag into the grid to insert an empty slot">
-            <img src="/fallback-ui/assets/icons/ui/placeholder-circle-gold.svg" alt="empty slot" class="em-grid-cell__placeholder-icon em-grid-cell__placeholder-icon--palette">
+    <div class="tab-scroll-shell">
+      <div id="em-grid-editor" class="em-grid-editor">
+        <div class="em-grid-hdr">
+          <h3 class="em-grid-hdr__title">Page Grid</h3>
+          <div class="em-grid-toolbar">
+            <div class="em-grid-cell em-grid-cell--palette" draggable="true" id="em-grid-palette-placeholder" title="Drag into the grid to insert an empty slot">
+              <img src="/fallback-ui/assets/icons/ui/placeholder-circle-gold.svg" alt="empty slot" class="em-grid-cell__placeholder-icon em-grid-cell__placeholder-icon--palette">
+            </div>
+            <div class="em-grid-trash" id="em-grid-trash" title="Drop an empty slot here to remove it">
+              <img src="/fallback-ui/assets/icons/ui/trash-gold.svg" alt="Remove slot" />
+            </div>
+            <button type="button" class="em-grid-tool-btn" id="em-grid-open-table-btn" title="Open Embed Menu table" aria-label="Open Embed Menu table">
+              <img src="/fallback-ui/assets/icons/hieroglyphs/kheper-gold-inverted.svg" alt="Open Embed Menu table" />
+            </button>
           </div>
-          <div class="em-grid-trash" id="em-grid-trash" title="Drop an empty slot here to remove it">
-            <img src="/fallback-ui/assets/icons/ui/trash-gold.svg" alt="Remove slot" />
-          </div>
-          <button type="button" class="em-grid-tool-btn" id="em-grid-open-table-btn" title="Open Embed Menu table" aria-label="Open Embed Menu table">
-            <img src="/fallback-ui/assets/icons/hieroglyphs/kheper-gold-inverted.svg" alt="Open Embed Menu table" />
-          </button>
         </div>
+        <p style="font-size:11px;color:var(--text-dim);margin:0 0 14px">Drag tiles to reorder. Drop <strong>&#xff0b; empty slot</strong> onto a tile to insert a gap. Drag an empty tile to <img src="/fallback-ui/assets/icons/ui/trash-gold.svg" alt="trash" style="width:12px;height:12px;vertical-align:middle;opacity:.5"> to close it.</p>
+        <div id="em-grid-sections"></div>
       </div>
-      <p style="font-size:11px;color:var(--text-dim);margin:0 0 14px">Drag tiles to reorder. Drop <strong>&#xff0b; empty slot</strong> onto a tile to insert a gap. Drag an empty tile to <img src="/fallback-ui/assets/icons/ui/trash-gold.svg" alt="trash" style="width:12px;height:12px;vertical-align:middle;opacity:.5"> to close it.</p>
-      <div id="em-grid-sections"></div>
     </div>
   </section>
 
