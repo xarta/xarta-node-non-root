@@ -589,7 +589,22 @@ function createHubMenu(cfg) {
             return !!this._floatingPrimaryMenuEl;
         },
 
+        _resolveLiveOriginAnchor(anchorEl) {
+            const candidates = [];
+            if (anchorEl) candidates.push(anchorEl);
+            document.querySelectorAll('[data-action="origin"]').forEach(el => {
+                if (el !== anchorEl) candidates.push(el);
+            });
+            return candidates.find(el => {
+                if (!el || el.isConnected === false || typeof el.getBoundingClientRect !== 'function') return false;
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+            }) || anchorEl;
+        },
+
         _positionFloatingMenuHost(host, menu, anchorEl) {
+            anchorEl = this._resolveLiveOriginAnchor(anchorEl);
+            if (!anchorEl || typeof anchorEl.getBoundingClientRect !== 'function') return;
             const anchorRect = anchorEl.getBoundingClientRect();
             const viewportW = window.innerWidth || document.documentElement.clientWidth || 0;
             const viewportH = this._getViewportHeight();
@@ -676,6 +691,7 @@ function createHubMenu(cfg) {
         },
 
         openPrimaryMenuAt(anchorEl) {
+            anchorEl = this._resolveLiveOriginAnchor(anchorEl);
             if (!anchorEl || typeof anchorEl.getBoundingClientRect !== 'function') return false;
             const topItems = this.getTopLevelItems().filter(item => item.id !== cfg.mobilePinnedId);
             if (!topItems.length) {
@@ -828,14 +844,8 @@ function createHubMenu(cfg) {
         },
 
         openContextMenuAt(anchorEl) {
+            anchorEl = this._resolveLiveOriginAnchor(anchorEl);
             if (!anchorEl || typeof anchorEl.getBoundingClientRect !== 'function') return false;
-            // A renderActionButtons() call during the long-press window can detach the
-            // origin button element before this fires.  When the passed element is no longer
-            // in the document, swap in the live element so positioning works correctly.
-            if (anchorEl.isConnected === false) {
-                const liveEl = document.querySelector('[data-action="origin"]');
-                if (liveEl) anchorEl = liveEl;
-            }
             const activeId = this._activeTabId();
             const fnItems = this._contextMenuFunctionItems(activeId);
             if (!fnItems.length) {

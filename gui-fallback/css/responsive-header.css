@@ -285,3 +285,51 @@ html.header-compact .header-inner {
         flex: 1 1 auto;
     }
 }
+
+@media (orientation: landscape) and (max-height: 600px) and (pointer: coarse),
+       (orientation: landscape) and (max-height: 600px) and (hover: none),
+       (orientation: landscape) and (max-height: 600px) and (max-width: 1000px) {
+    #synthesisMenuWrapper,
+    #probesMenuWrapper,
+    #settingsMenuWrapper,
+    #synthesisMenuSaveNotification,
+    #probesMenuSaveNotification,
+    #settingsMenuSaveNotification {
+        display: none !important;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] .menu-zone-nav {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+        column-gap: 8px;
+        row-gap: 6px;
+        width: 100%;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot {
+        display: none !important;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        align-content: flex-start;
+        gap: 6px;
+        width: 100%;
+        min-width: 0;
+        grid-column: 1;
+        margin-right: 0;
+        align-self: start;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #node-meta-compact {
+        grid-column: 2;
+        margin-left: 0;
+        justify-self: end;
+        align-self: start;
+        justify-content: flex-end;
+        flex: none;
+    }
+}

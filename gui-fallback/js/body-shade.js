@@ -172,6 +172,14 @@
     return window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(hover: none)').matches;
   }
 
+  function isMobileResyncViewport() {
+    if (!window.matchMedia) return false;
+    if (window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(hover: none)').matches) return true;
+    return window.matchMedia('(orientation: landscape)').matches
+      && window.matchMedia('(max-height: 600px)').matches
+      && window.matchMedia('(max-width: 1000px)').matches;
+  }
+
   function isSettingsMobileResyncMode() {
     if (!handle || !window.matchMedia) return false;
     var panel = handle.closest ? handle.closest('.tab-panel') : null;
@@ -197,7 +205,7 @@
       'tab-self-diag',
       'tab-ssh-terminal',
     ].includes(panel.id)) return false;
-    return window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(hover: none)').matches;
+    return isMobileResyncViewport();
   }
 
   function isSynthesisMobileResyncMode() {
@@ -211,7 +219,26 @@
       'tab-machines',
     ].includes(panelId) || panel.classList.contains('tab-panel--splash');
     if (!isSynthesisPanel) return false;
-    return window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(hover: none)').matches;
+    return isMobileResyncViewport();
+  }
+
+  function isProbesMobileResyncMode() {
+    if (!handle || !window.matchMedia) return false;
+    var panel = handle.closest ? handle.closest('.tab-panel') : null;
+    if (!panel || ![
+      'tab-pfsense-dns',
+      'tab-proxmox-config',
+      'tab-vlans',
+      'tab-ssh-targets',
+      'tab-dockge-stacks',
+      'tab-caddy-configs',
+      'tab-bookmarks-main',
+      'tab-bookmarks-history',
+      'tab-bookmarks-embeddings',
+      'tab-bookmarks-setup',
+      'tab-tts-pool',
+    ].includes(panel.id)) return false;
+    return isMobileResyncViewport();
   }
 
   function shouldResyncShadeUpOnViewportChange() {
@@ -220,7 +247,8 @@
       || isMatrixChatAdminLandscapeSnapMode()
       || isMatrixChatLandscapeSnapMode()
       || isSettingsMobileResyncMode()
-      || isSynthesisMobileResyncMode();
+      || isSynthesisMobileResyncMode()
+      || isProbesMobileResyncMode();
   }
 
   function getShadeSnapTop() {
