@@ -148,7 +148,20 @@
       || window.matchMedia('(display-mode: fullscreen)').matches;
   }
 
+  function isHermesDashboardLandscapeSnapMode() {
+    if (!handle || !window.matchMedia) return false;
+    var panel = handle.closest ? handle.closest('.tab-panel') : null;
+    if (!panel || (panel.id !== 'tab-hermes-local' && panel.id !== 'tab-hermes-vps')) return false;
+    if (!window.matchMedia('(orientation: landscape)').matches) return false;
+    return window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(hover: none)').matches;
+  }
+
+  function shouldResyncShadeUpOnViewportChange() {
+    return isS25StargateSnapMode() || isHermesDashboardLandscapeSnapMode();
+  }
+
   function getShadeSnapTop() {
+    if (isHermesDashboardLandscapeSnapMode()) return 12;
     if (!isS25StargateSnapMode()) return 0;
     var siteHeader = document.querySelector('header');
     if (!siteHeader) return 0;
@@ -573,7 +586,7 @@
     // First pass: near-immediate for normal tab switches.
     _fillTimer = setTimeout(function () {
       clampRootHorizontalScroll();
-      if (isUp && isS25StargateSnapMode()) {
+      if (isUp && shouldResyncShadeUpOnViewportChange()) {
         resyncShadeUpPosition();
         return;
       }
@@ -587,7 +600,7 @@
     [180, 360, 700].forEach(function (delay) {
       _fillSettleTimers.push(setTimeout(function () {
         clampRootHorizontalScroll();
-        if (isUp && isS25StargateSnapMode()) {
+        if (isUp && shouldResyncShadeUpOnViewportChange()) {
           resyncShadeUpPosition();
           return;
         }

@@ -42,3 +42,11 @@
     min-height: 100%;
   }
 }
+
+@media (orientation: landscape) and (max-height: 600px) and (pointer: coarse) {
+  body.shade-is-up #tab-hermes-local.active > .body-shade-handle,
+  body.shade-is-up #tab-hermes-vps.active > .body-shade-handle {
+    z-index: 90;
+    background: linear-gradient(180deg, rgba(15, 17, 23, 0.92), rgba(15, 17, 23, 0));
+  }
+}
