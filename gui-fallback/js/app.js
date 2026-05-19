@@ -416,6 +416,9 @@ function switchTab(tab) {
   if (tab === 'matrix-chat') {
     if (typeof _matrixChatLoadTab === 'function') _matrixChatLoadTab();
   }
+  if (tab === 'matrix-chat-admin') {
+    if (typeof _matrixChatAdminLoadTab === 'function') _matrixChatAdminLoadTab();
+  }
   if (tab === 'caddy-configs'  && !_caddyConfigs.length)  loadCaddyConfigs();
   if (tab === 'pve-hosts'      && !_pveHosts.length)      loadPveHosts();
   if (tab === 'vlans'          && !_vlans.length)         loadVlans();

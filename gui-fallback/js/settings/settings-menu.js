@@ -43,6 +43,7 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'hermes-local',    label: 'Hermes Local',   icon: HIEROGLYPHS.khaHorizon, pageLabel: 'Hermes Local',    parent: 'agent-pages', order: 0 },
         { id: 'hermes-vps',      label: 'Hermes VPS',     icon: HIEROGLYPHS.falcon,     pageLabel: 'Hermes VPS',      parent: 'agent-pages', order: 1 },
         { id: 'matrix-chat',     label: 'Chat',           icon: HIEROGLYPHS.papyrus,    pageLabel: 'Chat',            parent: 'agent-pages', order: 2 },
+        { id: 'matrix-chat-admin', label: 'Chat Admin',   icon: HIEROGLYPHS.eyeOfHorus, pageLabel: 'Chat Admin',      parent: 'agent-pages', order: 3 },
         { id: 'settings',        label: 'App Config',     icon: HIEROGLYPHS.djedPillar, pageLabel: 'App Config',      parent: null,        order: 3 },
         { id: 'arp-manual',      label: 'Manual ARP',     icon: HIEROGLYPHS.obelisk,    pageLabel: 'Manual ARP',      parent: 'settings',  order: 0 },
         { id: 'ai-providers',    label: 'AI Providers',   icon: HIEROGLYPHS.falcon,     pageLabel: 'AI Providers',    parent: 'settings',  order: 1 },
@@ -105,6 +106,7 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'chat-fn-refresh',  label: 'Refresh Chat',      icon: HIEROGLYPHS.nefer,      fn: 'chat.refresh',  activeOn: ['matrix-chat'], parent: 'settings-layout', order: 0 },
         { id: 'chat-fn-mention',  label: 'Mention Hermes',    icon: HIEROGLYPHS.falcon,     fn: 'chat.mention',  activeOn: ['matrix-chat'], parent: 'settings-layout', order: 1 },
         { id: 'chat-fn-send',     label: 'Send Message',      icon: HIEROGLYPHS.khaHorizon, fn: 'chat.send',     activeOn: ['matrix-chat'], parent: 'settings-layout', order: 2 },
+        { id: 'chat-admin-fn-refresh', label: 'Refresh Admin', icon: HIEROGLYPHS.nefer,     fn: 'chatAdmin.refresh', activeOn: ['matrix-chat-admin'], parent: 'settings-layout', order: 0 },
 
         // ── Manual ARP page function items ────────────────────────────────
         { id: 'arp-fn-add',      label: 'Add entry',        icon: HIEROGLYPHS.obelisk,    fn: 'arp.add',      activeOn: ['arp-manual'],   parent: 'settings-layout', order: 0 },
@@ -373,6 +375,33 @@ const SettingsMenuConfig = createHubMenu({
             'agent-fn-tui',
             'agent-fn-setup',
         ].forEach(id => {
+            const def = this.defaultMenu.find(entry => entry.id === id);
+            if (!def) return;
+            const existing = this.currentMenu.find(entry => entry.id === id);
+            if (existing) {
+                existing.label = def.label;
+                existing.icon = def.icon;
+                existing.pageLabel = def.pageLabel;
+                existing.parent = def.parent;
+                existing.order = def.order;
+                if (def.fn !== undefined) existing.fn = def.fn; else delete existing.fn;
+                if (def.activeOn !== undefined) existing.activeOn = def.activeOn; else delete existing.activeOn;
+            } else {
+                this.currentMenu.push({ ...def });
+            }
+        });
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentMenu));
+        localStorage.setItem(migrationKey, '1');
+    };
+})();
+
+(function migrateMatrixChatAdminAgentPage() {
+    const migrationKey = 'blueprintsSettingsMenuMatrixChatAdmin20260519';
+    const originalLoadConfig = SettingsMenuConfig.loadConfig.bind(SettingsMenuConfig);
+    SettingsMenuConfig.loadConfig = function loadConfigWithMatrixChatAdminPage() {
+        originalLoadConfig();
+        if (localStorage.getItem(migrationKey) === '1') return;
+        ['agent-pages', 'matrix-chat', 'matrix-chat-admin', 'chat-admin-fn-refresh'].forEach(id => {
             const def = this.defaultMenu.find(entry => entry.id === id);
             if (!def) return;
             const existing = this.currentMenu.find(entry => entry.id === id);
@@ -942,6 +971,7 @@ SettingsMenuConfig.registerFunctions({
     'chat.refresh':   () => window.MatrixChat?.refresh?.(),
     'chat.mention':   () => window.MatrixChat?.insertHermesMention?.(),
     'chat.send':      () => window.MatrixChat?.sendMessage?.(),
+    'chatAdmin.refresh': () => window.MatrixChatAdmin?.refresh?.(),
 
     // Manual ARP
     'arp.add':      () => addArpManualEntry(),

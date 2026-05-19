@@ -42,6 +42,7 @@
   <link rel="stylesheet" href="css/ssh-terminal.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/agent-pages.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/matrix-chat.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/matrix-chat-admin.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="embed/clock-overlay.css?v={{$assetVersion}}" />
 </head>
 <body class="bp-font-role-root">
@@ -972,6 +973,88 @@
             <textarea id="matrix-chat-composer" placeholder="Message Matrix room" autocomplete="off"></textarea>
             <button id="matrix-chat-send" class="matrix-chat-icon-btn" type="button" title="Send message" aria-label="Send message">Send</button>
           </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Agent Pages: Matrix Chat Admin -->
+  <section id="tab-matrix-chat-admin" class="tab-panel tab-panel--fill">
+    <div id="s25-lift-matrix-chat-admin" class="s25-lift-block matrix-chat-admin-mobile-lift" data-for-tab="matrix-chat-admin">
+      <div class="matrix-chat-admin-mobile-lift-inner">
+        <div class="matrix-chat-admin-mobile-status" aria-label="Matrix admin mobile status">
+          <div class="matrix-chat-admin-mobile-status-item">
+            <span>Admin</span>
+            <strong id="matrix-chat-admin-mobile-admin-configured">-</strong>
+          </div>
+          <div class="matrix-chat-admin-mobile-status-item">
+            <span>Reach</span>
+            <strong id="matrix-chat-admin-mobile-reachable">-</strong>
+          </div>
+          <div class="matrix-chat-admin-mobile-status-item">
+            <span>Refresh</span>
+            <strong id="matrix-chat-admin-mobile-last-refresh">-</strong>
+          </div>
+        </div>
+        <strong id="matrix-chat-admin-mobile-homeserver">-</strong>
+      </div>
+    </div>
+    <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
+    <div id="matrix-chat-admin-fill" class="matrix-chat-admin-fill table-wrap--fill">
+      <div class="matrix-chat-admin-shell">
+        <div class="matrix-chat-admin-status" aria-label="Matrix admin status">
+          <div class="matrix-chat-admin-status-item matrix-chat-admin-status-item--homeserver">
+            <span>Homeserver</span>
+            <strong id="matrix-chat-admin-homeserver">-</strong>
+          </div>
+          <div class="matrix-chat-admin-status-item">
+            <span>Admin token</span>
+            <strong id="matrix-chat-admin-admin-configured">-</strong>
+          </div>
+          <div class="matrix-chat-admin-status-item">
+            <span>Reachable</span>
+            <strong id="matrix-chat-admin-reachable">-</strong>
+          </div>
+          <div class="matrix-chat-admin-status-item">
+            <span>Last refresh</span>
+            <strong id="matrix-chat-admin-last-refresh">-</strong>
+          </div>
+        </div>
+        <div class="matrix-chat-admin-toolbar">
+          <div class="matrix-chat-admin-segments" role="tablist" aria-label="Chat admin views">
+            <button id="matrix-chat-admin-view-users" class="matrix-chat-admin-segment active" type="button" role="tab" aria-controls="matrix-chat-admin-users-panel">Users</button>
+            <button id="matrix-chat-admin-view-rooms" class="matrix-chat-admin-segment" type="button" role="tab" aria-controls="matrix-chat-admin-rooms-panel">Rooms</button>
+          </div>
+          <button id="matrix-chat-admin-refresh" class="matrix-chat-admin-icon-btn" type="button" title="Refresh Chat Admin" aria-label="Refresh Chat Admin">R</button>
+          <p id="matrix-chat-admin-message" class="matrix-chat-admin-message" aria-live="polite" hidden></p>
+        </div>
+        <div class="matrix-chat-admin-workspace">
+          <div class="matrix-chat-admin-list-panel">
+            <div id="matrix-chat-admin-users-panel" class="matrix-chat-admin-table" role="tabpanel">
+              <div class="matrix-chat-admin-head matrix-chat-admin-head--users" aria-hidden="true">
+                <span>Matrix ID</span>
+                <span>Display</span>
+                <span>Admin</span>
+                <span>Active</span>
+                <span>Guest</span>
+                <span>Created</span>
+              </div>
+              <div id="matrix-chat-admin-users-body"></div>
+            </div>
+            <div id="matrix-chat-admin-rooms-panel" class="matrix-chat-admin-table" role="tabpanel" hidden>
+              <div class="matrix-chat-admin-head matrix-chat-admin-head--rooms" aria-hidden="true">
+                <span>Name</span>
+                <span>Members</span>
+                <span>Encrypted</span>
+                <span>Federated</span>
+                <span>Room ID</span>
+              </div>
+              <div id="matrix-chat-admin-rooms-body"></div>
+            </div>
+          </div>
+          <aside id="matrix-chat-admin-detail" class="matrix-chat-admin-detail" aria-label="Chat admin detail">
+            <p class="matrix-chat-admin-empty">Select a user or room</p>
+          </aside>
         </div>
       </div>
     </div>
@@ -3936,6 +4019,7 @@
 <script src="js/settings/ssh-terminal.js?v={{$assetVersion}}"></script>
 <script src="js/settings/agent-pages.js?v={{$assetVersion}}"></script>
 <script src="js/settings/matrix-chat.js?v={{$assetVersion}}"></script>
+<script src="js/settings/matrix-chat-admin.js?v={{$assetVersion}}"></script>
 <script src="js/settings/arp-manual.js?v={{$assetVersion}}"></script>
 <script src="js/settings/ai-providers.js?v={{$assetVersion}}"></script>
 <script src="js/settings/nav-items.js?v={{$assetVersion}}"></script>
