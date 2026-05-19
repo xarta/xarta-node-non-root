@@ -172,7 +172,7 @@
     return window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(hover: none)').matches;
   }
 
-  function isSettingsLandscapeResyncMode() {
+  function isSettingsMobileResyncMode() {
     if (!handle || !window.matchMedia) return false;
     var panel = handle.closest ? handle.closest('.tab-panel') : null;
     if (!panel || ![
@@ -197,7 +197,20 @@
       'tab-self-diag',
       'tab-ssh-terminal',
     ].includes(panel.id)) return false;
-    if (!window.matchMedia('(orientation: landscape)').matches) return false;
+    return window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(hover: none)').matches;
+  }
+
+  function isSynthesisMobileResyncMode() {
+    if (!handle || !window.matchMedia) return false;
+    var panel = handle.closest ? handle.closest('.tab-panel') : null;
+    if (!panel) return false;
+    var panelId = panel.id || '';
+    var isSynthesisPanel = [
+      'tab-manual-links',
+      'tab-services',
+      'tab-machines',
+    ].includes(panelId) || panel.classList.contains('tab-panel--splash');
+    if (!isSynthesisPanel) return false;
     return window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(hover: none)').matches;
   }
 
@@ -206,7 +219,8 @@
       || isHermesDashboardLandscapeSnapMode()
       || isMatrixChatAdminLandscapeSnapMode()
       || isMatrixChatLandscapeSnapMode()
-      || isSettingsLandscapeResyncMode();
+      || isSettingsMobileResyncMode()
+      || isSynthesisMobileResyncMode();
   }
 
   function getShadeSnapTop() {
