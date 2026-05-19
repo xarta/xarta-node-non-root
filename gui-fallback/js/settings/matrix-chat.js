@@ -453,9 +453,15 @@ const MatrixChat = (() => {
     const timeline = el('matrix-chat-timeline');
     const title = el('matrix-chat-room-title');
     const roomId = el('matrix-chat-room-id');
+    const mobileTitle = el('matrix-chat-mobile-room-title');
+    const mobileRoomId = el('matrix-chat-mobile-room-id');
     const active = activeRoom();
-    if (title) title.textContent = active ? roomTitle(active) : 'No room selected';
-    if (roomId) roomId.textContent = active?.room_id || '';
+    const titleText = active ? roomTitle(active) : 'No room selected';
+    const roomIdText = active?.room_id || '';
+    if (title) title.textContent = titleText;
+    if (mobileTitle) mobileTitle.textContent = titleText;
+    if (roomId) roomId.textContent = roomIdText;
+    if (mobileRoomId) mobileRoomId.textContent = roomIdText;
     renderStatus();
     if (!timeline) return;
     timeline.innerHTML = '';
@@ -826,14 +832,17 @@ const MatrixChat = (() => {
 
   function setRailOpen(open) {
     const shell = el('matrix-chat-shell');
-    const toggle = el('matrix-chat-mobile-rail-toggle');
+    const toggles = [
+      el('matrix-chat-mobile-rail-toggle'),
+      el('matrix-chat-mobile-rail-toggle-top'),
+    ].filter(Boolean);
     if (!shell) return;
     shell.classList.toggle('rail-open', Boolean(open));
     shell.classList.toggle('rail-collapsed', !open);
-    if (toggle) {
+    toggles.forEach(toggle => {
       toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
       toggle.textContent = open ? 'Close' : 'Rooms';
-    }
+    });
   }
 
   function closeRailOnMobile() {
@@ -863,9 +872,13 @@ const MatrixChat = (() => {
     el('matrix-chat-rail-close')?.addEventListener('pointerup', closeRail);
     el('matrix-chat-rail-close')?.addEventListener('touchend', closeRail);
     el('matrix-chat-rail-close')?.addEventListener('click', closeRail);
-    el('matrix-chat-mobile-rail-toggle')?.addEventListener('pointerup', toggleRail);
-    el('matrix-chat-mobile-rail-toggle')?.addEventListener('touchend', toggleRail);
-    el('matrix-chat-mobile-rail-toggle')?.addEventListener('click', toggleRail);
+    [el('matrix-chat-mobile-rail-toggle'), el('matrix-chat-mobile-rail-toggle-top')]
+      .filter(Boolean)
+      .forEach(toggle => {
+        toggle.addEventListener('pointerup', toggleRail);
+        toggle.addEventListener('touchend', toggleRail);
+        toggle.addEventListener('click', toggleRail);
+      });
     el('matrix-chat-create')?.addEventListener('click', createRoom);
     el('matrix-chat-join')?.addEventListener('click', () => joinRoom());
     el('matrix-chat-invite')?.addEventListener('click', inviteUser);

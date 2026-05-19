@@ -109,6 +109,43 @@
   cursor: pointer;
 }
 
+.matrix-chat-mobile-lift {
+  display: none;
+}
+
+.matrix-chat-mobile-lift-inner {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.matrix-chat-mobile-lift-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+.matrix-chat-mobile-lift-title strong,
+.matrix-chat-mobile-lift-title span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.matrix-chat-mobile-lift-title strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.matrix-chat-mobile-lift-title span {
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .matrix-chat-rail-close {
   display: none;
 }
@@ -523,6 +560,10 @@
     margin: 0 -10px -10px;
   }
 
+  .matrix-chat-mobile-lift {
+    margin: 0 0 6px;
+  }
+
   .matrix-chat-shell {
     position: relative;
     grid-template-columns: 1fr;
@@ -660,5 +701,30 @@
   #matrix-chat-send:hover,
   #matrix-chat-send:focus-visible {
     background-image: url("../assets/icons/hieroglyphs/falcon-blue.svg");
+  }
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+  #tab-matrix-chat.active .matrix-chat-mobile-lift {
+    display: block;
+    position: relative;
+    min-height: 58px;
+  }
+
+  #tab-matrix-chat.active .matrix-chat-mobile-lift .matrix-chat-mobile-rail-toggle {
+    position: absolute;
+    top: 38px;
+    left: 20px;
+    justify-self: start;
+  }
+
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-matrix-chat .matrix-chat-mobile-rail-toggle {
+    position: absolute;
+    top: 38px;
+    left: 20px;
+  }
+
+  #tab-matrix-chat.active .matrix-chat-main > .matrix-chat-room-header {
+    display: none;
   }
 }
