@@ -387,11 +387,19 @@ const MatrixChat = (() => {
     const user = el('matrix-chat-user');
     const home = el('matrix-chat-homeserver');
     const features = el('matrix-chat-features');
+    const encryptedToggle = el('matrix-chat-create-encrypted');
     if (user) user.textContent = state.status?.user_id || 'Not configured';
     if (home) home.textContent = state.status?.homeserver_url || 'Matrix';
     if (features) {
-      const encrypted = activeRoom()?.encrypted ? 'Encrypted' : 'Unencrypted private room';
-      features.textContent = `${encrypted} - Blueprints push off`;
+      const e2ee = state.status?.features?.e2ee ? 'server E2EE on' : 'server E2EE off';
+      const encrypted = activeRoom()?.encrypted ? 'room encrypted' : 'room unencrypted';
+      features.textContent = `${e2ee} - ${encrypted}`;
+    }
+    if (encryptedToggle) {
+      encryptedToggle.disabled = !state.status?.features?.e2ee;
+      encryptedToggle.title = encryptedToggle.disabled
+        ? 'Server-side Matrix E2EE is not available'
+        : 'Create this room with Matrix end-to-end encryption';
     }
   }
 
@@ -417,7 +425,7 @@ const MatrixChat = (() => {
 
         const name = document.createElement('span');
         name.className = 'matrix-chat-room-name';
-        name.textContent = roomTitle(room);
+        name.textContent = `${room.encrypted ? '[E2EE] ' : ''}${roomTitle(room)}`;
         const meta = document.createElement('span');
         meta.className = 'matrix-chat-room-meta';
         meta.textContent = room.last_preview || room.room_id;
@@ -569,13 +577,14 @@ const MatrixChat = (() => {
 
   async function createRoom() {
     const input = el('matrix-chat-create-name');
+    const encrypted = Boolean(el('matrix-chat-create-encrypted')?.checked);
     const name = (input?.value || '').trim();
     if (!name) return;
     try {
       const data = await apiJson('/api/v1/matrix-chat/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, encrypted }),
       });
       if (input) input.value = '';
       if (data.room_id) rememberActiveRoom(data.room_id);

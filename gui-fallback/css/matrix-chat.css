@@ -176,6 +176,20 @@
   gap: 6px;
 }
 
+.matrix-chat-create-encrypted {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 26px;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.matrix-chat-create-encrypted .hub-checkbox__input:disabled ~ .hub-checkbox__label {
+  opacity: 0.58;
+}
+
 .matrix-chat-inline-form input,
 .matrix-chat-composer textarea {
   min-width: 0;
