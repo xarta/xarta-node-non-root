@@ -30,6 +30,16 @@
 body.has-fill-tab {
   overflow: hidden;
 }
+
+/* Full-bleed fill panels already cancel main's side padding. Keep their shade
+   handles at the panel width so the handle itself cannot create root x-scroll. */
+#tab-hermes-local.active > .body-shade-handle,
+#tab-hermes-vps.active > .body-shade-handle,
+#tab-matrix-chat.active > .body-shade-handle,
+#tab-matrix-chat-admin.active > .body-shade-handle {
+  margin-left: 0;
+  margin-right: 0;
+}
 .body-shade-handle {
   display: flex;
   align-items: center;

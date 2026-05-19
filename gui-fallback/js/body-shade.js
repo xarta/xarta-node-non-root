@@ -126,6 +126,17 @@
     return window.innerHeight || document.documentElement.clientHeight || 0;
   }
 
+  function clampRootHorizontalScroll() {
+    var x = window.scrollX
+      || document.documentElement.scrollLeft
+      || document.body.scrollLeft
+      || 0;
+    if (x === 0) return;
+    window.scrollTo(0, window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0);
+    document.documentElement.scrollLeft = 0;
+    document.body.scrollLeft = 0;
+  }
+
   function isS25StargateSnapMode() {
     var root = document.documentElement;
     if (!root || root.getAttribute('data-device-profile') !== 's25-ultra-oneui-webapk') return false;
@@ -558,8 +569,10 @@
     _fillSettleTimers.forEach(clearTimeout);
     _fillSettleTimers = [];
     clearTimeout(_fillTimer);
+    clampRootHorizontalScroll();
     // First pass: near-immediate for normal tab switches.
     _fillTimer = setTimeout(function () {
+      clampRootHorizontalScroll();
       if (isUp && isS25StargateSnapMode()) {
         resyncShadeUpPosition();
         return;
@@ -573,6 +586,7 @@
     // the correct final height without requiring a manual shade drag.
     [180, 360, 700].forEach(function (delay) {
       _fillSettleTimers.push(setTimeout(function () {
+        clampRootHorizontalScroll();
         if (isUp && isS25StargateSnapMode()) {
           resyncShadeUpPosition();
           return;
