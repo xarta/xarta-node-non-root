@@ -13,6 +13,7 @@ let _sshTerminalManualDisconnect = false;
 let _sshTerminalOpenToken = 0;
 let _sshTerminalLocked = false;
 let _sshTerminalPaintRaf = 0;
+let _sshTerminalViewportResizeToken = 0;
 const _SSH_TERMINAL_RESTORE_KEY = 'blueprintsSshTerminalRestore';
 
 function _sshTerminalEls() {
@@ -97,15 +98,27 @@ function _sshTerminalCellSize() {
 }
 
 function _sshTerminalResize(send = true, force = false) {
-  if (!_sshTerminalTerm) return;
   _sshTerminalApplyShellSize();
+  if (!_sshTerminalTerm) return;
   const size = _sshTerminalMeasure();
   if (!force && size.cols === _sshTerminalLastSize.cols && size.rows === _sshTerminalLastSize.rows) return;
+  const changed = size.cols !== _sshTerminalLastSize.cols || size.rows !== _sshTerminalLastSize.rows;
   _sshTerminalLastSize = size;
   _sshTerminalTerm.resize(size.cols, size.rows);
-  if (send && _sshTerminalWs && _sshTerminalWs.readyState === WebSocket.OPEN) {
+  if (send && changed && _sshTerminalWs && _sshTerminalWs.readyState === WebSocket.OPEN) {
     _sshTerminalWs.send(JSON.stringify({ type: 'resize', cols: size.cols, rows: size.rows }));
   }
+}
+
+function _sshTerminalScheduleViewportResize(send = true) {
+  const token = ++_sshTerminalViewportResizeToken;
+  [0, 80, 240, 600].forEach(delay => {
+    window.setTimeout(() => {
+      if (token !== _sshTerminalViewportResizeToken) return;
+      _sshTerminalSyncPortraitMode();
+      _sshTerminalResize(send, false);
+    }, delay);
+  });
 }
 
 function _sshTerminalScheduleSettledResize(send = true) {
@@ -692,12 +705,16 @@ function _sshTerminalInit() {
   disconnect?.addEventListener('click', _sshTerminalDisconnect);
   fullscreen?.addEventListener('click', _sshTerminalToggleFullscreen);
   window.addEventListener('resize', () => {
-    _sshTerminalSyncPortraitMode();
-    _sshTerminalResize(true);
+    _sshTerminalScheduleViewportResize(true);
   }, { passive: true });
   window.visualViewport?.addEventListener('resize', () => {
-    _sshTerminalSyncPortraitMode();
-    _sshTerminalResize(true);
+    _sshTerminalScheduleViewportResize(true);
+  }, { passive: true });
+  window.visualViewport?.addEventListener('scroll', () => {
+    _sshTerminalScheduleViewportResize(true);
+  }, { passive: true });
+  window.addEventListener('orientationchange', () => {
+    _sshTerminalScheduleViewportResize(true);
   }, { passive: true });
   document.addEventListener('bodyshadechange', () => {
     if (typeof SettingsMenuConfig !== 'undefined') SettingsMenuConfig.updateActiveTab('ssh-terminal');

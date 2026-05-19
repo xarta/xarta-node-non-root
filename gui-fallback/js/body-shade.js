@@ -180,6 +180,7 @@
       'tab-keys',
       'tab-certs',
       'tab-docs',
+      'tab-ssh-terminal',
     ].includes(panel.id)) return false;
     if (!window.matchMedia('(orientation: landscape)').matches) return false;
     return window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(hover: none)').matches;
