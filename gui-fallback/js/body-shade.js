@@ -177,9 +177,24 @@
     var panel = handle.closest ? handle.closest('.tab-panel') : null;
     if (!panel || ![
       'tab-settings',
+      'tab-arp-manual',
+      'tab-ai-providers',
+      'tab-mcp-servers',
+      'tab-prompt-injection',
+      'tab-nav-items',
+      'tab-form-controls',
+      'tab-embed-menu',
+      'tab-embed-menu-grid',
+      'tab-pve-hosts',
+      'tab-nodes',
+      'tab-local-dockge',
+      'tab-vps-dockge',
       'tab-keys',
       'tab-certs',
       'tab-docs',
+      'tab-docs-list',
+      'tab-docs-images',
+      'tab-self-diag',
       'tab-ssh-terminal',
     ].includes(panel.id)) return false;
     if (!window.matchMedia('(orientation: landscape)').matches) return false;
