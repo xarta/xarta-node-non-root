@@ -164,12 +164,27 @@
     return window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(hover: none)').matches;
   }
 
+  function isMatrixChatLandscapeSnapMode() {
+    if (!handle || !window.matchMedia) return false;
+    var panel = handle.closest ? handle.closest('.tab-panel') : null;
+    if (!panel || panel.id !== 'tab-matrix-chat') return false;
+    if (!window.matchMedia('(orientation: landscape)').matches) return false;
+    return window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(hover: none)').matches;
+  }
+
   function shouldResyncShadeUpOnViewportChange() {
-    return isS25StargateSnapMode() || isHermesDashboardLandscapeSnapMode() || isMatrixChatAdminLandscapeSnapMode();
+    return isS25StargateSnapMode()
+      || isHermesDashboardLandscapeSnapMode()
+      || isMatrixChatAdminLandscapeSnapMode()
+      || isMatrixChatLandscapeSnapMode();
   }
 
   function getShadeSnapTop() {
-    if (isHermesDashboardLandscapeSnapMode() || isMatrixChatAdminLandscapeSnapMode()) return 12;
+    if (
+      isHermesDashboardLandscapeSnapMode()
+      || isMatrixChatAdminLandscapeSnapMode()
+      || isMatrixChatLandscapeSnapMode()
+    ) return 12;
     if (!isS25StargateSnapMode()) return 0;
     var siteHeader = document.querySelector('header');
     if (!siteHeader) return 0;
