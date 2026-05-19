@@ -57,6 +57,278 @@ const MatrixChat = (() => {
     }
   }
 
+  function isMarkdownBlockStart(line, nextLine = '') {
+    return /^```/.test(line)
+      || /^#{1,6}\s+/.test(line)
+      || /^\s*[-*+]\s+/.test(line)
+      || /^\s*\d+\.\s+/.test(line)
+      || /^>\s?/.test(line)
+      || isTableStart(line, nextLine);
+  }
+
+  function isTableRow(line) {
+    return /^\s*\|.*\|\s*$/.test(line || '');
+  }
+
+  function isTableSeparator(line) {
+    return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line || '');
+  }
+
+  function isTableStart(line, nextLine) {
+    return isTableRow(line) && isTableSeparator(nextLine || '');
+  }
+
+  function tableCells(line) {
+    return String(line || '').trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(cell => cell.trim());
+  }
+
+  function safeLinkTarget(href) {
+    const raw = String(href || '').trim();
+    if (!raw || /[\u0000-\u001f\u007f]/.test(raw)) return '';
+    if (!/^(https?:\/\/|mailto:)/i.test(raw)) return '';
+    try {
+      const parsed = new URL(raw);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:' || parsed.protocol === 'mailto:') return raw;
+    } catch (_) {}
+    return '';
+  }
+
+  function appendInlineMarkdown(parent, source) {
+    const text = String(source || '');
+    let i = 0;
+
+    const appendTextUntil = end => {
+      if (end > i) parent.appendChild(document.createTextNode(text.slice(i, end)));
+      i = end;
+    };
+
+    while (i < text.length) {
+      if (text[i] === '`') {
+        const end = text.indexOf('`', i + 1);
+        if (end > i + 1) {
+          const code = document.createElement('code');
+          code.textContent = text.slice(i + 1, end);
+          parent.appendChild(code);
+          i = end + 1;
+          continue;
+        }
+      }
+
+      if (text.startsWith('**', i)) {
+        const end = text.indexOf('**', i + 2);
+        if (end > i + 2) {
+          const strong = document.createElement('strong');
+          appendInlineMarkdown(strong, text.slice(i + 2, end));
+          parent.appendChild(strong);
+          i = end + 2;
+          continue;
+        }
+      }
+
+      if (text.startsWith('__', i)) {
+        const end = text.indexOf('__', i + 2);
+        if (end > i + 2) {
+          const strong = document.createElement('strong');
+          appendInlineMarkdown(strong, text.slice(i + 2, end));
+          parent.appendChild(strong);
+          i = end + 2;
+          continue;
+        }
+      }
+
+      if (text.startsWith('~~', i)) {
+        const end = text.indexOf('~~', i + 2);
+        if (end > i + 2) {
+          const del = document.createElement('del');
+          appendInlineMarkdown(del, text.slice(i + 2, end));
+          parent.appendChild(del);
+          i = end + 2;
+          continue;
+        }
+      }
+
+      if (text[i] === '*') {
+        const end = text.indexOf('*', i + 1);
+        if (end > i + 1) {
+          const em = document.createElement('em');
+          appendInlineMarkdown(em, text.slice(i + 1, end));
+          parent.appendChild(em);
+          i = end + 1;
+          continue;
+        }
+      }
+
+      if (text[i] === '[') {
+        const labelEnd = text.indexOf(']', i + 1);
+        const targetStart = labelEnd >= 0 ? text.indexOf('(', labelEnd) : -1;
+        const targetEnd = targetStart >= 0 ? text.indexOf(')', targetStart) : -1;
+        if (labelEnd > i + 1 && targetStart === labelEnd + 1 && targetEnd > targetStart + 1) {
+          const label = text.slice(i + 1, labelEnd);
+          const target = text.slice(targetStart + 1, targetEnd);
+          const safe = safeLinkTarget(target);
+          if (safe) {
+            const anchor = document.createElement('a');
+            anchor.href = safe;
+            anchor.target = '_blank';
+            anchor.rel = 'noopener noreferrer';
+            appendInlineMarkdown(anchor, label);
+            parent.appendChild(anchor);
+          } else {
+            parent.appendChild(document.createTextNode(label));
+          }
+          i = targetEnd + 1;
+          continue;
+        }
+      }
+
+      const nextSpecials = ['`', '**', '__', '~~', '*', '[']
+        .map(token => text.indexOf(token, i + 1))
+        .filter(index => index !== -1);
+      appendTextUntil(nextSpecials.length ? Math.min(...nextSpecials) : text.length);
+    }
+  }
+
+  function appendParagraph(parent, lines) {
+    const p = document.createElement('p');
+    lines.forEach((line, index) => {
+      if (index) p.appendChild(document.createElement('br'));
+      appendInlineMarkdown(p, line);
+    });
+    parent.appendChild(p);
+  }
+
+  function renderMarkdownBody(markdown) {
+    const fragment = document.createDocumentFragment();
+    const text = String(markdown || '');
+    const lines = text.replace(/\r\n?/g, '\n').split('\n');
+    let i = 0;
+
+    while (i < lines.length) {
+      const line = lines[i];
+      if (!line.trim()) {
+        const spacer = document.createElement('div');
+        spacer.className = 'matrix-chat-markdown-spacer';
+        fragment.appendChild(spacer);
+        i += 1;
+        continue;
+      }
+
+      if (/^```/.test(line)) {
+        const codeLines = [];
+        i += 1;
+        while (i < lines.length && !/^```/.test(lines[i])) {
+          codeLines.push(lines[i]);
+          i += 1;
+        }
+        if (i < lines.length) i += 1;
+        const pre = document.createElement('pre');
+        const code = document.createElement('code');
+        code.textContent = codeLines.join('\n');
+        pre.appendChild(code);
+        fragment.appendChild(pre);
+        continue;
+      }
+
+      const heading = line.match(/^(#{1,6})\s+(.*)$/);
+      if (heading) {
+        const level = Math.min(6, Math.max(3, heading[1].length + 2));
+        const h = document.createElement(`h${level}`);
+        appendInlineMarkdown(h, heading[2]);
+        fragment.appendChild(h);
+        i += 1;
+        continue;
+      }
+
+      if (isTableStart(line, lines[i + 1])) {
+        const headerCells = tableCells(line);
+        i += 2;
+        const wrap = document.createElement('div');
+        wrap.className = 'matrix-chat-table-wrap';
+        const table = document.createElement('table');
+        const thead = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        headerCells.forEach(cell => {
+          const th = document.createElement('th');
+          appendInlineMarkdown(th, cell);
+          headRow.appendChild(th);
+        });
+        thead.appendChild(headRow);
+        table.appendChild(thead);
+        const tbody = document.createElement('tbody');
+        while (i < lines.length && isTableRow(lines[i])) {
+          const tr = document.createElement('tr');
+          const rowCells = tableCells(lines[i]);
+          headerCells.forEach((_, cellIndex) => {
+            const td = document.createElement('td');
+            appendInlineMarkdown(td, rowCells[cellIndex] || '');
+            tr.appendChild(td);
+          });
+          tbody.appendChild(tr);
+          i += 1;
+        }
+        table.appendChild(tbody);
+        wrap.appendChild(table);
+        fragment.appendChild(wrap);
+        continue;
+      }
+
+      const unordered = line.match(/^\s*[-*+]\s+(.*)$/);
+      if (unordered) {
+        const ul = document.createElement('ul');
+        while (i < lines.length) {
+          const match = lines[i].match(/^\s*[-*+]\s+(.*)$/);
+          if (!match) break;
+          const li = document.createElement('li');
+          appendInlineMarkdown(li, match[1]);
+          ul.appendChild(li);
+          i += 1;
+        }
+        fragment.appendChild(ul);
+        continue;
+      }
+
+      const ordered = line.match(/^\s*\d+\.\s+(.*)$/);
+      if (ordered) {
+        const ol = document.createElement('ol');
+        while (i < lines.length) {
+          const match = lines[i].match(/^\s*\d+\.\s+(.*)$/);
+          if (!match) break;
+          const li = document.createElement('li');
+          appendInlineMarkdown(li, match[1]);
+          ol.appendChild(li);
+          i += 1;
+        }
+        fragment.appendChild(ol);
+        continue;
+      }
+
+      const quote = line.match(/^>\s?(.*)$/);
+      if (quote) {
+        const blockquote = document.createElement('blockquote');
+        while (i < lines.length) {
+          const match = lines[i].match(/^>\s?(.*)$/);
+          if (!match) break;
+          if (blockquote.childNodes.length) blockquote.appendChild(document.createElement('br'));
+          appendInlineMarkdown(blockquote, match[1]);
+          i += 1;
+        }
+        fragment.appendChild(blockquote);
+        continue;
+      }
+
+      const paragraphLines = [line];
+      i += 1;
+      while (i < lines.length && lines[i].trim() && !isMarkdownBlockStart(lines[i], lines[i + 1])) {
+        paragraphLines.push(lines[i]);
+        i += 1;
+      }
+      appendParagraph(fragment, paragraphLines);
+    }
+
+    if (!fragment.childNodes.length) fragment.appendChild(document.createTextNode(text));
+    return fragment;
+  }
+
   function roomTitle(room) {
     return room?.display_name || room?.name || room?.canonical_alias || room?.room_id || 'Room';
   }
@@ -212,7 +484,7 @@ const MatrixChat = (() => {
 
       const body = document.createElement('div');
       body.className = 'matrix-chat-message-body';
-      body.textContent = message.body || '';
+      body.appendChild(renderMarkdownBody(message.body || ''));
       item.append(meta, body);
       timeline.appendChild(item);
     });
