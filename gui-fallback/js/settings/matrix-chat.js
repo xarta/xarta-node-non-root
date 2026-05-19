@@ -16,6 +16,9 @@ const MatrixChat = (() => {
     nextBatch: '',
     pollTimer: null,
     messagesByRoom: new Map(),
+    inviteCandidates: [],
+    inviteCandidateIndex: -1,
+    inviteCandidateTimer: null,
   };
 
   function el(id) {
@@ -285,6 +288,7 @@ const MatrixChat = (() => {
 
   async function selectRoom(roomId) {
     rememberActiveRoom(roomId);
+    hideInviteSuggestions();
     closeRailOnMobile();
     renderRooms();
     renderMessages();
@@ -340,8 +344,133 @@ const MatrixChat = (() => {
         body: JSON.stringify({ user_id: userId }),
       });
       setStatus(`Invite sent to ${userId}`, 'ok');
+      if (input) input.value = '';
+      hideInviteSuggestions();
+      await loadRooms();
     } catch (error) {
       setStatus(`Invite failed: ${error.message}`, 'error');
+    }
+  }
+
+  function hideInviteSuggestions() {
+    const node = el('matrix-chat-invite-suggestions');
+    state.inviteCandidates = [];
+    state.inviteCandidateIndex = -1;
+    if (!node) return;
+    node.innerHTML = '';
+    node.hidden = true;
+  }
+
+  function inviteCandidateLabel(user) {
+    return user?.display_name || user?.user_id || 'Matrix user';
+  }
+
+  function selectInviteCandidate(user) {
+    const input = el('matrix-chat-invite-user');
+    if (!input || !user?.user_id) return;
+    input.value = user.user_id;
+    hideInviteSuggestions();
+    input.focus();
+  }
+
+  function updateInviteSuggestionActive() {
+    const node = el('matrix-chat-invite-suggestions');
+    if (!node) return;
+    Array.from(node.querySelectorAll('.matrix-chat-invite-option')).forEach((btn, index) => {
+      const active = index === state.inviteCandidateIndex;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+      if (active) btn.scrollIntoView({ block: 'nearest' });
+    });
+  }
+
+  function renderInviteSuggestions(users, emptyText = '') {
+    const node = el('matrix-chat-invite-suggestions');
+    if (!node) return;
+    state.inviteCandidates = Array.isArray(users) ? users : [];
+    state.inviteCandidateIndex = state.inviteCandidates.length ? 0 : -1;
+    node.innerHTML = '';
+
+    if (!state.inviteCandidates.length) {
+      if (!emptyText) {
+        hideInviteSuggestions();
+        return;
+      }
+      const empty = document.createElement('div');
+      empty.className = 'matrix-chat-invite-empty';
+      empty.textContent = emptyText;
+      node.appendChild(empty);
+      node.hidden = false;
+      return;
+    }
+
+    state.inviteCandidates.forEach((user, index) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'matrix-chat-invite-option';
+      btn.classList.toggle('active', index === state.inviteCandidateIndex);
+      btn.setAttribute('role', 'option');
+      btn.setAttribute('aria-selected', index === state.inviteCandidateIndex ? 'true' : 'false');
+      const label = document.createElement('strong');
+      label.textContent = inviteCandidateLabel(user);
+      const id = document.createElement('span');
+      id.textContent = user.user_id || '';
+      btn.append(label, id);
+      btn.addEventListener('mouseenter', () => {
+        state.inviteCandidateIndex = index;
+        updateInviteSuggestionActive();
+      });
+      btn.addEventListener('click', () => selectInviteCandidate(user));
+      node.appendChild(btn);
+    });
+    node.hidden = false;
+  }
+
+  async function loadInviteCandidates() {
+    const input = el('matrix-chat-invite-user');
+    const query = (input?.value || '').trim();
+    if (!state.activeRoomId || !query.includes('@')) {
+      hideInviteSuggestions();
+      return;
+    }
+    try {
+      const data = await apiJson(
+        `/api/v1/matrix-chat/rooms/${encodeURIComponent(state.activeRoomId)}/invite-candidates?q=${encodeURIComponent(query)}`
+      );
+      const users = Array.isArray(data.users) ? data.users : [];
+      renderInviteSuggestions(users, users.length ? '' : 'No available users');
+    } catch (_) {
+      renderInviteSuggestions([], 'Unable to load users');
+    }
+  }
+
+  function scheduleInviteCandidates() {
+    window.clearTimeout(state.inviteCandidateTimer);
+    state.inviteCandidateTimer = window.setTimeout(loadInviteCandidates, 180);
+  }
+
+  function handleInviteKeydown(event) {
+    const node = el('matrix-chat-invite-suggestions');
+    const open = node && !node.hidden && state.inviteCandidates.length;
+    if (!open) return;
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      state.inviteCandidateIndex = Math.min(
+        state.inviteCandidates.length - 1,
+        state.inviteCandidateIndex + 1
+      );
+      updateInviteSuggestionActive();
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      state.inviteCandidateIndex = Math.max(0, state.inviteCandidateIndex - 1);
+      updateInviteSuggestionActive();
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      selectInviteCandidate(state.inviteCandidates[state.inviteCandidateIndex]);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      hideInviteSuggestions();
     }
   }
 
@@ -457,6 +586,9 @@ const MatrixChat = (() => {
     el('matrix-chat-create')?.addEventListener('click', createRoom);
     el('matrix-chat-join')?.addEventListener('click', () => joinRoom());
     el('matrix-chat-invite')?.addEventListener('click', inviteUser);
+    el('matrix-chat-invite-user')?.addEventListener('input', scheduleInviteCandidates);
+    el('matrix-chat-invite-user')?.addEventListener('focus', scheduleInviteCandidates);
+    el('matrix-chat-invite-user')?.addEventListener('keydown', handleInviteKeydown);
     el('matrix-chat-mention-hermes')?.addEventListener('click', insertHermesMention);
     el('matrix-chat-send')?.addEventListener('click', sendMessage);
     el('matrix-chat-composer')?.addEventListener('keydown', event => {

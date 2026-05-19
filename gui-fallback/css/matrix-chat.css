@@ -170,6 +170,7 @@
 }
 
 .matrix-chat-inline-form {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 6px;
@@ -189,6 +190,63 @@
   height: 30px;
   padding: 5px 8px;
   font-size: 12px;
+}
+
+.matrix-chat-invite-suggestions {
+  grid-column: 1 / -1;
+  display: grid;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid rgba(var(--hub-accent-rgb, 0, 212, 255), 0.24);
+  border-radius: 6px;
+  background: rgba(3, 6, 12, 0.98);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.28);
+}
+
+.matrix-chat-invite-suggestions[hidden] {
+  display: none;
+}
+
+.matrix-chat-invite-option,
+.matrix-chat-invite-empty {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 0;
+  border-bottom: 1px solid rgba(var(--hub-accent-rgb, 0, 212, 255), 0.12);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+
+.matrix-chat-invite-option {
+  cursor: pointer;
+}
+
+.matrix-chat-invite-option:last-child,
+.matrix-chat-invite-empty:last-child {
+  border-bottom: 0;
+}
+
+.matrix-chat-invite-option:hover,
+.matrix-chat-invite-option.active,
+.matrix-chat-invite-option:focus-visible {
+  background: rgba(var(--hub-accent-rgb, 0, 212, 255), 0.12);
+  outline: none;
+}
+
+.matrix-chat-invite-option strong,
+.matrix-chat-invite-option span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.matrix-chat-invite-option span,
+.matrix-chat-invite-empty {
+  color: var(--text-dim);
 }
 
 .matrix-chat-main {
