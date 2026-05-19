@@ -505,10 +505,13 @@
   <section id="tab-self-diag" class="tab-panel">
     <div id="s25-lift-self-diag" class="s25-lift-block" data-for-tab="self-diag">
       <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Runs connectivity and API diagnostics on this node. Most checks are read-only; optional on-demand bucket tests write only to isolated test user FE rows and clean up afterward.</p>
-      <p id="self-diag-status" style="font-size:12px;margin:0 0 10px" hidden></p>
     </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="tab-scroll-shell">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px">
+        <button id="self-diag-run-btn" type="button">&#x25b6; Run Diagnostics</button>
+        <p id="self-diag-status" style="font-size:12px;margin:0;color:var(--text-dim)" hidden></p>
+      </div>
       <div id="self-diag-results"></div>
     </div>
   </section>

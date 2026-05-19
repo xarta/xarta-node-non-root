@@ -1027,3 +1027,8 @@ function _selfDiagRow(icon, label, detail, extra) {
     <span style="flex:0.6;color:var(--text-dim);font-size:11px;text-align:right">${esc(extra || '')}</span>
   </div>`;
 }
+
+document.addEventListener('click', (event) => {
+  if (!event.target.closest('#self-diag-run-btn')) return;
+  runSelfDiag();
+});
