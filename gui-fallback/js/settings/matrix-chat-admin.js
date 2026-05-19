@@ -14,6 +14,7 @@ const MatrixChatAdmin = (() => {
     selectedRoomId: '',
     roomDetail: null,
     roomMembers: [],
+    detailCollapsed: false,
     lastRefresh: '',
     lastRefreshCompact: '',
   };
@@ -143,6 +144,19 @@ const MatrixChatAdmin = (() => {
     setText('matrix-chat-admin-mobile-reachable', fmtBool(Boolean(status.reachable)));
     setText('matrix-chat-admin-last-refresh', state.lastRefresh || '-');
     setText('matrix-chat-admin-mobile-last-refresh', state.lastRefreshCompact || state.lastRefresh || '-');
+  }
+
+  function renderDetailHandle() {
+    const tab = el('tab-matrix-chat-admin');
+    const toggle = el('matrix-chat-admin-detail-toggle');
+    if (tab) tab.classList.toggle('matrix-chat-admin-detail-collapsed', state.detailCollapsed);
+    if (toggle) toggle.setAttribute('aria-pressed', String(!state.detailCollapsed));
+  }
+
+  function toggleDetailPanel() {
+    state.detailCollapsed = !state.detailCollapsed;
+    renderDetailHandle();
+    window.BodyShade?.scheduleSizeFillTable?.();
   }
 
   function renderViewButtons() {
@@ -325,6 +339,7 @@ const MatrixChatAdmin = (() => {
     } else {
       renderRoomDetail(state.rooms.find(room => room.room_id === state.selectedRoomId));
     }
+    renderDetailHandle();
   }
 
   async function loadRoomDetail(roomId) {
@@ -415,6 +430,7 @@ const MatrixChatAdmin = (() => {
     el('matrix-chat-admin-refresh')?.addEventListener('click', refreshAll);
     el('matrix-chat-admin-view-users')?.addEventListener('click', () => setView('users'));
     el('matrix-chat-admin-view-rooms')?.addEventListener('click', () => setView('rooms'));
+    el('matrix-chat-admin-detail-toggle')?.addEventListener('click', toggleDetailPanel);
   }
 
   async function loadTab() {
