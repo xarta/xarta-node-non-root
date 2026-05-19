@@ -48,5 +48,32 @@
   body.shade-is-up #tab-hermes-vps.active > .body-shade-handle {
     z-index: 90;
     background: linear-gradient(180deg, rgba(15, 17, 23, 0.92), rgba(15, 17, 23, 0));
+    pointer-events: none;
+  }
+
+  body.shade-is-up #tab-hermes-local.active > .body-shade-handle .body-shade-grip,
+  body.shade-is-up #tab-hermes-vps.active > .body-shade-handle .body-shade-grip {
+    position: relative;
+    width: 112px;
+    height: 20px;
+    background: transparent;
+    pointer-events: auto;
+  }
+
+  body.shade-is-up #tab-hermes-local.active > .body-shade-handle .body-shade-grip::before,
+  body.shade-is-up #tab-hermes-vps.active > .body-shade-handle .body-shade-grip::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 34px;
+    width: 44px;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(var(--hub-accent-rgb, 91, 156, 246), 0.72);
+  }
+
+  body.shade-is-up #tab-hermes-local.active .agent-page-shell,
+  body.shade-is-up #tab-hermes-vps.active .agent-page-shell {
+    margin-top: -32px;
   }
 }
