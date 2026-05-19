@@ -960,6 +960,51 @@
     }
 }
 
+/* Phone landscape can cross the desktop-width breakpoint while still needing
+   touch-sized, wrapping navigation. Keep portrait on the hamburger layout. */
+@media (orientation: landscape) and (pointer: coarse) {
+    .menu-zone,
+    .menu-zone-nav,
+    .hub-tabs-wrapper {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .hub-tabs-wrapper {
+        width: 100%;
+    }
+
+    .hub-tabs {
+        flex-wrap: wrap;
+        align-items: flex-start;
+        max-width: 100%;
+        overflow: visible;
+        gap: 4px;
+    }
+
+    .hub-tab-dropdown {
+        min-width: 0;
+        max-width: 100%;
+        flex: 0 1 auto;
+    }
+
+    .hub-tab-split {
+        min-width: 0;
+    }
+
+    .hub-tab,
+    .hub-tab-split .hub-tab-label {
+        padding-left: 10px;
+        padding-right: 10px;
+        font-size: 0.9em;
+    }
+
+    .hub-tab-split .hub-tab-caret {
+        padding-left: 8px;
+        padding-right: 8px;
+    }
+}
+
 /* ── Menu icon images (asset icons replacing emoji) ─────────────────────── */
 /*
    Icons are rendered as CSS mask-image spans so they inherit `currentColor`
