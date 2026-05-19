@@ -420,6 +420,8 @@ const MatrixChat = (() => {
         btn.type = 'button';
         btn.className = 'matrix-chat-room';
         btn.classList.toggle('active', room.room_id === state.activeRoomId);
+        btn.classList.toggle('is-encrypted', Boolean(room.encrypted));
+        btn.classList.toggle('is-unencrypted', !room.encrypted);
         btn.dataset.roomId = room.room_id;
         btn.title = room.room_id;
 

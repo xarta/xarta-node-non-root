@@ -8,6 +8,7 @@
 }
 
 .matrix-chat-shell {
+  isolation: isolate;
   display: grid;
   grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
   flex: 1 1 auto;
@@ -24,6 +25,8 @@
 }
 
 .matrix-chat-rail {
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   border-right: 1px solid rgba(var(--hub-accent-rgb, 0, 212, 255), 0.18);
@@ -71,7 +74,7 @@
 
 .matrix-chat-icon-btn {
   flex: 0 0 auto;
-  min-width: 32px;
+  min-width: 34px;
   height: 30px;
   border: 1px solid rgba(var(--hub-accent-rgb, 0, 212, 255), 0.32);
   border-radius: 6px;
@@ -126,17 +129,40 @@
 
 .matrix-chat-room,
 .matrix-chat-invite {
+  position: relative;
   display: grid;
   width: 100%;
   min-height: 48px;
   margin: 0 0 6px;
-  padding: 8px 9px;
+  padding: 8px 16px 8px 9px;
   border: 1px solid rgba(var(--hub-accent-rgb, 0, 212, 255), 0.14);
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.025);
   color: var(--text);
   cursor: pointer;
   text-align: left;
+}
+
+.matrix-chat-room {
+  overflow: hidden;
+}
+
+.matrix-chat-room::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 5px;
+  border-radius: 0 5px 5px 0;
+  opacity: 0.92;
+  pointer-events: none;
+}
+
+.matrix-chat-room.is-encrypted::after {
+  background: var(--ok, #4caf7d);
+}
+
+.matrix-chat-room.is-unencrypted::after {
+  background: var(--err, #e05c5c);
 }
 
 .matrix-chat-room.active {
@@ -172,8 +198,13 @@
 .matrix-chat-inline-form {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) 38px;
   gap: 6px;
+}
+
+.matrix-chat-inline-form .matrix-chat-icon-btn {
+  width: 38px;
+  min-width: 38px;
 }
 
 .matrix-chat-create-encrypted {
@@ -264,6 +295,8 @@
 }
 
 .matrix-chat-main {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
 }
@@ -450,6 +483,11 @@
   border-bottom: 0;
 }
 
+.matrix-chat-composer .matrix-chat-icon-btn {
+  height: 42px;
+  align-self: flex-start;
+}
+
 .matrix-chat-composer textarea {
   flex: 1 1 auto;
   min-height: 42px;
@@ -486,15 +524,39 @@
 
   .matrix-chat-rail {
     position: absolute;
-    z-index: 5;
+    z-index: 70;
     inset: 0 auto 0 0;
     width: min(88vw, 360px);
     max-height: none;
     border-right: 0;
     border-bottom: 0;
-    box-shadow: 14px 0 28px rgba(0, 0, 0, 0.34);
+    overflow: hidden;
+    background: rgb(6, 10, 17);
+    -webkit-backdrop-filter: blur(22px) saturate(145%);
+    backdrop-filter: blur(22px) saturate(145%);
+    box-shadow: 16px 0 34px rgba(0, 0, 0, 0.62);
     transform: translateX(-104%);
     transition: transform 160ms ease;
+  }
+
+  .matrix-chat-rail::before {
+    content: "";
+    position: absolute;
+    z-index: 0;
+    inset: 0;
+    background:
+      linear-gradient(180deg, rgba(13, 18, 31, 0.99), rgba(4, 7, 13, 0.985)),
+      rgb(6, 10, 17);
+    pointer-events: none;
+  }
+
+  .matrix-chat-rail > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .matrix-chat-shell.rail-open .matrix-chat-main {
+    z-index: 0;
   }
 
   .matrix-chat-shell.rail-open .matrix-chat-rail {
