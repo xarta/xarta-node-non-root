@@ -172,11 +172,20 @@
     return window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(hover: none)').matches;
   }
 
+  function isSettingsLandscapeResyncMode() {
+    if (!handle || !window.matchMedia) return false;
+    var panel = handle.closest ? handle.closest('.tab-panel') : null;
+    if (!panel || panel.id !== 'tab-settings') return false;
+    if (!window.matchMedia('(orientation: landscape)').matches) return false;
+    return window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(hover: none)').matches;
+  }
+
   function shouldResyncShadeUpOnViewportChange() {
     return isS25StargateSnapMode()
       || isHermesDashboardLandscapeSnapMode()
       || isMatrixChatAdminLandscapeSnapMode()
-      || isMatrixChatLandscapeSnapMode();
+      || isMatrixChatLandscapeSnapMode()
+      || isSettingsLandscapeResyncMode();
   }
 
   function getShadeSnapTop() {
