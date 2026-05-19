@@ -906,7 +906,6 @@
   <section id="tab-matrix-chat" class="tab-panel tab-panel--fill">
     <div id="s25-lift-matrix-chat" class="s25-lift-block matrix-chat-mobile-lift" data-for-tab="matrix-chat">
       <div class="matrix-chat-mobile-lift-inner">
-        <button id="matrix-chat-mobile-rail-toggle-top" class="matrix-chat-mobile-rail-toggle" type="button" aria-expanded="false" aria-controls="matrix-chat-rail">Rooms</button>
         <div class="matrix-chat-mobile-lift-title">
           <strong id="matrix-chat-mobile-room-title">No room selected</strong>
           <span id="matrix-chat-mobile-room-id"></span>
@@ -954,7 +953,6 @@
         </aside>
         <div class="matrix-chat-main" aria-label="Matrix room timeline">
           <div class="matrix-chat-room-header">
-            <button id="matrix-chat-mobile-rail-toggle" class="matrix-chat-mobile-rail-toggle" type="button" aria-expanded="false" aria-controls="matrix-chat-rail">Rooms</button>
             <div class="matrix-chat-room-title">
               <strong id="matrix-chat-room-title">No room selected</strong>
               <span id="matrix-chat-room-id"></span>
@@ -967,7 +965,10 @@
           <p id="matrix-chat-status" class="matrix-chat-status" aria-live="polite" hidden></p>
           <div id="matrix-chat-timeline" class="matrix-chat-timeline" aria-live="polite"></div>
           <div class="matrix-chat-composer">
-            <button id="matrix-chat-mention-hermes" class="matrix-chat-icon-btn" type="button" title="Mention Hermes" aria-label="Mention Hermes">@H</button>
+            <div class="matrix-chat-composer-tools" aria-label="Matrix chat tools">
+              <button id="matrix-chat-mention-hermes" class="matrix-chat-icon-btn" type="button" title="Mention Hermes" aria-label="Mention Hermes">@H</button>
+              <button id="matrix-chat-mobile-rail-toggle" class="matrix-chat-mobile-rail-toggle" type="button" aria-expanded="false" aria-controls="matrix-chat-rail">Rooms</button>
+            </div>
             <textarea id="matrix-chat-composer" placeholder="Message Matrix room" autocomplete="off"></textarea>
             <button id="matrix-chat-send" class="matrix-chat-icon-btn" type="button" title="Send message" aria-label="Send message">Send</button>
           </div>

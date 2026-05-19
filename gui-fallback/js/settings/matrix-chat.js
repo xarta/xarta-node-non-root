@@ -832,10 +832,7 @@ const MatrixChat = (() => {
 
   function setRailOpen(open) {
     const shell = el('matrix-chat-shell');
-    const toggles = [
-      el('matrix-chat-mobile-rail-toggle'),
-      el('matrix-chat-mobile-rail-toggle-top'),
-    ].filter(Boolean);
+    const toggles = [el('matrix-chat-mobile-rail-toggle')].filter(Boolean);
     if (!shell) return;
     shell.classList.toggle('rail-open', Boolean(open));
     shell.classList.toggle('rail-collapsed', !open);
@@ -856,10 +853,7 @@ const MatrixChat = (() => {
   function bind() {
     if (state.bound) return;
     state.bound = true;
-    let lastRailPointerToggle = 0;
     const toggleRail = event => {
-      if (event?.type === 'click' && Date.now() - lastRailPointerToggle < 500) return;
-      if (event?.type === 'pointerup' || event?.type === 'touchend') lastRailPointerToggle = Date.now();
       event?.preventDefault?.();
       const shell = el('matrix-chat-shell');
       setRailOpen(!shell?.classList.contains('rail-open'));
@@ -872,13 +866,7 @@ const MatrixChat = (() => {
     el('matrix-chat-rail-close')?.addEventListener('pointerup', closeRail);
     el('matrix-chat-rail-close')?.addEventListener('touchend', closeRail);
     el('matrix-chat-rail-close')?.addEventListener('click', closeRail);
-    [el('matrix-chat-mobile-rail-toggle'), el('matrix-chat-mobile-rail-toggle-top')]
-      .filter(Boolean)
-      .forEach(toggle => {
-        toggle.addEventListener('pointerup', toggleRail);
-        toggle.addEventListener('touchend', toggleRail);
-        toggle.addEventListener('click', toggleRail);
-      });
+    el('matrix-chat-mobile-rail-toggle')?.addEventListener('click', toggleRail);
     el('matrix-chat-create')?.addEventListener('click', createRoom);
     el('matrix-chat-join')?.addEventListener('click', () => joinRoom());
     el('matrix-chat-invite')?.addEventListener('click', inviteUser);

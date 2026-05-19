@@ -529,6 +529,10 @@
   border-bottom: 0;
 }
 
+.matrix-chat-composer-tools {
+  display: contents;
+}
+
 .matrix-chat-composer .matrix-chat-icon-btn {
   height: 42px;
   align-self: flex-start;
@@ -617,16 +621,7 @@
   }
 
   .matrix-chat-mobile-rail-toggle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 8px;
-    z-index: 40;
-    min-width: 58px;
-    width: auto;
-    padding: 0 9px;
+    display: none;
   }
 
   .matrix-chat-room-header {
@@ -673,9 +668,30 @@
     padding: 8px;
   }
 
-  #matrix-chat-mention-hermes {
+  .matrix-chat-composer-tools {
+    display: flex;
     grid-column: 1 / -1;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  #matrix-chat-mention-hermes {
     justify-self: start;
+  }
+
+  .matrix-chat-composer .matrix-chat-mobile-rail-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    inset: auto;
+    z-index: 4;
+    min-width: 58px;
+    width: auto;
+    height: 42px;
+    padding: 0 9px;
+    justify-self: end;
   }
 
   .matrix-chat-composer textarea {
@@ -708,20 +724,7 @@
   #tab-matrix-chat.active .matrix-chat-mobile-lift {
     display: block;
     position: relative;
-    min-height: 58px;
-  }
-
-  #tab-matrix-chat.active .matrix-chat-mobile-lift .matrix-chat-mobile-rail-toggle {
-    position: absolute;
-    top: 38px;
-    left: 20px;
-    justify-self: start;
-  }
-
-  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-matrix-chat .matrix-chat-mobile-rail-toggle {
-    position: absolute;
-    top: 38px;
-    left: 20px;
+    min-height: 28px;
   }
 
   #tab-matrix-chat.active .matrix-chat-main > .matrix-chat-room-header {
