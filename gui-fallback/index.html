@@ -905,61 +905,63 @@
   <!-- Agent Pages: Matrix Chat -->
   <section id="tab-matrix-chat" class="tab-panel tab-panel--fill">
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
-    <div id="matrix-chat-shell" class="matrix-chat-shell">
-      <aside id="matrix-chat-rail" class="matrix-chat-rail" aria-label="Matrix rooms">
-        <div class="matrix-chat-rail-header">
-          <div class="matrix-chat-rail-title">
-            <strong>Matrix Chat</strong>
-            <span id="matrix-chat-user">Loading...</span>
+    <div id="matrix-chat-fill" class="matrix-chat-fill table-wrap--fill">
+      <div id="matrix-chat-shell" class="matrix-chat-shell">
+        <aside id="matrix-chat-rail" class="matrix-chat-rail" aria-label="Matrix rooms">
+          <div class="matrix-chat-rail-header">
+            <div class="matrix-chat-rail-title">
+              <strong>Matrix Chat</strong>
+              <span id="matrix-chat-user">Loading...</span>
+            </div>
+            <button id="matrix-chat-refresh" class="matrix-chat-icon-btn" type="button" title="Refresh Matrix chat" aria-label="Refresh Matrix chat">R</button>
+            <button id="matrix-chat-rail-close" class="matrix-chat-icon-btn matrix-chat-rail-close" type="button" title="Hide room list" aria-label="Hide room list">x</button>
           </div>
-          <button id="matrix-chat-refresh" class="matrix-chat-icon-btn" type="button" title="Refresh Matrix chat" aria-label="Refresh Matrix chat">R</button>
-          <button id="matrix-chat-rail-close" class="matrix-chat-icon-btn matrix-chat-rail-close" type="button" title="Hide room list" aria-label="Hide room list">x</button>
-        </div>
-        <div class="matrix-chat-rooms-wrap">
-          <div class="matrix-chat-subhead">Rooms</div>
-          <div id="matrix-chat-rooms"></div>
-          <div class="matrix-chat-subhead">Invites</div>
-          <div id="matrix-chat-invites" hidden></div>
-        </div>
-        <div class="matrix-chat-forms">
-          <div class="matrix-chat-inline-form">
-            <input id="matrix-chat-create-name" type="text" placeholder="New room name" autocomplete="off" />
-            <button id="matrix-chat-create" class="matrix-chat-icon-btn" type="button" title="Create room" aria-label="Create room">+</button>
+          <div class="matrix-chat-rooms-wrap">
+            <div class="matrix-chat-subhead">Rooms</div>
+            <div id="matrix-chat-rooms"></div>
+            <div class="matrix-chat-subhead">Invites</div>
+            <div id="matrix-chat-invites" hidden></div>
           </div>
-          <label class="hub-checkbox matrix-chat-create-encrypted">
-            <input id="matrix-chat-create-encrypted" class="hub-checkbox__input" type="checkbox" />
-            <span class="hub-checkbox__box" aria-hidden="true"></span>
-            <span class="hub-checkbox__label">E2EE room</span>
-          </label>
-          <div class="matrix-chat-inline-form">
-            <input id="matrix-chat-join-id" type="text" placeholder="Room ID or alias" autocomplete="off" />
-            <button id="matrix-chat-join" class="matrix-chat-icon-btn" type="button" title="Join room" aria-label="Join room">J</button>
+          <div class="matrix-chat-forms">
+            <div class="matrix-chat-inline-form">
+              <input id="matrix-chat-create-name" type="text" placeholder="New room name" autocomplete="off" />
+              <button id="matrix-chat-create" class="matrix-chat-icon-btn" type="button" title="Create room" aria-label="Create room">+</button>
+            </div>
+            <label class="hub-checkbox matrix-chat-create-encrypted">
+              <input id="matrix-chat-create-encrypted" class="hub-checkbox__input" type="checkbox" />
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label">E2EE room</span>
+            </label>
+            <div class="matrix-chat-inline-form">
+              <input id="matrix-chat-join-id" type="text" placeholder="Room ID or alias" autocomplete="off" />
+              <button id="matrix-chat-join" class="matrix-chat-icon-btn" type="button" title="Join room" aria-label="Join room">J</button>
+            </div>
+            <div class="matrix-chat-inline-form">
+              <input id="matrix-chat-invite-user" type="text" placeholder="@user:homeserver" autocomplete="off" />
+              <button id="matrix-chat-invite" class="matrix-chat-icon-btn" type="button" title="Invite user" aria-label="Invite user">@</button>
+              <div id="matrix-chat-invite-suggestions" class="matrix-chat-invite-suggestions" role="listbox" hidden></div>
+            </div>
           </div>
-          <div class="matrix-chat-inline-form">
-            <input id="matrix-chat-invite-user" type="text" placeholder="@user:homeserver" autocomplete="off" />
-            <button id="matrix-chat-invite" class="matrix-chat-icon-btn" type="button" title="Invite user" aria-label="Invite user">@</button>
-            <div id="matrix-chat-invite-suggestions" class="matrix-chat-invite-suggestions" role="listbox" hidden></div>
+        </aside>
+        <div class="matrix-chat-main" aria-label="Matrix room timeline">
+          <div class="matrix-chat-room-header">
+            <button id="matrix-chat-mobile-rail-toggle" class="matrix-chat-mobile-rail-toggle" type="button" aria-expanded="false" aria-controls="matrix-chat-rail">Rooms</button>
+            <div class="matrix-chat-room-title">
+              <strong id="matrix-chat-room-title">No room selected</strong>
+              <span id="matrix-chat-room-id"></span>
+            </div>
+            <div class="matrix-chat-meta-line">
+              <span id="matrix-chat-homeserver"></span>
+              <span id="matrix-chat-features"></span>
+            </div>
           </div>
-        </div>
-      </aside>
-      <div class="matrix-chat-main" aria-label="Matrix room timeline">
-        <div class="matrix-chat-room-header">
-          <button id="matrix-chat-mobile-rail-toggle" class="matrix-chat-mobile-rail-toggle" type="button" aria-expanded="false" aria-controls="matrix-chat-rail">Rooms</button>
-          <div class="matrix-chat-room-title">
-            <strong id="matrix-chat-room-title">No room selected</strong>
-            <span id="matrix-chat-room-id"></span>
+          <p id="matrix-chat-status" class="matrix-chat-status" aria-live="polite" hidden></p>
+          <div id="matrix-chat-timeline" class="matrix-chat-timeline" aria-live="polite"></div>
+          <div class="matrix-chat-composer">
+            <button id="matrix-chat-mention-hermes" class="matrix-chat-icon-btn" type="button" title="Mention Hermes" aria-label="Mention Hermes">@H</button>
+            <textarea id="matrix-chat-composer" placeholder="Message Matrix room" autocomplete="off"></textarea>
+            <button id="matrix-chat-send" class="matrix-chat-icon-btn" type="button" title="Send message" aria-label="Send message">Send</button>
           </div>
-          <div class="matrix-chat-meta-line">
-            <span id="matrix-chat-homeserver"></span>
-            <span id="matrix-chat-features"></span>
-          </div>
-        </div>
-        <p id="matrix-chat-status" class="matrix-chat-status" aria-live="polite" hidden></p>
-        <div id="matrix-chat-timeline" class="matrix-chat-timeline" aria-live="polite"></div>
-        <div class="matrix-chat-composer">
-          <button id="matrix-chat-mention-hermes" class="matrix-chat-icon-btn" type="button" title="Mention Hermes" aria-label="Mention Hermes">@H</button>
-          <textarea id="matrix-chat-composer" placeholder="Message Matrix room" autocomplete="off"></textarea>
-          <button id="matrix-chat-send" class="matrix-chat-icon-btn" type="button" title="Send message" aria-label="Send message">Send</button>
         </div>
       </div>
     </div>

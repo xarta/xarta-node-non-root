@@ -1,6 +1,7 @@
 /* ── Agent Pages ─────────────────────────────────────────────────────── */
 
-#tab-hermes-local.active {
+#tab-hermes-local.active,
+#tab-hermes-vps.active {
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -32,7 +33,8 @@
 }
 
 @media (max-width: 760px) {
-  #tab-hermes-local.active {
+  #tab-hermes-local.active,
+  #tab-hermes-vps.active {
     margin: 0 -10px -10px;
   }
 
