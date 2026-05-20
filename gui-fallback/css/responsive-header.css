@@ -410,17 +410,18 @@ html.header-compact .header-inner {
     }
 }
 
-/* Let Docs history navigation share the same row as the doc section buttons
-   when there is horizontal room. Keep phone portrait out of this rule set; it
-   already has a separately tuned stacked layout. If this area gets more
-   buttons later, flex-wrap should be allowed to wrap naturally rather than
-   reintroducing fixed row assumptions. */
+/* Docs shortcut/history controls use one wrapping row model. The same rule is
+   used for desktop, phone landscape, and the S25 portrait lift host: doc menu
+   pills claim only their natural width, then Back/Forward/history can rise onto
+   the same row when space exists and wrap back down when it does not. */
 @media (min-width: 770px),
+       (max-width: 600px) and (orientation: portrait),
        (orientation: landscape) and (max-height: 600px) and (pointer: coarse),
        (orientation: landscape) and (max-height: 600px) and (hover: none),
        (orientation: landscape) and (max-height: 600px) and (max-width: 1000px) {
     #s25-lift-docs {
         display: flex;
+        flex-direction: row !important;
         flex-wrap: wrap;
         align-items: center;
         gap: 4px 6px;
@@ -432,11 +433,12 @@ html.header-compact .header-inner {
     }
 
     #s25-lift-docs #docs-sidebar {
-        flex: 0 1 auto !important;
+        display: contents !important;
         max-width: 100%;
     }
 
     #s25-lift-docs .docs-history-row {
+        display: contents !important;
         flex: 0 1 auto;
         margin: 0 !important;
     }
@@ -447,4 +449,14 @@ html.header-compact .header-inner {
         flex: 1 1 100%;
         margin-bottom: 2px !important;
     }
+}
+
+#s25-lift-docs #docs-sidebar button.secondary,
+#s25-lift-docs .docs-history-btn {
+    box-sizing: border-box;
+    min-height: 0;
+    height: 28px;
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+    line-height: 1.15;
 }
