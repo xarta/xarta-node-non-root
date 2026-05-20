@@ -838,8 +838,8 @@
     display: none !important;
   }
 
-  #tab-matrix-chat.active > .body-shade-handle {
-    margin-top: -8px;
+  #tab-matrix-chat.active {
+    margin: -8px -10px -10px;
   }
 
   #tab-matrix-chat.active .matrix-chat-main > .matrix-chat-room-header {
