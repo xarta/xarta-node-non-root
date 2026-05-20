@@ -23,6 +23,13 @@ const MatrixChat = (() => {
     inviteCandidates: [],
     inviteCandidateIndex: -1,
     inviteCandidateTimer: null,
+    hermesCommands: [],
+    hermesCommandsLoaded: false,
+    composerSuggestions: [],
+    composerSuggestionIndex: -1,
+    composerSuggestionMode: '',
+    composerToken: null,
+    composerSuggestionTimer: null,
   };
 
   function el(id) {
@@ -861,6 +868,213 @@ const MatrixChat = (() => {
     }
   }
 
+  function hideComposerSuggestions() {
+    const node = el('matrix-chat-composer-suggestions');
+    state.composerSuggestions = [];
+    state.composerSuggestionIndex = -1;
+    state.composerSuggestionMode = '';
+    state.composerToken = null;
+    if (!node) return;
+    node.innerHTML = '';
+    node.hidden = true;
+  }
+
+  function composerToken() {
+    const composer = el('matrix-chat-composer');
+    if (!composer || !state.activeRoomId) return null;
+    const value = composer.value || '';
+    const cursor = composer.selectionStart || 0;
+    if (cursor !== (composer.selectionEnd || cursor)) return null;
+    const before = value.slice(0, cursor);
+    const match = /(^|\s)([@/][^\s]*)$/.exec(before);
+    if (!match) return null;
+    const token = match[2] || '';
+    if (token.length > 80) return null;
+    return {
+      trigger: token[0],
+      query: token.slice(1),
+      start: before.length - token.length,
+      end: cursor,
+    };
+  }
+
+  function commandMatches(command, query) {
+    const needle = String(query || '').trim().toLowerCase().replace(/^\//, '');
+    if (!needle) return true;
+    const aliases = Array.isArray(command.aliases) ? command.aliases.join(' ') : '';
+    return [
+      command.name,
+      command.description,
+      command.category,
+      aliases,
+    ].join(' ').toLowerCase().includes(needle);
+  }
+
+  async function ensureHermesCommands() {
+    if (state.hermesCommandsLoaded) return state.hermesCommands;
+    const data = await apiJson('/api/v1/matrix-chat/hermes/commands');
+    state.hermesCommands = Array.isArray(data.commands) ? data.commands : [];
+    state.hermesCommandsLoaded = true;
+    return state.hermesCommands;
+  }
+
+  function updateComposerSuggestionActive() {
+    const node = el('matrix-chat-composer-suggestions');
+    if (!node) return;
+    Array.from(node.querySelectorAll('.matrix-chat-composer-option')).forEach((btn, index) => {
+      const active = index === state.composerSuggestionIndex;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+      if (active) btn.scrollIntoView({ block: 'nearest' });
+    });
+  }
+
+  function renderComposerSuggestions(items, mode, token, emptyText = '') {
+    const node = el('matrix-chat-composer-suggestions');
+    if (!node) return;
+    state.composerSuggestions = Array.isArray(items) ? items.slice(0, 12) : [];
+    state.composerSuggestionIndex = state.composerSuggestions.length ? 0 : -1;
+    state.composerSuggestionMode = mode || '';
+    state.composerToken = token || null;
+    node.innerHTML = '';
+
+    if (!state.composerSuggestions.length) {
+      if (!emptyText) {
+        hideComposerSuggestions();
+        return;
+      }
+      const empty = document.createElement('div');
+      empty.className = 'matrix-chat-composer-empty';
+      empty.textContent = emptyText;
+      node.appendChild(empty);
+      node.hidden = false;
+      return;
+    }
+
+    state.composerSuggestions.forEach((item, index) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'matrix-chat-composer-option';
+      btn.classList.toggle('active', index === state.composerSuggestionIndex);
+      btn.setAttribute('role', 'option');
+      btn.setAttribute('aria-selected', index === state.composerSuggestionIndex ? 'true' : 'false');
+      const label = document.createElement('strong');
+      label.textContent = mode === 'command' ? item.name : (item.display_name || item.user_id || 'Matrix user');
+      const meta = document.createElement('span');
+      meta.textContent = mode === 'command'
+        ? [item.category, item.description].filter(Boolean).join(' - ')
+        : item.user_id || '';
+      btn.append(label, meta);
+      btn.addEventListener('mouseenter', () => {
+        state.composerSuggestionIndex = index;
+        updateComposerSuggestionActive();
+      });
+      btn.addEventListener('mousedown', event => event.preventDefault());
+      btn.addEventListener('click', () => selectComposerSuggestion(item));
+      node.appendChild(btn);
+    });
+    node.hidden = false;
+  }
+
+  function selectComposerSuggestion(item) {
+    const composer = el('matrix-chat-composer');
+    const token = state.composerToken;
+    if (!composer || !token || !item) return;
+    const value = composer.value || '';
+    const beforeToken = value.slice(0, token.start);
+    const afterToken = value.slice(token.end);
+    let insert = '';
+    let before = beforeToken;
+
+    if (state.composerSuggestionMode === 'command') {
+      insert = item.insert || item.name || '';
+      if (!insert.endsWith(' ')) insert += ' ';
+      if (!before.trim() && !value.trimStart().startsWith(MATRIX_CHAT_HERMES_PREFIX)) {
+        before = MATRIX_CHAT_HERMES_PREFIX;
+      }
+    } else {
+      insert = item.user_id || '';
+      if (!insert.endsWith(' ')) insert += ' ';
+    }
+
+    composer.value = `${before}${insert}${afterToken.replace(/^\s+/, '')}`;
+    const cursor = `${before}${insert}`.length;
+    composer.setSelectionRange(cursor, cursor);
+    hideComposerSuggestions();
+    composer.focus();
+  }
+
+  async function loadComposerSuggestions() {
+    const token = composerToken();
+    if (!token) {
+      hideComposerSuggestions();
+      return;
+    }
+
+    if (token.trigger === '/') {
+      try {
+        const commands = await ensureHermesCommands();
+        const matches = commands.filter(command => commandMatches(command, token.query));
+        renderComposerSuggestions(matches, 'command', token, matches.length ? '' : 'No Hermes commands');
+      } catch (_) {
+        renderComposerSuggestions([], 'command', token, 'Unable to load Hermes commands');
+      }
+      return;
+    }
+
+    if (token.trigger === '@') {
+      try {
+        const data = await apiJson(
+          `/api/v1/matrix-chat/rooms/${encodeURIComponent(state.activeRoomId)}/mention-candidates?q=${encodeURIComponent(token.query)}`
+        );
+        const users = Array.isArray(data.users) ? data.users : [];
+        renderComposerSuggestions(users, 'mention', token, users.length ? '' : 'No room members');
+      } catch (_) {
+        renderComposerSuggestions([], 'mention', token, 'Unable to load room members');
+      }
+    }
+  }
+
+  function scheduleComposerSuggestions() {
+    window.clearTimeout(state.composerSuggestionTimer);
+    state.composerSuggestionTimer = window.setTimeout(loadComposerSuggestions, 140);
+  }
+
+  function handleComposerKeydown(event) {
+    const node = el('matrix-chat-composer-suggestions');
+    const open = node && !node.hidden && state.composerSuggestions.length;
+
+    if (open && event.key === 'ArrowDown') {
+      event.preventDefault();
+      state.composerSuggestionIndex = Math.min(
+        state.composerSuggestions.length - 1,
+        state.composerSuggestionIndex + 1
+      );
+      updateComposerSuggestionActive();
+      return;
+    }
+    if (open && event.key === 'ArrowUp') {
+      event.preventDefault();
+      state.composerSuggestionIndex = Math.max(0, state.composerSuggestionIndex - 1);
+      updateComposerSuggestionActive();
+      return;
+    }
+    if (open && (event.key === 'Enter' || event.key === 'Tab')) {
+      event.preventDefault();
+      selectComposerSuggestion(state.composerSuggestions[state.composerSuggestionIndex]);
+      return;
+    }
+    if (open && event.key === 'Escape') {
+      event.preventDefault();
+      hideComposerSuggestions();
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+      event.preventDefault();
+      sendMessage();
+    }
+  }
+
   function insertHermesMention() {
     const composer = el('matrix-chat-composer');
     if (!composer) return;
@@ -872,6 +1086,7 @@ const MatrixChat = (() => {
     composer.value = `${MATRIX_CHAT_HERMES_PREFIX}${value.trimStart()}`;
     const cursor = MATRIX_CHAT_HERMES_PREFIX.length;
     composer.setSelectionRange(cursor, cursor);
+    hideComposerSuggestions();
     composer.focus();
   }
 
@@ -886,6 +1101,7 @@ const MatrixChat = (() => {
         body: JSON.stringify({ body }),
       });
       if (composer) composer.value = '';
+      hideComposerSuggestions();
       await loadMessages(state.activeRoomId);
       await loadRooms();
     } catch (error) {
@@ -970,12 +1186,15 @@ const MatrixChat = (() => {
     el('matrix-chat-invite-user')?.addEventListener('keydown', handleInviteKeydown);
     el('matrix-chat-mention-hermes')?.addEventListener('click', insertHermesMention);
     el('matrix-chat-send')?.addEventListener('click', sendMessage);
-    el('matrix-chat-composer')?.addEventListener('keydown', event => {
-      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-        event.preventDefault();
-        sendMessage();
+    el('matrix-chat-composer')?.addEventListener('input', scheduleComposerSuggestions);
+    el('matrix-chat-composer')?.addEventListener('focus', scheduleComposerSuggestions);
+    el('matrix-chat-composer')?.addEventListener('click', scheduleComposerSuggestions);
+    el('matrix-chat-composer')?.addEventListener('keyup', event => {
+      if (!['ArrowDown', 'ArrowUp', 'Enter', 'Escape', 'Tab'].includes(event.key)) {
+        scheduleComposerSuggestions();
       }
     });
+    el('matrix-chat-composer')?.addEventListener('keydown', handleComposerKeydown);
     window.addEventListener('resize', syncRailForViewport);
     syncRailForViewport();
   }
