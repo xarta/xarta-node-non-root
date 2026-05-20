@@ -8,6 +8,197 @@ const _docsViewModes = {}; // doc_id → true (preview) | false (edit); default 
 const _DOCS_HIDE_FRONTMATTER_KEY = 'blueprints.docs.hideFrontmatter.v1';
 let _docsHideFrontmatter = _docsLoadHideFrontmatterSetting();
 
+const DocsHistoryOverlayFsm = (() => {
+  const HIDE_DELAY_MS = 3000;
+  const FADE_MS = 1000;
+  const FAST_FADE_MS = 300;
+  let state = 'UNAVAILABLE';
+  let hideTimer = null;
+  let concealTimer = null;
+
+  const transitions = {
+    UNAVAILABLE: {
+      sync: 'UNAVAILABLE',
+      activate: 'HIDDEN',
+      documentInteract: 'VISIBLE',
+    },
+    HIDDEN: {
+      sync: 'HIDDEN',
+      deactivate: 'UNAVAILABLE',
+      documentInteract: 'VISIBLE',
+    },
+    VISIBLE: {
+      sync: 'VISIBLE',
+      deactivate: 'UNAVAILABLE',
+      documentInteract: 'VISIBLE',
+      panelInteract: 'VISIBLE',
+      panelHover: 'VISIBLE',
+      documentDrag: 'HIDDEN_FAST',
+      hideTimeout: 'HIDDEN',
+    },
+  };
+
+  function _panel() {
+    return document.getElementById('docs-history-overlay');
+  }
+
+  function _available() {
+    return !!(_panel() && _docsActiveId);
+  }
+
+  function _clearTimers() {
+    clearTimeout(hideTimer);
+    clearTimeout(concealTimer);
+    hideTimer = null;
+    concealTimer = null;
+  }
+
+  function _syncState() {
+    const panel = _panel();
+    if (!panel || !_docsActiveId) {
+      state = 'UNAVAILABLE';
+      return state;
+    }
+    state = panel.classList.contains('is-visible') ? 'VISIBLE' : 'HIDDEN';
+    return state;
+  }
+
+  function _show() {
+    const panel = _panel();
+    if (!panel || !_available()) return;
+    clearTimeout(concealTimer);
+    concealTimer = null;
+    panel.classList.remove('is-fast-hiding');
+    panel.hidden = false;
+    panel.inert = false;
+    panel.setAttribute('aria-hidden', 'false');
+    requestAnimationFrame(() => {
+      if (_available()) panel.classList.add('is-visible');
+    });
+  }
+
+  function _hide(options = {}) {
+    const panel = _panel();
+    if (!panel) return;
+    const fast = !!options.fast;
+    const fadeMs = fast ? FAST_FADE_MS : FADE_MS;
+    clearTimeout(hideTimer);
+    hideTimer = null;
+    panel.classList.toggle('is-fast-hiding', fast);
+    void panel.offsetWidth;
+    panel.classList.remove('is-visible');
+    panel.inert = true;
+    panel.setAttribute('aria-hidden', 'true');
+    clearTimeout(concealTimer);
+    concealTimer = setTimeout(() => {
+      if (state === 'HIDDEN' || !_available()) {
+        panel.hidden = !_available();
+      }
+      panel.classList.remove('is-fast-hiding');
+    }, fadeMs);
+  }
+
+  function _deactivate() {
+    const panel = _panel();
+    _clearTimers();
+    if (!panel) return;
+    panel.classList.remove('is-visible');
+    panel.inert = true;
+    panel.setAttribute('aria-hidden', 'true');
+    panel.hidden = true;
+  }
+
+  function _armHide() {
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => dispatch('hideTimeout'), HIDE_DELAY_MS);
+  }
+
+  function _enter(nextState) {
+    if (nextState === 'UNAVAILABLE') {
+      _deactivate();
+      return;
+    }
+    if (nextState === 'HIDDEN') {
+      _hide();
+      return;
+    }
+    if (nextState === 'HIDDEN_FAST') {
+      state = 'HIDDEN';
+      _hide({ fast: true });
+      return;
+    }
+    if (nextState === 'VISIBLE') {
+      _show();
+      _armHide();
+    }
+  }
+
+  function dispatch(eventName) {
+    _syncState();
+    const effectiveEvent = !_available() && eventName !== 'sync' ? 'deactivate' : eventName;
+    const nextState = transitions[state]?.[effectiveEvent];
+    if (!nextState) return state;
+    state = nextState;
+    _enter(nextState);
+    return state;
+  }
+
+  function sync() {
+    _syncState();
+    if (!_available()) {
+      state = 'UNAVAILABLE';
+      _enter(state);
+      return state;
+    }
+    if (state === 'UNAVAILABLE') state = 'HIDDEN';
+    if (state === 'HIDDEN') _enter('HIDDEN');
+    return state;
+  }
+
+  return { dispatch, sync, getState: () => state };
+})();
+
+function _docsWireHistoryOverlayDocumentSurface(el) {
+  if (!el) return;
+  const DRAG_THRESHOLD_PX = 7;
+  let gesture = null;
+
+  el.addEventListener('pointerdown', e => {
+    if (e.button !== undefined && e.button !== 0) return;
+    gesture = {
+      id: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+      dragged: false,
+    };
+  });
+
+  el.addEventListener('pointermove', e => {
+    if (!gesture || gesture.id !== e.pointerId || gesture.dragged) return;
+    const dx = e.clientX - gesture.x;
+    const dy = e.clientY - gesture.y;
+    if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+    gesture.dragged = true;
+    DocsHistoryOverlayFsm.dispatch('documentDrag');
+  });
+
+  el.addEventListener('pointerup', e => {
+    if (!gesture || gesture.id !== e.pointerId) return;
+    const wasDrag = gesture.dragged;
+    gesture = null;
+    if (!wasDrag) DocsHistoryOverlayFsm.dispatch('documentInteract');
+  });
+
+  el.addEventListener('pointercancel', () => {
+    if (gesture) DocsHistoryOverlayFsm.dispatch('documentDrag');
+    gesture = null;
+  });
+
+  el.addEventListener('scroll', () => {
+    DocsHistoryOverlayFsm.dispatch('documentDrag');
+  }, { passive: true });
+}
+
 function _docsSchedulePaneSize() {
   if (window.BodyShade && typeof window.BodyShade.scheduleSizeFillTable === 'function') {
     window.BodyShade.scheduleSizeFillTable();
@@ -184,7 +375,10 @@ function _docsUpdateHistoryButtons() {
   const backBtn = document.getElementById('docs-back-btn');
   const fwdBtn = document.getElementById('docs-forward-btn');
   const hint = document.getElementById('docs-history-hint');
-  if (!backBtn || !fwdBtn || !hint) return;
+  if (!backBtn || !fwdBtn || !hint) {
+    DocsHistoryOverlayFsm.sync();
+    return;
+  }
 
   const canBack = typeof docsHistCanBack === 'function' ? docsHistCanBack() : false;
   const canFwd = typeof docsHistCanForward === 'function' ? docsHistCanForward() : false;
@@ -201,7 +395,8 @@ function _docsUpdateHistoryButtons() {
   if (canBack) parts.push(`Back: ${_docsLabelById(backId) || 'doc'}`);
   if (canFwd) parts.push(`Forward: ${_docsLabelById(fwdId) || 'doc'}`);
   const countText = `(${stats.back}/${stats.forward})`;
-  hint.textContent = parts.length ? `${parts.join(' • ')} ${countText}` : `History idle ${countText}`;
+  hint.textContent = parts.length ? `${parts.join('\n')} ${countText}` : `History idle ${countText}`;
+  DocsHistoryOverlayFsm.sync();
 }
 
 function _docsRenderSidebar() {
@@ -413,6 +608,7 @@ function _docsHidePane() {
   const speechControl = document.getElementById('docs-doc-speech-control');
   if (speechControl) speechControl.hidden = true;
   // Note: do NOT clear _docsViewModes here — keep per-doc memory across hide/show cycles
+  DocsHistoryOverlayFsm.sync();
   _docsSchedulePaneSize();
 }
 
@@ -2762,7 +2958,39 @@ document.addEventListener('DOMContentLoaded', () => {
   if (typeof HubSelect !== 'undefined') {
     HubSelect.init('docs-folder-tree-mode');
   }
-  document.getElementById('docs-preview')?.addEventListener('click', _docsHandlePreviewLinkClick);
+  const docsHistoryOverlay = document.getElementById('docs-history-overlay');
+  docsHistoryOverlay?.addEventListener('pointerdown', e => {
+    e.stopPropagation();
+    DocsHistoryOverlayFsm.dispatch('panelInteract');
+  });
+  docsHistoryOverlay?.addEventListener('click', e => {
+    e.stopPropagation();
+    DocsHistoryOverlayFsm.dispatch('panelInteract');
+  });
+  docsHistoryOverlay?.addEventListener('pointerenter', e => {
+    if (e.pointerType === 'mouse') DocsHistoryOverlayFsm.dispatch('panelHover');
+  });
+  docsHistoryOverlay?.addEventListener('pointermove', e => {
+    if (e.pointerType === 'mouse') DocsHistoryOverlayFsm.dispatch('panelHover');
+  });
+
+  const docsPreview = document.getElementById('docs-preview');
+  const docsEditor = document.getElementById('docs-editor');
+  _docsWireHistoryOverlayDocumentSurface(docsPreview);
+  _docsWireHistoryOverlayDocumentSurface(docsEditor);
+  docsPreview?.addEventListener('click', _docsHandlePreviewLinkClick);
+  document.getElementById('docs-back-btn')?.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    DocsHistoryOverlayFsm.dispatch('panelInteract');
+    docsHistoryBack();
+  });
+  document.getElementById('docs-forward-btn')?.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    DocsHistoryOverlayFsm.dispatch('panelInteract');
+    docsHistoryForward();
+  });
 
   // New / Edit doc modal submit
   const docsSubmitBtn = document.getElementById('docs-modal-submit');

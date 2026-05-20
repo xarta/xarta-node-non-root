@@ -425,12 +425,6 @@
           <!-- Horizontal doc navbar -->
           <div id="docs-sidebar" class="bp-font-role-docs-markdown" style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;flex:1;min-width:0"></div>
         </div>
-        <!-- Row 2: docs history navigation -->
-        <div class="docs-history-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 8px 0">
-          <button id="docs-back-btn" class="secondary docs-history-btn" onclick="docsHistoryBack()" disabled>&larr; Back</button>
-          <button id="docs-forward-btn" class="secondary docs-history-btn" onclick="docsHistoryForward()" disabled>Forward &rarr;</button>
-          <span id="docs-history-hint" class="bp-font-role-docs-markdown" style="font-size:12px;color:var(--text-dim)">History idle</span>
-        </div>
         <!-- Status / error row -->
         <p id="docs-status" style="font-size:12px;margin:0 0 4px" hidden></p>
         <p id="docs-error"  class="error-msg" hidden></p>
@@ -442,6 +436,13 @@
       </div>
       <div id="docs-editor-pane" style="display:flex;flex-direction:column">
         <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
+        <div class="docs-history-overlay bp-font-role-docs-markdown" id="docs-history-overlay" hidden>
+          <div class="docs-history-overlay__buttons">
+            <button id="docs-back-btn" class="secondary docs-history-btn" type="button" disabled>&larr; Back</button>
+            <button id="docs-forward-btn" class="secondary docs-history-btn" type="button" disabled>Forward &rarr;</button>
+          </div>
+          <span id="docs-history-hint" class="docs-history-overlay__hint">History idle</span>
+        </div>
         <div class="docs-doc-speech-control" id="docs-doc-speech-control" hidden>
           <span class="docs-doc-speech-status bp-font-role-status-meta" id="docs-doc-speech-status"></span>
           <button class="docs-tree-speaker-btn docs-doc-speaker-btn" type="button" id="docs-doc-speaker" aria-label="Speak document" title="Speak document"></button>

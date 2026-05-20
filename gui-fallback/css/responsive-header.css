@@ -488,10 +488,11 @@ html.header-compact .header-inner {
     }
 }
 
-/* Docs shortcut/history controls use one wrapping row model. The same rule is
-   used for desktop, phone landscape, and the S25 portrait lift host: doc menu
-   pills claim only their natural width, then Back/Forward/history can rise onto
-   the same row when space exists and wrap back down when it does not. */
+/* Docs shortcuts use one wrapping row model. The same rule is used for desktop,
+   phone landscape, and the S25 portrait lift host: doc menu pills claim only
+   their natural width while status and active headings wrap below. History
+   controls are an overlay anchored to the document surface, not part of this
+   row. */
 @media (min-width: 770px),
        (max-width: 600px) and (orientation: portrait),
        (orientation: landscape) and (max-height: 600px) and (pointer: coarse),
@@ -515,22 +516,16 @@ html.header-compact .header-inner {
         max-width: 100%;
     }
 
-    #s25-lift-docs .docs-history-row {
-        display: contents !important;
-        flex: 0 1 auto;
-        margin: 0 !important;
-    }
-
     #s25-lift-docs #docs-status,
     #s25-lift-docs #docs-error,
     #s25-lift-docs .docs-active-header {
         flex: 1 1 100%;
         margin-bottom: 2px !important;
+        text-align: right;
     }
 }
 
-#s25-lift-docs #docs-sidebar button.secondary,
-#s25-lift-docs .docs-history-btn {
+#s25-lift-docs #docs-sidebar button.secondary {
     box-sizing: border-box;
     min-height: 0;
     height: 28px;
