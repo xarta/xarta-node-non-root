@@ -245,6 +245,12 @@ body.shade-is-up .tab-scroll-shell .table-wrap {
    the handle, such as Services/Machines/pfSense/Proxmox, keep their roomier
    spacing. */
 @media (max-width: 600px) and (orientation: portrait) {
+  #body-shade:has(> #tab-hermes-local.active),
+  #body-shade:has(> #tab-hermes-vps.active),
+  #body-shade:has(> #tab-matrix-chat.active) {
+    z-index: 360;
+  }
+
   #tab-manual-links.active > .body-shade-handle,
   #tab-nodes.active > .body-shade-handle,
   #tab-pve-hosts.active > .body-shade-handle,
@@ -254,9 +260,32 @@ body.shade-is-up .tab-scroll-shell .table-wrap {
   #tab-certs.active > .body-shade-handle,
   #tab-ai-providers.active > .body-shade-handle,
   #tab-ssh-targets.active > .body-shade-handle,
+  #tab-hermes-local.active > .body-shade-handle,
+  #tab-hermes-vps.active > .body-shade-handle,
+  #tab-matrix-chat.active > .body-shade-handle,
   #tab-bookmarks-main.active > .body-shade-handle,
   #tab-bookmarks-history.active > .body-shade-handle {
     margin-top: -10px;
+  }
+
+  #tab-hermes-local.active > .body-shade-handle,
+  #tab-hermes-vps.active > .body-shade-handle,
+  #tab-matrix-chat.active > .body-shade-handle {
+    margin-top: -18px;
+    opacity: 1;
+  }
+
+  #tab-hermes-local.active > .body-shade-handle .body-shade-hitbox,
+  #tab-hermes-vps.active > .body-shade-handle .body-shade-hitbox,
+  #tab-matrix-chat.active > .body-shade-handle .body-shade-hitbox {
+    top: 8px;
+  }
+
+  #tab-hermes-local.active > .body-shade-handle .body-shade-grip,
+  #tab-hermes-vps.active > .body-shade-handle .body-shade-grip,
+  #tab-matrix-chat.active > .body-shade-handle .body-shade-grip {
+    background: rgba(var(--hub-accent-rgb), 0.95);
+    transform: translateX(var(--body-shade-grip-offset-x)) translateY(10px);
   }
 }
 
