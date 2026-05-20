@@ -286,6 +286,82 @@ html.header-compact .header-inner {
     }
 }
 
+/* Phone landscape is intentionally treated as a dense hybrid:
+   - secondary menu wrappers stay hidden, as on phone portrait
+   - normal page controls remain visible, as on desktop
+   - active .s25-lift-block content is moved beside those controls by
+     ResponsiveLayout so explanatory text can share a row when there is room
+
+   Keep this block touch/hover scoped. The max-height/max-width fallback below
+   is only for hiding secondary menus; these spacing reductions should not
+   affect desktop windows that happen to be short and wide. */
+@media (orientation: landscape) and (max-height: 600px) and (pointer: coarse),
+       (orientation: landscape) and (max-height: 600px) and (hover: none) {
+    main {
+        padding-top: 8px;
+        padding-bottom: 8px;
+    }
+
+    .menu-zone {
+        gap: 4px 6px;
+        margin-bottom: 4px;
+    }
+
+    #page-controls-slot,
+    .page-control-group {
+        gap: 4px;
+    }
+
+    #page-controls-slot .page-control-group:not([hidden]) {
+        width: auto;
+        flex: 0 1 auto;
+        min-width: 0;
+    }
+
+    #page-controls-slot .s25-lift-block {
+        display: flex;
+        flex: 1 1 320px;
+        flex-wrap: wrap;
+        align-items: center;
+        align-content: center;
+        gap: 2px 8px;
+        min-width: 0;
+    }
+
+    #page-controls-slot .s25-lift-block > p {
+        margin: 0 !important;
+        line-height: 1.25;
+    }
+
+    #page-controls-slot #retouch-status:empty {
+        display: none;
+    }
+
+    .tab-panel {
+        margin-bottom: 12px;
+    }
+
+    .tab-panel.active > p:first-child,
+    .tab-panel.active > .s25-lift-block > p:first-child {
+        margin-top: 0 !important;
+        margin-bottom: 2px !important;
+        line-height: 1.25;
+    }
+
+    #retouch-status {
+        min-height: 0 !important;
+        margin: 0 0 2px !important;
+        line-height: 1.2;
+    }
+
+    #retouch-status:empty {
+        display: none;
+    }
+}
+
+/* Legacy-compatible secondary-menu suppression. This intentionally keeps the
+   max-width fallback so emulated phone-landscape/browser profiles that do not
+   report coarse pointer still match the phone navigation model. */
 @media (orientation: landscape) and (max-height: 600px) and (pointer: coarse),
        (orientation: landscape) and (max-height: 600px) and (hover: none),
        (orientation: landscape) and (max-height: 600px) and (max-width: 1000px) {
@@ -331,5 +407,44 @@ html.header-compact .header-inner {
         align-self: start;
         justify-content: flex-end;
         flex: none;
+    }
+}
+
+/* Let Docs history navigation share the same row as the doc section buttons
+   when there is horizontal room. Keep phone portrait out of this rule set; it
+   already has a separately tuned stacked layout. If this area gets more
+   buttons later, flex-wrap should be allowed to wrap naturally rather than
+   reintroducing fixed row assumptions. */
+@media (min-width: 770px),
+       (orientation: landscape) and (max-height: 600px) and (pointer: coarse),
+       (orientation: landscape) and (max-height: 600px) and (hover: none),
+       (orientation: landscape) and (max-height: 600px) and (max-width: 1000px) {
+    #s25-lift-docs {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 6px;
+    }
+
+    #s25-lift-docs .docs-nav-row {
+        display: contents !important;
+        margin-bottom: 0 !important;
+    }
+
+    #s25-lift-docs #docs-sidebar {
+        flex: 0 1 auto !important;
+        max-width: 100%;
+    }
+
+    #s25-lift-docs .docs-history-row {
+        flex: 0 1 auto;
+        margin: 0 !important;
+    }
+
+    #s25-lift-docs #docs-status,
+    #s25-lift-docs #docs-error,
+    #s25-lift-docs .docs-active-header {
+        flex: 1 1 100%;
+        margin-bottom: 2px !important;
     }
 }

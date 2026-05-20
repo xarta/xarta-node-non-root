@@ -62,6 +62,25 @@ const ResponsiveLayout = (() => {
         return document.documentElement.getAttribute('data-special-ui-mode') === 's25-stargate-touch-nav';
     }
 
+    // Phone landscape is a hybrid layout: the secondary menu wrappers are
+    // hidden like phone portrait, but the normal #page-controls-slot remains
+    // visible. Move only the active lift block into that controls row so page
+    // buttons and terse explanatory text can share horizontal space. Desktop
+    // keeps lift blocks in their panels, and phone portrait still uses the
+    // dedicated S25 host above.
+    function _isPhoneLandscapeLiftModeActive() {
+        if (!window.matchMedia) return false;
+        const landscapeShort = window.matchMedia('(orientation: landscape) and (max-height: 600px)').matches;
+        const touchLike = window.matchMedia('(pointer: coarse)').matches
+            || window.matchMedia('(hover: none)').matches
+            || window.matchMedia('(any-pointer: coarse)').matches;
+        return landscapeShort && touchLike;
+    }
+
+    function _shouldLiftActiveBlockToControlsHost() {
+        return _isS25SpecialModeActive() || _isPhoneLandscapeLiftModeActive();
+    }
+
     function _controlsHostForCurrentMode() {
         const hostId = _isS25SpecialModeActive() ? SPECIAL_CONTROLS_SLOT_ID : DEFAULT_CONTROLS_SLOT_ID;
         return document.getElementById(hostId);
@@ -101,7 +120,7 @@ const ResponsiveLayout = (() => {
         _liftMap.forEach((liftElId, tid) => {
             const el = document.getElementById(liftElId);
             if (!el) return;
-            if (_isS25SpecialModeActive() && _activeTabId && tid === _activeTabId) {
+            if (_shouldLiftActiveBlockToControlsHost() && _activeTabId && tid === _activeTabId) {
                 if (el.parentElement !== host) host.appendChild(el);
                 return;
             }

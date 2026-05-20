@@ -204,6 +204,17 @@ body.shade-is-up .tab-scroll-shell .table-wrap {
   }
 }
 
+/* Phone landscape has very little vertical budget, and the handle sits between
+   lifted intro text and the table/document body. Keep the touch strip slimmer
+   only for touch-like landscape devices; desktop and phone portrait retain the
+   regular 20px handle. */
+@media (orientation: landscape) and (max-height: 600px) and (pointer: coarse),
+       (orientation: landscape) and (max-height: 600px) and (hover: none) {
+  .body-shade-handle {
+    height: 14px;
+  }
+}
+
 @media (max-width: 600px) and (orientation: portrait) {
   /* S25 profile-specific portrait notch ergonomics.
      Keep this profile scoped so future phone profiles can opt in with their
