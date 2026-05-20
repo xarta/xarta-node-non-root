@@ -230,6 +230,14 @@
     height: 12px;
 }
 
+/* ResponsiveLayout measures these elements after mutating padding. The normal
+   button transition must be suspended for that measurement pass, or the solver
+   reads animated intermediate geometry and can chase its own tail. */
+#menu-zone-nav.hub-menu-fitting .hub-tab,
+#menu-zone-nav.hub-menu-fitting .hub-tab-caret {
+    transition: none !important;
+}
+
 .hub-tab-split .hub-tab-caret:hover {
     background: rgba(var(--hub-accent-rgb), 0.12);
 }

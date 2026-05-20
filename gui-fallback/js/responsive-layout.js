@@ -56,7 +56,7 @@ const ResponsiveLayout = (() => {
     const MENU_CARET_PAD_LEFT = 10;
     const MENU_CARET_PAD_LEFT_MIN = 6;
     const MENU_FIT_EPSILON = 1;
-    const MENU_FIT_RELAX_BUFFER = 48;
+    const MENU_FIT_BINARY_STEPS = 12;
 
     function _isS25SpecialModeActive() {
         return document.documentElement.getAttribute('data-special-ui-mode') === 's25-stargate-touch-nav';
@@ -144,21 +144,6 @@ const ResponsiveLayout = (() => {
             .reduce((right, el) => Math.max(right, el.getBoundingClientRect().right), 0);
     }
 
-    function _readPx(value, fallback) {
-        const parsed = parseFloat(value);
-        return Number.isFinite(parsed) ? parsed : fallback;
-    }
-
-    function _currentMenuFit(nav) {
-        const labelValue = nav.style.getPropertyValue('--hub-menu-tab-pad-left');
-        const caretValue = nav.style.getPropertyValue('--hub-menu-caret-pad-left');
-        return {
-            labelPad: _readPx(labelValue, MENU_LABEL_PAD_LEFT),
-            caretPad: _readPx(caretValue, MENU_CARET_PAD_LEFT),
-            compressed: Boolean(labelValue || caretValue),
-        };
-    }
-
     function _applyMenuFit(nav, labelPad, caretPad) {
         const nextLabel = Math.max(MENU_LABEL_PAD_LEFT_MIN, Math.min(MENU_LABEL_PAD_LEFT, labelPad));
         const nextCaret = Math.max(MENU_CARET_PAD_LEFT_MIN, Math.min(MENU_CARET_PAD_LEFT, caretPad));
@@ -176,25 +161,17 @@ const ResponsiveLayout = (() => {
         }
     }
 
-    function _padFitForOverflow(overflow, labelCount, caretCount, baseLabelPad, baseCaretPad) {
-        const maxShrink = Math.max(
-            baseLabelPad - MENU_LABEL_PAD_LEFT_MIN,
-            baseCaretPad - MENU_CARET_PAD_LEFT_MIN
-        );
-        if (maxShrink <= 0) return { labelPad: baseLabelPad, caretPad: baseCaretPad };
+    function _clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+    }
 
-        let lo = 0;
-        let hi = maxShrink;
-        for (let i = 0; i < 18; i += 1) {
-            const mid = (lo + hi) / 2;
-            const saved = (labelCount * Math.min(mid, baseLabelPad - MENU_LABEL_PAD_LEFT_MIN))
-                + (caretCount * Math.min(mid, baseCaretPad - MENU_CARET_PAD_LEFT_MIN));
-            if (saved < overflow) lo = mid;
-            else hi = mid;
-        }
+    function _fitFromCompression(compression) {
+        const labelCapacity = MENU_LABEL_PAD_LEFT - MENU_LABEL_PAD_LEFT_MIN;
+        const caretCapacity = MENU_CARET_PAD_LEFT - MENU_CARET_PAD_LEFT_MIN;
+        const x = _clamp(compression, 0, labelCapacity);
         return {
-            labelPad: Math.max(MENU_LABEL_PAD_LEFT_MIN, baseLabelPad - Math.min(hi, baseLabelPad - MENU_LABEL_PAD_LEFT_MIN)),
-            caretPad: Math.max(MENU_CARET_PAD_LEFT_MIN, baseCaretPad - Math.min(hi, baseCaretPad - MENU_CARET_PAD_LEFT_MIN)),
+            labelPad: MENU_LABEL_PAD_LEFT - Math.min(x, labelCapacity),
+            caretPad: MENU_CARET_PAD_LEFT - Math.min(x, caretCapacity),
         };
     }
 
@@ -209,53 +186,46 @@ const ResponsiveLayout = (() => {
             return;
         }
 
-        const labels = _visibleElements(wrapper, '.hub-tab:not(.hub-tab-caret)').length;
-        const carets = _visibleElements(wrapper, '.hub-tab-caret').length;
-        if (labels + carets <= 0) return;
-
-        const current = _currentMenuFit(nav);
-        const menuRight = _secondaryMenuRightEdge(wrapper);
-        const overflow = Math.ceil(menuRight - selectorRight);
-
-        if (!current.compressed) {
-            if (overflow <= MENU_FIT_EPSILON) return;
-            const fit = _padFitForOverflow(
-                overflow,
-                labels,
-                carets,
-                MENU_LABEL_PAD_LEFT,
-                MENU_CARET_PAD_LEFT
-            );
+        const maxCompression = MENU_LABEL_PAD_LEFT - MENU_LABEL_PAD_LEFT_MIN;
+        const applyCompression = (compression) => {
+            const fit = _fitFromCompression(compression);
             _applyMenuFit(nav, fit.labelPad, fit.caretPad);
-            return;
-        }
+            void nav.offsetWidth;
+            return _secondaryMenuRightEdge(wrapper) - selectorRight;
+        };
 
-        if (overflow > MENU_FIT_EPSILON) {
-            const fit = _padFitForOverflow(
-                overflow,
-                labels,
-                carets,
-                current.labelPad,
-                current.caretPad
-            );
-            _applyMenuFit(nav, fit.labelPad, fit.caretPad);
-            return;
-        }
+        // This solver mutates padding and immediately measures the resulting
+        // endpoint. The menu buttons normally transition "all" properties, so
+        // keep transitions disabled during the solve; otherwise measurements
+        // read the animated in-between state and the feedback loop behaves like
+        // a spring. The final padding remains in place after the class is gone.
+        nav.classList.add('hub-menu-fitting');
+        try {
+            const currentOverflow = _secondaryMenuRightEdge(wrapper) - selectorRight;
+            if (currentOverflow <= 0 && Math.abs(currentOverflow) <= MENU_FIT_EPSILON) return;
 
-        if (menuRight >= selectorRight - MENU_FIT_RELAX_BUFFER) return;
+            const naturalOverflow = applyCompression(0);
+            if (naturalOverflow <= 0) return;
 
-        _applyMenuFit(nav, MENU_LABEL_PAD_LEFT, MENU_CARET_PAD_LEFT);
-        void nav.offsetWidth;
-        const naturalOverflow = Math.ceil(_secondaryMenuRightEdge(wrapper) - selectorRight);
-        if (naturalOverflow > MENU_FIT_EPSILON) {
-            const fit = _padFitForOverflow(
-                naturalOverflow,
-                labels,
-                carets,
-                MENU_LABEL_PAD_LEFT,
-                MENU_CARET_PAD_LEFT
-            );
-            _applyMenuFit(nav, fit.labelPad, fit.caretPad);
+            const maxOverflow = applyCompression(maxCompression);
+            if (maxOverflow > 0) return;
+
+            let lo = 0;
+            let hi = maxCompression;
+            let best = maxCompression;
+            for (let i = 0; i < MENU_FIT_BINARY_STEPS; i += 1) {
+                const mid = (lo + hi) / 2;
+                const overflow = applyCompression(mid);
+                if (overflow > 0) {
+                    lo = mid;
+                } else {
+                    best = mid;
+                    hi = mid;
+                }
+            }
+            applyCompression(best);
+        } finally {
+            nav.classList.remove('hub-menu-fitting');
         }
     }
 
