@@ -113,6 +113,10 @@
   display: none;
 }
 
+#s25-lift-matrix-chat.matrix-chat-mobile-lift {
+  display: none !important;
+}
+
 .matrix-chat-mobile-lift-inner {
   position: relative;
   display: block;
@@ -823,11 +827,16 @@
   }
 }
 
+@media (orientation: landscape) and (max-height: 600px) {
+  html:has(#tab-matrix-chat.active) #page-controls-slot {
+    display: none !important;
+  }
+}
+
 @media (max-width: 600px) and (orientation: portrait) {
-  #tab-matrix-chat.active .matrix-chat-mobile-lift {
-    display: block;
-    position: relative;
-    min-height: 28px;
+  html[data-special-ui-mode='s25-stargate-touch-nav']:has(#tab-matrix-chat.active) #page-controls-slot-s25,
+  html[data-special-ui-mode='s25-stargate-touch-nav']:has(#tab-matrix-chat.active) #node-meta-compact {
+    display: none !important;
   }
 
   #tab-matrix-chat.active .matrix-chat-main > .matrix-chat-room-header {
