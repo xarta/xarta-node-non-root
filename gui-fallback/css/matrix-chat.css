@@ -649,6 +649,12 @@
   text-align: center;
 }
 
+@media (min-width: 821px) {
+  #tab-matrix-chat.active > .body-shade-handle {
+    transform: translateY(-8px);
+  }
+}
+
 @media (max-width: 820px) {
   #tab-matrix-chat.active {
     margin: 0 -10px -10px;
