@@ -316,6 +316,22 @@
           </select>
         </div>
 
+        <!-- Matrix Chat — compact timeline controls. -->
+        <div class="page-control-group matrix-chat-mobile-controls" id="pg-ctrl-matrix-chat"
+            data-for-tab="matrix-chat" hidden>
+          <span id="matrix-chat-mobile-known-count" class="matrix-chat-mobile-known-count"
+                title="Known loaded messages in this room">0</span>
+          <button id="matrix-chat-mobile-load-older" class="matrix-chat-mobile-load-older"
+                  type="button" title="Load older Matrix messages">Older</button>
+          <div class="matrix-chat-mobile-filter-wrap">
+            <input id="matrix-chat-mobile-filter" class="matrix-chat-mobile-filter"
+                   type="search" placeholder="Filter" autocomplete="off" spellcheck="false"
+                   title="Filter loaded Matrix messages" />
+            <button id="matrix-chat-mobile-filter-action" class="matrix-chat-mobile-filter-action"
+                    type="button" title="Filter loaded messages" aria-label="Filter loaded messages"></button>
+          </div>
+        </div>
+
     </div><!-- /#page-controls-slot -->
 
     </div><!-- /.menu-zone-nav -->

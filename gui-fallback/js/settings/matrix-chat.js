@@ -30,6 +30,7 @@ const MatrixChat = (() => {
     composerSuggestionMode: '',
     composerToken: null,
     composerSuggestionTimer: null,
+    messageFilter: '',
   };
 
   function el(id) {
@@ -480,8 +481,139 @@ const MatrixChat = (() => {
     state.historyByRoom.set(roomId, { ...historyState(roomId), ...patch });
   }
 
+  function messageMatchesFilter(message, query) {
+    const needle = (query || '').trim().toLowerCase();
+    if (!needle) return true;
+    return [
+      message?.body,
+      message?.sender,
+      message?.event_id,
+    ].some(value => String(value || '').toLowerCase().includes(needle));
+  }
+
+  function filteredMessages(messages) {
+    const query = (state.messageFilter || '').trim();
+    if (!query) return messages;
+    return messages.filter(message => messageMatchesFilter(message, query));
+  }
+
+  function compactCount(value) {
+    if (!Number.isFinite(value) || value < 0) return '0';
+    if (value >= 1000) return `${Math.floor(value / 100) / 10}k`;
+    return String(value);
+  }
+
+  function renderMobileControls(active, allMessages, history) {
+    const count = el('matrix-chat-mobile-known-count');
+    const older = el('matrix-chat-mobile-load-older');
+    const filter = el('matrix-chat-mobile-filter');
+    const filterAction = el('matrix-chat-mobile-filter-action');
+    const knownCount = active ? allMessages.length : 0;
+    const query = (state.messageFilter || '').trim();
+    const matchingCount = query ? filteredMessages(allMessages).length : knownCount;
+    if (count) {
+      count.textContent = compactCount(knownCount);
+      count.title = query
+        ? `${matchingCount} of ${knownCount} known loaded messages match the filter`
+        : `${knownCount} known loaded messages in this room`;
+    }
+    if (older) {
+      const canLoadOlder = Boolean(active && history?.end && !history.exhausted);
+      older.hidden = !canLoadOlder;
+      older.disabled = Boolean(history?.loading);
+      older.textContent = history?.loading ? 'Older...' : 'Older';
+    }
+    if (filter) {
+      filter.disabled = !active;
+      if (document.activeElement !== filter) filter.value = state.messageFilter || '';
+    }
+    if (filterAction) {
+      filterAction.disabled = !active;
+      filterAction.title = query ? 'Clear message filter' : 'Filter loaded messages';
+      filterAction.setAttribute('aria-label', filterAction.title);
+    }
+  }
+
+  function applyMessageFilter(value, options = {}) {
+    state.messageFilter = value || '';
+    renderMessages({
+      scrollToBottom: false,
+      focusTimelineFilter: Boolean(options.focusTimelineFilter),
+    });
+  }
+
+  function createTimelineControls(active, allMessages, history) {
+    const query = (state.messageFilter || '').trim();
+    const knownCount = active ? allMessages.length : 0;
+    const matchingCount = query ? filteredMessages(allMessages).length : knownCount;
+    const canLoadOlder = Boolean(active && history?.end && !history.exhausted);
+
+    const controls = document.createElement('div');
+    controls.className = 'matrix-chat-history-controls';
+
+    const count = document.createElement('span');
+    count.className = 'matrix-chat-history-count';
+    count.textContent = compactCount(knownCount);
+    count.title = query
+      ? `${matchingCount} of ${knownCount} known loaded messages match the filter`
+      : `${knownCount} known loaded messages in this room`;
+
+    const older = document.createElement('button');
+    older.type = 'button';
+    older.className = 'matrix-chat-history-load';
+    older.textContent = history?.loading ? 'Loading older...' : 'Load older';
+    older.disabled = Boolean(history?.loading);
+    older.hidden = !canLoadOlder;
+    older.addEventListener('click', loadOlderMessages);
+
+    const filterWrap = document.createElement('div');
+    filterWrap.className = 'matrix-chat-history-filter-wrap';
+
+    const filter = document.createElement('input');
+    filter.type = 'search';
+    filter.className = 'matrix-chat-history-filter';
+    filter.placeholder = 'Filter';
+    filter.autocomplete = 'off';
+    filter.spellcheck = false;
+    filter.title = 'Filter loaded Matrix messages';
+    filter.value = state.messageFilter || '';
+    filter.disabled = !active;
+    filter.dataset.matrixChatHistoryFilter = '1';
+    filter.addEventListener('input', event => {
+      applyMessageFilter(event.target?.value || '', { focusTimelineFilter: true });
+    });
+
+    const filterAction = document.createElement('button');
+    filterAction.type = 'button';
+    filterAction.className = 'matrix-chat-history-filter-action';
+    filterAction.title = query ? 'Clear message filter' : 'Filter loaded messages';
+    filterAction.setAttribute('aria-label', filterAction.title);
+    filterAction.disabled = !active;
+    filterAction.addEventListener('click', () => {
+      if (state.messageFilter) {
+        applyMessageFilter('', { focusTimelineFilter: true });
+      } else {
+        filter.focus();
+      }
+    });
+
+    filterWrap.append(filter, filterAction);
+    controls.append(count, older, filterWrap);
+    return controls;
+  }
+
+  function focusTimelineFilterInput(timeline) {
+    const filter = timeline?.querySelector?.('[data-matrix-chat-history-filter="1"]');
+    if (!filter) return;
+    filter.focus();
+    const end = filter.value.length;
+    try {
+      filter.setSelectionRange(end, end);
+    } catch (_) {}
+  }
+
   function renderMessages(options = {}) {
-    const { scrollToBottom = true } = options;
+    const { scrollToBottom = true, focusTimelineFilter = false } = options;
     const timeline = el('matrix-chat-timeline');
     const title = el('matrix-chat-room-title');
     const roomId = el('matrix-chat-room-id');
@@ -495,6 +627,9 @@ const MatrixChat = (() => {
     if (roomId) roomId.textContent = roomIdText;
     if (mobileRoomId) mobileRoomId.textContent = roomIdText;
     renderStatus();
+    const allMessages = active ? (state.messagesByRoom.get(active.room_id) || []) : [];
+    const history = active ? historyState(active.room_id) : {};
+    renderMobileControls(active, allMessages, history);
     if (!timeline) return;
     timeline.innerHTML = '';
 
@@ -506,18 +641,9 @@ const MatrixChat = (() => {
       return;
     }
 
-    const messages = state.messagesByRoom.get(active.room_id) || [];
-    const history = historyState(active.room_id);
-    if (history.end && !history.exhausted) {
-      const older = document.createElement('button');
-      older.id = 'matrix-chat-load-older';
-      older.type = 'button';
-      older.className = 'matrix-chat-load-older';
-      older.textContent = history.loading ? 'Loading older...' : 'Load older';
-      older.disabled = Boolean(history.loading);
-      older.addEventListener('click', loadOlderMessages);
-      timeline.appendChild(older);
-    } else if (history.exhausted && messages.length) {
+    const messages = filteredMessages(allMessages);
+    timeline.appendChild(createTimelineControls(active, allMessages, history));
+    if (history.exhausted && allMessages.length) {
       const marker = document.createElement('div');
       marker.className = 'matrix-chat-history-marker';
       marker.textContent = 'Start of available history';
@@ -526,8 +652,9 @@ const MatrixChat = (() => {
     if (!messages.length) {
       const empty = document.createElement('div');
       empty.className = 'matrix-chat-empty matrix-chat-empty--center';
-      empty.textContent = 'No recent messages.';
+      empty.textContent = allMessages.length && state.messageFilter ? 'No loaded messages match.' : 'No recent messages.';
       timeline.appendChild(empty);
+      if (focusTimelineFilter) focusTimelineFilterInput(timeline);
       return;
     }
 
@@ -553,6 +680,7 @@ const MatrixChat = (() => {
       timeline.appendChild(item);
     });
     if (scrollToBottom) timeline.scrollTop = timeline.scrollHeight;
+    if (focusTimelineFilter) focusTimelineFilterInput(timeline);
   }
 
   function mergeMessages(roomId, messages) {
@@ -1166,6 +1294,9 @@ const MatrixChat = (() => {
   function bind() {
     if (state.bound) return;
     state.bound = true;
+    if (typeof ResponsiveLayout !== 'undefined') {
+      ResponsiveLayout.registerTabControls('matrix-chat', 'pg-ctrl-matrix-chat');
+    }
     const toggleRail = event => {
       event?.preventDefault?.();
       const shell = el('matrix-chat-shell');
@@ -1180,6 +1311,19 @@ const MatrixChat = (() => {
     el('matrix-chat-rail-close')?.addEventListener('touchend', closeRail);
     el('matrix-chat-rail-close')?.addEventListener('click', closeRail);
     el('matrix-chat-mobile-rail-toggle')?.addEventListener('click', toggleRail);
+    el('matrix-chat-mobile-load-older')?.addEventListener('click', loadOlderMessages);
+    el('matrix-chat-mobile-filter')?.addEventListener('input', event => {
+      applyMessageFilter(event.target?.value || '');
+    });
+    el('matrix-chat-mobile-filter-action')?.addEventListener('click', () => {
+      const input = el('matrix-chat-mobile-filter');
+      if (state.messageFilter) {
+        state.messageFilter = '';
+        if (input) input.value = '';
+        renderMessages({ scrollToBottom: false });
+      }
+      input?.focus?.();
+    });
     el('matrix-chat-create')?.addEventListener('click', createRoom);
     el('matrix-chat-join')?.addEventListener('click', () => joinRoom());
     el('matrix-chat-invite')?.addEventListener('click', inviteUser);
