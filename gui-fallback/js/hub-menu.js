@@ -1116,6 +1116,10 @@ function createHubMenu(cfg) {
             document.removeEventListener('click', this._closeHandler);
             this._closeHandler = () => this.closeDropdowns(false);
             document.addEventListener('click', this._closeHandler);
+            if (typeof ResponsiveLayout !== 'undefined'
+                    && typeof ResponsiveLayout.scheduleSecondaryMenuFit === 'function') {
+                ResponsiveLayout.scheduleSecondaryMenuFit();
+            }
         },
 
         closeDropdowns(includeFloating) {

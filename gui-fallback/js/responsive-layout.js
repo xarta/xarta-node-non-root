@@ -35,6 +35,8 @@ const ResponsiveLayout = (() => {
     let _ro = null;                 // ResizeObserver instance
     let _timer = null;              // debounce timer handle
     let _pending = false;           // true while one measurement is queued
+    let _secondaryFitRaf = null;    // requestAnimationFrame handle for menu fit
+    let _secondaryFitTimers = [];   // delayed menu-fit timers for async icon/menu renders
     let _storedMetaWidth = 0;       // width of .node-meta when compact mode was triggered
     let _storedBrandWidth = 0;      // width of .brand when compact mode was triggered
     const _tabMap = new Map();      // tabId → groupElementId
@@ -49,6 +51,12 @@ const ResponsiveLayout = (() => {
 
     const DEFAULT_CONTROLS_SLOT_ID = 'page-controls-slot';
     const SPECIAL_CONTROLS_SLOT_ID = 'page-controls-slot-s25';
+    const MENU_LABEL_PAD_LEFT = 18;
+    const MENU_LABEL_PAD_LEFT_MIN = 6;
+    const MENU_CARET_PAD_LEFT = 10;
+    const MENU_CARET_PAD_LEFT_MIN = 6;
+    const MENU_FIT_EPSILON = 1;
+    const MENU_FIT_RELAX_BUFFER = 48;
 
     function _isS25SpecialModeActive() {
         return document.documentElement.getAttribute('data-special-ui-mode') === 's25-stargate-touch-nav';
@@ -99,6 +107,170 @@ const ResponsiveLayout = (() => {
             }
             _restoreLiftBlock(liftElId);
         });
+        scheduleSecondaryMenuFit();
+    }
+
+    function _isVisible(el) {
+        if (!el || typeof el.getBoundingClientRect !== 'function') return false;
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden') return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+    }
+
+    function _activeMenuWrapper() {
+        return ['synthesisMenuWrapper', 'probesMenuWrapper', 'settingsMenuWrapper']
+            .map(id => document.getElementById(id))
+            .find(_isVisible) || null;
+    }
+
+    function _selectorRightEdge() {
+        const candidates = [
+            document.querySelector('.header-right blueprints-node-selector'),
+            document.querySelector('.header-right .bp-node-selector'),
+            document.querySelector('.header-right'),
+        ].filter(Boolean);
+        const target = candidates.find(_isVisible);
+        return target ? target.getBoundingClientRect().right : 0;
+    }
+
+    function _visibleElements(scope, selector) {
+        if (!scope) return [];
+        return Array.from(scope.querySelectorAll(selector)).filter(_isVisible);
+    }
+
+    function _secondaryMenuRightEdge(wrapper) {
+        return _visibleElements(wrapper, '.hub-tab, .hub-tab-caret')
+            .reduce((right, el) => Math.max(right, el.getBoundingClientRect().right), 0);
+    }
+
+    function _readPx(value, fallback) {
+        const parsed = parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    function _currentMenuFit(nav) {
+        const labelValue = nav.style.getPropertyValue('--hub-menu-tab-pad-left');
+        const caretValue = nav.style.getPropertyValue('--hub-menu-caret-pad-left');
+        return {
+            labelPad: _readPx(labelValue, MENU_LABEL_PAD_LEFT),
+            caretPad: _readPx(caretValue, MENU_CARET_PAD_LEFT),
+            compressed: Boolean(labelValue || caretValue),
+        };
+    }
+
+    function _applyMenuFit(nav, labelPad, caretPad) {
+        const nextLabel = Math.max(MENU_LABEL_PAD_LEFT_MIN, Math.min(MENU_LABEL_PAD_LEFT, labelPad));
+        const nextCaret = Math.max(MENU_CARET_PAD_LEFT_MIN, Math.min(MENU_CARET_PAD_LEFT, caretPad));
+
+        if (Math.abs(nextLabel - MENU_LABEL_PAD_LEFT) <= 0.01) {
+            nav.style.removeProperty('--hub-menu-tab-pad-left');
+        } else {
+            nav.style.setProperty('--hub-menu-tab-pad-left', `${nextLabel.toFixed(2)}px`);
+        }
+
+        if (Math.abs(nextCaret - MENU_CARET_PAD_LEFT) <= 0.01) {
+            nav.style.removeProperty('--hub-menu-caret-pad-left');
+        } else {
+            nav.style.setProperty('--hub-menu-caret-pad-left', `${nextCaret.toFixed(2)}px`);
+        }
+    }
+
+    function _padFitForOverflow(overflow, labelCount, caretCount, baseLabelPad, baseCaretPad) {
+        const maxShrink = Math.max(
+            baseLabelPad - MENU_LABEL_PAD_LEFT_MIN,
+            baseCaretPad - MENU_CARET_PAD_LEFT_MIN
+        );
+        if (maxShrink <= 0) return { labelPad: baseLabelPad, caretPad: baseCaretPad };
+
+        let lo = 0;
+        let hi = maxShrink;
+        for (let i = 0; i < 18; i += 1) {
+            const mid = (lo + hi) / 2;
+            const saved = (labelCount * Math.min(mid, baseLabelPad - MENU_LABEL_PAD_LEFT_MIN))
+                + (caretCount * Math.min(mid, baseCaretPad - MENU_CARET_PAD_LEFT_MIN));
+            if (saved < overflow) lo = mid;
+            else hi = mid;
+        }
+        return {
+            labelPad: Math.max(MENU_LABEL_PAD_LEFT_MIN, baseLabelPad - Math.min(hi, baseLabelPad - MENU_LABEL_PAD_LEFT_MIN)),
+            caretPad: Math.max(MENU_CARET_PAD_LEFT_MIN, baseCaretPad - Math.min(hi, baseCaretPad - MENU_CARET_PAD_LEFT_MIN)),
+        };
+    }
+
+    function fitSecondaryMenuToSelector() {
+        const nav = document.getElementById('menu-zone-nav');
+        if (!nav) return;
+
+        const wrapper = _activeMenuWrapper();
+        const selectorRight = _selectorRightEdge();
+        if (!wrapper || selectorRight <= 0) {
+            _applyMenuFit(nav, MENU_LABEL_PAD_LEFT, MENU_CARET_PAD_LEFT);
+            return;
+        }
+
+        const labels = _visibleElements(wrapper, '.hub-tab:not(.hub-tab-caret)').length;
+        const carets = _visibleElements(wrapper, '.hub-tab-caret').length;
+        if (labels + carets <= 0) return;
+
+        const current = _currentMenuFit(nav);
+        const menuRight = _secondaryMenuRightEdge(wrapper);
+        const overflow = Math.ceil(menuRight - selectorRight);
+
+        if (!current.compressed) {
+            if (overflow <= MENU_FIT_EPSILON) return;
+            const fit = _padFitForOverflow(
+                overflow,
+                labels,
+                carets,
+                MENU_LABEL_PAD_LEFT,
+                MENU_CARET_PAD_LEFT
+            );
+            _applyMenuFit(nav, fit.labelPad, fit.caretPad);
+            return;
+        }
+
+        if (overflow > MENU_FIT_EPSILON) {
+            const fit = _padFitForOverflow(
+                overflow,
+                labels,
+                carets,
+                current.labelPad,
+                current.caretPad
+            );
+            _applyMenuFit(nav, fit.labelPad, fit.caretPad);
+            return;
+        }
+
+        if (menuRight >= selectorRight - MENU_FIT_RELAX_BUFFER) return;
+
+        _applyMenuFit(nav, MENU_LABEL_PAD_LEFT, MENU_CARET_PAD_LEFT);
+        void nav.offsetWidth;
+        const naturalOverflow = Math.ceil(_secondaryMenuRightEdge(wrapper) - selectorRight);
+        if (naturalOverflow > MENU_FIT_EPSILON) {
+            const fit = _padFitForOverflow(
+                naturalOverflow,
+                labels,
+                carets,
+                MENU_LABEL_PAD_LEFT,
+                MENU_CARET_PAD_LEFT
+            );
+            _applyMenuFit(nav, fit.labelPad, fit.caretPad);
+        }
+    }
+
+    function scheduleSecondaryMenuFit() {
+        if (_secondaryFitRaf) cancelAnimationFrame(_secondaryFitRaf);
+        _secondaryFitTimers.forEach(clearTimeout);
+        _secondaryFitTimers = [];
+        fitSecondaryMenuToSelector();
+        _secondaryFitRaf = requestAnimationFrame(() => {
+            _secondaryFitRaf = null;
+            fitSecondaryMenuToSelector();
+        });
+        [250, 900].forEach(delay => {
+            _secondaryFitTimers.push(setTimeout(fitSecondaryMenuToSelector, delay));
+        });
     }
 
     /* ── Debounce ─────────────────────────────────────────────── */
@@ -110,6 +282,7 @@ const ResponsiveLayout = (() => {
         _timer = setTimeout(() => {
             _pending = false;
             _checkHeaderOverlap();
+            scheduleSecondaryMenuFit();
         }, 500);
     }
 
@@ -200,6 +373,7 @@ const ResponsiveLayout = (() => {
             if (!el) return;
             el.hidden = tid !== tabId;
         });
+        scheduleSecondaryMenuFit();
     }
 
     /* ── Lifecycle ────────────────────────────────────────────── */
@@ -210,6 +384,7 @@ const ResponsiveLayout = (() => {
     function init() {
         const header      = document.querySelector('header');
         const headerInner = document.querySelector('.header-inner');
+        const headerRight = document.querySelector('.header-right');
         if (!header || !headerInner) return;
 
         const activePanel = document.querySelector('.tab-panel.active[id^="tab-"]');
@@ -220,6 +395,7 @@ const ResponsiveLayout = (() => {
 
         _ro = new ResizeObserver(_scheduleCheck);
         _ro.observe(headerInner);  // observe inner (constrained) row, not the full-bleed shell
+        if (headerRight) _ro.observe(headerRight);
 
         // Also catch viewport-width changes (scrollbar appearing/disappearing,
         // browser window drag) which the header RO may miss if header height
@@ -227,7 +403,10 @@ const ResponsiveLayout = (() => {
         window.addEventListener('resize', _scheduleCheck);
 
         // Run the first check after layout has settled
-        requestAnimationFrame(() => _checkHeaderOverlap());
+        requestAnimationFrame(() => {
+            _checkHeaderOverlap();
+            fitSecondaryMenuToSelector();
+        });
     }
 
     /**
@@ -238,12 +417,16 @@ const ResponsiveLayout = (() => {
         if (_ro) { _ro.disconnect(); _ro = null; }
         window.removeEventListener('resize', _scheduleCheck);
         clearTimeout(_timer);
+        if (_secondaryFitRaf) cancelAnimationFrame(_secondaryFitRaf);
+        _secondaryFitTimers.forEach(clearTimeout);
         _timer = null;
+        _secondaryFitRaf = null;
+        _secondaryFitTimers = [];
         _pending = false;
     }
 
     /* ── Public API ───────────────────────────────────────────── */
 
-    return { init, destroy, registerTabControls, updateControlsForTab, syncControlHost };
+    return { init, destroy, registerTabControls, updateControlsForTab, syncControlHost, scheduleSecondaryMenuFit };
 
 })();
