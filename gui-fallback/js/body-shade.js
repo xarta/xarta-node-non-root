@@ -53,6 +53,7 @@
   var lastTapAt = 0;
   var lastTapX = 0;
   var lastTapY = 0;
+  var activePointerId = null;
 
   function clearLongPressTimer() {
     if (!longPressTimer) return;
@@ -522,14 +523,77 @@
     handleTapForDoubleToggle(clickX, clickY);
   }
 
+  /* ── Pointer handlers for generated hitboxes ───────────────────────────── */
+  function onPointerDown(e) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.cancelable) e.preventDefault();
+    activePointerId = e.pointerId;
+    if (e.currentTarget && typeof e.currentTarget.setPointerCapture === 'function') {
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+    }
+    startDrag(e.clientY);
+  }
+
+  function onPointerMove(e) {
+    if (activePointerId !== null && e.pointerId !== activePointerId) return;
+    if (!dragging) return;
+    if (e.cancelable) e.preventDefault();
+    moveDrag(e.clientY);
+  }
+
+  function onPointerUp(e) {
+    if (activePointerId !== null && e.pointerId !== activePointerId) return;
+    if (e.currentTarget && typeof e.currentTarget.releasePointerCapture === 'function') {
+      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {}
+    }
+    activePointerId = null;
+    var wasDragMove = dragMoved;
+    endDrag();
+    if (longPressTriggered || wasDragMove) {
+      lastTapAt = 0;
+      return;
+    }
+    handleTapForDoubleToggle(e.clientX, e.clientY);
+  }
+
+  function onPointerCancel(e) {
+    if (activePointerId !== null && e.pointerId !== activePointerId) return;
+    if (e.currentTarget && typeof e.currentTarget.releasePointerCapture === 'function') {
+      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {}
+    }
+    activePointerId = null;
+    endDrag();
+    lastTapAt = 0;
+  }
+
   /* ── Bind all drag events to a handle element ───────────────────────────── */
+  function ensureHandleHitbox(el) {
+    var hitbox = el.querySelector('.body-shade-hitbox');
+    if (hitbox) return hitbox;
+    hitbox = document.createElement('span');
+    hitbox.className = 'body-shade-hitbox';
+    hitbox.setAttribute('aria-hidden', 'true');
+    el.insertBefore(hitbox, el.firstChild);
+    return hitbox;
+  }
+
   function bindHandle(el) {
     if (!el) return;
-    el.addEventListener('touchstart',  onTouchStart, { passive: false });
-    el.addEventListener('touchmove',   onTouchMove,  { passive: false });
-    el.addEventListener('touchend',    onTouchEnd,   { passive: true });
-    el.addEventListener('touchcancel', onTouchEnd,   { passive: true });
-    el.addEventListener('mousedown',   onMouseDown);
+    if (el.dataset.bodyShadeBound === '1') return;
+    var gestureTarget = ensureHandleHitbox(el);
+    if (window.PointerEvent) {
+      gestureTarget.addEventListener('pointerdown', onPointerDown);
+      gestureTarget.addEventListener('pointermove', onPointerMove);
+      gestureTarget.addEventListener('pointerup', onPointerUp);
+      gestureTarget.addEventListener('pointercancel', onPointerCancel);
+    } else {
+      gestureTarget.addEventListener('touchstart',  onTouchStart, { passive: false });
+      gestureTarget.addEventListener('touchmove',   onTouchMove,  { passive: false });
+      gestureTarget.addEventListener('touchend',    onTouchEnd,   { passive: true });
+      gestureTarget.addEventListener('touchcancel', onTouchEnd,   { passive: true });
+      gestureTarget.addEventListener('mousedown',   onMouseDown);
+    }
+    el.dataset.bodyShadeBound = '1';
   }
 
   function syncActiveHandleFromDom(opts) {

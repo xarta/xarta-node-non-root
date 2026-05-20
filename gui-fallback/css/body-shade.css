@@ -23,6 +23,9 @@
   --header-h: 0px;
   --shade-up-max-h: calc(100vh - 20px);
   --shade-bottom-clearance: 0px;
+  --body-shade-hitbox-w: 56px;
+  --body-shade-hitbox-h: 44px;
+  --body-shade-grip-offset-x: 0px;
 }
 
 /* When a fill tab is active, prevent the page from scrolling.
@@ -65,13 +68,43 @@ html:has(body.shade-is-up) {
   transition: opacity 0.3s ease;
 }
 
-.body-shade-handle:hover {
+/* BodyShade gesture events are bound to a generated, centered child hitbox.
+   This keeps the visual handle full-bleed for layout while avoiding the old
+   invisible full-width pointer strip that blocked nearby controls. */
+.body-shade .body-shade-handle {
+  pointer-events: none;
+}
+
+.body-shade .body-shade-hitbox {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: var(--body-shade-hitbox-w);
+  height: var(--body-shade-hitbox-h);
+  transform: translateX(calc(-50% + var(--body-shade-grip-offset-x)));
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  z-index: 2;
+}
+
+.body-shade-handle:hover,
+.body-shade .body-shade-handle:has(.body-shade-hitbox:hover) {
   opacity: 1;
 }
 
 .body-shade-handle.is-grabbing {
   cursor: grabbing;
   opacity: 1;
+}
+
+.body-shade-handle.is-grabbing .body-shade-hitbox {
+  cursor: grabbing;
 }
 
 /* ── Grip pill ───────────────────────────────────────────────────────────── */
@@ -81,10 +114,12 @@ html:has(body.shade-is-up) {
   border-radius: 2px;
   background: rgba(var(--hub-accent-rgb), 0.6);
   pointer-events: none;
-  transition: background 0.2s ease, width 0.2s ease;
+  transform: translateX(var(--body-shade-grip-offset-x));
+  transition: background 0.2s ease, width 0.2s ease, transform 0.2s ease;
 }
 
 .body-shade-handle:hover .body-shade-grip,
+.body-shade .body-shade-handle:has(.body-shade-hitbox:hover) .body-shade-grip,
 .body-shade-handle.is-grabbing .body-shade-grip {
   background: rgba(var(--hub-accent-rgb), 1.0);
   width: 52px;
@@ -231,6 +266,10 @@ body.shade-is-up .tab-scroll-shell .table-wrap {
    regular 20px handle. */
 @media (orientation: landscape) and (max-height: 600px) and (pointer: coarse),
        (orientation: landscape) and (max-height: 600px) and (hover: none) {
+  :root {
+    --body-shade-hitbox-h: 52px;
+  }
+
   .body-shade-handle {
     height: 14px;
   }
@@ -240,8 +279,8 @@ body.shade-is-up .tab-scroll-shell .table-wrap {
   /* S25 profile-specific portrait notch ergonomics.
      Keep this profile scoped so future phone profiles can opt in with their
      own tuned offsets rather than inheriting S25 assumptions. */
-  html[data-device-profile='s25-ultra-oneui-webapk'] .body-shade-grip {
-    transform: translateX(-60px);
+  html[data-device-profile='s25-ultra-oneui-webapk'] .body-shade-handle {
+    --body-shade-grip-offset-x: -60px;
   }
 }
 
