@@ -320,10 +320,6 @@ html.header-compact .header-inner {
     html[data-special-ui-mode='s25-stargate-touch-nav'] #s25-lift-nodes #retouch-status:empty {
         display: none;
     }
-
-    html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-docs .docs-active-header {
-        text-align: right;
-    }
 }
 
 /* Phone landscape is intentionally treated as a dense hybrid:
@@ -499,4 +495,18 @@ html.header-compact .header-inner {
     padding-top: 4px !important;
     padding-bottom: 4px !important;
     line-height: 1.15;
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-nodes,
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-docs .docs-active-header {
+        flex: 0 0 calc(100vw - 20px) !important;
+        width: calc(100vw - 20px) !important;
+        max-width: calc(100vw - 20px) !important;
+        box-sizing: border-box;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-docs .docs-active-header {
+        text-align: right;
+    }
 }
