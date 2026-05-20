@@ -2,16 +2,18 @@
 
 'use strict';
 
+const MATRIX_CHAT_SERVER_STORAGE_KEY = 'blueprintsMatrixChatServer';
 const MATRIX_CHAT_STORAGE_KEY = 'blueprintsMatrixChatActiveRoom';
-const MATRIX_CHAT_HERMES_PREFIX = 'hermes: ';
 const MATRIX_CHAT_INITIAL_MESSAGE_LIMIT = 60;
 const MATRIX_CHAT_OLDER_MESSAGE_LIMIT = 60;
 const MATRIX_CHAT_MAX_MESSAGES_PER_ROOM = 600;
+const MATRIX_CHAT_DEFAULT_SERVER = 'tb1';
 
 const MatrixChat = (() => {
   const state = {
     bound: false,
     loading: false,
+    serverId: savedServerId(),
     status: null,
     joined: [],
     invites: [],
@@ -53,6 +55,28 @@ const MatrixChat = (() => {
     const response = await apiFetch(url, options);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
+  }
+
+  function savedServerId() {
+    try {
+      const stored = localStorage.getItem(MATRIX_CHAT_SERVER_STORAGE_KEY);
+      if (stored === 'tb1' || stored === 'vps') return stored;
+    } catch (_) {}
+    return MATRIX_CHAT_DEFAULT_SERVER;
+  }
+
+  function activeRoomStorageKey() {
+    return `${MATRIX_CHAT_STORAGE_KEY}:${state.serverId}`;
+  }
+
+  function matrixApi(path) {
+    const url = new URL(`/api/v1/matrix-chat${path}`, window.location.origin);
+    url.searchParams.set('server', state.serverId);
+    return `${url.pathname}${url.search}`;
+  }
+
+  function hermesPrefix() {
+    return state.serverId === 'vps' ? 'hermes-vps: ' : 'hermes: ';
   }
 
   function fmtTime(ts) {
@@ -378,18 +402,18 @@ const MatrixChat = (() => {
   function rememberActiveRoom(roomId) {
     state.activeRoomId = roomId || '';
     try {
-      if (state.activeRoomId) localStorage.setItem(MATRIX_CHAT_STORAGE_KEY, state.activeRoomId);
+      if (state.activeRoomId) localStorage.setItem(activeRoomStorageKey(), state.activeRoomId);
     } catch (_) {}
   }
 
   function preferredRoomId() {
     try {
-      const saved = localStorage.getItem(MATRIX_CHAT_STORAGE_KEY) || '';
+      const saved = localStorage.getItem(activeRoomStorageKey()) || '';
       if (saved && state.joined.some(room => room.room_id === saved)) return saved;
     } catch (_) {}
     const defaultId = state.status?.default_room_id || '';
     if (defaultId && state.joined.some(room => room.room_id === defaultId)) return defaultId;
-    const smoke = state.joined.find(room => /hermes local smoke/i.test(room.name || ''));
+    const smoke = state.joined.find(room => /hermes local smoke|shared bridge/i.test(room.name || ''));
     return smoke?.room_id || state.joined[0]?.room_id || '';
   }
 
@@ -403,7 +427,13 @@ const MatrixChat = (() => {
     const home = el('matrix-chat-homeserver');
     const features = el('matrix-chat-features');
     const encryptedToggle = el('matrix-chat-create-encrypted');
-    if (user) user.textContent = state.status?.user_id || 'Not configured';
+    const label = state.status?.server_label || state.serverId.toUpperCase();
+    document.querySelectorAll('[data-matrix-chat-server]').forEach(btn => {
+      const active = btn.dataset.matrixChatServer === state.serverId;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    if (user) user.textContent = `${label}: ${state.status?.user_id || 'Not configured'}`;
     if (home) home.textContent = state.status?.homeserver_url || 'Matrix';
     if (features) {
       const e2ee = state.status?.features?.e2ee ? 'server E2EE on' : 'server E2EE off';
@@ -416,6 +446,7 @@ const MatrixChat = (() => {
     }
     if (encryptedToggle) {
       encryptedToggle.disabled = !state.status?.features?.e2ee;
+      if (state.serverId === 'vps' && state.status?.features?.e2ee) encryptedToggle.checked = true;
       encryptedToggle.title = encryptedToggle.disabled
         ? 'Server-side Matrix E2EE is not available'
         : 'Create this room with Matrix end-to-end encryption';
@@ -663,7 +694,7 @@ const MatrixChat = (() => {
       const item = document.createElement('article');
       item.className = 'matrix-chat-message';
       if (message.sender === ownUser) item.classList.add('is-self');
-      if ((message.sender || '').includes('hermes-local')) item.classList.add('is-hermes');
+      if (/hermes-(local|vps)/.test(message.sender || '')) item.classList.add('is-hermes');
 
       const meta = document.createElement('div');
       meta.className = 'matrix-chat-message-meta';
@@ -715,7 +746,7 @@ const MatrixChat = (() => {
   }
 
   async function loadStatus() {
-    state.status = await apiJson('/api/v1/matrix-chat/status');
+    state.status = await apiJson(matrixApi('/status'));
     if (!state.status.configured) {
       setStatus('Matrix chat credentials are not configured on the Blueprints server.', 'warn');
     } else if (!state.status.reachable) {
@@ -731,7 +762,7 @@ const MatrixChat = (() => {
   }
 
   async function loadRooms() {
-    const data = await apiJson('/api/v1/matrix-chat/rooms');
+    const data = await apiJson(matrixApi('/rooms'));
     state.joined = Array.isArray(data.joined) ? data.joined : [];
     state.invites = Array.isArray(data.invites) ? data.invites : [];
     state.nextBatch = data.next_batch || state.nextBatch || '';
@@ -744,7 +775,7 @@ const MatrixChat = (() => {
       renderMessages();
       return;
     }
-    const data = await apiJson(`/api/v1/matrix-chat/rooms/${encodeURIComponent(roomId)}/messages?limit=${MATRIX_CHAT_INITIAL_MESSAGE_LIMIT}`);
+    const data = await apiJson(matrixApi(`/rooms/${encodeURIComponent(roomId)}/messages?limit=${MATRIX_CHAT_INITIAL_MESSAGE_LIMIT}`));
     state.messagesByRoom.set(roomId, Array.isArray(data.messages) ? data.messages : []);
     setHistoryState(roomId, {
       end: data.end || '',
@@ -765,7 +796,7 @@ const MatrixChat = (() => {
     renderMessages({ scrollToBottom: false });
     try {
       const data = await apiJson(
-        `/api/v1/matrix-chat/rooms/${encodeURIComponent(roomId)}/messages?limit=${MATRIX_CHAT_OLDER_MESSAGE_LIMIT}&from=${encodeURIComponent(history.end)}`
+        matrixApi(`/rooms/${encodeURIComponent(roomId)}/messages?limit=${MATRIX_CHAT_OLDER_MESSAGE_LIMIT}&from=${encodeURIComponent(history.end)}`)
       );
       const messages = Array.isArray(data.messages) ? data.messages : [];
       prependMessages(roomId, messages);
@@ -824,7 +855,7 @@ const MatrixChat = (() => {
     const name = (input?.value || '').trim();
     if (!name) return;
     try {
-      const data = await apiJson('/api/v1/matrix-chat/rooms', {
+      const data = await apiJson(matrixApi('/rooms'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, encrypted }),
@@ -843,7 +874,7 @@ const MatrixChat = (() => {
     const target = (roomIdOrAlias || input?.value || '').trim();
     if (!target) return;
     try {
-      const data = await apiJson('/api/v1/matrix-chat/rooms/join', {
+      const data = await apiJson(matrixApi('/rooms/join'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ room_id_or_alias: target }),
@@ -862,7 +893,7 @@ const MatrixChat = (() => {
     const userId = (input?.value || '').trim();
     if (!userId || !state.activeRoomId) return;
     try {
-      await apiJson(`/api/v1/matrix-chat/rooms/${encodeURIComponent(state.activeRoomId)}/invite`, {
+      await apiJson(matrixApi(`/rooms/${encodeURIComponent(state.activeRoomId)}/invite`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId }),
@@ -959,7 +990,7 @@ const MatrixChat = (() => {
     }
     try {
       const data = await apiJson(
-        `/api/v1/matrix-chat/rooms/${encodeURIComponent(state.activeRoomId)}/invite-candidates?q=${encodeURIComponent(query)}`
+        matrixApi(`/rooms/${encodeURIComponent(state.activeRoomId)}/invite-candidates?q=${encodeURIComponent(query)}`)
       );
       const users = Array.isArray(data.users) ? data.users : [];
       renderInviteSuggestions(users, users.length ? '' : 'No available users');
@@ -1042,7 +1073,7 @@ const MatrixChat = (() => {
 
   async function ensureHermesCommands() {
     if (state.hermesCommandsLoaded) return state.hermesCommands;
-    const data = await apiJson('/api/v1/matrix-chat/hermes/commands');
+    const data = await apiJson(matrixApi('/hermes/commands'));
     state.hermesCommands = Array.isArray(data.commands) ? data.commands : [];
     state.hermesCommandsLoaded = true;
     return state.hermesCommands;
@@ -1119,8 +1150,9 @@ const MatrixChat = (() => {
     if (state.composerSuggestionMode === 'command') {
       insert = item.insert || item.name || '';
       if (!insert.endsWith(' ')) insert += ' ';
-      if (!before.trim() && !value.trimStart().startsWith(MATRIX_CHAT_HERMES_PREFIX)) {
-        before = MATRIX_CHAT_HERMES_PREFIX;
+      const prefix = hermesPrefix();
+      if (!before.trim() && !value.trimStart().startsWith(prefix)) {
+        before = prefix;
       }
     } else {
       insert = item.user_id || '';
@@ -1155,7 +1187,7 @@ const MatrixChat = (() => {
     if (token.trigger === '@') {
       try {
         const data = await apiJson(
-          `/api/v1/matrix-chat/rooms/${encodeURIComponent(state.activeRoomId)}/mention-candidates?q=${encodeURIComponent(token.query)}`
+          matrixApi(`/rooms/${encodeURIComponent(state.activeRoomId)}/mention-candidates?q=${encodeURIComponent(token.query)}`)
         );
         const users = Array.isArray(data.users) ? data.users : [];
         renderComposerSuggestions(users, 'mention', token, users.length ? '' : 'No room members');
@@ -1209,12 +1241,13 @@ const MatrixChat = (() => {
     const composer = el('matrix-chat-composer');
     if (!composer) return;
     const value = composer.value || '';
-    if (value.startsWith(MATRIX_CHAT_HERMES_PREFIX)) {
+    const prefix = hermesPrefix();
+    if (value.startsWith(prefix)) {
       composer.focus();
       return;
     }
-    composer.value = `${MATRIX_CHAT_HERMES_PREFIX}${value.trimStart()}`;
-    const cursor = MATRIX_CHAT_HERMES_PREFIX.length;
+    composer.value = `${prefix}${value.trimStart()}`;
+    const cursor = prefix.length;
     composer.setSelectionRange(cursor, cursor);
     hideComposerSuggestions();
     composer.focus();
@@ -1225,7 +1258,7 @@ const MatrixChat = (() => {
     const body = (composer?.value || '').trim();
     if (!body || !state.activeRoomId) return;
     try {
-      await apiJson(`/api/v1/matrix-chat/rooms/${encodeURIComponent(state.activeRoomId)}/messages`, {
+      await apiJson(matrixApi(`/rooms/${encodeURIComponent(state.activeRoomId)}/messages`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ body }),
@@ -1242,7 +1275,7 @@ const MatrixChat = (() => {
   async function poll() {
     if (!isActive() || state.loading || !state.nextBatch) return;
     try {
-      const data = await apiJson(`/api/v1/matrix-chat/sync?since=${encodeURIComponent(state.nextBatch)}&timeout_ms=0`);
+      const data = await apiJson(matrixApi(`/sync?since=${encodeURIComponent(state.nextBatch)}&timeout_ms=0`));
       state.nextBatch = data.next_batch || state.nextBatch;
       if (Array.isArray(data.joined) && data.joined.length) {
         const byId = new Map(state.joined.map(room => [room.room_id, room]));
@@ -1291,6 +1324,43 @@ const MatrixChat = (() => {
     setRailOpen(!isMobileLayout());
   }
 
+  function resetForServer(serverId) {
+    state.serverId = serverId;
+    state.status = null;
+    state.joined = [];
+    state.invites = [];
+    state.activeRoomId = '';
+    state.nextBatch = '';
+    state.messagesByRoom.clear();
+    state.historyByRoom.clear();
+    state.inviteCandidates = [];
+    state.inviteCandidateIndex = -1;
+    state.hermesCommands = [];
+    state.hermesCommandsLoaded = false;
+    state.composerSuggestions = [];
+    state.composerSuggestionIndex = -1;
+    state.composerSuggestionMode = '';
+    state.composerToken = null;
+    state.messageFilter = '';
+    hideInviteSuggestions();
+    hideComposerSuggestions();
+    el('matrix-chat-composer') && (el('matrix-chat-composer').value = '');
+    el('matrix-chat-mobile-filter') && (el('matrix-chat-mobile-filter').value = '');
+    try {
+      localStorage.setItem(MATRIX_CHAT_SERVER_STORAGE_KEY, serverId);
+    } catch (_) {}
+    renderRooms();
+    renderMessages();
+    renderStatus();
+  }
+
+  async function switchServer(serverId) {
+    if (!['tb1', 'vps'].includes(serverId) || serverId === state.serverId) return;
+    resetForServer(serverId);
+    setStatus(`Loading ${serverId.toUpperCase()} Matrix chat...`);
+    await refreshAll();
+  }
+
   function bind() {
     if (state.bound) return;
     state.bound = true;
@@ -1307,6 +1377,9 @@ const MatrixChat = (() => {
       setRailOpen(false);
     };
     el('matrix-chat-refresh')?.addEventListener('click', refreshAll);
+    document.querySelectorAll('[data-matrix-chat-server]').forEach(btn => {
+      btn.addEventListener('click', () => switchServer(btn.dataset.matrixChatServer || 'tb1'));
+    });
     el('matrix-chat-rail-close')?.addEventListener('pointerup', closeRail);
     el('matrix-chat-rail-close')?.addEventListener('touchend', closeRail);
     el('matrix-chat-rail-close')?.addEventListener('click', closeRail);
