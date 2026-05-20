@@ -32,6 +32,13 @@
   background: #05070b;
 }
 
+@media (min-width: 821px) {
+  #tab-hermes-local.active,
+  #tab-hermes-vps.active {
+    margin: -16px -16px -16px;
+  }
+}
+
 @media (max-width: 760px) {
   #tab-hermes-local.active,
   #tab-hermes-vps.active {
