@@ -3,7 +3,7 @@
 'use strict';
 
 const MATRIX_CHAT_STORAGE_KEY = 'blueprintsMatrixChatActiveRoom';
-const MATRIX_CHAT_HERMES_PREFIX = 'hermes-local-20260518: ';
+const MATRIX_CHAT_HERMES_PREFIX = 'hermes: ';
 
 const MatrixChat = (() => {
   const state = {
@@ -353,6 +353,9 @@ const MatrixChat = (() => {
       merged.name_source = existing.name_source;
       merged.canonical_alias = existing.canonical_alias;
     }
+    if (existing.encrypted && !incoming.encrypted) {
+      merged.encrypted = true;
+    }
     return merged;
   }
 
@@ -393,7 +396,11 @@ const MatrixChat = (() => {
     if (features) {
       const e2ee = state.status?.features?.e2ee ? 'server E2EE on' : 'server E2EE off';
       const encrypted = activeRoom()?.encrypted ? 'room encrypted' : 'room unencrypted';
-      features.textContent = `${e2ee} - ${encrypted}`;
+      const hermesPatch = state.status?.hermes_matrix_patch;
+      const patch = hermesPatch?.available
+        ? (hermesPatch.ok ? 'Hermes guard ok' : 'Hermes guard warning')
+        : 'Hermes guard pending';
+      features.textContent = `${e2ee} - ${encrypted} - ${patch}`;
     }
     if (encryptedToggle) {
       encryptedToggle.disabled = !state.status?.features?.e2ee;
@@ -528,6 +535,10 @@ const MatrixChat = (() => {
       setStatus('Matrix chat credentials are not configured on the Blueprints server.', 'warn');
     } else if (!state.status.reachable) {
       setStatus('Matrix homeserver is not reachable from Blueprints.', 'warn');
+    } else if (state.status.hermes_matrix_patch?.available && !state.status.hermes_matrix_patch.ok) {
+      const failed = state.status.hermes_matrix_patch.failed_checks || [];
+      const detail = failed.slice(0, 3).map(item => item.id).filter(Boolean).join(', ');
+      setStatus(`Hermes Matrix platform guard failed${detail ? `: ${detail}` : ''}.`, 'warn');
     } else {
       setStatus('');
     }
@@ -771,11 +782,8 @@ const MatrixChat = (() => {
       composer.focus();
       return;
     }
-    const start = composer.selectionStart || 0;
-    const end = composer.selectionEnd || 0;
-    const prefix = start === 0 ? MATRIX_CHAT_HERMES_PREFIX : ` ${MATRIX_CHAT_HERMES_PREFIX}`;
-    composer.value = `${value.slice(0, start)}${prefix}${value.slice(end)}`;
-    const cursor = start + prefix.length;
+    composer.value = `${MATRIX_CHAT_HERMES_PREFIX}${value.trimStart()}`;
+    const cursor = MATRIX_CHAT_HERMES_PREFIX.length;
     composer.setSelectionRange(cursor, cursor);
     composer.focus();
   }
