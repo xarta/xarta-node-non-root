@@ -170,6 +170,12 @@ html.header-compact .header-inner {
     justify-content: flex-end;
 }
 
+@media (max-width: 600px) and (orientation: portrait) {
+    .bm-main-intro-break {
+        display: none;
+    }
+}
+
 @media (min-width: 770px) {
     #page-controls-slot #pg-ctrl-nodes:not([hidden]) {
         width: auto;
@@ -195,6 +201,60 @@ html.header-compact .header-inner {
 
     #page-controls-slot #s25-lift-nodes #retouch-status:empty {
         display: none;
+    }
+
+    #page-controls-slot #pg-ctrl-bookmarks-main:not([hidden]) {
+        width: auto;
+        flex: 0 1 530px;
+        min-width: 360px;
+    }
+
+    #page-controls-slot #s25-lift-bookmarks-main {
+        display: flex;
+        flex: 1 1 360px;
+        min-width: 280px;
+        align-items: center;
+        align-content: center;
+        justify-content: flex-end;
+        text-align: right;
+    }
+
+    #page-controls-slot #s25-lift-bookmarks-main > p:first-child {
+        flex: 1 1 280px;
+        margin: 0 !important;
+        line-height: 1.35;
+        text-align: right;
+    }
+
+    #tab-bookmarks-main.active > .body-shade-handle {
+        margin-top: -8px;
+    }
+
+    #page-controls-slot #pg-ctrl-bookmarks-history:not([hidden]) {
+        width: auto;
+        flex: 0 1 530px;
+        min-width: 360px;
+    }
+
+    #page-controls-slot #s25-lift-bookmarks-history {
+        display: flex;
+        flex: 1 1 360px;
+        min-width: 280px;
+        align-items: center;
+        align-content: center;
+        justify-content: flex-end;
+        text-align: right;
+    }
+
+    #page-controls-slot #s25-lift-bookmarks-history > p:first-child {
+        flex: 1 1 280px;
+        margin: 0 !important;
+        line-height: 1.35;
+        text-align: right;
+    }
+
+    #tab-bookmarks-history.active > .body-shade-handle {
+        margin-top: -8px;
     }
 
     #tab-nodes.active > .body-shade-handle {
@@ -352,6 +412,121 @@ html.header-compact .header-inner {
     html[data-special-ui-mode='s25-stargate-touch-nav'] #s25-lift-nodes #retouch-status:empty {
         display: none;
     }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #pg-ctrl-bookmarks-main:not([hidden]) {
+        display: contents;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25:has(#pg-ctrl-bookmarks-main:not([hidden])) {
+        gap: 5px 4px;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #pg-ctrl-bookmarks-main .hub-clear-input {
+        order: 0;
+        flex: 1 1 100%;
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #pg-ctrl-bookmarks-main .hub-select {
+        order: 1;
+        flex: 0 0 78px;
+        min-width: 0;
+        max-width: 78px;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #pg-ctrl-bookmarks-main .hub-select-btn {
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+        gap: 4px;
+        padding-left: 7px;
+        padding-right: 6px;
+        padding-top: 6px;
+        padding-bottom: 6px;
+        height: 34px;
+        min-height: 0;
+        line-height: 1.1;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #pg-ctrl-bookmarks-main .hub-select-caret {
+        flex: 0 0 10px;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-bookmarks-main {
+        order: 2;
+        flex: 1 1 0;
+        width: auto;
+        min-width: 0;
+        max-width: none;
+        align-items: flex-start;
+        overflow: visible;
+        text-align: right;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #s25-lift-bookmarks-main > p:first-child {
+        width: calc(100vw - 104px);
+        max-width: calc(100vw - 104px);
+        margin: 2px 0 0 !important;
+        font-size: 10.5px !important;
+        line-height: 1.18;
+        text-align: right;
+        transform: translateY(2px);
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #pg-ctrl-bookmarks-history:not([hidden]) {
+        display: contents;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25:has(#pg-ctrl-bookmarks-history:not([hidden])) {
+        gap: 5px 4px;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #pg-ctrl-bookmarks-history .hub-clear-input {
+        order: 0;
+        flex: 1 1 100%;
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #pg-ctrl-bookmarks-history #bm-visit-saved-filter {
+        order: 1;
+        flex: 0 0 78px;
+        width: 78px;
+        min-width: 0;
+        max-width: 78px;
+        padding-left: 7px;
+        padding-right: 22px;
+        padding-top: 6px;
+        padding-bottom: 6px;
+        height: 34px;
+        min-height: 0;
+        line-height: 1.1;
+        background-position: right 8px center;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-bookmarks-history {
+        order: 2;
+        flex: 1 1 0;
+        width: auto;
+        min-width: 0;
+        max-width: none;
+        align-items: flex-start;
+        overflow: visible;
+        text-align: right;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #s25-lift-bookmarks-history > p:first-child {
+        width: calc(100vw - 104px);
+        max-width: calc(100vw - 104px);
+        margin: 2px 0 0 !important;
+        font-size: 10.5px !important;
+        line-height: 1.18;
+        text-align: right;
+        transform: translateY(2px);
+    }
 }
 
 /* Phone landscape is intentionally treated as a dense hybrid:
@@ -408,6 +583,50 @@ html.header-compact .header-inner {
 
     #page-controls-slot #s25-lift-nodes > p:first-child {
         flex: 1 1 220px;
+        text-align: right;
+    }
+
+    #page-controls-slot #pg-ctrl-bookmarks-main:not([hidden]) {
+        width: auto;
+        flex: 0 1 auto;
+        min-width: 0;
+    }
+
+    #page-controls-slot #s25-lift-bookmarks-main {
+        flex: 1 1 260px;
+        min-width: 0;
+        justify-content: flex-end;
+        text-align: right;
+    }
+
+    #page-controls-slot #s25-lift-bookmarks-main > p:first-child {
+        flex: 1 1 220px;
+        width: auto;
+        max-width: none;
+        margin: 0 !important;
+        line-height: 1.25;
+        text-align: right;
+    }
+
+    #page-controls-slot #pg-ctrl-bookmarks-history:not([hidden]) {
+        width: auto;
+        flex: 0 1 auto;
+        min-width: 0;
+    }
+
+    #page-controls-slot #s25-lift-bookmarks-history {
+        flex: 1 1 260px;
+        min-width: 0;
+        justify-content: flex-end;
+        text-align: right;
+    }
+
+    #page-controls-slot #s25-lift-bookmarks-history > p:first-child {
+        flex: 1 1 220px;
+        width: auto;
+        max-width: none;
+        margin: 0 !important;
+        line-height: 1.25;
         text-align: right;
     }
 

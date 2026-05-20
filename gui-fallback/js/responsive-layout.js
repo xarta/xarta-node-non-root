@@ -86,7 +86,7 @@ const ResponsiveLayout = (() => {
 
     function _shouldLiftTabToDefaultControlsHost(tabId) {
         if (!window.matchMedia || !tabId) return false;
-        return tabId === 'nodes'
+        return ['nodes', 'bookmarks-main', 'bookmarks-history'].includes(tabId)
             && window.matchMedia('(min-width: 769px)').matches
             && !_isPhoneLandscapeLiftModeActive()
             && !_isS25SpecialModeActive();

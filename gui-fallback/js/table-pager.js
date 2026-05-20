@@ -257,14 +257,14 @@
         syncState();
         state.page = 1;
       },
-      setEnabled: function (enabled) {
+      setEnabled: function (enabled, opts) {
         syncState();
         var next = !!enabled;
         if (state.enabled === next) return;
         state.enabled = next;
         updatePersistedState();
         state.page = 1;
-        emitChange();
+        if (!opts || !opts.silent) emitChange();
       },
       toggleEnabled: function () {
         this.setEnabled(!state.enabled);

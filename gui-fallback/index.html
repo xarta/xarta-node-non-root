@@ -2363,7 +2363,10 @@
   <!-- Bookmarks -->
   <section id="tab-bookmarks-main" class="tab-panel tab-panel--fill">
     <div id="s25-lift-bookmarks-main" class="s25-lift-block" data-for-tab="bookmarks-main">
-      <p style="font-size:12px;color:var(--text-dim);margin:0 0 12px">Personal link manager. Fleet-synced via SQLite; hybrid keyword+vector search via local SeekDB index.</p>
+      <p style="font-size:12px;color:var(--text-dim);margin:0 0 12px">
+        <span>Personal link manager.</span><br class="bm-main-intro-break">
+        <span>Fleet-synced via SQLite; hybrid keyword+vector search via local SeekDB index.</span>
+      </p>
     </div>
     <!-- Hidden file input for Import HTML (triggered via menu or Setup tab) -->
     <input type="file" id="bm-import-file" accept=".html,.htm" style="display:none" onchange="importBookmarksFile(this)" />
@@ -2390,13 +2393,12 @@
   <!-- Bookmarks — Visit History -->
   <section id="tab-bookmarks-history" class="tab-panel tab-panel--fill">
     <div id="s25-lift-bookmarks-history" class="s25-lift-block" data-for-tab="bookmarks-history">
-      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Pages visited via the browser extension visit recorder. Click a row to see per-visit timestamps.</p>
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">
+        <span>Pages visited via the browser extension visit recorder.</span><br>
+        <span>Click a row to see per-visit timestamps.</span>
+      </p>
     </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
-    <div style="display:flex;gap:6px;margin-bottom:8px">
-      <button id="vis-expand-all-btn" class="hub-action-btn table-row-toggle-button" hidden><span class="table-row-toggle-icon is-open" aria-hidden="true"></span>Expand all</button>
-      <button id="vis-collapse-all-btn" class="hub-action-btn table-row-toggle-button" hidden><span class="table-row-toggle-icon" aria-hidden="true"></span>Collapse all</button>
-    </div>
     <p id="vis-status" style="font-size:12px;color:var(--text-dim);margin:0 0 6px" hidden></p>
     <div class="table-wrap table-wrap--fill">
       <table id="vis-table" data-layout-table-name="visits" data-layout-table-code="15">

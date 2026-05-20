@@ -941,6 +941,22 @@ function _visGetSortState() {
   return _ensureVisitsTableView()?.sorter?.getState?.() || { key: 'visited_at', dir: -1 };
 }
 
+function getVisitHistoryExpansionState() {
+  const sortState = _visGetSortState();
+  const groupMode = sortState.key === 'url' || sortState.key === 'domain';
+  if (!groupMode) {
+    return { hasExpandable: false, anyExpanded: false, anyCollapsed: false };
+  }
+
+  const domains = new Set(_visDomainGroups.map(group => group.domain));
+  const expandedCount = [..._visExpandedDomains].filter(d => domains.has(d)).length;
+  return {
+    hasExpandable: _visTotalDomains > 0,
+    anyExpanded: expandedCount > 0,
+    anyCollapsed: expandedCount < domains.size,
+  };
+}
+
 // Visual-only pagination for visits — same pattern as bookmarks
 const _VIS_PAGE_SIZE_OPTIONS = [25, 50, 75, 100, 250, 1000];
 const _VIS_PAGER = TablePager.create({
@@ -954,12 +970,18 @@ const _VIS_PAGER = TablePager.create({
   },
   defaultEnabled: true,
   onChange: function () {
-    renderVisits({ keepPage: true });
+    loadVisits({ keepPage: true });
   },
 });
 
 // Domain grouping — active when sorted by url or domain
 let _visExpandedDomains = new Set(); // domains currently expanded in group mode
+let _visTotalRows = 0;
+let _visTotalVisitCount = 0;
+let _visTotalDomains = 0;
+let _visPageOffset = 0;
+let _visLoadSeq = 0;
+let _visDomainGroups = [];
 
 function _visColCount() {
   return _ensureVisitsTableView()?.getVisibleCols()?.length || 1;
@@ -989,7 +1011,7 @@ function _ensureVisitsLayoutController() {
     getMeta: col => ({ label: _VIS_FIELD_META[col]?.label ?? col, sortKey: _VIS_SORT_KEYS[col] || null }),
     getDefaultWidth: col => _visDefaultWidth(col),
     getColumnSeed: col => _visColumnSeed(col),
-    render: () => renderVisits(),
+    render: () => renderVisits({ keepPage: true, localOnly: true }),
     surfaceLabel: 'Visit History',
     layoutContextTitle: 'Visit History Layout Context',
   });
@@ -1028,7 +1050,7 @@ function _visHandleSortChange(nextState) {
   const nowGroupMode = nextKey === 'url' || nextKey === 'domain';
   _visLastSortKey = nextKey;
   if (!wasGroupMode && nowGroupMode) _visExpandedDomains = new Set();
-  renderVisits();
+  loadVisits();
 }
 
 // Return the hostname (stripped of www.) for a URL string
@@ -1060,20 +1082,67 @@ function _visApplyColsModal() {
   if (!view) return;
   const modal = document.getElementById('vis-cols-modal');
   view.applyColumns(modal, () => {
-    renderVisits({ keepPage: true });
+    renderVisits({ keepPage: true, localOnly: true });
     HubModal.close(modal);
     _ensureVisitsLayoutController()?.scheduleLayoutSave();
   });
 }
 
-async function loadVisits() {
+async function loadVisits(opts = {}) {
   const err = document.getElementById('bm-error');
   err.hidden = true;
+  if (!_VIS_PAGER.isEnabled()) _VIS_PAGER.setEnabled(true, { silent: true });
+  if (!opts.keepPage) _VIS_PAGER.resetPage();
+  const pagerState = _VIS_PAGER.getState();
+  const sortState = _visGetSortState();
+  const q = document.getElementById('bm-visit-search')?.value || '';
+  const savedFilter = document.getElementById('bm-visit-saved-filter')?.value || 'all';
+  const pageSize = pagerState.pageSize || 100;
+  const page = Math.max(1, pagerState.page || 1);
+  const offset = (page - 1) * pageSize;
+  const groupMode = sortState.key === 'url' || sortState.key === 'domain';
+  const params = new URLSearchParams({
+    q,
+    saved: savedFilter,
+    sort: sortState.key || 'visited_at',
+    direction: sortState.dir === 1 ? 'asc' : 'desc',
+    limit: String(pageSize),
+    offset: String(offset),
+  });
+  if (groupMode) {
+    for (const domain of _visExpandedDomains) {
+      params.append('expanded_domains', domain);
+    }
+  }
+  const seq = ++_visLoadSeq;
   try {
-    const r = await apiFetch('/api/v1/bookmarks/visits?limit=1000');
+    const endpoint = groupMode ? '/api/v1/bookmarks/visit-domains-page?' : '/api/v1/bookmarks/visits-page?';
+    const r = await apiFetch(endpoint + params.toString());
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    _bmVisits = await r.json();
-    renderVisits();
+    const payload = await r.json();
+    if (seq !== _visLoadSeq) return;
+    if (groupMode) {
+      _visDomainGroups = Array.isArray(payload.groups) ? payload.groups : [];
+      _bmVisits = _visDomainGroups.flatMap(group => Array.isArray(group.items) ? group.items : []);
+      _visTotalRows = Number(payload.total_urls || 0);
+      _visTotalVisitCount = Number(payload.total_visit_count || 0);
+      _visTotalDomains = Number(payload.total_domains || 0);
+    } else {
+      _bmVisits = Array.isArray(payload.items) ? payload.items : [];
+      _visDomainGroups = [];
+      _visTotalRows = Number(payload.total || 0);
+      _visTotalVisitCount = Number(payload.total_visit_count || 0);
+      _visTotalDomains = 0;
+    }
+    _visPageOffset = Number(payload.offset || 0);
+    const pageTotal = groupMode ? _visTotalDomains : _visTotalRows;
+    const pageItems = groupMode ? _visDomainGroups : _bmVisits;
+    if (!pageItems.length && pageTotal > 0 && _visPageOffset >= pageTotal) {
+      _VIS_PAGER.resetPage();
+      loadVisits();
+      return;
+    }
+    renderVisits({ keepPage: true, localOnly: true });
   } catch (e) {
     err.textContent = `Failed to load visits: ${e.message}`;
     err.hidden = false;
@@ -1081,40 +1150,29 @@ async function loadVisits() {
 }
 
 function renderVisits(opts = {}) {
+  if (!opts.localOnly) {
+    loadVisits(opts);
+    return;
+  }
   if (!opts.keepPage) _VIS_PAGER.resetPage();
-  const q = (document.getElementById('bm-visit-search')?.value || '').toLowerCase();
-  const savedFilter = document.getElementById('bm-visit-saved-filter')?.value || 'all';
   const view = _ensureVisitsTableView();
   let rows = _bmVisits;
-  if (q) {
-    rows = rows.filter(v =>
-      (v.title || '').toLowerCase().includes(q) ||
-      (v.url || '').toLowerCase().includes(q) ||
-      (v.domain || '').toLowerCase().includes(q)
-    );
-  }
-  if (savedFilter === 'saved') rows = rows.filter(v => v.bookmark_id);
-  if (savedFilter === 'unsaved') rows = rows.filter(v => !v.bookmark_id);
-  rows = view?.sorter ? view.sorter.sortRows(rows, _visSortValue) : rows;
 
   const visSortState = _visGetSortState();
   const groupMode = visSortState.key === 'url' || visSortState.key === 'domain';
-  const expandBtn = document.getElementById('vis-expand-all-btn');
-  const collapseBtn = document.getElementById('vis-collapse-all-btn');
-  if (expandBtn) expandBtn.hidden = !groupMode;
-  if (collapseBtn) collapseBtn.hidden = !groupMode;
 
   const cols = view?.getVisibleCols() || ['title'];
   const tbody = document.getElementById('bm-visits-tbody');
   const status = document.getElementById('vis-status');
 
   if (!groupMode) {
-    const pageData = _VIS_PAGER.getSlice(rows);
-    const total = pageData.totalItems;
-    const pageRows = pageData.items;
+    const total = _visTotalRows;
+    const pageRows = rows;
+    const from = total ? _visPageOffset + 1 : 0;
+    const to = Math.min(_visPageOffset + pageRows.length, total);
     if (status) {
-      if (pageData.enabled && pageData.paged) {
-        status.textContent = `${total} visit${total === 1 ? '' : 's'} (showing ${pageData.from}-${pageData.to})`;
+      if (total > pageRows.length) {
+        status.textContent = `${total} visit${total === 1 ? '' : 's'} (showing ${from}-${to})`;
       } else {
         status.textContent = `${total} visit${total === 1 ? '' : 's'}`;
       }
@@ -1144,24 +1202,19 @@ function renderVisits(opts = {}) {
     return;
   }
 
-  const domainOrder = [];
-  const domainGroups = new Map();
-  for (const v of rows) {
-    const domain = v.domain || _visDomain(v.url || '') || '(unknown)';
-    if (!domainGroups.has(domain)) {
-      domainGroups.set(domain, []);
-      domainOrder.push(domain);
-    }
-    domainGroups.get(domain).push(v);
-  }
-
   const items = [];
-  for (const domain of domainOrder) {
-    const visits = domainGroups.get(domain);
+  for (const group of _visDomainGroups) {
+    const domain = group.domain || '(unknown)';
+    const visits = Array.isArray(group.items) ? group.items : [];
     const expanded = _visExpandedDomains.has(domain);
-    const totalVisitCount = visits.reduce((sum, v) => sum + (v.visit_count || 1), 0);
-    items.push({ type: 'domain-header', domain, urlCount: visits.length, totalVisitCount, expanded });
-    if (expanded) {
+    items.push({
+      type: 'domain-header',
+      domain,
+      urlCount: Number(group.url_count || 0),
+      totalVisitCount: Number(group.total_visit_count || 0),
+      expanded,
+    });
+    if (expanded && visits.length) {
       const slugSet = new Set(visits.map(v => _visFirstSlug(v.url || '')));
       const hasMultipleSlugs = slugSet.size > 1;
       let lastSlug = null;
@@ -1176,19 +1229,21 @@ function renderVisits(opts = {}) {
     }
   }
 
-  const pageData = _VIS_PAGER.getSlice(items);
-  const totalItems = pageData.totalItems;
-  const pageItems = pageData.items;
+  const pageItems = items;
 
   if (status) {
-    const totalDomains = domainOrder.length;
-    const totalVisits = rows.reduce((sum, v) => sum + (v.visit_count || 1), 0);
-    const totalUrls = rows.length;
-    const expandedCount = [..._visExpandedDomains].filter(d => domainGroups.has(d)).length;
+    const totalDomains = _visTotalDomains;
+    const pageDomains = _visDomainGroups.length;
+    const totalVisits = _visTotalVisitCount;
+    const totalUrls = _visTotalRows;
+    const pageDomainSet = new Set(_visDomainGroups.map(group => group.domain || '(unknown)'));
+    const expandedCount = [..._visExpandedDomains].filter(d => pageDomainSet.has(d)).length;
     let statusText = `${totalVisits} visit${totalVisits === 1 ? '' : 's'} (${totalUrls} URL${totalUrls === 1 ? '' : 's'}) across ${totalDomains} domain${totalDomains === 1 ? '' : 's'}`;
     if (expandedCount) statusText += ` (${expandedCount} expanded)`;
-    if (pageData.enabled && pageData.paged) {
-      statusText += ` - rows ${pageData.from}-${pageData.to} of ${totalItems}`;
+    if (_visTotalDomains > pageDomains) {
+      const from = _visTotalDomains ? _visPageOffset + 1 : 0;
+      const to = Math.min(_visPageOffset + pageDomains, _visTotalDomains);
+      statusText += ` - domains ${from}-${to} of ${_visTotalDomains}`;
     }
     status.textContent = statusText;
     status.hidden = false;
@@ -1198,7 +1253,7 @@ function renderVisits(opts = {}) {
     view?.render(() => {
       tbody.innerHTML = `<tr class="empty-row"><td colspan="${cols.length}">No visit history.</td></tr>`;
     });
-    _VIS_PAGER.render(totalItems);
+    _VIS_PAGER.render(_visTotalDomains);
     return;
   }
 
@@ -1234,7 +1289,7 @@ function renderVisits(opts = {}) {
   view?.render(() => {
     tbody.innerHTML = html;
   });
-  _VIS_PAGER.render(totalItems);
+  _VIS_PAGER.render(_visTotalDomains);
 }
 
 function _visRenderVisitActionsCell(v) {
@@ -1314,28 +1369,27 @@ function _visToggleDomain(domain) {
   } else {
     _visExpandedDomains.add(domain);
   }
-  renderVisits({ keepPage: true });
+  loadVisits({ keepPage: true });
 }
 
 // Expand or collapse all domain groups
 function _visSetAllDomains(expanded) {
   if (expanded) {
     _visExpandedDomains = new Set(
-      _bmVisits.map(v => v.domain || _visDomain(v.url || '') || '(unknown)')
+      _visDomainGroups.map(group => group.domain || '(unknown)')
     );
   } else {
     _visExpandedDomains = new Set();
   }
-  _VIS_PAGER.resetPage();
-  renderVisits({ keepPage: true });
+  loadVisits({ keepPage: true });
 }
 
 function _visIsPaginationEnabled() {
-  return _VIS_PAGER.isEnabled();
+  return true;
 }
 
 function _visTogglePagination() {
-  _VIS_PAGER.toggleEnabled();
+  _VIS_PAGER.setEnabled(true, { silent: true });
   if (typeof ProbesMenuConfig !== 'undefined') ProbesMenuConfig.updateActiveTab();
 }
 
@@ -2221,22 +2275,18 @@ document.addEventListener('DOMContentLoaded', () => {
   let _visFilterTimer = null;
   const visSearch   = document.getElementById('bm-visit-search');
   const visSaved    = document.getElementById('bm-visit-saved-filter');
-  const visExpand   = document.getElementById('vis-expand-all-btn');
-  const visCollapse = document.getElementById('vis-collapse-all-btn');
   if (visSearch)   visSearch.addEventListener('input', () => {
     clearTimeout(_visFilterTimer);
-    _visFilterTimer = setTimeout(renderVisits, 250);
+    _visFilterTimer = setTimeout(() => loadVisits(), 250);
   });
-  if (visSaved)    visSaved.addEventListener('change', renderVisits);
-  if (visExpand)   visExpand.addEventListener('click', () => _visSetAllDomains(true));
-  if (visCollapse) visCollapse.addEventListener('click', () => _visSetAllDomains(false));
+  if (visSaved)    visSaved.addEventListener('change', () => loadVisits());
   if (typeof ResponsiveLayout !== 'undefined') {
     ResponsiveLayout.registerTabControls('bookmarks-history', 'pg-ctrl-bookmarks-history');
   }
 
   _ensureVisitsTableView();
   _visTableView?.onLayoutChange(() => {
-    renderVisits({ keepPage: true });
+    renderVisits({ keepPage: true, localOnly: true });
   });
 
   // Long-press on scoring column headers → column info modal

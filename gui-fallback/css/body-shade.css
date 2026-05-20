@@ -218,7 +218,9 @@ body.shade-is-up .tab-scroll-shell .table-wrap {
   #tab-keys.active > .body-shade-handle,
   #tab-certs.active > .body-shade-handle,
   #tab-ai-providers.active > .body-shade-handle,
-  #tab-ssh-targets.active > .body-shade-handle {
+  #tab-ssh-targets.active > .body-shade-handle,
+  #tab-bookmarks-main.active > .body-shade-handle,
+  #tab-bookmarks-history.active > .body-shade-handle {
     margin-top: -10px;
   }
 }

@@ -118,7 +118,9 @@ const ProbesMenuConfig = createHubMenu({
         { id: 'vis-fn-scroll',      label: 'Horiz Scroll: Is Off',    icon: 'icons/ui/table-columns-blue.svg', fn: 'vis.scroll', activeOn: ['bookmarks-history'], parent: 'probes-settings', order: 2 },
         { id: 'vis-fn-autofit',     label: 'Auto Fit Widths',      icon: 'icons/ui/table-columns-blue.svg', fn: 'vis.autoFit', activeOn: ['bookmarks-history'], parent: 'probes-settings', order: 3 },
         { id: 'vis-fn-pagination',  label: 'Pagination',           icon: 'icons/ui/table-columns-blue.svg', fn: 'vis.pagination', activeOn: ['bookmarks-history'], parent: 'probes-settings', order: 4 },
-        { id: 'vis-fn-context',     label: 'Layout Context',       icon: HIEROGLYPHS.eyeOfHorus, fn: 'vis.context', activeOn: ['bookmarks-history'], parent: 'probes-settings', order: 5 },
+        { id: 'vis-fn-expand',      label: 'Expand all',           icon: 'icons/ui/chevron-down-blue.svg', fn: 'vis.expandAll', activeOn: ['bookmarks-history'], parent: 'probes-settings', order: 5 },
+        { id: 'vis-fn-collapse',    label: 'Collapse all',         icon: 'icons/ui/chevron-up-blue.svg', fn: 'vis.collapseAll', activeOn: ['bookmarks-history'], parent: 'probes-settings', order: 6 },
+        { id: 'vis-fn-context',     label: 'Layout Context',       icon: HIEROGLYPHS.eyeOfHorus, fn: 'vis.context', activeOn: ['bookmarks-history'], parent: 'probes-settings', order: 7 },
 
         // ── Setup & Import page function items ─────────────────────────────
         { id: 'setup-fn-import',    label: 'Import HTML',         icon: HIEROGLYPHS.papyrus,    fn: 'setup.import',    activeOn: ['bookmarks-setup'],   parent: 'probes-settings', order: 0 },
@@ -257,6 +259,8 @@ ProbesMenuConfig.registerFunctions({
     'vis.autoFit':    () => _probesAutoFitLayout(() => _ensureVisitsLayoutController()),
     'vis.context':   () => openVisitsLayoutContextModal(),
     'vis.pagination': () => _visTogglePagination(),
+    'vis.expandAll': () => _visSetAllDomains(true),
+    'vis.collapseAll': () => _visSetAllDomains(false),
 
     // Setup & Import
     'setup.import':   () => { const inp = document.getElementById('bm-import-file2'); if (inp) inp.click(); },
@@ -277,7 +281,7 @@ ProbesMenuConfig.registerLabelGetters({
     'dockge-fn-obsolete': () => (typeof isDockgeHideObsolete === 'function' && isDockgeHideObsolete()) ? 'Show obsolete' : 'Hide obsolete',
     'caddy-fn-scroll':   () => _probesHorizontalScrollLabel('Horiz Scroll', () => _ensureCaddyLayoutController()),
     'vis-fn-scroll':     () => _probesHorizontalScrollLabel('Horiz Scroll', () => _ensureVisitsLayoutController()),
-    'vis-fn-pagination': () => _visIsPaginationEnabled() ? 'Pagination: On' : 'Pagination: Off',
+    'vis-fn-pagination': () => 'Pagination: Server',
 });
 
 ProbesMenuConfig.registerVisibilityGetters({
@@ -287,4 +291,6 @@ ProbesMenuConfig.registerVisibilityGetters({
     'pve-fn-collapse': () => _probesExpandCollapseVisible(() => (typeof getProxmoxConfigExpansionState === 'function' ? getProxmoxConfigExpansionState() : null), 'collapse'),
     'dockge-fn-expand': () => _probesExpandCollapseVisible(() => (typeof getDockgeExpansionState === 'function' ? getDockgeExpansionState() : null), 'expand'),
     'dockge-fn-collapse': () => _probesExpandCollapseVisible(() => (typeof getDockgeExpansionState === 'function' ? getDockgeExpansionState() : null), 'collapse'),
+    'vis-fn-expand': () => _probesExpandCollapseVisible(() => (typeof getVisitHistoryExpansionState === 'function' ? getVisitHistoryExpansionState() : null), 'expand'),
+    'vis-fn-collapse': () => _probesExpandCollapseVisible(() => (typeof getVisitHistoryExpansionState === 'function' ? getVisitHistoryExpansionState() : null), 'collapse'),
 });
