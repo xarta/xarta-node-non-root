@@ -237,6 +237,7 @@ const BlueprintsTtsClient = (() => {
       fallback_kind: typeof opts.fallbackKind === 'string' ? opts.fallbackKind : undefined,
       sanitize_text: typeof opts.sanitizeText === 'boolean' ? opts.sanitizeText : undefined,
       transform_profile: typeof opts.transformProfile === 'string' ? opts.transformProfile : undefined,
+      allow_llm_sanitizer: typeof opts.allowLlmSanitizer === 'boolean' ? opts.allowLlmSanitizer : undefined,
     };
 
     if (payload.interrupt) {
@@ -311,6 +312,7 @@ const BlueprintsTtsClient = (() => {
       fallback_kind: typeof opts.fallbackKind === 'string' ? opts.fallbackKind : undefined,
       sanitize_text: typeof opts.sanitizeText === 'boolean' ? opts.sanitizeText : undefined,
       transform_profile: typeof opts.transformProfile === 'string' ? opts.transformProfile : undefined,
+      allow_llm_sanitizer: typeof opts.allowLlmSanitizer === 'boolean' ? opts.allowLlmSanitizer : undefined,
     };
 
     const response = await apiFetch('/api/v1/tts/speak', {
