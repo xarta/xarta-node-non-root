@@ -650,8 +650,8 @@
 }
 
 @media (min-width: 821px) {
-  #tab-matrix-chat.active > .body-shade-handle {
-    transform: translateY(-8px);
+  #tab-matrix-chat.active {
+    margin: -8px -16px -16px;
   }
 }
 
