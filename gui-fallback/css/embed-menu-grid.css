@@ -114,6 +114,50 @@
     display: inline-flex;
 }
 
+/* Embed Menu's mobile shortcut is lifted beside compact telemetry. Keep its
+   footprint smaller in phone portrait so it does not crowd the DB/keys badge. */
+@media (max-width: 600px) and (orientation: portrait) {
+    #page-controls-slot-s25 .em-nav-icon-btn--xl {
+        width: 56px;
+        height: 56px;
+        flex-basis: 56px;
+    }
+
+    #page-controls-slot-s25 .em-nav-icon-btn--xl img {
+        width: 34px;
+        height: 34px;
+    }
+}
+
+/* Phone landscape keeps the lifted copy on the same row as the shortcut. The
+   button is still an overlay, so reserve its width explicitly instead of
+   letting explanatory text run underneath it. */
+@media (orientation: landscape) and (max-height: 600px) and (pointer: coarse),
+       (orientation: landscape) and (max-height: 600px) and (hover: none),
+       (orientation: landscape) and (max-height: 600px) and (max-width: 1000px) {
+    #page-controls-slot #s25-lift-embed-menu .em-fallback-composite {
+        position: relative;
+        box-sizing: border-box;
+        padding-right: 66px;
+        min-height: 58px;
+    }
+
+    #page-controls-slot #s25-lift-embed-menu .em-fallback-copy {
+        max-width: 100%;
+    }
+
+    #page-controls-slot #s25-lift-embed-menu .em-nav-icon-btn--xl {
+        width: 58px;
+        height: 58px;
+        flex-basis: 58px;
+    }
+
+    #page-controls-slot #s25-lift-embed-menu .em-nav-icon-btn--xl img {
+        width: 34px;
+        height: 34px;
+    }
+}
+
 .em-grid-tool-btn {
     display: inline-flex;
     align-items: center;
