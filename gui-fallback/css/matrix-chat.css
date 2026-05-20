@@ -834,9 +834,12 @@
 }
 
 @media (max-width: 600px) and (orientation: portrait) {
-  html[data-special-ui-mode='s25-stargate-touch-nav']:has(#tab-matrix-chat.active) #page-controls-slot-s25,
-  html[data-special-ui-mode='s25-stargate-touch-nav']:has(#tab-matrix-chat.active) #node-meta-compact {
+  html[data-special-ui-mode='s25-stargate-touch-nav']:has(#tab-matrix-chat.active) #page-controls-slot-s25 {
     display: none !important;
+  }
+
+  #tab-matrix-chat.active > .body-shade-handle {
+    margin-top: -8px;
   }
 
   #tab-matrix-chat.active .matrix-chat-main > .matrix-chat-room-header {
