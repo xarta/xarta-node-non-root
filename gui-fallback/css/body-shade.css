@@ -204,6 +204,24 @@ body.shade-is-up .tab-scroll-shell .table-wrap {
   }
 }
 
+/* Mobile portrait has a few "text-only intro" pages where the intro copy is
+   lifted into the compact header column, leaving the shade handle sitting below
+   empty air. Nudge only those handles upward; pages with real controls above
+   the handle, such as Services/Machines/pfSense/Proxmox, keep their roomier
+   spacing. */
+@media (max-width: 600px) and (orientation: portrait) {
+  #tab-manual-links.active > .body-shade-handle,
+  #tab-pve-hosts.active > .body-shade-handle,
+  #tab-vlans.active > .body-shade-handle,
+  #tab-arp-manual.active > .body-shade-handle,
+  #tab-keys.active > .body-shade-handle,
+  #tab-certs.active > .body-shade-handle,
+  #tab-ai-providers.active > .body-shade-handle,
+  #tab-ssh-targets.active > .body-shade-handle {
+    margin-top: -10px;
+  }
+}
+
 /* Phone landscape has very little vertical budget, and the handle sits between
    lifted intro text and the table/document body. Keep the touch strip slimmer
    only for touch-like landscape devices; desktop and phone portrait retain the
