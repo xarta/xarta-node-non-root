@@ -641,9 +641,10 @@ const MatrixChat = (() => {
       );
       const messages = Array.isArray(data.messages) ? data.messages : [];
       prependMessages(roomId, messages);
+      const exhausted = Boolean(data.at_start) || !data.end || messages.length === 0;
       setHistoryState(roomId, {
         end: data.end || '',
-        exhausted: !data.end || messages.length === 0,
+        exhausted,
         loading: false,
       });
       renderMessages({ scrollToBottom: false });
@@ -651,6 +652,7 @@ const MatrixChat = (() => {
         const delta = timeline.scrollHeight - priorHeight;
         timeline.scrollTop = Math.max(0, priorTop + delta);
       }
+      if (exhausted && messages.length === 0) setStatus('No older messages in this room.', 'ok');
     } catch (error) {
       setHistoryState(roomId, { loading: false });
       renderMessages({ scrollToBottom: false });
