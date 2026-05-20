@@ -365,6 +365,39 @@
   padding: 12px;
 }
 
+.matrix-chat-load-older {
+  display: block;
+  width: min(240px, 100%);
+  min-height: 34px;
+  margin: 0 auto 12px;
+  border: 1px solid rgba(var(--hub-accent-rgb, 0, 212, 255), 0.3);
+  border-radius: 6px;
+  background: rgba(var(--hub-accent-rgb, 0, 212, 255), 0.08);
+  color: var(--text, #f0f4ff);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.matrix-chat-load-older:hover,
+.matrix-chat-load-older:focus-visible {
+  border-color: rgba(var(--hub-accent-rgb, 0, 212, 255), 0.58);
+  background: rgba(var(--hub-accent-rgb, 0, 212, 255), 0.15);
+}
+
+.matrix-chat-load-older:disabled {
+  cursor: progress;
+  opacity: 0.64;
+}
+
+.matrix-chat-history-marker {
+  margin: 0 0 12px;
+  color: var(--text-dim);
+  font-size: 11px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
 .matrix-chat-message {
   max-width: min(760px, 94%);
   margin: 0 0 10px;

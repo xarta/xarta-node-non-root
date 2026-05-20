@@ -4,6 +4,9 @@
 
 const MATRIX_CHAT_STORAGE_KEY = 'blueprintsMatrixChatActiveRoom';
 const MATRIX_CHAT_HERMES_PREFIX = 'hermes: ';
+const MATRIX_CHAT_INITIAL_MESSAGE_LIMIT = 60;
+const MATRIX_CHAT_OLDER_MESSAGE_LIMIT = 60;
+const MATRIX_CHAT_MAX_MESSAGES_PER_ROOM = 600;
 
 const MatrixChat = (() => {
   const state = {
@@ -16,6 +19,7 @@ const MatrixChat = (() => {
     nextBatch: '',
     pollTimer: null,
     messagesByRoom: new Map(),
+    historyByRoom: new Map(),
     inviteCandidates: [],
     inviteCandidateIndex: -1,
     inviteCandidateTimer: null,
@@ -456,7 +460,21 @@ const MatrixChat = (() => {
     invitesNode.hidden = state.invites.length === 0;
   }
 
-  function renderMessages() {
+  function historyState(roomId) {
+    if (!roomId) return {};
+    if (!state.historyByRoom.has(roomId)) {
+      state.historyByRoom.set(roomId, { end: '', exhausted: false, loading: false });
+    }
+    return state.historyByRoom.get(roomId);
+  }
+
+  function setHistoryState(roomId, patch) {
+    if (!roomId) return;
+    state.historyByRoom.set(roomId, { ...historyState(roomId), ...patch });
+  }
+
+  function renderMessages(options = {}) {
+    const { scrollToBottom = true } = options;
     const timeline = el('matrix-chat-timeline');
     const title = el('matrix-chat-room-title');
     const roomId = el('matrix-chat-room-id');
@@ -482,6 +500,22 @@ const MatrixChat = (() => {
     }
 
     const messages = state.messagesByRoom.get(active.room_id) || [];
+    const history = historyState(active.room_id);
+    if (history.end && !history.exhausted) {
+      const older = document.createElement('button');
+      older.id = 'matrix-chat-load-older';
+      older.type = 'button';
+      older.className = 'matrix-chat-load-older';
+      older.textContent = history.loading ? 'Loading older...' : 'Load older';
+      older.disabled = Boolean(history.loading);
+      older.addEventListener('click', loadOlderMessages);
+      timeline.appendChild(older);
+    } else if (history.exhausted && messages.length) {
+      const marker = document.createElement('div');
+      marker.className = 'matrix-chat-history-marker';
+      marker.textContent = 'Start of available history';
+      timeline.appendChild(marker);
+    }
     if (!messages.length) {
       const empty = document.createElement('div');
       empty.className = 'matrix-chat-empty matrix-chat-empty--center';
@@ -511,7 +545,7 @@ const MatrixChat = (() => {
       item.append(meta, body);
       timeline.appendChild(item);
     });
-    timeline.scrollTop = timeline.scrollHeight;
+    if (scrollToBottom) timeline.scrollTop = timeline.scrollHeight;
   }
 
   function mergeMessages(roomId, messages) {
@@ -526,7 +560,23 @@ const MatrixChat = (() => {
       merged.push(message);
     });
     merged.sort((a, b) => (a.origin_server_ts || 0) - (b.origin_server_ts || 0));
-    state.messagesByRoom.set(roomId, merged.slice(-120));
+    state.messagesByRoom.set(roomId, merged.slice(-MATRIX_CHAT_MAX_MESSAGES_PER_ROOM));
+  }
+
+  function prependMessages(roomId, messages) {
+    if (!roomId || !Array.isArray(messages) || !messages.length) return;
+    const existing = state.messagesByRoom.get(roomId) || [];
+    const seen = new Set(existing.map(message => message.event_id).filter(Boolean));
+    const fresh = [];
+    messages.forEach(message => {
+      if (!message) return;
+      if (message.event_id && seen.has(message.event_id)) return;
+      if (message.event_id) seen.add(message.event_id);
+      fresh.push(message);
+    });
+    const merged = fresh.concat(existing);
+    merged.sort((a, b) => (a.origin_server_ts || 0) - (b.origin_server_ts || 0));
+    state.messagesByRoom.set(roomId, merged.slice(0, MATRIX_CHAT_MAX_MESSAGES_PER_ROOM));
   }
 
   async function loadStatus() {
@@ -559,9 +609,46 @@ const MatrixChat = (() => {
       renderMessages();
       return;
     }
-    const data = await apiJson(`/api/v1/matrix-chat/rooms/${encodeURIComponent(roomId)}/messages?limit=60`);
+    const data = await apiJson(`/api/v1/matrix-chat/rooms/${encodeURIComponent(roomId)}/messages?limit=${MATRIX_CHAT_INITIAL_MESSAGE_LIMIT}`);
     state.messagesByRoom.set(roomId, Array.isArray(data.messages) ? data.messages : []);
+    setHistoryState(roomId, {
+      end: data.end || '',
+      exhausted: !data.end || !Array.isArray(data.messages) || data.messages.length === 0,
+      loading: false,
+    });
     renderMessages();
+  }
+
+  async function loadOlderMessages() {
+    const roomId = state.activeRoomId;
+    const timeline = el('matrix-chat-timeline');
+    const history = historyState(roomId);
+    if (!roomId || !history.end || history.exhausted || history.loading) return;
+    const priorHeight = timeline?.scrollHeight || 0;
+    const priorTop = timeline?.scrollTop || 0;
+    setHistoryState(roomId, { loading: true });
+    renderMessages({ scrollToBottom: false });
+    try {
+      const data = await apiJson(
+        `/api/v1/matrix-chat/rooms/${encodeURIComponent(roomId)}/messages?limit=${MATRIX_CHAT_OLDER_MESSAGE_LIMIT}&from=${encodeURIComponent(history.end)}`
+      );
+      const messages = Array.isArray(data.messages) ? data.messages : [];
+      prependMessages(roomId, messages);
+      setHistoryState(roomId, {
+        end: data.end || '',
+        exhausted: !data.end || messages.length === 0,
+        loading: false,
+      });
+      renderMessages({ scrollToBottom: false });
+      if (timeline) {
+        const delta = timeline.scrollHeight - priorHeight;
+        timeline.scrollTop = Math.max(0, priorTop + delta);
+      }
+    } catch (error) {
+      setHistoryState(roomId, { loading: false });
+      renderMessages({ scrollToBottom: false });
+      setStatus(`Load older failed: ${error.message}`, 'error');
+    }
   }
 
   async function refreshAll() {
