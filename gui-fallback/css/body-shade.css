@@ -211,6 +211,7 @@ body.shade-is-up .tab-scroll-shell .table-wrap {
    spacing. */
 @media (max-width: 600px) and (orientation: portrait) {
   #tab-manual-links.active > .body-shade-handle,
+  #tab-nodes.active > .body-shade-handle,
   #tab-pve-hosts.active > .body-shade-handle,
   #tab-vlans.active > .body-shade-handle,
   #tab-arp-manual.active > .body-shade-handle,

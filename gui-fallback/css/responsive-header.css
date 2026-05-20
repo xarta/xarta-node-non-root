@@ -284,6 +284,46 @@ html.header-compact .header-inner {
         max-width: none;
         flex: 1 1 auto;
     }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #pg-ctrl-nodes:not([hidden]) {
+        flex-wrap: nowrap;
+        gap: 4px;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #pg-ctrl-nodes .hub-select {
+        flex: 1 1 118px;
+        min-width: 108px;
+        max-width: 136px;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #pg-ctrl-nodes .hub-select-btn {
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+        gap: 4px;
+        padding-left: 8px;
+        padding-right: 7px;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #pg-ctrl-nodes #retouch-btn,
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #pg-ctrl-nodes #retouch-all-btn {
+        flex: 0 0 auto;
+        padding-left: 8px;
+        padding-right: 8px;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #s25-lift-nodes > p:first-child {
+        margin-bottom: 2px !important;
+        line-height: 1.2;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #s25-lift-nodes #retouch-status:empty {
+        display: none;
+    }
+
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-docs .docs-active-header {
+        text-align: right;
+    }
 }
 
 /* Phone landscape is intentionally treated as a dense hybrid:
