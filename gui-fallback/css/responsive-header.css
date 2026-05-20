@@ -170,6 +170,38 @@ html.header-compact .header-inner {
     justify-content: flex-end;
 }
 
+@media (min-width: 770px) {
+    #page-controls-slot #pg-ctrl-nodes:not([hidden]) {
+        width: auto;
+        flex: 0 0 auto;
+    }
+
+    #page-controls-slot #s25-lift-nodes {
+        display: flex;
+        flex: 1 1 360px;
+        min-width: 260px;
+        align-items: center;
+        align-content: center;
+        justify-content: flex-end;
+        text-align: right;
+    }
+
+    #page-controls-slot #s25-lift-nodes > p:first-child {
+        flex: 1 1 260px;
+        margin: 0 !important;
+        line-height: 1.35;
+        text-align: right;
+    }
+
+    #page-controls-slot #s25-lift-nodes #retouch-status:empty {
+        display: none;
+    }
+
+    #tab-nodes.active > .body-shade-handle {
+        margin-top: -8px;
+    }
+}
+
 /* ── Mobile / narrow viewport overrides ──────────────────────── */
 
 /* Below the hub-menu breakpoint (769px), the hamburger is shown.
@@ -367,6 +399,16 @@ html.header-compact .header-inner {
     #page-controls-slot .s25-lift-block > p {
         margin: 0 !important;
         line-height: 1.25;
+    }
+
+    #page-controls-slot #s25-lift-nodes {
+        justify-content: flex-end;
+        text-align: right;
+    }
+
+    #page-controls-slot #s25-lift-nodes > p:first-child {
+        flex: 1 1 220px;
+        text-align: right;
     }
 
     #page-controls-slot #retouch-status:empty {

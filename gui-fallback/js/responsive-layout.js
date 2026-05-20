@@ -57,6 +57,9 @@ const ResponsiveLayout = (() => {
     const MENU_CARET_PAD_LEFT_MIN = 6;
     const MENU_FIT_EPSILON = 1;
     const MENU_FIT_BINARY_STEPS = 12;
+    const MENU_TAIL_EXTRA_PAD_MAX = 420;
+    const MENU_FIT_EDGE_SELECTOR = '.hub-tab, .hub-tab-caret, .hub-primary-menu-caret';
+    const MENU_FIT_CONTROL_SELECTOR = '.hub-tab-split, .hub-tab:not(.hub-tab-label), .hub-primary-menu-split';
 
     function _isS25SpecialModeActive() {
         return document.documentElement.getAttribute('data-special-ui-mode') === 's25-stargate-touch-nav';
@@ -66,8 +69,8 @@ const ResponsiveLayout = (() => {
     // hidden like phone portrait, but the normal #page-controls-slot remains
     // visible. Move only the active lift block into that controls row so page
     // buttons and terse explanatory text can share horizontal space. Desktop
-    // keeps lift blocks in their panels, and phone portrait still uses the
-    // dedicated S25 host above.
+    // normally keeps lift blocks in their panels, with explicit page exceptions
+    // for dense operator surfaces such as Fleet Nodes.
     function _isPhoneLandscapeLiftModeActive() {
         if (!window.matchMedia) return false;
         const landscapeShort = window.matchMedia('(orientation: landscape) and (max-height: 600px)').matches;
@@ -79,6 +82,14 @@ const ResponsiveLayout = (() => {
 
     function _shouldLiftActiveBlockToControlsHost() {
         return _isS25SpecialModeActive() || _isPhoneLandscapeLiftModeActive();
+    }
+
+    function _shouldLiftTabToDefaultControlsHost(tabId) {
+        if (!window.matchMedia || !tabId) return false;
+        return tabId === 'nodes'
+            && window.matchMedia('(min-width: 769px)').matches
+            && !_isPhoneLandscapeLiftModeActive()
+            && !_isS25SpecialModeActive();
     }
 
     function _controlsHostForCurrentMode() {
@@ -120,7 +131,8 @@ const ResponsiveLayout = (() => {
         _liftMap.forEach((liftElId, tid) => {
             const el = document.getElementById(liftElId);
             if (!el) return;
-            if (_shouldLiftActiveBlockToControlsHost() && _activeTabId && tid === _activeTabId) {
+            if (_activeTabId && tid === _activeTabId
+                    && (_shouldLiftActiveBlockToControlsHost() || _shouldLiftTabToDefaultControlsHost(tid))) {
                 if (el.parentElement !== host) host.appendChild(el);
                 return;
             }
@@ -143,14 +155,17 @@ const ResponsiveLayout = (() => {
             .find(_isVisible) || null;
     }
 
-    function _selectorRightEdge() {
+    function _selectorEdges() {
         const candidates = [
-            document.querySelector('.header-right blueprints-node-selector'),
             document.querySelector('.header-right .bp-node-selector'),
-            document.querySelector('.header-right'),
+            document.querySelector('.header-right blueprints-node-selector'),
         ].filter(Boolean);
         const target = candidates.find(_isVisible);
-        return target ? target.getBoundingClientRect().right : 0;
+        if (!target) return { left: 0, right: 0 };
+        const selectorButton = target.querySelector ? target.querySelector('.bp-ns-btn') : null;
+        const rectSource = _isVisible(selectorButton) ? selectorButton : target;
+        const rect = rectSource.getBoundingClientRect();
+        return { left: rect.left, right: rect.right };
     }
 
     function _visibleElements(scope, selector) {
@@ -159,8 +174,31 @@ const ResponsiveLayout = (() => {
     }
 
     function _secondaryMenuRightEdge(wrapper) {
-        return _visibleElements(wrapper, '.hub-tab, .hub-tab-caret')
+        return _visibleElements(wrapper, MENU_FIT_EDGE_SELECTOR)
             .reduce((right, el) => Math.max(right, el.getBoundingClientRect().right), 0);
+    }
+
+    function _secondaryMenuTailControl(wrapper) {
+        return _visibleElements(wrapper, MENU_FIT_CONTROL_SELECTOR)
+            .reduce((best, el) => {
+                const right = el.getBoundingClientRect().right;
+                const target = el.querySelector('.hub-tab-caret, .hub-primary-menu-caret') || el;
+                return !best || right >= best.right ? { el, target, right } : best;
+            }, null);
+    }
+
+    function _clearMenuTailFit(nav) {
+        nav.style.removeProperty('--hub-menu-tail-extra-pad');
+        nav.querySelectorAll('.hub-menu-fit-tail').forEach(el => {
+            el.classList.remove('hub-menu-fit-tail');
+        });
+    }
+
+    function _isDesktopMenuFitMode() {
+        if (!window.matchMedia) return false;
+        return window.matchMedia('(min-width: 769px)').matches
+            && !window.matchMedia('(orientation: landscape) and (max-height: 600px) and (pointer: coarse)').matches
+            && !window.matchMedia('(orientation: landscape) and (max-height: 600px) and (hover: none)').matches;
     }
 
     function _applyMenuFit(nav, labelPad, caretPad) {
@@ -199,32 +237,68 @@ const ResponsiveLayout = (() => {
         if (!nav) return;
 
         const wrapper = _activeMenuWrapper();
-        const selectorRight = _selectorRightEdge();
-        if (!wrapper || selectorRight <= 0) {
+        const selectorEdges = _selectorEdges();
+        if (!wrapper || selectorEdges.right <= 0) {
             _applyMenuFit(nav, MENU_LABEL_PAD_LEFT, MENU_CARET_PAD_LEFT);
+            _clearMenuTailFit(nav);
             return;
         }
 
         const maxCompression = MENU_LABEL_PAD_LEFT - MENU_LABEL_PAD_LEFT_MIN;
         const applyCompression = (compression) => {
+            _clearMenuTailFit(nav);
             const fit = _fitFromCompression(compression);
             _applyMenuFit(nav, fit.labelPad, fit.caretPad);
             void nav.offsetWidth;
-            return _secondaryMenuRightEdge(wrapper) - selectorRight;
+            return _secondaryMenuRightEdge(wrapper) - selectorEdges.right;
+        };
+        const applyTailExpansion = (extraPad) => {
+            _clearMenuTailFit(nav);
+            const tail = _secondaryMenuTailControl(wrapper);
+            if (!tail || !tail.target) return _secondaryMenuRightEdge(wrapper) - selectorEdges.right;
+            tail.target.classList.add('hub-menu-fit-tail');
+            nav.style.setProperty('--hub-menu-tail-extra-pad', `${Math.max(0, extraPad).toFixed(2)}px`);
+            void nav.offsetWidth;
+            return _secondaryMenuRightEdge(wrapper) - selectorEdges.right;
         };
 
         // This solver mutates padding and immediately measures the resulting
-        // endpoint. The menu buttons normally transition "all" properties, so
-        // keep transitions disabled during the solve; otherwise measurements
-        // read the animated in-between state and the feedback loop behaves like
-        // a spring. The final padding remains in place after the class is gone.
+        // endpoint. Overshoot compression and undershoot stretch are solved in
+        // one pass so they cannot race each other. The menu buttons normally
+        // transition "all" properties, so keep transitions disabled during the
+        // solve; otherwise measurements read animated in-between geometry and
+        // the feedback loop behaves like a spring.
         nav.classList.add('hub-menu-fitting');
         try {
-            const currentOverflow = _secondaryMenuRightEdge(wrapper) - selectorRight;
+            _clearMenuTailFit(nav);
+            const currentOverflow = _secondaryMenuRightEdge(wrapper) - selectorEdges.right;
             if (currentOverflow <= 0 && Math.abs(currentOverflow) <= MENU_FIT_EPSILON) return;
 
             const naturalOverflow = applyCompression(0);
-            if (naturalOverflow <= 0) return;
+            if (naturalOverflow <= 0) {
+                const tail = _secondaryMenuTailControl(wrapper);
+                const naturalRight = tail ? tail.right : _secondaryMenuRightEdge(wrapper);
+                const shouldStretch = _isDesktopMenuFitMode()
+                    && naturalRight > selectorEdges.left
+                    && naturalRight < selectorEdges.right - MENU_FIT_EPSILON;
+                if (!shouldStretch) return;
+
+                let lo = 0;
+                let hi = Math.min(MENU_TAIL_EXTRA_PAD_MAX, selectorEdges.right - naturalRight);
+                let best = 0;
+                for (let i = 0; i < MENU_FIT_BINARY_STEPS; i += 1) {
+                    const mid = (lo + hi) / 2;
+                    const overflow = applyTailExpansion(mid);
+                    if (overflow > 0) {
+                        hi = mid;
+                    } else {
+                        best = mid;
+                        lo = mid;
+                    }
+                }
+                applyTailExpansion(best);
+                return;
+            }
 
             const maxOverflow = applyCompression(maxCompression);
             if (maxOverflow > 0) return;

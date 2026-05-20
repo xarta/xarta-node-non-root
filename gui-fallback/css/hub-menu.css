@@ -234,7 +234,9 @@
    button transition must be suspended for that measurement pass, or the solver
    reads animated intermediate geometry and can chase its own tail. */
 #menu-zone-nav.hub-menu-fitting .hub-tab,
-#menu-zone-nav.hub-menu-fitting .hub-tab-caret {
+#menu-zone-nav.hub-menu-fitting .hub-tab-caret,
+#menu-zone-nav.hub-menu-fitting .hub-primary-menu-caret,
+#menu-zone-nav.hub-menu-fitting .hub-menu-fit-tail {
     transition: none !important;
 }
 
@@ -912,6 +914,14 @@
         letter-spacing: 0.02em;
     }
 
+    #menu-zone-nav .hub-tab.hub-menu-fit-tail {
+        padding-right: calc(18px + var(--hub-menu-tail-extra-pad, 0px));
+    }
+
+    #menu-zone-nav .hub-tab-split .hub-tab-caret.hub-menu-fit-tail {
+        padding-right: calc(10px + var(--hub-menu-tail-extra-pad, 0px));
+    }
+
     .hub-tab-dropdown {
         flex-direction: column;
         position: relative;
@@ -1012,6 +1022,10 @@
     .hub-tab-split .hub-tab-caret {
         padding-left: 8px;
         padding-right: 8px;
+    }
+
+    #menu-zone-nav .hub-tab-split .hub-tab-caret.hub-menu-fit-tail {
+        padding-right: calc(8px + var(--hub-menu-tail-extra-pad, 0px));
     }
 }
 
