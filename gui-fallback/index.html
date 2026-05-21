@@ -457,7 +457,7 @@
             <button id="docs-back-btn" class="secondary docs-history-btn" type="button" disabled>&larr; Back</button>
             <button id="docs-forward-btn" class="secondary docs-history-btn" type="button" disabled>Forward &rarr;</button>
           </div>
-          <span id="docs-history-hint" class="docs-history-overlay__hint">History idle</span>
+          <span id="docs-history-hint" class="docs-history-overlay__hint bp-font-role-docs-markdown">History idle</span>
         </div>
         <div class="docs-doc-speech-control" id="docs-doc-speech-control" hidden>
           <span class="docs-doc-speech-status bp-font-role-status-meta" id="docs-doc-speech-status"></span>
@@ -1018,6 +1018,22 @@
           <span class="hub-checkbox__box" aria-hidden="true"></span>
           <span class="hub-checkbox__label">Hermes slash catalogue</span>
         </label>
+        <div class="matrix-chat-room-admin-system">
+          <label class="hub-checkbox matrix-chat-room-admin-toggle">
+            <input id="matrix-chat-room-admin-hide-system" class="hub-checkbox__input" type="checkbox" />
+            <span class="hub-checkbox__box" aria-hidden="true"></span>
+            <span class="hub-checkbox__label">Hide system messages</span>
+          </label>
+          <label class="matrix-chat-room-admin-field">
+            <span>System level</span>
+            <select id="matrix-chat-room-admin-system-level">
+              <option value="debug">Debug</option>
+              <option value="information">Information</option>
+              <option value="warning">Warning</option>
+              <option value="error">Error</option>
+            </select>
+          </label>
+        </div>
         <div class="matrix-chat-room-admin-members-wrap">
           <div class="matrix-chat-room-admin-subhead">Members</div>
           <div id="matrix-chat-room-admin-members" class="matrix-chat-room-admin-members"></div>
