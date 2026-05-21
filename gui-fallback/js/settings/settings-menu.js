@@ -106,6 +106,7 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'chat-fn-refresh',  label: 'Refresh Chat',      icon: HIEROGLYPHS.nefer,      fn: 'chat.refresh',  activeOn: ['matrix-chat'], parent: 'settings-layout', order: 0 },
         { id: 'chat-fn-mention',  label: 'Mention Hermes',    icon: HIEROGLYPHS.falcon,     fn: 'chat.mention',  activeOn: ['matrix-chat'], parent: 'settings-layout', order: 1 },
         { id: 'chat-fn-send',     label: 'Send Message',      icon: HIEROGLYPHS.khaHorizon, fn: 'chat.send',     activeOn: ['matrix-chat'], parent: 'settings-layout', order: 2 },
+        { id: 'chat-fn-notifier', label: 'Notification Controls', icon: HIEROGLYPHS.shen,    fn: 'chat.notifier', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 3 },
         { id: 'chat-admin-fn-refresh', label: 'Refresh Admin', icon: HIEROGLYPHS.nefer,     fn: 'chatAdmin.refresh', activeOn: ['matrix-chat-admin'], parent: 'settings-layout', order: 0 },
 
         // ── Manual ARP page function items ────────────────────────────────
@@ -417,6 +418,30 @@ const SettingsMenuConfig = createHubMenu({
                 this.currentMenu.push({ ...def });
             }
         });
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentMenu));
+        localStorage.setItem(migrationKey, '1');
+    };
+})();
+
+(function migrateMatrixChatNotifierDndFunctionItem() {
+    const migrationKey = 'blueprintsSettingsMenuMatrixChatNotifierDnd20260521';
+    const originalLoadConfig = SettingsMenuConfig.loadConfig.bind(SettingsMenuConfig);
+    SettingsMenuConfig.loadConfig = function loadConfigWithMatrixChatNotifierDnd() {
+        originalLoadConfig();
+        if (localStorage.getItem(migrationKey) === '1') return;
+        const def = this.defaultMenu.find(entry => entry.id === 'chat-fn-notifier');
+        if (!def) return;
+        const existing = this.currentMenu.find(entry => entry.id === def.id);
+        if (existing) {
+            existing.label = def.label;
+            existing.icon = def.icon;
+            existing.parent = def.parent;
+            existing.order = def.order;
+            existing.fn = def.fn;
+            existing.activeOn = def.activeOn;
+        } else {
+            this.currentMenu.push({ ...def });
+        }
         localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentMenu));
         localStorage.setItem(migrationKey, '1');
     };
@@ -971,6 +996,7 @@ SettingsMenuConfig.registerFunctions({
     'chat.refresh':   () => window.MatrixChat?.refresh?.(),
     'chat.mention':   () => window.MatrixChat?.insertHermesMention?.(),
     'chat.send':      () => window.MatrixChat?.sendMessage?.(),
+    'chat.notifier':  () => window.MatrixChat?.openNotifierDnd?.(),
     'chatAdmin.refresh': () => window.MatrixChatAdmin?.refresh?.(),
 
     // Manual ARP

@@ -180,7 +180,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
     }
 
     _showToast(item.toastOpts);
-    _speak(item.text).finally(() => _afterAnnouncing(item));
+    _speak(item.text, item).finally(() => _afterAnnouncing(item));
   }
 
   /** Called after TTS completes (or fails).  Transitions through COOLING_DOWN
@@ -228,6 +228,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
         message:  (lastEvt && lastEvt.message) || `${events.length} model change(s)`,
         severity: 'info',
       },
+      event: lastEvt || {},
       isModelChange: true,  // flag: record timestamp after speaking
     });
 
@@ -241,8 +242,14 @@ const BlueprintsModelChangeAnnouncer = (() => {
     return localStorage.getItem('events.tts.muted') === 'true';
   }
 
-  async function _speak(text) {
+  async function _speak(text, item = {}) {
     if (_isMuted()) return;
+    if (typeof BlueprintsNotifierDnd !== 'undefined') {
+      const evt = item.event || {};
+      await BlueprintsNotifierDnd.loadConfig();
+      if (!BlueprintsNotifierDnd.shouldSpeak(evt)) return;
+      if (!BlueprintsNotifierDnd.claimSpeech(evt)) return;
+    }
     if (typeof BlueprintsTtsClient === 'undefined') return;
     if (typeof BlueprintsTtsClient.speak !== 'function') return;
     try {
@@ -357,14 +364,16 @@ const BlueprintsModelChangeAnnouncer = (() => {
       case 'alias.tests.completed':
         _pushAndDrain(
           _speechForAliasTests(false),
-          { title: 'Alias Tests Passed', message: evt.message || '', severity: 'info' }
+          { title: 'Alias Tests Passed', message: evt.message || '', severity: 'info' },
+          evt
         );
         break;
 
       case 'alias.tests.failed':
         _pushAndDrain(
           _speechForAliasTests(true),
-          { title: 'Alias Tests Failed', message: evt.message || '', severity: 'error' }
+          { title: 'Alias Tests Failed', message: evt.message || '', severity: 'error' },
+          evt
         );
         break;
 
@@ -375,7 +384,8 @@ const BlueprintsModelChangeAnnouncer = (() => {
             title: evt.title || 'Local LLM Offline',
             message: evt.message || 'Local Large Language Model is offline.',
             severity: evt.severity || 'error',
-          }
+          },
+          evt
         );
         break;
 
@@ -386,7 +396,8 @@ const BlueprintsModelChangeAnnouncer = (() => {
             title: evt.title || 'RAM Warning',
             message: evt.message || '',
             severity: evt.severity || 'warn',
-          }
+          },
+          evt
         );
         break;
 
@@ -397,7 +408,8 @@ const BlueprintsModelChangeAnnouncer = (() => {
             title: evt.title || 'Public Exposure Guard Failed',
             message: evt.message || '',
             severity: evt.severity || 'error',
-          }
+          },
+          evt
         );
         break;
 
@@ -408,7 +420,8 @@ const BlueprintsModelChangeAnnouncer = (() => {
             title: evt.title || 'Public Exposure Guard Recovered',
             message: evt.message || '',
             severity: evt.severity || 'info',
-          }
+          },
+          evt
         );
         break;
 
@@ -425,8 +438,8 @@ const BlueprintsModelChangeAnnouncer = (() => {
 
   /** Push an item directly to the announcement queue (no debounce) and drain
    *  if the machine is currently idle. */
-  function _pushAndDrain(text, toastOpts) {
-    _queue.push({ text, toastOpts });
+  function _pushAndDrain(text, toastOpts, event = null) {
+    _queue.push({ text, toastOpts, event: event || {} });
     if (_astate === ASTATE.IDLE) _drainQueue();
     // Otherwise the item will be picked up when the current announcement finishes.
   }
@@ -483,7 +496,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
       title:    count === 1 ? 'Model Changed (while offline)' : `${count} Model Changes (while offline)`,
       message:  missed[missed.length - 1].message || 'Local model aliases updated.',
       severity: 'info',
-    });
+    }, missed[missed.length - 1] || {});
     _recordAnnounced();
   }
 

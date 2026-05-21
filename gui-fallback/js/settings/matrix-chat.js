@@ -41,6 +41,8 @@ const MatrixChat = (() => {
     roomAdminMembers: [],
     roomAdminSaving: false,
     roomTabClickTimer: null,
+    notifierDndConfig: null,
+    notifierDndSaving: false,
   };
 
   const RoomTabInteractionMachine = (() => {
@@ -1070,6 +1072,143 @@ const MatrixChat = (() => {
     }
   }
 
+  function setNotifierDndStatus(message, tone = '') {
+    const node = el('matrix-chat-notifier-dnd-status');
+    if (!node) return;
+    node.textContent = message || '';
+    node.dataset.tone = tone || '';
+  }
+
+  function renderNotifierSchedules() {
+    const list = el('matrix-chat-notifier-schedules');
+    if (!list) return;
+    clearNode(list);
+    const schedules = Array.isArray(state.notifierDndConfig?.schedules)
+      ? state.notifierDndConfig.schedules
+      : [];
+    schedules.forEach((schedule, index) => {
+      const row = document.createElement('div');
+      row.className = 'matrix-chat-notifier-schedule';
+      row.dataset.index = String(index);
+      row.innerHTML = `
+        <label class="hub-checkbox matrix-chat-room-admin-toggle">
+          <input class="hub-checkbox__input" type="checkbox" data-notifier-schedule-field="enabled" />
+          <span class="hub-checkbox__box" aria-hidden="true"></span>
+          <span class="hub-checkbox__label">Enabled</span>
+        </label>
+        <label class="matrix-chat-notifier-field">
+          <span>Start</span>
+          <input type="time" data-notifier-schedule-field="start" />
+        </label>
+        <label class="matrix-chat-notifier-field">
+          <span>End</span>
+          <input type="time" data-notifier-schedule-field="end" />
+        </label>
+        <label class="matrix-chat-notifier-field">
+          <span>Mode</span>
+          <select data-notifier-schedule-field="mode">
+            <option value="scheduled_dnd_01">Scheduled DND 01</option>
+            <option value="scheduled_dnd_02">Scheduled DND 02</option>
+          </select>
+        </label>
+      `;
+      row.querySelector('[data-notifier-schedule-field="enabled"]').checked = Boolean(schedule.enabled);
+      row.querySelector('[data-notifier-schedule-field="start"]').value = schedule.start || '22:00';
+      row.querySelector('[data-notifier-schedule-field="end"]').value = schedule.end || '07:00';
+      row.querySelector('[data-notifier-schedule-field="mode"]').value = schedule.mode || 'scheduled_dnd_01';
+      list.appendChild(row);
+    });
+  }
+
+  function renderNotifierDndModal() {
+    const cfg = state.notifierDndConfig || {};
+    const mode = el('matrix-chat-notifier-mode');
+    const timeout = el('matrix-chat-notifier-timeout');
+    const normalVolume = el('matrix-chat-notifier-normal-volume');
+    const quietVolume = el('matrix-chat-notifier-quiet-volume');
+    const phoneWins = el('matrix-chat-notifier-phone-wins');
+    const desktopDedupe = el('matrix-chat-notifier-desktop-dedupe');
+    const dangerAlarm = el('matrix-chat-notifier-danger-alarm');
+    const save = el('matrix-chat-notifier-dnd-save');
+    if (mode) mode.value = cfg.mode || 'default';
+    if (timeout) timeout.value = String(cfg.manual_timeout_minutes || 60);
+    if (normalVolume) normalVolume.value = String(cfg.normal_volume ?? 0.85);
+    if (quietVolume) quietVolume.value = String(cfg.quiet_volume ?? 0.35);
+    if (phoneWins) phoneWins.checked = cfg.listener_policy?.phone_wins !== false;
+    if (desktopDedupe) desktopDedupe.checked = cfg.listener_policy?.desktop_one_per_os_ip !== false;
+    if (dangerAlarm) dangerAlarm.checked = Boolean(cfg.danger_policy?.alarm_sound_enabled);
+    if (save) save.disabled = state.notifierDndSaving || !state.notifierDndConfig;
+    renderNotifierSchedules();
+  }
+
+  async function openNotifierDndModal() {
+    const modal = el('matrix-chat-notifier-dnd-modal');
+    if (!modal) return;
+    state.notifierDndConfig = null;
+    state.notifierDndSaving = false;
+    setNotifierDndStatus('Loading notification policy...', '');
+    renderNotifierDndModal();
+    if (typeof HubModal !== 'undefined') HubModal.open(modal);
+    else modal.showModal?.();
+    try {
+      if (typeof BlueprintsNotifierDnd === 'undefined') throw new Error('policy client unavailable');
+      state.notifierDndConfig = await BlueprintsNotifierDnd.loadConfig({ force: true });
+      renderNotifierDndModal();
+      const activeMode = BlueprintsNotifierDnd.activeMode(state.notifierDndConfig);
+      setNotifierDndStatus(`Active speech mode: ${activeMode}`, 'ok');
+    } catch (error) {
+      setNotifierDndStatus(`Notification policy load failed: ${error.message}`, 'error');
+    }
+  }
+
+  function collectNotifierDndConfig() {
+    const base = state.notifierDndConfig || {};
+    const mode = el('matrix-chat-notifier-mode')?.value || 'default';
+    const timeoutMinutes = Number(el('matrix-chat-notifier-timeout')?.value || 60);
+    const manualMode = mode === 'manual_dnd_1' || mode === 'manual_dnd_2';
+    const schedules = Array.from(document.querySelectorAll('.matrix-chat-notifier-schedule')).map(row => ({
+      enabled: Boolean(row.querySelector('[data-notifier-schedule-field="enabled"]')?.checked),
+      start: row.querySelector('[data-notifier-schedule-field="start"]')?.value || '22:00',
+      end: row.querySelector('[data-notifier-schedule-field="end"]')?.value || '07:00',
+      mode: row.querySelector('[data-notifier-schedule-field="mode"]')?.value || 'scheduled_dnd_01',
+    }));
+    return {
+      ...base,
+      mode,
+      manual_timeout_minutes: Math.max(5, Math.min(720, timeoutMinutes || 60)),
+      manual_until: manualMode ? Date.now() / 1000 + Math.max(5, timeoutMinutes || 60) * 60 : null,
+      normal_volume: Number(el('matrix-chat-notifier-normal-volume')?.value || 0.85),
+      quiet_volume: Number(el('matrix-chat-notifier-quiet-volume')?.value || 0.35),
+      schedules,
+      listener_policy: {
+        ...(base.listener_policy || {}),
+        phone_wins: Boolean(el('matrix-chat-notifier-phone-wins')?.checked),
+        desktop_one_per_os_ip: Boolean(el('matrix-chat-notifier-desktop-dedupe')?.checked),
+      },
+      danger_policy: {
+        ...(base.danger_policy || {}),
+        alarm_sound_enabled: false,
+      },
+    };
+  }
+
+  async function saveNotifierDndConfig() {
+    if (state.notifierDndSaving || typeof BlueprintsNotifierDnd === 'undefined') return;
+    state.notifierDndSaving = true;
+    renderNotifierDndModal();
+    setNotifierDndStatus('Saving...', '');
+    try {
+      state.notifierDndConfig = await BlueprintsNotifierDnd.saveConfig(collectNotifierDndConfig());
+      renderNotifierDndModal();
+      setNotifierDndStatus(`Saved. Active speech mode: ${BlueprintsNotifierDnd.activeMode(state.notifierDndConfig)}`, 'ok');
+    } catch (error) {
+      setNotifierDndStatus(`Save failed: ${error.message}`, 'error');
+    } finally {
+      state.notifierDndSaving = false;
+      renderNotifierDndModal();
+    }
+  }
+
   async function refreshAll() {
     if (state.loading) return;
     state.loading = true;
@@ -1701,6 +1840,7 @@ const MatrixChat = (() => {
     el('matrix-chat-mention-hermes')?.addEventListener('click', insertHermesMention);
     el('matrix-chat-send')?.addEventListener('click', sendMessage);
     el('matrix-chat-room-admin-save')?.addEventListener('click', saveRoomAdminSettings);
+    el('matrix-chat-notifier-dnd-save')?.addEventListener('click', saveNotifierDndConfig);
     el('matrix-chat-composer')?.addEventListener('input', scheduleComposerSuggestions);
     el('matrix-chat-composer')?.addEventListener('focus', scheduleComposerSuggestions);
     el('matrix-chat-composer')?.addEventListener('click', scheduleComposerSuggestions);
@@ -1725,6 +1865,7 @@ const MatrixChat = (() => {
     refresh: refreshAll,
     sendMessage,
     insertHermesMention,
+    openNotifierDnd: openNotifierDndModal,
   };
 })();
 

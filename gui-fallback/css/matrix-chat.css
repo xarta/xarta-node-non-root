@@ -989,6 +989,57 @@
   align-self: flex-start;
 }
 
+.matrix-chat-notifier-modal .hub-modal-body {
+  display: grid;
+  gap: 14px;
+}
+
+.matrix-chat-notifier-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.matrix-chat-notifier-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(var(--hub-accent-rgb, 0, 212, 255), 0.18);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.matrix-chat-notifier-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.matrix-chat-notifier-field input,
+.matrix-chat-notifier-field select {
+  width: 100%;
+  min-width: 0;
+  color: var(--text);
+  font-size: 13px;
+  text-transform: none;
+}
+
+.matrix-chat-notifier-schedules {
+  display: grid;
+  gap: 8px;
+}
+
+.matrix-chat-notifier-schedule {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.7fr) repeat(3, minmax(120px, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+
 .matrix-chat-composer textarea {
   flex: 1 1 auto;
   min-height: 42px;
