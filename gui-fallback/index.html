@@ -1003,6 +1003,32 @@
         </div>
       </div>
     </div>
+    <dialog class="hub-modal hub-dialog matrix-chat-room-admin-modal" data-tone="info" id="matrix-chat-room-admin-modal" style="width:min(520px,94vw)">
+      <div class="hub-modal-header">
+        <h2 class="hub-modal-title" style="min-width:0;flex:1">
+          <span class="hub-dialog-badge">ROOM</span>
+          <span class="hub-dialog-title-text" id="matrix-chat-room-admin-title">Room</span>
+        </h2>
+        <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+      </div>
+      <div class="hub-modal-body">
+        <p id="matrix-chat-room-admin-room-id" class="matrix-chat-room-admin-room-id"></p>
+        <label class="hub-checkbox matrix-chat-room-admin-toggle">
+          <input id="matrix-chat-room-admin-hermes-catalogue" class="hub-checkbox__input" type="checkbox" />
+          <span class="hub-checkbox__box" aria-hidden="true"></span>
+          <span class="hub-checkbox__label">Hermes slash catalogue</span>
+        </label>
+        <div class="matrix-chat-room-admin-members-wrap">
+          <div class="matrix-chat-room-admin-subhead">Members</div>
+          <div id="matrix-chat-room-admin-members" class="matrix-chat-room-admin-members"></div>
+        </div>
+        <p id="matrix-chat-room-admin-status" class="hub-modal-error matrix-chat-room-admin-status"></p>
+      </div>
+      <div class="hub-modal-footer">
+        <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
+        <button class="hub-modal-btn" id="matrix-chat-room-admin-save" type="button">Save</button>
+      </div>
+    </dialog>
   </section>
 
   <!-- Agent Pages: Matrix Chat Admin -->

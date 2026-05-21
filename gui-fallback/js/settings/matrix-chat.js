@@ -8,6 +8,7 @@ const MATRIX_CHAT_INITIAL_MESSAGE_LIMIT = 60;
 const MATRIX_CHAT_OLDER_MESSAGE_LIMIT = 60;
 const MATRIX_CHAT_MAX_MESSAGES_PER_ROOM = 600;
 const MATRIX_CHAT_DEFAULT_SERVER = 'tb1';
+const MATRIX_CHAT_ROOM_TAB_DOUBLE_CLICK_MS = 240;
 
 const MatrixChat = (() => {
   const state = {
@@ -27,13 +28,71 @@ const MatrixChat = (() => {
     inviteCandidateTimer: null,
     hermesCommands: [],
     hermesCommandsLoaded: false,
+    hermesCommandsRoomId: '',
     composerSuggestions: [],
     composerSuggestionIndex: -1,
     composerSuggestionMode: '',
     composerToken: null,
     composerSuggestionTimer: null,
     messageFilter: '',
+    roomAdminRoomId: '',
+    roomAdminSettings: null,
+    roomAdminMembers: [],
+    roomAdminSaving: false,
+    roomTabClickTimer: null,
   };
+
+  const RoomTabInteractionMachine = (() => {
+    const transitions = {
+      IDLE: {
+        tap: ['ROOM_SELECTED', ['selectRoom']],
+        doubleTap: ['ADMIN_OPEN', ['selectRoom', 'openAdmin']],
+        longPress: ['ADMIN_OPEN', ['selectRoom', 'openAdmin']],
+      },
+      ROOM_SELECTED: {
+        tap: ['ROOM_SELECTED', ['selectRoom']],
+        doubleTap: ['ADMIN_OPEN', ['openAdmin']],
+        longPress: ['ADMIN_OPEN', ['openAdmin']],
+      },
+      ADMIN_OPEN: {
+        tap: ['ADMIN_OPEN', []],
+        doubleTap: ['ADMIN_OPEN', []],
+        longPress: ['ADMIN_OPEN', []],
+      },
+    };
+    let machineState = 'IDLE';
+    let handlers = {};
+
+    function syncState() {
+      const modal = el('matrix-chat-room-admin-modal');
+      if (modal?.open) machineState = 'ADMIN_OPEN';
+      else if (state.activeRoomId) machineState = 'ROOM_SELECTED';
+      else machineState = 'IDLE';
+    }
+
+    function execute(action, roomId) {
+      if (action === 'selectRoom') handlers.onSelectRoom?.(roomId);
+      if (action === 'openAdmin') handlers.onOpenAdmin?.(roomId);
+    }
+
+    return {
+      configure(nextHandlers = {}) {
+        handlers = nextHandlers;
+      },
+      dispatch(input, roomId) {
+        syncState();
+        const transition = transitions[machineState]?.[input];
+        if (!transition) return;
+        const [nextState, actions] = transition;
+        machineState = nextState;
+        actions.forEach(action => execute(action, roomId));
+      },
+      getState() {
+        syncState();
+        return machineState;
+      },
+    };
+  })();
 
   function el(id) {
     return document.getElementById(id);
@@ -49,6 +108,11 @@ const MatrixChat = (() => {
     node.textContent = message || '';
     node.dataset.tone = tone || '';
     node.hidden = !message;
+  }
+
+  function clearNode(node) {
+    if (!node) return;
+    while (node.firstChild) node.removeChild(node.firstChild);
   }
 
   async function apiJson(url, options = {}) {
@@ -437,12 +501,14 @@ const MatrixChat = (() => {
     if (home) home.textContent = state.status?.homeserver_url || 'Matrix';
     if (features) {
       const e2ee = state.status?.features?.e2ee ? 'server E2EE on' : 'server E2EE off';
-      const encrypted = activeRoom()?.encrypted ? 'room encrypted' : 'room unencrypted';
+      const room = activeRoom();
+      const encrypted = room?.encrypted ? 'room encrypted' : 'room unencrypted';
+      const hermesCatalog = room?.hermes_command_catalog ? 'Hermes / on' : 'Hermes / off';
       const hermesPatch = state.status?.hermes_matrix_patch;
       const patch = hermesPatch?.available
         ? (hermesPatch.ok ? 'Hermes guard ok' : 'Hermes guard warning')
         : 'Hermes guard pending';
-      features.textContent = `${e2ee} - ${encrypted} - ${patch}`;
+      features.textContent = `${e2ee} - ${encrypted} - ${hermesCatalog} - ${patch}`;
     }
     if (encryptedToggle) {
       encryptedToggle.disabled = !state.status?.features?.e2ee;
@@ -472,6 +538,7 @@ const MatrixChat = (() => {
         btn.classList.toggle('active', room.room_id === state.activeRoomId);
         btn.classList.toggle('is-encrypted', Boolean(room.encrypted));
         btn.classList.toggle('is-unencrypted', !room.encrypted);
+        btn.classList.toggle('has-hermes-catalog', Boolean(room.hermes_command_catalog));
         btn.dataset.roomId = room.room_id;
         btn.title = room.room_id;
 
@@ -480,9 +547,11 @@ const MatrixChat = (() => {
         name.textContent = `${room.encrypted ? '[E2EE] ' : ''}${roomTitle(room)}`;
         const meta = document.createElement('span');
         meta.className = 'matrix-chat-room-meta';
-        meta.textContent = room.last_preview || room.room_id;
+        meta.textContent = [room.hermes_command_catalog ? 'Hermes /' : '', room.last_preview || room.room_id]
+          .filter(Boolean)
+          .join(' ');
         btn.append(name, meta);
-        btn.addEventListener('click', () => selectRoom(room.room_id));
+        btn.addEventListener('click', event => handleRoomTabClick(event, room.room_id));
         roomsNode.appendChild(btn);
       });
     }
@@ -819,6 +888,149 @@ const MatrixChat = (() => {
     }
   }
 
+  function canOpenRoomAdmin() {
+    return Boolean(state.status?.features?.room_settings);
+  }
+
+  function roomAdminMemberKind(member) {
+    const membership = String(member?.membership || '').toLowerCase();
+    const power = Number(member?.power_level);
+    if (membership && membership !== 'join') return membership;
+    if (Number.isFinite(power) && power >= 100) return 'owner';
+    if (Number.isFinite(power) && power >= 50) return 'admin';
+    return 'member';
+  }
+
+  function memberDisplayName(member) {
+    return member?.display_name || member?.user_id || 'Matrix user';
+  }
+
+  function renderRoomAdminMembers() {
+    const list = el('matrix-chat-room-admin-members');
+    if (!list) return;
+    clearNode(list);
+    if (!state.roomAdminMembers.length) {
+      const empty = document.createElement('div');
+      empty.className = 'matrix-chat-room-admin-empty';
+      empty.textContent = 'No members loaded';
+      list.appendChild(empty);
+      return;
+    }
+    state.roomAdminMembers.forEach(member => {
+      const kind = roomAdminMemberKind(member);
+      const row = document.createElement('div');
+      row.className = `matrix-chat-room-admin-member is-${kind}`;
+      row.title = member.user_id || '';
+      const name = document.createElement('span');
+      name.className = 'matrix-chat-room-admin-member-name';
+      name.textContent = memberDisplayName(member);
+      const badge = document.createElement('span');
+      badge.className = 'matrix-chat-room-admin-member-badge';
+      badge.textContent = kind;
+      row.append(name, badge);
+      list.appendChild(row);
+    });
+  }
+
+  function setRoomAdminStatus(message, tone = '') {
+    const node = el('matrix-chat-room-admin-status');
+    if (!node) return;
+    node.textContent = message || '';
+    node.dataset.tone = tone || '';
+  }
+
+  function applyRoomSettings(roomId, settings) {
+    state.joined = state.joined.map(room => {
+      if (room.room_id !== roomId) return room;
+      return {
+        ...room,
+        hermes_command_catalog: Boolean(settings?.hermes_command_catalog),
+      };
+    });
+    if (state.hermesCommandsRoomId === roomId) {
+      state.hermesCommands = [];
+      state.hermesCommandsLoaded = false;
+      state.hermesCommandsRoomId = '';
+    }
+    renderStatus();
+    renderRooms();
+  }
+
+  function renderRoomAdminModal() {
+    const room = state.joined.find(item => item.room_id === state.roomAdminRoomId) || null;
+    const title = el('matrix-chat-room-admin-title');
+    const roomId = el('matrix-chat-room-admin-room-id');
+    const checkbox = el('matrix-chat-room-admin-hermes-catalogue');
+    const save = el('matrix-chat-room-admin-save');
+    if (title) title.textContent = roomTitle(room);
+    if (roomId) roomId.textContent = state.roomAdminRoomId || '';
+    if (checkbox) {
+      checkbox.checked = Boolean(state.roomAdminSettings?.hermes_command_catalog);
+      checkbox.disabled = state.roomAdminSaving || !state.roomAdminSettings;
+    }
+    if (save) save.disabled = state.roomAdminSaving || !state.roomAdminSettings;
+    renderRoomAdminMembers();
+  }
+
+  async function openRoomAdmin(roomId = state.activeRoomId) {
+    if (!roomId || !canOpenRoomAdmin()) {
+      return;
+    }
+    const modal = el('matrix-chat-room-admin-modal');
+    if (!modal) return;
+    state.roomAdminRoomId = roomId;
+    state.roomAdminSettings = null;
+    state.roomAdminMembers = [];
+    state.roomAdminSaving = false;
+    renderRoomAdminModal();
+    setRoomAdminStatus('Loading room admin...', '');
+    if (typeof HubModal !== 'undefined') HubModal.open(modal);
+    else modal.showModal?.();
+
+    try {
+      const [settings, members] = await Promise.all([
+        apiJson(matrixApi(`/rooms/${encodeURIComponent(roomId)}/settings`)),
+        apiJson(matrixApi(`/admin/rooms/${encodeURIComponent(roomId)}/members`)).catch(error => ({
+          members: [],
+          error,
+        })),
+      ]);
+      state.roomAdminSettings = settings;
+      state.roomAdminMembers = Array.isArray(members.members) ? members.members : [];
+      applyRoomSettings(roomId, settings);
+      renderRoomAdminModal();
+      setRoomAdminStatus(members.error ? `Members unavailable: ${members.error.message}` : '', members.error ? 'warn' : '');
+    } catch (error) {
+      setRoomAdminStatus(`Room admin failed: ${error.message}`, 'error');
+      state.roomAdminSettings = null;
+      renderRoomAdminModal();
+    }
+  }
+
+  async function saveRoomAdminSettings() {
+    const roomId = state.roomAdminRoomId;
+    const checkbox = el('matrix-chat-room-admin-hermes-catalogue');
+    if (!roomId || !checkbox || state.roomAdminSaving) return;
+    state.roomAdminSaving = true;
+    renderRoomAdminModal();
+    setRoomAdminStatus('Saving...', '');
+    try {
+      const settings = await apiJson(matrixApi(`/rooms/${encodeURIComponent(roomId)}/settings`), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hermes_command_catalog: Boolean(checkbox.checked) }),
+      });
+      state.roomAdminSettings = settings;
+      applyRoomSettings(roomId, settings);
+      setRoomAdminStatus('Saved', 'ok');
+    } catch (error) {
+      setRoomAdminStatus(`Save failed: ${error.message}`, 'error');
+    } finally {
+      state.roomAdminSaving = false;
+      renderRoomAdminModal();
+    }
+  }
+
   async function refreshAll() {
     if (state.loading) return;
     state.loading = true;
@@ -841,12 +1053,35 @@ const MatrixChat = (() => {
   }
 
   async function selectRoom(roomId) {
+    const changed = roomId !== state.activeRoomId;
     rememberActiveRoom(roomId);
+    if (changed) {
+      state.hermesCommands = [];
+      state.hermesCommandsLoaded = false;
+      state.hermesCommandsRoomId = '';
+      hideComposerSuggestions();
+    }
     hideInviteSuggestions();
     closeRailOnMobile();
     renderRooms();
     renderMessages();
     await loadMessages(roomId);
+  }
+
+  function handleRoomTabClick(event, roomId) {
+    event?.preventDefault?.();
+    if (!roomId) return;
+    if (event?.detail >= 2) {
+      window.clearTimeout(state.roomTabClickTimer);
+      state.roomTabClickTimer = null;
+      RoomTabInteractionMachine.dispatch('doubleTap', roomId);
+      return;
+    }
+    window.clearTimeout(state.roomTabClickTimer);
+    state.roomTabClickTimer = window.setTimeout(() => {
+      state.roomTabClickTimer = null;
+      RoomTabInteractionMachine.dispatch('tap', roomId);
+    }, MATRIX_CHAT_ROOM_TAB_DOUBLE_CLICK_MS);
   }
 
   async function createRoom() {
@@ -1071,11 +1306,13 @@ const MatrixChat = (() => {
     ].join(' ').toLowerCase().includes(needle);
   }
 
-  async function ensureHermesCommands() {
-    if (state.hermesCommandsLoaded) return state.hermesCommands;
-    const data = await apiJson(matrixApi('/hermes/commands'));
+  async function ensureHermesCommands(roomId = state.activeRoomId) {
+    if (!roomId || !activeRoom()?.hermes_command_catalog) return [];
+    if (state.hermesCommandsLoaded && state.hermesCommandsRoomId === roomId) return state.hermesCommands;
+    const data = await apiJson(matrixApi(`/hermes/commands?room_id=${encodeURIComponent(roomId)}`));
     state.hermesCommands = Array.isArray(data.commands) ? data.commands : [];
     state.hermesCommandsLoaded = true;
+    state.hermesCommandsRoomId = roomId;
     return state.hermesCommands;
   }
 
@@ -1174,8 +1411,12 @@ const MatrixChat = (() => {
     }
 
     if (token.trigger === '/') {
+      if (!activeRoom()?.hermes_command_catalog) {
+        hideComposerSuggestions();
+        return;
+      }
       try {
-        const commands = await ensureHermesCommands();
+        const commands = await ensureHermesCommands(state.activeRoomId);
         const matches = commands.filter(command => commandMatches(command, token.query));
         renderComposerSuggestions(matches, 'command', token, matches.length ? '' : 'No Hermes commands');
       } catch (_) {
@@ -1337,13 +1578,24 @@ const MatrixChat = (() => {
     state.inviteCandidateIndex = -1;
     state.hermesCommands = [];
     state.hermesCommandsLoaded = false;
+    state.hermesCommandsRoomId = '';
     state.composerSuggestions = [];
     state.composerSuggestionIndex = -1;
     state.composerSuggestionMode = '';
     state.composerToken = null;
     state.messageFilter = '';
+    state.roomAdminRoomId = '';
+    state.roomAdminSettings = null;
+    state.roomAdminMembers = [];
+    window.clearTimeout(state.roomTabClickTimer);
+    state.roomTabClickTimer = null;
     hideInviteSuggestions();
     hideComposerSuggestions();
+    const roomAdminModal = el('matrix-chat-room-admin-modal');
+    if (roomAdminModal?.open) {
+      if (typeof HubModal !== 'undefined') HubModal.close(roomAdminModal);
+      else roomAdminModal.close?.();
+    }
     el('matrix-chat-composer') && (el('matrix-chat-composer').value = '');
     el('matrix-chat-mobile-filter') && (el('matrix-chat-mobile-filter').value = '');
     try {
@@ -1376,6 +1628,10 @@ const MatrixChat = (() => {
       event?.preventDefault?.();
       setRailOpen(false);
     };
+    RoomTabInteractionMachine.configure({
+      onSelectRoom: roomId => selectRoom(roomId),
+      onOpenAdmin: roomId => openRoomAdmin(roomId),
+    });
     el('matrix-chat-refresh')?.addEventListener('click', refreshAll);
     document.querySelectorAll('[data-matrix-chat-server]').forEach(btn => {
       btn.addEventListener('click', () => switchServer(btn.dataset.matrixChatServer || 'tb1'));
@@ -1405,6 +1661,7 @@ const MatrixChat = (() => {
     el('matrix-chat-invite-user')?.addEventListener('keydown', handleInviteKeydown);
     el('matrix-chat-mention-hermes')?.addEventListener('click', insertHermesMention);
     el('matrix-chat-send')?.addEventListener('click', sendMessage);
+    el('matrix-chat-room-admin-save')?.addEventListener('click', saveRoomAdminSettings);
     el('matrix-chat-composer')?.addEventListener('input', scheduleComposerSuggestions);
     el('matrix-chat-composer')?.addEventListener('focus', scheduleComposerSuggestions);
     el('matrix-chat-composer')?.addEventListener('click', scheduleComposerSuggestions);
