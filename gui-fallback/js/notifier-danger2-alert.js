@@ -191,6 +191,7 @@ const BlueprintsDanger2Alert = (() => {
       await BlueprintsTtsClient.speak({
         text: alertText(evt),
         interrupt: true,
+        mode: 'stream',
         eventKind: 'danger2',
         fallbackKind: 'danger',
         volume: dangerVolume(config),

@@ -345,6 +345,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
       await BlueprintsTtsClient.speak({
         text,
         interrupt: false,
+        mode: 'stream',
         fallbackKind: 'neutral',
         eventKind: 'notification',
         volume: item.volume,
