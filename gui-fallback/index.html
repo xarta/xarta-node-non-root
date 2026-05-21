@@ -1094,11 +1094,19 @@
             <span class="hub-checkbox__box" aria-hidden="true"></span>
             <span class="hub-checkbox__label">One desktop webpage speaks</span>
           </label>
-          <label class="hub-checkbox matrix-chat-room-admin-toggle">
-            <input id="matrix-chat-notifier-danger-alarm" class="hub-checkbox__input" type="checkbox" disabled />
-            <span class="hub-checkbox__box" aria-hidden="true"></span>
-            <span class="hub-checkbox__label">Danger2 alarm sound armed</span>
-          </label>
+          <div class="matrix-chat-notifier-danger-row">
+            <label class="matrix-chat-notifier-field matrix-chat-notifier-danger-path">
+              <span>Danger2 alarm sound</span>
+              <input id="matrix-chat-notifier-danger-sound" type="text" readonly placeholder="sounds/..." />
+            </label>
+            <button class="btn-small secondary matrix-chat-notifier-sound-btn" id="matrix-chat-notifier-danger-pick" type="button">Pick</button>
+            <button class="btn-small secondary matrix-chat-notifier-sound-btn" id="matrix-chat-notifier-danger-test" type="button">Test</button>
+            <label class="hub-checkbox matrix-chat-room-admin-toggle matrix-chat-notifier-danger-armed">
+              <input id="matrix-chat-notifier-danger-alarm" class="hub-checkbox__input" type="checkbox" disabled />
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label">Armed</span>
+            </label>
+          </div>
         </div>
         <p id="matrix-chat-notifier-dnd-status" class="hub-modal-error matrix-chat-room-admin-status"></p>
       </div>

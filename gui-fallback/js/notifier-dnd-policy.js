@@ -48,6 +48,7 @@ const BlueprintsNotifierDnd = (() => {
     danger_policy: {
       danger2_alarm_planned: true,
       alarm_sound_enabled: false,
+      alarm_sound_path: null,
     },
     notes: '',
   });

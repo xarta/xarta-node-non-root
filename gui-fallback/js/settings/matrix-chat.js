@@ -1091,11 +1091,14 @@ const MatrixChat = (() => {
       row.className = 'matrix-chat-notifier-schedule';
       row.dataset.index = String(index);
       row.innerHTML = `
-        <label class="hub-checkbox matrix-chat-room-admin-toggle">
-          <input class="hub-checkbox__input" type="checkbox" data-notifier-schedule-field="enabled" />
-          <span class="hub-checkbox__box" aria-hidden="true"></span>
-          <span class="hub-checkbox__label">Enabled</span>
-        </label>
+        <div class="matrix-chat-notifier-schedule-cell matrix-chat-notifier-schedule-toggle">
+          <span class="matrix-chat-notifier-schedule-label">State</span>
+          <label class="hub-checkbox matrix-chat-room-admin-toggle">
+            <input class="hub-checkbox__input" type="checkbox" data-notifier-schedule-field="enabled" />
+            <span class="hub-checkbox__box" aria-hidden="true"></span>
+            <span class="hub-checkbox__label">Enabled</span>
+          </label>
+        </div>
         <label class="matrix-chat-notifier-field">
           <span>Start</span>
           <input type="time" data-notifier-schedule-field="start" />
@@ -1128,7 +1131,9 @@ const MatrixChat = (() => {
     const quietVolume = el('matrix-chat-notifier-quiet-volume');
     const phoneWins = el('matrix-chat-notifier-phone-wins');
     const desktopDedupe = el('matrix-chat-notifier-desktop-dedupe');
+    const dangerSound = el('matrix-chat-notifier-danger-sound');
     const dangerAlarm = el('matrix-chat-notifier-danger-alarm');
+    const dangerTest = el('matrix-chat-notifier-danger-test');
     const save = el('matrix-chat-notifier-dnd-save');
     if (mode) mode.value = cfg.mode || 'default';
     if (timeout) timeout.value = String(cfg.manual_timeout_minutes || 60);
@@ -1136,9 +1141,51 @@ const MatrixChat = (() => {
     if (quietVolume) quietVolume.value = String(cfg.quiet_volume ?? 0.35);
     if (phoneWins) phoneWins.checked = cfg.listener_policy?.phone_wins !== false;
     if (desktopDedupe) desktopDedupe.checked = cfg.listener_policy?.desktop_one_per_os_ip !== false;
+    if (dangerSound) dangerSound.value = cfg.danger_policy?.alarm_sound_path || '';
     if (dangerAlarm) dangerAlarm.checked = Boolean(cfg.danger_policy?.alarm_sound_enabled);
+    if (dangerTest) dangerTest.disabled = !cfg.danger_policy?.alarm_sound_path;
     if (save) save.disabled = state.notifierDndSaving || !state.notifierDndConfig;
     renderNotifierSchedules();
+  }
+
+  function setNotifierDangerSoundPath(assetPath) {
+    if (!state.notifierDndConfig) state.notifierDndConfig = {};
+    state.notifierDndConfig.danger_policy = {
+      ...(state.notifierDndConfig.danger_policy || {}),
+      alarm_sound_path: assetPath || null,
+      alarm_sound_enabled: false,
+    };
+    renderNotifierDndModal();
+  }
+
+  function notifierDangerSoundUrl(path) {
+    const value = String(path || '').trim();
+    if (!value) return '';
+    return `/fallback-ui/assets/${value}`;
+  }
+
+  function openNotifierDangerSoundPicker() {
+    if (typeof AssetPicker === 'undefined') {
+      setNotifierDndStatus('Sound picker unavailable.', 'error');
+      return;
+    }
+    AssetPicker.open({
+      title: 'Choose Danger2 alarm sound',
+      kind: 'sound',
+      browseUrl: '/api/v1/nav-items/assets?type=sounds',
+      emptyMessage: 'No sound assets uploaded yet.',
+      onSelect: async (assetPath) => {
+        setNotifierDangerSoundPath(assetPath);
+        setNotifierDndStatus('Danger2 sound selected. Save to keep it.', 'ok');
+      },
+    });
+  }
+
+  function testNotifierDangerSound(button) {
+    const path = el('matrix-chat-notifier-danger-sound')?.value || '';
+    const url = notifierDangerSoundUrl(path);
+    if (!url || typeof SoundManager === 'undefined') return;
+    SoundManager.previewToggle(url, { button });
   }
 
   async function openNotifierDndModal() {
@@ -1187,6 +1234,7 @@ const MatrixChat = (() => {
       },
       danger_policy: {
         ...(base.danger_policy || {}),
+        alarm_sound_path: (el('matrix-chat-notifier-danger-sound')?.value || '').trim() || null,
         alarm_sound_enabled: false,
       },
     };
@@ -1841,6 +1889,8 @@ const MatrixChat = (() => {
     el('matrix-chat-send')?.addEventListener('click', sendMessage);
     el('matrix-chat-room-admin-save')?.addEventListener('click', saveRoomAdminSettings);
     el('matrix-chat-notifier-dnd-save')?.addEventListener('click', saveNotifierDndConfig);
+    el('matrix-chat-notifier-danger-pick')?.addEventListener('click', openNotifierDangerSoundPicker);
+    el('matrix-chat-notifier-danger-test')?.addEventListener('click', event => testNotifierDangerSound(event.currentTarget));
     el('matrix-chat-composer')?.addEventListener('input', scheduleComposerSuggestions);
     el('matrix-chat-composer')?.addEventListener('focus', scheduleComposerSuggestions);
     el('matrix-chat-composer')?.addEventListener('click', scheduleComposerSuggestions);
