@@ -1189,6 +1189,23 @@ const MatrixChat = (() => {
     SoundManager.previewToggle(url, { button, volume });
   }
 
+  async function showNotifierModeImpact(saved = false) {
+    if (!state.notifierDndConfig || typeof BlueprintsNotifierDnd === 'undefined') return;
+    const pendingConfig = collectNotifierDndConfig();
+    const impact = BlueprintsNotifierDnd.describeModeImpact(state.notifierDndConfig, pendingConfig, { saved });
+    setNotifierDndStatus(`Pending active speech mode: ${impact.after.label}`, 'ok');
+    if (typeof HubDialogs !== 'undefined' && typeof HubDialogs.alert === 'function') {
+      await HubDialogs.alert({
+        title: saved ? 'Notification Mode Saved' : 'Notification Mode Preview',
+        badge: 'DND',
+        message: impact.message,
+        detail: impact.detail,
+        confirmText: 'OK',
+        width: 'min(640px,95vw)',
+      });
+    }
+  }
+
   async function openNotifierDndModal() {
     const modal = el('matrix-chat-notifier-dnd-modal');
     if (!modal) return;
@@ -1245,12 +1262,26 @@ const MatrixChat = (() => {
   async function saveNotifierDndConfig() {
     if (state.notifierDndSaving || typeof BlueprintsNotifierDnd === 'undefined') return;
     const nextConfig = collectNotifierDndConfig();
+    const priorConfig = state.notifierDndConfig;
     state.notifierDndSaving = true;
     setNotifierDndStatus('Saving...', '');
     try {
       state.notifierDndConfig = await BlueprintsNotifierDnd.saveConfig(nextConfig);
       renderNotifierDndModal();
       setNotifierDndStatus(`Saved. Active speech mode: ${BlueprintsNotifierDnd.activeMode(state.notifierDndConfig)}`, 'ok');
+      if ((priorConfig?.mode || 'default') !== (state.notifierDndConfig?.mode || 'default')) {
+        const impact = BlueprintsNotifierDnd.describeModeImpact(priorConfig, state.notifierDndConfig, { saved: true });
+        if (typeof HubDialogs !== 'undefined' && typeof HubDialogs.alert === 'function') {
+          await HubDialogs.alert({
+            title: 'Notification Mode Saved',
+            badge: 'DND',
+            message: impact.message,
+            detail: impact.detail,
+            confirmText: 'OK',
+            width: 'min(640px,95vw)',
+          });
+        }
+      }
     } catch (error) {
       setNotifierDndStatus(`Save failed: ${error.message}`, 'error');
     } finally {
@@ -1890,6 +1921,9 @@ const MatrixChat = (() => {
     el('matrix-chat-mention-hermes')?.addEventListener('click', insertHermesMention);
     el('matrix-chat-send')?.addEventListener('click', sendMessage);
     el('matrix-chat-room-admin-save')?.addEventListener('click', saveRoomAdminSettings);
+    el('matrix-chat-notifier-mode')?.addEventListener('change', () => {
+      void showNotifierModeImpact(false);
+    });
     el('matrix-chat-notifier-dnd-save')?.addEventListener('click', saveNotifierDndConfig);
     el('matrix-chat-notifier-danger-pick')?.addEventListener('click', openNotifierDangerSoundPicker);
     el('matrix-chat-notifier-danger-test')?.addEventListener('click', event => testNotifierDangerSound(event.currentTarget));

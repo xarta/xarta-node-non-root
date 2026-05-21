@@ -26,6 +26,14 @@ const BlueprintsNotifierDnd = (() => {
     manual_dnd_1: 'urgent2',
     manual_dnd_2: 'danger2',
   });
+  const MODE_LABEL = Object.freeze({
+    debug: 'Debug',
+    default: 'Default',
+    scheduled_dnd_01: 'Scheduled DND 01',
+    scheduled_dnd_02: 'Scheduled DND 02',
+    manual_dnd_1: 'Manual DND 1',
+    manual_dnd_2: 'Manual DND 2',
+  });
   const DEFAULT_CONFIG = Object.freeze({
     version: 1,
     mode: 'default',
@@ -115,29 +123,176 @@ const BlueprintsNotifierDnd = (() => {
     return Number(match[1]) * 60 + Number(match[2]);
   }
 
+  function modeLabel(mode) {
+    return MODE_LABEL[mode] || String(mode || 'default');
+  }
+
+  function coerceDate(value) {
+    return value instanceof Date && Number.isFinite(value.getTime()) ? value : new Date();
+  }
+
+  function formatClock(date) {
+    const value = coerceDate(date);
+    return value.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function formatDateTime(date, now = new Date()) {
+    const value = coerceDate(date);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const day = new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+    const dayLabel = day === today ? 'today' : day === today + 86400000 ? 'tomorrow' : value.toLocaleDateString();
+    return `${dayLabel} at ${formatClock(value)}`;
+  }
+
   function scheduleActive(schedule, now = new Date()) {
     if (!schedule?.enabled) return false;
     const start = timeToMinutes(schedule.start);
     const end = timeToMinutes(schedule.end);
     if (start === null || end === null || start === end) return false;
-    const current = now.getHours() * 60 + now.getMinutes();
+    const date = coerceDate(now);
+    const current = date.getHours() * 60 + date.getMinutes();
     return start < end ? current >= start && current < end : current >= start || current < end;
   }
 
-  function activeMode(config = _config) {
-    const nowSec = Date.now() / 1000;
+  function activeScheduleEntries(config = _config, now = new Date()) {
+    const date = coerceDate(now);
+    return (config.schedules || [])
+      .map((schedule, index) => ({ schedule, index }))
+      .filter(item => scheduleActive(item.schedule, date));
+  }
+
+  function activeMode(config = _config, now = new Date()) {
+    const date = coerceDate(now);
+    const nowSec = date.getTime() / 1000;
     if (
       (config.mode === 'manual_dnd_1' || config.mode === 'manual_dnd_2') &&
       (!config.manual_until || Number(config.manual_until) > nowSec)
     ) {
       return config.mode;
     }
-    const now = new Date();
-    const activeSchedules = (config.schedules || []).filter(schedule => scheduleActive(schedule, now));
-    if (activeSchedules.length) return activeSchedules[activeSchedules.length - 1].mode;
+    const activeSchedules = activeScheduleEntries(config, date);
+    if (activeSchedules.length) return activeSchedules[activeSchedules.length - 1].schedule.mode;
     if (config.mode === 'debug') return 'debug';
     if (config.mode === 'scheduled_dnd_01' || config.mode === 'scheduled_dnd_02') return config.mode;
     return 'default';
+  }
+
+  function scheduleBoundaryCandidates(config = _config, now = new Date()) {
+    const date = coerceDate(now);
+    const midnight = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const candidates = [];
+    (config.schedules || []).forEach((schedule, index) => {
+      if (!schedule?.enabled) return;
+      const start = timeToMinutes(schedule.start);
+      const end = timeToMinutes(schedule.end);
+      if (start === null || end === null || start === end) return;
+      for (let dayOffset = -1; dayOffset <= 3; dayOffset += 1) {
+        const startDate = new Date(midnight.getTime() + (dayOffset * 86400000) + (start * 60000));
+        const endDayOffset = dayOffset + (end <= start ? 1 : 0);
+        const endDate = new Date(midnight.getTime() + (endDayOffset * 86400000) + (end * 60000));
+        if (startDate > date) candidates.push({ type: 'schedule_start', date: startDate, index, mode: schedule.mode });
+        if (endDate > date) candidates.push({ type: 'schedule_end', date: endDate, index, mode: schedule.mode });
+      }
+    });
+    const manualUntil = Number(config.manual_until || 0);
+    if (
+      (config.mode === 'manual_dnd_1' || config.mode === 'manual_dnd_2') &&
+      manualUntil > date.getTime() / 1000
+    ) {
+      candidates.push({ type: 'manual_timeout', date: new Date(manualUntil * 1000), mode: config.mode });
+    }
+    return candidates.sort((a, b) => a.date - b.date);
+  }
+
+  function nextModeChange(config = _config, now = new Date()) {
+    const date = coerceDate(now);
+    const currentMode = activeMode(config, date);
+    const seen = new Set();
+    for (const candidate of scheduleBoundaryCandidates(config, date)) {
+      const key = String(candidate.date.getTime());
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const probe = new Date(candidate.date.getTime() + 1000);
+      const modeAfter = activeMode(config, probe);
+      if (modeAfter !== currentMode) return { ...candidate, mode_before: currentMode, mode_after: modeAfter };
+    }
+    return null;
+  }
+
+  function activeModeDetails(config = _config, now = new Date()) {
+    const date = coerceDate(now);
+    const mode = activeMode(config, date);
+    const activeSchedules = activeScheduleEntries(config, date);
+    const lastSchedule = activeSchedules[activeSchedules.length - 1] || null;
+    let source = 'base';
+    let reason = `Base mode is ${modeLabel(config.mode || 'default')}.`;
+    if (config.mode === 'manual_dnd_1' || config.mode === 'manual_dnd_2') {
+      const manualUntil = Number(config.manual_until || 0);
+      if (!manualUntil || manualUntil > date.getTime() / 1000) {
+        source = 'manual';
+        reason = manualUntil
+          ? `${modeLabel(config.mode)} overrides schedules until ${formatDateTime(new Date(manualUntil * 1000), date)}.`
+          : `${modeLabel(config.mode)} overrides schedules until it is changed.`;
+      }
+    }
+    if (source !== 'manual' && lastSchedule) {
+      source = 'schedule';
+      reason = `Schedule ${lastSchedule.index + 1} is active now and sets ${modeLabel(mode)}.`;
+    }
+    const next = nextModeChange(config, date);
+    return {
+      mode,
+      label: modeLabel(mode),
+      source,
+      reason,
+      active_schedules: activeSchedules.map(item => ({
+        index: item.index,
+        mode: item.schedule.mode,
+        label: modeLabel(item.schedule.mode),
+        start: item.schedule.start,
+        end: item.schedule.end,
+      })),
+      next_change: next ? {
+        ...next,
+        label_before: modeLabel(next.mode_before),
+        label_after: modeLabel(next.mode_after),
+        date_label: formatDateTime(next.date, date),
+      } : null,
+    };
+  }
+
+  function describeModeImpact(beforeConfig, afterConfig, options = {}) {
+    const now = new Date();
+    const before = activeModeDetails(beforeConfig || _config, now);
+    const after = activeModeDetails(afterConfig || _config, now);
+    const beforeMode = modeLabel((beforeConfig || {}).mode || 'default');
+    const afterMode = modeLabel((afterConfig || {}).mode || 'default');
+    const saved = Boolean(options.saved);
+    const lines = [
+      `${saved ? 'Saved' : 'Pending'} base mode: ${beforeMode} -> ${afterMode}.`,
+      `Active speech mode before: ${before.label}.`,
+      `Active speech mode after: ${after.label}.`,
+      after.reason,
+    ];
+    if (after.active_schedules.length) {
+      const names = after.active_schedules.map(item => `Schedule ${item.index + 1} (${item.start}-${item.end})`).join(', ');
+      lines.push(`Active schedules now: ${names}. Later active schedule rows take precedence.`);
+    } else {
+      lines.push('No schedule is active right now.');
+    }
+    if (after.next_change) {
+      const scheduleText = after.next_change.index !== undefined ? ` Schedule ${after.next_change.index + 1}.` : '';
+      lines.push(`Next calculated mode change: ${after.next_change.date_label}, ${after.next_change.label_before} -> ${after.next_change.label_after}.${scheduleText}`);
+    } else {
+      lines.push('No future scheduled mode change is currently calculated from the enabled schedules.');
+    }
+    if (!saved) lines.push('This change is not saved until you press Save.');
+    return {
+      before,
+      after,
+      message: `${saved ? 'Mode saved' : 'Mode selection preview'}: ${beforeMode} -> ${afterMode}.`,
+      detail: lines.join('\n'),
+    };
   }
 
   function eventImportance(evt) {
@@ -251,7 +406,10 @@ const BlueprintsNotifierDnd = (() => {
     loadConfig,
     saveConfig,
     getConfig: () => _config,
+    modeLabel,
     activeMode,
+    activeModeDetails,
+    describeModeImpact,
     shouldSpeak,
     ttsVolume,
     claimSpeech,
