@@ -149,6 +149,13 @@ const BlueprintsModelChangeAnnouncer = (() => {
     return String(evt?.payload?.speech || evt?.message || 'Warning. Xarta node RAM usage is high.');
   }
 
+  function _speechForPublicExposure(evt, recovered) {
+    if (evt?.payload?.speech) return String(evt.payload.speech);
+    return recovered
+      ? 'Information. Public exposure guard has recovered.'
+      : 'Warning. Public exposure guard found a private service exposure problem.';
+  }
+
   // ── Queue drain ────────────────────────────────────────────────────────────
 
   /** Central drain function.  Called after every state completion (cooldown done,
@@ -379,6 +386,28 @@ const BlueprintsModelChangeAnnouncer = (() => {
             title: evt.title || 'RAM Warning',
             message: evt.message || '',
             severity: evt.severity || 'warn',
+          }
+        );
+        break;
+
+      case 'security.public_exposure.warning':
+        _pushAndDrain(
+          _speechForPublicExposure(evt, false),
+          {
+            title: evt.title || 'Public Exposure Guard Failed',
+            message: evt.message || '',
+            severity: evt.severity || 'error',
+          }
+        );
+        break;
+
+      case 'security.public_exposure.recovered':
+        _pushAndDrain(
+          _speechForPublicExposure(evt, true),
+          {
+            title: evt.title || 'Public Exposure Guard Recovered',
+            message: evt.message || '',
+            severity: evt.severity || 'info',
           }
         );
         break;

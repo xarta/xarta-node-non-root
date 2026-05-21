@@ -4,6 +4,8 @@
 .env.backup*
 .env.*.bak*
 .env.*.backup*
+*_bak
+*.bak
 
 # Editor / OS noise
 .DS_Store
