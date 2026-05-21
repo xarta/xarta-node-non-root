@@ -310,22 +310,24 @@ const BlueprintsModelChangeAnnouncer = (() => {
   }
 
   async function _speak(text, item = {}) {
+    const evt = item.event || {};
+    const testBroadcast = evt?.payload?.frontend_contract === 'notification-tests-modal'
+      && evt?.payload?.test_broadcast_speech === true;
     if (_isMuted()) {
       _emitSpeechSuppressed('browser_tts_muted', item);
       return;
     }
-    if (!_isFreshNotifierSpeech(item.event || {})) {
+    if (!_isFreshNotifierSpeech(evt)) {
       _emitSpeechSuppressed('stale_notifier_replay', item);
       return;
     }
     if (typeof BlueprintsNotifierDnd !== 'undefined') {
-      const evt = item.event || {};
       await BlueprintsNotifierDnd.loadConfig();
       if (!BlueprintsNotifierDnd.shouldSpeak(evt)) {
         _emitSpeechSuppressed('dnd_policy_suppressed', item);
         return;
       }
-      if (!await BlueprintsNotifierDnd.claimSpeech(evt)) {
+      if (!testBroadcast && !await BlueprintsNotifierDnd.claimSpeech(evt)) {
         _emitSpeechSuppressed('speech_claim_denied', item);
         return;
       }

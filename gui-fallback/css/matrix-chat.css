@@ -1366,15 +1366,28 @@ dialog.matrix-chat-notifier-info-modal {
   position: fixed;
   inset: 0;
   z-index: 20000;
-  display: grid;
-  place-items: center;
+  width: 100vw;
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0;
   padding: clamp(14px, 4vw, 44px);
+  border: 0;
   box-sizing: border-box;
   background: rgba(8, 7, 10, 0.92);
 }
 
 .danger2-alert-modal[hidden] {
   display: none;
+}
+
+.danger2-alert-modal[open] {
+  display: grid;
+  place-items: center;
+}
+
+.danger2-alert-modal::backdrop {
+  background: rgba(8, 7, 10, 0.82);
 }
 
 .danger2-alert-panel {

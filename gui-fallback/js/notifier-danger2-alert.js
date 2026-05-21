@@ -83,12 +83,22 @@ const BlueprintsDanger2Alert = (() => {
     setDetails(evt);
     modal.hidden = false;
     modal.setAttribute('aria-hidden', 'false');
+    if (typeof modal.showModal === 'function' && !modal.open) {
+      try {
+        modal.showModal();
+      } catch (error) {
+        setStatus(`Danger2 alert modal could not enter top layer: ${error.message || error}.`, 'error');
+      }
+    }
     el('danger2-alert-cancel')?.focus?.();
   }
 
   function closeModal() {
     const modal = el('danger2-alert-modal');
     if (!modal) return;
+    if (typeof modal.close === 'function' && modal.open) {
+      try { modal.close(); } catch (_) {}
+    }
     modal.hidden = true;
     modal.setAttribute('aria-hidden', 'true');
   }
