@@ -296,13 +296,39 @@ const BlueprintsNotifierDnd = (() => {
   }
 
   function eventImportance(evt) {
-    const raw = evt?.payload?.importance || evt?.data?.importance || evt?.importance || 'neutral';
-    return Object.prototype.hasOwnProperty.call(IMPORTANCE_RANK, raw) ? raw : 'neutral';
+    return explicitImportance(evt) || 'neutral';
+  }
+
+  function explicitImportance(evt) {
+    const raw = evt?.payload?.importance || evt?.data?.importance || evt?.importance || '';
+    return Object.prototype.hasOwnProperty.call(IMPORTANCE_RANK, raw) ? raw : null;
+  }
+
+  function eventSeverity(evt) {
+    const raw = String(evt?.payload?.notifier_level || evt?.severity || evt?.level || 'information').toLowerCase();
+    if (raw === 'warn') return 'warning';
+    if (raw === 'info') return 'information';
+    if (raw === 'critical') return 'error';
+    if (raw === 'debug' || raw === 'information' || raw === 'warning' || raw === 'error') return raw;
+    return 'information';
+  }
+
+  function speechPolicyImportance(evt) {
+    const explicit = explicitImportance(evt);
+    if (explicit) return explicit;
+    const unknownEvent = evt?.unknown_event_type === true || evt?.payload?.unknown_event_type === true;
+    if (!unknownEvent) return 'neutral';
+    const severity = eventSeverity(evt);
+    if (severity === 'warning') return 'urgent1';
+    if (severity === 'error') return 'urgent2';
+    return null;
   }
 
   function shouldSpeak(evt, config = _config) {
     const required = MODE_MIN[activeMode(config)] || config.minimum_speak_importance || 'neutral';
-    return IMPORTANCE_RANK[eventImportance(evt)] >= IMPORTANCE_RANK[required];
+    const effective = speechPolicyImportance(evt);
+    if (!effective) return false;
+    return IMPORTANCE_RANK[effective] >= IMPORTANCE_RANK[required];
   }
 
   function ttsVolume(evt, config = _config) {
@@ -414,6 +440,9 @@ const BlueprintsNotifierDnd = (() => {
     ttsVolume,
     claimSpeech,
     eventImportance,
+    explicitImportance,
+    eventSeverity,
+    speechPolicyImportance,
   });
 })();
 

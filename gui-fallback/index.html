@@ -1120,6 +1120,86 @@
         <button class="hub-modal-btn" id="matrix-chat-notifier-dnd-save" type="button">Save</button>
       </div>
     </dialog>
+    <dialog class="hub-modal hub-dialog matrix-chat-notifier-tests-modal" data-tone="warning" id="matrix-chat-notifier-tests-modal" style="width:min(920px,96vw);max-width:96vw">
+      <div class="hub-modal-header">
+        <h2 class="hub-modal-title" style="min-width:0;flex:1">
+          <span class="hub-dialog-badge">TEST</span>
+          <span class="hub-dialog-title-text">Notification Tests</span>
+        </h2>
+        <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+      </div>
+      <div class="hub-modal-body">
+        <div class="matrix-chat-notifier-tests-summary">
+          <strong>Notifier-backed integration smoke tests</strong>
+          <span>Every test submits to system-bridge-notifier, then waits for the drained Blueprints SSE event.</span>
+        </div>
+        <div class="matrix-chat-notifier-tests-grid" id="matrix-chat-notifier-tests-grid">
+          <button class="matrix-chat-notifier-test-btn" type="button" data-notifier-test-id="neutral">
+            <strong>neutral</strong><span>ordinary test</span>
+          </button>
+          <button class="matrix-chat-notifier-test-btn is-noisy" type="button" data-notifier-test-id="urgent1">
+            <strong>urgent1</strong><span>live speech</span>
+          </button>
+          <button class="matrix-chat-notifier-test-btn is-noisy" type="button" data-notifier-test-id="urgent2">
+            <strong>urgent2</strong><span>live speech</span>
+          </button>
+          <button class="matrix-chat-notifier-test-btn is-noisy" type="button" data-notifier-test-id="danger1">
+            <strong>danger1</strong><span>live speech</span>
+          </button>
+          <button class="matrix-chat-notifier-test-btn is-noisy is-danger" type="button" data-notifier-test-id="danger2_drill">
+            <strong>danger2 drill</strong><span>alarm loop</span>
+          </button>
+          <button class="matrix-chat-notifier-test-btn is-noisy" type="button" data-notifier-test-id="unknown_warning">
+            <strong>unknown warning</strong><span>generic speech</span>
+          </button>
+          <button class="matrix-chat-notifier-test-btn is-noisy" type="button" data-notifier-test-id="unknown_error">
+            <strong>unknown error</strong><span>generic speech</span>
+          </button>
+          <button class="matrix-chat-notifier-test-btn" type="button" data-notifier-test-id="unknown_information">
+            <strong>unknown information</strong><span>toast only</span>
+          </button>
+          <button class="matrix-chat-notifier-test-btn" type="button" data-notifier-test-id="unknown_debug">
+            <strong>unknown debug</strong><span>toast only</span>
+          </button>
+        </div>
+        <div class="matrix-chat-notifier-tests-panel">
+          <div class="matrix-chat-room-admin-subhead">Policy preview</div>
+          <div class="matrix-chat-notifier-tests-policy">
+            <span>default: neutral+</span>
+            <span>DND 01: urgent1+</span>
+            <span>DND 02: urgent2+</span>
+            <span>manual 1: urgent2+</span>
+            <span>manual 2: danger2</span>
+          </div>
+        </div>
+        <div class="matrix-chat-notifier-tests-status-row">
+          <button class="hub-modal-btn danger" type="button" id="matrix-chat-notifier-tests-cancel-danger2">Cancel Danger2</button>
+          <p id="matrix-chat-notifier-tests-status" class="hub-modal-error matrix-chat-notifier-tests-status" aria-live="polite"></p>
+        </div>
+        <div id="matrix-chat-notifier-tests-log" class="matrix-chat-notifier-tests-log" aria-live="polite"></div>
+      </div>
+      <div class="hub-modal-footer">
+        <button class="hub-modal-btn secondary hub-modal-close" type="button">Close</button>
+      </div>
+    </dialog>
+    <div class="danger2-alert-modal" id="danger2-alert-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+      <div class="danger2-alert-panel">
+        <div class="danger2-alert-copy">
+          <span class="danger2-alert-badge">DANGER2</span>
+          <h2 id="danger2-alert-title">Danger2 Alert</h2>
+          <p id="danger2-alert-message"></p>
+          <p id="danger2-alert-meta" class="danger2-alert-meta"></p>
+          <p id="danger2-alert-status" class="danger2-alert-status" aria-live="assertive"></p>
+        </div>
+        <button class="danger2-alert-cancel" id="danger2-alert-cancel" type="button" aria-label="Double-click to cancel Danger2 everywhere">
+          <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+            <circle cx="50" cy="50" r="45"></circle>
+            <path d="M32 32 L68 68 M68 32 L32 68"></path>
+          </svg>
+          <span>Cancel</span>
+        </button>
+      </div>
+    </div>
     <dialog class="hub-modal hub-dialog matrix-chat-notifier-info-modal" data-tone="info" id="matrix-chat-notifier-info-modal">
       <div class="hub-modal-header">
         <h2 class="hub-modal-title" style="min-width:0;flex:1">
@@ -4228,6 +4308,7 @@
 <script src="js/tts-wrapper-client.js?v={{$assetVersion}}"></script>
 <script src="js/events-stream.js?v={{$assetVersion}}"></script>
 <script src="js/notifier-dnd-policy.js?v={{$assetVersion}}"></script>
+<script src="js/notifier-danger2-alert.js?v={{$assetVersion}}"></script>
 <script src="js/model-change-announcer.js?v={{$assetVersion}}"></script>
 <script src="js/form-control-manager.js?v={{$assetVersion}}"></script>
 <script src="js/hub-modal.js?v={{$assetVersion}}"></script>

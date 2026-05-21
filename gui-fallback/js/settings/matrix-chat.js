@@ -43,6 +43,7 @@ const MatrixChat = (() => {
     roomTabClickTimer: null,
     notifierDndConfig: null,
     notifierDndSaving: false,
+    notifierTestEvents: new Map(),
   };
 
   const RoomTabInteractionMachine = (() => {
@@ -1296,6 +1297,146 @@ const MatrixChat = (() => {
     }
   }
 
+  function setNotifierTestsStatus(message, tone = '') {
+    const node = el('matrix-chat-notifier-tests-status');
+    if (!node) return;
+    node.textContent = message || '';
+    node.dataset.tone = tone || '';
+  }
+
+  function appendNotifierTestLog(message, tone = '') {
+    const log = el('matrix-chat-notifier-tests-log');
+    if (!log) return;
+    const row = document.createElement('div');
+    row.dataset.tone = tone || '';
+    row.textContent = `${new Date().toLocaleTimeString()} - ${message}`;
+    log.prepend(row);
+    while (log.children.length > 20) log.removeChild(log.lastChild);
+  }
+
+  async function confirmDanger2Drill() {
+    const message = 'Danger2 drill is intentionally noisy and loops alarm plus TTS until cancelled.';
+    if (typeof HubDialogs !== 'undefined' && typeof HubDialogs.confirm === 'function') {
+      return HubDialogs.confirm({
+        title: 'Start Danger2 Drill?',
+        badge: 'DANGER2',
+        message,
+        detail: 'This submits a real notifier event through system-bridge-notifier. Use Cancel Danger2 to stop every active listener.',
+        confirmText: 'Start drill',
+        cancelText: 'Cancel',
+        tone: 'danger',
+        width: 'min(560px,95vw)',
+      });
+    }
+    return window.confirm(`${message}\n\nStart drill?`);
+  }
+
+  async function submitNotifierTest(testId, button = null) {
+    if (!testId) return;
+    const confirmed = testId === 'danger2_drill' ? await confirmDanger2Drill() : false;
+    if (testId === 'danger2_drill' && !confirmed) {
+      setNotifierTestsStatus('Danger2 drill cancelled before submission.', 'warn');
+      return;
+    }
+    if (button) button.disabled = true;
+    setNotifierTestsStatus(`Submitting ${testId} to system-bridge-notifier...`, '');
+    appendNotifierTestLog(`${testId}: submitting to notifier webhook`);
+    try {
+      const result = await apiJson('/api/v1/notifier-dnd/tests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ test_id: testId, confirmed: Boolean(confirmed) }),
+      });
+      state.notifierTestEvents.set(result.event_id, { testId, submittedAt: Date.now() });
+      setNotifierTestsStatus(`${testId}: submitted to notifier; waiting for drained Blueprints SSE event.`, 'ok');
+      appendNotifierTestLog(`${testId}: submitted to notifier as ${result.event_id}`, 'ok');
+      window.setTimeout(() => {
+        const pending = state.notifierTestEvents.get(result.event_id);
+        if (!pending) return;
+        setNotifierTestsStatus(`${testId}: still waiting for drained event. Check notifier drain status if this persists.`, 'warn');
+        appendNotifierTestLog(`${testId}: no drained SSE event observed yet`, 'warn');
+      }, 15000);
+    } catch (error) {
+      setNotifierTestsStatus(`${testId}: notifier submission failed: ${error.message}`, 'error');
+      appendNotifierTestLog(`${testId}: notifier submission failed: ${error.message}`, 'error');
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  async function cancelDanger2FromTests() {
+    setNotifierTestsStatus('Recording Danger2 cancel state...', '');
+    try {
+      const result = typeof BlueprintsDanger2Alert !== 'undefined'
+        ? await BlueprintsDanger2Alert.cancel('operator_tests_modal_cancel')
+        : await apiJson('/api/v1/notifier-dnd/danger2-cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'operator_tests_modal_cancel', source: 'blueprints-tests-modal' }),
+        });
+      const suffix = result.notification_submitted === false
+        ? ' Notifier cancellation notice failed.'
+        : ' Cancellation notice submitted through notifier.';
+      setNotifierTestsStatus(`Danger2 cancel recorded.${suffix}`, result.notification_submitted === false ? 'error' : 'ok');
+      appendNotifierTestLog(`danger2 cancel recorded: ${result.cancel_id || 'ok'}`, 'ok');
+    } catch (error) {
+      setNotifierTestsStatus(`Danger2 cancel failed: ${error.message}`, 'error');
+      appendNotifierTestLog(`danger2 cancel failed: ${error.message}`, 'error');
+    }
+  }
+
+  function handleNotifierTestDrainedEvent(evt) {
+    const eventId = evt?.event_id || evt?.payload?.notifier_event_id || '';
+    const testId = evt?.payload?.test_id || '';
+    if (!eventId && !testId) return;
+    const pending = state.notifierTestEvents.get(eventId);
+    if (!pending && !testId) return;
+    if (pending) state.notifierTestEvents.delete(eventId);
+    const label = testId || pending?.testId || 'notifier test';
+    setNotifierTestsStatus(`${label}: drained event received from Blueprints SSE.`, 'ok');
+    appendNotifierTestLog(`${label}: drained through Blueprints SSE`, 'ok');
+  }
+
+  function speechSuppressionLabel(reason) {
+    const labels = {
+      browser_tts_muted: 'browser TTS is muted',
+      stale_notifier_replay: 'stale notifier replay was not spoken',
+      dnd_policy_suppressed: 'DND policy suppressed speech',
+      speech_claim_denied: 'another listener claimed speech',
+      tts_client_unavailable: 'TTS client is unavailable',
+      tts_speak_unavailable: 'TTS speak function is unavailable',
+      tts_error: 'TTS playback failed',
+    };
+    return labels[reason] || reason || 'speech suppressed';
+  }
+
+  function handleNotifierSpeechSuppressed(detail) {
+    const evt = detail?.event || {};
+    const testId = evt?.payload?.test_id || '';
+    if (!testId) return;
+    const label = speechSuppressionLabel(detail.reason);
+    setNotifierTestsStatus(`${testId}: ${label}.`, 'warn');
+    appendNotifierTestLog(`${testId}: ${label}`, 'warn');
+  }
+
+  async function openNotifierTestsModal() {
+    const modal = el('matrix-chat-notifier-tests-modal');
+    if (!modal) return;
+    let status = 'Ready. Live/noisy tests are marked on their buttons.';
+    try {
+      if (typeof BlueprintsNotifierDnd !== 'undefined') {
+        const config = await BlueprintsNotifierDnd.loadConfig({ force: true });
+        status = `${status} Active speech mode: ${BlueprintsNotifierDnd.activeMode(config)}.`;
+      }
+      if (typeof BlueprintsModelChangeAnnouncer !== 'undefined' && BlueprintsModelChangeAnnouncer.isMuted()) {
+        status = `${status} Browser TTS is muted.`;
+      }
+    } catch (_) {}
+    setNotifierTestsStatus(status, '');
+    if (typeof HubModal !== 'undefined') HubModal.open(modal);
+    else modal.showModal?.();
+  }
+
   async function refreshAll() {
     if (state.loading) return;
     state.loading = true;
@@ -1935,6 +2076,20 @@ const MatrixChat = (() => {
     el('matrix-chat-notifier-dnd-save')?.addEventListener('click', saveNotifierDndConfig);
     el('matrix-chat-notifier-danger-pick')?.addEventListener('click', openNotifierDangerSoundPicker);
     el('matrix-chat-notifier-danger-test')?.addEventListener('click', event => testNotifierDangerSound(event.currentTarget));
+    document.querySelectorAll('[data-notifier-test-id]').forEach(button => {
+      button.addEventListener('click', () => {
+        void submitNotifierTest(button.dataset.notifierTestId || '', button);
+      });
+    });
+    el('matrix-chat-notifier-tests-cancel-danger2')?.addEventListener('click', () => {
+      void cancelDanger2FromTests();
+    });
+    document.addEventListener('blueprints:event', domEvt => {
+      if (domEvt.detail) handleNotifierTestDrainedEvent(domEvt.detail);
+    });
+    document.addEventListener('blueprints:notification-speech-suppressed', domEvt => {
+      if (domEvt.detail) handleNotifierSpeechSuppressed(domEvt.detail);
+    });
     el('matrix-chat-composer')?.addEventListener('input', scheduleComposerSuggestions);
     el('matrix-chat-composer')?.addEventListener('focus', scheduleComposerSuggestions);
     el('matrix-chat-composer')?.addEventListener('click', scheduleComposerSuggestions);
@@ -1960,6 +2115,7 @@ const MatrixChat = (() => {
     sendMessage,
     insertHermesMention,
     openNotifierDnd: openNotifierDndModal,
+    openNotifierTests: openNotifierTestsModal,
   };
 })();
 

@@ -72,6 +72,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
   const _TOAST_MAX       = 4;     // max simultaneous toasts
   const _REPLAY_LOOKBACK = 900;   // seconds: replay window on SSE connect (15 min)
   const _REPLAY_DELAY_MS = 4500;  // ms after SSE connect before running replay
+  const _NOTIFIER_SPEECH_FRESHNESS_SECONDS = 180;
 
   // ── Module state ──────────────────────────────────────────────────────────
 
@@ -154,6 +155,59 @@ const BlueprintsModelChangeAnnouncer = (() => {
     return recovered
       ? 'Information. Public exposure guard has recovered.'
       : 'Warning. Public exposure guard found a private service exposure problem.';
+  }
+
+  function _eventSeverity(evt) {
+    if (typeof BlueprintsNotifierDnd !== 'undefined' && BlueprintsNotifierDnd.eventSeverity) {
+      return BlueprintsNotifierDnd.eventSeverity(evt);
+    }
+    const raw = String(evt?.payload?.notifier_level || evt?.severity || 'information').toLowerCase();
+    if (raw === 'warn') return 'warning';
+    if (raw === 'info') return 'information';
+    if (raw === 'critical') return 'error';
+    return ['debug', 'information', 'warning', 'error'].includes(raw) ? raw : 'information';
+  }
+
+  function _hasExplicitImportance(evt) {
+    if (typeof BlueprintsNotifierDnd !== 'undefined' && BlueprintsNotifierDnd.explicitImportance) {
+      return Boolean(BlueprintsNotifierDnd.explicitImportance(evt));
+    }
+    const raw = evt?.payload?.importance || evt?.importance || '';
+    return ['low_importance', 'neutral', 'urgent1', 'urgent2', 'danger1', 'danger2'].includes(raw);
+  }
+
+  function _isDanger2(evt) {
+    const explicit = typeof BlueprintsNotifierDnd !== 'undefined' && BlueprintsNotifierDnd.explicitImportance
+      ? BlueprintsNotifierDnd.explicitImportance(evt)
+      : (evt?.payload?.importance || evt?.importance || '');
+    return explicit === 'danger2';
+  }
+
+  function _isFreshNotifierSpeech(evt) {
+    if (!evt?.payload?.notifier_event_id) return true;
+    const createdAt = Number(evt.created_at || 0);
+    if (!Number.isFinite(createdAt) || createdAt <= 0) return true;
+    return (Date.now() / 1000) - createdAt <= _NOTIFIER_SPEECH_FRESHNESS_SECONDS;
+  }
+
+  function _genericSpeechForEvent(evt) {
+    if (evt?.payload?.speech) return String(evt.payload.speech);
+    const severity = _eventSeverity(evt);
+    const lead = severity === 'debug'
+      ? 'Debug'
+      : severity === 'information'
+        ? 'Information'
+        : severity === 'warning'
+          ? 'Warning'
+          : 'Error';
+    const body = evt?.message || evt?.title || evt?.event_type || 'System notification';
+    return `${lead}. ${body}`;
+  }
+
+  function _speechPolicyEvent(evt, unknownEventType = false) {
+    const payload = { ...(evt?.payload || {}) };
+    if (unknownEventType) payload.unknown_event_type = true;
+    return { ...(evt || {}), unknown_event_type: unknownEventType, payload };
   }
 
   // ── Queue drain ────────────────────────────────────────────────────────────
@@ -242,17 +296,49 @@ const BlueprintsModelChangeAnnouncer = (() => {
     return localStorage.getItem('events.tts.muted') === 'true';
   }
 
+  function _emitSpeechSuppressed(reason, item = {}) {
+    try {
+      document.dispatchEvent(new CustomEvent('blueprints:notification-speech-suppressed', {
+        detail: {
+          reason,
+          event: item.event || {},
+          title: item.toastOpts?.title || '',
+        },
+        bubbles: false,
+      }));
+    } catch (_) {}
+  }
+
   async function _speak(text, item = {}) {
-    if (_isMuted()) return;
+    if (_isMuted()) {
+      _emitSpeechSuppressed('browser_tts_muted', item);
+      return;
+    }
+    if (!_isFreshNotifierSpeech(item.event || {})) {
+      _emitSpeechSuppressed('stale_notifier_replay', item);
+      return;
+    }
     if (typeof BlueprintsNotifierDnd !== 'undefined') {
       const evt = item.event || {};
       await BlueprintsNotifierDnd.loadConfig();
-      if (!BlueprintsNotifierDnd.shouldSpeak(evt)) return;
-      if (!await BlueprintsNotifierDnd.claimSpeech(evt)) return;
+      if (!BlueprintsNotifierDnd.shouldSpeak(evt)) {
+        _emitSpeechSuppressed('dnd_policy_suppressed', item);
+        return;
+      }
+      if (!await BlueprintsNotifierDnd.claimSpeech(evt)) {
+        _emitSpeechSuppressed('speech_claim_denied', item);
+        return;
+      }
       item.volume = BlueprintsNotifierDnd.ttsVolume(evt);
     }
-    if (typeof BlueprintsTtsClient === 'undefined') return;
-    if (typeof BlueprintsTtsClient.speak !== 'function') return;
+    if (typeof BlueprintsTtsClient === 'undefined') {
+      _emitSpeechSuppressed('tts_client_unavailable', item);
+      return;
+    }
+    if (typeof BlueprintsTtsClient.speak !== 'function') {
+      _emitSpeechSuppressed('tts_speak_unavailable', item);
+      return;
+    }
     try {
       await BlueprintsTtsClient.speak({
         text,
@@ -263,6 +349,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
       });
     } catch (e) {
       console.warn('[model-change-announcer] TTS error (non-fatal):', e);
+      _emitSpeechSuppressed('tts_error', item);
     }
   }
 
@@ -428,7 +515,27 @@ const BlueprintsModelChangeAnnouncer = (() => {
         break;
 
       default:
-        // Unknown event type: toast only, no TTS.
+        // Unknown event type: always toast. Warnings/errors, and any event with
+        // explicit importance, can speak through the DND policy.
+        {
+          const unknownEvt = _speechPolicyEvent(evt, true);
+          const severity = _eventSeverity(unknownEvt);
+          const maySpeak = !unknownEvt.payload?.suppress_speech
+            && !_isDanger2(unknownEvt)
+            && (_hasExplicitImportance(unknownEvt) || severity === 'warning' || severity === 'error');
+          if (maySpeak) {
+            _pushAndDrain(
+              _genericSpeechForEvent(unknownEvt),
+              {
+                title: evt.title || evt.event_type,
+                message: evt.message || '',
+                severity: evt.severity || 'info',
+              },
+              unknownEvt
+            );
+            break;
+          }
+        }
         _showToast({
           title:    evt.title    || evt.event_type,
           message:  evt.message  || '',
