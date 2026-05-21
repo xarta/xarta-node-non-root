@@ -1051,6 +1051,7 @@
           <span class="hub-dialog-badge">DND</span>
           <span class="hub-dialog-title-text">Notification Controls</span>
         </h2>
+        <button class="matrix-chat-notifier-info-btn" id="matrix-chat-notifier-info-open" type="button">Info</button>
         <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
       </div>
       <div class="hub-modal-body">
@@ -1117,6 +1118,89 @@
       <div class="hub-modal-footer">
         <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
         <button class="hub-modal-btn" id="matrix-chat-notifier-dnd-save" type="button">Save</button>
+      </div>
+    </dialog>
+    <dialog class="hub-modal hub-dialog matrix-chat-notifier-info-modal" data-tone="info" id="matrix-chat-notifier-info-modal">
+      <div class="hub-modal-header">
+        <h2 class="hub-modal-title" style="min-width:0;flex:1">
+          <span class="hub-dialog-badge">INFO</span>
+          <span class="hub-dialog-title-text">Notification Mode Guide</span>
+        </h2>
+        <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+      </div>
+      <div class="hub-modal-body matrix-chat-notifier-info-body">
+        <section class="matrix-chat-notifier-info-section">
+          <h3>What Mode Controls</h3>
+          <p>Mode controls which notification importance levels may speak through the notifier policy. It does not change the event severity field. Severity remains separate and still means debug, information, warning, or error.</p>
+          <p>Importance is ordered from quietest to loudest intent: low_importance, neutral, urgent1, urgent2, danger1, danger2.</p>
+        </section>
+        <section class="matrix-chat-notifier-info-section">
+          <h3>Precedence</h3>
+          <ol>
+            <li>Manual DND 1 or Manual DND 2 wins while its timeout is active.</li>
+            <li>Enabled schedules win next. Schedule 2 wins over Schedule 1 when both are active.</li>
+            <li>The top Mode selector is the base mode used when no manual timeout or active schedule overrides it.</li>
+          </ol>
+          <p>Choosing Default in the top Mode selector does not disable enabled schedules. The schedules will apply again at their next active window.</p>
+        </section>
+        <section class="matrix-chat-notifier-info-section">
+          <h3>Mode Filters</h3>
+          <div class="matrix-chat-notifier-info-table" role="table" aria-label="Notification mode filters">
+            <div role="row">
+              <strong role="columnheader">Mode</strong>
+              <strong role="columnheader">Speaks</strong>
+              <strong role="columnheader">Volume</strong>
+              <strong role="columnheader">Use</strong>
+            </div>
+            <div role="row">
+              <span role="cell">Debug</span>
+              <span role="cell">low_importance and above</span>
+              <span role="cell">debug volume</span>
+              <span role="cell">For testing policy and low-value chatter.</span>
+            </div>
+            <div role="row">
+              <span role="cell">Default</span>
+              <span role="cell">neutral and above</span>
+              <span role="cell">normal volume</span>
+              <span role="cell">Ordinary day mode.</span>
+            </div>
+            <div role="row">
+              <span role="cell">Scheduled DND 01</span>
+              <span role="cell">urgent1 and above</span>
+              <span role="cell">quiet volume</span>
+              <span role="cell">Schedule 1, or a continuous base mode if selected at the top.</span>
+            </div>
+            <div role="row">
+              <span role="cell">Scheduled DND 02</span>
+              <span role="cell">urgent2, danger1, danger2</span>
+              <span role="cell">quiet volume</span>
+              <span role="cell">Schedule 2, or a continuous base mode if selected at the top.</span>
+            </div>
+            <div role="row">
+              <span role="cell">Manual DND 1</span>
+              <span role="cell">urgent2, danger1, danger2</span>
+              <span role="cell">quiet volume</span>
+              <span role="cell">Temporary override for the selected timeout.</span>
+            </div>
+            <div role="row">
+              <span role="cell">Manual DND 2</span>
+              <span role="cell">danger2 only</span>
+              <span role="cell">quiet volume</span>
+              <span role="cell">Strongest temporary quiet mode.</span>
+            </div>
+          </div>
+        </section>
+        <section class="matrix-chat-notifier-info-section">
+          <h3>Volumes And Speech Surfaces</h3>
+          <p>Normal volume is used by Default. Quiet volume is used by scheduled and manual DND modes. Debug mode uses the stored debug volume. Phone listener wins means an active phone listener is preferred for speech. One desktop webpage speaks limits desktop browser speech to one active desktop page for the local listener group.</p>
+        </section>
+        <section class="matrix-chat-notifier-info-section">
+          <h3>Danger2 Alarm</h3>
+          <p>Danger2 is always armed in policy. The selected alarm sound can be picked and tested here, and its test playback uses the separate alarm volume. Automatic Danger2 alarm playback is still reserved for a safety-tested notifier path, so the current Pick and Test controls are for choosing and verifying the sound without creating accidental alarms.</p>
+        </section>
+      </div>
+      <div class="hub-modal-footer">
+        <button class="hub-modal-btn" type="button" id="matrix-chat-notifier-info-close">Close</button>
       </div>
     </dialog>
   </section>

@@ -1218,6 +1218,20 @@ const MatrixChat = (() => {
     }
   }
 
+  function openNotifierInfoModal() {
+    const modal = el('matrix-chat-notifier-info-modal');
+    if (!modal) return;
+    if (typeof HubModal !== 'undefined') HubModal.open(modal);
+    else modal.showModal?.();
+  }
+
+  function closeNotifierInfoModal() {
+    const modal = el('matrix-chat-notifier-info-modal');
+    if (!modal) return;
+    if (typeof HubModal !== 'undefined') HubModal.close(modal);
+    else modal.close?.();
+  }
+
   function collectNotifierDndConfig() {
     const base = state.notifierDndConfig || {};
     const mode = el('matrix-chat-notifier-mode')?.value || 'default';
@@ -1913,6 +1927,8 @@ const MatrixChat = (() => {
     el('matrix-chat-mention-hermes')?.addEventListener('click', insertHermesMention);
     el('matrix-chat-send')?.addEventListener('click', sendMessage);
     el('matrix-chat-room-admin-save')?.addEventListener('click', saveRoomAdminSettings);
+    el('matrix-chat-notifier-info-open')?.addEventListener('click', openNotifierInfoModal);
+    el('matrix-chat-notifier-info-close')?.addEventListener('click', closeNotifierInfoModal);
     el('matrix-chat-notifier-mode')?.addEventListener('change', () => {
       void showNotifierModeImpact(false);
     });
