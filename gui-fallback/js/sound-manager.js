@@ -29,6 +29,7 @@ const SoundManager = (() => {
     let _previewStartedAt = 0;
     let _previewPlaying = false;
     let _previewButton = null;
+    let _previewGainNode = null;
     let _previewToken = 0;
     let _lifecycleWired = false;
 
@@ -61,6 +62,13 @@ const SoundManager = (() => {
             _gainNode.connect(ctx.destination);
         }
         return _gainNode;
+    }
+
+    function _volumeOverride(value) {
+        if (value === null || value === undefined || value === '') return null;
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) return null;
+        return Math.max(0, Math.min(1, parsed));
     }
 
     // Wire up a one-time resume-on-first-interaction handler
@@ -102,6 +110,10 @@ const SoundManager = (() => {
         try { _previewSource.stop(0); } catch (e) {}
         try { _previewSource.disconnect(); } catch (e) {}
         _previewSource = null;
+        if (_previewGainNode) {
+            try { _previewGainNode.disconnect(); } catch (e) {}
+            _previewGainNode = null;
+        }
     }
 
     function _resetPreviewState(buttonState) {
@@ -136,7 +148,7 @@ const SoundManager = (() => {
         _setPreviewButtonState(button, 'idle');
     }
 
-    async function _startPreview(url, button, offset) {
+    async function _startPreview(url, button, offset, volumeOverride) {
         const ctx = _getCtx();
         if (!ctx || !url) {
             _clearBrokenPreview(button);
@@ -144,7 +156,14 @@ const SoundManager = (() => {
         }
 
         _resumeCtx();
-        const gainNode = _getGainNode();
+        let gainNode = _getGainNode();
+        const previewVolume = _volumeOverride(volumeOverride);
+        if (previewVolume !== null) {
+            gainNode = ctx.createGain();
+            gainNode.gain.value = previewVolume;
+            gainNode.connect(ctx.destination);
+            _previewGainNode = gainNode;
+        }
         const token = ++_previewToken;
 
         _previewUrl = url;
@@ -188,6 +207,10 @@ const SoundManager = (() => {
                 _previewPlaying = false;
                 const activeButton = _previewButton;
                 _previewButton = null;
+                if (_previewGainNode) {
+                    try { _previewGainNode.disconnect(); } catch (e) {}
+                    _previewGainNode = null;
+                }
                 _setPreviewButtonState(activeButton, 'idle');
             };
             _previewSource = source;
@@ -281,12 +304,12 @@ const SoundManager = (() => {
             }
 
             if (sameChoice && !_previewPlaying && _previewOffset > 0) {
-                void _startPreview.call(this, url, button, _previewOffset);
+                void _startPreview.call(this, url, button, _previewOffset, (opts || {}).volume);
                 return;
             }
 
             _resetPreviewState('idle');
-            void _startPreview.call(this, url, button, 0);
+            void _startPreview.call(this, url, button, 0, (opts || {}).volume);
         },
 
         stopPreview() {

@@ -34,6 +34,11 @@ const BlueprintsTtsClient = (() => {
     return volume;
   }
 
+  function _overrideVolume(value) {
+    if (value === null || value === undefined || value === '') return null;
+    return _clamp01(value, null);
+  }
+
   function _stopAudioElement(audioEl) {
     if (!audioEl) return;
     try {
@@ -98,7 +103,7 @@ const BlueprintsTtsClient = (() => {
     return { ok: false, resumed: false };
   }
 
-  async function _playAudioBlob(blob, engine) {
+  async function _playAudioBlob(blob, engine, volumeOverride = null) {
     if (!blob || !blob.size) {
       throw new Error('Wrapper returned empty audio payload.');
     }
@@ -106,7 +111,7 @@ const BlueprintsTtsClient = (() => {
     const blobUrl = URL.createObjectURL(blob);
     const audio = new Audio(blobUrl);
     const useFallbackVolume = String(engine || '').toLowerCase() === 'sound_fallback';
-    audio.volume = useFallbackVolume ? getTtsFallbackVolume() : getTtsVolume();
+    audio.volume = volumeOverride ?? (useFallbackVolume ? getTtsFallbackVolume() : getTtsVolume());
     _activeSpeechAudio = audio;
 
     audio.addEventListener('ended', () => {
@@ -122,7 +127,7 @@ const BlueprintsTtsClient = (() => {
     await audio.play();
   }
 
-  async function _streamWavResponse(response, engine, abortController) {
+  async function _streamWavResponse(response, engine, abortController, volumeOverride = null) {
     const reader = response.body?.getReader?.();
     if (!reader) {
       throw new Error('Streaming response reader is not available.');
@@ -143,7 +148,7 @@ const BlueprintsTtsClient = (() => {
 
     const useFallbackVolume = String(engine || '').toLowerCase() === 'sound_fallback';
     const gainNode = audioCtx.createGain();
-    gainNode.gain.value = useFallbackVolume ? getTtsFallbackVolume() : getTtsVolume();
+    gainNode.gain.value = volumeOverride ?? (useFallbackVolume ? getTtsFallbackVolume() : getTtsVolume());
     gainNode.connect(audioCtx.destination);
 
     let nextStartTime = audioCtx.currentTime + 0.08;
@@ -239,6 +244,7 @@ const BlueprintsTtsClient = (() => {
       transform_profile: typeof opts.transformProfile === 'string' ? opts.transformProfile : undefined,
       allow_llm_sanitizer: typeof opts.allowLlmSanitizer === 'boolean' ? opts.allowLlmSanitizer : undefined,
     };
+    const volumeOverride = _overrideVolume(opts.volume);
 
     if (payload.interrupt) {
       try {
@@ -276,13 +282,13 @@ const BlueprintsTtsClient = (() => {
       const isFallbackAudio = String(engine).toLowerCase() === 'sound_fallback';
       if (isStreamMode && isWav && !isFallbackAudio && response.body && response.body.getReader) {
         await _stopActiveStream();
-          await _streamWavResponse(response, engine, abortController);
+        await _streamWavResponse(response, engine, abortController, volumeOverride);
       } else {
         const blob = await response.blob();
         if (!blob.size) {
           throw new Error('Wrapper returned empty audio payload.');
         }
-        await _playAudioBlob(blob, engine);
+        await _playAudioBlob(blob, engine, volumeOverride);
       }
       return { ok: true, engine };
     }

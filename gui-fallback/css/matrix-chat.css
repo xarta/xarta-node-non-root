@@ -1033,6 +1033,7 @@
   height: 35px;
   min-width: 0;
   box-sizing: border-box;
+  padding: 0 10px;
   border: 1px solid rgba(var(--hub-accent-rgb, 0, 212, 255), 0.28);
   background: rgba(15, 23, 42, 0.72);
   color: var(--text);
@@ -1068,13 +1069,16 @@
 }
 
 .matrix-chat-notifier-schedule-toggle .hub-checkbox {
+  height: var(--notifier-schedule-control-height);
   min-height: var(--notifier-schedule-control-height);
   box-sizing: border-box;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .matrix-chat-notifier-danger-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto auto minmax(110px, auto);
+  grid-template-columns: minmax(220px, 1fr) minmax(130px, 0.28fr) auto auto minmax(120px, auto);
   gap: 8px;
   align-items: end;
 }
@@ -1088,8 +1092,22 @@
   height: 35px;
 }
 
-.matrix-chat-notifier-danger-armed {
+.matrix-chat-notifier-armed-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 35px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  border: 1px solid rgba(63, 185, 80, 0.42);
+  border-radius: 6px;
+  background: rgba(63, 185, 80, 0.09);
+  color: var(--ok, #3fb950);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0;
+  white-space: nowrap;
 }
 
 .matrix-chat-composer textarea {
@@ -1120,7 +1138,7 @@
   }
 
   .matrix-chat-notifier-schedule-toggle .hub-checkbox,
-  .matrix-chat-notifier-danger-armed {
+  .matrix-chat-notifier-armed-pill {
     width: 100%;
   }
 

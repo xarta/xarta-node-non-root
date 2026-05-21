@@ -47,8 +47,9 @@ const BlueprintsNotifierDnd = (() => {
     },
     danger_policy: {
       danger2_alarm_planned: true,
-      alarm_sound_enabled: false,
+      alarm_sound_enabled: true,
       alarm_sound_path: null,
+      danger_alarm_volume: 1.0,
     },
     notes: '',
   });
@@ -131,8 +132,11 @@ const BlueprintsNotifierDnd = (() => {
     ) {
       return config.mode;
     }
-    const activeSchedule = (config.schedules || []).find(scheduleActive);
-    return activeSchedule?.mode || (config.mode === 'debug' ? 'debug' : 'default');
+    const activeSchedules = (config.schedules || []).filter(scheduleActive);
+    if (activeSchedules.length) return activeSchedules[activeSchedules.length - 1].mode;
+    if (config.mode === 'debug') return 'debug';
+    if (config.mode === 'scheduled_dnd_01' || config.mode === 'scheduled_dnd_02') return config.mode;
+    return 'default';
   }
 
   function eventImportance(evt) {
@@ -143,6 +147,13 @@ const BlueprintsNotifierDnd = (() => {
   function shouldSpeak(evt, config = _config) {
     const required = MODE_MIN[activeMode(config)] || config.minimum_speak_importance || 'neutral';
     return IMPORTANCE_RANK[eventImportance(evt)] >= IMPORTANCE_RANK[required];
+  }
+
+  function ttsVolume(evt, config = _config) {
+    const mode = activeMode(config);
+    if (mode === 'debug') return Number(config.debug_volume ?? 0.60);
+    if (mode === 'default') return Number(config.normal_volume ?? 0.85);
+    return Number(config.quiet_volume ?? 0.35);
   }
 
   function listenerEntries() {
@@ -241,6 +252,7 @@ const BlueprintsNotifierDnd = (() => {
     getConfig: () => _config,
     activeMode,
     shouldSpeak,
+    ttsVolume,
     claimSpeech,
     eventImportance,
   });

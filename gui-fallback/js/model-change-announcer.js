@@ -248,7 +248,8 @@ const BlueprintsModelChangeAnnouncer = (() => {
       const evt = item.event || {};
       await BlueprintsNotifierDnd.loadConfig();
       if (!BlueprintsNotifierDnd.shouldSpeak(evt)) return;
-      if (!BlueprintsNotifierDnd.claimSpeech(evt)) return;
+      if (!await BlueprintsNotifierDnd.claimSpeech(evt)) return;
+      item.volume = BlueprintsNotifierDnd.ttsVolume(evt);
     }
     if (typeof BlueprintsTtsClient === 'undefined') return;
     if (typeof BlueprintsTtsClient.speak !== 'function') return;
@@ -258,6 +259,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
         interrupt: false,
         fallbackKind: 'neutral',
         eventKind: 'notification',
+        volume: item.volume,
       });
     } catch (e) {
       console.warn('[model-change-announcer] TTS error (non-fatal):', e);

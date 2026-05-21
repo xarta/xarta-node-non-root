@@ -1092,11 +1092,11 @@ const MatrixChat = (() => {
       row.dataset.index = String(index);
       row.innerHTML = `
         <div class="matrix-chat-notifier-schedule-cell matrix-chat-notifier-schedule-toggle">
-          <span class="matrix-chat-notifier-schedule-label">State</span>
+          <span class="matrix-chat-notifier-schedule-label">Schedule ${index + 1}</span>
           <label class="hub-checkbox matrix-chat-room-admin-toggle">
             <input class="hub-checkbox__input" type="checkbox" data-notifier-schedule-field="enabled" />
             <span class="hub-checkbox__box" aria-hidden="true"></span>
-            <span class="hub-checkbox__label">Enabled</span>
+            <span class="hub-checkbox__label">Use schedule</span>
           </label>
         </div>
         <label class="matrix-chat-notifier-field">
@@ -1132,7 +1132,7 @@ const MatrixChat = (() => {
     const phoneWins = el('matrix-chat-notifier-phone-wins');
     const desktopDedupe = el('matrix-chat-notifier-desktop-dedupe');
     const dangerSound = el('matrix-chat-notifier-danger-sound');
-    const dangerAlarm = el('matrix-chat-notifier-danger-alarm');
+    const dangerVolume = el('matrix-chat-notifier-danger-volume');
     const dangerTest = el('matrix-chat-notifier-danger-test');
     const save = el('matrix-chat-notifier-dnd-save');
     if (mode) mode.value = cfg.mode || 'default';
@@ -1142,7 +1142,7 @@ const MatrixChat = (() => {
     if (phoneWins) phoneWins.checked = cfg.listener_policy?.phone_wins !== false;
     if (desktopDedupe) desktopDedupe.checked = cfg.listener_policy?.desktop_one_per_os_ip !== false;
     if (dangerSound) dangerSound.value = cfg.danger_policy?.alarm_sound_path || '';
-    if (dangerAlarm) dangerAlarm.checked = Boolean(cfg.danger_policy?.alarm_sound_enabled);
+    if (dangerVolume) dangerVolume.value = String(cfg.danger_policy?.danger_alarm_volume ?? 1);
     if (dangerTest) dangerTest.disabled = !cfg.danger_policy?.alarm_sound_path;
     if (save) save.disabled = state.notifierDndSaving || !state.notifierDndConfig;
     renderNotifierSchedules();
@@ -1153,7 +1153,7 @@ const MatrixChat = (() => {
     state.notifierDndConfig.danger_policy = {
       ...(state.notifierDndConfig.danger_policy || {}),
       alarm_sound_path: assetPath || null,
-      alarm_sound_enabled: false,
+      alarm_sound_enabled: true,
     };
     renderNotifierDndModal();
   }
@@ -1185,7 +1185,8 @@ const MatrixChat = (() => {
     const path = el('matrix-chat-notifier-danger-sound')?.value || '';
     const url = notifierDangerSoundUrl(path);
     if (!url || typeof SoundManager === 'undefined') return;
-    SoundManager.previewToggle(url, { button });
+    const volume = Number(el('matrix-chat-notifier-danger-volume')?.value || 1);
+    SoundManager.previewToggle(url, { button, volume });
   }
 
   async function openNotifierDndModal() {
@@ -1235,18 +1236,19 @@ const MatrixChat = (() => {
       danger_policy: {
         ...(base.danger_policy || {}),
         alarm_sound_path: (el('matrix-chat-notifier-danger-sound')?.value || '').trim() || null,
-        alarm_sound_enabled: false,
+        alarm_sound_enabled: true,
+        danger_alarm_volume: Number(el('matrix-chat-notifier-danger-volume')?.value || 1),
       },
     };
   }
 
   async function saveNotifierDndConfig() {
     if (state.notifierDndSaving || typeof BlueprintsNotifierDnd === 'undefined') return;
+    const nextConfig = collectNotifierDndConfig();
     state.notifierDndSaving = true;
-    renderNotifierDndModal();
     setNotifierDndStatus('Saving...', '');
     try {
-      state.notifierDndConfig = await BlueprintsNotifierDnd.saveConfig(collectNotifierDndConfig());
+      state.notifierDndConfig = await BlueprintsNotifierDnd.saveConfig(nextConfig);
       renderNotifierDndModal();
       setNotifierDndStatus(`Saved. Active speech mode: ${BlueprintsNotifierDnd.activeMode(state.notifierDndConfig)}`, 'ok');
     } catch (error) {
