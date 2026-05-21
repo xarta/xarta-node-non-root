@@ -1122,7 +1122,7 @@ const MatrixChat = (() => {
     const timeout = el('matrix-chat-notifier-timeout');
     const normalVolume = el('matrix-chat-notifier-normal-volume');
     const quietVolume = el('matrix-chat-notifier-quiet-volume');
-    const phoneWins = el('matrix-chat-notifier-phone-wins');
+    const phoneAlwaysSpeaks = el('matrix-chat-notifier-phone-always-speaks');
     const desktopDedupe = el('matrix-chat-notifier-desktop-dedupe');
     const dangerSound = el('matrix-chat-notifier-danger-sound');
     const dangerVolume = el('matrix-chat-notifier-danger-volume');
@@ -1132,7 +1132,7 @@ const MatrixChat = (() => {
     if (timeout) timeout.value = String(cfg.manual_timeout_minutes || 60);
     if (normalVolume) normalVolume.value = String(cfg.normal_volume ?? 0.85);
     if (quietVolume) quietVolume.value = String(cfg.quiet_volume ?? 0.35);
-    if (phoneWins) phoneWins.checked = cfg.listener_policy?.phone_wins !== false;
+    if (phoneAlwaysSpeaks) phoneAlwaysSpeaks.checked = true;
     if (desktopDedupe) desktopDedupe.checked = cfg.listener_policy?.desktop_one_per_os_ip !== false;
     if (dangerSound) dangerSound.value = cfg.danger_policy?.alarm_sound_path || '';
     if (dangerVolume) dangerVolume.value = String(cfg.danger_policy?.danger_alarm_volume ?? 1);
@@ -1254,7 +1254,8 @@ const MatrixChat = (() => {
       schedules,
       listener_policy: {
         ...(base.listener_policy || {}),
-        phone_wins: Boolean(el('matrix-chat-notifier-phone-wins')?.checked),
+        // Legacy key: true means phones always speak; phones do not suppress desktop/web.
+        phone_wins: true,
         desktop_one_per_os_ip: Boolean(el('matrix-chat-notifier-desktop-dedupe')?.checked),
       },
       danger_policy: {
@@ -1402,7 +1403,7 @@ const MatrixChat = (() => {
       browser_tts_muted: 'browser TTS is muted',
       stale_notifier_replay: 'stale notifier replay was not spoken',
       dnd_policy_suppressed: 'DND policy suppressed speech',
-      speech_claim_denied: 'another listener claimed speech',
+      speech_claim_denied: 'another webpage on this device already spoke for this event',
       tts_client_unavailable: 'TTS client is unavailable',
       tts_speak_unavailable: 'TTS speak function is unavailable',
       tts_error: 'TTS playback failed',

@@ -1086,9 +1086,9 @@
         </div>
         <div class="matrix-chat-notifier-panel">
           <label class="hub-checkbox matrix-chat-room-admin-toggle">
-            <input id="matrix-chat-notifier-phone-wins" class="hub-checkbox__input" type="checkbox" />
+            <input id="matrix-chat-notifier-phone-always-speaks" class="hub-checkbox__input" type="checkbox" checked disabled />
             <span class="hub-checkbox__box" aria-hidden="true"></span>
-            <span class="hub-checkbox__label">Phone listener wins</span>
+            <span class="hub-checkbox__label">Phone always speaks</span>
           </label>
           <label class="hub-checkbox matrix-chat-room-admin-toggle">
             <input id="matrix-chat-notifier-desktop-dedupe" class="hub-checkbox__input" type="checkbox" />
@@ -1272,7 +1272,7 @@
         </section>
         <section class="matrix-chat-notifier-info-section">
           <h3>Volumes And Speech Surfaces</h3>
-          <p>Normal volume is used by Default. Quiet volume is used by scheduled and manual DND modes. Debug mode uses the stored debug volume. Phone listener wins means an active phone listener is preferred for speech. One desktop webpage speaks limits desktop browser speech to one active desktop page for the local listener group.</p>
+          <p>Normal volume is used by Default. Quiet volume is used by scheduled and manual DND modes. Debug mode uses the stored debug volume. Phone listeners always speak when policy allows TTS. One desktop webpage speaks limits desktop browser speech to one active page per client IP for each event.</p>
         </section>
         <section class="matrix-chat-notifier-info-section">
           <h3>Danger2 Alarm</h3>

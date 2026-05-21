@@ -48,6 +48,7 @@ const BlueprintsNotifierDnd = (() => {
       { enabled: false, start: '00:00', end: '07:00', mode: 'scheduled_dnd_02' },
     ],
     listener_policy: {
+      // Legacy key: true means phones always speak; phones do not suppress desktop/web.
       phone_wins: true,
       desktop_one_per_os_ip: true,
       android_listener_future: true,
@@ -386,18 +387,18 @@ const BlueprintsNotifierDnd = (() => {
     heartbeatLocal();
     const kind = deviceKind();
     const policy = config.listener_policy || {};
-    if (kind !== 'phone' && policy.phone_wins !== false) {
-      if (listenerEntries().some(item => item.kind === 'phone' && item.id !== LISTENER_ID)) return false;
-    }
+    if (kind === 'phone') return true;
     if (kind === 'desktop' && policy.desktop_one_per_os_ip !== false) {
       const now = Date.now();
+      const eventKey = evt?.event_id || evt?.id || `no-event:${Math.floor(now / LISTENER_TTL_MS)}`;
+      const leaderKey = `${DESKTOP_LEADER_KEY}.${eventKey}`;
       try {
-        const leader = JSON.parse(localStorage.getItem(DESKTOP_LEADER_KEY) || '{}');
+        const leader = JSON.parse(localStorage.getItem(leaderKey) || '{}');
         if (leader.id && leader.id !== LISTENER_ID && now - Number(leader.ts || 0) <= LISTENER_TTL_MS) return false;
-        localStorage.setItem(DESKTOP_LEADER_KEY, JSON.stringify({
+        localStorage.setItem(leaderKey, JSON.stringify({
           id: LISTENER_ID,
           ts: now,
-          event_id: evt?.event_id || '',
+          event_id: eventKey,
         }));
       } catch (_) {}
     }
