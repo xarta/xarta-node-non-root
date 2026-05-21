@@ -1107,18 +1107,10 @@ const MatrixChat = (() => {
           <span>End</span>
           <input type="time" data-notifier-schedule-field="end" />
         </label>
-        <label class="matrix-chat-notifier-field">
-          <span>Mode</span>
-          <select data-notifier-schedule-field="mode">
-            <option value="scheduled_dnd_01">Scheduled DND 01</option>
-            <option value="scheduled_dnd_02">Scheduled DND 02</option>
-          </select>
-        </label>
       `;
       row.querySelector('[data-notifier-schedule-field="enabled"]').checked = Boolean(schedule.enabled);
       row.querySelector('[data-notifier-schedule-field="start"]').value = schedule.start || '22:00';
       row.querySelector('[data-notifier-schedule-field="end"]').value = schedule.end || '07:00';
-      row.querySelector('[data-notifier-schedule-field="mode"]').value = schedule.mode || 'scheduled_dnd_01';
       list.appendChild(row);
     });
   }
@@ -1235,7 +1227,7 @@ const MatrixChat = (() => {
       enabled: Boolean(row.querySelector('[data-notifier-schedule-field="enabled"]')?.checked),
       start: row.querySelector('[data-notifier-schedule-field="start"]')?.value || '22:00',
       end: row.querySelector('[data-notifier-schedule-field="end"]')?.value || '07:00',
-      mode: row.querySelector('[data-notifier-schedule-field="mode"]')?.value || 'scheduled_dnd_01',
+      mode: Number(row.dataset.index || 0) === 1 ? 'scheduled_dnd_02' : 'scheduled_dnd_01',
     }));
     return {
       ...base,

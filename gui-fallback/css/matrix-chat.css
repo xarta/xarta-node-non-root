@@ -1041,6 +1041,26 @@
   text-transform: none;
 }
 
+.matrix-chat-notifier-field select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235b9cf6' opacity='.8'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  cursor: pointer;
+}
+
+.matrix-chat-notifier-field select:hover {
+  border-color: rgba(var(--hub-accent-rgb, 0, 212, 255), 0.5);
+}
+
+.matrix-chat-notifier-field select:focus {
+  border-color: rgba(var(--hub-accent-rgb, 0, 212, 255), 0.7);
+  outline: none;
+}
+
 .matrix-chat-notifier-field input[readonly] {
   cursor: default;
 }
@@ -1053,7 +1073,7 @@
 .matrix-chat-notifier-schedule {
   --notifier-schedule-control-height: 35px;
   display: grid;
-  grid-template-columns: minmax(132px, 0.72fr) repeat(3, minmax(130px, 1fr));
+  grid-template-columns: minmax(132px, 0.72fr) repeat(2, minmax(130px, 1fr));
   gap: 8px;
   align-items: start;
 }
@@ -1072,6 +1092,7 @@
   height: var(--notifier-schedule-control-height);
   min-height: var(--notifier-schedule-control-height);
   box-sizing: border-box;
+  margin-bottom: 0;
   padding-top: 0;
   padding-bottom: 0;
 }
@@ -1132,12 +1153,33 @@
 }
 
 @media (max-width: 720px) {
-  .matrix-chat-notifier-schedule,
+  .matrix-chat-notifier-schedule {
+    grid-template-columns: minmax(104px, 1.1fr) minmax(76px, 0.85fr) minmax(76px, 0.85fr);
+    gap: 8px;
+  }
+
+  .matrix-chat-notifier-schedule .matrix-chat-notifier-field input[type="time"] {
+    padding: 0 8px;
+    font-size: 12px;
+  }
+
+  .matrix-chat-notifier-schedule-toggle .hub-checkbox {
+    gap: 6px;
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .matrix-chat-notifier-schedule-toggle .hub-checkbox__label {
+    overflow: hidden;
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .matrix-chat-notifier-danger-row {
     grid-template-columns: 1fr;
   }
 
-  .matrix-chat-notifier-schedule-toggle .hub-checkbox,
   .matrix-chat-notifier-armed-pill {
     width: 100%;
   }
