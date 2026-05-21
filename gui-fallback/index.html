@@ -1103,12 +1103,16 @@
               <span>Alarm volume</span>
               <input id="matrix-chat-notifier-danger-volume" type="range" min="0" max="1" step="0.05" />
             </label>
-            <button class="btn-small secondary matrix-chat-notifier-sound-btn" id="matrix-chat-notifier-danger-pick" type="button">Pick</button>
-            <button class="btn-small secondary matrix-chat-notifier-sound-btn" id="matrix-chat-notifier-danger-test" type="button">Test</button>
+            <div class="matrix-chat-notifier-sound-actions">
+              <button class="btn-small secondary matrix-chat-notifier-sound-btn" id="matrix-chat-notifier-danger-pick" type="button">Pick</button>
+              <button class="btn-small secondary matrix-chat-notifier-sound-btn" id="matrix-chat-notifier-danger-test" type="button">Test</button>
+            </div>
+          </div>
+          <div class="matrix-chat-notifier-status-row">
             <div class="matrix-chat-notifier-armed-pill" aria-live="polite">Always armed</div>
+            <p id="matrix-chat-notifier-dnd-status" class="hub-modal-error matrix-chat-room-admin-status matrix-chat-notifier-status"></p>
           </div>
         </div>
-        <p id="matrix-chat-notifier-dnd-status" class="hub-modal-error matrix-chat-room-admin-status"></p>
       </div>
       <div class="hub-modal-footer">
         <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>

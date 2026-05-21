@@ -1099,7 +1099,7 @@
 
 .matrix-chat-notifier-danger-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(130px, 0.28fr) auto auto minmax(120px, auto);
+  grid-template-columns: minmax(220px, 1fr) minmax(130px, 0.28fr) minmax(148px, auto);
   gap: 8px;
   align-items: end;
 }
@@ -1109,8 +1109,21 @@
 }
 
 .matrix-chat-notifier-sound-btn {
-  min-width: 70px;
+  min-width: 0;
   height: 35px;
+}
+
+.matrix-chat-notifier-sound-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.matrix-chat-notifier-status-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) minmax(0, 2fr);
+  gap: 8px;
+  align-items: stretch;
 }
 
 .matrix-chat-notifier-armed-pill {
@@ -1129,6 +1142,14 @@
   text-transform: uppercase;
   letter-spacing: 0;
   white-space: nowrap;
+}
+
+.matrix-chat-notifier-status {
+  display: flex;
+  align-items: center;
+  min-height: 35px;
+  box-sizing: border-box;
+  margin: 0;
 }
 
 .matrix-chat-composer textarea {
@@ -1180,6 +1201,16 @@
     grid-template-columns: 1fr;
   }
 
+  .matrix-chat-notifier-sound-actions,
+  .matrix-chat-notifier-status-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .matrix-chat-notifier-status-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  }
+
+  .matrix-chat-notifier-sound-btn,
   .matrix-chat-notifier-armed-pill {
     width: 100%;
   }
