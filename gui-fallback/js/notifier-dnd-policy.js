@@ -132,7 +132,8 @@ const BlueprintsNotifierDnd = (() => {
     ) {
       return config.mode;
     }
-    const activeSchedules = (config.schedules || []).filter(scheduleActive);
+    const now = new Date();
+    const activeSchedules = (config.schedules || []).filter(schedule => scheduleActive(schedule, now));
     if (activeSchedules.length) return activeSchedules[activeSchedules.length - 1].mode;
     if (config.mode === 'debug') return 'debug';
     if (config.mode === 'scheduled_dnd_01' || config.mode === 'scheduled_dnd_02') return config.mode;
