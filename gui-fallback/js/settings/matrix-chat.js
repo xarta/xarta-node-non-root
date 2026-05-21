@@ -1332,6 +1332,23 @@ const MatrixChat = (() => {
     return window.confirm(`${message}\n\nStart drill?`);
   }
 
+  async function confirmNotifierFailureDrill() {
+    const message = 'This temporarily stops the system-bridge-notifier Dockge stack, attempts a real notifier webhook, publishes the explicit failure-warning TTS fallback, then restarts the stack.';
+    if (typeof HubDialogs !== 'undefined' && typeof HubDialogs.confirm === 'function') {
+      return HubDialogs.confirm({
+        title: 'Run Notifier Failure Drill?',
+        badge: 'FAILURE',
+        message,
+        detail: 'This is intentionally noisy and briefly disrupts notifier delivery. Do not close the page until the restart status is shown.',
+        confirmText: 'Stop notifier and test',
+        cancelText: 'Cancel',
+        tone: 'danger',
+        width: 'min(620px,95vw)',
+      });
+    }
+    return window.confirm(`${message}\n\nRun notifier failure drill?`);
+  }
+
   async function submitNotifierTest(testId, button = null) {
     if (!testId) return;
     const confirmed = testId === 'danger2_drill' ? await confirmDanger2Drill() : false;
@@ -1360,6 +1377,36 @@ const MatrixChat = (() => {
     } catch (error) {
       setNotifierTestsStatus(`${testId}: notifier submission failed: ${error.message}`, 'error');
       appendNotifierTestLog(`${testId}: notifier submission failed: ${error.message}`, 'error');
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  async function runNotifierFailureDrill(button = null) {
+    const confirmed = await confirmNotifierFailureDrill();
+    if (!confirmed) {
+      setNotifierTestsStatus('Notifier failure drill cancelled before stopping the stack.', 'warn');
+      return;
+    }
+    if (button) button.disabled = true;
+    setNotifierTestsStatus('Stopping system-bridge-notifier Dockge stack for failure drill...', 'warn');
+    appendNotifierTestLog('notifier_failure_warning: stopping system-bridge-notifier Dockge stack', 'warn');
+    try {
+      const result = await apiJson('/api/v1/notifier-dnd/tests/notifier-failure-drill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmed: true }),
+      });
+      state.notifierTestEvents.set(result.event_id, {
+        testId: result.test_id || 'notifier_failure_warning',
+        submittedAt: Date.now(),
+      });
+      const restartText = result.restart_ok ? 'notifier restarted' : 'notifier restart reported a problem';
+      setNotifierTestsStatus(`Notifier failure warning published; ${restartText}.`, result.restart_ok ? 'ok' : 'error');
+      appendNotifierTestLog(`notifier_failure_warning: warning event ${result.event_id}; ${restartText}`, result.restart_ok ? 'ok' : 'error');
+    } catch (error) {
+      setNotifierTestsStatus(`Notifier failure drill failed: ${error.message}`, 'error');
+      appendNotifierTestLog(`notifier_failure_warning: drill failed: ${error.message}`, 'error');
     } finally {
       if (button) button.disabled = false;
     }
@@ -2084,6 +2131,9 @@ const MatrixChat = (() => {
     });
     el('matrix-chat-notifier-tests-cancel-danger2')?.addEventListener('click', () => {
       void cancelDanger2FromTests();
+    });
+    el('matrix-chat-notifier-tests-failure-drill')?.addEventListener('click', event => {
+      void runNotifierFailureDrill(event.currentTarget);
     });
     document.addEventListener('blueprints:event', domEvt => {
       if (domEvt.detail) handleNotifierTestDrainedEvent(domEvt.detail);
