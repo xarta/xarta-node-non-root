@@ -23,6 +23,7 @@ const MatrixChat = (() => {
     nextBatch: '',
     pollTimer: null,
     messagesByRoom: new Map(),
+    redactedEventIdsByRoom: new Map(),
     historyByRoom: new Map(),
     inviteCandidates: [],
     inviteCandidateIndex: -1,
@@ -40,6 +41,9 @@ const MatrixChat = (() => {
     roomAdminSettings: null,
     roomAdminMembers: [],
     roomAdminSaving: false,
+    roomAdminDeleting: false,
+    roomAdminTesting: false,
+    messageDeleteButtonsVisible: false,
     roomTabClickTimer: null,
     notifierDndConfig: null,
     notifierDndSaving: false,
@@ -728,6 +732,60 @@ const MatrixChat = (() => {
     } catch (_) {}
   }
 
+  function redactedEventIds(roomId) {
+    if (!roomId) return new Set();
+    let ids = state.redactedEventIdsByRoom.get(roomId);
+    if (!ids) {
+      ids = new Set();
+      state.redactedEventIdsByRoom.set(roomId, ids);
+    }
+    return ids;
+  }
+
+  function rememberRedactedEventIds(roomId, eventIds) {
+    const ids = new Set((eventIds || []).filter(Boolean));
+    if (!roomId || !ids.size) return;
+    const redacted = redactedEventIds(roomId);
+    ids.forEach(eventId => redacted.add(eventId));
+  }
+
+  function removeMessagesByEventId(roomId, eventIds) {
+    const ids = new Set((eventIds || []).filter(Boolean));
+    if (!roomId || !ids.size) return;
+    rememberRedactedEventIds(roomId, Array.from(ids));
+    const existing = state.messagesByRoom.get(roomId) || [];
+    state.messagesByRoom.set(roomId, existing.filter(message => !ids.has(message.event_id)));
+  }
+
+  async function redactMessages(roomId, payload) {
+    return apiJson(matrixApi(`/rooms/${encodeURIComponent(roomId)}/redactions`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async function deleteMessage(message, button = null) {
+    const roomId = state.activeRoomId;
+    const eventId = message?.event_id || '';
+    if (!roomId || !eventId) return;
+    if (button) button.disabled = true;
+    try {
+      const result = await redactMessages(roomId, {
+        mode: 'events',
+        event_ids: [eventId],
+        reason: 'Blueprints Matrix Chat quick delete',
+      });
+      const redactedIds = (result.redacted || []).map(item => item.event_id).filter(Boolean);
+      removeMessagesByEventId(roomId, redactedIds.length ? redactedIds : [eventId]);
+      renderMessages({ scrollToBottom: false });
+      setStatus('Message deleted.', 'ok');
+    } catch (error) {
+      setStatus(`Delete failed: ${error.message}`, 'error');
+      if (button) button.disabled = false;
+    }
+  }
+
   function renderMessages(options = {}) {
     const { scrollToBottom = true, focusTimelineFilter = false } = options;
     const timeline = el('matrix-chat-timeline');
@@ -796,6 +854,19 @@ const MatrixChat = (() => {
         meta.appendChild(badge);
       }
       meta.appendChild(ts);
+      if (state.messageDeleteButtonsVisible && message.event_id) {
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'matrix-chat-message-delete';
+        del.textContent = 'Delete';
+        del.title = 'Delete this Matrix event immediately';
+        del.addEventListener('click', event => {
+          event.preventDefault();
+          event.stopPropagation();
+          void deleteMessage(message, del);
+        });
+        meta.appendChild(del);
+      }
 
       const body = document.createElement('div');
       body.className = 'matrix-chat-message-body';
@@ -810,10 +881,12 @@ const MatrixChat = (() => {
   function mergeMessages(roomId, messages) {
     if (!roomId || !Array.isArray(messages) || !messages.length) return;
     const existing = state.messagesByRoom.get(roomId) || [];
+    const redacted = redactedEventIds(roomId);
     const seen = new Set(existing.map(message => message.event_id).filter(Boolean));
     const merged = existing.slice();
     messages.forEach(message => {
       if (!message) return;
+      if (message.event_id && redacted.has(message.event_id)) return;
       if (message.event_id && seen.has(message.event_id)) return;
       if (message.event_id) seen.add(message.event_id);
       merged.push(message);
@@ -825,10 +898,12 @@ const MatrixChat = (() => {
   function prependMessages(roomId, messages) {
     if (!roomId || !Array.isArray(messages) || !messages.length) return;
     const existing = state.messagesByRoom.get(roomId) || [];
+    const redacted = redactedEventIds(roomId);
     const seen = new Set(existing.map(message => message.event_id).filter(Boolean));
     const fresh = [];
     messages.forEach(message => {
       if (!message) return;
+      if (message.event_id && redacted.has(message.event_id)) return;
       if (message.event_id && seen.has(message.event_id)) return;
       if (message.event_id) seen.add(message.event_id);
       fresh.push(message);
@@ -869,7 +944,12 @@ const MatrixChat = (() => {
       return;
     }
     const data = await apiJson(matrixApi(`/rooms/${encodeURIComponent(roomId)}/messages?limit=${MATRIX_CHAT_INITIAL_MESSAGE_LIMIT}`));
-    state.messagesByRoom.set(roomId, Array.isArray(data.messages) ? data.messages : []);
+    const redacted = redactedEventIds(roomId);
+    const messages = Array.isArray(data.messages) ? data.messages : [];
+    state.messagesByRoom.set(
+      roomId,
+      messages.filter(message => !message?.event_id || !redacted.has(message.event_id)),
+    );
     setHistoryState(roomId, {
       end: data.end || '',
       exhausted: !data.end || !Array.isArray(data.messages) || data.messages.length === 0,
@@ -992,6 +1072,11 @@ const MatrixChat = (() => {
     const checkbox = el('matrix-chat-room-admin-hermes-catalogue');
     const hideSystem = el('matrix-chat-room-admin-hide-system');
     const systemLevel = el('matrix-chat-room-admin-system-level');
+    const showDelete = el('matrix-chat-room-admin-show-delete');
+    const deleteUndecryptable = el('matrix-chat-room-admin-delete-undecryptable');
+    const deleteSystemBefore = el('matrix-chat-room-admin-delete-system-before');
+    const systemBefore = el('matrix-chat-room-admin-system-before');
+    const seedDecryptionTest = el('matrix-chat-room-admin-seed-decryption-test');
     const save = el('matrix-chat-room-admin-save');
     if (title) title.textContent = roomTitle(room);
     if (roomId) roomId.textContent = state.roomAdminRoomId || '';
@@ -1007,6 +1092,13 @@ const MatrixChat = (() => {
       systemLevel.value = state.roomAdminSettings?.system_message_min_level || 'information';
       systemLevel.disabled = state.roomAdminSaving || !state.roomAdminSettings;
     }
+    if (showDelete) {
+      showDelete.checked = Boolean(state.messageDeleteButtonsVisible);
+      showDelete.disabled = state.roomAdminDeleting;
+    }
+    if (deleteUndecryptable) deleteUndecryptable.disabled = state.roomAdminDeleting || !state.roomAdminRoomId;
+    if (deleteSystemBefore) deleteSystemBefore.disabled = state.roomAdminDeleting || !state.roomAdminRoomId || !systemBefore?.value;
+    if (seedDecryptionTest) seedDecryptionTest.disabled = state.roomAdminTesting || !state.roomAdminRoomId;
     if (save) save.disabled = state.roomAdminSaving || !state.roomAdminSettings;
     renderRoomAdminMembers();
   }
@@ -1020,6 +1112,9 @@ const MatrixChat = (() => {
     state.roomAdminRoomId = roomId;
     state.roomAdminSettings = null;
     state.roomAdminMembers = [];
+    state.roomAdminDeleting = false;
+    state.roomAdminTesting = false;
+    state.messageDeleteButtonsVisible = false;
     state.roomAdminSaving = false;
     renderRoomAdminModal();
     setRoomAdminStatus('Loading room admin...', '');
@@ -1073,6 +1168,112 @@ const MatrixChat = (() => {
       setRoomAdminStatus(`Save failed: ${error.message}`, 'error');
     } finally {
       state.roomAdminSaving = false;
+      renderRoomAdminModal();
+    }
+  }
+
+  async function bulkRedactRoomMessages(mode, options = {}) {
+    const roomId = state.roomAdminRoomId || state.activeRoomId;
+    if (!roomId || state.roomAdminDeleting) return;
+    state.roomAdminDeleting = true;
+    renderRoomAdminModal();
+    setRoomAdminStatus('Deleting messages...', 'warn');
+    try {
+      const payload = {
+        mode,
+        reason: options.reason || 'Blueprints Matrix Chat bulk delete',
+      };
+      if (Array.isArray(options.eventIds)) {
+        payload.event_ids = options.eventIds.filter(Boolean);
+      } else {
+        payload.limit = 20000;
+        payload.scan_all = true;
+      }
+      if (Number.isFinite(options.beforeTs)) payload.before_ts = options.beforeTs;
+      const result = await redactMessages(roomId, payload);
+      const redactedIds = (result.redacted || []).map(item => item.event_id).filter(Boolean);
+      removeMessagesByEventId(roomId, redactedIds);
+      if (state.activeRoomId === roomId) {
+        await loadMessages(roomId);
+      }
+      await loadRooms();
+      renderMessages({ scrollToBottom: false });
+      const failed = Array.isArray(result.errors) && result.errors.length
+        ? ` (${result.errors.length} failed)`
+        : '';
+      const capped = result.scan_exhausted === false ? ' Scan limit reached; older history was not scanned.' : '';
+      setRoomAdminStatus(`Deleted ${result.redacted_count || 0} message${(result.redacted_count || 0) === 1 ? '' : 's'}${failed}.${capped}`, result.errors?.length || capped ? 'warn' : 'ok');
+    } catch (error) {
+      setRoomAdminStatus(`Delete failed: ${error.message}`, 'error');
+    } finally {
+      state.roomAdminDeleting = false;
+      renderRoomAdminModal();
+    }
+  }
+
+  function deleteUndecryptableMessages() {
+    const roomId = state.roomAdminRoomId || state.activeRoomId;
+    const messages = state.messagesByRoom.get(roomId) || [];
+    const eventIds = messages
+      .filter(message => (
+        message?.event_id
+        && message.encrypted
+        && !message.decrypted
+        && /\[(unable to decrypt encrypted event|encrypted event)\]/i.test(message.body || '')
+      ))
+      .map(message => message.event_id);
+    if (!eventIds.length) {
+      setRoomAdminStatus('No loaded undecryptable messages to delete.', 'ok');
+      return;
+    }
+    void bulkRedactRoomMessages('events', {
+      eventIds,
+      reason: 'Blueprints Matrix Chat delete loaded undecryptable events',
+    });
+  }
+
+  function deleteSystemMessagesBefore() {
+    const value = el('matrix-chat-room-admin-system-before')?.value || '';
+    const timestamp = value ? new Date(value).getTime() : NaN;
+    if (!Number.isFinite(timestamp)) {
+      setRoomAdminStatus('Choose a valid date/time for old system-message deletion.', 'error');
+      return;
+    }
+    void bulkRedactRoomMessages('system_before', {
+      beforeTs: timestamp,
+      reason: 'Blueprints Matrix Chat delete old system messages',
+    });
+  }
+
+  function toggleMessageDeleteButtons() {
+    state.messageDeleteButtonsVisible = Boolean(el('matrix-chat-room-admin-show-delete')?.checked);
+    renderRoomAdminModal();
+    renderMessages({ scrollToBottom: false });
+  }
+
+  async function seedDecryptionTestMessages() {
+    const roomId = state.roomAdminRoomId || state.activeRoomId;
+    if (!roomId || state.roomAdminTesting) return;
+    state.roomAdminTesting = true;
+    renderRoomAdminModal();
+    setRoomAdminStatus('Seeding decryptable and undecryptable test messages...', 'warn');
+    try {
+      const result = await apiJson(matrixApi(`/rooms/${encodeURIComponent(roomId)}/test/decryption-mix`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decryptable_count: 2, undecryptable_count: 2 }),
+      });
+      if (state.activeRoomId === roomId) {
+        await loadMessages(roomId);
+      }
+      await loadRooms();
+      renderMessages({ scrollToBottom: true });
+      const count = Array.isArray(result.events) ? result.events.length : 0;
+      setRoomAdminStatus(`Seeded ${count} labelled test messages.`, 'ok');
+    } catch (error) {
+      setRoomAdminStatus(`Test seed failed: ${error.message}`, 'error');
+    } finally {
+      state.roomAdminTesting = false;
       renderRoomAdminModal();
     }
   }
@@ -1986,7 +2187,10 @@ const MatrixChat = (() => {
         state.invites = data.invites;
         renderRooms();
       }
-      (data.room_updates || []).forEach(update => mergeMessages(update.room_id, update.messages));
+      (data.room_updates || []).forEach(update => {
+        removeMessagesByEventId(update.room_id, update.redacted_event_ids || []);
+        mergeMessages(update.room_id, update.messages);
+      });
       renderMessages();
     } catch (_) {
       // Keep the page calm; explicit refresh will surface detailed errors.
@@ -2031,6 +2235,7 @@ const MatrixChat = (() => {
     state.activeRoomId = '';
     state.nextBatch = '';
     state.messagesByRoom.clear();
+    state.redactedEventIdsByRoom.clear();
     state.historyByRoom.clear();
     state.inviteCandidates = [];
     state.inviteCandidateIndex = -1;
@@ -2045,6 +2250,10 @@ const MatrixChat = (() => {
     state.roomAdminRoomId = '';
     state.roomAdminSettings = null;
     state.roomAdminMembers = [];
+    state.roomAdminSaving = false;
+    state.roomAdminDeleting = false;
+    state.roomAdminTesting = false;
+    state.messageDeleteButtonsVisible = false;
     window.clearTimeout(state.roomTabClickTimer);
     state.roomTabClickTimer = null;
     hideInviteSuggestions();
@@ -2120,6 +2329,11 @@ const MatrixChat = (() => {
     el('matrix-chat-mention-hermes')?.addEventListener('click', insertHermesMention);
     el('matrix-chat-send')?.addEventListener('click', sendMessage);
     el('matrix-chat-room-admin-save')?.addEventListener('click', saveRoomAdminSettings);
+    el('matrix-chat-room-admin-show-delete')?.addEventListener('change', toggleMessageDeleteButtons);
+    el('matrix-chat-room-admin-delete-undecryptable')?.addEventListener('click', deleteUndecryptableMessages);
+    el('matrix-chat-room-admin-delete-system-before')?.addEventListener('click', deleteSystemMessagesBefore);
+    el('matrix-chat-room-admin-system-before')?.addEventListener('input', renderRoomAdminModal);
+    el('matrix-chat-room-admin-seed-decryption-test')?.addEventListener('click', seedDecryptionTestMessages);
     el('matrix-chat-notifier-info-open')?.addEventListener('click', openNotifierInfoModal);
     el('matrix-chat-notifier-info-close')?.addEventListener('click', closeNotifierInfoModal);
     el('matrix-chat-notifier-mode')?.addEventListener('change', () => {

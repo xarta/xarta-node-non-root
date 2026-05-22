@@ -73,6 +73,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
   const _REPLAY_LOOKBACK = 900;   // seconds: replay window on SSE connect (15 min)
   const _REPLAY_DELAY_MS = 4500;  // ms after SSE connect before running replay
   const _NOTIFIER_SPEECH_FRESHNESS_SECONDS = 180;
+  const _HERMES_SPEECH_FRESHNESS_SECONDS = 180;
 
   // ── Module state ──────────────────────────────────────────────────────────
 
@@ -188,6 +189,13 @@ const BlueprintsModelChangeAnnouncer = (() => {
     const createdAt = Number(evt.created_at || 0);
     if (!Number.isFinite(createdAt) || createdAt <= 0) return true;
     return (Date.now() / 1000) - createdAt <= _NOTIFIER_SPEECH_FRESHNESS_SECONDS;
+  }
+
+  function _isFreshHermesSpeech(evt) {
+    if (evt?.event_type !== 'tts.utterance.requested') return true;
+    const createdAt = Number(evt?.payload?.created_at || evt?.created_at || 0);
+    if (!Number.isFinite(createdAt) || createdAt <= 0) return false;
+    return (Date.now() / 1000) - createdAt <= _HERMES_SPEECH_FRESHNESS_SECONDS;
   }
 
   function _genericSpeechForEvent(evt) {
@@ -321,17 +329,32 @@ const BlueprintsModelChangeAnnouncer = (() => {
       _emitSpeechSuppressed('stale_notifier_replay', item);
       return;
     }
+    if (!_isFreshHermesSpeech(evt)) {
+      _emitSpeechSuppressed('stale_hermes_utterance_replay', item);
+      return;
+    }
     if (typeof BlueprintsNotifierDnd !== 'undefined') {
       await BlueprintsNotifierDnd.loadConfig();
-      if (!BlueprintsNotifierDnd.shouldSpeak(evt)) {
-        _emitSpeechSuppressed('dnd_policy_suppressed', item);
-        return;
+      if (item.hermesUtterance) {
+        const shouldBroadcast = evt?.payload?.target?.dedupe === 'broadcast';
+        if (!shouldBroadcast && !await BlueprintsNotifierDnd.claimSpeech(evt)) {
+          _emitSpeechSuppressed('speech_claim_denied', item);
+          return;
+        }
+        item.volume = Number.isFinite(Number(evt?.payload?.volume))
+          ? Number(evt.payload.volume)
+          : undefined;
+      } else {
+        if (!BlueprintsNotifierDnd.shouldSpeak(evt)) {
+          _emitSpeechSuppressed('dnd_policy_suppressed', item);
+          return;
+        }
+        if (!testBroadcast && !await BlueprintsNotifierDnd.claimSpeech(evt)) {
+          _emitSpeechSuppressed('speech_claim_denied', item);
+          return;
+        }
+        item.volume = BlueprintsNotifierDnd.ttsVolume(evt);
       }
-      if (!testBroadcast && !await BlueprintsNotifierDnd.claimSpeech(evt)) {
-        _emitSpeechSuppressed('speech_claim_denied', item);
-        return;
-      }
-      item.volume = BlueprintsNotifierDnd.ttsVolume(evt);
     }
     if (typeof BlueprintsTtsClient === 'undefined') {
       _emitSpeechSuppressed('tts_client_unavailable', item);
@@ -342,6 +365,26 @@ const BlueprintsModelChangeAnnouncer = (() => {
       return;
     }
     try {
+      if (item.hermesUtterance) {
+        const payload = evt?.payload || {};
+        await BlueprintsTtsClient.speak({
+          text,
+          voice: typeof payload.voice === 'string' && payload.voice ? payload.voice : undefined,
+          clientId: typeof payload.client_id === 'string' ? payload.client_id : undefined,
+          interrupt: typeof payload.interrupt === 'boolean' ? payload.interrupt : false,
+          mode: typeof payload.mode === 'string' ? payload.mode : 'stream',
+          format: typeof payload.format === 'string' ? payload.format : 'wav',
+          timeoutMs: Number.isFinite(Number(payload.timeout_ms)) ? Number(payload.timeout_ms) : 120000,
+          allowFallback: typeof payload.allow_fallback === 'boolean' ? payload.allow_fallback : false,
+          fallbackKind: 'neutral',
+          eventKind: 'hermes.conversation',
+          sanitizeText: payload.sanitize_text !== false,
+          transformProfile: typeof payload.transform_profile === 'string' ? payload.transform_profile : 'conversation',
+          allowLlmSanitizer: payload.allow_llm_sanitizer === true,
+          volume: item.volume,
+        });
+        return;
+      }
       await BlueprintsTtsClient.speak({
         text,
         interrupt: false,
@@ -517,6 +560,22 @@ const BlueprintsModelChangeAnnouncer = (() => {
         );
         break;
 
+      case 'tts.utterance.requested': {
+        const payload = evt.payload || {};
+        const text = String(payload.text || '').trim();
+        _pushAndDrain(
+          text || evt.message || 'Hermes speech.',
+          {
+            title: evt.title || 'Hermes Speech',
+            message: payload.agent_id ? `Agent: ${payload.agent_id}` : (evt.message || ''),
+            severity: evt.severity || 'info',
+          },
+          evt,
+          { hermesUtterance: true }
+        );
+        break;
+      }
+
       default:
         // Unknown event type: always toast. Warnings/errors, and any event with
         // explicit importance, can speak through the DND policy.
@@ -550,8 +609,8 @@ const BlueprintsModelChangeAnnouncer = (() => {
 
   /** Push an item directly to the announcement queue (no debounce) and drain
    *  if the machine is currently idle. */
-  function _pushAndDrain(text, toastOpts, event = null) {
-    _queue.push({ text, toastOpts, event: event || {} });
+  function _pushAndDrain(text, toastOpts, event = null, extra = {}) {
+    _queue.push({ text, toastOpts, event: event || {}, ...(extra || {}) });
     if (_astate === ASTATE.IDLE) _drainQueue();
     // Otherwise the item will be picked up when the current announcement finishes.
   }

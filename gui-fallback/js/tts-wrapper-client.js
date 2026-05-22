@@ -233,6 +233,7 @@ const BlueprintsTtsClient = (() => {
     const payload = {
       text: typeof opts.text === 'string' ? opts.text : undefined,
       voice: typeof opts.voice === 'string' ? opts.voice : undefined,
+      client_id: typeof opts.clientId === 'string' ? opts.clientId : undefined,
       interrupt: typeof opts.interrupt === 'boolean' ? opts.interrupt : true,
       mode: typeof opts.mode === 'string' ? opts.mode : undefined,
       format: typeof opts.format === 'string' ? opts.format : undefined,
@@ -309,6 +310,7 @@ const BlueprintsTtsClient = (() => {
     const payload = {
       text: typeof opts.text === 'string' ? opts.text : undefined,
       voice: typeof opts.voice === 'string' ? opts.voice : undefined,
+      client_id: typeof opts.clientId === 'string' ? opts.clientId : undefined,
       interrupt: typeof opts.interrupt === 'boolean' ? opts.interrupt : false,
       mode: typeof opts.mode === 'string' ? opts.mode : 'batch',
       format: typeof opts.format === 'string' ? opts.format : 'mp3',

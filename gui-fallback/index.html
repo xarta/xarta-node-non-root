@@ -1003,7 +1003,7 @@
         </div>
       </div>
     </div>
-    <dialog class="hub-modal hub-dialog matrix-chat-room-admin-modal" data-tone="info" id="matrix-chat-room-admin-modal" style="width:min(520px,94vw)">
+    <dialog class="hub-modal hub-dialog matrix-chat-room-admin-modal" data-tone="info" id="matrix-chat-room-admin-modal" style="width:min(680px,94vw)">
       <div class="hub-modal-header">
         <h2 class="hub-modal-title" style="min-width:0;flex:1">
           <span class="hub-dialog-badge">ROOM</span>
@@ -1033,6 +1033,23 @@
               <option value="error">Error</option>
             </select>
           </label>
+        </div>
+        <div class="matrix-chat-room-admin-danger">
+          <div class="matrix-chat-room-admin-subhead">Delete</div>
+          <label class="hub-checkbox matrix-chat-room-admin-toggle">
+            <input id="matrix-chat-room-admin-show-delete" class="hub-checkbox__input" type="checkbox" />
+            <span class="hub-checkbox__box" aria-hidden="true"></span>
+            <span class="hub-checkbox__label">Show instant message delete buttons</span>
+          </label>
+          <div class="matrix-chat-room-admin-delete-actions">
+            <button id="matrix-chat-room-admin-delete-undecryptable" class="hub-modal-btn danger" type="button">Delete loaded undecryptable</button>
+            <label class="matrix-chat-room-admin-field">
+              <span>System older than</span>
+              <input id="matrix-chat-room-admin-system-before" type="datetime-local" />
+            </label>
+            <button id="matrix-chat-room-admin-delete-system-before" class="hub-modal-btn danger" type="button">Delete old system</button>
+          </div>
+          <button id="matrix-chat-room-admin-seed-decryption-test" class="hub-modal-btn" type="button">Seed decryption test</button>
         </div>
         <div class="matrix-chat-room-admin-members-wrap">
           <div class="matrix-chat-room-admin-subhead">Members</div>

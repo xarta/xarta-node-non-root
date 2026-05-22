@@ -478,7 +478,8 @@
   margin-bottom: 14px;
 }
 
-.matrix-chat-room-admin-system .matrix-chat-room-admin-toggle {
+.matrix-chat-room-admin-system .matrix-chat-room-admin-toggle,
+.matrix-chat-room-admin-danger .matrix-chat-room-admin-toggle {
   margin-bottom: 0;
 }
 
@@ -499,7 +500,8 @@
   white-space: nowrap;
 }
 
-.matrix-chat-room-admin-field select {
+.matrix-chat-room-admin-field select,
+.matrix-chat-room-admin-field input {
   min-width: 0;
   min-height: 38px;
   border: 1px solid rgba(var(--hub-accent-rgb, 0, 212, 255), 0.2);
@@ -507,6 +509,23 @@
   background: rgba(5, 7, 11, 0.95);
   color: var(--text);
   font-size: 12px;
+}
+
+.matrix-chat-room-admin-danger {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 10px;
+  border: 1px solid rgba(239, 68, 68, 0.26);
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.045);
+}
+
+.matrix-chat-room-admin-delete-actions {
+  display: grid;
+  grid-template-columns: auto minmax(190px, 1fr) auto;
+  gap: 8px;
+  align-items: end;
 }
 
 .matrix-chat-room-admin-members-wrap {
@@ -832,6 +851,25 @@
   min-width: 0;
   color: var(--text-dim);
   font-size: 11px;
+}
+
+.matrix-chat-message-delete {
+  flex: 0 0 auto;
+  min-height: 24px;
+  padding: 2px 7px;
+  border: 1px solid rgba(239, 68, 68, 0.55);
+  border-radius: 5px;
+  background: rgba(239, 68, 68, 0.12);
+  color: #fecaca;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.matrix-chat-message-delete:disabled {
+  cursor: wait;
+  opacity: 0.5;
 }
 
 .matrix-chat-message-meta span {
@@ -1699,6 +1737,10 @@ dialog.matrix-chat-notifier-info-modal {
   }
 
   .matrix-chat-room-admin-system {
+    grid-template-columns: 1fr;
+  }
+
+  .matrix-chat-room-admin-delete-actions {
     grid-template-columns: 1fr;
   }
 
