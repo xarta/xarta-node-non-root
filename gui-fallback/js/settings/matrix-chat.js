@@ -151,6 +151,12 @@ const MatrixChat = (() => {
     return state.serverId === 'vps' ? 'hermes-vps: ' : 'hermes: ';
   }
 
+  function hermesAliasPattern() {
+    return state.serverId === 'vps'
+      ? /^\s*(?:hermes-vps|vps|hv)\s*:/i
+      : /^\s*(?:hermes|h)\s*:/i;
+  }
+
   function fmtTime(ts) {
     if (!Number.isFinite(ts)) return '';
     try {
@@ -469,6 +475,23 @@ const MatrixChat = (() => {
 
   function activeRoom() {
     return state.joined.find(room => room.room_id === state.activeRoomId) || null;
+  }
+
+  function activeRoomNeedsHermesPrefix() {
+    const title = roomTitle(activeRoom()).trim().toLowerCase();
+    if (state.serverId === 'vps') return title === 'shared bridge';
+    return title === 'bridge';
+  }
+
+  function hasExplicitMatrixMention(value) {
+    return /(^|[^\w/])@[0-9A-Za-z._=/-]+:[0-9A-Za-z.-]+(?::\d+)?/.test(value || '');
+  }
+
+  function outgoingComposerBody(raw) {
+    const body = (raw || '').trim();
+    if (!body || !activeRoomNeedsHermesPrefix()) return body;
+    if (hermesAliasPattern().test(body) || hasExplicitMatrixMention(body)) return body;
+    return `${hermesPrefix()}${body}`;
   }
 
   function rememberActiveRoom(roomId) {
@@ -2142,7 +2165,7 @@ const MatrixChat = (() => {
     if (!composer) return;
     const value = composer.value || '';
     const prefix = hermesPrefix();
-    if (value.startsWith(prefix)) {
+    if (hermesAliasPattern().test(value)) {
       composer.focus();
       return;
     }
@@ -2155,7 +2178,7 @@ const MatrixChat = (() => {
 
   async function sendMessage() {
     const composer = el('matrix-chat-composer');
-    const body = (composer?.value || '').trim();
+    const body = outgoingComposerBody(composer?.value || '');
     if (!body || !state.activeRoomId) return;
     try {
       await apiJson(matrixApi(`/rooms/${encodeURIComponent(state.activeRoomId)}/messages`), {
