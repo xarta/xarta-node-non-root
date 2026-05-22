@@ -980,6 +980,9 @@ const MatrixChat = (() => {
     }
     renderStatus();
     renderRooms();
+    if (state.activeRoomId === roomId) {
+      renderMessages({ scrollToBottom: false });
+    }
   }
 
   function renderRoomAdminModal() {
@@ -1049,6 +1052,11 @@ const MatrixChat = (() => {
     const hideSystem = el('matrix-chat-room-admin-hide-system');
     const systemLevel = el('matrix-chat-room-admin-system-level');
     if (!roomId || !checkbox || state.roomAdminSaving) return;
+    const nextSettings = {
+      hermes_command_catalog: Boolean(checkbox.checked),
+      hide_system_messages: Boolean(hideSystem?.checked),
+      system_message_min_level: systemLevel?.value || 'information',
+    };
     state.roomAdminSaving = true;
     renderRoomAdminModal();
     setRoomAdminStatus('Saving...', '');
@@ -1056,11 +1064,7 @@ const MatrixChat = (() => {
       const settings = await apiJson(matrixApi(`/rooms/${encodeURIComponent(roomId)}/settings`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          hermes_command_catalog: Boolean(checkbox.checked),
-          hide_system_messages: Boolean(hideSystem?.checked),
-          system_message_min_level: systemLevel?.value || 'information',
-        }),
+        body: JSON.stringify(nextSettings),
       });
       state.roomAdminSettings = settings;
       applyRoomSettings(roomId, settings);
