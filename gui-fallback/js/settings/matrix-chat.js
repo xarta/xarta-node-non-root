@@ -9,6 +9,8 @@ const MATRIX_CHAT_OLDER_MESSAGE_LIMIT = 60;
 const MATRIX_CHAT_MAX_MESSAGES_PER_ROOM = 600;
 const MATRIX_CHAT_DEFAULT_SERVER = 'tb1';
 const MATRIX_CHAT_ROOM_TAB_DOUBLE_CLICK_MS = 240;
+const MATRIX_CHAT_SYNC_TIMEOUT_MS = 25000;
+const MATRIX_CHAT_SYNC_RETRY_MS = 1500;
 const MATRIX_CHAT_LEVEL_RANK = Object.freeze({ debug: 0, information: 1, warning: 2, error: 3 });
 
 const MatrixChat = (() => {
@@ -22,6 +24,8 @@ const MatrixChat = (() => {
     activeRoomId: '',
     nextBatch: '',
     pollTimer: null,
+    pollInFlight: false,
+    pollGeneration: 0,
     messagesByRoom: new Map(),
     redactedEventIdsByRoom: new Map(),
     historyByRoom: new Map(),
@@ -1716,6 +1720,7 @@ const MatrixChat = (() => {
   async function refreshAll() {
     if (state.loading) return;
     state.loading = true;
+    state.pollGeneration += 1;
     try {
       const priorRoom = state.activeRoomId;
       await loadStatus();
@@ -2195,10 +2200,25 @@ const MatrixChat = (() => {
     }
   }
 
+  function schedulePoll(delayMs = 0) {
+    window.clearTimeout(state.pollTimer);
+    state.pollTimer = window.setTimeout(poll, Math.max(0, delayMs));
+  }
+
   async function poll() {
-    if (!isActive() || state.loading || !state.nextBatch) return;
+    state.pollTimer = null;
+    if (!isActive() || state.loading || !state.nextBatch || state.pollInFlight) {
+      schedulePoll(MATRIX_CHAT_SYNC_RETRY_MS);
+      return;
+    }
+    const pollGeneration = state.pollGeneration;
+    const pollServerId = state.serverId;
+    state.pollInFlight = true;
     try {
-      const data = await apiJson(matrixApi(`/sync?since=${encodeURIComponent(state.nextBatch)}&timeout_ms=0`));
+      const data = await apiJson(
+        matrixApi(`/sync?since=${encodeURIComponent(state.nextBatch)}&timeout_ms=${MATRIX_CHAT_SYNC_TIMEOUT_MS}`)
+      );
+      if (pollGeneration !== state.pollGeneration || pollServerId !== state.serverId) return;
       state.nextBatch = data.next_batch || state.nextBatch;
       if (Array.isArray(data.joined) && data.joined.length) {
         const byId = new Map(state.joined.map(room => [room.room_id, room]));
@@ -2217,6 +2237,9 @@ const MatrixChat = (() => {
       renderMessages();
     } catch (_) {
       // Keep the page calm; explicit refresh will surface detailed errors.
+    } finally {
+      state.pollInFlight = false;
+      schedulePoll(isActive() ? 0 : MATRIX_CHAT_SYNC_RETRY_MS);
     }
   }
 
@@ -2252,6 +2275,7 @@ const MatrixChat = (() => {
 
   function resetForServer(serverId) {
     state.serverId = serverId;
+    state.pollGeneration += 1;
     state.status = null;
     state.joined = [];
     state.invites = [];
@@ -2398,7 +2422,7 @@ const MatrixChat = (() => {
   async function loadTab() {
     bind();
     await refreshAll();
-    if (!state.pollTimer) state.pollTimer = window.setInterval(poll, 8000);
+    schedulePoll(0);
   }
 
   return {
