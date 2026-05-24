@@ -583,6 +583,9 @@ const BlueprintsModelChangeAnnouncer = (() => {
         break;
       }
 
+      case 'matrix.chat.sync':
+        break;
+
       default:
         // Unknown event type: always toast. Warnings/errors, and any event with
         // explicit importance, can speak through the DND policy.

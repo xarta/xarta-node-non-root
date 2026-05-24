@@ -11,6 +11,7 @@ const MATRIX_CHAT_DEFAULT_SERVER = 'tb1';
 const MATRIX_CHAT_ROOM_TAB_DOUBLE_CLICK_MS = 240;
 const MATRIX_CHAT_SYNC_TIMEOUT_MS = 25000;
 const MATRIX_CHAT_SYNC_RETRY_MS = 1500;
+const MATRIX_CHAT_SYNC_FALLBACK_MS = 30000;
 const MATRIX_CHAT_LEVEL_RANK = Object.freeze({ debug: 0, information: 1, warning: 2, error: 3 });
 
 const MatrixChat = (() => {
@@ -26,6 +27,7 @@ const MatrixChat = (() => {
     pollTimer: null,
     pollInFlight: false,
     pollGeneration: 0,
+    lastBackendSyncAt: 0,
     messagesByRoom: new Map(),
     redactedEventIdsByRoom: new Map(),
     historyByRoom: new Map(),
@@ -920,6 +922,49 @@ const MatrixChat = (() => {
     });
     merged.sort((a, b) => (a.origin_server_ts || 0) - (b.origin_server_ts || 0));
     state.messagesByRoom.set(roomId, merged.slice(-MATRIX_CHAT_MAX_MESSAGES_PER_ROOM));
+  }
+
+  function eventStreamState() {
+    try {
+      if (typeof BlueprintsEventStream !== 'undefined' && BlueprintsEventStream.getState) {
+        return BlueprintsEventStream.getState();
+      }
+    } catch (_) {}
+    return 'DISCONNECTED';
+  }
+
+  function eventStreamConnected() {
+    return eventStreamState() === 'CONNECTED';
+  }
+
+  function applySyncPayload(data, options = {}) {
+    if (!data || (data.server_id && data.server_id !== state.serverId)) return false;
+    const snapshot = Boolean(data.snapshot || options.snapshot);
+    let changed = false;
+    state.nextBatch = data.next_batch || state.nextBatch;
+    if (Array.isArray(data.joined) && (data.joined.length || snapshot)) {
+      const byId = new Map((snapshot ? [] : state.joined).map(room => [room.room_id, room]));
+      data.joined.forEach(room => byId.set(room.room_id, mergeRoomSummary(byId.get(room.room_id), room)));
+      state.joined = Array.from(byId.values()).sort((a, b) => (b.last_event_ts || 0) - (a.last_event_ts || 0));
+      chooseActiveRoom();
+      changed = true;
+    }
+    if (Array.isArray(data.invites) && (data.invites.length || snapshot)) {
+      state.invites = data.invites;
+      changed = true;
+    }
+    if (Array.isArray(data.room_updates) && data.room_updates.length) {
+      data.room_updates.forEach(update => {
+        removeMessagesByEventId(update.room_id, update.redacted_event_ids || []);
+        mergeMessages(update.room_id, update.messages);
+      });
+      changed = true;
+    }
+    if (changed) {
+      renderRooms();
+      renderMessages({ scrollToBottom: options.scrollToBottom !== false });
+    }
+    return changed;
   }
 
   function prependMessages(roomId, messages) {
@@ -2200,6 +2245,21 @@ const MatrixChat = (() => {
     }
   }
 
+  function handleBlueprintsEvent(domEvt) {
+    const evt = domEvt?.detail;
+    if (!evt || evt.event_type !== 'matrix.chat.sync') return;
+    state.lastBackendSyncAt = Date.now();
+    applySyncPayload(evt.payload || {}, { snapshot: Boolean(evt.payload?.snapshot) });
+  }
+
+  function handleBlueprintsStreamState(domEvt) {
+    if (domEvt?.detail?.state === 'CONNECTED') {
+      schedulePoll(MATRIX_CHAT_SYNC_FALLBACK_MS);
+    } else if (isActive()) {
+      schedulePoll(MATRIX_CHAT_SYNC_RETRY_MS);
+    }
+  }
+
   function schedulePoll(delayMs = 0) {
     window.clearTimeout(state.pollTimer);
     state.pollTimer = window.setTimeout(poll, Math.max(0, delayMs));
@@ -2207,6 +2267,12 @@ const MatrixChat = (() => {
 
   async function poll() {
     state.pollTimer = null;
+    const backendSyncFresh = state.lastBackendSyncAt
+      && Date.now() - state.lastBackendSyncAt < MATRIX_CHAT_SYNC_FALLBACK_MS;
+    if (eventStreamConnected() && backendSyncFresh) {
+      schedulePoll(MATRIX_CHAT_SYNC_FALLBACK_MS);
+      return;
+    }
     if (!isActive() || state.loading || !state.nextBatch || state.pollInFlight) {
       schedulePoll(MATRIX_CHAT_SYNC_RETRY_MS);
       return;
@@ -2219,27 +2285,12 @@ const MatrixChat = (() => {
         matrixApi(`/sync?since=${encodeURIComponent(state.nextBatch)}&timeout_ms=${MATRIX_CHAT_SYNC_TIMEOUT_MS}`)
       );
       if (pollGeneration !== state.pollGeneration || pollServerId !== state.serverId) return;
-      state.nextBatch = data.next_batch || state.nextBatch;
-      if (Array.isArray(data.joined) && data.joined.length) {
-        const byId = new Map(state.joined.map(room => [room.room_id, room]));
-        data.joined.forEach(room => byId.set(room.room_id, mergeRoomSummary(byId.get(room.room_id), room)));
-        state.joined = Array.from(byId.values()).sort((a, b) => (b.last_event_ts || 0) - (a.last_event_ts || 0));
-        renderRooms();
-      }
-      if (Array.isArray(data.invites) && data.invites.length) {
-        state.invites = data.invites;
-        renderRooms();
-      }
-      (data.room_updates || []).forEach(update => {
-        removeMessagesByEventId(update.room_id, update.redacted_event_ids || []);
-        mergeMessages(update.room_id, update.messages);
-      });
-      renderMessages();
+      applySyncPayload(data);
     } catch (_) {
       // Keep the page calm; explicit refresh will surface detailed errors.
     } finally {
       state.pollInFlight = false;
-      schedulePoll(isActive() ? 0 : MATRIX_CHAT_SYNC_RETRY_MS);
+      schedulePoll(isActive() && !eventStreamConnected() ? 0 : MATRIX_CHAT_SYNC_FALLBACK_MS);
     }
   }
 
@@ -2403,6 +2454,8 @@ const MatrixChat = (() => {
     document.addEventListener('blueprints:event', domEvt => {
       if (domEvt.detail) handleNotifierTestDrainedEvent(domEvt.detail);
     });
+    document.addEventListener('blueprints:event', handleBlueprintsEvent);
+    document.addEventListener('blueprints:stream:state', handleBlueprintsStreamState);
     document.addEventListener('blueprints:notification-speech-suppressed', domEvt => {
       if (domEvt.detail) handleNotifierSpeechSuppressed(domEvt.detail);
     });
