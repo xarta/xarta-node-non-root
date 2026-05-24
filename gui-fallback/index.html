@@ -4390,6 +4390,25 @@
         </label>
       </div>
 
+      <div class="voice-mode-model" aria-label="TTS companion model preference">
+        <div class="voice-mode-model__head">
+          <span class="voice-mode-control__text">
+            <span class="voice-mode-control__name">Companion model</span>
+            <span class="voice-mode-control__hint">Preferred processor for Matrix TTS.</span>
+          </span>
+        </div>
+        <div class="voice-mode-model__choices" role="radiogroup" aria-label="TTS companion preferred processor">
+          <label class="voice-mode-model__choice">
+            <input type="radio" name="voice-mode-companion-model" value="codex_spark" id="voice-mode-model-codex" />
+            <span>Codex Spark</span>
+          </label>
+          <label class="voice-mode-model__choice">
+            <input type="radio" name="voice-mode-companion-model" value="local_private" id="voice-mode-model-local" />
+            <span>Local private</span>
+          </label>
+        </div>
+      </div>
+
       <div class="voice-mode-actions">
         <p class="voice-mode-status" id="voice-mode-status" aria-live="polite"></p>
         <button class="hub-modal-btn" type="button" id="voice-mode-activate-btn">Activate</button>

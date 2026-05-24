@@ -12,6 +12,7 @@ const BlueprintsVoiceMode = (() => {
   const STATUS_URL = '/api/v1/voice-mode/status';
   const ACTIVATE_URL = '/api/v1/voice-mode/activate';
   const DEACTIVATE_URL = '/api/v1/voice-mode/deactivate';
+  const POLICY_URL = '/api/v1/voice-mode/policy';
   const CUE_DEFAULT_REARM_MS = 1500;
   const CUE_MIN_REARM_MS = 250;
   const CUE_MAX_REARM_MS = 5000;
@@ -19,7 +20,12 @@ const BlueprintsVoiceMode = (() => {
   const CUE_TTS_PRESTREAM_ESTIMATE_MS = 325;
   const CUE_MAX_TTS_START_DELAY_MS = 5000;
 
-  let _serverState = { active: null, revision: 0, updated_at: 0 };
+  let _serverState = {
+    active: null,
+    policy: { tts_companion_model_preference: 'codex_spark' },
+    revision: 0,
+    updated_at: 0,
+  };
   let _statusLoaded = false;
   let _initDone = false;
   let _lastAnnouncementCueAt = 0;
@@ -84,6 +90,18 @@ const BlueprintsVoiceMode = (() => {
     };
   }
 
+  function _modelPreference(value) {
+    const raw = String(value || '').trim().toLowerCase().replace(/-/g, '_');
+    return raw === 'local_private' ? 'local_private' : 'codex_spark';
+  }
+
+  function _policyState() {
+    const policy = _serverState.policy || {};
+    return {
+      tts_companion_model_preference: _modelPreference(policy.tts_companion_model_preference),
+    };
+  }
+
   function _localState() {
     return {
       browser_id: _browserId(),
@@ -113,6 +131,8 @@ const BlueprintsVoiceMode = (() => {
       cueTest: document.getElementById('voice-mode-cue-test'),
       cueRearm: document.getElementById('voice-mode-cue-rearm'),
       cueRearmLabel: document.getElementById('voice-mode-cue-rearm-label'),
+      modelCodex: document.getElementById('voice-mode-model-codex'),
+      modelLocal: document.getElementById('voice-mode-model-local'),
       activate: document.getElementById('voice-mode-activate-btn'),
       status: document.getElementById('voice-mode-status'),
     };
@@ -133,6 +153,7 @@ const BlueprintsVoiceMode = (() => {
     if (!els.modal) return;
     const local = _localState();
     const cue = _cueState();
+    const policy = _policyState();
     const active = _serverState.active || null;
     const ownsLease = _isActiveOwner();
 
@@ -152,6 +173,8 @@ const BlueprintsVoiceMode = (() => {
     if (els.cueRearm) els.cueRearm.value = String(cue.rearm_ms / 1000);
     if (els.cueRearmLabel) els.cueRearmLabel.textContent = `${(cue.rearm_ms / 1000).toFixed(2)}s`;
     if (els.cueTest) els.cueTest.disabled = !cue.sound;
+    if (els.modelCodex) els.modelCodex.checked = policy.tts_companion_model_preference === 'codex_spark';
+    if (els.modelLocal) els.modelLocal.checked = policy.tts_companion_model_preference === 'local_private';
     if (cue.sound && typeof SoundManager !== 'undefined' && typeof SoundManager.preload === 'function') {
       SoundManager.preload(_assetUrl(cue.sound)).catch(() => {});
     }
@@ -168,6 +191,7 @@ const BlueprintsVoiceMode = (() => {
     if (_serverState.revision && revision && revision < _serverState.revision) return;
     _serverState = {
       active: next.active || null,
+      policy: next.policy || { tts_companion_model_preference: 'codex_spark' },
       revision,
       updated_at: Number(next.updated_at || 0),
     };
@@ -246,6 +270,15 @@ const BlueprintsVoiceMode = (() => {
   function _setCueRearmSeconds(seconds) {
     _setStringStorage(LS_CUE_REARM_MS, String(_clampRearmMs(Number(seconds) * 1000)));
     _render();
+  }
+
+  async function _setModelPreference(value) {
+    const preference = _modelPreference(value);
+    _setStatus('Updating companion model preference...');
+    await _post(POLICY_URL, { tts_companion_model_preference: preference });
+    _setStatus(preference === 'local_private'
+      ? 'Companion prefers local private model.'
+      : 'Companion prefers Codex Spark.');
   }
 
   function _assetUrl(assetPath) {
@@ -389,6 +422,12 @@ const BlueprintsVoiceMode = (() => {
     els.cuePick?.addEventListener('click', _openCuePicker);
     els.cueTest?.addEventListener('click', () => _testCue(els.cueTest));
     els.cueRearm?.addEventListener('input', () => _setCueRearmSeconds(els.cueRearm.value));
+    els.modelCodex?.addEventListener('change', () => {
+      if (els.modelCodex.checked) _setModelPreference('codex_spark').catch((error) => _setStatus(error.message || String(error)));
+    });
+    els.modelLocal?.addEventListener('change', () => {
+      if (els.modelLocal.checked) _setModelPreference('local_private').catch((error) => _setStatus(error.message || String(error)));
+    });
 
     document.addEventListener('blueprints:event', (event) => {
       if (event.detail?.event_type === 'voice.mode.changed') {
