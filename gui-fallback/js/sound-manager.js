@@ -71,6 +71,17 @@ const SoundManager = (() => {
         return Math.max(0, Math.min(1, parsed));
     }
 
+    function _makeGainNode(volumeOverride) {
+        const ctx = _getCtx();
+        if (!ctx) return null;
+        const override = _volumeOverride(volumeOverride);
+        if (override === null) return _getGainNode();
+        const gainNode = ctx.createGain();
+        gainNode.gain.value = override;
+        gainNode.connect(ctx.destination);
+        return gainNode;
+    }
+
     // Wire up a one-time resume-on-first-interaction handler
     function _setupResumeOnGesture() {
         const handler = () => {
@@ -314,6 +325,42 @@ const SoundManager = (() => {
 
         stopPreview() {
             _resetPreviewState('idle');
+        },
+
+        async playOneShot(url, opts) {
+            if (!url) return 0;
+            const ctx = _getCtx();
+            if (!ctx) return 0;
+            _resumeCtx();
+            if (!_cache[url]) await this.preload(url);
+            const buffer = _cache[url];
+            if (!buffer) return 0;
+            try {
+                const source = ctx.createBufferSource();
+                const gainNode = _makeGainNode((opts || {}).volume);
+                const waitForEnd = (opts || {}).waitForEnd === true;
+                source.buffer = buffer;
+                source.connect(gainNode || ctx.destination);
+                const cleanup = () => {
+                    try { source.disconnect(); } catch (e) {}
+                    if (gainNode && gainNode !== _gainNode) {
+                        try { gainNode.disconnect(); } catch (e) {}
+                    }
+                };
+                source.start(0);
+                if (!waitForEnd) {
+                    source.onended = cleanup;
+                    return Math.max(0, buffer.duration || 0);
+                }
+                return await new Promise(resolve => {
+                    source.onended = () => {
+                        cleanup();
+                        resolve(Math.max(0, buffer.duration || 0));
+                    };
+                });
+            } catch (e) {
+                return 0;
+            }
         },
 
         _playNow(url) {

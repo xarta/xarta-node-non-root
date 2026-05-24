@@ -4367,6 +4367,29 @@
         </div>
       </div>
 
+      <div class="voice-mode-cue" aria-label="Announcement cue">
+        <div class="voice-mode-cue__head">
+          <label class="hub-checkbox">
+            <input class="hub-checkbox__input" type="checkbox" id="voice-mode-cue-toggle" />
+            <span class="hub-checkbox__box" aria-hidden="true"></span>
+            <span class="hub-checkbox__label voice-mode-control__text">
+              <span class="voice-mode-control__name">Announcement cue</span>
+              <span class="voice-mode-control__hint">Before Matrix and Codex TTS.</span>
+            </span>
+          </label>
+        </div>
+        <div class="voice-mode-cue__row">
+          <input type="text" id="voice-mode-cue-sound" readonly placeholder="sounds/..." aria-label="Announcement cue sound" />
+          <button class="btn-small secondary" type="button" id="voice-mode-cue-pick">Pick</button>
+          <button class="btn-small secondary" type="button" id="voice-mode-cue-test">Preview</button>
+        </div>
+        <label class="voice-mode-cue__slider" for="voice-mode-cue-rearm">
+          <span>Re-arm after silence</span>
+          <input type="range" id="voice-mode-cue-rearm" min="0.25" max="5" step="0.25" value="1.5" />
+          <output id="voice-mode-cue-rearm-label" for="voice-mode-cue-rearm">1.50s</output>
+        </label>
+      </div>
+
       <div class="voice-mode-actions">
         <p class="voice-mode-status" id="voice-mode-status" aria-live="polite"></p>
         <button class="hub-modal-btn" type="button" id="voice-mode-activate-btn">Activate</button>

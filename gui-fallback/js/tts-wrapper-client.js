@@ -127,7 +127,29 @@ const BlueprintsTtsClient = (() => {
     await audio.play();
   }
 
-  async function _streamWavResponse(response, engine, abortController, volumeOverride = null) {
+  function _ttsTimingHeaders(response) {
+    const header = (name) => response.headers.get(`x-blueprints-tts-timing-${name}`) || '0';
+    return {
+      totalPrestreamMs: Number(header('total-prestream-ms')) || 0,
+      sanitizerMs: Number(header('sanitizer-ms')) || 0,
+      probeMs: Number(header('probe-ms')) || 0,
+      upstreamHeadersMs: Number(header('upstream-headers-ms')) || 0,
+    };
+  }
+
+  function _logTiming(opts, stage, details) {
+    if (!opts?.debugTiming) return;
+    const label = opts.timingLabel || opts.eventKind || 'tts';
+    const payload = Object.assign({ label, stage }, details || {});
+    try {
+      console.info('[tts-timing]', payload);
+    } catch (_) {}
+    try {
+      document.dispatchEvent(new CustomEvent('blueprints:tts-timing', { detail: payload }));
+    } catch (_) {}
+  }
+
+  async function _streamWavResponse(response, engine, abortController, volumeOverride = null, timing = null) {
     const reader = response.body?.getReader?.();
     if (!reader) {
       throw new Error('Streaming response reader is not available.');
@@ -154,12 +176,21 @@ const BlueprintsTtsClient = (() => {
     let nextStartTime = audioCtx.currentTime + 0.08;
     let headerBytesRemaining = WAV_HEADER_BYTES;
     let leftover = null;
+    let sawFirstNetworkChunk = false;
+    let sawFirstPcm = false;
 
     try {
       while (!streamState.stopped) {
         const { done, value } = await reader.read();
         if (done) break;
         if (!value || !value.length) continue;
+        if (!sawFirstNetworkChunk) {
+          sawFirstNetworkChunk = true;
+          _logTiming(timing, 'first-network-chunk', {
+            elapsedMs: Math.round(performance.now() - timing.startedAt),
+            bytes: value.length,
+          });
+        }
 
         let chunk = value;
 
@@ -188,6 +219,13 @@ const BlueprintsTtsClient = (() => {
           pcmData = pcmData.slice(0, pcmData.length - 1);
         }
         if (!pcmData.length) continue;
+        if (!sawFirstPcm) {
+          sawFirstPcm = true;
+          _logTiming(timing, 'first-pcm', {
+            elapsedMs: Math.round(performance.now() - timing.startedAt),
+            bytes: pcmData.length,
+          });
+        }
 
         const sampleCount = pcmData.length / 2;
         const audioBuffer = audioCtx.createBuffer(1, sampleCount, sampleRate);
@@ -230,6 +268,7 @@ const BlueprintsTtsClient = (() => {
   }
 
   async function speak(opts = {}) {
+    const startedAt = performance.now();
     const payload = {
       text: typeof opts.text === 'string' ? opts.text : undefined,
       voice: typeof opts.voice === 'string' ? opts.voice : undefined,
@@ -269,6 +308,10 @@ const BlueprintsTtsClient = (() => {
     } finally {
       if (_activeSpeakAbortController === abortController) _activeSpeakAbortController = null;
     }
+    _logTiming(opts, 'response-headers', {
+      elapsedMs: Math.round(performance.now() - startedAt),
+      backend: _ttsTimingHeaders(response),
+    });
 
     if (!response.ok) {
       const detail = await response.text();
@@ -283,7 +326,13 @@ const BlueprintsTtsClient = (() => {
       const isFallbackAudio = String(engine).toLowerCase() === 'sound_fallback';
       if (isStreamMode && isWav && !isFallbackAudio && response.body && response.body.getReader) {
         await _stopActiveStream();
-        await _streamWavResponse(response, engine, abortController, volumeOverride);
+        await _streamWavResponse(
+          response,
+          engine,
+          abortController,
+          volumeOverride,
+          Object.assign({ startedAt }, opts)
+        );
       } else {
         const blob = await response.blob();
         if (!blob.size) {

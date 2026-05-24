@@ -374,6 +374,18 @@ const BlueprintsModelChangeAnnouncer = (() => {
     try {
       if (item.hermesUtterance) {
         const payload = evt?.payload || {};
+        if (typeof BlueprintsVoiceMode !== 'undefined'
+            && typeof BlueprintsVoiceMode.maybePlayAnnouncementCue === 'function') {
+          const cueStartedAt = performance.now();
+          const cueResult = await BlueprintsVoiceMode.maybePlayAnnouncementCue(evt);
+          console.info('[tts-timing]', {
+            label: 'hermes.conversation',
+            stage: 'cue-offset-complete',
+            played: !!cueResult,
+            cue: cueResult || null,
+            elapsedMs: Math.round(performance.now() - cueStartedAt),
+          });
+        }
         await BlueprintsTtsClient.speak({
           text,
           voice: typeof payload.voice === 'string' && payload.voice ? payload.voice : undefined,
@@ -389,6 +401,8 @@ const BlueprintsModelChangeAnnouncer = (() => {
           transformProfile: typeof payload.transform_profile === 'string' ? payload.transform_profile : 'conversation',
           allowLlmSanitizer: payload.allow_llm_sanitizer === true,
           volume: item.volume,
+          debugTiming: true,
+          timingLabel: 'hermes.conversation',
         });
         return;
       }

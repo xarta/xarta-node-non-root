@@ -6,13 +6,23 @@ const BlueprintsVoiceMode = (() => {
   const LS_BROWSER_ID = 'blueprints.voice.browser_id';
   const LS_STT = 'blueprints.voice.stt_enabled';
   const LS_TTS = 'blueprints.voice.tts_enabled';
+  const LS_CUE_ENABLED = 'blueprints.voice.announcement_cue_enabled';
+  const LS_CUE_SOUND = 'blueprints.voice.announcement_cue_sound';
+  const LS_CUE_REARM_MS = 'blueprints.voice.announcement_cue_rearm_ms';
   const STATUS_URL = '/api/v1/voice-mode/status';
   const ACTIVATE_URL = '/api/v1/voice-mode/activate';
   const DEACTIVATE_URL = '/api/v1/voice-mode/deactivate';
+  const CUE_DEFAULT_REARM_MS = 1500;
+  const CUE_MIN_REARM_MS = 250;
+  const CUE_MAX_REARM_MS = 5000;
+  const CUE_STEP_MS = 250;
+  const CUE_TTS_PRESTREAM_ESTIMATE_MS = 325;
+  const CUE_MAX_TTS_START_DELAY_MS = 5000;
 
   let _serverState = { active: null, revision: 0, updated_at: 0 };
   let _statusLoaded = false;
   let _initDone = false;
+  let _lastAnnouncementCueAt = 0;
 
   function _browserId() {
     try {
@@ -42,6 +52,38 @@ const BlueprintsVoiceMode = (() => {
     try { localStorage.setItem(key, value ? 'true' : 'false'); } catch (_) {}
   }
 
+  function _stringFromStorage(key) {
+    try { return localStorage.getItem(key) || ''; } catch (_) { return ''; }
+  }
+
+  function _setStringStorage(key, value) {
+    try { localStorage.setItem(key, String(value || '')); } catch (_) {}
+  }
+
+  function _numberFromStorage(key, fallback) {
+    try {
+      const raw = Number(localStorage.getItem(key));
+      return Number.isFinite(raw) ? raw : fallback;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  function _clampRearmMs(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return CUE_DEFAULT_REARM_MS;
+    const clamped = Math.max(CUE_MIN_REARM_MS, Math.min(CUE_MAX_REARM_MS, parsed));
+    return Math.round(clamped / CUE_STEP_MS) * CUE_STEP_MS;
+  }
+
+  function _cueState() {
+    return {
+      enabled: _boolFromStorage(LS_CUE_ENABLED),
+      sound: _stringFromStorage(LS_CUE_SOUND),
+      rearm_ms: _clampRearmMs(_numberFromStorage(LS_CUE_REARM_MS, CUE_DEFAULT_REARM_MS)),
+    };
+  }
+
   function _localState() {
     return {
       browser_id: _browserId(),
@@ -65,6 +107,12 @@ const BlueprintsVoiceMode = (() => {
       tts: document.getElementById('voice-mode-tts-toggle'),
       sttLed: document.getElementById('voice-mode-stt-led'),
       ttsLed: document.getElementById('voice-mode-tts-led'),
+      cueToggle: document.getElementById('voice-mode-cue-toggle'),
+      cueSound: document.getElementById('voice-mode-cue-sound'),
+      cuePick: document.getElementById('voice-mode-cue-pick'),
+      cueTest: document.getElementById('voice-mode-cue-test'),
+      cueRearm: document.getElementById('voice-mode-cue-rearm'),
+      cueRearmLabel: document.getElementById('voice-mode-cue-rearm-label'),
       activate: document.getElementById('voice-mode-activate-btn'),
       status: document.getElementById('voice-mode-status'),
     };
@@ -84,6 +132,7 @@ const BlueprintsVoiceMode = (() => {
     const els = _els();
     if (!els.modal) return;
     const local = _localState();
+    const cue = _cueState();
     const active = _serverState.active || null;
     const ownsLease = _isActiveOwner();
 
@@ -98,6 +147,14 @@ const BlueprintsVoiceMode = (() => {
     if (els.combined) els.combined.checked = local.stt_enabled && local.tts_enabled;
     if (els.sttLed) els.sttLed.dataset.state = _capabilityLed(local.stt_enabled);
     if (els.ttsLed) els.ttsLed.dataset.state = _capabilityLed(local.tts_enabled);
+    if (els.cueToggle) els.cueToggle.checked = cue.enabled;
+    if (els.cueSound) els.cueSound.value = cue.sound;
+    if (els.cueRearm) els.cueRearm.value = String(cue.rearm_ms / 1000);
+    if (els.cueRearmLabel) els.cueRearmLabel.textContent = `${(cue.rearm_ms / 1000).toFixed(2)}s`;
+    if (els.cueTest) els.cueTest.disabled = !cue.sound;
+    if (cue.sound && typeof SoundManager !== 'undefined' && typeof SoundManager.preload === 'function') {
+      SoundManager.preload(_assetUrl(cue.sound)).catch(() => {});
+    }
     if (els.activate) {
       els.activate.textContent = ownsLease ? 'Deactivate' : 'Activate';
       els.activate.disabled = !ownsLease && !local.stt_enabled && !local.tts_enabled;
@@ -176,6 +233,53 @@ const BlueprintsVoiceMode = (() => {
     _deactivateIfNowInvalid().catch((error) => _setStatus(error.message || String(error)));
   }
 
+  function _setCueEnabled(value) {
+    _setBoolStorage(LS_CUE_ENABLED, value);
+    _render();
+  }
+
+  function _setCueSound(assetPath) {
+    _setStringStorage(LS_CUE_SOUND, assetPath || '');
+    _render();
+  }
+
+  function _setCueRearmSeconds(seconds) {
+    _setStringStorage(LS_CUE_REARM_MS, String(_clampRearmMs(Number(seconds) * 1000)));
+    _render();
+  }
+
+  function _assetUrl(assetPath) {
+    const path = String(assetPath || '').trim();
+    if (!path) return '';
+    if (/^https?:\/\//i.test(path) || path.startsWith('/')) return path;
+    return `/fallback-ui/assets/${path}`;
+  }
+
+  function _openCuePicker() {
+    if (typeof AssetPicker === 'undefined') {
+      _setStatus('Sound picker unavailable.');
+      return;
+    }
+    AssetPicker.open({
+      title: 'Choose announcement cue',
+      kind: 'sound',
+      browseUrl: '/api/v1/nav-items/assets?type=sounds',
+      emptyMessage: 'No sound assets uploaded yet.',
+      onSelect: async (assetPath) => {
+        _setCueSound(assetPath);
+        _setCueEnabled(true);
+        _setStatus('Announcement cue selected.');
+      },
+    });
+  }
+
+  function _testCue(button) {
+    const cue = _cueState();
+    const url = _assetUrl(cue.sound);
+    if (!url || typeof SoundManager === 'undefined') return;
+    SoundManager.previewToggle(url, { button });
+  }
+
   async function toggleActive() {
     try {
       if (_isActiveOwner()) await deactivate();
@@ -212,6 +316,64 @@ const BlueprintsVoiceMode = (() => {
     );
   }
 
+  function _payloadFlag(payload, key) {
+    if (!payload) return undefined;
+    if (payload[key] !== undefined) return payload[key];
+    if (payload.metadata && payload.metadata[key] !== undefined) return payload.metadata[key];
+    return undefined;
+  }
+
+  function _announcementCueEligible(evt) {
+    const payload = evt?.payload || {};
+    const metadata = payload.metadata || {};
+    const explicit = _payloadFlag(payload, 'pre_roll');
+    if (explicit === false || explicit === 'false' || explicit === 'suppress' || explicit === 'off') return false;
+    if (metadata.realtime === true || payload.realtime === true) return false;
+    const source = String(payload.source || evt?.source || '').toLowerCase();
+    const agentId = String(payload.agent_id || '').toLowerCase();
+    const subagentId = String(payload.subagent_id || '').toLowerCase();
+    const purpose = String(metadata.purpose || '').toLowerCase();
+    const platform = String(metadata.platform || '').toLowerCase();
+    const hermesInstance = String(metadata.hermes_instance || '').toLowerCase();
+    if (source === 'codex' || agentId === 'codex' || purpose === 'codex_status') return true;
+    if (
+      (source === 'hermes-local' || hermesInstance === 'hermes-local')
+      && (
+        agentId === 'tts-companion'
+        || subagentId === 'xarta-tts-companion'
+        || platform === 'matrix'
+        || purpose === 'tts_companion'
+      )
+    ) return true;
+    return explicit === true || explicit === 'true' || explicit === 'auto' || explicit === 'force';
+  }
+
+  async function maybePlayAnnouncementCue(evt) {
+    const cue = _cueState();
+    if (!cue.enabled || !cue.sound || !_announcementCueEligible(evt)) return false;
+    if (!await canSpeakHermesUtterance()) return false;
+    const now = Date.now();
+    if (_lastAnnouncementCueAt && now - _lastAnnouncementCueAt < cue.rearm_ms) return false;
+    const url = _assetUrl(cue.sound);
+    if (!url || typeof SoundManager === 'undefined' || typeof SoundManager.playOneShot !== 'function') return false;
+    _lastAnnouncementCueAt = now;
+    const durationSeconds = await SoundManager.playOneShot(url, { waitForEnd: false });
+    const durationMs = Math.max(0, Math.round(Number(durationSeconds || 0) * 1000));
+    const delayMs = Math.max(
+      0,
+      Math.min(CUE_MAX_TTS_START_DELAY_MS, durationMs - CUE_TTS_PRESTREAM_ESTIMATE_MS)
+    );
+    if (delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    return {
+      played: true,
+      duration_ms: durationMs,
+      tts_prestream_estimate_ms: CUE_TTS_PRESTREAM_ESTIMATE_MS,
+      tts_start_delay_ms: delayMs,
+    };
+  }
+
   function _wire() {
     if (_initDone) return;
     _initDone = true;
@@ -223,6 +385,10 @@ const BlueprintsVoiceMode = (() => {
     els.stt?.addEventListener('change', () => _setLocalToggles({ stt: els.stt.checked }));
     els.tts?.addEventListener('change', () => _setLocalToggles({ tts: els.tts.checked }));
     els.activate?.addEventListener('click', toggleActive);
+    els.cueToggle?.addEventListener('change', () => _setCueEnabled(els.cueToggle.checked));
+    els.cuePick?.addEventListener('click', _openCuePicker);
+    els.cueTest?.addEventListener('click', () => _testCue(els.cueTest));
+    els.cueRearm?.addEventListener('input', () => _setCueRearmSeconds(els.cueRearm.value));
 
     document.addEventListener('blueprints:event', (event) => {
       if (event.detail?.event_type === 'voice.mode.changed') {
@@ -243,6 +409,7 @@ const BlueprintsVoiceMode = (() => {
     open,
     reconcile,
     canSpeakHermesUtterance,
+    maybePlayAnnouncementCue,
     getBrowserId: _browserId,
   };
 })();
