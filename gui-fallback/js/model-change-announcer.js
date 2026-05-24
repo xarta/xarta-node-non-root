@@ -333,6 +333,13 @@ const BlueprintsModelChangeAnnouncer = (() => {
       _emitSpeechSuppressed('stale_hermes_utterance_replay', item);
       return;
     }
+    if (item.hermesUtterance
+        && typeof BlueprintsVoiceMode !== 'undefined'
+        && typeof BlueprintsVoiceMode.canSpeakHermesUtterance === 'function'
+        && !await BlueprintsVoiceMode.canSpeakHermesUtterance()) {
+      _emitSpeechSuppressed('voice_mode_not_active_tts_browser', item);
+      return;
+    }
     if (typeof BlueprintsNotifierDnd !== 'undefined') {
       await BlueprintsNotifierDnd.loadConfig();
       if (item.hermesUtterance) {

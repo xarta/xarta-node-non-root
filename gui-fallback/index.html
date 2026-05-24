@@ -38,6 +38,7 @@
   <link rel="stylesheet" href="css/hub-dialogs.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/embed-menu-grid.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/tts-pool.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/voice-mode.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="vendor/xterm/xterm.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/ssh-terminal.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/agent-pages.css?v={{$assetVersion}}" />
@@ -4313,6 +4314,70 @@
   </div>
 </dialog>
 
+<!-- Voice Mode control modal -->
+<dialog class="hub-modal hub-dialog" data-tone="info" id="voice-mode-modal" style="width:min(560px,95vw)">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">VOICE</span>
+      <span class="hub-dialog-title-text">Voice Mode</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body">
+    <div class="voice-mode-grid">
+      <div class="voice-mode-browser">
+        <div class="voice-mode-browser__label" id="voice-mode-browser-label">This browser</div>
+        <div class="voice-mode-browser__meta" id="voice-mode-browser-meta">Active: checking...</div>
+      </div>
+
+      <div class="voice-mode-controls" aria-label="Voice capabilities">
+        <div class="voice-mode-control">
+          <label class="hub-checkbox">
+            <input class="hub-checkbox__input" type="checkbox" id="voice-mode-combined-toggle" />
+            <span class="hub-checkbox__box" aria-hidden="true"></span>
+            <span class="hub-checkbox__label voice-mode-control__text">
+              <span class="voice-mode-control__name">STT + TTS</span>
+              <span class="voice-mode-control__hint">Enable both browser voice paths.</span>
+            </span>
+          </label>
+        </div>
+
+        <div class="voice-mode-control">
+          <label class="hub-checkbox">
+            <input class="hub-checkbox__input" type="checkbox" id="voice-mode-stt-toggle" />
+            <span class="hub-checkbox__box" aria-hidden="true"></span>
+            <span class="hub-checkbox__label voice-mode-control__text">
+              <span class="voice-mode-control__name">STT</span>
+              <span class="voice-mode-control__hint">Runtime planned, not wired.</span>
+            </span>
+          </label>
+          <span class="voice-mode-led" id="voice-mode-stt-led" data-state="red" aria-label="STT status"></span>
+        </div>
+
+        <div class="voice-mode-control">
+          <label class="hub-checkbox">
+            <input class="hub-checkbox__input" type="checkbox" id="voice-mode-tts-toggle" />
+            <span class="hub-checkbox__box" aria-hidden="true"></span>
+            <span class="hub-checkbox__label voice-mode-control__text">
+              <span class="voice-mode-control__name">TTS</span>
+              <span class="voice-mode-control__hint">Hermes browser-directed speech.</span>
+            </span>
+          </label>
+          <span class="voice-mode-led" id="voice-mode-tts-led" data-state="red" aria-label="TTS status"></span>
+        </div>
+      </div>
+
+      <div class="voice-mode-actions">
+        <p class="voice-mode-status" id="voice-mode-status" aria-live="polite"></p>
+        <button class="hub-modal-btn" type="button" id="voice-mode-activate-btn">Activate</button>
+      </div>
+    </div>
+  </div>
+  <div class="hub-modal-footer">
+    <button class="hub-modal-btn secondary hub-modal-close" type="button">Close</button>
+  </div>
+</dialog>
+
 <script src="js/utils.js?v={{$assetVersion}}"></script>
 <script src="js/api.js?v={{$assetVersion}}"></script>
 <script src="js/state.js?v={{$assetVersion}}"></script>
@@ -4327,6 +4392,7 @@
 <script src="js/sound-manager.js?v={{$assetVersion}}"></script>
 <script src="js/tts-wrapper-client.js?v={{$assetVersion}}"></script>
 <script src="js/events-stream.js?v={{$assetVersion}}"></script>
+<script src="js/voice-mode.js?v={{$assetVersion}}"></script>
 <script src="js/notifier-dnd-policy.js?v={{$assetVersion}}"></script>
 <script src="js/notifier-danger2-alert.js?v={{$assetVersion}}"></script>
 <script src="js/model-change-announcer.js?v={{$assetVersion}}"></script>

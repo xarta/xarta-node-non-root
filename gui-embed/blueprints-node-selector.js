@@ -2836,6 +2836,17 @@
         pressTimer = window.setTimeout(() => {
           longPressTriggered = true;
           pressTimer = null;
+          if (
+            btn.dataset.action === 'settings'
+            && typeof window.BlueprintsVoiceMode !== 'undefined'
+            && typeof window.BlueprintsVoiceMode.open === 'function'
+          ) {
+            window.BlueprintsVoiceMode.open({
+              source: 'selector-settings-long-press',
+              button: btn,
+            });
+            return;
+          }
           // TTS/sound feedback — confirms the event fired when no action is assigned.
           // Mirrors the pattern in app.js _handleOriginContextMenu.
           if (typeof window.BlueprintsTtsClient !== 'undefined') {
