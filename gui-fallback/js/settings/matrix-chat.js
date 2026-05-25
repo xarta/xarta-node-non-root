@@ -4,6 +4,7 @@
 
 const MATRIX_CHAT_SERVER_STORAGE_KEY = 'blueprintsMatrixChatServer';
 const MATRIX_CHAT_STORAGE_KEY = 'blueprintsMatrixChatActiveRoom';
+const MATRIX_CHAT_COMPOSER_HEIGHT_STORAGE_KEY = 'blueprintsMatrixChatComposerHeight';
 const MATRIX_CHAT_INITIAL_MESSAGE_LIMIT = 60;
 const MATRIX_CHAT_OLDER_MESSAGE_LIMIT = 60;
 const MATRIX_CHAT_MAX_MESSAGES_PER_ROOM = 600;
@@ -54,6 +55,14 @@ const MatrixChat = (() => {
     notifierDndConfig: null,
     notifierDndSaving: false,
     notifierTestEvents: new Map(),
+    audioSending: false,
+    audioStarting: false,
+    audioRecording: false,
+    audioRecorder: null,
+    audioStream: null,
+    audioChunks: [],
+    audioStartedAt: 0,
+    audioStopAfterStart: false,
   };
 
   const RoomTabInteractionMachine = (() => {
@@ -151,6 +160,49 @@ const MatrixChat = (() => {
     const url = new URL(`/api/v1/matrix-chat${path}`, window.location.origin);
     url.searchParams.set('server', state.serverId);
     return `${url.pathname}${url.search}`;
+  }
+
+  function guessAudioMime(file) {
+    const explicit = (file?.type || '').trim();
+    if (explicit) return explicit;
+    const name = (file?.name || '').toLowerCase();
+    if (name.endsWith('.mp3')) return 'audio/mpeg';
+    if (name.endsWith('.wav')) return 'audio/wav';
+    if (name.endsWith('.m4a')) return 'audio/mp4';
+    if (name.endsWith('.aac')) return 'audio/aac';
+    if (name.endsWith('.ogg') || name.endsWith('.oga')) return 'audio/ogg';
+    if (name.endsWith('.webm')) return 'audio/webm';
+    if (name.endsWith('.flac')) return 'audio/flac';
+    return 'application/octet-stream';
+  }
+
+  function preferredRecordingMime() {
+    if (typeof MediaRecorder === 'undefined') return '';
+    const candidates = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/ogg;codecs=opus',
+      'audio/ogg',
+      'audio/mp4',
+    ];
+    return candidates.find(type => {
+      try {
+        return MediaRecorder.isTypeSupported(type);
+      } catch (_) {
+        return false;
+      }
+    }) || '';
+  }
+
+  function extensionForAudioMime(mimetype) {
+    const clean = String(mimetype || '').split(';', 1)[0].toLowerCase();
+    if (clean === 'audio/mpeg') return 'mp3';
+    if (clean === 'audio/wav' || clean === 'audio/wave' || clean === 'audio/x-wav') return 'wav';
+    if (clean === 'audio/mp4') return 'm4a';
+    if (clean === 'audio/aac') return 'aac';
+    if (clean === 'audio/ogg') return 'ogg';
+    if (clean === 'audio/flac') return 'flac';
+    return 'webm';
   }
 
   function hermesPrefix() {
@@ -2245,6 +2297,167 @@ const MatrixChat = (() => {
     }
   }
 
+  function audioDurationMs(file) {
+    if (!file || typeof URL === 'undefined') return Promise.resolve(null);
+    return new Promise(resolve => {
+      const audio = document.createElement('audio');
+      const url = URL.createObjectURL(file);
+      let settled = false;
+      const done = value => {
+        if (settled) return;
+        settled = true;
+        URL.revokeObjectURL(url);
+        resolve(value);
+      };
+      const timer = window.setTimeout(() => done(null), 1800);
+      audio.preload = 'metadata';
+      audio.onloadedmetadata = () => {
+        window.clearTimeout(timer);
+        const duration = Number.isFinite(audio.duration) ? Math.round(audio.duration * 1000) : null;
+        done(duration);
+      };
+      audio.onerror = () => {
+        window.clearTimeout(timer);
+        done(null);
+      };
+      audio.src = url;
+    });
+  }
+
+  async function sendAudioFile(file, durationMs = null) {
+    if (!file || state.audioSending) return;
+    if (!state.activeRoomId) {
+      setStatus('Select a Matrix room before sending audio.', 'warn');
+      return;
+    }
+    const mimetype = guessAudioMime(file);
+    if (!mimetype.startsWith('audio/')) {
+      setStatus('Choose an audio file to send.', 'warn');
+      return;
+    }
+    const button = el('matrix-chat-audio');
+    state.audioSending = true;
+    if (button) button.disabled = true;
+    setStatus(`Uploading ${file.name || 'audio'}...`, 'warn');
+    try {
+      const duration = Number.isFinite(durationMs) ? durationMs : await audioDurationMs(file);
+      const uploadFile = file.type ? file : new File([file], file.name || 'voice-message.webm', { type: mimetype });
+      const form = new FormData();
+      form.append('file', uploadFile, uploadFile.name || 'voice-message.webm');
+      if (Number.isFinite(duration)) form.append('duration_ms', String(duration));
+      await apiJson(matrixApi(`/rooms/${encodeURIComponent(state.activeRoomId)}/audio`), {
+        method: 'POST',
+        body: form,
+      });
+      setStatus('Audio sent.', 'ok');
+      await loadMessages(state.activeRoomId);
+      await loadRooms();
+    } catch (error) {
+      setStatus(`Audio send failed: ${error.message}`, 'error');
+    } finally {
+      state.audioSending = false;
+      if (button) button.disabled = false;
+    }
+  }
+
+  function cleanupAudioRecording() {
+    state.audioStarting = false;
+    state.audioRecording = false;
+    state.audioRecorder = null;
+    state.audioChunks = [];
+    state.audioStartedAt = 0;
+    state.audioStopAfterStart = false;
+    if (state.audioStream) {
+      state.audioStream.getTracks().forEach(track => track.stop());
+      state.audioStream = null;
+    }
+    el('matrix-chat-audio')?.classList.remove('is-recording');
+  }
+
+  async function startAudioRecording() {
+    if (state.audioSending || state.audioStarting || state.audioRecording || state.audioRecorder) return;
+    if (!state.activeRoomId) {
+      setStatus('Select a Matrix room before recording audio.', 'warn');
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setStatus('This browser cannot record audio here.', 'warn');
+      return;
+    }
+    const button = el('matrix-chat-audio');
+    try {
+      state.audioStarting = true;
+      state.audioStopAfterStart = false;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimetype = preferredRecordingMime();
+      const options = mimetype ? { mimeType: mimetype } : {};
+      const recorder = new MediaRecorder(stream, options);
+      state.audioStream = stream;
+      state.audioRecorder = recorder;
+      state.audioChunks = [];
+      state.audioStartedAt = Date.now();
+      recorder.addEventListener('dataavailable', event => {
+        if (event.data?.size) state.audioChunks.push(event.data);
+      });
+      recorder.addEventListener('stop', () => {
+        const chunks = state.audioChunks.slice();
+        const duration = Math.max(0, Date.now() - state.audioStartedAt);
+        const type = recorder.mimeType || mimetype || 'audio/webm';
+        cleanupAudioRecording();
+        if (!chunks.length) {
+          setStatus('No audio was captured.', 'warn');
+          return;
+        }
+        const blob = new Blob(chunks, { type });
+        const ext = extensionForAudioMime(type);
+        const filename = `voice-message-${new Date().toISOString().replace(/[:.]/g, '-')}.${ext}`;
+        const file = new File([blob], filename, { type });
+        void sendAudioFile(file, duration);
+      });
+      recorder.start();
+      state.audioStarting = false;
+      state.audioRecording = true;
+      button?.classList.add('is-recording');
+      setStatus('Recording audio... release to send.', 'warn');
+      if (state.audioStopAfterStart) stopAudioRecording();
+    } catch (error) {
+      cleanupAudioRecording();
+      setStatus(`Audio recording unavailable: ${error.message}`, 'error');
+    }
+  }
+
+  function stopAudioRecording() {
+    const recorder = state.audioRecorder;
+    if (!recorder) {
+      state.audioStopAfterStart = true;
+      return;
+    }
+    if (recorder.state === 'recording') {
+      recorder.stop();
+    } else {
+      cleanupAudioRecording();
+    }
+  }
+
+  function bindAudioRecordButton() {
+    const button = el('matrix-chat-audio');
+    if (!button) return;
+    button.addEventListener('pointerdown', event => {
+      if (event.button !== undefined && event.button !== 0) return;
+      event.preventDefault();
+      button.setPointerCapture?.(event.pointerId);
+      void startAudioRecording();
+    });
+    button.addEventListener('pointerup', event => {
+      event.preventDefault();
+      stopAudioRecording();
+    });
+    button.addEventListener('pointercancel', event => {
+      event.preventDefault();
+      stopAudioRecording();
+    });
+  }
+
   function handleBlueprintsEvent(domEvt) {
     const evt = domEvt?.detail;
     if (!evt || evt.event_type !== 'matrix.chat.sync') return;
@@ -2300,6 +2513,86 @@ const MatrixChat = (() => {
     }
   }
 
+  function composerHeightBounds() {
+    const main = el('matrix-chat-main');
+    const mainRect = main?.getBoundingClientRect();
+    const mainHeight = mainRect?.height || window.innerHeight || 600;
+    const min = isMobileLayout() ? 92 : 56;
+    const max = Math.max(min, Math.min(Math.round(mainHeight * 0.62), isMobileLayout() ? 320 : 440));
+    return { min, max };
+  }
+
+  function clampComposerHeight(value) {
+    const { min, max } = composerHeightBounds();
+    const next = Math.round(Number(value) || 0);
+    return Math.min(max, Math.max(min, next));
+  }
+
+  function setComposerHeight(value, persist = true) {
+    const main = el('matrix-chat-main');
+    if (!main) return;
+    const height = clampComposerHeight(value);
+    main.style.setProperty('--matrix-chat-composer-height', `${height}px`);
+    if (persist) {
+      try {
+        localStorage.setItem(MATRIX_CHAT_COMPOSER_HEIGHT_STORAGE_KEY, String(height));
+      } catch (_) {}
+    }
+    scheduleViewportFit();
+  }
+
+  function restoreComposerHeight() {
+    try {
+      const stored = Number(localStorage.getItem(MATRIX_CHAT_COMPOSER_HEIGHT_STORAGE_KEY) || '');
+      if (Number.isFinite(stored) && stored > 0) setComposerHeight(stored, false);
+    } catch (_) {}
+  }
+
+  function initComposerResize() {
+    const handle = el('matrix-chat-composer-resize');
+    const composer = document.querySelector('.matrix-chat-composer');
+    const main = el('matrix-chat-main');
+    if (!handle || !composer || !main) return;
+
+    const resizeFromClientY = clientY => {
+      const rect = main.getBoundingClientRect();
+      setComposerHeight(rect.bottom - clientY);
+    };
+
+    handle.addEventListener('pointerdown', event => {
+      event.preventDefault();
+      composer.classList.add('is-resizing');
+      handle.setPointerCapture?.(event.pointerId);
+      resizeFromClientY(event.clientY);
+      const onMove = moveEvent => {
+        moveEvent.preventDefault();
+        resizeFromClientY(moveEvent.clientY);
+      };
+      const onEnd = () => {
+        composer.classList.remove('is-resizing');
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onEnd);
+        window.removeEventListener('pointercancel', onEnd);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onEnd);
+      window.addEventListener('pointercancel', onEnd);
+    });
+
+    handle.addEventListener('keydown', event => {
+      if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const current = parseFloat(getComputedStyle(main).getPropertyValue('--matrix-chat-composer-height')) || composer.offsetHeight;
+      const { min, max } = composerHeightBounds();
+      if (event.key === 'ArrowUp') setComposerHeight(current + 16);
+      if (event.key === 'ArrowDown') setComposerHeight(current - 16);
+      if (event.key === 'Home') setComposerHeight(min);
+      if (event.key === 'End') setComposerHeight(max);
+    });
+
+    restoreComposerHeight();
+  }
+
   function isMobileLayout() {
     return window.matchMedia?.('(max-width: 820px)').matches;
   }
@@ -2352,6 +2645,8 @@ const MatrixChat = (() => {
     state.roomAdminDeleting = false;
     state.roomAdminTesting = false;
     state.messageDeleteButtonsVisible = false;
+    state.audioSending = false;
+    cleanupAudioRecording();
     window.clearTimeout(state.roomTabClickTimer);
     state.roomTabClickTimer = null;
     hideInviteSuggestions();
@@ -2425,6 +2720,7 @@ const MatrixChat = (() => {
     el('matrix-chat-invite-user')?.addEventListener('focus', scheduleInviteCandidates);
     el('matrix-chat-invite-user')?.addEventListener('keydown', handleInviteKeydown);
     el('matrix-chat-mention-hermes')?.addEventListener('click', insertHermesMention);
+    bindAudioRecordButton();
     el('matrix-chat-send')?.addEventListener('click', sendMessage);
     el('matrix-chat-room-admin-save')?.addEventListener('click', saveRoomAdminSettings);
     el('matrix-chat-room-admin-show-delete')?.addEventListener('change', toggleMessageDeleteButtons);
@@ -2468,7 +2764,13 @@ const MatrixChat = (() => {
       }
     });
     el('matrix-chat-composer')?.addEventListener('keydown', handleComposerKeydown);
-    window.addEventListener('resize', syncRailForViewport);
+    initComposerResize();
+    window.addEventListener('resize', () => {
+      syncRailForViewport();
+      const main = el('matrix-chat-main');
+      const current = parseFloat(getComputedStyle(main || document.documentElement).getPropertyValue('--matrix-chat-composer-height'));
+      if (Number.isFinite(current)) setComposerHeight(current, false);
+    });
     syncRailForViewport();
   }
 
@@ -2482,6 +2784,7 @@ const MatrixChat = (() => {
     loadTab,
     refresh: refreshAll,
     sendMessage,
+    sendAudioFile,
     insertHermesMention,
     openNotifierDnd: openNotifierDndModal,
     openNotifierTests: openNotifierTestsModal,

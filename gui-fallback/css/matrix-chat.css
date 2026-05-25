@@ -766,6 +766,7 @@
   z-index: 1;
   display: flex;
   flex-direction: column;
+  --matrix-chat-composer-height: 64px;
 }
 
 .matrix-chat-status {
@@ -1014,8 +1015,44 @@
 
 .matrix-chat-composer {
   position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+  min-height: 56px;
+  height: var(--matrix-chat-composer-height, 64px);
+  padding-top: 12px;
   border-top: 1px solid rgba(var(--hub-accent-rgb, 0, 212, 255), 0.16);
   border-bottom: 0;
+}
+
+.matrix-chat-composer-resize {
+  position: absolute;
+  z-index: 12;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 12px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.matrix-chat-composer-resize::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 4px;
+  width: min(150px, 34%);
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(var(--hub-accent-rgb, 0, 212, 255), 0.34);
+  box-shadow: 0 0 14px rgba(var(--hub-accent-rgb, 0, 212, 255), 0.16);
+  transform: translateX(-50%);
+}
+
+.matrix-chat-composer-resize:hover::before,
+.matrix-chat-composer-resize:focus-visible::before,
+.matrix-chat-composer.is-resizing .matrix-chat-composer-resize::before {
+  background: rgba(var(--glyph-gold-rgb, 200, 168, 75), 0.72);
 }
 
 .matrix-chat-composer-tools {
@@ -1025,6 +1062,35 @@
 .matrix-chat-composer .matrix-chat-icon-btn {
   height: 42px;
   align-self: flex-start;
+}
+
+.matrix-chat-audio-btn {
+  overflow: hidden;
+  color: transparent;
+  background-image: url("../assets/icons/ui/microphone-blue.svg");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 20px 20px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.matrix-chat-audio-btn:hover,
+.matrix-chat-audio-btn:focus-visible,
+.matrix-chat-audio-btn.is-recording {
+  background-image: url("../assets/icons/ui/microphone-gold.svg");
+}
+
+.matrix-chat-audio-btn.is-recording {
+  border-color: rgba(var(--glyph-gold-rgb, 200, 168, 75), 0.72);
+  background-color: rgba(var(--glyph-gold-rgb, 200, 168, 75), 0.12);
+  box-shadow: 0 0 0 2px rgba(var(--glyph-gold-rgb, 200, 168, 75), 0.12);
+}
+
+.matrix-chat-audio-btn:disabled {
+  cursor: progress;
+  opacity: 0.58;
 }
 
 .matrix-chat-notifier-modal .hub-modal-body {
@@ -1527,11 +1593,13 @@ dialog.matrix-chat-notifier-info-modal {
 }
 
 .matrix-chat-composer textarea {
+  box-sizing: border-box;
   flex: 1 1 auto;
+  height: 100%;
   min-height: 42px;
-  max-height: 120px;
+  max-height: none;
   padding: 8px 10px;
-  resize: vertical;
+  resize: none;
 }
 
 .matrix-chat-empty {
@@ -1648,9 +1716,57 @@ dialog.matrix-chat-notifier-info-modal {
   }
 }
 
+@media (min-width: 821px) and (orientation: portrait) {
+  .matrix-chat-main {
+    --matrix-chat-composer-height: 108px;
+  }
+
+  .matrix-chat-composer {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) minmax(56px, auto);
+    grid-template-rows: repeat(2, minmax(42px, 1fr));
+    align-items: stretch;
+  }
+
+  .matrix-chat-composer-tools {
+    display: contents;
+  }
+
+  #matrix-chat-mention-hermes,
+  #matrix-chat-audio {
+    grid-column: 1;
+    width: 42px;
+    min-width: 42px;
+  }
+
+  #matrix-chat-mention-hermes {
+    grid-row: 1;
+  }
+
+  #matrix-chat-audio {
+    grid-row: 2;
+  }
+
+  .matrix-chat-composer textarea {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  #matrix-chat-send {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    align-self: stretch;
+    height: auto;
+  }
+}
+
 @media (max-width: 820px) {
   #tab-matrix-chat.active {
     margin: 0 -10px -10px;
+  }
+
+  .matrix-chat-main {
+    --matrix-chat-composer-height: 100px;
   }
 
   .matrix-chat-mobile-lift {
@@ -1761,8 +1877,10 @@ dialog.matrix-chat-notifier-info-modal {
   .matrix-chat-composer {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 42px;
+    grid-template-rows: 42px minmax(42px, 1fr);
     align-items: start;
     padding: 8px;
+    padding-top: 16px;
   }
 
   .matrix-chat-composer-suggestions {
@@ -1776,12 +1894,19 @@ dialog.matrix-chat-notifier-info-modal {
     display: flex;
     grid-column: 1 / -1;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 8px;
   }
 
-  #matrix-chat-mention-hermes {
+  #matrix-chat-mention-hermes,
+  #matrix-chat-audio {
     justify-self: start;
+    width: 42px;
+    min-width: 42px;
+  }
+
+  #matrix-chat-mobile-rail-toggle {
+    margin-left: auto;
   }
 
   .matrix-chat-composer .matrix-chat-mobile-rail-toggle {
@@ -1801,8 +1926,8 @@ dialog.matrix-chat-notifier-info-modal {
   .matrix-chat-composer textarea {
     grid-column: 1;
     width: 100%;
-    height: 42px;
-    max-height: 96px;
+    height: 100%;
+    max-height: none;
   }
 
   #matrix-chat-send {
@@ -1821,6 +1946,12 @@ dialog.matrix-chat-notifier-info-modal {
   #matrix-chat-send:hover,
   #matrix-chat-send:focus-visible {
     background-image: url("../assets/icons/hieroglyphs/falcon-blue.svg");
+  }
+}
+
+@media (max-width: 820px) and (orientation: portrait) {
+  .matrix-chat-main {
+    --matrix-chat-composer-height: 116px;
   }
 }
 

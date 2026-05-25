@@ -979,7 +979,7 @@
             </div>
           </div>
         </aside>
-        <div class="matrix-chat-main" aria-label="Matrix room timeline">
+        <div id="matrix-chat-main" class="matrix-chat-main" aria-label="Matrix room timeline">
           <div class="matrix-chat-room-header">
             <div class="matrix-chat-room-title">
               <strong id="matrix-chat-room-title">No room selected</strong>
@@ -993,8 +993,11 @@
           <p id="matrix-chat-status" class="matrix-chat-status" aria-live="polite" hidden></p>
           <div id="matrix-chat-timeline" class="matrix-chat-timeline" aria-live="polite"></div>
           <div class="matrix-chat-composer">
+            <div id="matrix-chat-composer-resize" class="matrix-chat-composer-resize" role="separator"
+                 aria-label="Resize message composer" aria-orientation="horizontal" tabindex="0"></div>
             <div class="matrix-chat-composer-tools" aria-label="Matrix chat tools">
               <button id="matrix-chat-mention-hermes" class="matrix-chat-icon-btn" type="button" title="Mention Hermes" aria-label="Mention Hermes">@H</button>
+              <button id="matrix-chat-audio" class="matrix-chat-icon-btn matrix-chat-audio-btn" type="button" title="Hold to record audio" aria-label="Hold to record audio"></button>
               <button id="matrix-chat-mobile-rail-toggle" class="matrix-chat-mobile-rail-toggle" type="button" aria-expanded="false" aria-controls="matrix-chat-rail">Rooms</button>
             </div>
             <div id="matrix-chat-composer-suggestions" class="matrix-chat-composer-suggestions" role="listbox" hidden></div>
