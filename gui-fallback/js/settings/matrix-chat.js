@@ -2373,6 +2373,9 @@ const MatrixChat = (() => {
   async function matrixSttWebSocketUrl(roomId) {
     const url = new URL(matrixApi(`/rooms/${encodeURIComponent(roomId)}/stt/ws`), window.location.origin);
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    if (window.BlueprintsVoiceMode?.sttNoiseReductionEnabled?.()) {
+      url.searchParams.set('noise_reduction', '1');
+    }
     const secret = localStorage.getItem(_LS_SECRET_KEY) || '';
     const token = typeof _computeApiToken === 'function'
       ? await _computeApiToken(secret, `${url.pathname}${url.search}`)
@@ -2639,7 +2642,10 @@ const MatrixChat = (() => {
       processor.connect(audioContext.destination);
 
       button?.classList.add('is-recording');
-      setStatus('Recording voice for STT... release to send.', 'warn');
+      const noiseEnabled = window.BlueprintsVoiceMode?.sttNoiseReductionEnabled?.();
+      setStatus(noiseEnabled
+        ? 'Recording voice for STT with noise reduction... release to send.'
+        : 'Recording voice for STT... release to send.', 'warn');
       if (state.audioStopAfterStart) stopAudioRecording();
     } catch (error) {
       cleanupAudioRecording();

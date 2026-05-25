@@ -4351,10 +4351,22 @@
             <span class="hub-checkbox__box" aria-hidden="true"></span>
             <span class="hub-checkbox__label voice-mode-control__text">
               <span class="voice-mode-control__name">STT</span>
-              <span class="voice-mode-control__hint">Runtime planned, not wired.</span>
+              <span class="voice-mode-control__hint">Matrix chat push-to-talk.</span>
             </span>
           </label>
           <span class="voice-mode-led" id="voice-mode-stt-led" data-state="red" aria-label="STT status"></span>
+        </div>
+
+        <div class="voice-mode-control">
+          <label class="hub-checkbox">
+            <input class="hub-checkbox__input" type="checkbox" id="voice-mode-stt-noise-toggle" />
+            <span class="hub-checkbox__box" aria-hidden="true"></span>
+            <span class="hub-checkbox__label voice-mode-control__text">
+              <span class="voice-mode-control__name">Noise reduction</span>
+              <span class="voice-mode-control__hint">Insert DeepFilterNet for push-to-talk STT.</span>
+            </span>
+          </label>
+          <span class="voice-mode-led" id="voice-mode-stt-noise-led" data-state="red" aria-label="STT noise reduction status"></span>
         </div>
 
         <div class="voice-mode-control">
