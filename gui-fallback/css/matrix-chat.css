@@ -1065,6 +1065,11 @@
 }
 
 .matrix-chat-audio-btn {
+  --matrix-chat-audio-level: 0;
+  --matrix-chat-audio-glow: 8px;
+  --matrix-chat-audio-brightness: 1;
+  --matrix-chat-audio-saturation: 1;
+  --matrix-chat-audio-scale: 1;
   overflow: hidden;
   color: transparent;
   background-image: url("../assets/icons/ui/microphone-blue.svg");
@@ -1074,6 +1079,12 @@
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  transition:
+    background-color 80ms linear,
+    border-color 80ms linear,
+    box-shadow 80ms linear,
+    filter 80ms linear,
+    transform 80ms linear;
 }
 
 .matrix-chat-audio-btn:hover,
@@ -1085,7 +1096,13 @@
 .matrix-chat-audio-btn.is-recording {
   border-color: rgba(var(--glyph-gold-rgb, 200, 168, 75), 0.72);
   background-color: rgba(var(--glyph-gold-rgb, 200, 168, 75), 0.12);
-  box-shadow: 0 0 0 2px rgba(var(--glyph-gold-rgb, 200, 168, 75), 0.12);
+  box-shadow:
+    0 0 0 2px rgba(var(--glyph-gold-rgb, 200, 168, 75), 0.12),
+    0 0 var(--matrix-chat-audio-glow, 8px) rgba(var(--glyph-gold-rgb, 200, 168, 75), 0.42);
+  filter:
+    brightness(var(--matrix-chat-audio-brightness, 1))
+    saturate(var(--matrix-chat-audio-saturation, 1));
+  transform: scale(var(--matrix-chat-audio-scale, 1));
 }
 
 .matrix-chat-audio-btn:disabled {

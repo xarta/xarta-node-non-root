@@ -14,6 +14,7 @@ const MATRIX_CHAT_SYNC_TIMEOUT_MS = 25000;
 const MATRIX_CHAT_SYNC_RETRY_MS = 1500;
 const MATRIX_CHAT_SYNC_FALLBACK_MS = 30000;
 const MATRIX_CHAT_LEVEL_RANK = Object.freeze({ debug: 0, information: 1, warning: 2, error: 3 });
+const MATRIX_CHAT_STT_TRANSCRIPT_MARKER = '[voice/STT transcript, may contain recognition errors] ';
 
 const MatrixChat = (() => {
   const state = {
@@ -58,11 +59,20 @@ const MatrixChat = (() => {
     audioSending: false,
     audioStarting: false,
     audioRecording: false,
-    audioRecorder: null,
+    audioFinalizing: false,
+    audioWs: null,
+    audioContext: null,
+    audioSourceNode: null,
+    audioProcessorNode: null,
     audioStream: null,
     audioChunks: [],
+    audioBytesSent: 0,
+    audioFramesSent: 0,
     audioStartedAt: 0,
     audioStopAfterStart: false,
+    audioDraftActive: false,
+    audioDraftPrefix: '',
+    audioDraftValue: '',
   };
 
   const RoomTabInteractionMachine = (() => {
@@ -2360,11 +2370,160 @@ const MatrixChat = (() => {
     }
   }
 
-  function cleanupAudioRecording() {
+  async function matrixSttWebSocketUrl(roomId) {
+    const url = new URL(matrixApi(`/rooms/${encodeURIComponent(roomId)}/stt/ws`), window.location.origin);
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    const secret = localStorage.getItem(_LS_SECRET_KEY) || '';
+    const token = typeof _computeApiToken === 'function'
+      ? await _computeApiToken(secret, `${url.pathname}${url.search}`)
+      : '';
+    if (token) url.searchParams.set('token', token);
+    return url.toString();
+  }
+
+  function waitForSocketOpen(socket) {
+    return new Promise((resolve, reject) => {
+      if (socket.readyState === WebSocket.OPEN) {
+        resolve();
+        return;
+      }
+      const timer = window.setTimeout(() => {
+        cleanup();
+        reject(new Error('STT connection timed out'));
+      }, 6000);
+      const cleanup = () => {
+        window.clearTimeout(timer);
+        socket.removeEventListener('open', onOpen);
+        socket.removeEventListener('error', onError);
+      };
+      const onOpen = () => {
+        cleanup();
+        resolve();
+      };
+      const onError = () => {
+        cleanup();
+        reject(new Error('STT connection failed'));
+      };
+      socket.addEventListener('open', onOpen);
+      socket.addEventListener('error', onError);
+    });
+  }
+
+  function downsampleFloat32(input, inputRate, outputRate = 16000) {
+    if (!input?.length) return null;
+    if (!Number.isFinite(inputRate) || inputRate <= 0 || inputRate === outputRate) {
+      return new Float32Array(input);
+    }
+    const ratio = inputRate / outputRate;
+    const outputLength = Math.max(1, Math.floor(input.length / ratio));
+    const output = new Float32Array(outputLength);
+    for (let i = 0; i < outputLength; i += 1) {
+      const start = Math.floor(i * ratio);
+      const end = Math.min(input.length, Math.floor((i + 1) * ratio));
+      let sum = 0;
+      let count = 0;
+      for (let j = start; j < end; j += 1) {
+        sum += input[j];
+        count += 1;
+      }
+      output[i] = count ? sum / count : input[Math.min(start, input.length - 1)] || 0;
+    }
+    return output;
+  }
+
+  function audioInputLevel(input) {
+    if (!input?.length) return 0;
+    let sum = 0;
+    let peak = 0;
+    for (let i = 0; i < input.length; i += 1) {
+      const value = Math.abs(input[i] || 0);
+      sum += value * value;
+      if (value > peak) peak = value;
+    }
+    const rms = Math.sqrt(sum / input.length);
+    return Math.min(1, Math.max(0, (rms * 16) + (peak * 0.16)));
+  }
+
+  function updateAudioButtonLevel(level) {
+    const button = el('matrix-chat-audio');
+    if (!button) return;
+    const next = Math.min(1, Math.max(0, Number(level) || 0));
+    button.style.setProperty('--matrix-chat-audio-level', next.toFixed(3));
+    button.style.setProperty('--matrix-chat-audio-glow', `${(8 + (next * 18)).toFixed(1)}px`);
+    button.style.setProperty('--matrix-chat-audio-brightness', (1 + (next * 0.72)).toFixed(3));
+    button.style.setProperty('--matrix-chat-audio-saturation', (1 + (next * 0.45)).toFixed(3));
+    button.style.setProperty('--matrix-chat-audio-scale', (1 + (next * 0.045)).toFixed(3));
+  }
+
+  function sttComposerPrefix() {
+    return `${hermesPrefix()}${MATRIX_CHAT_STT_TRANSCRIPT_MARKER}`;
+  }
+
+  function clearSttComposerDraft(options = {}) {
+    const composer = el('matrix-chat-composer');
+    if (options.clearValue && composer && state.audioDraftActive && composer.value === state.audioDraftValue) {
+      composer.value = '';
+    }
+    state.audioDraftActive = false;
+    state.audioDraftPrefix = '';
+    state.audioDraftValue = '';
+  }
+
+  function renderSttComposerDraft(text) {
+    const clean = (text || '').trim();
+    const composer = el('matrix-chat-composer');
+    if (!clean || !composer) return false;
+    if (!state.audioDraftActive) {
+      if ((composer.value || '').trim()) return false;
+      state.audioDraftActive = true;
+      state.audioDraftPrefix = sttComposerPrefix();
+      state.audioDraftValue = '';
+    } else if ((composer.value || '') !== state.audioDraftValue) {
+      return false;
+    }
+    const value = `${state.audioDraftPrefix || sttComposerPrefix()}${clean}`;
+    composer.value = value;
+    state.audioDraftValue = value;
+    try {
+      composer.setSelectionRange(value.length, value.length);
+    } catch (_) {}
+    hideComposerSuggestions();
+    return true;
+  }
+
+  function cleanupAudioRecording(options = {}) {
+    const closeSocket = options.closeSocket !== false;
     state.audioStarting = false;
     state.audioRecording = false;
-    state.audioRecorder = null;
+    state.audioFinalizing = false;
+    if (state.audioProcessorNode) {
+      try {
+        state.audioProcessorNode.disconnect();
+      } catch (_) {}
+      state.audioProcessorNode.onaudioprocess = null;
+      state.audioProcessorNode = null;
+    }
+    if (state.audioSourceNode) {
+      try {
+        state.audioSourceNode.disconnect();
+      } catch (_) {}
+      state.audioSourceNode = null;
+    }
+    if (state.audioContext) {
+      try {
+        void state.audioContext.close();
+      } catch (_) {}
+      state.audioContext = null;
+    }
+    if (closeSocket && state.audioWs) {
+      try {
+        state.audioWs.close();
+      } catch (_) {}
+      state.audioWs = null;
+    }
     state.audioChunks = [];
+    state.audioBytesSent = 0;
+    state.audioFramesSent = 0;
     state.audioStartedAt = 0;
     state.audioStopAfterStart = false;
     if (state.audioStream) {
@@ -2372,16 +2531,57 @@ const MatrixChat = (() => {
       state.audioStream = null;
     }
     el('matrix-chat-audio')?.classList.remove('is-recording');
+    updateAudioButtonLevel(0);
+  }
+
+  async function handleSttMessage(event) {
+    let payload = {};
+    try {
+      payload = JSON.parse(event.data || '{}');
+    } catch (_) {
+      return;
+    }
+    if (payload.type === 'partial' && payload.text) {
+      renderSttComposerDraft(payload.text);
+      setStatus(`Transcribing: ${payload.text}`, 'warn');
+      return;
+    }
+    if (payload.type === 'final') {
+      const button = el('matrix-chat-audio');
+      cleanupAudioRecording();
+      state.audioSending = false;
+      if (button) button.disabled = false;
+      if (payload.matrix?.event_id) {
+        clearSttComposerDraft({ clearValue: true });
+        setStatus('Voice transcript sent.', 'ok');
+        await loadMessages(state.activeRoomId);
+        await loadRooms();
+      } else if (payload.matrix_error) {
+        renderSttComposerDraft(payload.text || '');
+        setStatus(`Voice transcript send failed: ${payload.matrix_error}`, 'error');
+      } else {
+        clearSttComposerDraft({ clearValue: true });
+        setStatus('');
+      }
+    } else if (payload.type === 'error') {
+      const button = el('matrix-chat-audio');
+      cleanupAudioRecording();
+      state.audioSending = false;
+      if (button) button.disabled = false;
+      clearSttComposerDraft({ clearValue: true });
+      setStatus(`STT failed: ${payload.detail || 'unknown error'}`, 'error');
+    }
   }
 
   async function startAudioRecording() {
-    if (state.audioSending || state.audioStarting || state.audioRecording || state.audioRecorder) return;
+    if (state.audioSending || state.audioStarting || state.audioRecording || state.audioFinalizing || state.audioWs) return;
     if (!state.activeRoomId) {
       setStatus('Select a Matrix room before recording audio.', 'warn');
       return;
     }
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      setStatus('This browser cannot record audio here.', 'warn');
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!navigator.mediaDevices?.getUserMedia || typeof WebSocket === 'undefined' || !AudioContextCtor) {
+      setStatus('This browser cannot stream microphone audio here.', 'warn');
       return;
     }
     const button = el('matrix-chat-audio');
@@ -2389,36 +2589,57 @@ const MatrixChat = (() => {
       state.audioStarting = true;
       state.audioStopAfterStart = false;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimetype = preferredRecordingMime();
-      const options = mimetype ? { mimeType: mimetype } : {};
-      const recorder = new MediaRecorder(stream, options);
-      state.audioStream = stream;
-      state.audioRecorder = recorder;
-      state.audioChunks = [];
-      state.audioStartedAt = Date.now();
-      recorder.addEventListener('dataavailable', event => {
-        if (event.data?.size) state.audioChunks.push(event.data);
+      const ws = new WebSocket(await matrixSttWebSocketUrl(state.activeRoomId));
+      ws.binaryType = 'arraybuffer';
+      state.audioWs = ws;
+      ws.addEventListener('message', event => {
+        void handleSttMessage(event);
       });
-      recorder.addEventListener('stop', () => {
-        const chunks = state.audioChunks.slice();
-        const duration = Math.max(0, Date.now() - state.audioStartedAt);
-        const type = recorder.mimeType || mimetype || 'audio/webm';
-        cleanupAudioRecording();
-        if (!chunks.length) {
-          setStatus('No audio was captured.', 'warn');
-          return;
+      ws.addEventListener('close', () => {
+        if (state.audioRecording || state.audioFinalizing) {
+          cleanupAudioRecording({ closeSocket: false });
+          state.audioSending = false;
+          if (button) button.disabled = false;
+          setStatus('STT connection closed before a final transcript.', 'warn');
         }
-        const blob = new Blob(chunks, { type });
-        const ext = extensionForAudioMime(type);
-        const filename = `voice-message-${new Date().toISOString().replace(/[:.]/g, '-')}.${ext}`;
-        const file = new File([blob], filename, { type });
-        void sendAudioFile(file, duration);
+        state.audioWs = null;
       });
-      recorder.start();
+      await waitForSocketOpen(ws);
+
+      const audioContext = new AudioContextCtor();
+      await audioContext.resume?.();
+      const source = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      state.audioStream = stream;
+      state.audioContext = audioContext;
+      state.audioSourceNode = source;
+      state.audioProcessorNode = processor;
+      state.audioChunks = [];
+      state.audioBytesSent = 0;
+      state.audioFramesSent = 0;
+      state.audioStartedAt = Date.now();
+      clearSttComposerDraft({ clearValue: true });
+      updateAudioButtonLevel(0);
       state.audioStarting = false;
       state.audioRecording = true;
+      processor.onaudioprocess = event => {
+        const output = event.outputBuffer?.getChannelData?.(0);
+        if (output) output.fill(0);
+        if (!state.audioRecording || state.audioWs?.readyState !== WebSocket.OPEN) return;
+        const input = event.inputBuffer.getChannelData(0);
+        updateAudioButtonLevel(audioInputLevel(input));
+        const pcm = downsampleFloat32(input, audioContext.sampleRate, 16000);
+        if (pcm?.byteLength) {
+          state.audioBytesSent += pcm.byteLength;
+          state.audioFramesSent += 1;
+          state.audioWs.send(pcm.buffer);
+        }
+      };
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+
       button?.classList.add('is-recording');
-      setStatus('Recording audio... release to send.', 'warn');
+      setStatus('Recording voice for STT... release to send.', 'warn');
       if (state.audioStopAfterStart) stopAudioRecording();
     } catch (error) {
       cleanupAudioRecording();
@@ -2427,15 +2648,47 @@ const MatrixChat = (() => {
   }
 
   function stopAudioRecording() {
-    const recorder = state.audioRecorder;
-    if (!recorder) {
+    if (state.audioStarting) {
       state.audioStopAfterStart = true;
       return;
     }
-    if (recorder.state === 'recording') {
-      recorder.stop();
+    if (!state.audioWs) {
+      cleanupAudioRecording();
+      return;
+    }
+    state.audioRecording = false;
+    state.audioFinalizing = true;
+    state.audioSending = true;
+    const button = el('matrix-chat-audio');
+    if (button) button.disabled = true;
+    button?.classList.remove('is-recording');
+    updateAudioButtonLevel(0);
+    if (state.audioProcessorNode) {
+      try {
+        state.audioProcessorNode.disconnect();
+      } catch (_) {}
+    }
+    if (state.audioSourceNode) {
+      try {
+        state.audioSourceNode.disconnect();
+      } catch (_) {}
+    }
+    if (state.audioStream) {
+      state.audioStream.getTracks().forEach(track => track.stop());
+      state.audioStream = null;
+    }
+    if (state.audioWs.readyState === WebSocket.OPEN) {
+      state.audioWs.send(JSON.stringify({
+        type: 'end',
+        audio_bytes: state.audioBytesSent,
+        audio_frames: state.audioFramesSent,
+      }));
+      setStatus('Finalizing voice transcript...', 'warn');
     } else {
       cleanupAudioRecording();
+      state.audioSending = false;
+      if (button) button.disabled = false;
+      setStatus('STT connection was not ready.', 'error');
     }
   }
 
