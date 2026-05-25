@@ -4369,6 +4369,12 @@
           <span class="voice-mode-led" id="voice-mode-stt-noise-led" data-state="red" aria-label="STT noise reduction status"></span>
         </div>
 
+        <label class="voice-mode-noise-level" for="voice-mode-stt-noise-level">
+          <span class="voice-mode-noise-level__label">Noise level</span>
+          <input type="range" id="voice-mode-stt-noise-level" min="0" max="12" step="0.5" value="6" />
+          <output id="voice-mode-stt-noise-level-label" for="voice-mode-stt-noise-level">6.0 dB</output>
+        </label>
+
         <div class="voice-mode-control">
           <label class="hub-checkbox">
             <input class="hub-checkbox__input" type="checkbox" id="voice-mode-tts-toggle" />

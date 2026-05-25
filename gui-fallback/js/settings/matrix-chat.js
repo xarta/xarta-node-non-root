@@ -2375,6 +2375,10 @@ const MatrixChat = (() => {
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     if (window.BlueprintsVoiceMode?.sttNoiseReductionEnabled?.()) {
       url.searchParams.set('noise_reduction', '1');
+      const levelDb = window.BlueprintsVoiceMode?.sttNoiseReductionLevelDb?.();
+      if (Number.isFinite(levelDb)) {
+        url.searchParams.set('atten_lim_db', String(levelDb));
+      }
     }
     const secret = localStorage.getItem(_LS_SECRET_KEY) || '';
     const token = typeof _computeApiToken === 'function'

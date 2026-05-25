@@ -6,6 +6,7 @@ const BlueprintsVoiceMode = (() => {
   const LS_BROWSER_ID = 'blueprints.voice.browser_id';
   const LS_STT = 'blueprints.voice.stt_enabled';
   const LS_STT_NOISE = 'blueprints.voice.stt_noise_reduction_enabled';
+  const LS_STT_NOISE_LEVEL_DB = 'blueprints.voice.stt_noise_reduction_level_db';
   const LS_TTS = 'blueprints.voice.tts_enabled';
   const LS_CUE_ENABLED = 'blueprints.voice.announcement_cue_enabled';
   const LS_CUE_SOUND = 'blueprints.voice.announcement_cue_sound';
@@ -20,6 +21,10 @@ const BlueprintsVoiceMode = (() => {
   const CUE_STEP_MS = 250;
   const CUE_TTS_PRESTREAM_ESTIMATE_MS = 325;
   const CUE_MAX_TTS_START_DELAY_MS = 5000;
+  const STT_NOISE_DEFAULT_DB = 6;
+  const STT_NOISE_MIN_DB = 0;
+  const STT_NOISE_MAX_DB = 12;
+  const STT_NOISE_STEP_DB = 0.5;
 
   let _serverState = {
     active: null,
@@ -83,6 +88,13 @@ const BlueprintsVoiceMode = (() => {
     return Math.round(clamped / CUE_STEP_MS) * CUE_STEP_MS;
   }
 
+  function _clampNoiseLevelDb(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return STT_NOISE_DEFAULT_DB;
+    const clamped = Math.max(STT_NOISE_MIN_DB, Math.min(STT_NOISE_MAX_DB, parsed));
+    return Math.round(clamped / STT_NOISE_STEP_DB) * STT_NOISE_STEP_DB;
+  }
+
   function _cueState() {
     return {
       enabled: _boolFromStorage(LS_CUE_ENABLED),
@@ -109,6 +121,7 @@ const BlueprintsVoiceMode = (() => {
       browser_label: _browserLabel(),
       stt_enabled: _boolFromStorage(LS_STT),
       stt_noise_reduction_enabled: _boolFromStorage(LS_STT_NOISE),
+      stt_noise_reduction_level_db: _clampNoiseLevelDb(_numberFromStorage(LS_STT_NOISE_LEVEL_DB, STT_NOISE_DEFAULT_DB)),
       tts_enabled: _boolFromStorage(LS_TTS),
     };
   }
@@ -125,6 +138,8 @@ const BlueprintsVoiceMode = (() => {
       combined: document.getElementById('voice-mode-combined-toggle'),
       stt: document.getElementById('voice-mode-stt-toggle'),
       sttNoise: document.getElementById('voice-mode-stt-noise-toggle'),
+      sttNoiseLevel: document.getElementById('voice-mode-stt-noise-level'),
+      sttNoiseLevelLabel: document.getElementById('voice-mode-stt-noise-level-label'),
       tts: document.getElementById('voice-mode-tts-toggle'),
       sttLed: document.getElementById('voice-mode-stt-led'),
       sttNoiseLed: document.getElementById('voice-mode-stt-noise-led'),
@@ -171,6 +186,13 @@ const BlueprintsVoiceMode = (() => {
     if (els.sttNoise) {
       els.sttNoise.checked = local.stt_noise_reduction_enabled;
       els.sttNoise.disabled = !local.stt_enabled;
+    }
+    if (els.sttNoiseLevel) {
+      els.sttNoiseLevel.value = String(local.stt_noise_reduction_level_db);
+      els.sttNoiseLevel.disabled = !local.stt_enabled || !local.stt_noise_reduction_enabled;
+    }
+    if (els.sttNoiseLevelLabel) {
+      els.sttNoiseLevelLabel.textContent = `${local.stt_noise_reduction_level_db.toFixed(1)} dB`;
     }
     if (els.tts) els.tts.checked = local.tts_enabled;
     if (els.combined) els.combined.checked = local.stt_enabled && local.tts_enabled;
@@ -276,9 +298,19 @@ const BlueprintsVoiceMode = (() => {
     _setStatus(value ? 'STT noise reduction enabled for this browser.' : 'STT noise reduction disabled.');
   }
 
+  function _setSttNoiseLevelDb(value) {
+    const level = _clampNoiseLevelDb(value);
+    _setStringStorage(LS_STT_NOISE_LEVEL_DB, String(level));
+    _render();
+  }
+
   function sttNoiseReductionEnabled() {
     const local = _localState();
     return !!(local.stt_enabled && local.stt_noise_reduction_enabled);
+  }
+
+  function sttNoiseReductionLevelDb() {
+    return _localState().stt_noise_reduction_level_db;
   }
 
   function _setCueEnabled(value) {
@@ -441,6 +473,7 @@ const BlueprintsVoiceMode = (() => {
     });
     els.stt?.addEventListener('change', () => _setLocalToggles({ stt: els.stt.checked }));
     els.sttNoise?.addEventListener('change', () => _setSttNoiseReduction(els.sttNoise.checked));
+    els.sttNoiseLevel?.addEventListener('input', () => _setSttNoiseLevelDb(els.sttNoiseLevel.value));
     els.tts?.addEventListener('change', () => _setLocalToggles({ tts: els.tts.checked }));
     els.activate?.addEventListener('click', toggleActive);
     els.cueToggle?.addEventListener('change', () => _setCueEnabled(els.cueToggle.checked));
@@ -474,6 +507,7 @@ const BlueprintsVoiceMode = (() => {
     reconcile,
     canSpeakHermesUtterance,
     sttNoiseReductionEnabled,
+    sttNoiseReductionLevelDb,
     maybePlayAnnouncementCue,
     getBrowserId: _browserId,
   };
