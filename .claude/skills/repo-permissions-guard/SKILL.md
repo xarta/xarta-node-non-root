@@ -42,3 +42,5 @@ bash /xarta-node/.claude/skills/repo-permissions-guard/scripts/check-repo-owner-
 
 This public copy exists because the guard is directly relevant to the public
 non-root repo layout. Keep private-only operational notes in the private repo.
+
+End-of-turn TTS reminder: if you are Codex on xarta-node and have not already run active TTS this turn, run `python3 /root/.codex/skills/xarta-active-tts/scripts/say-active-tts.py "<short status>"` before your final response.
