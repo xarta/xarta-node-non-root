@@ -266,7 +266,7 @@ dialog.hub-modal[open]::backdrop {
 .hub-modal-body select:focus {
     outline: none;
     border-color: var(--hub-accent, #00d4ff);
-    background: var(--hub-bg-focus, rgba(0, 0, 0, 0.45));
+    background-color: var(--hub-bg-focus, rgba(0, 0, 0, 0.45));
 }
 
 .hub-modal-body textarea {
