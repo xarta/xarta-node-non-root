@@ -135,7 +135,6 @@ const BlueprintsVoiceMode = (() => {
       modal: document.getElementById('voice-mode-modal'),
       browserLabel: document.getElementById('voice-mode-browser-label'),
       browserMeta: document.getElementById('voice-mode-browser-meta'),
-      combined: document.getElementById('voice-mode-combined-toggle'),
       stt: document.getElementById('voice-mode-stt-toggle'),
       sttNoise: document.getElementById('voice-mode-stt-noise-toggle'),
       sttNoiseLevel: document.getElementById('voice-mode-stt-noise-level'),
@@ -195,7 +194,6 @@ const BlueprintsVoiceMode = (() => {
       els.sttNoiseLevelLabel.textContent = `${local.stt_noise_reduction_level_db.toFixed(1)} dB`;
     }
     if (els.tts) els.tts.checked = local.tts_enabled;
-    if (els.combined) els.combined.checked = local.stt_enabled && local.tts_enabled;
     if (els.sttLed) els.sttLed.dataset.state = _capabilityLed(local.stt_enabled);
     if (els.sttNoiseLed) {
       els.sttNoiseLed.dataset.state = (local.stt_enabled && local.stt_noise_reduction_enabled)
@@ -468,9 +466,6 @@ const BlueprintsVoiceMode = (() => {
     _initDone = true;
     const els = _els();
     if (!els.modal) return;
-    els.combined?.addEventListener('change', () => {
-      _setLocalToggles({ stt: els.combined.checked, tts: els.combined.checked });
-    });
     els.stt?.addEventListener('change', () => _setLocalToggles({ stt: els.stt.checked }));
     els.sttNoise?.addEventListener('change', () => _setSttNoiseReduction(els.sttNoise.checked));
     els.sttNoiseLevel?.addEventListener('input', () => _setSttNoiseLevelDb(els.sttNoiseLevel.value));
