@@ -13,6 +13,7 @@
     { key: 'refresh', rank: 10, patterns: [/\brefresh\b/, /\breload\b/, /refresh ui/] },
     { key: 'chat-mention', rank: 16, patterns: [/chat-fn-mention/, /\bmention\b/] },
     { key: 'chat-send', rank: 18, patterns: [/chat-fn-send/, /\bsend message\b/] },
+    { key: 'chat-voice-mode', rank: 18, patterns: [/chat-fn-voice-mode/, /\bvoice mode\b/] },
     { key: 'chat-notifier', rank: 19, patterns: [/chat-fn-notifier/, /\bnotification controls\b/] },
     { key: 'connect', rank: 12, patterns: [/\bconnect\b/] },
     { key: 'disconnect', rank: 14, patterns: [/\bdisconnect\b/] },

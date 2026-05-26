@@ -43,6 +43,13 @@
   padding-inline: 14px;
 }
 
+@media (max-width: 600px) {
+  #voice-mode-modal.hub-modal {
+    margin-top: calc(var(--header-h, 50px) + 8px);
+    max-height: calc(100dvh - var(--header-h, 50px) - 16px);
+  }
+}
+
 .voice-mode-domain {
   display: grid;
   gap: 8px;

@@ -106,8 +106,9 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'chat-fn-refresh',  label: 'Refresh Chat',      icon: HIEROGLYPHS.nefer,      fn: 'chat.refresh',  activeOn: ['matrix-chat'], parent: 'settings-layout', order: 0 },
         { id: 'chat-fn-mention',  label: 'Mention Hermes',    icon: HIEROGLYPHS.falcon,     fn: 'chat.mention',  activeOn: ['matrix-chat'], parent: 'settings-layout', order: 1 },
         { id: 'chat-fn-send',     label: 'Send Message',      icon: HIEROGLYPHS.khaHorizon, fn: 'chat.send',     activeOn: ['matrix-chat'], parent: 'settings-layout', order: 2 },
-        { id: 'chat-fn-notifier', label: 'Notification Controls', icon: HIEROGLYPHS.shen,    fn: 'chat.notifier', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 3 },
-        { id: 'chat-fn-notifier-tests', label: 'Notification Tests', icon: HIEROGLYPHS.eyeOfHorus, fn: 'chat.notifierTests', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 4 },
+        { id: 'chat-fn-voice-mode', label: 'Voice Mode',       icon: 'icons/ui/microphone-blue.svg', fn: 'chat.voiceMode', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 3 },
+        { id: 'chat-fn-notifier', label: 'Notification Controls', icon: HIEROGLYPHS.shen,    fn: 'chat.notifier', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 4 },
+        { id: 'chat-fn-notifier-tests', label: 'Notification Tests', icon: HIEROGLYPHS.eyeOfHorus, fn: 'chat.notifierTests', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 5 },
         { id: 'chat-admin-fn-refresh', label: 'Refresh Admin', icon: HIEROGLYPHS.nefer,     fn: 'chatAdmin.refresh', activeOn: ['matrix-chat-admin'], parent: 'settings-layout', order: 0 },
 
         // ── Manual ARP page function items ────────────────────────────────
@@ -279,6 +280,32 @@ const SettingsMenuConfig = createHubMenu({
             tests.order = 4;
             tests.activeOn = ['matrix-chat'];
         }
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentMenu));
+        localStorage.setItem(migrationKey, '1');
+    };
+})();
+
+(function migrateChatVoiceModeMenuItem() {
+    const migrationKey = 'blueprintsSettingsMenuChatVoiceMode20260526';
+    const originalLoadConfig = SettingsMenuConfig.loadConfig.bind(SettingsMenuConfig);
+    SettingsMenuConfig.loadConfig = function loadConfigWithChatVoiceModeMigration() {
+        originalLoadConfig();
+        if (localStorage.getItem(migrationKey) === '1') return;
+        ['chat-fn-voice-mode', 'chat-fn-notifier', 'chat-fn-notifier-tests'].forEach(id => {
+            const def = this.defaultMenu.find(entry => entry.id === id);
+            if (!def) return;
+            const existing = this.currentMenu.find(entry => entry.id === id);
+            if (existing) {
+                existing.label = def.label;
+                existing.icon = def.icon;
+                existing.parent = def.parent;
+                existing.order = def.order;
+                existing.fn = def.fn;
+                existing.activeOn = def.activeOn;
+            } else {
+                this.currentMenu.push({ ...def });
+            }
+        });
         localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentMenu));
         localStorage.setItem(migrationKey, '1');
     };
@@ -1020,6 +1047,7 @@ SettingsMenuConfig.registerFunctions({
     'chat.refresh':   () => window.MatrixChat?.refresh?.(),
     'chat.mention':   () => window.MatrixChat?.insertHermesMention?.(),
     'chat.send':      () => window.MatrixChat?.sendMessage?.(),
+    'chat.voiceMode': () => window.BlueprintsVoiceMode?.open?.(),
     'chat.notifier':  () => window.MatrixChat?.openNotifierDnd?.(),
     'chat.notifierTests': () => window.MatrixChat?.openNotifierTests?.(),
     'chatAdmin.refresh': () => window.MatrixChatAdmin?.refresh?.(),
