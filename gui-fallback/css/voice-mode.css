@@ -43,9 +43,15 @@
   padding-inline: 14px;
 }
 
-.voice-mode-controls {
+.voice-mode-domain {
   display: grid;
   gap: 8px;
+}
+
+.voice-mode-domain {
+  border: 1px solid rgba(var(--hub-accent-rgb, 0, 212, 255), 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.026);
 }
 
 .voice-mode-control {
@@ -57,6 +63,15 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.035);
+}
+
+.voice-mode-domain > .voice-mode-control,
+.voice-mode-domain > .voice-mode-noise-level,
+.voice-mode-domain > .voice-mode-cue,
+.voice-mode-domain > .voice-mode-model {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .voice-mode-control .hub-checkbox {

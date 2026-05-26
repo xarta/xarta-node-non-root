@@ -4336,7 +4336,7 @@
         <button class="hub-modal-btn voice-mode-browser__activate" type="button" id="voice-mode-activate-btn">Activate</button>
       </div>
 
-      <div class="voice-mode-controls" aria-label="Voice capabilities">
+      <div class="voice-mode-domain voice-mode-domain--stt" aria-label="STT controls">
         <div class="voice-mode-control">
           <label class="hub-checkbox">
             <input class="hub-checkbox__input" type="checkbox" id="voice-mode-stt-toggle" />
@@ -4366,7 +4366,9 @@
           <input type="range" id="voice-mode-stt-noise-level" min="0" max="12" step="0.5" value="6" />
           <output id="voice-mode-stt-noise-level-label" for="voice-mode-stt-noise-level">6.0 dB</output>
         </label>
+      </div>
 
+      <div class="voice-mode-domain voice-mode-domain--tts" aria-label="TTS controls">
         <div class="voice-mode-control">
           <label class="hub-checkbox">
             <input class="hub-checkbox__input" type="checkbox" id="voice-mode-tts-toggle" />
@@ -4378,47 +4380,47 @@
           </label>
           <span class="voice-mode-led" id="voice-mode-tts-led" data-state="red" aria-label="TTS status"></span>
         </div>
-      </div>
 
-      <div class="voice-mode-cue" aria-label="Announcement cue">
-        <div class="voice-mode-cue__head">
-          <label class="hub-checkbox">
-            <input class="hub-checkbox__input" type="checkbox" id="voice-mode-cue-toggle" />
-            <span class="hub-checkbox__box" aria-hidden="true"></span>
-            <span class="hub-checkbox__label voice-mode-control__text">
-              <span class="voice-mode-control__name">Announcement cue</span>
-              <span class="voice-mode-control__hint">Before Matrix and Codex TTS.</span>
+        <div class="voice-mode-cue" aria-label="Announcement cue">
+          <div class="voice-mode-cue__head">
+            <label class="hub-checkbox">
+              <input class="hub-checkbox__input" type="checkbox" id="voice-mode-cue-toggle" />
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label voice-mode-control__text">
+                <span class="voice-mode-control__name">Announcement cue</span>
+                <span class="voice-mode-control__hint">Before Matrix and Codex TTS.</span>
+              </span>
+            </label>
+          </div>
+          <div class="voice-mode-cue__row">
+            <input type="text" id="voice-mode-cue-sound" readonly placeholder="sounds/..." aria-label="Announcement cue sound" />
+            <button class="btn-small secondary" type="button" id="voice-mode-cue-pick">Pick</button>
+            <button class="btn-small secondary" type="button" id="voice-mode-cue-test">Preview</button>
+          </div>
+          <label class="voice-mode-cue__slider" for="voice-mode-cue-rearm">
+            <span>Re-arm after silence</span>
+            <input type="range" id="voice-mode-cue-rearm" min="0.25" max="5" step="0.25" value="1.5" />
+            <output id="voice-mode-cue-rearm-label" for="voice-mode-cue-rearm">1.50s</output>
+          </label>
+        </div>
+
+        <div class="voice-mode-model" aria-label="TTS companion model preference">
+          <div class="voice-mode-model__head">
+            <span class="voice-mode-control__text">
+              <span class="voice-mode-control__name">Companion model</span>
+              <span class="voice-mode-control__hint">Preferred processor for Matrix TTS.</span>
             </span>
-          </label>
-        </div>
-        <div class="voice-mode-cue__row">
-          <input type="text" id="voice-mode-cue-sound" readonly placeholder="sounds/..." aria-label="Announcement cue sound" />
-          <button class="btn-small secondary" type="button" id="voice-mode-cue-pick">Pick</button>
-          <button class="btn-small secondary" type="button" id="voice-mode-cue-test">Preview</button>
-        </div>
-        <label class="voice-mode-cue__slider" for="voice-mode-cue-rearm">
-          <span>Re-arm after silence</span>
-          <input type="range" id="voice-mode-cue-rearm" min="0.25" max="5" step="0.25" value="1.5" />
-          <output id="voice-mode-cue-rearm-label" for="voice-mode-cue-rearm">1.50s</output>
-        </label>
-      </div>
-
-      <div class="voice-mode-model" aria-label="TTS companion model preference">
-        <div class="voice-mode-model__head">
-          <span class="voice-mode-control__text">
-            <span class="voice-mode-control__name">Companion model</span>
-            <span class="voice-mode-control__hint">Preferred processor for Matrix TTS.</span>
-          </span>
-        </div>
-        <div class="voice-mode-model__choices" role="radiogroup" aria-label="TTS companion preferred processor">
-          <label class="voice-mode-model__choice">
-            <input type="radio" name="voice-mode-companion-model" value="codex_spark" id="voice-mode-model-codex" />
-            <span>Codex Spark</span>
-          </label>
-          <label class="voice-mode-model__choice">
-            <input type="radio" name="voice-mode-companion-model" value="local_private" id="voice-mode-model-local" />
-            <span>Local private</span>
-          </label>
+          </div>
+          <div class="voice-mode-model__choices" role="radiogroup" aria-label="TTS companion preferred processor">
+            <label class="voice-mode-model__choice">
+              <input type="radio" name="voice-mode-companion-model" value="codex_spark" id="voice-mode-model-codex" />
+              <span>Codex Spark</span>
+            </label>
+            <label class="voice-mode-model__choice">
+              <input type="radio" name="voice-mode-companion-model" value="local_private" id="voice-mode-model-local" />
+              <span>Local private</span>
+            </label>
+          </div>
         </div>
       </div>
 
