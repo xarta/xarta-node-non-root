@@ -5,6 +5,7 @@
 const BlueprintsVoiceMode = (() => {
   const LS_BROWSER_ID = 'blueprints.voice.browser_id';
   const LS_STT = 'blueprints.voice.stt_enabled';
+  const LS_STT_MODE = 'blueprints.voice.stt_mode';
   const LS_STT_NOISE = 'blueprints.voice.stt_noise_reduction_enabled';
   const LS_STT_NOISE_LEVEL_DB = 'blueprints.voice.stt_noise_reduction_level_db';
   const LS_TTS = 'blueprints.voice.tts_enabled';
@@ -25,6 +26,11 @@ const BlueprintsVoiceMode = (() => {
   const STT_NOISE_MIN_DB = 0;
   const STT_NOISE_MAX_DB = 12;
   const STT_NOISE_STEP_DB = 0.5;
+  const STT_MODE_NONE = '';
+  const STT_MODE_REALTIME = 'realtime_conversation';
+  const STT_MODE_PUSH = 'push_to_talk';
+  const STT_MODE_WAKE = 'wake_to_talk';
+  const STT_MODES = new Set([STT_MODE_REALTIME, STT_MODE_PUSH, STT_MODE_WAKE]);
 
   let _serverState = {
     active: null,
@@ -95,6 +101,43 @@ const BlueprintsVoiceMode = (() => {
     return Math.round(clamped / STT_NOISE_STEP_DB) * STT_NOISE_STEP_DB;
   }
 
+  function _normalizeSttMode(value) {
+    const raw = String(value || '').trim().toLowerCase().replace(/[-\s]+/g, '_');
+    if (!raw || raw === 'off' || raw === 'none' || raw === 'disabled') return STT_MODE_NONE;
+    if (raw === 'realtime' || raw === 'real_time' || raw === 'conversation' || raw === 'realtime_conversation') {
+      return STT_MODE_REALTIME;
+    }
+    if (raw === 'push' || raw === 'push_to_talk' || raw === 'ptt' || raw === 'stt') {
+      return STT_MODE_PUSH;
+    }
+    if (raw === 'wake' || raw === 'wake_to_talk' || raw === 'wake_word') {
+      return STT_MODE_WAKE;
+    }
+    return STT_MODES.has(raw) ? raw : STT_MODE_NONE;
+  }
+
+  function _storedSttMode() {
+    try {
+      const stored = localStorage.getItem(LS_STT_MODE);
+      if (stored !== null) return _normalizeSttMode(stored);
+    } catch (_) {}
+    return _boolFromStorage(LS_STT) ? STT_MODE_PUSH : STT_MODE_NONE;
+  }
+
+  function _setStoredSttMode(mode) {
+    const next = _normalizeSttMode(mode);
+    _setStringStorage(LS_STT_MODE, next);
+    _setBoolStorage(LS_STT, Boolean(next));
+    return next;
+  }
+
+  function _sttModeStatusLabel(mode) {
+    if (mode === STT_MODE_REALTIME) return 'Realtime conversation';
+    if (mode === STT_MODE_PUSH) return 'Push-to-talk';
+    if (mode === STT_MODE_WAKE) return 'Wake-to-talk';
+    return 'STT';
+  }
+
   function _cueState() {
     return {
       enabled: _boolFromStorage(LS_CUE_ENABLED),
@@ -116,10 +159,12 @@ const BlueprintsVoiceMode = (() => {
   }
 
   function _localState() {
+    const sttMode = _storedSttMode();
     return {
       browser_id: _browserId(),
       browser_label: _browserLabel(),
-      stt_enabled: _boolFromStorage(LS_STT),
+      stt_enabled: Boolean(sttMode),
+      stt_mode: sttMode,
       stt_noise_reduction_enabled: _boolFromStorage(LS_STT_NOISE),
       stt_noise_reduction_level_db: _clampNoiseLevelDb(_numberFromStorage(LS_STT_NOISE_LEVEL_DB, STT_NOISE_DEFAULT_DB)),
       tts_enabled: _boolFromStorage(LS_TTS),
@@ -135,12 +180,16 @@ const BlueprintsVoiceMode = (() => {
       modal: document.getElementById('voice-mode-modal'),
       browserLabel: document.getElementById('voice-mode-browser-label'),
       browserMeta: document.getElementById('voice-mode-browser-meta'),
-      stt: document.getElementById('voice-mode-stt-toggle'),
+      sttRealtime: document.getElementById('voice-mode-stt-realtime-toggle'),
+      sttPush: document.getElementById('voice-mode-stt-push-toggle'),
+      sttWake: document.getElementById('voice-mode-stt-wake-toggle'),
       sttNoise: document.getElementById('voice-mode-stt-noise-toggle'),
       sttNoiseLevel: document.getElementById('voice-mode-stt-noise-level'),
       sttNoiseLevelLabel: document.getElementById('voice-mode-stt-noise-level-label'),
       tts: document.getElementById('voice-mode-tts-toggle'),
-      sttLed: document.getElementById('voice-mode-stt-led'),
+      sttRealtimeLed: document.getElementById('voice-mode-stt-realtime-led'),
+      sttPushLed: document.getElementById('voice-mode-stt-push-led'),
+      sttWakeLed: document.getElementById('voice-mode-stt-wake-led'),
       sttNoiseLed: document.getElementById('voice-mode-stt-noise-led'),
       ttsLed: document.getElementById('voice-mode-tts-led'),
       cueToggle: document.getElementById('voice-mode-cue-toggle'),
@@ -166,9 +215,18 @@ const BlueprintsVoiceMode = (() => {
     return _isActiveOwner() ? 'green' : 'yellow';
   }
 
+  function _syncExternalVoiceState() {
+    try {
+      window.MatrixChat?.syncVoiceModeAudioState?.();
+    } catch (_) {}
+  }
+
   function _render() {
     const els = _els();
-    if (!els.modal) return;
+    if (!els.modal) {
+      _syncExternalVoiceState();
+      return;
+    }
     const local = _localState();
     const cue = _cueState();
     const policy = _policyState();
@@ -181,22 +239,25 @@ const BlueprintsVoiceMode = (() => {
         ? `Active: ${active.browser_label || active.browser_id}`
         : 'Active: none';
     }
-    if (els.stt) els.stt.checked = local.stt_enabled;
+    if (els.sttRealtime) els.sttRealtime.checked = local.stt_mode === STT_MODE_REALTIME;
+    if (els.sttPush) els.sttPush.checked = local.stt_mode === STT_MODE_PUSH;
+    if (els.sttWake) els.sttWake.checked = local.stt_mode === STT_MODE_WAKE;
     if (els.sttNoise) {
       els.sttNoise.checked = local.stt_noise_reduction_enabled;
-      els.sttNoise.disabled = !local.stt_enabled;
     }
     if (els.sttNoiseLevel) {
       els.sttNoiseLevel.value = String(local.stt_noise_reduction_level_db);
-      els.sttNoiseLevel.disabled = !local.stt_enabled || !local.stt_noise_reduction_enabled;
+      els.sttNoiseLevel.disabled = !local.stt_noise_reduction_enabled;
     }
     if (els.sttNoiseLevelLabel) {
       els.sttNoiseLevelLabel.textContent = `${local.stt_noise_reduction_level_db.toFixed(1)} dB`;
     }
     if (els.tts) els.tts.checked = local.tts_enabled;
-    if (els.sttLed) els.sttLed.dataset.state = _capabilityLed(local.stt_enabled);
+    if (els.sttRealtimeLed) els.sttRealtimeLed.dataset.state = _capabilityLed(local.stt_mode === STT_MODE_REALTIME);
+    if (els.sttPushLed) els.sttPushLed.dataset.state = _capabilityLed(local.stt_mode === STT_MODE_PUSH);
+    if (els.sttWakeLed) els.sttWakeLed.dataset.state = _capabilityLed(local.stt_mode === STT_MODE_WAKE);
     if (els.sttNoiseLed) {
-      els.sttNoiseLed.dataset.state = (local.stt_enabled && local.stt_noise_reduction_enabled)
+      els.sttNoiseLed.dataset.state = local.stt_noise_reduction_enabled
         ? _capabilityLed(true)
         : 'red';
     }
@@ -215,6 +276,7 @@ const BlueprintsVoiceMode = (() => {
       els.activate.textContent = ownsLease ? 'Deactivate' : 'Activate';
       els.activate.disabled = !ownsLease && !local.stt_enabled && !local.tts_enabled;
     }
+    _syncExternalVoiceState();
   }
 
   function _applyServerState(payload) {
@@ -283,11 +345,21 @@ const BlueprintsVoiceMode = (() => {
     }
   }
 
-  function _setLocalToggles({ stt, tts }) {
-    if (typeof stt === 'boolean') _setBoolStorage(LS_STT, stt);
+  function _setLocalToggles({ tts }) {
     if (typeof tts === 'boolean') _setBoolStorage(LS_TTS, tts);
     _render();
     _deactivateIfNowInvalid().catch((error) => _setStatus(error.message || String(error)));
+  }
+
+  function _setSttMode(mode) {
+    const next = _setStoredSttMode(mode);
+    _render();
+    _setStatus(next ? `${_sttModeStatusLabel(next)} enabled for this browser.` : 'STT disabled for this browser.');
+    _deactivateIfNowInvalid().catch((error) => _setStatus(error.message || String(error)));
+  }
+
+  function _toggleSttMode(mode, checked) {
+    _setSttMode(checked ? mode : STT_MODE_NONE);
   }
 
   function _setSttNoiseReduction(value) {
@@ -315,8 +387,7 @@ const BlueprintsVoiceMode = (() => {
   }
 
   function sttNoiseReductionEnabled() {
-    const local = _localState();
-    return !!(local.stt_enabled && local.stt_noise_reduction_enabled);
+    return !!_localState().stt_noise_reduction_enabled;
   }
 
   function sttNoiseReductionSettingEnabled() {
@@ -325,6 +396,22 @@ const BlueprintsVoiceMode = (() => {
 
   function sttNoiseReductionLevelDb() {
     return _localState().stt_noise_reduction_level_db;
+  }
+
+  function sttMode() {
+    return _localState().stt_mode;
+  }
+
+  function sttModeEnabled(mode) {
+    return _localState().stt_mode === _normalizeSttMode(mode);
+  }
+
+  function canUsePushToTalkStt() {
+    const local = _localState();
+    return Boolean(
+      local.stt_mode === STT_MODE_PUSH
+      && _isActiveOwner()
+    );
   }
 
   function _setCueEnabled(value) {
@@ -482,7 +569,9 @@ const BlueprintsVoiceMode = (() => {
     _initDone = true;
     const els = _els();
     if (!els.modal) return;
-    els.stt?.addEventListener('change', () => _setLocalToggles({ stt: els.stt.checked }));
+    els.sttRealtime?.addEventListener('change', () => _toggleSttMode(STT_MODE_REALTIME, els.sttRealtime.checked));
+    els.sttPush?.addEventListener('change', () => _toggleSttMode(STT_MODE_PUSH, els.sttPush.checked));
+    els.sttWake?.addEventListener('change', () => _toggleSttMode(STT_MODE_WAKE, els.sttWake.checked));
     els.sttNoise?.addEventListener('change', () => _setSttNoiseReduction(els.sttNoise.checked));
     els.sttNoiseLevel?.addEventListener('input', () => _setSttNoiseLevelDb(els.sttNoiseLevel.value));
     els.tts?.addEventListener('change', () => _setLocalToggles({ tts: els.tts.checked }));
@@ -520,6 +609,9 @@ const BlueprintsVoiceMode = (() => {
     sttNoiseReductionEnabled,
     sttNoiseReductionSettingEnabled,
     sttNoiseReductionLevelDb,
+    sttMode,
+    sttModeEnabled,
+    canUsePushToTalkStt,
     setSttNoiseReductionEnabled: _setSttNoiseReduction,
     setSttNoiseReductionLevelDb: _setSttNoiseLevelDb,
     maybePlayAnnouncementCue,

@@ -4340,14 +4340,38 @@
       <div class="voice-mode-domain voice-mode-domain--stt" aria-label="STT controls">
         <div class="voice-mode-control">
           <label class="hub-checkbox">
-            <input class="hub-checkbox__input" type="checkbox" id="voice-mode-stt-toggle" />
+            <input class="hub-checkbox__input" type="checkbox" id="voice-mode-stt-realtime-toggle" />
             <span class="hub-checkbox__box" aria-hidden="true"></span>
             <span class="hub-checkbox__label voice-mode-control__text">
-              <span class="voice-mode-control__name">STT</span>
-              <span class="voice-mode-control__hint">Matrix realtime conversation.</span>
+              <span class="voice-mode-control__name">Realtime conversation</span>
+              <span class="voice-mode-control__hint">Planned Matrix realtime conversation.</span>
             </span>
           </label>
-          <span class="voice-mode-led" id="voice-mode-stt-led" data-state="red" aria-label="STT status"></span>
+          <span class="voice-mode-led" id="voice-mode-stt-realtime-led" data-state="red" aria-label="Realtime conversation STT status"></span>
+        </div>
+
+        <div class="voice-mode-control">
+          <label class="hub-checkbox">
+            <input class="hub-checkbox__input" type="checkbox" id="voice-mode-stt-push-toggle" />
+            <span class="hub-checkbox__box" aria-hidden="true"></span>
+            <span class="hub-checkbox__label voice-mode-control__text">
+              <span class="voice-mode-control__name">Push to talk</span>
+              <span class="voice-mode-control__hint">Matrix chat hold-to-record STT.</span>
+            </span>
+          </label>
+          <span class="voice-mode-led" id="voice-mode-stt-push-led" data-state="red" aria-label="Push-to-talk STT status"></span>
+        </div>
+
+        <div class="voice-mode-control">
+          <label class="hub-checkbox">
+            <input class="hub-checkbox__input" type="checkbox" id="voice-mode-stt-wake-toggle" />
+            <span class="hub-checkbox__box" aria-hidden="true"></span>
+            <span class="hub-checkbox__label voice-mode-control__text">
+              <span class="voice-mode-control__name">Wake to talk</span>
+              <span class="voice-mode-control__hint">Planned wake word with silence-timer capture.</span>
+            </span>
+          </label>
+          <span class="voice-mode-led" id="voice-mode-stt-wake-led" data-state="red" aria-label="Wake-to-talk STT status"></span>
         </div>
 
         <div class="voice-mode-control">
@@ -4356,7 +4380,7 @@
             <span class="hub-checkbox__box" aria-hidden="true"></span>
             <span class="hub-checkbox__label voice-mode-control__text">
               <span class="voice-mode-control__name">Noise reduction</span>
-              <span class="voice-mode-control__hint">Insert DeepFilterNet for realtime STT.</span>
+              <span class="voice-mode-control__hint">Insert DeepFilterNet for any STT mode.</span>
             </span>
           </label>
           <span class="voice-mode-led" id="voice-mode-stt-noise-led" data-state="red" aria-label="STT noise reduction status"></span>

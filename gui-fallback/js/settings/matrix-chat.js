@@ -2366,8 +2366,25 @@ const MatrixChat = (() => {
       setStatus(`Audio send failed: ${error.message}`, 'error');
     } finally {
       state.audioSending = false;
-      if (button) button.disabled = false;
+      syncVoiceModeAudioState();
     }
+  }
+
+  function voicePushToTalkReady() {
+    return window.BlueprintsVoiceMode?.canUsePushToTalkStt?.() === true;
+  }
+
+  function syncVoiceModeAudioState() {
+    const button = el('matrix-chat-audio');
+    if (!button) return;
+    const busy = state.audioSending || state.audioFinalizing;
+    const ready = voicePushToTalkReady();
+    button.disabled = busy || !ready;
+    button.setAttribute('aria-disabled', button.disabled ? 'true' : 'false');
+    button.title = ready
+      ? 'Hold to record audio'
+      : 'Enable Voice Mode Push to talk on this browser to record audio';
+    button.setAttribute('aria-label', button.title);
   }
 
   async function matrixSttWebSocketUrl(roomId) {
@@ -2554,10 +2571,9 @@ const MatrixChat = (() => {
       return;
     }
     if (payload.type === 'final') {
-      const button = el('matrix-chat-audio');
       cleanupAudioRecording();
       state.audioSending = false;
-      if (button) button.disabled = false;
+      syncVoiceModeAudioState();
       if (payload.matrix?.event_id) {
         clearSttComposerDraft({ clearValue: true });
         setStatus('Voice transcript sent.', 'ok');
@@ -2571,10 +2587,9 @@ const MatrixChat = (() => {
         setStatus('');
       }
     } else if (payload.type === 'error') {
-      const button = el('matrix-chat-audio');
       cleanupAudioRecording();
       state.audioSending = false;
-      if (button) button.disabled = false;
+      syncVoiceModeAudioState();
       clearSttComposerDraft({ clearValue: true });
       setStatus(`STT failed: ${payload.detail || 'unknown error'}`, 'error');
     }
@@ -2582,6 +2597,11 @@ const MatrixChat = (() => {
 
   async function startAudioRecording() {
     if (state.audioSending || state.audioStarting || state.audioRecording || state.audioFinalizing || state.audioWs) return;
+    if (!voicePushToTalkReady()) {
+      syncVoiceModeAudioState();
+      setStatus('Enable Voice Mode Push to talk on this browser before recording audio.', 'warn');
+      return;
+    }
     if (!state.activeRoomId) {
       setStatus('Select a Matrix room before recording audio.', 'warn');
       return;
@@ -2606,7 +2626,7 @@ const MatrixChat = (() => {
         if (state.audioRecording || state.audioFinalizing) {
           cleanupAudioRecording({ closeSocket: false });
           state.audioSending = false;
-          if (button) button.disabled = false;
+          syncVoiceModeAudioState();
           setStatus('STT connection closed before a final transcript.', 'warn');
         }
         state.audioWs = null;
@@ -2697,7 +2717,7 @@ const MatrixChat = (() => {
     } else {
       cleanupAudioRecording();
       state.audioSending = false;
-      if (button) button.disabled = false;
+      syncVoiceModeAudioState();
       setStatus('STT connection was not ready.', 'error');
     }
   }
@@ -2719,6 +2739,7 @@ const MatrixChat = (() => {
       event.preventDefault();
       stopAudioRecording();
     });
+    syncVoiceModeAudioState();
   }
 
   function handleBlueprintsEvent(domEvt) {
@@ -3048,6 +3069,7 @@ const MatrixChat = (() => {
     refresh: refreshAll,
     sendMessage,
     sendAudioFile,
+    syncVoiceModeAudioState,
     insertHermesMention,
     openNotifierDnd: openNotifierDndModal,
     openNotifierTests: openNotifierTestsModal,
