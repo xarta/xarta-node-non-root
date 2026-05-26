@@ -215,7 +215,7 @@
 
 .stt-noise-player {
   display: grid;
-  grid-template-columns: minmax(116px, 1fr) repeat(4, auto);
+  grid-template-columns: minmax(116px, 1fr) repeat(3, auto);
   gap: 8px;
   align-items: center;
   padding: 9px;

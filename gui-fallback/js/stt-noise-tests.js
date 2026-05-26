@@ -10,6 +10,8 @@ const SttNoiseTests = (() => {
   const SERVER_STORAGE_KEY = 'blueprintsMatrixChatServer';
   const DEFAULT_SERVER = 'tb1';
   const API_SECRET_KEY = 'blueprints_api_secret';
+  const LS_STT_NOISE = 'blueprints.voice.stt_noise_reduction_enabled';
+  const LS_STT_NOISE_LEVEL_DB = 'blueprints.voice.stt_noise_reduction_level_db';
   const PASSAGES = [
     {
       id: 'harvard-sentences',
@@ -83,16 +85,80 @@ const SttNoiseTests = (() => {
     return Math.round(Math.max(0, Math.min(12, parsed)) * 2) / 2;
   }
 
+  function storedNoiseSettingEnabled() {
+    try {
+      return localStorage.getItem(LS_STT_NOISE) === 'true';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function storedNoiseLevelDb() {
+    try {
+      return clampNoiseLevel(localStorage.getItem(LS_STT_NOISE_LEVEL_DB) ?? 6);
+    } catch (_) {
+      return 6;
+    }
+  }
+
   function voiceNoiseEnabled() {
     if (typeof window.BlueprintsVoiceMode?.sttNoiseReductionSettingEnabled === 'function') {
       return window.BlueprintsVoiceMode.sttNoiseReductionSettingEnabled();
     }
-    return !!window.BlueprintsVoiceMode?.sttNoiseReductionEnabled?.();
+    if (typeof window.BlueprintsVoiceMode?.sttNoiseReductionEnabled === 'function') {
+      return !!window.BlueprintsVoiceMode.sttNoiseReductionEnabled();
+    }
+    return storedNoiseSettingEnabled();
+  }
+
+  function voiceNoiseLevelDb() {
+    if (typeof window.BlueprintsVoiceMode?.sttNoiseReductionLevelDb === 'function') {
+      return clampNoiseLevel(window.BlueprintsVoiceMode.sttNoiseReductionLevelDb());
+    }
+    return storedNoiseLevelDb();
+  }
+
+  function setVoiceNoiseEnabled(value) {
+    if (typeof window.BlueprintsVoiceMode?.setSttNoiseReductionEnabled === 'function') {
+      window.BlueprintsVoiceMode.setSttNoiseReductionEnabled(value);
+      return;
+    }
+    try {
+      localStorage.setItem(LS_STT_NOISE, value ? 'true' : 'false');
+      window.dispatchEvent(new CustomEvent('blueprints:voice-mode:stt-noise-changed', {
+        detail: {
+          enabled: !!value,
+          level_db: voiceNoiseLevelDb(),
+        },
+      }));
+    } catch (_) {}
+  }
+
+  function setVoiceNoiseLevelDb(value) {
+    const level = clampNoiseLevel(value);
+    if (typeof window.BlueprintsVoiceMode?.setSttNoiseReductionLevelDb === 'function') {
+      window.BlueprintsVoiceMode.setSttNoiseReductionLevelDb(level);
+      return level;
+    }
+    if (typeof window.BlueprintsVoiceMode?.setSttNoiseLevelDb === 'function') {
+      window.BlueprintsVoiceMode.setSttNoiseLevelDb(level);
+      return level;
+    }
+    try {
+      localStorage.setItem(LS_STT_NOISE_LEVEL_DB, String(level));
+      window.dispatchEvent(new CustomEvent('blueprints:voice-mode:stt-noise-changed', {
+        detail: {
+          enabled: voiceNoiseEnabled(),
+          level_db: level,
+        },
+      }));
+    } catch (_) {}
+    return level;
   }
 
   function renderNoiseControls() {
     const enabled = voiceNoiseEnabled();
-    const level = clampNoiseLevel(window.BlueprintsVoiceMode?.sttNoiseReductionLevelDb?.() ?? 6);
+    const level = voiceNoiseLevelDb();
     const toggle = el('stt-noise-enabled');
     const slider = el('stt-noise-level');
     const label = el('stt-noise-level-label');
@@ -357,18 +423,37 @@ const SttNoiseTests = (() => {
     updatePlaybackButtons(kind, false);
   }
 
+  function ensureAudio(kind) {
+    if (!audioEls[kind]) {
+      const audio = new Audio();
+      ['play', 'pause', 'ended', 'emptied'].forEach(eventName => {
+        audio.addEventListener(eventName, () => updatePlaybackToggle(kind));
+      });
+      audioEls[kind] = audio;
+    }
+    return audioEls[kind];
+  }
+
   function setAudioUrl(kind, blob) {
     if (audioUrls[kind]) URL.revokeObjectURL(audioUrls[kind]);
     audioUrls[kind] = URL.createObjectURL(blob);
-    if (!audioEls[kind]) audioEls[kind] = new Audio();
-    audioEls[kind].src = audioUrls[kind];
+    const audio = ensureAudio(kind);
+    audio.src = audioUrls[kind];
     updatePlaybackButtons(kind, true);
+  }
+
+  function updatePlaybackToggle(kind) {
+    const button = document.querySelector(`[data-audio-action="toggle"][data-audio-kind="${kind}"]`);
+    const audio = audioEls[kind];
+    if (!button || !audio) return;
+    button.textContent = !audio.paused && !audio.ended ? 'Pause' : 'Play';
   }
 
   function updatePlaybackButtons(kind, enabled) {
     document.querySelectorAll(`[data-audio-kind="${kind}"]`).forEach(button => {
       button.disabled = !enabled || state.recording || state.finalizing;
     });
+    updatePlaybackToggle(kind);
   }
 
   function refreshPlaybackButtons() {
@@ -379,11 +464,23 @@ const SttNoiseTests = (() => {
   function playback(kind, action) {
     const audio = audioEls[kind];
     if (!audio) return;
+    if (action === 'toggle') {
+      if (audio.paused || audio.ended) {
+        audio.play().catch(error => {
+          updatePlaybackToggle(kind);
+          setStatus(`Playback failed: ${error.message}`);
+        });
+      } else {
+        audio.pause();
+      }
+      updatePlaybackToggle(kind);
+    }
     if (action === 'play') audio.play().catch(error => setStatus(`Playback failed: ${error.message}`));
     if (action === 'pause') audio.pause();
     if (action === 'reset') {
       audio.pause();
       audio.currentTime = 0;
+      updatePlaybackToggle(kind);
     }
     if (action === 'clear') void clearAudio(kind);
   }
@@ -624,13 +721,16 @@ const SttNoiseTests = (() => {
       if (state.transcript) renderWer(state.transcript);
     });
     el('stt-noise-enabled')?.addEventListener('change', event => {
-      window.BlueprintsVoiceMode?.setSttNoiseReductionEnabled?.(event.target.checked);
+      setVoiceNoiseEnabled(event.target.checked);
       renderNoiseControls();
     });
-    el('stt-noise-level')?.addEventListener('input', event => {
-      window.BlueprintsVoiceMode?.setSttNoiseLevelDb?.(event.target.value);
+    const noiseLevel = el('stt-noise-level');
+    const updateNoiseLevel = event => {
+      setVoiceNoiseLevelDb(event.target.value);
       renderNoiseControls();
-    });
+    };
+    noiseLevel?.addEventListener('input', updateNoiseLevel);
+    noiseLevel?.addEventListener('change', updateNoiseLevel);
     el('stt-noise-record')?.addEventListener('click', () => { void startRecording(); });
     el('stt-noise-stop')?.addEventListener('click', () => { void stopRecording(); });
     el('stt-noise-clear')?.addEventListener('click', () => { void resetAll(); });
