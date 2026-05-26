@@ -97,6 +97,11 @@
   font-weight: 700;
 }
 
+.voice-mode-control__issue {
+  color: #f87171;
+  font-weight: 700;
+}
+
 .voice-mode-control__hint {
   color: var(--text-dim, #98a2b8);
   font-size: 12px;
@@ -120,6 +125,23 @@
 .voice-mode-led[data-state="green"] {
   background: #16a34a;
   box-shadow: 0 0 12px rgba(34, 197, 94, 0.4);
+}
+
+.voice-mode-led[data-alert="true"] {
+  animation: voice-mode-led-alert 0.9s ease-in-out infinite;
+}
+
+@keyframes voice-mode-led-alert {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 8px rgba(248, 113, 113, 0.36);
+  }
+
+  50% {
+    opacity: 0.42;
+    box-shadow: 0 0 18px rgba(248, 113, 113, 0.82);
+  }
 }
 
 .voice-mode-noise-level {

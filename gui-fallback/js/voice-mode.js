@@ -13,6 +13,7 @@ const BlueprintsVoiceMode = (() => {
   const LS_CUE_SOUND = 'blueprints.voice.announcement_cue_sound';
   const LS_CUE_REARM_MS = 'blueprints.voice.announcement_cue_rearm_ms';
   const STATUS_URL = '/api/v1/voice-mode/status';
+  const DEPENDENCY_HEALTH_URL = '/api/v1/voice-mode/dependency-health';
   const ACTIVATE_URL = '/api/v1/voice-mode/activate';
   const DEACTIVATE_URL = '/api/v1/voice-mode/deactivate';
   const POLICY_URL = '/api/v1/voice-mode/policy';
@@ -41,6 +42,9 @@ const BlueprintsVoiceMode = (() => {
   let _statusLoaded = false;
   let _initDone = false;
   let _lastAnnouncementCueAt = 0;
+  let _dependencyHealth = null;
+  let _dependencyHealthTimer = null;
+  let _dependencyHealthInFlight = false;
 
   function _browserId() {
     try {
@@ -187,6 +191,11 @@ const BlueprintsVoiceMode = (() => {
       sttNoiseLevel: document.getElementById('voice-mode-stt-noise-level'),
       sttNoiseLevelLabel: document.getElementById('voice-mode-stt-noise-level-label'),
       tts: document.getElementById('voice-mode-tts-toggle'),
+      sttRealtimeIssue: document.getElementById('voice-mode-stt-realtime-issue'),
+      sttPushIssue: document.getElementById('voice-mode-stt-push-issue'),
+      sttWakeIssue: document.getElementById('voice-mode-stt-wake-issue'),
+      sttNoiseIssue: document.getElementById('voice-mode-stt-noise-issue'),
+      ttsIssue: document.getElementById('voice-mode-tts-issue'),
       sttRealtimeLed: document.getElementById('voice-mode-stt-realtime-led'),
       sttPushLed: document.getElementById('voice-mode-stt-push-led'),
       sttWakeLed: document.getElementById('voice-mode-stt-wake-led'),
@@ -210,7 +219,32 @@ const BlueprintsVoiceMode = (() => {
     if (status) status.textContent = message || '';
   }
 
-  function _capabilityLed(enabled) {
+  function _componentHealth(key) {
+    const component = _dependencyHealth?.components?.[key] || null;
+    return component && typeof component === 'object' ? component : null;
+  }
+
+  function _componentIssue(key) {
+    const component = _componentHealth(key);
+    return component && component.ok === false && component.issue ? String(component.issue) : '';
+  }
+
+  function _setIssue(el, issue) {
+    if (!el) return;
+    const text = String(issue || '').trim();
+    el.textContent = text ? ` (${text})` : '';
+    el.hidden = !text;
+  }
+
+  function _setLed(el, state, alert) {
+    if (!el) return;
+    el.dataset.state = state;
+    if (alert) el.dataset.alert = 'true';
+    else delete el.dataset.alert;
+  }
+
+  function _capabilityLed(enabled, issue) {
+    if (issue) return 'red';
     if (!enabled) return 'red';
     return _isActiveOwner() ? 'green' : 'yellow';
   }
@@ -253,15 +287,39 @@ const BlueprintsVoiceMode = (() => {
       els.sttNoiseLevelLabel.textContent = `${local.stt_noise_reduction_level_db.toFixed(1)} dB`;
     }
     if (els.tts) els.tts.checked = local.tts_enabled;
-    if (els.sttRealtimeLed) els.sttRealtimeLed.dataset.state = _capabilityLed(local.stt_mode === STT_MODE_REALTIME);
-    if (els.sttPushLed) els.sttPushLed.dataset.state = _capabilityLed(local.stt_mode === STT_MODE_PUSH);
-    if (els.sttWakeLed) els.sttWakeLed.dataset.state = _capabilityLed(local.stt_mode === STT_MODE_WAKE);
-    if (els.sttNoiseLed) {
-      els.sttNoiseLed.dataset.state = local.stt_noise_reduction_enabled
-        ? _capabilityLed(true)
-        : 'red';
-    }
-    if (els.ttsLed) els.ttsLed.dataset.state = _capabilityLed(local.tts_enabled);
+    const sttIssue = _componentIssue('stt');
+    const noiseIssue = _componentIssue('noise_reduction');
+    const ttsIssue = _componentIssue('tts');
+    _setIssue(els.sttRealtimeIssue, local.stt_mode === STT_MODE_REALTIME ? sttIssue : '');
+    _setIssue(els.sttPushIssue, local.stt_mode === STT_MODE_PUSH || !local.stt_mode ? sttIssue : '');
+    _setIssue(els.sttWakeIssue, local.stt_mode === STT_MODE_WAKE ? sttIssue : '');
+    _setIssue(els.sttNoiseIssue, noiseIssue);
+    _setIssue(els.ttsIssue, ttsIssue);
+    _setLed(
+      els.sttRealtimeLed,
+      _capabilityLed(local.stt_mode === STT_MODE_REALTIME, local.stt_mode === STT_MODE_REALTIME ? sttIssue : ''),
+      Boolean(local.stt_mode === STT_MODE_REALTIME && sttIssue)
+    );
+    _setLed(
+      els.sttPushLed,
+      _capabilityLed(local.stt_mode === STT_MODE_PUSH, local.stt_mode === STT_MODE_PUSH ? sttIssue : ''),
+      Boolean(local.stt_mode === STT_MODE_PUSH && sttIssue)
+    );
+    _setLed(
+      els.sttWakeLed,
+      _capabilityLed(local.stt_mode === STT_MODE_WAKE, local.stt_mode === STT_MODE_WAKE ? sttIssue : ''),
+      Boolean(local.stt_mode === STT_MODE_WAKE && sttIssue)
+    );
+    _setLed(
+      els.sttNoiseLed,
+      _capabilityLed(local.stt_noise_reduction_enabled, local.stt_noise_reduction_enabled ? noiseIssue : ''),
+      Boolean(local.stt_noise_reduction_enabled && noiseIssue)
+    );
+    _setLed(
+      els.ttsLed,
+      _capabilityLed(local.tts_enabled, local.tts_enabled ? ttsIssue : ''),
+      Boolean(local.tts_enabled && ttsIssue)
+    );
     if (els.cueToggle) els.cueToggle.checked = cue.enabled;
     if (els.cueSound) els.cueSound.value = cue.sound;
     if (els.cueRearm) els.cueRearm.value = String(cue.rearm_ms / 1000);
@@ -303,6 +361,53 @@ const BlueprintsVoiceMode = (() => {
     } catch (error) {
       _setStatus(`Voice Mode status unavailable: ${error.message || error}`);
       throw error;
+    }
+  }
+
+  function _modalIsOpen() {
+    const modal = _els().modal;
+    return Boolean(modal && modal.open && document.visibilityState !== 'hidden');
+  }
+
+  function _scheduleDependencyHealthPoll(delayMs) {
+    if (_dependencyHealthTimer) window.clearTimeout(_dependencyHealthTimer);
+    _dependencyHealthTimer = null;
+    if (!_modalIsOpen()) return;
+    const ms = Math.max(2000, Math.min(30000, Number(delayMs) || 30000));
+    _dependencyHealthTimer = window.setTimeout(() => {
+      _dependencyHealthTimer = null;
+      refreshDependencyHealth().catch(() => {});
+    }, ms);
+  }
+
+  async function refreshDependencyHealth(options = {}) {
+    if (_dependencyHealthInFlight) return _dependencyHealth;
+    _dependencyHealthInFlight = true;
+    try {
+      const suffix = options.force ? '?force=true' : '';
+      const response = await apiFetch(`${DEPENDENCY_HEALTH_URL}${suffix}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      _dependencyHealth = await response.json();
+      _render();
+      const hasIssue = _dependencyHealth && _dependencyHealth.ok === false;
+      const nextSeconds = Number(_dependencyHealth?.next_check_seconds || (hasIssue ? 2 : 30));
+      _scheduleDependencyHealthPoll(nextSeconds * 1000);
+      return _dependencyHealth;
+    } catch (error) {
+      _dependencyHealth = {
+        ok: false,
+        components: {
+          stt: { ok: false, issue: 'health check unavailable' },
+          noise_reduction: { ok: false, issue: 'health check unavailable' },
+          tts: { ok: false, issue: 'health check unavailable' },
+        },
+        next_check_seconds: 2,
+      };
+      _render();
+      _scheduleDependencyHealthPoll(2000);
+      return _dependencyHealth;
+    } finally {
+      _dependencyHealthInFlight = false;
     }
   }
 
@@ -486,8 +591,14 @@ const BlueprintsVoiceMode = (() => {
     if (!els.modal) return;
     _render();
     reconcile().catch(() => {});
+    refreshDependencyHealth({ force: true }).catch(() => {});
     if (typeof HubModal !== 'undefined') {
-      HubModal.open(els.modal, { onOpen: _render });
+      HubModal.open(els.modal, {
+        onOpen: () => {
+          _render();
+          refreshDependencyHealth({ force: true }).catch(() => {});
+        },
+      });
     } else if (typeof els.modal.showModal === 'function') {
       els.modal.showModal();
     }
@@ -592,9 +703,22 @@ const BlueprintsVoiceMode = (() => {
         _applyServerState(event.detail.payload || {});
       }
     });
-    window.addEventListener('focus', () => reconcile().catch(() => {}));
+    window.addEventListener('focus', () => {
+      reconcile().catch(() => {});
+      if (_modalIsOpen()) refreshDependencyHealth().catch(() => {});
+    });
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') reconcile().catch(() => {});
+      if (document.visibilityState === 'visible') {
+        reconcile().catch(() => {});
+        if (_modalIsOpen()) refreshDependencyHealth().catch(() => {});
+      } else if (_dependencyHealthTimer) {
+        window.clearTimeout(_dependencyHealthTimer);
+        _dependencyHealthTimer = null;
+      }
+    });
+    els.modal.addEventListener('close', () => {
+      if (_dependencyHealthTimer) window.clearTimeout(_dependencyHealthTimer);
+      _dependencyHealthTimer = null;
     });
     reconcile().catch(() => {});
     _render();
