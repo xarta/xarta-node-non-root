@@ -4500,6 +4500,18 @@
         <button class="hub-action-btn" type="button" id="stt-noise-clear">Clear</button>
       </div>
       <p class="stt-noise-status" id="stt-noise-status" aria-live="polite"></p>
+      <div class="stt-stream-check">
+        <div class="stt-stream-check__head">
+          <span>Stream quality</span>
+          <button class="hub-action-btn" type="button" id="stt-stream-check-run">Run 10s check</button>
+        </div>
+        <div class="stt-stream-check__score">
+          <span>Quality</span>
+          <strong id="stt-stream-check-quality">--</strong>
+        </div>
+        <p class="stt-stream-check__status" id="stt-stream-check-status" aria-live="polite">Idle.</p>
+        <p class="stt-stream-check__detail" id="stt-stream-check-detail"></p>
+      </div>
     </section>
     <section class="stt-noise-tests__results" aria-label="Noise test results">
       <div class="stt-noise-metrics">

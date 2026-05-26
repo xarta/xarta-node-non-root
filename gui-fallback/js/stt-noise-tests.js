@@ -12,6 +12,10 @@ const SttNoiseTests = (() => {
   const API_SECRET_KEY = 'blueprints_api_secret';
   const LS_STT_NOISE = 'blueprints.voice.stt_noise_reduction_enabled';
   const LS_STT_NOISE_LEVEL_DB = 'blueprints.voice.stt_noise_reduction_level_db';
+  const STREAM_CHECK_MAGIC = 0x51545358;
+  const STREAM_CHECK_FRAMES = 100;
+  const STREAM_CHECK_INTERVAL_MS = 100;
+  const STREAM_CHECK_SAMPLES = 1600;
   const PASSAGES = [
     {
       id: 'harvard-sentences',
@@ -54,6 +58,7 @@ const SttNoiseTests = (() => {
     enhancedChunks: [],
     transcript: '',
     timing: null,
+    streamCheck: null,
   };
 
   function el(id) {
@@ -204,6 +209,8 @@ const SttNoiseTests = (() => {
     if (record) record.disabled = recording || finalizing;
     if (stop) stop.disabled = !recording;
     if (clear) clear.disabled = recording || finalizing;
+    const streamCheck = el('stt-stream-check-run');
+    if (streamCheck && !state.streamCheck?.running) streamCheck.disabled = recording || finalizing;
     renderNoiseControls();
     refreshPlaybackButtons();
   }
@@ -503,6 +510,18 @@ const SttNoiseTests = (() => {
     return url.toString();
   }
 
+  async function streamQualityWebsocketUrl() {
+    const url = new URL('/api/v1/matrix-chat/stt/noise-test/stream-quality/ws', window.location.origin);
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    url.searchParams.set('server', savedServerId());
+    const secret = localStorage.getItem(API_SECRET_KEY) || '';
+    const token = typeof _computeApiToken === 'function'
+      ? await _computeApiToken(secret, `${url.pathname}${url.search}`)
+      : '';
+    if (token) url.searchParams.set('token', token);
+    return url.toString();
+  }
+
   function waitForSocketOpen(socket) {
     return new Promise((resolve, reject) => {
       const timer = window.setTimeout(() => {
@@ -525,6 +544,290 @@ const SttNoiseTests = (() => {
       socket.addEventListener('open', onOpen);
       socket.addEventListener('error', onError);
     });
+  }
+
+  function waitForStreamSocketOpen(socket) {
+    return new Promise((resolve, reject) => {
+      const timer = window.setTimeout(() => {
+        reject(new Error('Stream quality connection timed out'));
+      }, 6000);
+      const done = () => {
+        window.clearTimeout(timer);
+        socket.removeEventListener('open', onOpen);
+        socket.removeEventListener('error', onError);
+      };
+      const onOpen = () => {
+        done();
+        resolve();
+      };
+      const onError = () => {
+        done();
+        reject(new Error('Stream quality connection failed'));
+      };
+      socket.addEventListener('open', onOpen);
+      socket.addEventListener('error', onError);
+    });
+  }
+
+  function fnv1a(bytes) {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < bytes.length; i += 1) {
+      hash ^= bytes[i];
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return hash >>> 0;
+  }
+
+  function makeStreamCheckFrame(seq) {
+    const bytes = 16 + STREAM_CHECK_SAMPLES * 4;
+    const buffer = new ArrayBuffer(bytes);
+    const view = new DataView(buffer);
+    const samples = new Float32Array(buffer, 16, STREAM_CHECK_SAMPLES);
+    let seed = ((seq + 1) * 2654435761) >>> 0;
+    for (let index = 0; index < samples.length; index += 1) {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      const noise = (((seed >>> 8) & 0xffffff) / 0xffffff) * 2 - 1;
+      const phase = (seq * STREAM_CHECK_SAMPLES + index) * 0.013;
+      samples[index] = Math.sin(phase) * 0.38 + noise * 0.015;
+    }
+    const hash = fnv1a(new Uint8Array(buffer, 16));
+    view.setUint32(0, STREAM_CHECK_MAGIC, true);
+    view.setUint32(4, seq, true);
+    view.setUint32(8, STREAM_CHECK_SAMPLES, true);
+    view.setUint32(12, hash, true);
+    return { buffer, hash, bytes };
+  }
+
+  function resetStreamCheckUi() {
+    const quality = el('stt-stream-check-quality');
+    const status = el('stt-stream-check-status');
+    const detail = el('stt-stream-check-detail');
+    const button = el('stt-stream-check-run');
+    if (quality) quality.textContent = '--';
+    if (status) status.textContent = 'Idle.';
+    if (detail) detail.textContent = '';
+    if (button) {
+      button.textContent = 'Run 10s check';
+      button.disabled = state.recording || state.finalizing;
+    }
+  }
+
+  function summarizeStreamCheck(check, final = false) {
+    const sent = check.sent;
+    const expectedSeen = check.correct + check.corrupt;
+    const missing = Math.max(0, sent - expectedSeen);
+    const orderedCorrect = Math.max(0, check.correct - check.outOfOrder);
+    const qualityPct = sent ? (orderedCorrect / sent) * 100 : 0;
+    const avgRtt = check.rtts.length
+      ? check.rtts.reduce((sum, value) => sum + value, 0) / check.rtts.length
+      : 0;
+    const maxRtt = check.rtts.length ? Math.max(...check.rtts) : 0;
+    const quality = el('stt-stream-check-quality');
+    const status = el('stt-stream-check-status');
+    const detail = el('stt-stream-check-detail');
+    if (quality) quality.textContent = sent ? `${qualityPct.toFixed(2)}%` : '--';
+    if (status) {
+      status.textContent = check.running
+        ? `Running ${sent}/${STREAM_CHECK_FRAMES} frames${check.mode ? ` via ${check.mode}` : ''}.`
+        : final ? 'Stream check complete.' : 'Stream check stopped.';
+    }
+    if (detail) {
+      const degradation = missing || check.corrupt || check.outOfOrder || check.duplicates || check.unexpected;
+      const verdict = !final
+        ? ''
+        : degradation
+          ? 'Audio discontinuities are plausible on this path.'
+          : 'No byte-level stream damage detected on this run.';
+      detail.textContent = [
+        `Returned ${check.received}/${sent}; missing ${missing}; corrupt ${check.corrupt}; out-of-order ${check.outOfOrder}; duplicate ${check.duplicates}.`,
+        check.rtts.length ? `RTT avg ${avgRtt.toFixed(1)} ms, max ${maxRtt.toFixed(1)} ms.` : '',
+        verdict,
+      ].filter(Boolean).join(' ');
+    }
+  }
+
+  function finishStreamCheck(reason = 'complete') {
+    const check = state.streamCheck;
+    if (!check) return;
+    check.running = false;
+    if (check.timer) window.clearInterval(check.timer);
+    if (check.finalTimer) window.clearTimeout(check.finalTimer);
+    const button = el('stt-stream-check-run');
+    if (button) {
+      button.textContent = 'Run 10s check';
+      button.disabled = state.recording || state.finalizing;
+    }
+    if (check.ws && check.ws.readyState === WebSocket.OPEN) {
+      try { check.ws.close(); } catch (_) {}
+    }
+    if (reason !== 'error') summarizeStreamCheck(check, reason === 'complete');
+  }
+
+  function stopStreamCheck() {
+    const check = state.streamCheck;
+    if (!check?.running) return;
+    try {
+      if (check.ws?.readyState === WebSocket.OPEN) {
+        check.ws.send(JSON.stringify({
+          type: 'end',
+          sent_frames: check.sent,
+          sent_bytes: check.sentBytes,
+        }));
+      }
+    } catch (_) {}
+    finishStreamCheck('stopped');
+  }
+
+  function handleStreamCheckBytes(data) {
+    const check = state.streamCheck;
+    if (!check) return;
+    const buffer = data instanceof ArrayBuffer ? data : data.buffer;
+    if (!buffer || buffer.byteLength < 16) {
+      check.unexpected += 1;
+      summarizeStreamCheck(check);
+      return;
+    }
+    const view = new DataView(buffer);
+    const magic = view.getUint32(0, true);
+    const seq = view.getUint32(4, true);
+    const samples = view.getUint32(8, true);
+    const hash = view.getUint32(12, true);
+    const expected = check.expected.get(seq);
+    check.received += 1;
+    if (magic !== STREAM_CHECK_MAGIC || samples !== STREAM_CHECK_SAMPLES || !expected) {
+      check.unexpected += 1;
+      summarizeStreamCheck(check);
+      return;
+    }
+    if (check.seen.has(seq)) {
+      check.duplicates += 1;
+      summarizeStreamCheck(check);
+      return;
+    }
+    check.seen.add(seq);
+    const actualHash = fnv1a(new Uint8Array(buffer, 16));
+    if (buffer.byteLength !== expected.bytes || hash !== expected.hash || actualHash !== expected.hash) {
+      check.corrupt += 1;
+    } else {
+      check.correct += 1;
+      if (seq <= check.lastSeq) check.outOfOrder += 1;
+      check.lastSeq = Math.max(check.lastSeq, seq);
+    }
+    check.rtts.push(performance.now() - expected.sentAt);
+    summarizeStreamCheck(check);
+  }
+
+  function handleStreamCheckMessage(event) {
+    const check = state.streamCheck;
+    if (!check) return;
+    if (event.data instanceof ArrayBuffer) {
+      handleStreamCheckBytes(event.data);
+      return;
+    }
+    let payload = {};
+    try {
+      payload = JSON.parse(event.data || '{}');
+    } catch (_) {
+      return;
+    }
+    if (payload.type === 'config') {
+      check.mode = payload.mode === 'mirror_ws' ? 'mirror' : 'unknown path';
+      summarizeStreamCheck(check);
+      return;
+    }
+    if (payload.type === 'final') {
+      finishStreamCheck('complete');
+      return;
+    }
+    if (payload.type === 'error') {
+      const status = el('stt-stream-check-status');
+      if (status) status.textContent = `Stream check failed: ${payload.detail || 'unknown error'}`;
+      finishStreamCheck('error');
+    }
+  }
+
+  async function startStreamCheck() {
+    if (state.recording || state.finalizing) {
+      setStatus('Stop recording before running the stream quality check.');
+      return;
+    }
+    if (state.streamCheck?.running) {
+      stopStreamCheck();
+      return;
+    }
+    const check = {
+      running: true,
+      ws: null,
+      timer: null,
+      finalTimer: null,
+      expected: new Map(),
+      seen: new Set(),
+      sent: 0,
+      sentBytes: 0,
+      received: 0,
+      correct: 0,
+      corrupt: 0,
+      duplicates: 0,
+      outOfOrder: 0,
+      unexpected: 0,
+      lastSeq: -1,
+      rtts: [],
+      mode: '',
+    };
+    state.streamCheck = check;
+    const button = el('stt-stream-check-run');
+    if (button) {
+      button.textContent = 'Stop check';
+      button.disabled = false;
+    }
+    summarizeStreamCheck(check);
+    try {
+      const ws = new WebSocket(await streamQualityWebsocketUrl());
+      ws.binaryType = 'arraybuffer';
+      check.ws = ws;
+      ws.addEventListener('message', handleStreamCheckMessage);
+      ws.addEventListener('close', () => {
+        if (check.running) finishStreamCheck(check.sent >= STREAM_CHECK_FRAMES ? 'complete' : 'stopped');
+      });
+      await waitForStreamSocketOpen(ws);
+      ws.send(JSON.stringify({
+        type: 'start',
+        frames: STREAM_CHECK_FRAMES,
+        interval_ms: STREAM_CHECK_INTERVAL_MS,
+        samples_per_frame: STREAM_CHECK_SAMPLES,
+      }));
+      const sendFrame = () => {
+        if (!check.running || ws.readyState !== WebSocket.OPEN) return;
+        if (check.sent >= STREAM_CHECK_FRAMES) {
+          window.clearInterval(check.timer);
+          check.timer = null;
+          ws.send(JSON.stringify({
+            type: 'end',
+            sent_frames: check.sent,
+            sent_bytes: check.sentBytes,
+          }));
+          check.finalTimer = window.setTimeout(() => finishStreamCheck('complete'), 2500);
+          return;
+        }
+        const seq = check.sent;
+        const frame = makeStreamCheckFrame(seq);
+        check.expected.set(seq, {
+          hash: frame.hash,
+          bytes: frame.bytes,
+          sentAt: performance.now(),
+        });
+        ws.send(frame.buffer);
+        check.sent += 1;
+        check.sentBytes += frame.bytes;
+        summarizeStreamCheck(check);
+      };
+      sendFrame();
+      check.timer = window.setInterval(sendFrame, STREAM_CHECK_INTERVAL_MS);
+    } catch (error) {
+      const status = el('stt-stream-check-status');
+      if (status) status.textContent = `Stream check failed: ${error.message || error}`;
+      finishStreamCheck('error');
+    }
   }
 
   async function handleSocketMessage(event) {
@@ -701,6 +1004,7 @@ const SttNoiseTests = (() => {
 
   async function resetAll() {
     cleanup({ closeSocket: true });
+    stopStreamCheck();
     setRecordingUi(false, false);
     clearMetrics();
     state.rawChunks = [];
@@ -709,6 +1013,7 @@ const SttNoiseTests = (() => {
     await clearAudio('raw').catch(() => {});
     await clearAudio('enhanced').catch(() => {});
     setStatus('');
+    resetStreamCheckUi();
   }
 
   function wire() {
@@ -734,6 +1039,7 @@ const SttNoiseTests = (() => {
     el('stt-noise-record')?.addEventListener('click', () => { void startRecording(); });
     el('stt-noise-stop')?.addEventListener('click', () => { void stopRecording(); });
     el('stt-noise-clear')?.addEventListener('click', () => { void resetAll(); });
+    el('stt-stream-check-run')?.addEventListener('click', () => { void startStreamCheck(); });
     document.querySelectorAll('[data-audio-action][data-audio-kind]').forEach(button => {
       button.addEventListener('click', () => playback(button.dataset.audioKind, button.dataset.audioAction));
     });
