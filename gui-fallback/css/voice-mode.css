@@ -153,6 +153,18 @@
   white-space: nowrap;
 }
 
+.voice-mode-noise-level [data-lastpass-icon-root],
+.voice-mode-cue__slider [data-lastpass-icon-root] {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+}
+
+.voice-mode-noise-level [data-lastpass-icon],
+.voice-mode-cue__slider [data-lastpass-icon] {
+  display: none !important;
+}
+
 .voice-mode-actions {
   display: flex;
   align-items: center;
