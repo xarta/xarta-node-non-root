@@ -39,6 +39,7 @@
   <link rel="stylesheet" href="css/embed-menu-grid.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/tts-pool.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/voice-mode.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/stt-noise-tests.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="vendor/xterm/xterm.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/ssh-terminal.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/agent-pages.css?v={{$assetVersion}}" />
@@ -4455,6 +4456,88 @@
   </div>
 </dialog>
 
+<!-- STT Noise Tests modal -->
+<dialog class="hub-modal hub-dialog stt-noise-tests-modal" data-tone="info" id="stt-noise-tests-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">STT</span>
+      <span class="hub-dialog-title-text">Noise Tests</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body stt-noise-tests">
+    <section class="stt-noise-tests__controls" aria-label="Noise test controls">
+      <label class="stt-noise-field" for="stt-noise-passage">
+        <span>Passage</span>
+        <select id="stt-noise-passage"></select>
+      </label>
+      <div class="stt-noise-reference" id="stt-noise-reference"></div>
+      <div class="stt-noise-toggles">
+        <label class="hub-checkbox stt-noise-checkbox">
+          <input class="hub-checkbox__input" type="checkbox" id="stt-noise-enabled" />
+          <span class="hub-checkbox__box" aria-hidden="true"></span>
+          <span class="hub-checkbox__label">Noise reduction</span>
+        </label>
+        <label class="stt-noise-level" for="stt-noise-level">
+          <span>Noise level</span>
+          <input
+            type="range"
+            id="stt-noise-level"
+            min="0"
+            max="12"
+            step="0.5"
+            value="6"
+            data-lpignore="true"
+            data-form-type="other"
+            autocomplete="off"
+          />
+          <output id="stt-noise-level-label" for="stt-noise-level">6.0 dB</output>
+        </label>
+      </div>
+      <div class="stt-noise-actions">
+        <button class="hub-action-btn hub-primary" type="button" id="stt-noise-record">Record</button>
+        <button class="hub-action-btn" type="button" id="stt-noise-stop" disabled>Stop</button>
+        <button class="hub-action-btn" type="button" id="stt-noise-clear">Clear</button>
+      </div>
+      <p class="stt-noise-status" id="stt-noise-status" aria-live="polite"></p>
+    </section>
+    <section class="stt-noise-tests__results" aria-label="Noise test results">
+      <div class="stt-noise-metrics">
+        <div><span>WER</span><strong id="stt-noise-wer">--</strong></div>
+        <div><span>Words</span><strong id="stt-noise-words">--</strong></div>
+        <div><span>Subs</span><strong id="stt-noise-subs">--</strong></div>
+        <div><span>Ins</span><strong id="stt-noise-ins">--</strong></div>
+        <div><span>Del</span><strong id="stt-noise-del">--</strong></div>
+        <div class="stt-noise-timing-card"><span>Timing</span><strong id="stt-noise-latency">--</strong></div>
+      </div>
+      <div class="stt-noise-transcript">
+        <div class="stt-noise-section-title">Transcript</div>
+        <output id="stt-noise-transcript"></output>
+      </div>
+      <div class="stt-noise-alignment">
+        <div class="stt-noise-section-title">Comparison</div>
+        <div id="stt-noise-alignment"></div>
+      </div>
+      <div class="stt-noise-playback">
+        <div class="stt-noise-player" data-kind="raw">
+          <span>Raw input</span>
+          <button class="hub-action-btn" type="button" data-audio-action="play" data-audio-kind="raw" disabled>Play</button>
+          <button class="hub-action-btn" type="button" data-audio-action="pause" data-audio-kind="raw" disabled>Pause</button>
+          <button class="hub-action-btn" type="button" data-audio-action="reset" data-audio-kind="raw" disabled>Reset</button>
+          <button class="hub-action-btn" type="button" data-audio-action="clear" data-audio-kind="raw" disabled>Clear</button>
+        </div>
+        <div class="stt-noise-player" data-kind="enhanced">
+          <span>Enhanced output</span>
+          <button class="hub-action-btn" type="button" data-audio-action="play" data-audio-kind="enhanced" disabled>Play</button>
+          <button class="hub-action-btn" type="button" data-audio-action="pause" data-audio-kind="enhanced" disabled>Pause</button>
+          <button class="hub-action-btn" type="button" data-audio-action="reset" data-audio-kind="enhanced" disabled>Reset</button>
+          <button class="hub-action-btn" type="button" data-audio-action="clear" data-audio-kind="enhanced" disabled>Clear</button>
+        </div>
+      </div>
+    </section>
+  </div>
+</dialog>
+
 <script src="js/utils.js?v={{$assetVersion}}"></script>
 <script src="js/api.js?v={{$assetVersion}}"></script>
 <script src="js/state.js?v={{$assetVersion}}"></script>
@@ -4470,6 +4553,7 @@
 <script src="js/tts-wrapper-client.js?v={{$assetVersion}}"></script>
 <script src="js/events-stream.js?v={{$assetVersion}}"></script>
 <script src="js/voice-mode.js?v={{$assetVersion}}"></script>
+<script src="js/stt-noise-tests.js?v={{$assetVersion}}"></script>
 <script src="js/notifier-dnd-policy.js?v={{$assetVersion}}"></script>
 <script src="js/notifier-danger2-alert.js?v={{$assetVersion}}"></script>
 <script src="js/model-change-announcer.js?v={{$assetVersion}}"></script>

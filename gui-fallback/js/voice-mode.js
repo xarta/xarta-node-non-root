@@ -294,17 +294,33 @@ const BlueprintsVoiceMode = (() => {
     _setBoolStorage(LS_STT_NOISE, value);
     _render();
     _setStatus(value ? 'STT noise reduction enabled for this browser.' : 'STT noise reduction disabled.');
+    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:stt-noise-changed', {
+      detail: {
+        enabled: !!value,
+        level_db: sttNoiseReductionLevelDb(),
+      },
+    }));
   }
 
   function _setSttNoiseLevelDb(value) {
     const level = _clampNoiseLevelDb(value);
     _setStringStorage(LS_STT_NOISE_LEVEL_DB, String(level));
     _render();
+    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:stt-noise-changed', {
+      detail: {
+        enabled: sttNoiseReductionSettingEnabled(),
+        level_db: level,
+      },
+    }));
   }
 
   function sttNoiseReductionEnabled() {
     const local = _localState();
     return !!(local.stt_enabled && local.stt_noise_reduction_enabled);
+  }
+
+  function sttNoiseReductionSettingEnabled() {
+    return !!_localState().stt_noise_reduction_enabled;
   }
 
   function sttNoiseReductionLevelDb() {
@@ -502,7 +518,10 @@ const BlueprintsVoiceMode = (() => {
     reconcile,
     canSpeakHermesUtterance,
     sttNoiseReductionEnabled,
+    sttNoiseReductionSettingEnabled,
     sttNoiseReductionLevelDb,
+    setSttNoiseReductionEnabled: _setSttNoiseReduction,
+    setSttNoiseReductionLevelDb: _setSttNoiseLevelDb,
     maybePlayAnnouncementCue,
     getBrowserId: _browserId,
   };
