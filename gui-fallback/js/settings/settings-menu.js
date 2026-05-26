@@ -7,7 +7,7 @@
 // localStorage key: 'blueprintsSettingsMenuConfig'
 //
 // Default groupings:
-//   🗄 PVE Hosts  [▼ 🤝 Nodes, Local Dockge]
+//   🗄 PVE Hosts  [▼ 🤝 Nodes, Local Dockge, VPS Dockge, 841 Dockge]
 //   SSH Terminal [▼ target sessions from /api/v1/ssh-terminal/targets]
 //   Agents        [▼ Hermes Local, Hermes VPS]
 //   🔧 App Config [▼ 🗺 Manual ARP, 🤖 AI Providers]
@@ -38,6 +38,7 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'nodes',           label: 'Nodes',          icon: HIEROGLYPHS.crookFlail, pageLabel: 'Fleet Nodes',     parent: 'pve-hosts', order: 0 },
         { id: 'local-dockge',    label: 'Local Dockge',   icon: HIEROGLYPHS.pyramid,    pageLabel: 'Local Dockge',    parent: 'pve-hosts', order: 1 },
         { id: 'vps-dockge',      label: 'VPS Dockge',     icon: HIEROGLYPHS.naosShrine, pageLabel: 'VPS Dockge',      parent: 'pve-hosts', order: 2 },
+        { id: 'lxc841-dockge',   label: '841 Dockge',     icon: HIEROGLYPHS.pyramid,    pageLabel: '841 Dockge',      parent: 'pve-hosts', order: 3 },
         { id: 'ssh-terminal',    label: 'SSH Terminal',   icon: HIEROGLYPHS.khaHorizon, pageLabel: 'SSH Terminal',    parent: null,        order: 1 },
         { id: 'agent-pages',     label: 'Agents',         icon: HIEROGLYPHS.falcon,     pageLabel: 'Agent Pages',     parent: null,        order: 2 },
         { id: 'hermes-local',    label: 'Hermes Local',   icon: HIEROGLYPHS.khaHorizon, pageLabel: 'Hermes Local',    parent: 'agent-pages', order: 0 },
@@ -91,6 +92,7 @@ const SettingsMenuConfig = createHubMenu({
         // ── Local Dockge page function items ─────────────────────────────
         { id: 'ldg-fn-refresh',  label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'ldg.refresh',  activeOn: ['local-dockge'], parent: 'settings-layout', order: 0 },
         { id: 'vdg-fn-refresh',  label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'vdg.refresh',  activeOn: ['vps-dockge'], parent: 'settings-layout', order: 0 },
+        { id: 'l841-fn-refresh', label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'l841.refresh', activeOn: ['lxc841-dockge'], parent: 'settings-layout', order: 0 },
         { id: 'ssh-fn-agent',    label: 'Agent',             icon: HIEROGLYPHS.khaHorizon, fn: 'ssh.agent', activeOn: ['ssh-terminal'], parent: 'settings-layout', order: 0 },
         { id: 'ssh-fn-setup',    label: 'Setup',             icon: HIEROGLYPHS.djedPillar, fn: 'ssh.setup', activeOn: ['ssh-terminal'], parent: 'settings-layout', order: 1 },
         { id: 'ssh-fn-disconnect', label: 'Disconnect',      icon: HIEROGLYPHS.tjet,       fn: 'ssh.disconnect', activeOn: ['ssh-terminal'], parent: 'settings-layout', order: 2 },
@@ -258,6 +260,36 @@ const SettingsMenuConfig = createHubMenu({
         if (docsItem && !docsItem.parent) docsItem.order = 5;
         const layoutItem = this.currentMenu.find(entry => entry.id === 'settings-layout');
         if (layoutItem && !layoutItem.parent) layoutItem.order = 6;
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentMenu));
+        localStorage.setItem(migrationKey, '1');
+    };
+})();
+
+(function migrateLxc841DockgeMenuItem() {
+    const migrationKey = 'blueprintsSettingsMenuLxc841Dockge20260526';
+    const originalLoadConfig = SettingsMenuConfig.loadConfig.bind(SettingsMenuConfig);
+    SettingsMenuConfig.loadConfig = function loadConfigWithLxc841DockgeMigration() {
+        originalLoadConfig();
+        if (localStorage.getItem(migrationKey) === '1') return;
+        for (const id of ['lxc841-dockge', 'l841-fn-refresh']) {
+            if (!this.currentMenu.some(entry => entry.id === id)) {
+                const def = this.defaultMenu.find(entry => entry.id === id);
+                if (def) this.currentMenu.push({ ...def });
+            }
+        }
+        const item = this.currentMenu.find(entry => entry.id === 'lxc841-dockge');
+        if (item) {
+            item.parent = 'pve-hosts';
+            item.order = 3;
+            item.label = '841 Dockge';
+            item.pageLabel = '841 Dockge';
+        }
+        const fn = this.currentMenu.find(entry => entry.id === 'l841-fn-refresh');
+        if (fn) {
+            fn.parent = 'settings-layout';
+            fn.order = 0;
+            fn.activeOn = ['lxc841-dockge'];
+        }
         localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.currentMenu));
         localStorage.setItem(migrationKey, '1');
     };
@@ -1059,6 +1091,7 @@ SettingsMenuConfig.registerFunctions({
     // Local Dockge
     'ldg.refresh':  () => loadLocalDockgeStacks(),
     'vdg.refresh':  () => loadVpsDockgeStacks(),
+    'l841.refresh': () => loadLxc841DockgeStacks(),
     'ssh.agent': () => window._sshTerminalOpenHermesAgent?.(),
     'ssh.setup': () => window._sshTerminalOpenHermesSetup?.(),
     'ssh.disconnect': () => window._sshTerminalDisconnect?.(),

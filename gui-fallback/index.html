@@ -888,6 +888,21 @@
     <p id="vps-dockge-error" class="error-msg" hidden></p>
   </section>
 
+  <!-- LXC 841 Dockge -->
+  <section id="tab-lxc841-dockge" class="tab-panel tab-panel--fill">
+    <p id="lxc841-dockge-status" style="font-size:12px;margin:4px 0 0;color:var(--text-dim)" hidden></p>
+    <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
+    <div class="table-wrap table-wrap--fill">
+      <table id="lxc841-dockge-table" data-layout-table-name="lxc841-dockge" data-layout-table-code="21">
+        <thead><tr>
+          <th data-col="stack">Stack</th><th data-col="services">Services</th><th data-col="containers">Containers</th><th data-col="status_health">Status<br>Health</th><th data-col="updated">Updated</th><th data-col="actions">Actions</th>
+        </tr></thead>
+        <tbody id="lxc841-dockge-tbody"><tr class="empty-row"><td colspan="6">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <p id="lxc841-dockge-error" class="error-msg" hidden></p>
+  </section>
+
   <!-- SSH Terminal -->
   <section id="tab-ssh-terminal" class="tab-panel tab-panel--fill">
     <span class="ssh-terminal-status" id="ssh-terminal-status" aria-live="polite" hidden></span>
@@ -3401,6 +3416,26 @@
   </div>
 </dialog>
 
+<!-- LXC 841 Dockge service information modal -->
+<dialog class="hub-modal hub-dialog" data-tone="info" id="lxc841-dockge-service-modal" style="width:min(1180px,98vw);height:min(860px,94vh);max-width:98vw;max-height:94vh">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge" id="lxc841-dockge-service-modal-badge">SVC</span>
+      <span class="hub-dialog-title-text" id="lxc841-dockge-service-modal-title">841 Dockge Service</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body" style="min-height:0;overflow:auto">
+    <p id="lxc841-dockge-service-modal-status" style="min-height:1.4em;color:var(--text-dim);font-size:12px;margin:0 0 12px;"></p>
+    <div id="lxc841-dockge-service-modal-body"></div>
+    <p class="hub-modal-error" id="lxc841-dockge-service-modal-error"></p>
+  </div>
+  <div class="hub-modal-footer">
+    <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Close</button>
+    <button class="hub-modal-btn" type="button" id="lxc841-dockge-service-modal-open" disabled>Open</button>
+  </div>
+</dialog>
+
 <!-- Generic Fleet Nodes action modal -->
 <dialog class="hub-modal hub-dialog" data-tone="info" id="node-action-modal" style="width:min(540px,95vw)">
   <div class="hub-modal-header">
@@ -4612,6 +4647,7 @@
 <script src="js/settings/pve-hosts.js?v={{$assetVersion}}"></script>
 <script src="js/settings/local-dockge.js?v={{$assetVersion}}"></script>
 <script src="js/settings/vps-dockge.js?v={{$assetVersion}}"></script>
+<script src="js/settings/lxc841-dockge.js?v={{$assetVersion}}"></script>
 <script src="vendor/xterm/xterm.js?v={{$assetVersion}}"></script>
 <script src="js/settings/ssh-terminal.js?v={{$assetVersion}}"></script>
 <script src="js/settings/agent-pages.js?v={{$assetVersion}}"></script>

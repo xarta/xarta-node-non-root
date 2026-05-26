@@ -409,6 +409,10 @@ function switchTab(tab) {
     if (typeof scheduleVpsDockgeStacksLoad === 'function') scheduleVpsDockgeStacksLoad();
     else loadVpsDockgeStacks();
   }
+  if (tab === 'lxc841-dockge'  && !_lxc841DockgeStacks.length) {
+    if (typeof scheduleLxc841DockgeStacksLoad === 'function') scheduleLxc841DockgeStacksLoad();
+    else loadLxc841DockgeStacks();
+  }
   if (tab === 'ssh-terminal')  { if (typeof _sshTerminalLoadTab === 'function') _sshTerminalLoadTab(); }
   if (tab === 'hermes-local' || tab === 'hermes-vps') {
     if (typeof _agentPagesLoadHermes === 'function') _agentPagesLoadHermes(tab);
