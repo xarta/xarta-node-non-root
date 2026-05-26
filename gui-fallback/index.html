@@ -4329,8 +4329,11 @@
   <div class="hub-modal-body">
     <div class="voice-mode-grid">
       <div class="voice-mode-browser">
-        <div class="voice-mode-browser__label" id="voice-mode-browser-label">This browser</div>
-        <div class="voice-mode-browser__meta" id="voice-mode-browser-meta">Active: checking...</div>
+        <div class="voice-mode-browser__copy">
+          <div class="voice-mode-browser__label" id="voice-mode-browser-label">This browser</div>
+          <div class="voice-mode-browser__meta" id="voice-mode-browser-meta">Active: checking...</div>
+        </div>
+        <button class="hub-modal-btn voice-mode-browser__activate" type="button" id="voice-mode-activate-btn">Activate</button>
       </div>
 
       <div class="voice-mode-controls" aria-label="Voice capabilities">
@@ -4432,7 +4435,6 @@
 
       <div class="voice-mode-actions">
         <p class="voice-mode-status" id="voice-mode-status" aria-live="polite"></p>
-        <button class="hub-modal-btn" type="button" id="voice-mode-activate-btn">Activate</button>
       </div>
     </div>
   </div>
