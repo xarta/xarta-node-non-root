@@ -399,7 +399,7 @@ const WakeDevModal = (() => {
   }
 
   function audioFeatures(input) {
-    if (!input?.length) return { rms: 0, peak: 0, level: 0 };
+    if (!input?.length) return { rms: 0, peak: 0, level: 0, vadEnergy: 0 };
     let sum = 0;
     let peak = 0;
     for (let i = 0; i < input.length; i += 1) {
@@ -408,7 +408,8 @@ const WakeDevModal = (() => {
       if (value > peak) peak = value;
     }
     const rms = Math.sqrt(sum / input.length);
-    return { rms, peak, level: Math.max(rms, peak * 0.55) };
+    const level = Math.min(1, Math.max(0, (rms * 16) + (peak * 0.16)));
+    return { rms, peak, level, vadEnergy: rms + (peak * 0.15) };
   }
 
   async function probeWebsocketUrl() {
@@ -1000,20 +1001,18 @@ const WakeDevModal = (() => {
         if (output) output.fill(0);
         const input = event.inputBuffer.getChannelData(0);
         const features = audioFeatures(input);
-        const pcm = downsampleFloat32(input, audioContext.sampleRate);
         addVadProbeSample(features);
-        if (pcm?.byteLength) {
-          if (VAD_TEST_DELAY_FRAMES > 0) {
-            state.vadProbe.delayFrames.push(pcm);
-            while (state.vadProbe.delayFrames.length > VAD_TEST_DELAY_FRAMES) state.vadProbe.delayFrames.shift();
-          }
-          if (state.vadProbe.recording && state.vadProbe.ws?.readyState === WebSocket.OPEN) {
-            sendVadProbePcm(pcm, 'stream');
-          }
-        }
         if (state.vadProbe.vadRecordEnabled || state.vadProbe.vadStopEnabled) {
           updateVadProbe(features, Date.now());
         }
+        if (!state.vadProbe.recording || state.vadProbe.ws?.readyState !== WebSocket.OPEN) return;
+        const pcm = downsampleFloat32(input, audioContext.sampleRate);
+        if (!pcm?.byteLength) return;
+        if (VAD_TEST_DELAY_FRAMES > 0) {
+          state.vadProbe.delayFrames.push(pcm);
+          while (state.vadProbe.delayFrames.length > VAD_TEST_DELAY_FRAMES) state.vadProbe.delayFrames.shift();
+        }
+        sendVadProbePcm(pcm, 'stream');
       };
       source.connect(processor);
       processor.connect(audioContext.destination);
@@ -1256,12 +1255,13 @@ const WakeDevModal = (() => {
       timeout_ms: vadProbeResetTimeoutMs(),
     });
     if (state.vadProbe.ws.readyState === WebSocket.OPEN) {
-      state.vadProbe.ws.send(JSON.stringify({
+      const endPayload = {
         type: 'end',
-        reason,
         audio_bytes: state.vadProbe.bytesSent,
         audio_frames: state.vadProbe.framesSent,
-      }));
+      };
+      if (reason !== 'manual_stop') endPayload.reason = reason;
+      state.vadProbe.ws.send(JSON.stringify(endPayload));
       vadProbeStatus(reason === 'vad_stop'
         ? `VAD Stop sent end after ${Math.round(recordingMs || 0)} ms / ${state.vadProbe.framesSent} frames.`
         : 'Finalizing transcript.');
