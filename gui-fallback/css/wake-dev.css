@@ -9,7 +9,7 @@
 
 .wake-dev {
   display: grid;
-  grid-template-columns: minmax(330px, 0.42fr) minmax(560px, 1fr);
+  grid-template-columns: 1fr;
   gap: 14px;
   height: calc(100dvh - 70px);
   min-height: 0;
@@ -26,8 +26,14 @@
   min-height: 0;
 }
 
+.wake-dev__controls {
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+}
+
 .wake-dev__debug {
+  grid-template-columns: 1fr;
   grid-template-rows: auto auto auto;
+  width: 100%;
 }
 
 .wake-dev-card,
@@ -112,13 +118,18 @@
   gap: 9px;
 }
 
+.wake-dev-settings,
+.wake-dev-status {
+  grid-column: 1 / -1;
+}
+
 .wake-dev-test {
   gap: 9px;
 }
 
 .wake-dev-test__tools {
   display: grid;
-  grid-template-columns: minmax(128px, 1fr) repeat(3, minmax(76px, auto));
+  grid-template-columns: minmax(130px, 1fr) repeat(3, minmax(62px, 0.42fr));
   gap: 8px;
   min-width: 0;
 }
@@ -129,7 +140,8 @@
 
 .wake-dev-test__tools .hub-modal-btn {
   min-height: 34px;
-  padding-inline: 12px;
+  min-width: 0;
+  padding-inline: 8px;
 }
 
 .wake-dev-test__tools .hub-modal-btn[aria-pressed="true"] {
@@ -522,10 +534,6 @@
 }
 
 @media (max-width: 1080px) {
-  .wake-dev {
-    grid-template-columns: 1fr;
-  }
-
   .wake-dev__debug {
     grid-template-rows: auto auto auto;
   }
@@ -554,6 +562,10 @@
 
   .wake-dev {
     padding: 12px;
+  }
+
+  .wake-dev__controls {
+    grid-template-columns: 1fr;
   }
 
   .wake-dev-metrics {
