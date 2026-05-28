@@ -1,4 +1,4 @@
-// voice-mode.js — browser-local STT/TTS toggles plus node-local active lease.
+// voice-mode.js - browser-local STT/TTS selection plus backend-activated browser state.
 
 'use strict';
 
@@ -17,6 +17,8 @@ const BlueprintsVoiceMode = (() => {
   const ACTIVATE_URL = '/api/v1/voice-mode/activate';
   const DEACTIVATE_URL = '/api/v1/voice-mode/deactivate';
   const POLICY_URL = '/api/v1/voice-mode/policy';
+  const WAKE_SETTINGS_URL = '/api/v1/voice-mode/wake-settings';
+  const AGGREGATION_TIMEOUT_URL = '/api/v1/voice-mode/stt/aggregation-timeout';
   const CUE_DEFAULT_REARM_MS = 1500;
   const CUE_MIN_REARM_MS = 250;
   const CUE_MAX_REARM_MS = 5000;
@@ -27,6 +29,14 @@ const BlueprintsVoiceMode = (() => {
   const STT_NOISE_MIN_DB = 0;
   const STT_NOISE_MAX_DB = 12;
   const STT_NOISE_STEP_DB = 0.5;
+  const STT_VAD_RESET_DEFAULT_MS = 300;
+  const STT_VAD_RESET_MIN_MS = 0;
+  const STT_VAD_RESET_MAX_MS = 500;
+  const STT_VAD_RESET_STEP_MS = 50;
+  const STT_SILENCE_RESET_DEFAULT_MS = 2100;
+  const STT_SILENCE_RESET_MIN_MS = 0;
+  const STT_SILENCE_RESET_MAX_MS = 3000;
+  const STT_SILENCE_RESET_STEP_MS = 300;
   const STT_MODE_NONE = '';
   const STT_MODE_REALTIME = 'realtime_conversation';
   const STT_MODE_PUSH = 'push_to_talk';
@@ -45,6 +55,16 @@ const BlueprintsVoiceMode = (() => {
   let _dependencyHealth = null;
   let _dependencyHealthTimer = null;
   let _dependencyHealthInFlight = false;
+  let _wakeSettings = null;
+  let _wakeSettingsLoaded = false;
+  let _wakeSettingsInFlight = false;
+  let _wakeSaveTimer = null;
+  let _aggregationTimeout = null;
+  let _aggregationTimeoutInFlight = false;
+  let _activeModalTab = 'general';
+  let _wakeRuntime = { state: '', reason: '', running: false, starting: false };
+  let _lastWakeControllerSyncKey = '';
+  let _activeActivationSyncInFlight = false;
 
   function _browserId() {
     try {
@@ -159,6 +179,87 @@ const BlueprintsVoiceMode = (() => {
     const policy = _serverState.policy || {};
     return {
       tts_companion_model_preference: _modelPreference(policy.tts_companion_model_preference),
+      wake_to_talk: _cleanWakeSettings(policy.wake_to_talk),
+      stt: _cleanSttPolicy(policy.stt),
+    };
+  }
+
+  function _defaultWakeSettings() {
+    if (window.WakeToTalkState?.mergedConfig) {
+      return window.WakeToTalkState.mergedConfig({});
+    }
+    return {
+      instances: {
+        local: {
+          enabled: true,
+          label: 'local',
+          matrix_server: 'tb1',
+          matrix_room_id: '',
+          wake_word: 'Computer',
+          wake_aliases: ['computer'],
+          hermes_prefix: 'hermes: ',
+          post_wake_pause_ms: 500,
+          initial_silence_cancel_ms: 1000,
+          pause_reset_seconds: 30,
+          auto_execute_silence_ms: 0,
+          commands: {
+            pause: 'pause-dictation',
+            resume: 'resume-dictation',
+            execute: 'execute',
+            cancel: 'cancel-dictation',
+          },
+        },
+        vps: {
+          enabled: true,
+          label: 'vps',
+          matrix_server: 'vps',
+          matrix_room_id: '',
+          wake_word: 'Mini-Me',
+          wake_aliases: ['mini-me', 'mini me', 'minime'],
+          hermes_prefix: 'hermes-vps: ',
+          post_wake_pause_ms: 500,
+          initial_silence_cancel_ms: 1000,
+          pause_reset_seconds: 30,
+          auto_execute_silence_ms: 0,
+          commands: {
+            pause: 'pause-dictation',
+            resume: 'resume-dictation',
+            execute: 'execute',
+            cancel: 'cancel-dictation',
+          },
+        },
+      },
+    };
+  }
+
+  function _cleanWakeSettings(value) {
+    return window.WakeToTalkState?.mergedConfig
+      ? window.WakeToTalkState.mergedConfig(value || {})
+      : { ..._defaultWakeSettings(), ...(value || {}) };
+  }
+
+  function _cleanSttPolicy(value) {
+    const raw = value && typeof value === 'object' ? value : {};
+    const aggregationMs = Number(raw.speech_aggregation_timeout_ms);
+    const vadResetMs = Number(raw.vad_reset_timeout_ms);
+    const silenceResetMs = Number(raw.silence_reset_timeout_ms);
+    return {
+      speech_aggregation_timeout_ms: Number.isFinite(aggregationMs) ? Math.max(50, Math.min(300, Math.round(aggregationMs / 10) * 10)) : 80,
+      vad_reset_timeout_ms: Number.isFinite(vadResetMs)
+        ? Math.max(STT_VAD_RESET_MIN_MS, Math.min(STT_VAD_RESET_MAX_MS, Math.round(vadResetMs / STT_VAD_RESET_STEP_MS) * STT_VAD_RESET_STEP_MS))
+        : STT_VAD_RESET_DEFAULT_MS,
+      silence_reset_timeout_ms: Number.isFinite(silenceResetMs)
+        ? Math.max(STT_SILENCE_RESET_MIN_MS, Math.min(STT_SILENCE_RESET_MAX_MS, Math.round(silenceResetMs / STT_SILENCE_RESET_STEP_MS) * STT_SILENCE_RESET_STEP_MS))
+        : STT_SILENCE_RESET_DEFAULT_MS,
+    };
+  }
+
+  function _cleanPolicy(value) {
+    const raw = value && typeof value === 'object' ? value : {};
+    return {
+      tts_companion_model_preference: _modelPreference(raw.tts_companion_model_preference),
+      wake_to_talk: _cleanWakeSettings(raw.wake_to_talk),
+      stt: _cleanSttPolicy(raw.stt),
     };
   }
 
@@ -177,6 +278,18 @@ const BlueprintsVoiceMode = (() => {
 
   function _isActiveOwner() {
     return !!(_serverState.active && _serverState.active.browser_id === _browserId());
+  }
+
+  function _activeSttMode() {
+    return _isActiveOwner() ? _localState().stt_mode : '';
+  }
+
+  function _canUseSelectedSttMode(mode) {
+    return _isActiveOwner() && _localState().stt_mode === _normalizeSttMode(mode);
+  }
+
+  function _ownsActiveSttMode(mode) {
+    return _canUseSelectedSttMode(mode);
   }
 
   function _els() {
@@ -211,6 +324,21 @@ const BlueprintsVoiceMode = (() => {
       modelLocal: document.getElementById('voice-mode-model-local'),
       activate: document.getElementById('voice-mode-activate-btn'),
       status: document.getElementById('voice-mode-status'),
+      tabGeneral: document.getElementById('voice-mode-tab-general'),
+      tabLocal: document.getElementById('voice-mode-tab-local'),
+      tabVps: document.getElementById('voice-mode-tab-vps'),
+      panelGeneral: document.getElementById('voice-mode-panel-general'),
+      panelLocal: document.getElementById('voice-mode-panel-local'),
+      panelVps: document.getElementById('voice-mode-panel-vps'),
+      aggWrap: document.getElementById('voice-mode-aggregation-wrap'),
+      aggSlider: document.getElementById('voice-mode-aggregation-timeout'),
+      aggLabel: document.getElementById('voice-mode-aggregation-label'),
+      vadResetSlider: document.getElementById('voice-mode-vad-reset-timeout'),
+      vadResetLabel: document.getElementById('voice-mode-vad-reset-label'),
+      silenceResetSlider: document.getElementById('voice-mode-silence-reset-timeout'),
+      silenceResetLabel: document.getElementById('voice-mode-silence-reset-label'),
+      wakeRuntime: document.getElementById('voice-mode-wake-runtime'),
+      wakeRuntimeLabel: document.getElementById('voice-mode-wake-runtime-label'),
     };
   }
 
@@ -243,16 +371,220 @@ const BlueprintsVoiceMode = (() => {
     else delete el.dataset.alert;
   }
 
-  function _capabilityLed(enabled, issue) {
+  function _capabilityLed(enabled, issue, activated = _isActiveOwner()) {
     if (issue) return 'red';
     if (!enabled) return 'red';
-    return _isActiveOwner() ? 'green' : 'yellow';
+    return activated ? 'green' : 'yellow';
+  }
+
+  function _activeBrowserLabel(active) {
+    if (!active) return 'none';
+    return active.browser_label || active.browser_id || 'unknown browser';
   }
 
   function _syncExternalVoiceState() {
     try {
       window.MatrixChat?.syncVoiceModeAudioState?.();
     } catch (_) {}
+  }
+
+  function _syncWakeToTalkController() {
+    try {
+      const syncPayload = {
+        stt_mode: sttMode(),
+        active_owner: _isActiveOwner(),
+        selected_stt_mode_active: _isActiveOwner() ? sttMode() : '',
+        wake_settings: getWakeSettings(),
+      };
+      const syncKey = JSON.stringify(syncPayload);
+      if (syncKey === _lastWakeControllerSyncKey) return;
+      _lastWakeControllerSyncKey = syncKey;
+      window.dispatchEvent(new CustomEvent('blueprints:voice-mode:changed', {
+        detail: syncPayload,
+      }));
+      window.WakeToTalkController?.sync?.();
+    } catch (_) {}
+  }
+
+  function _tabButtonFor(tab) {
+    const els = _els();
+    if (tab === 'local') return els.tabLocal;
+    if (tab === 'vps') return els.tabVps;
+    return els.tabGeneral;
+  }
+
+  function _tabPanelFor(tab) {
+    const els = _els();
+    if (tab === 'local') return els.panelLocal;
+    if (tab === 'vps') return els.panelVps;
+    return els.panelGeneral;
+  }
+
+  function _renderVoiceModeTabs(els = _els()) {
+    ['general', 'local', 'vps'].forEach(tab => {
+      const button = _tabButtonFor(tab);
+      const panel = _tabPanelFor(tab);
+      const selected = tab === _activeModalTab;
+      if (button) {
+        button.classList.toggle('is-active', selected);
+        button.setAttribute('aria-selected', selected ? 'true' : 'false');
+      }
+      if (panel) panel.hidden = !selected;
+    });
+  }
+
+  function _setVoiceModeTab(tab) {
+    _activeModalTab = ['general', 'local', 'vps'].includes(tab) ? tab : 'general';
+    _renderVoiceModeTabs();
+  }
+
+  function _instanceControl(instanceId, key) {
+    return document.querySelector(`[data-wake-instance="${instanceId}"][data-wake-key="${key}"]`);
+  }
+
+  function _instanceValue(instanceId, key, fallback = '') {
+    const el = _instanceControl(instanceId, key);
+    if (!el) return fallback;
+    if (el.type === 'checkbox') return el.checked;
+    return el.value;
+  }
+
+  function _setControlValue(el, value) {
+    if (!el) return;
+    if (el.type === 'checkbox') {
+      el.checked = !!value;
+    } else {
+      el.value = value == null ? '' : String(value);
+    }
+  }
+
+  function _renderWakeInstance(instanceId, instance) {
+    if (!instance) return;
+    const keys = [
+      'matrix_room_id',
+      'wake_word',
+      'post_wake_pause_ms',
+      'initial_silence_cancel_ms',
+      'pause_reset_seconds',
+      'auto_execute_silence_ms',
+      'commands.pause',
+      'commands.resume',
+      'commands.execute',
+      'commands.cancel',
+    ];
+    keys.forEach(key => {
+      const el = _instanceControl(instanceId, key);
+      const value = key.startsWith('commands.')
+        ? instance.commands?.[key.split('.')[1]]
+        : instance[key];
+      _setControlValue(el, value);
+      const output = document.querySelector(`[data-wake-instance="${instanceId}"][data-wake-output="${key}"]`);
+      if (output) {
+        if (key === 'pause_reset_seconds') output.textContent = `${value}s`;
+        else if (key === 'auto_execute_silence_ms') output.textContent = Number(value) > 0 ? `${value} ms` : 'Off';
+        else output.textContent = `${value} ms`;
+      }
+    });
+  }
+
+  function _renderWakePanels(settings) {
+    const wakeSettings = _cleanWakeSettings(settings);
+    Object.entries(wakeSettings.instances || {}).forEach(([instanceId, instance]) => {
+      _renderWakeInstance(instanceId, instance);
+    });
+  }
+
+  function _renderAggregationTimeout(sttPolicy) {
+    const els = _els();
+    const supported = _aggregationTimeout?.supported === true;
+    if (els.aggWrap) els.aggWrap.hidden = !supported;
+    const value = supported
+      ? Number(_aggregationTimeout.aggregation_timeout_ms)
+      : Number(sttPolicy?.speech_aggregation_timeout_ms || 80);
+    if (els.aggSlider && Number.isFinite(value)) els.aggSlider.value = String(value);
+    if (els.aggLabel && Number.isFinite(value)) els.aggLabel.textContent = `${value} ms`;
+  }
+
+  function _formatVadResetTimeout(ms) {
+    const value = Math.max(STT_VAD_RESET_MIN_MS, Math.min(STT_VAD_RESET_MAX_MS, Math.round(Number(ms || 0) / STT_VAD_RESET_STEP_MS) * STT_VAD_RESET_STEP_MS));
+    return value > 0 ? `${value} ms` : 'Off';
+  }
+
+  function _renderVadResetTimeout(sttPolicy) {
+    const els = _els();
+    const value = _cleanSttPolicy(sttPolicy).vad_reset_timeout_ms;
+    if (els.vadResetSlider) els.vadResetSlider.value = String(value);
+    if (els.vadResetLabel) els.vadResetLabel.textContent = _formatVadResetTimeout(value);
+  }
+
+  function _formatSilenceResetTimeout(ms) {
+    const value = Math.max(STT_SILENCE_RESET_MIN_MS, Math.min(STT_SILENCE_RESET_MAX_MS, Math.round(Number(ms || 0) / STT_SILENCE_RESET_STEP_MS) * STT_SILENCE_RESET_STEP_MS));
+    return value > 0 ? `${value} ms` : 'Off';
+  }
+
+  function _renderSilenceResetTimeout(sttPolicy) {
+    const els = _els();
+    const value = _cleanSttPolicy(sttPolicy).silence_reset_timeout_ms;
+    if (els.silenceResetSlider) els.silenceResetSlider.value = String(value);
+    if (els.silenceResetLabel) els.silenceResetLabel.textContent = _formatSilenceResetTimeout(value);
+  }
+
+  function _wakeRuntimeLabel(local) {
+    if (local.stt_mode !== STT_MODE_WAKE) return 'Wake to Talk is not selected.';
+    if (!_isActiveOwner()) return 'Wake to Talk is selected but this browser is not activated.';
+    const state = String(_wakeRuntime.state || '').toUpperCase();
+    if (_wakeRuntime.reason && (!state || state === 'DISABLED' || state === 'SELECTED_INACTIVE')) {
+      return _wakeRuntime.reason;
+    }
+    if (state === 'BLOCKED') return _wakeRuntime.reason || 'Wake to Talk is blocked.';
+    if (_wakeRuntime.starting || state === 'PERMISSION_PENDING') return 'Wake to Talk is requesting the microphone.';
+    if (state === 'ARMED_IDLE') return 'Wake to Talk armed. Waiting for wake word.';
+    if (state === 'WAKE_CANDIDATE') return 'Wake word heard. Waiting for the configured pause.';
+    if (state === 'WAKE_CONFIRMED_WAITING_SPEECH') return 'Wake confirmed. Waiting for speech.';
+    if (state === 'CAPTURING' || state === 'COMMAND_CANDIDATE') return 'Wake to Talk is capturing dictation.';
+    if (state === 'PAUSED') return 'Wake to Talk dictation is paused.';
+    if (state === 'EXECUTING') return 'Wake to Talk is sending the transcript.';
+    if (state === 'SENT_FEEDBACK') return 'Wake to Talk sent the transcript.';
+    if (state === 'ERROR_FEEDBACK') return _wakeRuntime.reason || 'Wake to Talk hit an error.';
+    if (!local.stt_enabled) return 'Wake to Talk is not selected.';
+    return _wakeRuntime.reason || 'Wake to Talk is idle.';
+  }
+
+  function _renderWakeRuntime(local, els = _els()) {
+    if (!els.wakeRuntime || !els.wakeRuntimeLabel) return;
+    const state = String(_wakeRuntime.state || '').toLowerCase().replace(/_/g, '-') || 'disabled';
+    els.wakeRuntime.dataset.state = local.stt_mode === STT_MODE_WAKE ? state : 'disabled';
+    els.wakeRuntimeLabel.textContent = _wakeRuntimeLabel(local);
+  }
+
+  function _collectWakeSettingsFromDom() {
+    const current = getWakeSettings();
+    const next = _cleanWakeSettings(current);
+    Object.keys(next.instances || {}).forEach(instanceId => {
+      const instance = next.instances[instanceId];
+      instance.enabled = true;
+      instance.matrix_room_id = _instanceValue(instanceId, 'matrix_room_id', instance.matrix_room_id);
+      instance.wake_word = _instanceValue(instanceId, 'wake_word', instance.wake_word);
+      instance.post_wake_pause_ms = Number(_instanceValue(instanceId, 'post_wake_pause_ms', instance.post_wake_pause_ms));
+      instance.initial_silence_cancel_ms = Number(_instanceValue(instanceId, 'initial_silence_cancel_ms', instance.initial_silence_cancel_ms));
+      instance.pause_reset_seconds = Number(_instanceValue(instanceId, 'pause_reset_seconds', instance.pause_reset_seconds));
+      instance.auto_execute_silence_ms = Number(_instanceValue(instanceId, 'auto_execute_silence_ms', instance.auto_execute_silence_ms));
+      instance.commands = {
+        pause: _instanceValue(instanceId, 'commands.pause', instance.commands?.pause || 'pause-dictation'),
+        resume: _instanceValue(instanceId, 'commands.resume', instance.commands?.resume || 'resume-dictation'),
+        execute: _instanceValue(instanceId, 'commands.execute', instance.commands?.execute || 'execute'),
+        cancel: _instanceValue(instanceId, 'commands.cancel', instance.commands?.cancel || 'cancel-dictation'),
+      };
+    });
+    return window.WakeToTalkState?.mergedConfig ? window.WakeToTalkState.mergedConfig(next) : next;
+  }
+
+  function _scheduleWakeSettingsSave() {
+    if (_wakeSaveTimer) window.clearTimeout(_wakeSaveTimer);
+    _wakeSaveTimer = window.setTimeout(() => {
+      _wakeSaveTimer = null;
+      saveWakeSettings(_collectWakeSettingsFromDom()).catch(error => _setStatus(error.message || String(error)));
+    }, 450);
   }
 
   function _render() {
@@ -264,14 +596,13 @@ const BlueprintsVoiceMode = (() => {
     const local = _localState();
     const cue = _cueState();
     const policy = _policyState();
+    const wakeSettings = getWakeSettings();
     const active = _serverState.active || null;
-    const ownsLease = _isActiveOwner();
+    const ownsActivation = _isActiveOwner();
 
     if (els.browserLabel) els.browserLabel.textContent = local.browser_label;
     if (els.browserMeta) {
-      els.browserMeta.textContent = active
-        ? `Active: ${active.browser_label || active.browser_id}`
-        : 'Active: none';
+      els.browserMeta.textContent = `Activated browser: ${_activeBrowserLabel(active)}`;
     }
     if (els.sttRealtime) els.sttRealtime.checked = local.stt_mode === STT_MODE_REALTIME;
     if (els.sttPush) els.sttPush.checked = local.stt_mode === STT_MODE_PUSH;
@@ -297,17 +628,29 @@ const BlueprintsVoiceMode = (() => {
     _setIssue(els.ttsIssue, ttsIssue);
     _setLed(
       els.sttRealtimeLed,
-      _capabilityLed(local.stt_mode === STT_MODE_REALTIME, local.stt_mode === STT_MODE_REALTIME ? sttIssue : ''),
+      _capabilityLed(
+        local.stt_mode === STT_MODE_REALTIME,
+        local.stt_mode === STT_MODE_REALTIME ? sttIssue : '',
+        _ownsActiveSttMode(STT_MODE_REALTIME)
+      ),
       Boolean(local.stt_mode === STT_MODE_REALTIME && sttIssue)
     );
     _setLed(
       els.sttPushLed,
-      _capabilityLed(local.stt_mode === STT_MODE_PUSH, local.stt_mode === STT_MODE_PUSH ? sttIssue : ''),
+      _capabilityLed(
+        local.stt_mode === STT_MODE_PUSH,
+        local.stt_mode === STT_MODE_PUSH ? sttIssue : '',
+        _ownsActiveSttMode(STT_MODE_PUSH)
+      ),
       Boolean(local.stt_mode === STT_MODE_PUSH && sttIssue)
     );
     _setLed(
       els.sttWakeLed,
-      _capabilityLed(local.stt_mode === STT_MODE_WAKE, local.stt_mode === STT_MODE_WAKE ? sttIssue : ''),
+      _capabilityLed(
+        local.stt_mode === STT_MODE_WAKE,
+        local.stt_mode === STT_MODE_WAKE ? sttIssue : '',
+        _ownsActiveSttMode(STT_MODE_WAKE)
+      ),
       Boolean(local.stt_mode === STT_MODE_WAKE && sttIssue)
     );
     _setLed(
@@ -327,14 +670,21 @@ const BlueprintsVoiceMode = (() => {
     if (els.cueTest) els.cueTest.disabled = !cue.sound;
     if (els.modelCodex) els.modelCodex.checked = policy.tts_companion_model_preference === 'codex_spark';
     if (els.modelLocal) els.modelLocal.checked = policy.tts_companion_model_preference === 'local_private';
+    _renderVoiceModeTabs(els);
+    _renderWakePanels(wakeSettings);
+    _renderAggregationTimeout(policy.stt);
+    _renderVadResetTimeout(policy.stt);
+    _renderSilenceResetTimeout(policy.stt);
+    _renderWakeRuntime(local, els);
     if (cue.sound && typeof SoundManager !== 'undefined' && typeof SoundManager.preload === 'function') {
       SoundManager.preload(_assetUrl(cue.sound)).catch(() => {});
     }
     if (els.activate) {
-      els.activate.textContent = ownsLease ? 'Deactivate' : 'Activate';
-      els.activate.disabled = !ownsLease && !local.stt_enabled && !local.tts_enabled;
+      els.activate.textContent = ownsActivation ? 'Deactivate' : 'Activate';
+      els.activate.disabled = !ownsActivation && !local.stt_enabled && !local.tts_enabled;
     }
     _syncExternalVoiceState();
+    _syncWakeToTalkController();
   }
 
   function _applyServerState(payload) {
@@ -344,10 +694,12 @@ const BlueprintsVoiceMode = (() => {
     if (_serverState.revision && revision && revision < _serverState.revision) return;
     _serverState = {
       active: next.active || null,
-      policy: next.policy || { tts_companion_model_preference: 'codex_spark' },
+      policy: _cleanPolicy(next.policy || { tts_companion_model_preference: 'codex_spark' }),
       revision,
       updated_at: Number(next.updated_at || 0),
     };
+    _wakeSettings = _cleanWakeSettings(_serverState.policy.wake_to_talk);
+    _wakeSettingsLoaded = true;
     _statusLoaded = true;
     _render();
   }
@@ -357,6 +709,7 @@ const BlueprintsVoiceMode = (() => {
       const response = await apiFetch(STATUS_URL, { cache: 'no-store' });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       _applyServerState(await response.json());
+      _syncActiveActivationAfterLocalChange().catch((error) => _setStatus(error.message || String(error)));
       return _serverState;
     } catch (error) {
       _setStatus(`Voice Mode status unavailable: ${error.message || error}`);
@@ -411,6 +764,179 @@ const BlueprintsVoiceMode = (() => {
     }
   }
 
+  async function loadWakeSettings(options = {}) {
+    if (_wakeSettingsInFlight && !options.force) return _wakeSettings;
+    _wakeSettingsInFlight = true;
+    try {
+      const response = await apiFetch(WAKE_SETTINGS_URL, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json();
+      _wakeSettings = _cleanWakeSettings(payload.wake_to_talk);
+      _serverState.policy = {
+        ...(_serverState.policy || {}),
+        wake_to_talk: _wakeSettings,
+        stt: _cleanSttPolicy(payload.stt),
+      };
+      _wakeSettingsLoaded = true;
+      _render();
+      window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
+        detail: { wake_settings: _wakeSettings },
+      }));
+      return _wakeSettings;
+    } finally {
+      _wakeSettingsInFlight = false;
+    }
+  }
+
+  async function saveWakeSettings(settings) {
+    const next = _cleanWakeSettings(settings);
+    _wakeSettings = next;
+    _wakeSettingsLoaded = true;
+    _setStatus('Saving Wake to Talk settings...');
+    const response = await apiFetch(WAKE_SETTINGS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        wake_to_talk: next,
+        stt: _cleanSttPolicy(_serverState.policy?.stt),
+      }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
+    _applyServerState(payload);
+    _wakeSettings = _cleanWakeSettings(payload.wake_to_talk || payload.policy?.wake_to_talk);
+    _setStatus('Wake to Talk settings saved.');
+    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
+      detail: { wake_settings: _wakeSettings },
+    }));
+    return _wakeSettings;
+  }
+
+  async function saveVadResetTimeout(ms) {
+    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
+    const nextStt = {
+      ...currentPolicy,
+      vad_reset_timeout_ms: _cleanSttPolicy({ vad_reset_timeout_ms: ms }).vad_reset_timeout_ms,
+    };
+    const response = await apiFetch(WAKE_SETTINGS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        wake_to_talk: getWakeSettings(),
+        stt: nextStt,
+      }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
+    _applyServerState(payload);
+    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
+      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
+    }));
+    return nextStt;
+  }
+
+  async function saveSilenceResetTimeout(ms) {
+    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
+    const nextStt = {
+      ...currentPolicy,
+      silence_reset_timeout_ms: _cleanSttPolicy({ silence_reset_timeout_ms: ms }).silence_reset_timeout_ms,
+    };
+    const response = await apiFetch(WAKE_SETTINGS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        wake_to_talk: getWakeSettings(),
+        stt: nextStt,
+      }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
+    _applyServerState(payload);
+    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
+      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
+    }));
+    return nextStt;
+  }
+
+  async function loadAggregationTimeout(options = {}) {
+    if (_aggregationTimeoutInFlight && !options.force) return _aggregationTimeout;
+    _aggregationTimeoutInFlight = true;
+    try {
+      const response = await apiFetch(AGGREGATION_TIMEOUT_URL, { cache: 'no-store' });
+      _aggregationTimeout = await response.json().catch(() => null);
+      _render();
+      return _aggregationTimeout;
+    } finally {
+      _aggregationTimeoutInFlight = false;
+    }
+  }
+
+  async function saveAggregationTimeout(ms) {
+    const value = Math.max(50, Math.min(300, Math.round(Number(ms || 80) / 10) * 10));
+    const response = await apiFetch(AGGREGATION_TIMEOUT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ aggregation_timeout_ms: value }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
+    _aggregationTimeout = payload;
+    _serverState.policy = {
+      ...(_serverState.policy || {}),
+      stt: {
+        ..._cleanSttPolicy(_serverState.policy?.stt),
+        speech_aggregation_timeout_ms: payload.aggregation_timeout_ms,
+      },
+    };
+    _render();
+    return payload;
+  }
+
+  async function loadWakeRooms(instanceId) {
+    const settings = getWakeSettings();
+    const instance = settings.instances?.[instanceId];
+    const select = _instanceControl(instanceId, 'matrix_room_id');
+    if (!instance || !select) return;
+    const url = `/api/v1/matrix-chat/rooms?server=${encodeURIComponent(instance.matrix_server || 'tb1')}`;
+    try {
+      const response = await apiFetch(url, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json();
+      const joined = Array.isArray(payload.joined) ? payload.joined : [];
+      const current = instance.matrix_room_id || select.value || '';
+      select.innerHTML = '';
+      joined.forEach(room => {
+        const option = document.createElement('option');
+        option.value = room.room_id || '';
+        option.textContent = room.name || room.room_id || 'Matrix room';
+        select.appendChild(option);
+      });
+      if (!joined.length) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'No joined rooms';
+        select.appendChild(option);
+      }
+      select.value = current || joined[0]?.room_id || '';
+      if (!current && select.value) {
+        _scheduleWakeSettingsSave();
+      }
+    } catch (error) {
+      if (!select.options.length) {
+        const option = document.createElement('option');
+        option.value = instance.matrix_room_id || '';
+        option.textContent = instance.matrix_room_id ? 'Configured room' : 'Rooms unavailable';
+        select.appendChild(option);
+      }
+    }
+  }
+
+  function loadAllWakeRooms() {
+    ['local', 'vps'].forEach(instanceId => {
+      loadWakeRooms(instanceId).catch(() => {});
+    });
+  }
+
   async function _post(url, body) {
     const response = await apiFetch(url, {
       method: 'POST',
@@ -434,7 +960,7 @@ const BlueprintsVoiceMode = (() => {
     }
     _setStatus('Activating...');
     await _post(ACTIVATE_URL, local);
-    _setStatus('Active lease held by this browser.');
+    _setStatus('Voice Mode activated for this browser.');
   }
 
   async function deactivate() {
@@ -450,17 +976,38 @@ const BlueprintsVoiceMode = (() => {
     }
   }
 
+  async function _syncActiveActivationAfterLocalChange() {
+    if (!_isActiveOwner() || _activeActivationSyncInFlight) return;
+    const local = _localState();
+    if (!local.stt_enabled && !local.tts_enabled) {
+      await deactivate();
+      return;
+    }
+    const active = _serverState.active || {};
+    const activeMode = _normalizeSttMode(active.stt_mode, Boolean(active.stt_enabled));
+    const activeTts = !!active.tts_enabled;
+    if (activeMode === local.stt_mode && activeTts === local.tts_enabled) return;
+    _activeActivationSyncInFlight = true;
+    try {
+      _setStatus('Updating activated Voice Mode state...');
+      await _post(ACTIVATE_URL, local);
+      _setStatus('Activated Voice Mode state updated.');
+    } finally {
+      _activeActivationSyncInFlight = false;
+    }
+  }
+
   function _setLocalToggles({ tts }) {
     if (typeof tts === 'boolean') _setBoolStorage(LS_TTS, tts);
     _render();
-    _deactivateIfNowInvalid().catch((error) => _setStatus(error.message || String(error)));
+    _syncActiveActivationAfterLocalChange().catch((error) => _setStatus(error.message || String(error)));
   }
 
   function _setSttMode(mode) {
     const next = _setStoredSttMode(mode);
     _render();
     _setStatus(next ? `${_sttModeStatusLabel(next)} enabled for this browser.` : 'STT disabled for this browser.');
-    _deactivateIfNowInvalid().catch((error) => _setStatus(error.message || String(error)));
+    _syncActiveActivationAfterLocalChange().catch((error) => _setStatus(error.message || String(error)));
   }
 
   function _toggleSttMode(mode, checked) {
@@ -503,6 +1050,21 @@ const BlueprintsVoiceMode = (() => {
     return _localState().stt_noise_reduction_level_db;
   }
 
+  function sttAggregationTimeoutMs() {
+    const live = Number(_aggregationTimeout?.aggregation_timeout_ms);
+    if (Number.isFinite(live)) return Math.max(50, Math.min(300, Math.round(live / 10) * 10));
+    const policy = Number(_serverState.policy?.stt?.speech_aggregation_timeout_ms);
+    return Number.isFinite(policy) ? Math.max(50, Math.min(300, Math.round(policy / 10) * 10)) : 80;
+  }
+
+  function vadResetTimeoutMs() {
+    return _cleanSttPolicy(_serverState.policy?.stt).vad_reset_timeout_ms;
+  }
+
+  function silenceResetTimeoutMs() {
+    return _cleanSttPolicy(_serverState.policy?.stt).silence_reset_timeout_ms;
+  }
+
   function sttMode() {
     return _localState().stt_mode;
   }
@@ -511,11 +1073,30 @@ const BlueprintsVoiceMode = (() => {
     return _localState().stt_mode === _normalizeSttMode(mode);
   }
 
+  function isActiveOwner() {
+    return _isActiveOwner();
+  }
+
+  function activeSttMode() {
+    return _activeSttMode();
+  }
+
+  function ownsActiveSttMode(mode) {
+    return _ownsActiveSttMode(mode);
+  }
+
+  function getWakeSettings() {
+    if (_wakeSettingsLoaded && _wakeSettings) return _cleanWakeSettings(_wakeSettings);
+    const policySettings = _serverState.policy?.wake_to_talk;
+    if (policySettings) return _cleanWakeSettings(policySettings);
+    return _defaultWakeSettings();
+  }
+
   function canUsePushToTalkStt() {
     const local = _localState();
     return Boolean(
       local.stt_mode === STT_MODE_PUSH
-      && _isActiveOwner()
+      && _ownsActiveSttMode(STT_MODE_PUSH)
     );
   }
 
@@ -575,9 +1156,11 @@ const BlueprintsVoiceMode = (() => {
     SoundManager.previewToggle(url, { button });
   }
 
-  async function toggleActive() {
+  async function toggleActive(options = {}) {
     try {
-      if (_isActiveOwner()) await deactivate();
+      const requiredMode = _normalizeSttMode(options?.stt_mode || '');
+      if (requiredMode && !_ownsActiveSttMode(requiredMode)) await activate();
+      else if (_isActiveOwner()) await deactivate();
       else await activate();
       _render();
     } catch (error) {
@@ -592,11 +1175,15 @@ const BlueprintsVoiceMode = (() => {
     _render();
     reconcile().catch(() => {});
     refreshDependencyHealth({ force: true }).catch(() => {});
+    loadWakeSettings().then(loadAllWakeRooms).catch((error) => _setStatus(error.message || String(error)));
+    loadAggregationTimeout({ force: true }).catch(() => {});
     if (typeof HubModal !== 'undefined') {
       HubModal.open(els.modal, {
         onOpen: () => {
           _render();
           refreshDependencyHealth({ force: true }).catch(() => {});
+          loadWakeSettings().then(loadAllWakeRooms).catch((error) => _setStatus(error.message || String(error)));
+          loadAggregationTimeout({ force: true }).catch(() => {});
         },
       });
     } else if (typeof els.modal.showModal === 'function') {
@@ -697,6 +1284,51 @@ const BlueprintsVoiceMode = (() => {
     els.modelLocal?.addEventListener('change', () => {
       if (els.modelLocal.checked) _setModelPreference('local_private').catch((error) => _setStatus(error.message || String(error)));
     });
+    els.tabGeneral?.addEventListener('click', () => _setVoiceModeTab('general'));
+    els.tabLocal?.addEventListener('click', () => _setVoiceModeTab('local'));
+    els.tabVps?.addEventListener('click', () => _setVoiceModeTab('vps'));
+    els.aggSlider?.addEventListener('input', () => {
+      if (els.aggLabel) els.aggLabel.textContent = `${els.aggSlider.value} ms`;
+    });
+    els.aggSlider?.addEventListener('change', () => {
+      saveAggregationTimeout(els.aggSlider.value).catch((error) => _setStatus(error.message || String(error)));
+    });
+    els.vadResetSlider?.addEventListener('input', () => {
+      if (els.vadResetLabel) els.vadResetLabel.textContent = _formatVadResetTimeout(els.vadResetSlider.value);
+    });
+    els.vadResetSlider?.addEventListener('change', () => {
+      saveVadResetTimeout(els.vadResetSlider.value).catch((error) => _setStatus(error.message || String(error)));
+    });
+    els.silenceResetSlider?.addEventListener('input', () => {
+      if (els.silenceResetLabel) els.silenceResetLabel.textContent = _formatSilenceResetTimeout(els.silenceResetSlider.value);
+    });
+    els.silenceResetSlider?.addEventListener('change', () => {
+      saveSilenceResetTimeout(els.silenceResetSlider.value).catch((error) => _setStatus(error.message || String(error)));
+    });
+    document.querySelectorAll('[data-wake-instance][data-wake-key]').forEach(control => {
+      control.addEventListener('input', () => {
+        const outputKey = control.dataset.wakeKey;
+        const instanceId = control.dataset.wakeInstance;
+        const output = document.querySelector(`[data-wake-instance="${instanceId}"][data-wake-output="${outputKey}"]`);
+        if (output) {
+          if (outputKey === 'pause_reset_seconds') output.textContent = `${control.value}s`;
+          else if (outputKey === 'auto_execute_silence_ms') output.textContent = Number(control.value) > 0 ? `${control.value} ms` : 'Off';
+          else output.textContent = `${control.value} ms`;
+        }
+        _scheduleWakeSettingsSave();
+      });
+      control.addEventListener('change', () => {
+        _scheduleWakeSettingsSave();
+      });
+    });
+
+    window.addEventListener('blueprints:voice-mode:wake-runtime', (event) => {
+      _wakeRuntime = {
+        ..._wakeRuntime,
+        ...(event.detail || {}),
+      };
+      _renderWakeRuntime(_localState());
+    });
 
     document.addEventListener('blueprints:event', (event) => {
       if (event.detail?.event_type === 'voice.mode.changed') {
@@ -721,6 +1353,7 @@ const BlueprintsVoiceMode = (() => {
       _dependencyHealthTimer = null;
     });
     reconcile().catch(() => {});
+    loadWakeSettings().then(loadAllWakeRooms).catch(() => {});
     _render();
   }
 
@@ -728,14 +1361,29 @@ const BlueprintsVoiceMode = (() => {
 
   return {
     open,
+    toggleActive,
     reconcile,
     canSpeakHermesUtterance,
     sttNoiseReductionEnabled,
     sttNoiseReductionSettingEnabled,
     sttNoiseReductionLevelDb,
+    sttAggregationTimeoutMs,
+    vadResetTimeoutMs,
+    silenceResetTimeoutMs,
     sttMode,
     sttModeEnabled,
     canUsePushToTalkStt,
+    isActiveOwner,
+    activeSttMode,
+    ownsActiveSttMode,
+    getWakeSettings,
+    loadWakeSettings,
+    saveWakeSettings,
+    loadAggregationTimeout,
+    saveAggregationTimeout,
+    saveVadResetTimeout,
+    saveSilenceResetTimeout,
+    setSttMode: _setSttMode,
     setSttNoiseReductionEnabled: _setSttNoiseReduction,
     setSttNoiseReductionLevelDb: _setSttNoiseLevelDb,
     maybePlayAnnouncementCue,

@@ -40,6 +40,7 @@
   <link rel="stylesheet" href="css/tts-pool.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/voice-mode.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/stt-noise-tests.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/wake-dev.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="vendor/xterm/xterm.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/ssh-terminal.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/agent-pages.css?v={{$assetVersion}}" />
@@ -4354,7 +4355,7 @@
 </dialog>
 
 <!-- Voice Mode control modal -->
-<dialog class="hub-modal hub-dialog" data-tone="info" id="voice-mode-modal" style="width:min(560px,95vw)">
+<dialog class="hub-modal hub-dialog" data-tone="info" id="voice-mode-modal" style="width:min(720px,95vw)">
   <div class="hub-modal-header">
     <h2 class="hub-modal-title">
       <span class="hub-dialog-badge">VOICE</span>
@@ -4372,138 +4373,179 @@
         <button class="hub-modal-btn voice-mode-browser__activate" type="button" id="voice-mode-activate-btn">Activate</button>
       </div>
 
-      <div class="voice-mode-domain voice-mode-domain--stt" aria-label="STT controls">
-        <div class="voice-mode-control">
-          <label class="hub-checkbox">
-            <input class="hub-checkbox__input" type="checkbox" id="voice-mode-stt-realtime-toggle" />
-            <span class="hub-checkbox__box" aria-hidden="true"></span>
-            <span class="hub-checkbox__label voice-mode-control__text">
-              <span class="voice-mode-control__name">Realtime conversation<span class="voice-mode-control__issue" id="voice-mode-stt-realtime-issue" hidden></span></span>
-              <span class="voice-mode-control__hint">Planned Matrix realtime conversation.</span>
-            </span>
-          </label>
-          <span class="voice-mode-led" id="voice-mode-stt-realtime-led" data-state="red" aria-label="Realtime conversation STT status"></span>
-        </div>
-
-        <div class="voice-mode-control">
-          <label class="hub-checkbox">
-            <input class="hub-checkbox__input" type="checkbox" id="voice-mode-stt-push-toggle" />
-            <span class="hub-checkbox__box" aria-hidden="true"></span>
-            <span class="hub-checkbox__label voice-mode-control__text">
-              <span class="voice-mode-control__name">Push to talk<span class="voice-mode-control__issue" id="voice-mode-stt-push-issue" hidden></span></span>
-              <span class="voice-mode-control__hint">Matrix chat hold-to-record STT.</span>
-            </span>
-          </label>
-          <span class="voice-mode-led" id="voice-mode-stt-push-led" data-state="red" aria-label="Push-to-talk STT status"></span>
-        </div>
-
-        <div class="voice-mode-control">
-          <label class="hub-checkbox">
-            <input class="hub-checkbox__input" type="checkbox" id="voice-mode-stt-wake-toggle" />
-            <span class="hub-checkbox__box" aria-hidden="true"></span>
-            <span class="hub-checkbox__label voice-mode-control__text">
-              <span class="voice-mode-control__name">Wake to talk<span class="voice-mode-control__issue" id="voice-mode-stt-wake-issue" hidden></span></span>
-              <span class="voice-mode-control__hint">Planned wake word with silence-timer capture.</span>
-            </span>
-          </label>
-          <span class="voice-mode-led" id="voice-mode-stt-wake-led" data-state="red" aria-label="Wake-to-talk STT status"></span>
-        </div>
-
-        <div class="voice-mode-control">
-          <label class="hub-checkbox">
-            <input class="hub-checkbox__input" type="checkbox" id="voice-mode-stt-noise-toggle" />
-            <span class="hub-checkbox__box" aria-hidden="true"></span>
-            <span class="hub-checkbox__label voice-mode-control__text">
-              <span class="voice-mode-control__name">Noise reduction<span class="voice-mode-control__issue" id="voice-mode-stt-noise-issue" hidden></span></span>
-              <span class="voice-mode-control__hint">Insert DeepFilterNet for any STT mode.</span>
-            </span>
-          </label>
-          <span class="voice-mode-led" id="voice-mode-stt-noise-led" data-state="red" aria-label="STT noise reduction status"></span>
-        </div>
-
-        <label class="voice-mode-noise-level" for="voice-mode-stt-noise-level">
-          <span class="voice-mode-noise-level__label">Noise level</span>
-          <input
-            type="range"
-            id="voice-mode-stt-noise-level"
-            min="0"
-            max="12"
-            step="0.5"
-            value="6"
-            autocomplete="off"
-            data-lpignore="true"
-            data-form-type="other"
-            data-1p-ignore="true"
-            data-bwignore="true"
-          />
-          <output id="voice-mode-stt-noise-level-label" for="voice-mode-stt-noise-level">6.0 dB</output>
-        </label>
+      <div class="voice-mode-tabs" role="tablist" aria-label="Voice Mode sections">
+        <button class="voice-mode-tab is-active" type="button" id="voice-mode-tab-general" role="tab" aria-selected="true" aria-controls="voice-mode-panel-general">General</button>
+        <button class="voice-mode-tab" type="button" id="voice-mode-tab-local" role="tab" aria-selected="false" aria-controls="voice-mode-panel-local">local</button>
+        <button class="voice-mode-tab" type="button" id="voice-mode-tab-vps" role="tab" aria-selected="false" aria-controls="voice-mode-panel-vps">vps</button>
       </div>
 
-      <div class="voice-mode-domain voice-mode-domain--tts" aria-label="TTS controls">
-        <div class="voice-mode-control">
-          <label class="hub-checkbox">
-            <input class="hub-checkbox__input" type="checkbox" id="voice-mode-tts-toggle" />
-            <span class="hub-checkbox__box" aria-hidden="true"></span>
-            <span class="hub-checkbox__label voice-mode-control__text">
-              <span class="voice-mode-control__name">TTS<span class="voice-mode-control__issue" id="voice-mode-tts-issue" hidden></span></span>
-              <span class="voice-mode-control__hint">Hermes browser-directed speech.</span>
-            </span>
-          </label>
-          <span class="voice-mode-led" id="voice-mode-tts-led" data-state="red" aria-label="TTS status"></span>
-        </div>
-
-        <div class="voice-mode-cue" aria-label="Announcement cue">
-          <div class="voice-mode-cue__head">
+      <div class="voice-mode-panel" id="voice-mode-panel-general" role="tabpanel" aria-labelledby="voice-mode-tab-general">
+        <div class="voice-mode-domain voice-mode-domain--stt" aria-label="STT controls">
+          <div class="voice-mode-control">
             <label class="hub-checkbox">
-              <input class="hub-checkbox__input" type="checkbox" id="voice-mode-cue-toggle" />
+              <input class="hub-checkbox__input" type="checkbox" id="voice-mode-stt-realtime-toggle" />
               <span class="hub-checkbox__box" aria-hidden="true"></span>
               <span class="hub-checkbox__label voice-mode-control__text">
-                <span class="voice-mode-control__name">Announcement cue</span>
-                <span class="voice-mode-control__hint">Before Matrix and Codex TTS.</span>
+                <span class="voice-mode-control__name">Realtime conversation<span class="voice-mode-control__issue" id="voice-mode-stt-realtime-issue" hidden></span></span>
+                <span class="voice-mode-control__hint">Planned Matrix realtime conversation.</span>
               </span>
             </label>
+            <span class="voice-mode-led" id="voice-mode-stt-realtime-led" data-state="red" aria-label="Realtime conversation STT status"></span>
           </div>
-          <div class="voice-mode-cue__row">
-            <input type="text" id="voice-mode-cue-sound" readonly placeholder="sounds/..." aria-label="Announcement cue sound" />
-            <button class="btn-small secondary" type="button" id="voice-mode-cue-pick">Pick</button>
-            <button class="btn-small secondary" type="button" id="voice-mode-cue-test">Preview</button>
+
+          <div class="voice-mode-control">
+            <label class="hub-checkbox">
+              <input class="hub-checkbox__input" type="checkbox" id="voice-mode-stt-push-toggle" />
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label voice-mode-control__text">
+                <span class="voice-mode-control__name">Push to talk<span class="voice-mode-control__issue" id="voice-mode-stt-push-issue" hidden></span></span>
+                <span class="voice-mode-control__hint">Matrix chat hold-to-record STT.</span>
+              </span>
+            </label>
+            <span class="voice-mode-led" id="voice-mode-stt-push-led" data-state="red" aria-label="Push-to-talk STT status"></span>
           </div>
-          <label class="voice-mode-cue__slider" for="voice-mode-cue-rearm">
-            <span>Re-arm after silence</span>
-            <input
-              type="range"
-              id="voice-mode-cue-rearm"
-              min="0.25"
-              max="5"
-              step="0.25"
-              value="1.5"
-              autocomplete="off"
-              data-lpignore="true"
-              data-form-type="other"
-              data-1p-ignore="true"
-              data-bwignore="true"
-            />
-            <output id="voice-mode-cue-rearm-label" for="voice-mode-cue-rearm">1.50s</output>
+
+          <div class="voice-mode-control">
+            <label class="hub-checkbox">
+              <input class="hub-checkbox__input" type="checkbox" id="voice-mode-stt-wake-toggle" />
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label voice-mode-control__text">
+                <span class="voice-mode-control__name">Wake to talk<span class="voice-mode-control__issue" id="voice-mode-stt-wake-issue" hidden></span></span>
+                <span class="voice-mode-control__hint">Wake word capture for loaded Blueprints pages.</span>
+              </span>
+            </label>
+            <span class="voice-mode-led" id="voice-mode-stt-wake-led" data-state="red" aria-label="Wake-to-talk STT status"></span>
+          </div>
+
+          <div class="voice-mode-control">
+            <label class="hub-checkbox">
+              <input class="hub-checkbox__input" type="checkbox" id="voice-mode-stt-noise-toggle" />
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label voice-mode-control__text">
+                <span class="voice-mode-control__name">Noise reduction<span class="voice-mode-control__issue" id="voice-mode-stt-noise-issue" hidden></span></span>
+                <span class="voice-mode-control__hint">Insert DeepFilterNet for any STT mode.</span>
+              </span>
+            </label>
+            <span class="voice-mode-led" id="voice-mode-stt-noise-led" data-state="red" aria-label="STT noise reduction status"></span>
+          </div>
+
+          <label class="voice-mode-noise-level" for="voice-mode-stt-noise-level">
+            <span class="voice-mode-noise-level__label">Noise level</span>
+            <input type="range" id="voice-mode-stt-noise-level" min="0" max="12" step="0.5" value="6" autocomplete="off" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
+            <output id="voice-mode-stt-noise-level-label" for="voice-mode-stt-noise-level">6.0 dB</output>
           </label>
+
+          <label class="voice-mode-noise-level" for="voice-mode-aggregation-timeout" id="voice-mode-aggregation-wrap" hidden>
+            <span class="voice-mode-noise-level__label">Speech aggregation</span>
+            <input type="range" id="voice-mode-aggregation-timeout" min="50" max="300" step="10" value="80" autocomplete="off" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
+            <output id="voice-mode-aggregation-label" for="voice-mode-aggregation-timeout">80 ms</output>
+          </label>
+
+          <label class="voice-mode-noise-level" for="voice-mode-vad-reset-timeout">
+            <span class="voice-mode-noise-level__label">VAD reset timeout</span>
+            <input type="range" id="voice-mode-vad-reset-timeout" min="0" max="500" step="50" value="300" autocomplete="off" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
+            <output id="voice-mode-vad-reset-label" for="voice-mode-vad-reset-timeout">300 ms</output>
+          </label>
+
+          <div class="voice-mode-wake-runtime" id="voice-mode-wake-runtime" data-state="disabled">
+            <span class="voice-mode-wake-runtime__dot" aria-hidden="true"></span>
+            <span id="voice-mode-wake-runtime-label">Wake to Talk idle.</span>
+          </div>
         </div>
 
-        <div class="voice-mode-model" aria-label="TTS companion model preference">
-          <div class="voice-mode-model__head">
-            <span class="voice-mode-control__text">
-              <span class="voice-mode-control__name">Companion model</span>
-              <span class="voice-mode-control__hint">Preferred processor for Matrix TTS.</span>
-            </span>
+        <div class="voice-mode-domain voice-mode-domain--tts" aria-label="TTS controls">
+          <div class="voice-mode-control">
+            <label class="hub-checkbox">
+              <input class="hub-checkbox__input" type="checkbox" id="voice-mode-tts-toggle" />
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label voice-mode-control__text">
+                <span class="voice-mode-control__name">TTS<span class="voice-mode-control__issue" id="voice-mode-tts-issue" hidden></span></span>
+                <span class="voice-mode-control__hint">Hermes browser-directed speech.</span>
+              </span>
+            </label>
+            <span class="voice-mode-led" id="voice-mode-tts-led" data-state="red" aria-label="TTS status"></span>
           </div>
-          <div class="voice-mode-model__choices" role="radiogroup" aria-label="TTS companion preferred processor">
-            <label class="voice-mode-model__choice">
-              <input type="radio" name="voice-mode-companion-model" value="codex_spark" id="voice-mode-model-codex" />
-              <span>Codex Spark</span>
+
+          <div class="voice-mode-cue" aria-label="Announcement cue">
+            <div class="voice-mode-cue__head">
+              <label class="hub-checkbox">
+                <input class="hub-checkbox__input" type="checkbox" id="voice-mode-cue-toggle" />
+                <span class="hub-checkbox__box" aria-hidden="true"></span>
+                <span class="hub-checkbox__label voice-mode-control__text">
+                  <span class="voice-mode-control__name">Announcement cue</span>
+                  <span class="voice-mode-control__hint">Before Matrix and Codex TTS.</span>
+                </span>
+              </label>
+            </div>
+            <div class="voice-mode-cue__row">
+              <input type="text" id="voice-mode-cue-sound" readonly placeholder="sounds/..." aria-label="Announcement cue sound" />
+              <button class="btn-small secondary" type="button" id="voice-mode-cue-pick">Pick</button>
+              <button class="btn-small secondary" type="button" id="voice-mode-cue-test">Preview</button>
+            </div>
+            <label class="voice-mode-cue__slider" for="voice-mode-cue-rearm">
+              <span>Re-arm after silence</span>
+              <input type="range" id="voice-mode-cue-rearm" min="0.25" max="5" step="0.25" value="1.5" autocomplete="off" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
+              <output id="voice-mode-cue-rearm-label" for="voice-mode-cue-rearm">1.50s</output>
             </label>
-            <label class="voice-mode-model__choice">
-              <input type="radio" name="voice-mode-companion-model" value="local_private" id="voice-mode-model-local" />
-              <span>Local private</span>
-            </label>
+          </div>
+
+          <div class="voice-mode-model" aria-label="TTS companion model preference">
+            <div class="voice-mode-model__head">
+              <span class="voice-mode-control__text">
+                <span class="voice-mode-control__name">Companion model</span>
+                <span class="voice-mode-control__hint">Preferred processor for Matrix TTS.</span>
+              </span>
+            </div>
+            <div class="voice-mode-model__choices" role="radiogroup" aria-label="TTS companion preferred processor">
+              <label class="voice-mode-model__choice">
+                <input type="radio" name="voice-mode-companion-model" value="codex_spark" id="voice-mode-model-codex" />
+                <span>Codex Spark</span>
+              </label>
+              <label class="voice-mode-model__choice">
+                <input type="radio" name="voice-mode-companion-model" value="local_private" id="voice-mode-model-local" />
+                <span>Local private</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="voice-mode-panel" id="voice-mode-panel-local" role="tabpanel" aria-labelledby="voice-mode-tab-local" hidden>
+        <div class="voice-mode-wake-panel" data-instance-panel="local">
+          <div class="voice-mode-wake-head">
+            <span class="voice-mode-control__name">Wake To Talk</span>
+          </div>
+          <div class="voice-mode-form-grid">
+            <label>Wake word<input type="text" data-wake-instance="local" data-wake-key="wake_word" /></label>
+            <label>Matrix room<select data-wake-instance="local" data-wake-key="matrix_room_id"></select></label>
+            <label>Pause after wake<input type="range" min="0" max="2000" step="50" data-wake-instance="local" data-wake-key="post_wake_pause_ms" /><output data-wake-instance="local" data-wake-output="post_wake_pause_ms">500 ms</output></label>
+            <label>No-speech cancel<input type="range" min="0" max="2000" step="50" data-wake-instance="local" data-wake-key="initial_silence_cancel_ms" /><output data-wake-instance="local" data-wake-output="initial_silence_cancel_ms">1000 ms</output></label>
+            <label>Pause reset<input type="range" min="5" max="120" step="5" data-wake-instance="local" data-wake-key="pause_reset_seconds" /><output data-wake-instance="local" data-wake-output="pause_reset_seconds">30s</output></label>
+            <label>Auto execute<input type="range" min="0" max="3000" step="300" data-wake-instance="local" data-wake-key="auto_execute_silence_ms" /><output data-wake-instance="local" data-wake-output="auto_execute_silence_ms">Off</output></label>
+            <label>Pause command<input type="text" data-wake-instance="local" data-wake-key="commands.pause" /></label>
+            <label>Resume command<input type="text" data-wake-instance="local" data-wake-key="commands.resume" /></label>
+            <label>Execute command<input type="text" data-wake-instance="local" data-wake-key="commands.execute" /></label>
+            <label>Cancel command<input type="text" data-wake-instance="local" data-wake-key="commands.cancel" /></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="voice-mode-panel" id="voice-mode-panel-vps" role="tabpanel" aria-labelledby="voice-mode-tab-vps" hidden>
+        <div class="voice-mode-wake-panel" data-instance-panel="vps">
+          <div class="voice-mode-wake-head">
+            <span class="voice-mode-control__name">Wake To Talk</span>
+          </div>
+          <div class="voice-mode-form-grid">
+            <label>Wake word<input type="text" data-wake-instance="vps" data-wake-key="wake_word" /></label>
+            <label>Matrix room<select data-wake-instance="vps" data-wake-key="matrix_room_id"></select></label>
+            <label>Pause after wake<input type="range" min="0" max="2000" step="50" data-wake-instance="vps" data-wake-key="post_wake_pause_ms" /><output data-wake-instance="vps" data-wake-output="post_wake_pause_ms">500 ms</output></label>
+            <label>No-speech cancel<input type="range" min="0" max="2000" step="50" data-wake-instance="vps" data-wake-key="initial_silence_cancel_ms" /><output data-wake-instance="vps" data-wake-output="initial_silence_cancel_ms">1000 ms</output></label>
+            <label>Pause reset<input type="range" min="5" max="120" step="5" data-wake-instance="vps" data-wake-key="pause_reset_seconds" /><output data-wake-instance="vps" data-wake-output="pause_reset_seconds">30s</output></label>
+            <label>Auto execute<input type="range" min="0" max="3000" step="300" data-wake-instance="vps" data-wake-key="auto_execute_silence_ms" /><output data-wake-instance="vps" data-wake-output="auto_execute_silence_ms">Off</output></label>
+            <label>Pause command<input type="text" data-wake-instance="vps" data-wake-key="commands.pause" /></label>
+            <label>Resume command<input type="text" data-wake-instance="vps" data-wake-key="commands.resume" /></label>
+            <label>Execute command<input type="text" data-wake-instance="vps" data-wake-key="commands.execute" /></label>
+            <label>Cancel command<input type="text" data-wake-instance="vps" data-wake-key="commands.cancel" /></label>
           </div>
         </div>
       </div>
@@ -4512,6 +4554,134 @@
         <p class="voice-mode-status" id="voice-mode-status" aria-live="polite"></p>
       </div>
     </div>
+  </div>
+</dialog>
+
+<!-- Wake-to-Talk development modal -->
+<dialog class="hub-modal hub-dialog wake-dev-modal" data-tone="info" id="wake-dev-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">WAKE</span>
+      <span class="hub-dialog-title-text">Wake Dev</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body wake-dev">
+    <section class="wake-dev__controls" aria-label="Wake-to-talk local controls">
+      <div class="wake-dev-card wake-dev-browser">
+        <div class="wake-dev-browser__copy">
+          <div class="wake-dev-card__title">Local Hermes Wake-to-Talk</div>
+          <div class="wake-dev-meta" id="wake-dev-browser-meta">Checking browser lease...</div>
+        </div>
+        <button class="hub-modal-btn wake-dev-browser__activate" type="button" id="wake-dev-activate-btn">Activate</button>
+      </div>
+
+      <div class="wake-dev-card wake-dev-switches">
+        <label class="hub-checkbox wake-dev-check">
+          <input class="hub-checkbox__input" type="checkbox" id="wake-dev-stt-wake-toggle" />
+          <span class="hub-checkbox__box" aria-hidden="true"></span>
+          <span class="hub-checkbox__label wake-dev-check__label">Wake to talk</span>
+        </label>
+        <label class="hub-checkbox wake-dev-check">
+          <input class="hub-checkbox__input" type="checkbox" id="wake-dev-noise-toggle" />
+          <span class="hub-checkbox__box" aria-hidden="true"></span>
+          <span class="hub-checkbox__label wake-dev-check__label">Noise reduction</span>
+        </label>
+        <label class="wake-dev-slider" for="wake-dev-noise-level">
+          <span>Noise level</span>
+          <input type="range" id="wake-dev-noise-level" min="0" max="12" step="0.5" value="6" autocomplete="off" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
+          <output id="wake-dev-noise-level-label" for="wake-dev-noise-level">6.0 dB</output>
+        </label>
+        <label class="wake-dev-slider" for="wake-dev-aggregation-timeout">
+          <span>Speech aggregation</span>
+          <input type="range" id="wake-dev-aggregation-timeout" min="50" max="300" step="10" value="80" autocomplete="off" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
+          <output id="wake-dev-aggregation-label" for="wake-dev-aggregation-timeout">80 ms</output>
+        </label>
+        <label class="wake-dev-slider" for="wake-dev-vad-reset-timeout">
+          <span>VAD reset timeout</span>
+          <input type="range" id="wake-dev-vad-reset-timeout" min="0" max="500" step="50" value="300" autocomplete="off" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
+          <output id="wake-dev-vad-reset-label" for="wake-dev-vad-reset-timeout">300 ms</output>
+        </label>
+      </div>
+
+      <div class="wake-dev-card wake-dev-test">
+        <div class="wake-dev-card__head">
+          <span class="wake-dev-card__title">Manual STT Test Mode</span>
+          <span class="wake-dev-meta" id="wake-dev-test-status">VAD bypass is off.</span>
+        </div>
+        <div class="wake-dev-test__tools">
+          <button class="hub-modal-btn" type="button" id="wake-dev-test-mode" aria-pressed="false">Enable test mode</button>
+          <button class="hub-modal-btn" type="button" id="wake-dev-test-record" disabled>Record</button>
+          <button class="hub-modal-btn" type="button" id="wake-dev-test-stop" disabled>Stop</button>
+          <button class="hub-modal-btn" type="button" id="wake-dev-test-clear">Clear</button>
+        </div>
+        <div class="wake-dev-test__transcript">
+          <span class="wake-dev-section-label">Transcript</span>
+          <div class="wake-dev-transcript" id="wake-dev-transcript" aria-live="polite"></div>
+        </div>
+      </div>
+
+      <div class="wake-dev-card wake-dev-test">
+        <div class="wake-dev-card__head">
+          <span class="wake-dev-card__title">VAD STT Test Mode</span>
+          <span class="wake-dev-meta" id="wake-dev-vad-test-status">VAD STT probe is off.</span>
+        </div>
+        <div class="wake-dev-test__tools wake-dev-test__tools--vad">
+          <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-mode" aria-pressed="false">Enable test mode</button>
+          <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-record-vad" aria-pressed="false" disabled>Enable VAD Record</button>
+          <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-stop-vad" aria-pressed="false" disabled>Enable VAD Stop</button>
+          <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-record" disabled>Record</button>
+          <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-stop" disabled>Stop</button>
+          <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-clear">Clear</button>
+        </div>
+        <div class="wake-dev-test__transcript">
+          <span class="wake-dev-section-label">Transcript</span>
+          <div class="wake-dev-transcript" id="wake-dev-vad-transcript" aria-live="polite"></div>
+        </div>
+      </div>
+
+      <div class="wake-dev-card">
+        <div class="wake-dev-card__title">Local Wake Settings</div>
+        <div class="wake-dev-form">
+          <label>Wake word<input type="text" id="wake-dev-wake-word" data-wake-dev-key="wake_word" /></label>
+          <label>Matrix room<select id="wake-dev-matrix-room" data-wake-dev-key="matrix_room_id"></select></label>
+          <label>Pause after wake<input type="range" min="0" max="2000" step="50" id="wake-dev-post-wake" data-wake-dev-key="post_wake_pause_ms" /><output id="wake-dev-post-wake-label">500 ms</output></label>
+          <label>No-speech cancel<input type="range" min="0" max="2000" step="50" id="wake-dev-initial-cancel" data-wake-dev-key="initial_silence_cancel_ms" /><output id="wake-dev-initial-cancel-label">1000 ms</output></label>
+          <label>Pause reset<input type="range" min="5" max="120" step="5" id="wake-dev-pause-reset" data-wake-dev-key="pause_reset_seconds" /><output id="wake-dev-pause-reset-label">30s</output></label>
+          <label>Auto execute<input type="range" min="0" max="3000" step="300" id="wake-dev-auto-execute" data-wake-dev-key="auto_execute_silence_ms" /><output id="wake-dev-auto-execute-label">Off</output></label>
+          <label>Pause command<input type="text" id="wake-dev-pause-command" data-wake-dev-key="commands.pause" /></label>
+          <label>Resume command<input type="text" id="wake-dev-resume-command" data-wake-dev-key="commands.resume" /></label>
+          <label>Execute command<input type="text" id="wake-dev-execute-command" data-wake-dev-key="commands.execute" /></label>
+          <label>Cancel command<input type="text" id="wake-dev-cancel-command" data-wake-dev-key="commands.cancel" /></label>
+        </div>
+      </div>
+
+      <p class="wake-dev-status" id="wake-dev-status" aria-live="polite"></p>
+    </section>
+
+    <section class="wake-dev__debug" aria-label="Wake-to-talk diagnostics">
+      <div class="wake-dev-metrics">
+        <div><span>FSM</span><strong id="wake-dev-fsm-state">--</strong></div>
+        <div><span>Session</span><strong id="wake-dev-session">--</strong></div>
+        <div><span>Instance</span><strong id="wake-dev-instance">--</strong></div>
+        <div><span>Frames</span><strong id="wake-dev-frames">--</strong></div>
+        <div><span>Debug age</span><strong id="wake-dev-age">--</strong></div>
+        <div><span>Level</span><strong id="wake-dev-db">--</strong></div>
+      </div>
+
+      <div class="wake-dev-card wake-dev-wave">
+        <div class="wake-dev-card__head">
+          <span class="wake-dev-card__title">Input Level and FSM Events</span>
+          <div class="wake-dev-wave__tools">
+            <span class="wake-dev-meta" id="wake-dev-debug-source">Waiting for wake runtime...</span>
+            <button class="wake-dev-icon-btn" type="button" id="wake-dev-pause-timeline" aria-pressed="false" title="Pause timeline">Pause</button>
+          </div>
+        </div>
+        <canvas id="wake-dev-wave-canvas" width="1200" height="260" aria-label="Ten second wake-to-talk audio level and event timeline"></canvas>
+      </div>
+
+      <div class="wake-dev-states" id="wake-dev-states" aria-label="Wake-to-talk FSM state list"></div>
+    </section>
   </div>
 </dialog>
 
@@ -4607,6 +4777,69 @@
   </div>
 </dialog>
 
+<!-- Wake-to-Talk queue diagnostics -->
+<dialog class="hub-modal hub-dialog wake-queue-modal" data-tone="info" id="wake-queue-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">QUEUE</span>
+      <span class="hub-dialog-title-text">Wake Queue Dev</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body wake-queue-dev">
+    <section class="wake-queue-strip" aria-label="Wake-to-talk stream status">
+      <div><span>Source</span><strong id="wake-queue-source">connecting</strong></div>
+      <div><span>Age</span><strong id="wake-queue-age">--</strong></div>
+      <div><span>Active browser</span><strong id="wake-queue-active-browser">--</strong></div>
+      <div><span>Reporter</span><strong id="wake-queue-reporter">--</strong></div>
+      <div><span>FSM</span><strong id="wake-queue-fsm">--</strong></div>
+      <div><span>Session</span><strong id="wake-queue-session">--</strong></div>
+      <div><span>Mode</span><strong>Read-only</strong></div>
+    </section>
+
+    <section class="wake-queue-columns" aria-label="Wake-to-talk queues">
+      <div class="wake-dev-card wake-queue-panel">
+        <div class="wake-dev-card__title">Input Queue</div>
+        <div class="wake-queue-list" id="wake-queue-input"></div>
+      </div>
+      <div class="wake-dev-card wake-queue-panel">
+        <div class="wake-dev-card__title">Pending Commands</div>
+        <div class="wake-queue-list" id="wake-queue-pending"></div>
+      </div>
+      <div class="wake-dev-card wake-queue-panel">
+        <div class="wake-dev-card__title">Message Queue</div>
+        <div class="wake-queue-list" id="wake-queue-message"></div>
+      </div>
+    </section>
+
+    <section class="wake-queue-detail" aria-label="Wake-to-talk command matching diagnostics">
+      <div class="wake-dev-card wake-queue-panel">
+        <div class="wake-dev-card__title">Command Candidate</div>
+        <dl class="wake-queue-kv" id="wake-queue-command"></dl>
+      </div>
+      <div class="wake-dev-card wake-queue-panel">
+        <div class="wake-dev-card__title">Normalized Text</div>
+        <dl class="wake-queue-kv" id="wake-queue-normalized"></dl>
+      </div>
+      <div class="wake-dev-card wake-queue-panel">
+        <div class="wake-dev-card__title">Wake Aliases and Commands</div>
+        <dl class="wake-queue-kv" id="wake-queue-aliases"></dl>
+      </div>
+    </section>
+
+    <section class="wake-queue-log-grid" aria-label="Wake-to-talk queue event logs">
+      <div class="wake-dev-card wake-queue-panel">
+        <div class="wake-dev-card__title">Recent STT Payloads</div>
+        <div class="wake-queue-list wake-queue-list--dense" id="wake-queue-stt"></div>
+      </div>
+      <div class="wake-dev-card wake-queue-panel">
+        <div class="wake-dev-card__title">Queue FSM Actions</div>
+        <div class="wake-queue-list wake-queue-list--dense" id="wake-queue-actions"></div>
+      </div>
+    </section>
+  </div>
+</dialog>
+
 <script src="js/utils.js?v={{$assetVersion}}"></script>
 <script src="js/api.js?v={{$assetVersion}}"></script>
 <script src="js/state.js?v={{$assetVersion}}"></script>
@@ -4621,7 +4854,11 @@
 <script src="js/sound-manager.js?v={{$assetVersion}}"></script>
 <script src="js/tts-wrapper-client.js?v={{$assetVersion}}"></script>
 <script src="js/events-stream.js?v={{$assetVersion}}"></script>
+<script src="js/wake-to-talk-state.js?v={{$assetVersion}}"></script>
 <script src="js/voice-mode.js?v={{$assetVersion}}"></script>
+<script src="js/wake-to-talk.js?v={{$assetVersion}}"></script>
+<script src="js/wake-dev.js?v={{$assetVersion}}"></script>
+<script src="js/wake-queue-dev.js?v={{$assetVersion}}"></script>
 <script src="js/stt-noise-tests.js?v={{$assetVersion}}"></script>
 <script src="js/notifier-dnd-policy.js?v={{$assetVersion}}"></script>
 <script src="js/notifier-danger2-alert.js?v={{$assetVersion}}"></script>

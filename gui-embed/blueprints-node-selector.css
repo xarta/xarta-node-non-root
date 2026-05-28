@@ -225,6 +225,112 @@ blueprints-node-selector,
   background-image: var(--bp-ns-icon-asset, url('/fallback-ui/assets/icons/fallback.svg'));
 }
 
+.bp-ns-action-btn[data-action="settings"].wake-to-talk-target {
+  color: #facc15;
+  border-color: rgba(250, 204, 21, 0.96);
+  border-width: 2px;
+  animation: bp-ns-wake-settings-button-pulse 1s ease-in-out infinite;
+}
+
+.bp-ns-action-btn[data-action="settings"].wake-to-talk-target::before {
+  animation: bp-ns-wake-settings-icon-pulse 1s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.72));
+}
+
+.bp-ns-action-btn[data-action="settings"].wake-to-talk-target::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border: 2px solid rgba(250, 204, 21, 0.6);
+  border-radius: inherit;
+  pointer-events: none;
+  animation: bp-ns-wake-settings-ring 1s ease-in-out infinite;
+}
+
+.bp-ns-action-btn[data-action="settings"].wake-to-talk-target[data-wake-state="capturing"] {
+  box-shadow: 0 0 calc(8px + (var(--wake-to-talk-level, 0) * 22px)) rgba(250, 204, 21, calc(0.25 + (var(--wake-to-talk-level, 0) * 0.62)));
+}
+
+.bp-ns-action-btn[data-action="settings"].wake-to-talk-target[data-wake-state="paused"] {
+  animation: bp-ns-wake-settings-paused 0.45s steps(2, end) infinite;
+}
+
+.bp-ns-action-btn[data-action="settings"].wake-to-talk-target[data-wake-state="executing"],
+.bp-ns-action-btn[data-action="settings"].wake-to-talk-target[data-wake-state="sent-feedback"] {
+  animation: bp-ns-wake-settings-chase 0.8s linear infinite;
+}
+
+.bp-ns-action-btn[data-action="settings"].wake-to-talk-target[data-wake-state="error-feedback"] {
+  border-color: rgba(248, 113, 113, 0.96);
+  box-shadow: 0 0 18px rgba(248, 113, 113, 0.58);
+}
+
+.bp-ns-action-btn[data-action="settings"].wake-to-talk-target[data-wake-state="error-feedback"]::after {
+  border-color: rgba(248, 113, 113, 0.6);
+}
+
+@keyframes bp-ns-wake-settings-button-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.24), 0 0 8px rgba(250, 204, 21, 0.34);
+  }
+
+  50% {
+    box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.54), 0 0 24px rgba(250, 204, 21, 0.9);
+  }
+}
+
+@keyframes bp-ns-wake-settings-icon-pulse {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    filter: drop-shadow(0 0 5px rgba(250, 204, 21, 0.4));
+  }
+
+  50% {
+    transform: translate(-50%, -50%) scale(1.14);
+    filter: drop-shadow(0 0 16px rgba(250, 204, 21, 0.96));
+  }
+}
+
+@keyframes bp-ns-wake-settings-ring {
+  0%,
+  100% {
+    opacity: 0.36;
+    transform: scale(0.98);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes bp-ns-wake-settings-paused {
+  0%,
+  100% {
+    box-shadow: 0 0 5px rgba(250, 204, 21, 0.25);
+  }
+
+  50% {
+    box-shadow: 0 0 14px rgba(250, 204, 21, 0.92);
+  }
+}
+
+@keyframes bp-ns-wake-settings-chase {
+  0% {
+    box-shadow: 0 -3px 0 rgba(248, 113, 113, 0.9), 3px 0 0 rgba(34, 197, 94, 0.7), 0 3px 0 rgba(59, 130, 246, 0.55);
+  }
+
+  50% {
+    box-shadow: 3px 0 0 rgba(248, 113, 113, 0.65), 0 3px 0 rgba(34, 197, 94, 0.9), -3px 0 0 rgba(59, 130, 246, 0.65);
+  }
+
+  100% {
+    box-shadow: 0 3px 0 rgba(248, 113, 113, 0.55), -3px 0 0 rgba(34, 197, 94, 0.65), 0 -3px 0 rgba(59, 130, 246, 0.9);
+  }
+}
+
 .bp-ns-action-btn[data-action="diag-chip"]::before {
   background-image: var(--bp-ns-icon-asset, url('/fallback-ui/assets/icons/fallback.svg'));
 }

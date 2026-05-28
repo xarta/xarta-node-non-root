@@ -1,0 +1,579 @@
+.wake-dev-modal.hub-modal {
+  width: 100vw;
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0;
+  border-radius: 0;
+}
+
+.wake-dev {
+  display: grid;
+  grid-template-columns: minmax(330px, 0.42fr) minmax(560px, 1fr);
+  gap: 14px;
+  height: calc(100dvh - 70px);
+  min-height: 0;
+  overflow: auto;
+  padding: 15px 16px 16px;
+}
+
+.wake-dev__controls,
+.wake-dev__debug {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.wake-dev__debug {
+  grid-template-rows: auto auto auto;
+}
+
+.wake-dev-card,
+.wake-dev-metrics > div {
+  background: rgba(0, 0, 0, 0.24);
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.22);
+  border-radius: 8px;
+}
+
+.wake-dev-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 11px;
+}
+
+.wake-dev-card__head,
+.wake-dev-browser {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.wake-dev-card__title {
+  color: #f1f7fa;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.wake-dev-wave__tools {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.wake-dev-icon-btn {
+  min-width: 64px;
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.34);
+  border-radius: 7px;
+  background: rgba(10, 19, 32, 0.92);
+  color: #dce8ed;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 7px 10px;
+}
+
+.wake-dev-icon-btn[aria-pressed="true"] {
+  border-color: rgba(251, 191, 36, 0.72);
+  background: rgba(69, 48, 10, 0.9);
+  color: #fff8d7;
+}
+
+.wake-dev-meta,
+.wake-dev-status {
+  color: #aebfca;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.wake-dev-status {
+  min-height: 18px;
+  margin: 0;
+}
+
+.wake-dev-browser__copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.wake-dev-browser__activate {
+  min-width: 84px;
+  min-height: 34px;
+  padding-inline: 14px;
+}
+
+.wake-dev-switches {
+  gap: 9px;
+}
+
+.wake-dev-test {
+  gap: 9px;
+}
+
+.wake-dev-test__tools {
+  display: grid;
+  grid-template-columns: minmax(128px, 1fr) repeat(3, minmax(76px, auto));
+  gap: 8px;
+  min-width: 0;
+}
+
+.wake-dev-test__tools--vad {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.wake-dev-test__tools .hub-modal-btn {
+  min-height: 34px;
+  padding-inline: 12px;
+}
+
+.wake-dev-test__tools .hub-modal-btn[aria-pressed="true"] {
+  border-color: rgba(56, 189, 248, 0.62);
+  background: rgba(7, 24, 39, 0.94);
+  color: #f1f7fa;
+}
+
+.wake-dev-test__transcript {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.wake-dev-check {
+  min-height: 34px;
+  align-items: center;
+}
+
+.wake-dev-check__label {
+  color: var(--hub-text);
+  font-weight: 700;
+}
+
+.wake-dev-slider {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) 76px;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px 9px;
+  color: var(--hub-text);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.2);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.wake-dev-slider span,
+.wake-dev-form label,
+.wake-dev-section-label {
+  color: #94a8b3;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.wake-dev-slider input[type="range"] {
+  min-width: 0;
+  width: 100%;
+}
+
+.wake-dev-slider output,
+.wake-dev-form output {
+  color: var(--hub-accent);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.wake-dev-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
+.wake-dev-form label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.wake-dev-form label:has(input[type="range"]) {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.wake-dev-form label:has(input[type="range"]) input {
+  grid-column: 1 / -1;
+}
+
+.wake-dev-form input[type="text"],
+.wake-dev-form select {
+  width: 100%;
+  min-width: 0;
+  min-height: 33px;
+  padding: 7px 9px;
+  color: var(--hub-text);
+  background: var(--hub-bg);
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.24);
+  border-radius: 6px;
+}
+
+.wake-dev-form select {
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235b9cf6' opacity='.8'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 10px 6px;
+  appearance: none;
+}
+
+.wake-dev-metrics {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(86px, 1fr));
+  gap: 8px;
+}
+
+.wake-dev-metrics > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 10px;
+}
+
+.wake-dev-metrics span {
+  color: #94a8b3;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.wake-dev-metrics strong {
+  overflow: hidden;
+  color: #f1f7fa;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wake-dev-wave canvas {
+  display: block;
+  width: 100%;
+  height: clamp(220px, 34dvh, 360px);
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.18);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.wake-dev-states {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.wake-dev-state {
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.18);
+  border-radius: 999px;
+  color: #aebfca;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 11px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.wake-dev-state.is-active {
+  color: #f1f7fa;
+  border-color: rgba(var(--hub-accent-rgb), 0.6);
+  background: rgba(var(--hub-accent-rgb), 0.16);
+  box-shadow: 0 0 14px rgba(var(--hub-accent-rgb), 0.16);
+}
+
+.wake-dev-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-height: 0;
+}
+
+.wake-dev-panel {
+  min-height: 170px;
+}
+
+.wake-dev-scroll,
+.wake-dev-transcript,
+.wake-dev-json,
+.wake-dev-action-log {
+  min-height: 96px;
+  max-height: 210px;
+  overflow: auto;
+  color: #e7eef2;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.wake-dev-transcript {
+  white-space: pre-wrap;
+}
+
+.wake-dev-queues {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.wake-dev-queue-summary,
+.wake-queue-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.wake-dev-queue-summary > div,
+.wake-queue-strip > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.2);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.wake-dev-queue-summary span,
+.wake-queue-strip span,
+.wake-queue-kv dt {
+  color: #94a8b3;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.wake-dev-queue-summary strong,
+.wake-queue-strip strong {
+  overflow: hidden;
+  color: #f1f7fa;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wake-dev-queues > div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.wake-dev-pill,
+.wake-dev-action {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.wake-dev-pill strong,
+.wake-dev-action strong {
+  color: #f1f7fa;
+  font-size: 12px;
+}
+
+.wake-dev-pill span,
+.wake-dev-action span {
+  overflow-wrap: anywhere;
+  color: #aebfca;
+  font-size: 12px;
+}
+
+.wake-dev-json {
+  margin: 0;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.22);
+  white-space: pre-wrap;
+}
+
+.wake-dev-actions {
+  min-height: 120px;
+}
+
+.wake-dev-slider [data-lastpass-icon-root],
+.wake-dev-slider [data-lastpass-icon],
+.wake-dev-form [data-lastpass-icon-root],
+.wake-dev-form [data-lastpass-icon] {
+  display: none !important;
+}
+
+.wake-queue-modal.hub-modal {
+  width: 100vw;
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0;
+  border-radius: 0;
+}
+
+.wake-queue-dev {
+  display: grid;
+  grid-template-rows: auto minmax(170px, 0.9fr) minmax(210px, 1fr) minmax(220px, 1.05fr);
+  gap: 12px;
+  height: calc(100dvh - 70px);
+  min-height: 0;
+  overflow: auto;
+  padding: 15px 16px 16px;
+}
+
+.wake-queue-strip {
+  grid-template-columns: repeat(7, minmax(92px, 1fr));
+}
+
+.wake-queue-columns,
+.wake-queue-detail,
+.wake-queue-log-grid {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.wake-queue-columns {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.wake-queue-detail {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.wake-queue-log-grid {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+}
+
+.wake-queue-panel {
+  min-height: 0;
+}
+
+.wake-queue-list {
+  min-height: 0;
+  overflow: auto;
+  color: #e7eef2;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.wake-queue-list--dense {
+  max-height: none;
+}
+
+.wake-queue-item {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  margin-bottom: 7px;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.wake-queue-item strong {
+  overflow-wrap: anywhere;
+  color: #f1f7fa;
+  font-size: 12px;
+}
+
+.wake-queue-item span {
+  overflow-wrap: anywhere;
+  color: #aebfca;
+  font-size: 12px;
+}
+
+.wake-queue-kv {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.42fr) minmax(0, 1fr);
+  gap: 7px 10px;
+  min-width: 0;
+  margin: 0;
+  overflow: auto;
+}
+
+.wake-queue-kv dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #e7eef2;
+  font-size: 12px;
+}
+
+@media (max-width: 1080px) {
+  .wake-dev {
+    grid-template-columns: 1fr;
+  }
+
+  .wake-dev__debug {
+    grid-template-rows: auto auto auto;
+  }
+
+  .wake-queue-dev {
+    grid-template-rows: auto;
+  }
+
+  .wake-queue-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .wake-queue-columns,
+  .wake-queue-detail,
+  .wake-queue-log-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .wake-dev-modal.hub-modal {
+    width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+
+  .wake-dev {
+    padding: 12px;
+  }
+
+  .wake-dev-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .wake-dev-grid,
+  .wake-dev-form,
+  .wake-dev-queues,
+  .wake-dev-queue-summary,
+  .wake-dev-test__tools,
+  .wake-queue-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .wake-dev-slider {
+    grid-template-columns: 1fr auto;
+  }
+
+  .wake-dev-slider input[type="range"] {
+    grid-column: 1 / -1;
+  }
+}

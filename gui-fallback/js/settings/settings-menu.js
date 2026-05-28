@@ -110,8 +110,10 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'chat-fn-send',     label: 'Send Message',      icon: HIEROGLYPHS.khaHorizon, fn: 'chat.send',     activeOn: ['matrix-chat'], parent: 'settings-layout', order: 2 },
         { id: 'chat-fn-voice-mode', label: 'Voice Mode',       icon: 'icons/ui/microphone-blue.svg', fn: 'chat.voiceMode', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 3 },
         { id: 'chat-fn-noise-tests', label: 'Noise Tests',     icon: 'icons/ui/microphone-blue.svg', fn: 'chat.noiseTests', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 4 },
-        { id: 'chat-fn-notifier', label: 'Notification Controls', icon: HIEROGLYPHS.shen,    fn: 'chat.notifier', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 5 },
-        { id: 'chat-fn-notifier-tests', label: 'Notification Tests', icon: HIEROGLYPHS.eyeOfHorus, fn: 'chat.notifierTests', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 6 },
+        { id: 'chat-fn-wake-dev', label: 'Wake Dev',           icon: 'icons/ui/microphone-blue.svg', fn: 'chat.wakeDev', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 5 },
+        { id: 'chat-fn-wake-queues', label: 'Wake Queue Dev',   icon: 'icons/ui/microphone-blue.svg', fn: 'chat.wakeQueues', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 6 },
+        { id: 'chat-fn-notifier', label: 'Notification Controls', icon: HIEROGLYPHS.shen,    fn: 'chat.notifier', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 7 },
+        { id: 'chat-fn-notifier-tests', label: 'Notification Tests', icon: HIEROGLYPHS.eyeOfHorus, fn: 'chat.notifierTests', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 8 },
         { id: 'chat-admin-fn-refresh', label: 'Refresh Admin', icon: HIEROGLYPHS.nefer,     fn: 'chatAdmin.refresh', activeOn: ['matrix-chat-admin'], parent: 'settings-layout', order: 0 },
 
         // ── Manual ARP page function items ────────────────────────────────
@@ -1109,6 +1111,8 @@ SettingsMenuConfig.registerFunctions({
     'chat.send':      () => window.MatrixChat?.sendMessage?.(),
     'chat.voiceMode': () => window.BlueprintsVoiceMode?.open?.(),
     'chat.noiseTests': () => window.SttNoiseTests?.open?.(),
+    'chat.wakeDev':   () => window.WakeDevModal?.open?.(),
+    'chat.wakeQueues': () => window.WakeQueueDev?.open?.(),
     'chat.notifier':  () => window.MatrixChat?.openNotifierDnd?.(),
     'chat.notifierTests': () => window.MatrixChat?.openNotifierTests?.(),
     'chatAdmin.refresh': () => window.MatrixChatAdmin?.refresh?.(),
