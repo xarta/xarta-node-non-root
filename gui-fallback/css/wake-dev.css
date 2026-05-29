@@ -32,8 +32,79 @@
 
 .wake-dev__debug {
   grid-template-columns: 1fr;
-  grid-template-rows: auto auto auto;
   width: 100%;
+}
+
+.wake-dev-debug-tabs {
+  display: grid;
+  min-width: 0;
+  padding: 0 10px 10px;
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.22);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.wake-dev-debug-tab-radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.wake-dev-debug-tablist {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  margin: -1px 0 10px -1px;
+  overflow: hidden;
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.28);
+  border-radius: 7px 7px 7px 0;
+  background: rgba(8, 16, 28, 0.92);
+}
+
+.wake-dev-debug-tab {
+  min-width: 60px;
+  padding: 8px 16px;
+  border-right: 1px solid rgba(var(--hub-accent-rgb), 0.22);
+  color: #aebfca;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.wake-dev-debug-tab:last-child {
+  border-right: 0;
+}
+
+#wake-dev-debug-view-old:checked ~ .wake-dev-debug-tablist label[for="wake-dev-debug-view-old"],
+#wake-dev-debug-view-new:checked ~ .wake-dev-debug-tablist label[for="wake-dev-debug-view-new"] {
+  background: rgba(var(--hub-accent-rgb), 0.22);
+  color: #f1f7fa;
+}
+
+.wake-dev-debug-panels {
+  min-width: 0;
+}
+
+.wake-dev-debug-panel {
+  display: none;
+}
+
+#wake-dev-debug-view-old:checked ~ .wake-dev-debug-panels .wake-dev-debug-panel--old,
+#wake-dev-debug-view-new:checked ~ .wake-dev-debug-panels .wake-dev-debug-panel--new {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.wake-dev-output-view {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
 }
 
 .wake-dev-card,

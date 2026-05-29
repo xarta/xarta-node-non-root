@@ -4660,27 +4660,42 @@
     </section>
 
     <section class="wake-dev__debug" aria-label="Wake-to-talk diagnostics">
-      <div class="wake-dev-metrics">
-        <div><span>FSM</span><strong id="wake-dev-fsm-state">--</strong></div>
-        <div><span>Session</span><strong id="wake-dev-session">--</strong></div>
-        <div><span>Instance</span><strong id="wake-dev-instance">--</strong></div>
-        <div><span>Frames</span><strong id="wake-dev-frames">--</strong></div>
-        <div><span>Debug age</span><strong id="wake-dev-age">--</strong></div>
-        <div><span>Level</span><strong id="wake-dev-db">--</strong></div>
-      </div>
+      <div class="wake-dev-debug-tabs" aria-label="Wake-to-talk diagnostics views">
+        <input class="wake-dev-debug-tab-radio" type="radio" name="wake-dev-debug-view" id="wake-dev-debug-view-old" checked>
+        <input class="wake-dev-debug-tab-radio" type="radio" name="wake-dev-debug-view" id="wake-dev-debug-view-new">
+        <div class="wake-dev-debug-tablist" role="tablist" aria-label="Wake-to-talk diagnostics views">
+          <label class="wake-dev-debug-tab" role="tab" for="wake-dev-debug-view-old">OLD</label>
+          <label class="wake-dev-debug-tab" role="tab" for="wake-dev-debug-view-new">NEW</label>
+        </div>
+        <div class="wake-dev-debug-panels">
+          <div class="wake-dev-debug-panel wake-dev-debug-panel--old" role="tabpanel" aria-label="Old wake-to-talk diagnostics">
+            <div class="wake-dev-metrics">
+              <div><span>FSM</span><strong id="wake-dev-fsm-state">--</strong></div>
+              <div><span>Session</span><strong id="wake-dev-session">--</strong></div>
+              <div><span>Instance</span><strong id="wake-dev-instance">--</strong></div>
+              <div><span>Frames</span><strong id="wake-dev-frames">--</strong></div>
+              <div><span>Debug age</span><strong id="wake-dev-age">--</strong></div>
+              <div><span>Level</span><strong id="wake-dev-db">--</strong></div>
+            </div>
 
-      <div class="wake-dev-card wake-dev-wave">
-        <div class="wake-dev-card__head">
-          <span class="wake-dev-card__title">Input Level and FSM Events</span>
-          <div class="wake-dev-wave__tools">
-            <span class="wake-dev-meta" id="wake-dev-debug-source">Waiting for wake runtime...</span>
-            <button class="wake-dev-icon-btn" type="button" id="wake-dev-pause-timeline" aria-pressed="false" title="Pause timeline">Pause</button>
+            <div class="wake-dev-card wake-dev-wave">
+              <div class="wake-dev-card__head">
+                <span class="wake-dev-card__title">Input Level and FSM Events</span>
+                <div class="wake-dev-wave__tools">
+                  <span class="wake-dev-meta" id="wake-dev-debug-source">Waiting for wake runtime...</span>
+                  <button class="wake-dev-icon-btn" type="button" id="wake-dev-pause-timeline" aria-pressed="false" title="Pause timeline">Pause</button>
+                </div>
+              </div>
+              <canvas id="wake-dev-wave-canvas" width="1200" height="260" aria-label="Ten second wake-to-talk audio level and event timeline"></canvas>
+            </div>
+
+            <div class="wake-dev-states" id="wake-dev-states" aria-label="Wake-to-talk FSM state list"></div>
+          </div>
+          <div class="wake-dev-debug-panel wake-dev-debug-panel--new" role="tabpanel" aria-label="New wake-to-talk diagnostics">
+            <div class="wake-dev-output-view" id="wake-dev-output-view"></div>
           </div>
         </div>
-        <canvas id="wake-dev-wave-canvas" width="1200" height="260" aria-label="Ten second wake-to-talk audio level and event timeline"></canvas>
       </div>
-
-      <div class="wake-dev-states" id="wake-dev-states" aria-label="Wake-to-talk FSM state list"></div>
     </section>
   </div>
 </dialog>
@@ -4858,6 +4873,7 @@
 <script src="js/voice-mode.js?v={{$assetVersion}}"></script>
 <script src="js/wake-to-talk.js?v={{$assetVersion}}"></script>
 <script src="js/wake-dev.js?v={{$assetVersion}}"></script>
+<script src="js/wake-dev-output-view.js?v={{$assetVersion}}"></script>
 <script src="js/wake-queue-dev.js?v={{$assetVersion}}"></script>
 <script src="js/stt-noise-tests.js?v={{$assetVersion}}"></script>
 <script src="js/notifier-dnd-policy.js?v={{$assetVersion}}"></script>
