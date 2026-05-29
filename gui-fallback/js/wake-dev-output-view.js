@@ -16,7 +16,9 @@
   const WINDOW_MS = 10000;
   const SCALE_MIN_DB = -80;
   const SCALE_MAX_DB = 0;
-  const DB_TICKS = [0, -20, -40, -60, -80];
+  const DB_TICKS = [0, -20, -40, -60];
+  const CANVAS_LABEL_FONT = '11px system-ui, sans-serif';
+  const CANVAS_SMALL_FONT = '10px system-ui, sans-serif';
   const DEFAULT_STATE_LABELS = [
     'DISABLED',
     'SELECTED_INACTIVE',
@@ -67,6 +69,7 @@
         samples: [],
         markers: [],
         text: [],
+        transcriptSpan: null,
         bands: [
           { y: 0.25, color: 'rgba(251,191,36,0.22)' },
           { y: 0.72, color: 'rgba(148,168,179,0.18)' },
@@ -154,10 +157,10 @@
     const clean = clipCanvasText(ctx, label, numberOr(options.maxWidth, 220));
     if (!clean) return;
     const padX = 7;
-    const height = 20;
-    const width = Math.min(numberOr(options.maxWidth, 220), ctx.measureText(clean).width + (padX * 2));
-    const left = clamp(x, 8, Math.max(8, numberOr(options.canvasWidth, 640) - width - 8));
-    ctx.fillStyle = options.background || 'rgba(16,24,38,0.92)';
+    const height = options.height || 18;
+    const width = Math.min(numberOr(options.maxWidth, 220) + (padX * 2), ctx.measureText(clean).width + (padX * 2));
+    const left = Math.max(4, Math.min(numberOr(options.canvasWidth, 640) - width - 4, x));
+    ctx.fillStyle = options.background || 'rgba(16, 24, 38, 0.9)';
     ctx.strokeStyle = options.border || 'rgba(91,156,246,0.45)';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -166,22 +169,47 @@
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = options.color || '#dce8ed';
-    ctx.fillText(clean, left + padX, y + 14);
+    ctx.fillText(clean, left + padX, y + 13);
+  }
+
+  function drawSpanPill(ctx, label, startX, endX, y, options = {}) {
+    const clean = text(label, '');
+    if (!clean) return;
+    const canvasWidth = numberOr(options.canvasWidth, 640);
+    const left = clamp(Math.min(startX, endX), 8, Math.max(8, canvasWidth - 38));
+    const right = clamp(Math.max(startX, endX), left + 30, canvasWidth - 8);
+    const width = Math.max(30, right - left);
+    const height = numberOr(options.height, 22);
+    const padX = 8;
+    ctx.fillStyle = options.background || 'rgba(7,24,39,0.97)';
+    ctx.strokeStyle = options.border || 'rgba(56,189,248,0.78)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    if (typeof ctx.roundRect === 'function') ctx.roundRect(left, y, width, height, 6);
+    else ctx.rect(left, y, width, height);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = options.color || '#f1f7fa';
+    ctx.fillText(clipCanvasText(ctx, clean, Math.max(1, width - (padX * 2))), left + padX, y + 15);
   }
 
   function prepareCanvas(canvas, options = {}) {
     if (!canvas?.getContext) return null;
     const rect = typeof canvas.getBoundingClientRect === 'function'
       ? canvas.getBoundingClientRect()
-      : { width: canvas.width || 1200, height: canvas.height || 260 };
+      : null;
+    const cssWidth = rect ? Number(rect.width) : Number(canvas.clientWidth || canvas.width || 1200);
+    const cssHeight = rect ? Number(rect.height) : Number(canvas.clientHeight || canvas.height || 260);
+    if (!Number.isFinite(cssWidth) || !Number.isFinite(cssHeight) || cssWidth < 1 || cssHeight < 1) return null;
     const dpr = Number(options.devicePixelRatio || root.devicePixelRatio || 1) || 1;
-    const width = Math.max(320, Math.round((Number(rect.width) || 1200) * dpr));
-    const height = Math.max(180, Math.round((Number(rect.height) || 260) * dpr));
+    const width = Math.max(320, Math.round(cssWidth * dpr));
+    const height = Math.max(180, Math.round(cssHeight * dpr));
     if (canvas.width !== width) canvas.width = width;
     if (canvas.height !== height) canvas.height = height;
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.textBaseline = 'alphabetic';
     return { ctx, width: width / dpr, height: height / dpr };
   }
 
@@ -190,12 +218,12 @@
     if (!prepared) return null;
     const { ctx, width, height } = prepared;
     const timeline = snapshot.timeline || {};
-    const graphTop = 18;
-    const graphBottom = Math.max(graphTop + 120, height - 86);
+    const graphTop = 0;
+    const graphBottom = Math.max(graphTop + 120, height - 104);
     const graphHeight = graphBottom - graphTop;
-    const labelX = 24;
-    const gridLeft = 86;
-    const graphWidth = width - gridLeft;
+    const labelX = 8;
+    const gridLeft = 0;
+    const graphWidth = width;
     const endMs = numberOr(timeline.endMs ?? timeline.end_ms, 0);
     const startMs = numberOr(timeline.startMs ?? timeline.start_ms, endMs - WINDOW_MS);
     const windowMs = Math.max(1, endMs - startMs || WINDOW_MS);
@@ -214,16 +242,29 @@
       ctx.stroke();
     }
 
-    ctx.font = '11px system-ui, sans-serif';
+    ctx.font = CANVAS_LABEL_FONT;
     DB_TICKS.forEach(db => {
       const y = graphTop + (((SCALE_MAX_DB - db) / (SCALE_MAX_DB - SCALE_MIN_DB)) * graphHeight);
-      ctx.strokeStyle = db === -20 ? 'rgba(251,191,36,0.28)' : 'rgba(255,255,255,0.10)';
+      ctx.strokeStyle = db === -20 ? 'rgba(251,191,36,0.22)' : 'rgba(255,255,255,0.09)';
       ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(width, y);
       ctx.stroke();
-      ctx.fillStyle = 'rgba(174,191,202,0.82)';
-      ctx.fillText(`${db} dB`, labelX, Math.max(graphTop + 12, Math.min(graphBottom - 4, y - 4)));
+      ctx.fillStyle = 'rgba(174,191,202,0.78)';
+      ctx.fillText(`${db} dB`, labelX, Math.max(12, y - 4));
+    });
+
+    const statuses = Array.isArray(timeline.statuses) ? timeline.statuses : [];
+    statuses.slice(0, 4).forEach((status, index) => {
+      const maxWidth = numberOr(status?.maxWidth ?? status?.max_width, 300);
+      ctx.font = CANVAS_LABEL_FONT;
+      drawPill(ctx, status?.label ?? status?.text, width - maxWidth - 12, graphTop + 8 + (index * 24), {
+        canvasWidth: width,
+        maxWidth,
+        background: status?.background,
+        border: status?.border,
+        color: status?.color,
+      });
     });
 
     const xFor = at => gridLeft + (((at - startMs) / windowMs) * graphWidth);
@@ -259,8 +300,29 @@
     ctx.lineTo(width, graphBottom + 0.5);
     ctx.stroke();
 
-    ctx.fillStyle = 'rgba(174,191,202,0.78)';
-    ctx.fillText('STT payloads', labelX, graphBottom + 26);
+    ctx.fillStyle = 'rgba(174,191,202,0.72)';
+    ctx.font = CANVAS_SMALL_FONT;
+    ctx.fillText('STT payloads', 6, graphBottom + 24);
+    const span = timeline.transcriptSpan ?? timeline.transcript_span;
+    if (span) {
+      const spanStart = atMs(span);
+      const spanEnd = numberOr(span.endMs ?? span.end_ms ?? span.untilMs ?? span.until_ms, endMs);
+      if (spanEnd >= startMs && spanStart <= endMs) {
+        const color = span.color || (span.status === 'final'
+          ? '#22c55e'
+          : (span.status === 'timeout' ? '#f87171' : '#38bdf8'));
+        ctx.font = CANVAS_LABEL_FONT;
+        drawSpanPill(ctx, span.text ?? span.label, xFor(Math.max(spanStart, startMs)), xFor(Math.min(spanEnd, endMs)), graphBottom + 36, {
+          canvasWidth: width,
+          background: span.background || (span.status === 'final'
+            ? 'rgba(5,46,22,0.97)'
+            : (span.status === 'timeout' ? 'rgba(69,10,10,0.97)' : 'rgba(7,24,39,0.97)')),
+          border: span.border || color,
+          color: span.textColor ?? span.text_color ?? '#f1f7fa',
+          height: 22,
+        });
+      }
+    }
     (Array.isArray(timeline.markers) ? timeline.markers : []).forEach((marker, index) => {
       const x = xFor(atMs(marker));
       if (x < gridLeft || x > width) return;
@@ -276,6 +338,7 @@
       ctx.arc(x, graphBottom + 8, 3, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#dce8ed';
+      ctx.font = CANVAS_LABEL_FONT;
       ctx.fillText(clipCanvasText(ctx, marker?.label ?? marker?.type, 130), Math.min(width - 140, x + 4), y + 14);
     });
 
@@ -283,6 +346,7 @@
       const x = xFor(atMs(item));
       if (x < gridLeft || x > width) return;
       const label = `${text(item?.prefix, '')}${text(item?.text ?? item?.label, '')}`;
+      ctx.font = CANVAS_LABEL_FONT;
       drawPill(ctx, label, x + 4, graphBottom + 36 + (index % 2) * 24, {
         canvasWidth: width,
         maxWidth: numberOr(item?.maxWidth, 260),
@@ -293,9 +357,10 @@
     });
 
     ctx.fillStyle = 'rgba(174,191,202,0.78)';
-    ctx.fillText(timeline.startLabel || '10s', labelX, height - 12);
+    ctx.font = CANVAS_LABEL_FONT;
+    ctx.fillText(timeline.startLabel || '10s', 6, height - 8);
     const endLabel = timeline.endLabel || 'now';
-    ctx.fillText(endLabel, Math.max(labelX, width - ctx.measureText(endLabel).width - 16), height - 12);
+    ctx.fillText(endLabel, Math.max(6, width - ctx.measureText(endLabel).width - 8), height - 8);
     return { width, height, graphHeight };
   }
 
@@ -325,6 +390,7 @@
 
   function createOutputView(container, options = {}) {
     const refs = build(container);
+    let pendingRenderFrame = 0;
     const state = {
       paused: false,
       snapshot: null,
@@ -344,6 +410,15 @@
       return snapshot;
     }
 
+    function scheduleRender() {
+      if (pendingRenderFrame) return;
+      const requestFrame = root.requestAnimationFrame || (callback => root.setTimeout(callback, 16));
+      pendingRenderFrame = requestFrame(() => {
+        pendingRenderFrame = 0;
+        render();
+      });
+    }
+
     function setPaused(next) {
       state.paused = next === true;
       if (!state.paused && state.pendingSnapshot) {
@@ -359,6 +434,14 @@
     }
 
     refs.pause?.addEventListener('click', () => setPaused(!state.paused));
+    const resizeObserver = typeof root.ResizeObserver === 'function'
+      ? new root.ResizeObserver(scheduleRender)
+      : null;
+    resizeObserver?.observe(refs.canvas);
+    root.addEventListener?.('resize', scheduleRender);
+    container.ownerDocument?.addEventListener?.('change', event => {
+      if (event.target?.id === 'wake-dev-debug-view-new' && event.target.checked) scheduleRender();
+    });
 
     const api = {
       render,
@@ -393,7 +476,10 @@
   function mountDocument(documentRef = root.document, options = {}) {
     const container = documentRef?.getElementById?.('wake-dev-output-view');
     if (!container) return null;
-    return createOutputView(container, options);
+    if (container.__blueprintsWakeDevOutputView) return container.__blueprintsWakeDevOutputView;
+    const view = createOutputView(container, options);
+    container.__blueprintsWakeDevOutputView = view;
+    return view;
   }
 
   return {

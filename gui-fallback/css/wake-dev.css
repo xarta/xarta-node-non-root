@@ -185,8 +185,18 @@
   padding-inline: 14px;
 }
 
+.wake-dev-browser,
 .wake-dev-switches {
+  align-self: start;
+}
+
+.wake-dev-switches {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 9px;
+}
+
+.wake-dev-switches .wake-dev-slider {
+  grid-column: 1 / -1;
 }
 
 .wake-dev-settings,
@@ -195,6 +205,70 @@
 }
 
 .wake-dev-test {
+  gap: 9px;
+}
+
+.wake-dev-test-tabs {
+  align-content: start;
+  align-self: start;
+}
+
+.wake-dev-test-tab-radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.wake-dev-test-tablist {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.26);
+  border-radius: 7px;
+  background: rgba(8, 16, 28, 0.9);
+}
+
+.wake-dev-test-tab {
+  min-width: 78px;
+  padding: 8px 14px;
+  border-right: 1px solid rgba(var(--hub-accent-rgb), 0.2);
+  color: #aebfca;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.wake-dev-test-tab:last-child {
+  border-right: 0;
+}
+
+#wake-dev-test-tab-manual:checked ~ .wake-dev-test-tablist label[for="wake-dev-test-tab-manual"],
+#wake-dev-test-tab-vad:checked ~ .wake-dev-test-tablist label[for="wake-dev-test-tab-vad"],
+#wake-dev-test-tab-rearm:checked ~ .wake-dev-test-tablist label[for="wake-dev-test-tab-rearm"] {
+  background: rgba(var(--hub-accent-rgb), 0.22);
+  color: #f1f7fa;
+}
+
+.wake-dev-test-panels,
+.wake-dev-test-panel {
+  min-width: 0;
+}
+
+.wake-dev-test-panel {
+  display: none;
+}
+
+#wake-dev-test-tab-manual:checked ~ .wake-dev-test-panels .wake-dev-test-panel--manual,
+#wake-dev-test-tab-vad:checked ~ .wake-dev-test-panels .wake-dev-test-panel--vad,
+#wake-dev-test-tab-rearm:checked ~ .wake-dev-test-panels .wake-dev-test-panel--rearm {
+  display: grid;
   gap: 9px;
 }
 
@@ -225,6 +299,11 @@
   display: grid;
   gap: 6px;
   min-width: 0;
+}
+
+.wake-dev-test__transcript .wake-dev-transcript {
+  min-height: 40px;
+  max-height: 72px;
 }
 
 .wake-dev-check {
@@ -658,5 +737,9 @@
 
   .wake-dev-slider input[type="range"] {
     grid-column: 1 / -1;
+  }
+
+  .wake-dev-switches {
+    grid-template-columns: 1fr;
   }
 }

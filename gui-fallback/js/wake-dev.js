@@ -15,6 +15,15 @@ const WakeDevModal = (() => {
   const VAD_TEST_ABSOLUTE_FLOOR = 0.0012;
   const VAD_TEST_STRONG_MULTIPLIER = 5;
   const VAD_TEST_EXIT_HANGOVER_MS = 180;
+  const REARM_FINAL_TIMEOUT_MS = 2000;
+  const REARM_OUTPUT_STATES = [
+    'VAD_REARM_STT_OFF',
+    'VAD_REARM_STT_READY',
+    'VAD_REARM_STT_ARMED',
+    'VAD_REARM_STT_OPENING',
+    'VAD_REARM_STT_RECORDING',
+    'VAD_REARM_STT_FINALIZING',
+  ];
 
   const state = {
     open: false,
@@ -90,6 +99,49 @@ const WakeDevModal = (() => {
         lastAutoStopAt: 0,
       },
     },
+    rearmProbe: {
+      enabled: false,
+      recording: false,
+      finalizing: false,
+      starting: false,
+      vadRecordEnabled: false,
+      vadStopEnabled: false,
+      ws: null,
+      stream: null,
+      audioContext: null,
+      sourceNode: null,
+      processorNode: null,
+      startedAt: 0,
+      bytesSent: 0,
+      framesSent: 0,
+      transcript: '',
+      status: 'VAD ReArm STT probe is off.',
+      events: [],
+      actions: [],
+      samples: [],
+      lastLevel: 0,
+      outputTouched: false,
+      uiStateSignature: '',
+      restoreWakeOnDisable: false,
+      delayFrames: [],
+      pendingFrames: [],
+      vad: {
+        speaking: false,
+        candidateActive: false,
+        candidateConfirmed: false,
+        speechSeenSinceReset: false,
+        lastVoiceAt: 0,
+        lastResetAt: 0,
+        lastEnergy: 0,
+        noiseFloor: 0,
+        enterThreshold: 0,
+        exitThreshold: 0,
+        strongEnterThreshold: 0,
+        lastAutoRecordAt: 0,
+        lastAutoStopAt: 0,
+      },
+    },
+    outputView: null,
   };
 
   const els = {};
@@ -148,6 +200,11 @@ const WakeDevModal = (() => {
   function vadProbeStatus(message) {
     state.vadProbe.status = message || '';
     setText(els.vadTestStatus, state.vadProbe.status, '');
+  }
+
+  function rearmProbeStatus(message) {
+    state.rearmProbe.status = message || '';
+    setText(els.rearmTestStatus, state.rearmProbe.status, '');
   }
 
   function voiceMode() {
@@ -502,6 +559,69 @@ const WakeDevModal = (() => {
     state.vadProbe.events = state.vadProbe.events.slice(-160);
   }
 
+  function touchRearmOutput() {
+    state.rearmProbe.outputTouched = true;
+  }
+
+  function pushRearmProbeAction(type, detail = {}) {
+    touchRearmOutput();
+    state.rearmProbe.actions.push({
+      at_ms: Date.now(),
+      type,
+      ...detail,
+    });
+    state.rearmProbe.actions = state.rearmProbe.actions.slice(-160);
+  }
+
+  function pushRearmProbeEvent(type, textValue, detail = {}) {
+    const clean = String(textValue || '').trim();
+    touchRearmOutput();
+    state.rearmProbe.events.push({
+      at_ms: Date.now(),
+      type,
+      text: clean,
+      text_length: clean.length,
+      audio_frames_sent: state.rearmProbe.framesSent,
+      ...detail,
+    });
+    state.rearmProbe.events = state.rearmProbe.events.slice(-160);
+  }
+
+  function buttonSnapshot(control, node) {
+    if (!node) return null;
+    return {
+      control,
+      text: node.textContent || control,
+      disabled: !!node.disabled,
+      pressed: node.getAttribute('aria-pressed') === 'true',
+    };
+  }
+
+  function rearmButtonLabel(item) {
+    const stateText = [
+      item.pressed ? 'pressed' : 'unpressed',
+      item.disabled ? 'disabled' : 'enabled',
+    ].join(', ');
+    return `${item.control}: ${stateText}`;
+  }
+
+  function recordRearmButtonStates(items) {
+    if (!state.rearmProbe.outputTouched) return;
+    const list = items.filter(Boolean);
+    const signature = JSON.stringify(list.map(item => [item.control, item.disabled, item.pressed, item.text]));
+    if (signature === state.rearmProbe.uiStateSignature) return;
+    state.rearmProbe.uiStateSignature = signature;
+    list.forEach(item => {
+      pushRearmProbeAction('controlState', {
+        control: item.control,
+        label: rearmButtonLabel(item),
+        button_text: item.text,
+        disabled: item.disabled,
+        pressed: item.pressed,
+      });
+    });
+  }
+
   function renderProbeUi() {
     if (els.testMode) {
       els.testMode.setAttribute('aria-pressed', state.probe.enabled ? 'true' : 'false');
@@ -537,6 +657,39 @@ const WakeDevModal = (() => {
     if (els.vadTranscript) els.vadTranscript.textContent = state.vadProbe.transcript || '';
   }
 
+  function renderRearmProbeUi() {
+    if (els.rearmTestMode) {
+      els.rearmTestMode.setAttribute('aria-pressed', state.rearmProbe.enabled ? 'true' : 'false');
+      els.rearmTestMode.textContent = state.rearmProbe.enabled ? 'Disable test mode' : 'Enable test mode';
+    }
+    if (els.rearmRecordToggle) {
+      els.rearmRecordToggle.disabled = !state.rearmProbe.enabled || state.rearmProbe.finalizing;
+      els.rearmRecordToggle.setAttribute('aria-pressed', state.rearmProbe.vadRecordEnabled ? 'true' : 'false');
+      els.rearmRecordToggle.textContent = state.rearmProbe.recording
+        ? 'VAD Recording'
+        : (state.rearmProbe.starting ? 'VAD Opening' : (state.rearmProbe.vadRecordEnabled ? 'VAD Record Armed' : 'Enable VAD Record'));
+    }
+    if (els.rearmStopToggle) {
+      els.rearmStopToggle.disabled = !state.rearmProbe.enabled || state.rearmProbe.finalizing;
+      els.rearmStopToggle.setAttribute('aria-pressed', state.rearmProbe.vadStopEnabled ? 'true' : 'false');
+      els.rearmStopToggle.textContent = state.rearmProbe.vadStopEnabled ? 'VAD Stop Armed' : 'Enable VAD Stop';
+    }
+    if (els.rearmTestRecord) els.rearmTestRecord.disabled = !state.rearmProbe.enabled || state.rearmProbe.vadRecordEnabled || state.rearmProbe.recording || state.rearmProbe.finalizing || state.rearmProbe.starting;
+    if (els.rearmTestStop) els.rearmTestStop.disabled = !state.rearmProbe.recording && !state.rearmProbe.starting && !state.rearmProbe.vadRecordEnabled;
+    if (els.rearmTestClear) els.rearmTestClear.disabled = state.rearmProbe.recording || state.rearmProbe.finalizing || state.rearmProbe.starting;
+    rearmProbeStatus(state.rearmProbe.status);
+    if (els.rearmTranscript) els.rearmTranscript.textContent = state.rearmProbe.transcript || '';
+    recordRearmButtonStates([
+      buttonSnapshot('Enable test mode', els.rearmTestMode),
+      buttonSnapshot('Enable VAD Record', els.rearmRecordToggle),
+      buttonSnapshot('Enable VAD Stop', els.rearmStopToggle),
+      buttonSnapshot('Record', els.rearmTestRecord),
+      buttonSnapshot('Stop', els.rearmTestStop),
+      buttonSnapshot('Clear', els.rearmTestClear),
+    ]);
+    renderRearmOutput();
+  }
+
   function addProbeSample(features) {
     state.lastLevel = Math.max(0, Math.min(1, Number(features.level) || 0));
     if (state.timelinePaused) return;
@@ -569,6 +722,24 @@ const WakeDevModal = (() => {
     state.samples = state.samples.filter(sample => sample.at >= now - WINDOW_MS - 1000);
   }
 
+  function addRearmProbeSample(features) {
+    const level = Math.max(0, Math.min(1, Number(features.level) || 0));
+    state.rearmProbe.lastLevel = level;
+    touchRearmOutput();
+    const now = Date.now();
+    state.rearmProbe.samples.push({
+      at: now,
+      level,
+      rms: Math.max(0, Number(features.rms) || 0),
+      peak: Math.max(0, Number(features.peak) || 0),
+      vad_energy: Math.max(0, Number(features.vadEnergy) || 0),
+      fsm_state: state.rearmProbe.recording
+        ? 'VAD_REARM_STT_RECORDING'
+        : (state.rearmProbe.vadRecordEnabled || state.rearmProbe.vadStopEnabled ? 'VAD_REARM_STT_ARMED' : 'VAD_REARM_STT_READY'),
+    });
+    state.rearmProbe.samples = state.rearmProbe.samples.filter(sample => sample.at >= now - WINDOW_MS - 1000);
+  }
+
   function closeProbeSocket() {
     if (state.probe.ws) {
       try { state.probe.ws.close(); } catch (_) {}
@@ -580,6 +751,13 @@ const WakeDevModal = (() => {
     if (state.vadProbe.ws) {
       try { state.vadProbe.ws.close(); } catch (_) {}
       state.vadProbe.ws = null;
+    }
+  }
+
+  function closeRearmProbeSocket() {
+    if (state.rearmProbe.ws) {
+      try { state.rearmProbe.ws.close(); } catch (_) {}
+      state.rearmProbe.ws = null;
     }
   }
 
@@ -620,6 +798,26 @@ const WakeDevModal = (() => {
     if (state.vadProbe.stream) {
       state.vadProbe.stream.getTracks().forEach(track => track.stop());
       state.vadProbe.stream = null;
+    }
+  }
+
+  function cleanupRearmProbeAudio() {
+    if (state.rearmProbe.processorNode) {
+      try { state.rearmProbe.processorNode.disconnect(); } catch (_) {}
+      state.rearmProbe.processorNode.onaudioprocess = null;
+      state.rearmProbe.processorNode = null;
+    }
+    if (state.rearmProbe.sourceNode) {
+      try { state.rearmProbe.sourceNode.disconnect(); } catch (_) {}
+      state.rearmProbe.sourceNode = null;
+    }
+    if (state.rearmProbe.audioContext) {
+      try { void state.rearmProbe.audioContext.close(); } catch (_) {}
+      state.rearmProbe.audioContext = null;
+    }
+    if (state.rearmProbe.stream) {
+      state.rearmProbe.stream.getTracks().forEach(track => track.stop());
+      state.rearmProbe.stream = null;
     }
   }
 
@@ -794,6 +992,237 @@ const WakeDevModal = (() => {
     };
   }
 
+  function rearmProbeResetTimeoutMs() {
+    return vadProbeResetTimeoutMs();
+  }
+
+  function resetRearmProbeVad(now = Date.now()) {
+    const vad = state.rearmProbe.vad;
+    vad.speaking = false;
+    vad.candidateActive = false;
+    vad.candidateConfirmed = false;
+    vad.speechSeenSinceReset = false;
+    vad.lastVoiceAt = 0;
+    vad.lastResetAt = now;
+    vad.lastEnergy = 0;
+  }
+
+  function updateRearmProbe(features, now = Date.now()) {
+    const vad = state.rearmProbe.vad;
+    const energy = Number(features?.vadEnergy || 0);
+    if (!vad.noiseFloor) {
+      vad.noiseFloor = Math.max(0.0005, Math.min(0.02, energy || 0.002));
+    }
+    const enterThreshold = Math.max(VAD_TEST_ABSOLUTE_FLOOR, (vad.noiseFloor * 4.0) + 0.00045);
+    const exitThreshold = Math.max(VAD_TEST_ABSOLUTE_FLOOR * 0.65, (vad.noiseFloor * 2.2) + 0.00025);
+    const strongEnterThreshold = enterThreshold * VAD_TEST_STRONG_MULTIPLIER;
+    const level = Number(features?.level || 0);
+    const speechNow = energy >= enterThreshold || level >= 0.035;
+    const strongSpeechNow = energy >= strongEnterThreshold || level >= (0.035 * VAD_TEST_STRONG_MULTIPLIER);
+    const speechStarted = speechNow && !vad.speaking;
+    vad.lastEnergy = energy;
+    vad.enterThreshold = enterThreshold;
+    vad.exitThreshold = exitThreshold;
+    vad.strongEnterThreshold = strongEnterThreshold;
+
+    if (speechNow) {
+      vad.speaking = true;
+      vad.speechSeenSinceReset = true;
+      vad.lastVoiceAt = now;
+    } else if (vad.speaking && now - vad.lastVoiceAt > VAD_TEST_EXIT_HANGOVER_MS) {
+      vad.speaking = false;
+    }
+    if (!vad.speaking && energy < exitThreshold) {
+      vad.noiseFloor = (vad.noiseFloor * 0.985) + (energy * 0.015);
+    }
+    if (speechStarted) {
+      vad.candidateActive = true;
+      vad.candidateConfirmed = false;
+      pushRearmProbeAction('vadCandidateStart', {
+        audio_frame: state.rearmProbe.framesSent,
+        delay_frames: VAD_TEST_DELAY_FRAMES,
+      });
+      if (state.rearmProbe.vadRecordEnabled && !state.rearmProbe.recording && !state.rearmProbe.finalizing && !state.rearmProbe.starting) {
+        rearmProbeStatus('VAD Record triggered; opening STT.');
+        void startRearmProbeRecording({ reason: 'vad_record' });
+      }
+    }
+    if (vad.candidateActive && !vad.candidateConfirmed && strongSpeechNow) {
+      vad.candidateConfirmed = true;
+      pushRearmProbeAction('vadCandidateConfirmed', {
+        start_threshold: 'strong_confirmed',
+        strong_multiplier: VAD_TEST_STRONG_MULTIPLIER,
+      });
+    }
+    const timeoutMs = rearmProbeResetTimeoutMs();
+    if (
+      state.rearmProbe.vadStopEnabled
+      && state.rearmProbe.recording
+      && timeoutMs > 0
+      && vad.speechSeenSinceReset
+      && !vad.speaking
+      && vad.lastVoiceAt
+      && now - vad.lastVoiceAt >= timeoutMs
+      && now - vad.lastResetAt > 250
+    ) {
+      vad.lastAutoStopAt = now;
+      stopRearmProbeRecording('vad_stop');
+    }
+  }
+
+  function rearmProbeFsm() {
+    if (!state.rearmProbe.enabled) return 'VAD_REARM_STT_OFF';
+    if (state.rearmProbe.recording) return 'VAD_REARM_STT_RECORDING';
+    if (state.rearmProbe.finalizing) return 'VAD_REARM_STT_FINALIZING';
+    if (state.rearmProbe.starting) return 'VAD_REARM_STT_OPENING';
+    if (state.rearmProbe.vadRecordEnabled || state.rearmProbe.vadStopEnabled) return 'VAD_REARM_STT_ARMED';
+    return 'VAD_REARM_STT_READY';
+  }
+
+  function rearmMarkerColor(action) {
+    if (action?.type === 'controlState') {
+      if (action.disabled) return 'rgba(148,168,179,0.72)';
+      return action.pressed ? '#38bdf8' : '#aebfca';
+    }
+    if (action?.type === 'rearmProbeRecordStart' || action?.type === 'rearmProbeFinal' || action?.type === 'vadCandidateConfirmed') return '#22c55e';
+    if (action?.type === 'rearmProbeRecordStop' || action?.type === 'vadStopMode') return '#fbbf24';
+    if (action?.type === 'vadRecordMode' || action?.type === 'rearmTestMode' || action?.type === 'vadCandidateStart') return '#38bdf8';
+    if (action?.type === 'rearmProbeError') return '#f87171';
+    return '#aebfca';
+  }
+
+  function rearmActionLabel(action) {
+    if (!action || typeof action !== 'object') return '';
+    if (action.type === 'controlState') return action.label || action.control || 'control';
+    if (action.type === 'rearmTestMode') return `test ${action.reason || ''}`.trim();
+    if (action.type === 'vadRecordMode') return `VAD Record ${action.enabled ? 'on' : 'off'}`;
+    if (action.type === 'vadStopMode') return `VAD Stop ${action.enabled ? 'on' : 'off'}`;
+    if (action.type === 'vadCandidateStart') return 'VAD candidate';
+    if (action.type === 'vadCandidateConfirmed') return 'VAD strong';
+    if (action.type === 'rearmProbeRecordStart') return `Record ${action.reason || 'start'}`;
+    if (action.type === 'rearmProbeRecordStop') return `Stop ${action.reason || 'stop'}`;
+    if (action.type === 'rearmProbeFinal') return 'final transcript';
+    if (action.type === 'rearmProbeError') return `error ${action.error || ''}`.trim();
+    return action.type || 'event';
+  }
+
+  function ensureOutputView() {
+    if (state.outputView) return state.outputView;
+    const module = window.BlueprintsWakeDevOutputView;
+    if (typeof module?.mountDocument === 'function') {
+      state.outputView = module.mountDocument(document);
+    } else if (typeof module?.createOutputView === 'function' && els.outputView) {
+      state.outputView = module.createOutputView(els.outputView);
+    }
+    return state.outputView;
+  }
+
+  function rearmTranscriptSpan(now = Date.now()) {
+    const textEvents = state.rearmProbe.events
+      .filter(evt => (evt.type === 'partial' || evt.type === 'final') && String(evt.text || '').trim());
+    if (!textEvents.length) return null;
+    const first = textEvents.find(evt => evt.type === 'partial') || textEvents[0];
+    const finalEvent = textEvents.find(evt => evt.type === 'final');
+    const latest = textEvents[textEvents.length - 1];
+    const stopAction = [...state.rearmProbe.actions].reverse()
+      .find(action => action.type === 'rearmProbeRecordStop');
+    let statusValue = 'partial';
+    let endAt = now;
+    if (finalEvent) {
+      statusValue = 'final';
+      endAt = Number(finalEvent.at_ms || now);
+    } else if (stopAction?.at_ms && now - Number(stopAction.at_ms) >= REARM_FINAL_TIMEOUT_MS) {
+      statusValue = 'timeout';
+      endAt = Number(stopAction.at_ms) + REARM_FINAL_TIMEOUT_MS;
+    }
+    const color = statusValue === 'final' ? '#22c55e' : (statusValue === 'timeout' ? '#f87171' : '#38bdf8');
+    return {
+      atMs: Number(first.at_ms || now),
+      endMs: Math.max(Number(first.at_ms || now) + 80, endAt),
+      text: latest.text || '',
+      status: statusValue,
+      color,
+      background: statusValue === 'final'
+        ? 'rgba(5,46,22,0.97)'
+        : (statusValue === 'timeout' ? 'rgba(69,10,10,0.97)' : 'rgba(7,24,39,0.97)'),
+      border: statusValue === 'final'
+        ? 'rgba(74,222,128,0.86)'
+        : (statusValue === 'timeout' ? 'rgba(248,113,113,0.86)' : 'rgba(56,189,248,0.82)'),
+      timeoutSource: stopAction?.reason === 'vad_stop' ? 'VAD Stop' : 'Stop',
+    };
+  }
+
+  function rearmOutputSnapshot() {
+    const now = Date.now();
+    const start = now - WINDOW_MS;
+    const fsm = rearmProbeFsm();
+    const transcriptSpan = rearmTranscriptSpan(now);
+    const vad = state.rearmProbe.vad || {};
+    const vadEnabled = !!(state.rearmProbe.vadRecordEnabled || state.rearmProbe.vadStopEnabled);
+    const vadSpeech = !!vad.speaking;
+    const vadStage = vad.candidateConfirmed ? 'strong' : (vad.candidateActive ? 'candidate' : 'idle');
+    const statusBackground = vadEnabled ? (vadSpeech ? 'rgba(21,128,61,0.34)' : 'rgba(7,24,39,0.94)') : 'rgba(16,24,38,0.9)';
+    const statusBorder = vadEnabled ? (vadSpeech ? 'rgba(34,197,94,0.7)' : 'rgba(56,189,248,0.58)') : 'rgba(148,168,179,0.42)';
+    return {
+      metrics: [
+        { label: 'FSM', value: fsm },
+        { label: 'Session', value: state.rearmProbe.enabled ? 'vad-rearm-probe' : '--' },
+        { label: 'Instance', value: 'voice-mode-stt' },
+        { label: 'Frames', value: String(state.rearmProbe.framesSent || 0) },
+        { label: 'Debug age', value: 'live' },
+        { label: 'Level', value: formatDb(state.rearmProbe.lastLevel || 0) },
+      ],
+      source: `VAD ReArm STT probe | ${STT_WS_URL} | ${state.rearmProbe.status || 'ready'}`,
+      activeState: fsm,
+      states: REARM_OUTPUT_STATES,
+      transcript: state.rearmProbe.transcript || '',
+      timeline: {
+        startMs: start,
+        endMs: now,
+        samples: state.rearmProbe.samples,
+        markers: [
+          ...state.rearmProbe.actions.map((action, index) => ({
+            atMs: action.at_ms,
+            label: rearmActionLabel(action),
+            color: rearmMarkerColor(action),
+            lane: index % 4,
+          })),
+          ...(transcriptSpan?.status === 'timeout' ? [{
+            atMs: transcriptSpan.endMs,
+            label: `${transcriptSpan.timeoutSource || 'Stop'} final timeout`,
+            color: '#f87171',
+            lane: 0,
+          }] : []),
+        ],
+        text: [],
+        transcriptSpan,
+        statuses: [
+          {
+            label: `VAD ${vadEnabled ? 'enabled' : 'off'} | ${vadSpeech ? 'speech' : 'quiet'} | ${vadStage} | record ${state.rearmProbe.vadRecordEnabled ? 'on' : 'off'} | stop ${state.rearmProbe.vadStopEnabled ? 'on' : 'off'}`,
+            background: statusBackground,
+            border: statusBorder,
+            color: '#f1f7fa',
+            maxWidth: 420,
+          },
+          {
+            label: `STT ${state.rearmProbe.recording ? 'recording' : (state.rearmProbe.finalizing ? 'finalizing' : (state.rearmProbe.starting ? 'opening' : 'idle'))} | ${state.rearmProbe.bytesSent || 0} bytes`,
+            background: state.rearmProbe.recording ? 'rgba(5,46,22,0.9)' : 'rgba(16,24,38,0.9)',
+            border: state.rearmProbe.recording ? 'rgba(74,222,128,0.72)' : 'rgba(91,156,246,0.42)',
+            color: '#f1f7fa',
+            maxWidth: 280,
+          },
+        ],
+        startLabel: '10s',
+        endLabel: 'now',
+      },
+    };
+  }
+
+  function renderRearmOutput() {
+    if (!state.rearmProbe.outputTouched) return;
+    ensureOutputView()?.setSnapshot(rearmOutputSnapshot());
+  }
+
   function currentSnapshot() {
     if (state.probe.enabled) {
       return { snapshot: manualSnapshot(), source: 'manual STT probe' };
@@ -899,9 +1328,54 @@ const WakeDevModal = (() => {
     }
   }
 
+  async function handleRearmProbeMessage(event) {
+    let payload = {};
+    try {
+      payload = JSON.parse(event.data || '{}');
+    } catch (_) {
+      return;
+    }
+    if (payload.type === 'partial') {
+      const value = String(payload.text || '').trim();
+      pushRearmProbeEvent('partial', value, { detail: value ? '' : 'empty partial' });
+      if (value) state.rearmProbe.transcript = value;
+      renderRearmProbeUi();
+      poll();
+      return;
+    }
+    if (payload.type === 'final') {
+      const value = String(payload.text || state.rearmProbe.transcript || '').trim();
+      state.rearmProbe.transcript = value;
+      pushRearmProbeEvent('final', value, { detail: 'rearm probe final' });
+      pushRearmProbeAction('rearmProbeFinal', { text: value });
+      state.rearmProbe.recording = false;
+      state.rearmProbe.finalizing = false;
+      state.rearmProbe.starting = false;
+      closeRearmProbeSocket();
+      resetRearmProbeVad();
+      rearmProbeStatus(value ? 'Transcript ready.' : 'No transcript returned.');
+      renderRearmProbeUi();
+      poll();
+      return;
+    }
+    if (payload.type === 'error') {
+      const detail = payload.detail || 'unknown error';
+      pushRearmProbeEvent('error', '', { detail });
+      pushRearmProbeAction('rearmProbeError', { error: detail });
+      state.rearmProbe.recording = false;
+      state.rearmProbe.finalizing = false;
+      state.rearmProbe.starting = false;
+      closeRearmProbeSocket();
+      rearmProbeStatus(`STT failed: ${detail}`);
+      renderRearmProbeUi();
+      poll();
+    }
+  }
+
   async function enableProbeMode() {
     if (state.probe.enabled) return;
     if (state.vadProbe.enabled) disableVadProbeMode();
+    if (state.rearmProbe.enabled) disableRearmProbeMode();
     const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
     if (!navigator.mediaDevices?.getUserMedia || typeof WebSocket === 'undefined' || !AudioContextCtor) {
       probeStatus('Manual STT probe is unavailable in this browser.');
@@ -965,6 +1439,7 @@ const WakeDevModal = (() => {
   async function enableVadProbeMode() {
     if (state.vadProbe.enabled) return;
     if (state.probe.enabled) disableProbeMode();
+    if (state.rearmProbe.enabled) disableRearmProbeMode();
     const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
     if (!navigator.mediaDevices?.getUserMedia || typeof WebSocket === 'undefined' || !AudioContextCtor) {
       vadProbeStatus('VAD STT probe is unavailable in this browser.');
@@ -1034,6 +1509,82 @@ const WakeDevModal = (() => {
     }
   }
 
+  async function enableRearmProbeMode() {
+    if (state.rearmProbe.enabled) return;
+    if (state.probe.enabled) disableProbeMode();
+    if (state.vadProbe.enabled) disableVadProbeMode();
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!navigator.mediaDevices?.getUserMedia || typeof WebSocket === 'undefined' || !AudioContextCtor) {
+      touchRearmOutput();
+      rearmProbeStatus('VAD ReArm STT probe is unavailable in this browser.');
+      renderRearmProbeUi();
+      return;
+    }
+    try {
+      const wakeController = window.WakeToTalkController;
+      state.rearmProbe.restoreWakeOnDisable = wakeController?.isRunning?.() === true;
+      if (state.rearmProbe.restoreWakeOnDisable) {
+        wakeController.stop?.('vad-rearm-stt-test-mode');
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+      const audioContext = new AudioContextCtor();
+      await audioContext.resume?.();
+      const source = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(AUDIO_BUFFER_SIZE, 1, 1);
+      state.rearmProbe.stream = stream;
+      state.rearmProbe.audioContext = audioContext;
+      state.rearmProbe.sourceNode = source;
+      state.rearmProbe.processorNode = processor;
+      state.rearmProbe.enabled = true;
+      state.rearmProbe.recording = false;
+      state.rearmProbe.finalizing = false;
+      state.rearmProbe.starting = false;
+      state.rearmProbe.startedAt = 0;
+      state.rearmProbe.delayFrames = [];
+      state.rearmProbe.pendingFrames = [];
+      state.rearmProbe.samples = [];
+      resetRearmProbeVad(Date.now());
+      processor.onaudioprocess = event => {
+        const output = event.outputBuffer?.getChannelData?.(0);
+        if (output) output.fill(0);
+        const input = event.inputBuffer.getChannelData(0);
+        const features = audioFeatures(input);
+        addRearmProbeSample(features);
+        if (state.rearmProbe.vadRecordEnabled || state.rearmProbe.vadStopEnabled) {
+          updateRearmProbe(features, Date.now());
+        }
+        if (!state.rearmProbe.recording || state.rearmProbe.ws?.readyState !== WebSocket.OPEN) return;
+        const pcm = downsampleFloat32(input, audioContext.sampleRate);
+        if (!pcm?.byteLength) return;
+        if (VAD_TEST_DELAY_FRAMES > 0) {
+          state.rearmProbe.delayFrames.push(pcm);
+          while (state.rearmProbe.delayFrames.length > VAD_TEST_DELAY_FRAMES) state.rearmProbe.delayFrames.shift();
+        }
+        sendRearmProbePcm(pcm, 'stream');
+      };
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+      pushRearmProbeAction('rearmTestMode', { reason: 'enabled' });
+      rearmProbeStatus(state.rearmProbe.restoreWakeOnDisable
+        ? 'VAD ReArm STT test mode enabled. Wake controller paused; mic is live.'
+        : 'VAD ReArm STT test mode enabled. Mic is live.');
+      renderRearmProbeUi();
+      poll();
+    } catch (error) {
+      cleanupRearmProbeAudio();
+      state.rearmProbe.enabled = false;
+      if (state.rearmProbe.restoreWakeOnDisable) {
+        state.rearmProbe.restoreWakeOnDisable = false;
+        restoreWakeController();
+      }
+      touchRearmOutput();
+      rearmProbeStatus(`VAD ReArm test mode unavailable: ${error.message || error}`);
+      renderRearmProbeUi();
+    }
+  }
+
   function disableProbeMode() {
     const restoreWake = state.probe.restoreWakeOnDisable;
     closeProbeSocket();
@@ -1077,6 +1628,32 @@ const WakeDevModal = (() => {
     renderVadProbeUi();
     poll();
     drawWaveform();
+    if (restoreWake) {
+      restoreWakeController();
+    }
+  }
+
+  function disableRearmProbeMode() {
+    const restoreWake = state.rearmProbe.restoreWakeOnDisable;
+    closeRearmProbeSocket();
+    cleanupRearmProbeAudio();
+    state.rearmProbe.enabled = false;
+    state.rearmProbe.recording = false;
+    state.rearmProbe.finalizing = false;
+    state.rearmProbe.starting = false;
+    state.rearmProbe.vadRecordEnabled = false;
+    state.rearmProbe.vadStopEnabled = false;
+    state.rearmProbe.restoreWakeOnDisable = false;
+    state.rearmProbe.startedAt = 0;
+    state.rearmProbe.bytesSent = 0;
+    state.rearmProbe.framesSent = 0;
+    state.rearmProbe.delayFrames = [];
+    state.rearmProbe.pendingFrames = [];
+    resetRearmProbeVad();
+    pushRearmProbeAction('rearmTestMode', { reason: 'disabled' });
+    rearmProbeStatus('VAD ReArm STT probe is off.');
+    renderRearmProbeUi();
+    poll();
     if (restoreWake) {
       restoreWakeController();
     }
@@ -1198,6 +1775,81 @@ const WakeDevModal = (() => {
     }
   }
 
+  function sendRearmProbePcm(pcm, source = 'stream') {
+    if (!pcm?.byteLength || state.rearmProbe.ws?.readyState !== WebSocket.OPEN) return false;
+    try {
+      state.rearmProbe.ws.send(pcm.buffer);
+      state.rearmProbe.bytesSent += pcm.byteLength;
+      state.rearmProbe.framesSent += 1;
+      if (source !== 'stream') {
+        pushRearmProbeAction('rearmProbeFrame', { source, audio_frame: state.rearmProbe.framesSent });
+      }
+      return true;
+    } catch (error) {
+      pushRearmProbeAction('rearmProbeError', { error: error.message || String(error) });
+      return false;
+    }
+  }
+
+  async function startRearmProbeRecording(options = {}) {
+    if (state.rearmProbe.recording || state.rearmProbe.finalizing || state.rearmProbe.starting) return;
+    if (!state.rearmProbe.enabled) await enableRearmProbeMode();
+    if (!state.rearmProbe.enabled) return;
+    closeRearmProbeSocket();
+    state.rearmProbe.bytesSent = 0;
+    state.rearmProbe.framesSent = 0;
+    state.rearmProbe.transcript = '';
+    state.rearmProbe.events = [];
+    state.rearmProbe.pendingFrames = [];
+    state.rearmProbe.starting = true;
+    renderRearmProbeUi();
+    poll();
+    try {
+      const ws = new WebSocket(await probeWebsocketUrl());
+      ws.binaryType = 'arraybuffer';
+      state.rearmProbe.ws = ws;
+      ws.addEventListener('message', event => { void handleRearmProbeMessage(event); });
+      ws.addEventListener('close', () => {
+        if (!state.rearmProbe.recording && !state.rearmProbe.finalizing && !state.rearmProbe.starting) return;
+        state.rearmProbe.recording = false;
+        state.rearmProbe.finalizing = false;
+        state.rearmProbe.starting = false;
+        state.rearmProbe.ws = null;
+        pushRearmProbeAction('rearmProbeError', { error: 'socket closed before final transcript' });
+        rearmProbeStatus('STT connection closed before final transcript.');
+        renderRearmProbeUi();
+        poll();
+      });
+      await waitForSocketOpen(ws);
+      state.rearmProbe.startedAt = Date.now();
+      state.rearmProbe.recording = true;
+      state.rearmProbe.finalizing = false;
+      state.rearmProbe.starting = false;
+      const queued = state.rearmProbe.pendingFrames.splice(0);
+      queued.forEach(frame => sendRearmProbePcm(frame, 'pre_roll'));
+      pushRearmProbeAction('rearmProbeRecordStart', {
+        route: STT_WS_URL,
+        reason: options.reason || 'manual_record',
+        vad_record_enabled: !!state.rearmProbe.vadRecordEnabled,
+        pre_roll_frames: queued.length,
+      });
+      rearmProbeStatus(voiceNoiseEnabled()
+        ? 'Recording with noise reduction; isolated VAD ReArm test.'
+        : 'Recording without noise reduction; isolated VAD ReArm test.');
+      renderRearmProbeUi();
+      poll();
+    } catch (error) {
+      closeRearmProbeSocket();
+      state.rearmProbe.recording = false;
+      state.rearmProbe.finalizing = false;
+      state.rearmProbe.starting = false;
+      pushRearmProbeAction('rearmProbeError', { error: error.message || String(error) });
+      rearmProbeStatus(`Recording unavailable: ${error.message || error}`);
+      renderRearmProbeUi();
+      poll();
+    }
+  }
+
   function stopProbeRecording() {
     if (!state.probe.recording || !state.probe.ws) return;
     state.probe.recording = false;
@@ -1275,6 +1927,56 @@ const WakeDevModal = (() => {
     drawWaveform();
   }
 
+  function stopRearmProbeRecording(reason = 'manual_stop') {
+    if (!state.rearmProbe.recording || !state.rearmProbe.ws) {
+      if (state.rearmProbe.starting || state.rearmProbe.vadRecordEnabled) {
+        closeRearmProbeSocket();
+        state.rearmProbe.starting = false;
+        state.rearmProbe.recording = false;
+        state.rearmProbe.finalizing = false;
+        state.rearmProbe.vadRecordEnabled = false;
+        pushRearmProbeAction('rearmProbeRecordStop', { reason: 'cancel_armed_record', audio_bytes: state.rearmProbe.bytesSent, audio_frames: state.rearmProbe.framesSent });
+        rearmProbeStatus('VAD Record stopped.');
+        renderRearmProbeUi();
+        poll();
+      }
+      return;
+    }
+    state.rearmProbe.recording = false;
+    state.rearmProbe.finalizing = true;
+    state.rearmProbe.vadRecordEnabled = false;
+    const vad = state.rearmProbe.vad || {};
+    const now = Date.now();
+    const speechAge = vad.lastVoiceAt ? Math.max(0, now - vad.lastVoiceAt) : null;
+    const recordingMs = state.rearmProbe.startedAt ? Math.max(0, now - state.rearmProbe.startedAt) : null;
+    pushRearmProbeAction('rearmProbeRecordStop', {
+      reason,
+      audio_bytes: state.rearmProbe.bytesSent,
+      audio_frames: state.rearmProbe.framesSent,
+      speech_age_ms: speechAge,
+      recording_ms: recordingMs,
+      timeout_ms: rearmProbeResetTimeoutMs(),
+    });
+    if (state.rearmProbe.ws.readyState === WebSocket.OPEN) {
+      const endPayload = {
+        type: 'end',
+        audio_bytes: state.rearmProbe.bytesSent,
+        audio_frames: state.rearmProbe.framesSent,
+      };
+      if (reason !== 'manual_stop') endPayload.reason = reason;
+      state.rearmProbe.ws.send(JSON.stringify(endPayload));
+      rearmProbeStatus(reason === 'vad_stop'
+        ? `VAD Stop sent end after ${Math.round(recordingMs || 0)} ms / ${state.rearmProbe.framesSent} frames.`
+        : 'Finalizing transcript.');
+    } else {
+      state.rearmProbe.finalizing = false;
+      closeRearmProbeSocket();
+      rearmProbeStatus('STT connection was not ready.');
+    }
+    renderRearmProbeUi();
+    poll();
+  }
+
   function clearProbe() {
     if (state.probe.recording || state.probe.finalizing) return;
     state.probe.transcript = '';
@@ -1303,6 +2005,29 @@ const WakeDevModal = (() => {
     drawWaveform();
   }
 
+  function clearRearmProbe() {
+    if (state.rearmProbe.recording || state.rearmProbe.finalizing || state.rearmProbe.starting) return;
+    state.rearmProbe.transcript = '';
+    state.rearmProbe.events = [];
+    state.rearmProbe.actions = [];
+    state.rearmProbe.samples = [];
+    state.rearmProbe.bytesSent = 0;
+    state.rearmProbe.framesSent = 0;
+    state.rearmProbe.pendingFrames = [];
+    state.rearmProbe.uiStateSignature = '';
+    resetRearmProbeVad();
+    pushRearmProbeAction('controlState', {
+      control: 'Clear',
+      label: 'Clear: pressed',
+      button_text: 'Clear',
+      disabled: false,
+      pressed: true,
+    });
+    rearmProbeStatus(state.rearmProbe.enabled ? 'VAD ReArm STT test mode enabled. Mic is live.' : 'VAD ReArm STT probe is off.');
+    renderRearmProbeUi();
+    poll();
+  }
+
   function toggleVadRecordMode() {
     if (!state.vadProbe.enabled) return;
     state.vadProbe.vadRecordEnabled = !state.vadProbe.vadRecordEnabled;
@@ -1310,6 +2035,25 @@ const WakeDevModal = (() => {
     pushVadProbeAction('vadRecordMode', { enabled: state.vadProbe.vadRecordEnabled });
     vadProbeStatus(state.vadProbe.vadRecordEnabled ? 'VAD Record enabled. Speak to auto-record.' : 'VAD Record disabled.');
     renderVadProbeUi();
+    poll();
+  }
+
+  function toggleRearmRecordMode() {
+    if (!state.rearmProbe.enabled) return;
+    state.rearmProbe.vadRecordEnabled = !state.rearmProbe.vadRecordEnabled;
+    resetRearmProbeVad();
+    pushRearmProbeAction('vadRecordMode', { enabled: state.rearmProbe.vadRecordEnabled });
+    rearmProbeStatus(state.rearmProbe.vadRecordEnabled ? 'VAD Record enabled. Speak to auto-record.' : 'VAD Record disabled.');
+    renderRearmProbeUi();
+    poll();
+  }
+
+  function toggleRearmStopMode() {
+    if (!state.rearmProbe.enabled) return;
+    state.rearmProbe.vadStopEnabled = !state.rearmProbe.vadStopEnabled;
+    pushRearmProbeAction('vadStopMode', { enabled: state.rearmProbe.vadStopEnabled, timeout_ms: rearmProbeResetTimeoutMs() });
+    rearmProbeStatus(state.rearmProbe.vadStopEnabled ? 'VAD Stop enabled. Silence will send Stop.' : 'VAD Stop disabled.');
+    renderRearmProbeUi();
     poll();
   }
 
@@ -1476,6 +2220,7 @@ const WakeDevModal = (() => {
   function poll() {
     const current = currentSnapshot();
     renderSnapshot(current.snapshot, current.source);
+    renderRearmOutput();
     renderControlState();
   }
 
@@ -1804,6 +2549,7 @@ const WakeDevModal = (() => {
     if (state.timelinePaused) toggleTimelinePause();
     if (state.probe.enabled || state.probe.ws) disableProbeMode();
     if (state.vadProbe.enabled || state.vadProbe.ws) disableVadProbeMode();
+    if (state.rearmProbe.enabled || state.rearmProbe.ws) disableRearmProbeMode();
   }
 
   function open() {
@@ -1849,6 +2595,15 @@ const WakeDevModal = (() => {
     els.vadTestClear = el('wake-dev-vad-test-clear');
     els.vadTestStatus = el('wake-dev-vad-test-status');
     els.vadTranscript = el('wake-dev-vad-transcript');
+    els.rearmTestMode = el('wake-dev-rearm-test-mode');
+    els.rearmRecordToggle = el('wake-dev-rearm-test-record-vad');
+    els.rearmStopToggle = el('wake-dev-rearm-test-stop-vad');
+    els.rearmTestRecord = el('wake-dev-rearm-test-record');
+    els.rearmTestStop = el('wake-dev-rearm-test-stop');
+    els.rearmTestClear = el('wake-dev-rearm-test-clear');
+    els.rearmTestStatus = el('wake-dev-rearm-test-status');
+    els.rearmTranscript = el('wake-dev-rearm-transcript');
+    els.outputView = el('wake-dev-output-view');
     els.wakeWord = el('wake-dev-wake-word');
     els.matrixRoom = el('wake-dev-matrix-room');
     els.postWake = el('wake-dev-post-wake');
@@ -1900,6 +2655,15 @@ const WakeDevModal = (() => {
     els.vadTestRecord?.addEventListener('click', () => { void startVadProbeRecording({ reason: 'manual_record' }); });
     els.vadTestStop?.addEventListener('click', () => stopVadProbeRecording('manual_stop'));
     els.vadTestClear?.addEventListener('click', clearVadProbe);
+    els.rearmTestMode?.addEventListener('click', () => {
+      if (state.rearmProbe.enabled) disableRearmProbeMode();
+      else void enableRearmProbeMode();
+    });
+    els.rearmRecordToggle?.addEventListener('click', toggleRearmRecordMode);
+    els.rearmStopToggle?.addEventListener('click', toggleRearmStopMode);
+    els.rearmTestRecord?.addEventListener('click', () => { void startRearmProbeRecording({ reason: 'manual_record' }); });
+    els.rearmTestStop?.addEventListener('click', () => stopRearmProbeRecording('manual_stop'));
+    els.rearmTestClear?.addEventListener('click', clearRearmProbe);
     els.wakeToggle?.addEventListener('change', () => {
       setWakeMode(els.wakeToggle.checked);
       status(els.wakeToggle.checked ? 'Wake to Talk selected. Activate this browser to run it.' : 'Wake to Talk deselected.');
@@ -1962,6 +2726,8 @@ const WakeDevModal = (() => {
     els.modal.addEventListener('close', stop);
     renderStates('');
     renderProbeUi();
+    renderRearmProbeUi();
+    ensureOutputView();
     renderControlState();
   }
 

@@ -4604,39 +4604,68 @@
         </label>
       </div>
 
-      <div class="wake-dev-card wake-dev-test">
-        <div class="wake-dev-card__head">
-          <span class="wake-dev-card__title">Manual STT Test Mode</span>
-          <span class="wake-dev-meta" id="wake-dev-test-status">VAD bypass is off.</span>
+      <div class="wake-dev-card wake-dev-test wake-dev-test-tabs">
+        <input class="wake-dev-test-tab-radio" type="radio" name="wake-dev-test-tab" id="wake-dev-test-tab-manual" checked>
+        <input class="wake-dev-test-tab-radio" type="radio" name="wake-dev-test-tab" id="wake-dev-test-tab-vad">
+        <input class="wake-dev-test-tab-radio" type="radio" name="wake-dev-test-tab" id="wake-dev-test-tab-rearm">
+        <div class="wake-dev-test-tablist" role="tablist" aria-label="STT test modes">
+          <label class="wake-dev-test-tab" role="tab" for="wake-dev-test-tab-manual">Manual</label>
+          <label class="wake-dev-test-tab" role="tab" for="wake-dev-test-tab-vad">VAD</label>
+          <label class="wake-dev-test-tab" role="tab" for="wake-dev-test-tab-rearm">VAD ReArm</label>
         </div>
-        <div class="wake-dev-test__tools">
-          <button class="hub-modal-btn" type="button" id="wake-dev-test-mode" aria-pressed="false">Enable test mode</button>
-          <button class="hub-modal-btn" type="button" id="wake-dev-test-record" disabled>Record</button>
-          <button class="hub-modal-btn" type="button" id="wake-dev-test-stop" disabled>Stop</button>
-          <button class="hub-modal-btn" type="button" id="wake-dev-test-clear">Clear</button>
-        </div>
-        <div class="wake-dev-test__transcript">
-          <span class="wake-dev-section-label">Transcript</span>
-          <div class="wake-dev-transcript" id="wake-dev-transcript" aria-live="polite"></div>
-        </div>
-      </div>
-
-      <div class="wake-dev-card wake-dev-test">
-        <div class="wake-dev-card__head">
-          <span class="wake-dev-card__title">VAD STT Test Mode</span>
-          <span class="wake-dev-meta" id="wake-dev-vad-test-status">VAD STT probe is off.</span>
-        </div>
-        <div class="wake-dev-test__tools wake-dev-test__tools--vad">
-          <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-mode" aria-pressed="false">Enable test mode</button>
-          <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-record-vad" aria-pressed="false" disabled>Enable VAD Record</button>
-          <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-stop-vad" aria-pressed="false" disabled>Enable VAD Stop</button>
-          <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-record" disabled>Record</button>
-          <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-stop" disabled>Stop</button>
-          <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-clear">Clear</button>
-        </div>
-        <div class="wake-dev-test__transcript">
-          <span class="wake-dev-section-label">Transcript</span>
-          <div class="wake-dev-transcript" id="wake-dev-vad-transcript" aria-live="polite"></div>
+        <div class="wake-dev-test-panels">
+          <section class="wake-dev-test-panel wake-dev-test-panel--manual" role="tabpanel" aria-label="Manual STT Test Mode">
+            <div class="wake-dev-card__head">
+              <span class="wake-dev-card__title">Manual STT Test Mode</span>
+              <span class="wake-dev-meta" id="wake-dev-test-status">VAD bypass is off.</span>
+            </div>
+            <div class="wake-dev-test__tools">
+              <button class="hub-modal-btn" type="button" id="wake-dev-test-mode" aria-pressed="false">Enable test mode</button>
+              <button class="hub-modal-btn" type="button" id="wake-dev-test-record" disabled>Record</button>
+              <button class="hub-modal-btn" type="button" id="wake-dev-test-stop" disabled>Stop</button>
+              <button class="hub-modal-btn" type="button" id="wake-dev-test-clear">Clear</button>
+            </div>
+            <div class="wake-dev-test__transcript">
+              <span class="wake-dev-section-label">Transcript</span>
+              <div class="wake-dev-transcript" id="wake-dev-transcript" aria-live="polite"></div>
+            </div>
+          </section>
+          <section class="wake-dev-test-panel wake-dev-test-panel--vad" role="tabpanel" aria-label="VAD STT Test Mode">
+            <div class="wake-dev-card__head">
+              <span class="wake-dev-card__title">VAD STT Test Mode</span>
+              <span class="wake-dev-meta" id="wake-dev-vad-test-status">VAD STT probe is off.</span>
+            </div>
+            <div class="wake-dev-test__tools wake-dev-test__tools--vad">
+              <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-mode" aria-pressed="false">Enable test mode</button>
+              <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-record-vad" aria-pressed="false" disabled>Enable VAD Record</button>
+              <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-stop-vad" aria-pressed="false" disabled>Enable VAD Stop</button>
+              <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-record" disabled>Record</button>
+              <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-stop" disabled>Stop</button>
+              <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-clear">Clear</button>
+            </div>
+            <div class="wake-dev-test__transcript">
+              <span class="wake-dev-section-label">Transcript</span>
+              <div class="wake-dev-transcript" id="wake-dev-vad-transcript" aria-live="polite"></div>
+            </div>
+          </section>
+          <section class="wake-dev-test-panel wake-dev-test-panel--rearm" role="tabpanel" aria-label="VAD ReArm STT Test Mode">
+            <div class="wake-dev-card__head">
+              <span class="wake-dev-card__title">VAD ReArm STT Test Mode</span>
+              <span class="wake-dev-meta" id="wake-dev-rearm-test-status">VAD ReArm STT probe is off.</span>
+            </div>
+            <div class="wake-dev-test__tools wake-dev-test__tools--vad">
+              <button class="hub-modal-btn" type="button" id="wake-dev-rearm-test-mode" aria-pressed="false">Enable test mode</button>
+              <button class="hub-modal-btn" type="button" id="wake-dev-rearm-test-record-vad" aria-pressed="false" disabled>Enable VAD Record</button>
+              <button class="hub-modal-btn" type="button" id="wake-dev-rearm-test-stop-vad" aria-pressed="false" disabled>Enable VAD Stop</button>
+              <button class="hub-modal-btn" type="button" id="wake-dev-rearm-test-record" disabled>Record</button>
+              <button class="hub-modal-btn" type="button" id="wake-dev-rearm-test-stop" disabled>Stop</button>
+              <button class="hub-modal-btn" type="button" id="wake-dev-rearm-test-clear">Clear</button>
+            </div>
+            <div class="wake-dev-test__transcript">
+              <span class="wake-dev-section-label">Transcript</span>
+              <div class="wake-dev-transcript" id="wake-dev-rearm-transcript" aria-live="polite"></div>
+            </div>
+          </section>
         </div>
       </div>
 
