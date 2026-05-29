@@ -587,6 +587,64 @@ const WakeDevModal = (() => {
     state.rearmProbe.events = state.rearmProbe.events.slice(-160);
   }
 
+  function cleanSttTranscript(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function sttPayloadDisplayText(payload) {
+    if (!payload || typeof payload !== 'object') return '';
+    const direct = payload.transcript
+      ?? payload.full_text
+      ?? payload.display_text
+      ?? payload.result_text
+      ?? payload.text
+      ?? payload.partial
+      ?? payload.final;
+    if (direct != null) return cleanSttTranscript(direct);
+    const result = payload.result && typeof payload.result === 'object' ? payload.result : null;
+    if (result?.transcript != null) return cleanSttTranscript(result.transcript);
+    if (result?.text != null) return cleanSttTranscript(result.text);
+    const alternatives = Array.isArray(payload.alternatives) ? payload.alternatives : [];
+    if (alternatives[0]?.transcript != null) return cleanSttTranscript(alternatives[0].transcript);
+    if (alternatives[0]?.text != null) return cleanSttTranscript(alternatives[0].text);
+    return '';
+  }
+
+  function mergeTranscriptProgress(previousValue, nextValue, phase = 'partial') {
+    const previous = cleanSttTranscript(previousValue);
+    const next = cleanSttTranscript(nextValue);
+    if (!next) return previous;
+    if (!previous) return next;
+    const previousLower = previous.toLowerCase();
+    const nextLower = next.toLowerCase();
+    if (nextLower === previousLower) return previous;
+    if (nextLower.startsWith(previousLower)) return next;
+    if (previousLower.endsWith(nextLower) || previousLower.includes(nextLower)) return previous;
+    if (phase === 'final' && previous.length > next.length * 1.25) return previous;
+
+    const maxOverlap = Math.min(previous.length, next.length);
+    for (let size = maxOverlap; size >= 8; size -= 1) {
+      if (previousLower.slice(-size) === nextLower.slice(0, size)) {
+        return cleanSttTranscript(`${previous}${next.slice(size)}`);
+      }
+    }
+
+    const previousWords = previous.split(/\s+/);
+    const nextWords = next.split(/\s+/);
+    const wordOverlap = Math.min(previousWords.length, nextWords.length, 8);
+    for (let size = wordOverlap; size >= 1; size -= 1) {
+      const left = previousWords.slice(-size).join(' ').toLowerCase();
+      const right = nextWords.slice(0, size).join(' ').toLowerCase();
+      if (left === right) {
+        return cleanSttTranscript([...previousWords, ...nextWords.slice(size)].join(' '));
+      }
+    }
+
+    const sharedStart = previousWords[0]?.toLowerCase() && previousWords[0].toLowerCase() === nextWords[0]?.toLowerCase();
+    if (sharedStart && next.length >= previous.length * 0.8) return next.length >= previous.length ? next : previous;
+    return cleanSttTranscript(`${previous} ${next}`);
+  }
+
   function buttonSnapshot(control, node) {
     if (!node) return null;
     return {
@@ -1119,7 +1177,7 @@ const WakeDevModal = (() => {
 
   function rearmTranscriptSpan(now = Date.now()) {
     const textEvents = state.rearmProbe.events
-      .filter(evt => (evt.type === 'partial' || evt.type === 'final') && String(evt.text || '').trim());
+      .filter(evt => (evt.type === 'partial' || evt.type === 'final') && String(evt.display_text || evt.text || '').trim());
     if (!textEvents.length) return null;
     const first = textEvents.find(evt => evt.type === 'partial') || textEvents[0];
     const finalEvent = textEvents.find(evt => evt.type === 'final');
@@ -1139,7 +1197,7 @@ const WakeDevModal = (() => {
     return {
       atMs: Number(first.at_ms || now),
       endMs: Math.max(Number(first.at_ms || now) + 80, endAt),
-      text: latest.text || '',
+      text: latest.display_text || state.rearmProbe.transcript || latest.text || '',
       status: statusValue,
       color,
       background: statusValue === 'final'
@@ -1336,18 +1394,28 @@ const WakeDevModal = (() => {
       return;
     }
     if (payload.type === 'partial') {
-      const value = String(payload.text || '').trim();
-      pushRearmProbeEvent('partial', value, { detail: value ? '' : 'empty partial' });
-      if (value) state.rearmProbe.transcript = value;
+      const rawValue = cleanSttTranscript(payload.text ?? payload.partial ?? payload.transcript ?? payload.result_text ?? '');
+      const displayValue = mergeTranscriptProgress(state.rearmProbe.transcript, sttPayloadDisplayText(payload), 'partial');
+      pushRearmProbeEvent('partial', displayValue, {
+        detail: displayValue ? '' : 'empty partial',
+        raw_text: rawValue,
+        display_text: displayValue,
+      });
+      if (displayValue) state.rearmProbe.transcript = displayValue;
       renderRearmProbeUi();
       poll();
       return;
     }
     if (payload.type === 'final') {
-      const value = String(payload.text || state.rearmProbe.transcript || '').trim();
+      const rawValue = cleanSttTranscript(payload.text ?? payload.final ?? payload.transcript ?? payload.result_text ?? '');
+      const value = mergeTranscriptProgress(state.rearmProbe.transcript, sttPayloadDisplayText(payload) || rawValue, 'final');
       state.rearmProbe.transcript = value;
-      pushRearmProbeEvent('final', value, { detail: 'rearm probe final' });
-      pushRearmProbeAction('rearmProbeFinal', { text: value });
+      pushRearmProbeEvent('final', value, {
+        detail: 'rearm probe final',
+        raw_text: rawValue,
+        display_text: value,
+      });
+      pushRearmProbeAction('rearmProbeFinal', { text: value, raw_text: rawValue });
       state.rearmProbe.recording = false;
       state.rearmProbe.finalizing = false;
       state.rearmProbe.starting = false;
