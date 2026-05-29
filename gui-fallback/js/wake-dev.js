@@ -119,6 +119,7 @@ const WakeDevModal = (() => {
       events: [],
       actions: [],
       samples: [],
+      segmentId: 0,
       lastLevel: 0,
       outputTouched: false,
       uiStateSignature: '',
@@ -568,6 +569,7 @@ const WakeDevModal = (() => {
     state.rearmProbe.actions.push({
       at_ms: Date.now(),
       type,
+      segment_id: Number(state.rearmProbe.segmentId || 0),
       ...detail,
     });
     state.rearmProbe.actions = state.rearmProbe.actions.slice(-160);
@@ -581,6 +583,7 @@ const WakeDevModal = (() => {
       type,
       text: clean,
       text_length: clean.length,
+      segment_id: Number(state.rearmProbe.segmentId || 0),
       audio_frames_sent: state.rearmProbe.framesSent,
       ...detail,
     });
@@ -608,41 +611,6 @@ const WakeDevModal = (() => {
     if (alternatives[0]?.transcript != null) return cleanSttTranscript(alternatives[0].transcript);
     if (alternatives[0]?.text != null) return cleanSttTranscript(alternatives[0].text);
     return '';
-  }
-
-  function mergeTranscriptProgress(previousValue, nextValue, phase = 'partial') {
-    const previous = cleanSttTranscript(previousValue);
-    const next = cleanSttTranscript(nextValue);
-    if (!next) return previous;
-    if (!previous) return next;
-    const previousLower = previous.toLowerCase();
-    const nextLower = next.toLowerCase();
-    if (nextLower === previousLower) return previous;
-    if (nextLower.startsWith(previousLower)) return next;
-    if (previousLower.endsWith(nextLower) || previousLower.includes(nextLower)) return previous;
-    if (phase === 'final' && previous.length > next.length * 1.25) return previous;
-
-    const maxOverlap = Math.min(previous.length, next.length);
-    for (let size = maxOverlap; size >= 8; size -= 1) {
-      if (previousLower.slice(-size) === nextLower.slice(0, size)) {
-        return cleanSttTranscript(`${previous}${next.slice(size)}`);
-      }
-    }
-
-    const previousWords = previous.split(/\s+/);
-    const nextWords = next.split(/\s+/);
-    const wordOverlap = Math.min(previousWords.length, nextWords.length, 8);
-    for (let size = wordOverlap; size >= 1; size -= 1) {
-      const left = previousWords.slice(-size).join(' ').toLowerCase();
-      const right = nextWords.slice(0, size).join(' ').toLowerCase();
-      if (left === right) {
-        return cleanSttTranscript([...previousWords, ...nextWords.slice(size)].join(' '));
-      }
-    }
-
-    const sharedStart = previousWords[0]?.toLowerCase() && previousWords[0].toLowerCase() === nextWords[0]?.toLowerCase();
-    if (sharedStart && next.length >= previous.length * 0.8) return next.length >= previous.length ? next : previous;
-    return cleanSttTranscript(`${previous} ${next}`);
   }
 
   function buttonSnapshot(control, node) {
@@ -1176,20 +1144,29 @@ const WakeDevModal = (() => {
   }
 
   function rearmTranscriptSpan(now = Date.now()) {
+    const segmentId = Number(state.rearmProbe.segmentId || 0);
     const textEvents = state.rearmProbe.events
-      .filter(evt => (evt.type === 'partial' || evt.type === 'final') && String(evt.display_text || evt.text || '').trim());
+      .filter(evt => (
+        (evt.type === 'partial' || evt.type === 'final')
+        && Number(evt.segment_id || 0) === segmentId
+        && String(evt.display_text || evt.text || '').trim()
+      ));
     if (!textEvents.length) return null;
     const first = textEvents.find(evt => evt.type === 'partial') || textEvents[0];
-    const finalEvent = textEvents.find(evt => evt.type === 'final');
+    const finalEvent = [...textEvents].reverse().find(evt => evt.type === 'final');
     const latest = textEvents[textEvents.length - 1];
     const stopAction = [...state.rearmProbe.actions].reverse()
-      .find(action => action.type === 'rearmProbeRecordStop');
+      .find(action => (
+        action.type === 'rearmProbeRecordStop'
+        && Number(action.segment_id || 0) === segmentId
+        && Number(action.at_ms || 0) >= Number(first.at_ms || 0)
+      ));
     let statusValue = 'partial';
     let endAt = now;
     if (finalEvent) {
       statusValue = 'final';
       endAt = Number(finalEvent.at_ms || now);
-    } else if (stopAction?.at_ms && now - Number(stopAction.at_ms) >= REARM_FINAL_TIMEOUT_MS) {
+    } else if (!state.rearmProbe.recording && stopAction?.at_ms && now - Number(stopAction.at_ms) >= REARM_FINAL_TIMEOUT_MS) {
       statusValue = 'timeout';
       endAt = Number(stopAction.at_ms) + REARM_FINAL_TIMEOUT_MS;
     }
@@ -1395,7 +1372,7 @@ const WakeDevModal = (() => {
     }
     if (payload.type === 'partial') {
       const rawValue = cleanSttTranscript(payload.text ?? payload.partial ?? payload.transcript ?? payload.result_text ?? '');
-      const displayValue = mergeTranscriptProgress(state.rearmProbe.transcript, sttPayloadDisplayText(payload), 'partial');
+      const displayValue = sttPayloadDisplayText(payload) || rawValue || state.rearmProbe.transcript;
       pushRearmProbeEvent('partial', displayValue, {
         detail: displayValue ? '' : 'empty partial',
         raw_text: rawValue,
@@ -1408,7 +1385,7 @@ const WakeDevModal = (() => {
     }
     if (payload.type === 'final') {
       const rawValue = cleanSttTranscript(payload.text ?? payload.final ?? payload.transcript ?? payload.result_text ?? '');
-      const value = mergeTranscriptProgress(state.rearmProbe.transcript, sttPayloadDisplayText(payload) || rawValue, 'final');
+      const value = sttPayloadDisplayText(payload) || rawValue || state.rearmProbe.transcript;
       state.rearmProbe.transcript = value;
       pushRearmProbeEvent('final', value, {
         detail: 'rearm probe final',
@@ -1610,9 +1587,13 @@ const WakeDevModal = (() => {
       state.rearmProbe.finalizing = false;
       state.rearmProbe.starting = false;
       state.rearmProbe.startedAt = 0;
+      state.rearmProbe.transcript = '';
+      state.rearmProbe.events = [];
+      state.rearmProbe.actions = [];
       state.rearmProbe.delayFrames = [];
       state.rearmProbe.pendingFrames = [];
       state.rearmProbe.samples = [];
+      state.rearmProbe.uiStateSignature = '';
       resetRearmProbeVad(Date.now());
       processor.onaudioprocess = event => {
         const output = event.outputBuffer?.getChannelData?.(0);
@@ -1868,6 +1849,7 @@ const WakeDevModal = (() => {
     state.rearmProbe.framesSent = 0;
     state.rearmProbe.transcript = '';
     state.rearmProbe.events = [];
+    state.rearmProbe.segmentId = Number(state.rearmProbe.segmentId || 0) + 1;
     state.rearmProbe.pendingFrames = [];
     state.rearmProbe.starting = true;
     renderRearmProbeUi();
