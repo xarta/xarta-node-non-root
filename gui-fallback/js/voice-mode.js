@@ -31,7 +31,7 @@ const BlueprintsVoiceMode = (() => {
   const STT_NOISE_STEP_DB = 0.5;
   const STT_VAD_RESET_DEFAULT_MS = 300;
   const STT_VAD_RESET_MIN_MS = 0;
-  const STT_VAD_RESET_MAX_MS = 500;
+  const STT_VAD_RESET_MAX_MS = 2000;
   const STT_VAD_RESET_STEP_MS = 50;
   const STT_SILENCE_RESET_DEFAULT_MS = 2100;
   const STT_SILENCE_RESET_MIN_MS = 0;

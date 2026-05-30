@@ -15,7 +15,7 @@ const WakeDevModal = (() => {
   const VAD_TEST_ABSOLUTE_FLOOR = 0.0012;
   const VAD_TEST_STRONG_MULTIPLIER = 5;
   const VAD_TEST_EXIT_HANGOVER_MS = 180;
-  const REARM_FINAL_TIMEOUT_MS = 2000;
+  const VAD_RESET_TIMEOUT_MAX_MS = 2000;
   const REARM_OUTPUT_STATES = [
     'VAD_REARM_STT_OFF',
     'VAD_REARM_STT_READY',
@@ -120,6 +120,10 @@ const WakeDevModal = (() => {
       actions: [],
       samples: [],
       segmentId: 0,
+      autoRearmPending: false,
+      autoRearmSegmentId: 0,
+      finalWaitDeadlineAt: 0,
+      finalWaitTimeoutMs: 0,
       lastLevel: 0,
       outputTouched: false,
       uiStateSignature: '',
@@ -302,7 +306,7 @@ const WakeDevModal = (() => {
   }
 
   function formatVadResetTimeout(ms) {
-    const value = Math.max(0, Math.min(500, Math.round(Number(ms || 0) / 50) * 50));
+    const value = Math.max(0, Math.min(VAD_RESET_TIMEOUT_MAX_MS, Math.round(Number(ms || 0) / 50) * 50));
     return value > 0 ? `${value} ms` : 'Off';
   }
 
@@ -375,7 +379,7 @@ const WakeDevModal = (() => {
       if (Number.isFinite(value) && els.aggregation) els.aggregation.value = String(value);
       const vadReset = Number(vm?.vadResetTimeoutMs?.() ?? 300);
       if (Number.isFinite(vadReset) && els.vadReset) {
-        els.vadReset.value = String(Math.max(0, Math.min(500, Math.round(vadReset / 50) * 50)));
+        els.vadReset.value = String(Math.max(0, Math.min(VAD_RESET_TIMEOUT_MAX_MS, Math.round(vadReset / 50) * 50)));
       }
       const silenceReset = Number(vm?.silenceResetTimeoutMs?.() ?? 2100);
       if (Number.isFinite(silenceReset) && els.silenceReset) {
@@ -1022,6 +1026,55 @@ const WakeDevModal = (() => {
     return vadProbeResetTimeoutMs();
   }
 
+  function rearmProbeFinalTimeoutMs() {
+    // ReArm intentionally reuses the VAD reset timeout as the post-end final wait.
+    // That keeps one surfaced timing knob: quiet-to-Stop and Stop-to-rearm timeout.
+    return rearmProbeResetTimeoutMs();
+  }
+
+  function clearRearmAutoRearmState() {
+    state.rearmProbe.autoRearmPending = false;
+    state.rearmProbe.autoRearmSegmentId = 0;
+    state.rearmProbe.finalWaitDeadlineAt = 0;
+    state.rearmProbe.finalWaitTimeoutMs = 0;
+  }
+
+  function armRearmProbeAfterSegment(reason) {
+    if (!state.rearmProbe.enabled || !state.rearmProbe.vadStopEnabled) return false;
+    if (state.rearmProbe.recording || state.rearmProbe.finalizing || state.rearmProbe.starting) return false;
+    state.rearmProbe.vadRecordEnabled = true;
+    clearRearmAutoRearmState();
+    resetRearmProbeVad(Date.now());
+    pushRearmProbeAction('vadRecordMode', {
+      enabled: true,
+      reason,
+      auto_rearm: true,
+    });
+    rearmProbeStatus(reason === 'final_timeout'
+      ? 'VAD Record auto re-armed after final timeout. Speak for the next segment.'
+      : 'VAD Record auto re-armed after final transcript. Speak for the next segment.');
+    renderRearmProbeUi();
+    poll();
+    return true;
+  }
+
+  function maybeRearmProbeAfterFinalTimeout(now = Date.now()) {
+    if (!state.rearmProbe.autoRearmPending) return false;
+    const deadline = Number(state.rearmProbe.finalWaitDeadlineAt || 0);
+    if (!deadline || now < deadline) return false;
+    pushRearmProbeAction('rearmProbeFinalTimeout', {
+      wait_ms: state.rearmProbe.finalWaitTimeoutMs,
+      reason: 'final_timeout',
+      waited_from: 'stt_end',
+      segment_id: state.rearmProbe.autoRearmSegmentId,
+    });
+    state.rearmProbe.recording = false;
+    state.rearmProbe.finalizing = false;
+    state.rearmProbe.starting = false;
+    closeRearmProbeSocket();
+    return armRearmProbeAfterSegment('final_timeout');
+  }
+
   function resetRearmProbeVad(now = Date.now()) {
     const vad = state.rearmProbe.vad;
     vad.speaking = false;
@@ -1113,7 +1166,7 @@ const WakeDevModal = (() => {
     if (action?.type === 'rearmProbeRecordStart' || action?.type === 'rearmProbeFinal' || action?.type === 'vadCandidateConfirmed') return '#22c55e';
     if (action?.type === 'rearmProbeRecordStop' || action?.type === 'vadStopMode') return '#fbbf24';
     if (action?.type === 'vadRecordMode' || action?.type === 'rearmTestMode' || action?.type === 'vadCandidateStart') return '#38bdf8';
-    if (action?.type === 'rearmProbeError') return '#f87171';
+    if (action?.type === 'rearmProbeError' || action?.type === 'rearmProbeFinalTimeout') return '#f87171';
     return '#aebfca';
   }
 
@@ -1121,6 +1174,7 @@ const WakeDevModal = (() => {
     if (!action || typeof action !== 'object') return '';
     if (action.type === 'controlState') return action.label || action.control || 'control';
     if (action.type === 'rearmTestMode') return `test ${action.reason || ''}`.trim();
+    if (action.type === 'vadRecordMode' && action.auto_rearm) return `VAD Record auto rearmed ${action.reason || ''}`.trim();
     if (action.type === 'vadRecordMode') return `VAD Record ${action.enabled ? 'on' : 'off'}`;
     if (action.type === 'vadStopMode') return `VAD Stop ${action.enabled ? 'on' : 'off'}`;
     if (action.type === 'vadCandidateStart') return 'VAD candidate';
@@ -1128,6 +1182,7 @@ const WakeDevModal = (() => {
     if (action.type === 'rearmProbeRecordStart') return `Record ${action.reason || 'start'}`;
     if (action.type === 'rearmProbeRecordStop') return `Stop ${action.reason || 'stop'}`;
     if (action.type === 'rearmProbeFinal') return 'final transcript';
+    if (action.type === 'rearmProbeFinalTimeout') return `final timeout ${action.wait_ms || ''} ms`.trim();
     if (action.type === 'rearmProbeError') return `error ${action.error || ''}`.trim();
     return action.type || 'event';
   }
@@ -1163,12 +1218,13 @@ const WakeDevModal = (() => {
       ));
     let statusValue = 'partial';
     let endAt = now;
+    const finalTimeoutMs = Number(stopAction?.final_wait_timeout_ms ?? rearmProbeFinalTimeoutMs());
     if (finalEvent) {
       statusValue = 'final';
       endAt = Number(finalEvent.at_ms || now);
-    } else if (!state.rearmProbe.recording && stopAction?.at_ms && now - Number(stopAction.at_ms) >= REARM_FINAL_TIMEOUT_MS) {
+    } else if (!state.rearmProbe.recording && finalTimeoutMs > 0 && stopAction?.at_ms && now - Number(stopAction.at_ms) >= finalTimeoutMs) {
       statusValue = 'timeout';
-      endAt = Number(stopAction.at_ms) + REARM_FINAL_TIMEOUT_MS;
+      endAt = Number(stopAction.at_ms) + finalTimeoutMs;
     }
     const color = statusValue === 'final' ? '#22c55e' : (statusValue === 'timeout' ? '#f87171' : '#38bdf8');
     return {
@@ -1198,6 +1254,10 @@ const WakeDevModal = (() => {
     const vadStage = vad.candidateConfirmed ? 'strong' : (vad.candidateActive ? 'candidate' : 'idle');
     const statusBackground = vadEnabled ? (vadSpeech ? 'rgba(21,128,61,0.34)' : 'rgba(7,24,39,0.94)') : 'rgba(16,24,38,0.9)';
     const statusBorder = vadEnabled ? (vadSpeech ? 'rgba(34,197,94,0.7)' : 'rgba(56,189,248,0.58)') : 'rgba(148,168,179,0.42)';
+    const hasExplicitTimeoutMarker = state.rearmProbe.actions.some(action => (
+      action.type === 'rearmProbeFinalTimeout'
+      && Number(action.segment_id || 0) === Number(state.rearmProbe.segmentId || 0)
+    ));
     return {
       metrics: [
         { label: 'FSM', value: fsm },
@@ -1222,7 +1282,7 @@ const WakeDevModal = (() => {
             color: rearmMarkerColor(action),
             lane: index % 4,
           })),
-          ...(transcriptSpan?.status === 'timeout' ? [{
+          ...(transcriptSpan?.status === 'timeout' && !hasExplicitTimeoutMarker ? [{
             atMs: transcriptSpan.endMs,
             label: `${transcriptSpan.timeoutSource || 'Stop'} final timeout`,
             color: '#f87171',
@@ -1398,9 +1458,11 @@ const WakeDevModal = (() => {
       state.rearmProbe.starting = false;
       closeRearmProbeSocket();
       resetRearmProbeVad();
-      rearmProbeStatus(value ? 'Transcript ready.' : 'No transcript returned.');
-      renderRearmProbeUi();
-      poll();
+      if (!armRearmProbeAfterSegment('final')) {
+        rearmProbeStatus(value ? 'Transcript ready.' : 'No transcript returned.');
+        renderRearmProbeUi();
+        poll();
+      }
       return;
     }
     if (payload.type === 'error') {
@@ -1410,6 +1472,7 @@ const WakeDevModal = (() => {
       state.rearmProbe.recording = false;
       state.rearmProbe.finalizing = false;
       state.rearmProbe.starting = false;
+      clearRearmAutoRearmState();
       closeRearmProbeSocket();
       rearmProbeStatus(`STT failed: ${detail}`);
       renderRearmProbeUi();
@@ -1590,6 +1653,7 @@ const WakeDevModal = (() => {
       state.rearmProbe.transcript = '';
       state.rearmProbe.events = [];
       state.rearmProbe.actions = [];
+      clearRearmAutoRearmState();
       state.rearmProbe.delayFrames = [];
       state.rearmProbe.pendingFrames = [];
       state.rearmProbe.samples = [];
@@ -1696,6 +1760,7 @@ const WakeDevModal = (() => {
     state.rearmProbe.startedAt = 0;
     state.rearmProbe.bytesSent = 0;
     state.rearmProbe.framesSent = 0;
+    clearRearmAutoRearmState();
     state.rearmProbe.delayFrames = [];
     state.rearmProbe.pendingFrames = [];
     resetRearmProbeVad();
@@ -1850,6 +1915,7 @@ const WakeDevModal = (() => {
     state.rearmProbe.transcript = '';
     state.rearmProbe.events = [];
     state.rearmProbe.segmentId = Number(state.rearmProbe.segmentId || 0) + 1;
+    clearRearmAutoRearmState();
     state.rearmProbe.pendingFrames = [];
     state.rearmProbe.starting = true;
     renderRearmProbeUi();
@@ -1865,6 +1931,7 @@ const WakeDevModal = (() => {
         state.rearmProbe.finalizing = false;
         state.rearmProbe.starting = false;
         state.rearmProbe.ws = null;
+        clearRearmAutoRearmState();
         pushRearmProbeAction('rearmProbeError', { error: 'socket closed before final transcript' });
         rearmProbeStatus('STT connection closed before final transcript.');
         renderRearmProbeUi();
@@ -1985,6 +2052,7 @@ const WakeDevModal = (() => {
         state.rearmProbe.recording = false;
         state.rearmProbe.finalizing = false;
         state.rearmProbe.vadRecordEnabled = false;
+        clearRearmAutoRearmState();
         pushRearmProbeAction('rearmProbeRecordStop', { reason: 'cancel_armed_record', audio_bytes: state.rearmProbe.bytesSent, audio_frames: state.rearmProbe.framesSent });
         rearmProbeStatus('VAD Record stopped.');
         renderRearmProbeUi();
@@ -1997,6 +2065,7 @@ const WakeDevModal = (() => {
     state.rearmProbe.vadRecordEnabled = false;
     const vad = state.rearmProbe.vad || {};
     const now = Date.now();
+    const shouldAutoRearm = reason === 'vad_stop' && state.rearmProbe.vadStopEnabled;
     const speechAge = vad.lastVoiceAt ? Math.max(0, now - vad.lastVoiceAt) : null;
     const recordingMs = state.rearmProbe.startedAt ? Math.max(0, now - state.rearmProbe.startedAt) : null;
     pushRearmProbeAction('rearmProbeRecordStop', {
@@ -2006,6 +2075,8 @@ const WakeDevModal = (() => {
       speech_age_ms: speechAge,
       recording_ms: recordingMs,
       timeout_ms: rearmProbeResetTimeoutMs(),
+      final_wait_timeout_ms: rearmProbeFinalTimeoutMs(),
+      auto_rearm: shouldAutoRearm,
     });
     if (state.rearmProbe.ws.readyState === WebSocket.OPEN) {
       const endPayload = {
@@ -2015,12 +2086,27 @@ const WakeDevModal = (() => {
       };
       if (reason !== 'manual_stop') endPayload.reason = reason;
       state.rearmProbe.ws.send(JSON.stringify(endPayload));
-      rearmProbeStatus(reason === 'vad_stop'
-        ? `VAD Stop sent end after ${Math.round(recordingMs || 0)} ms / ${state.rearmProbe.framesSent} frames.`
-        : 'Finalizing transcript.');
+      if (shouldAutoRearm) {
+        const finalTimeoutMs = rearmProbeFinalTimeoutMs();
+        state.rearmProbe.autoRearmPending = true;
+        state.rearmProbe.autoRearmSegmentId = Number(state.rearmProbe.segmentId || 0);
+        state.rearmProbe.finalWaitTimeoutMs = finalTimeoutMs;
+        state.rearmProbe.finalWaitDeadlineAt = finalTimeoutMs > 0 ? now + finalTimeoutMs : 0;
+      } else {
+        clearRearmAutoRearmState();
+      }
+      if (reason === 'vad_stop') {
+        const finalTimeoutMs = rearmProbeFinalTimeoutMs();
+        rearmProbeStatus(finalTimeoutMs > 0
+          ? `VAD Stop sent end after ${Math.round(recordingMs || 0)} ms / ${state.rearmProbe.framesSent} frames; waiting ${formatVadResetTimeout(finalTimeoutMs)} for final before re-arm.`
+          : `VAD Stop sent end after ${Math.round(recordingMs || 0)} ms / ${state.rearmProbe.framesSent} frames; waiting for final with timeout off.`);
+      } else {
+        rearmProbeStatus('Finalizing transcript.');
+      }
     } else {
       state.rearmProbe.finalizing = false;
       closeRearmProbeSocket();
+      clearRearmAutoRearmState();
       rearmProbeStatus('STT connection was not ready.');
     }
     renderRearmProbeUi();
@@ -2065,6 +2151,7 @@ const WakeDevModal = (() => {
     state.rearmProbe.framesSent = 0;
     state.rearmProbe.pendingFrames = [];
     state.rearmProbe.uiStateSignature = '';
+    clearRearmAutoRearmState();
     resetRearmProbeVad();
     pushRearmProbeAction('controlState', {
       control: 'Clear',
@@ -2268,6 +2355,7 @@ const WakeDevModal = (() => {
   }
 
   function poll() {
+    maybeRearmProbeAfterFinalTimeout();
     const current = currentSnapshot();
     renderSnapshot(current.snapshot, current.source);
     renderRearmOutput();
