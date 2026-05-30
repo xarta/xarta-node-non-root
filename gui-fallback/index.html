@@ -41,6 +41,8 @@
   <link rel="stylesheet" href="css/voice-mode.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/stt-noise-tests.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/wake-dev.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/vad-dev.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/voice-timeline-module.priority.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="vendor/xterm/xterm.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/ssh-terminal.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/agent-pages.css?v={{$assetVersion}}" />
@@ -4557,6 +4559,30 @@
   </div>
 </dialog>
 
+<!-- VAD development modal -->
+<dialog class="hub-modal hub-dialog vad-dev-modal" data-tone="info" id="vad-dev-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">VAD</span>
+      <span class="hub-dialog-title-text">VAD Dev</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body vad-dev">
+    <div class="vad-dev-tabs" aria-label="VAD development views">
+      <input class="vad-dev-tab-radio" type="radio" name="vad-dev-tab" id="vad-dev-tab-timeline" checked>
+      <div class="vad-dev-tablist" role="tablist" aria-label="VAD development views">
+        <label class="vad-dev-tab" role="tab" for="vad-dev-tab-timeline">timeline</label>
+      </div>
+      <div class="vad-dev-tab-panels">
+        <section class="vad-dev-tab-panel vad-dev-tab-panel--timeline" role="tabpanel" aria-label="VAD timeline">
+          <div id="vad-dev-timeline-module" data-voice-timeline-module-mount></div>
+        </section>
+      </div>
+    </div>
+  </div>
+</dialog>
+
 <!-- Wake-to-Talk development modal -->
 <dialog class="hub-modal hub-dialog wake-dev-modal" data-tone="info" id="wake-dev-modal">
   <div class="hub-modal-header">
@@ -4903,6 +4929,8 @@
 <script src="js/wake-to-talk.js?v={{$assetVersion}}"></script>
 <script src="js/wake-dev.js?v={{$assetVersion}}"></script>
 <script src="js/wake-dev-output-view.js?v={{$assetVersion}}"></script>
+<script src="js/voice-timeline-module.js?v={{$assetVersion}}"></script>
+<script src="js/vad-dev.js?v={{$assetVersion}}"></script>
 <script src="js/wake-queue-dev.js?v={{$assetVersion}}"></script>
 <script src="js/stt-noise-tests.js?v={{$assetVersion}}"></script>
 <script src="js/notifier-dnd-policy.js?v={{$assetVersion}}"></script>
