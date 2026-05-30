@@ -28,6 +28,18 @@ const VadDevModal = (() => {
   const VAD_TEST_NOISE_UP_CAP_RATIO = 1.18;
   const VAD_TEST_BASELINE_HOLDOFF_MS = 650;
   const VAD_RESET_TIMEOUT_MAX_MS = 2000;
+  const DETECTOR_ENERGY = 'energy_delta';
+  const DETECTOR_SILERO = 'silero_vad';
+  const SILERO_MODEL = 'v5';
+  const SILERO_POSITIVE_THRESHOLD = 0.3;
+  const SILERO_NEGATIVE_THRESHOLD = 0.25;
+  const SILERO_REDEMPTION_MS = 900;
+  const SILERO_MIN_SPEECH_MS = 250;
+  const SILERO_PRE_SPEECH_PAD_MS = 160;
+  const SILERO_VAD_ASSET_BASE = '/fallback-ui/vendor/vad-web/';
+  const SILERO_ONNX_WASM_BASE = '/fallback-ui/vendor/onnxruntime-web/';
+  const SILERO_ORT_SCRIPT = '/fallback-ui/vendor/onnxruntime-web/ort.wasm.min.js';
+  const SILERO_VAD_SCRIPT = '/fallback-ui/vendor/vad-web/bundle.min.js';
   const SURFACE = 'vad_dev';
 
   const MODE_MANUAL = 'manual';
@@ -63,6 +75,8 @@ const VadDevModal = (() => {
     timeline: null,
     timelinePromise: null,
     selectedMode: MODE_MANUAL,
+    sileroEnabled: false,
+    sileroScriptPromises: {},
     devCommandIds: [],
     devStatusLastAt: 0,
     devStatusSignature: '',
@@ -75,6 +89,30 @@ const VadDevModal = (() => {
   };
 
   const els = {};
+
+  function createSileroState() {
+    return {
+      instance: null,
+      loading: false,
+      ready: false,
+      listening: false,
+      error: '',
+      model: SILERO_MODEL,
+      isSpeechProbability: null,
+      notSpeechProbability: null,
+      positiveThreshold: SILERO_POSITIVE_THRESHOLD,
+      negativeThreshold: SILERO_NEGATIVE_THRESHOLD,
+      redemptionMs: SILERO_REDEMPTION_MS,
+      minSpeechMs: SILERO_MIN_SPEECH_MS,
+      preSpeechPadMs: SILERO_PRE_SPEECH_PAD_MS,
+      frameCount: 0,
+      lastFrameAt: 0,
+      lastSpeechStartAt: 0,
+      lastSpeechRealStartAt: 0,
+      lastSpeechEndAt: 0,
+      misfires: 0,
+    };
+  }
 
   function createVadState() {
     return {
@@ -135,6 +173,7 @@ const VadDevModal = (() => {
       finalWaitDeadlineAt: 0,
       finalWaitTimeoutMs: 0,
       vad: createVadState(),
+      silero: createSileroState(),
     };
   }
 
@@ -149,6 +188,45 @@ const VadDevModal = (() => {
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value || {}));
+  }
+
+  function frontendAssetVersion() {
+    return cleanText(window.BLUEPRINTS_FRONTEND_VERSION?.asset_version || '');
+  }
+
+  function cacheBustUrl(src) {
+    const version = frontendAssetVersion();
+    if (!version) return src;
+    const separator = src.includes('?') ? '&' : '?';
+    return `${src}${separator}v=${encodeURIComponent(version)}`;
+  }
+
+  function loadScriptOnce(key, src, readyCheck) {
+    if (typeof readyCheck === 'function' && readyCheck()) return Promise.resolve();
+    if (state.sileroScriptPromises[key]) return state.sileroScriptPromises[key];
+    state.sileroScriptPromises[key] = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = cacheBustUrl(src);
+      script.async = true;
+      script.onload = () => {
+        if (typeof readyCheck === 'function' && !readyCheck()) {
+          reject(new Error(`Loaded ${src}, but expected browser global was not available`));
+          return;
+        }
+        resolve();
+      };
+      script.onerror = () => reject(new Error(`Failed to load ${src}`));
+      document.head.appendChild(script);
+    }).catch(error => {
+      delete state.sileroScriptPromises[key];
+      throw error;
+    });
+    return state.sileroScriptPromises[key];
+  }
+
+  async function loadSileroLibrary() {
+    await loadScriptOnce('ort-wasm', SILERO_ORT_SCRIPT, () => !!window.ort?.InferenceSession);
+    await loadScriptOnce('vad-web', SILERO_VAD_SCRIPT, () => !!window.vad?.MicVAD);
   }
 
   function text(value, fallback = '--') {
@@ -174,6 +252,18 @@ const VadDevModal = (() => {
 
   function probe(mode) {
     return state.probes[mode] || state.probes[MODE_MANUAL];
+  }
+
+  function selectedVadDetector() {
+    return state.sileroEnabled ? DETECTOR_SILERO : DETECTOR_ENERGY;
+  }
+
+  function detectorForMode(mode) {
+    return mode === MODE_MANUAL ? 'bypassed' : selectedVadDetector();
+  }
+
+  function sileroAvailable() {
+    return !!window.vad?.MicVAD && !!window.ort?.InferenceSession;
   }
 
   function modeConfig(mode) {
@@ -236,6 +326,7 @@ const VadDevModal = (() => {
   function renderSharedControls() {
     const vm = voiceMode();
     if (els.noiseToggle) els.noiseToggle.checked = voiceNoiseEnabled();
+    if (els.sileroToggle) els.sileroToggle.checked = !!state.sileroEnabled;
     if (els.noiseLevel) els.noiseLevel.value = String(voiceNoiseLevelDb());
     const aggregation = Number(vm?.sttAggregationTimeoutMs?.());
     if (Number.isFinite(aggregation) && els.aggregation) els.aggregation.value = String(aggregation);
@@ -422,6 +513,53 @@ const VadDevModal = (() => {
     }
   }
 
+  function resetSileroMetrics(mode, options = {}) {
+    const silero = probe(mode).silero;
+    silero.frameCount = 0;
+    silero.lastFrameAt = 0;
+    silero.lastSpeechStartAt = 0;
+    silero.lastSpeechRealStartAt = 0;
+    silero.lastSpeechEndAt = 0;
+    silero.misfires = 0;
+    silero.listening = !!silero.instance?.listening;
+    if (options.clearProbabilities) {
+      silero.isSpeechProbability = null;
+      silero.notSpeechProbability = null;
+    }
+    if (options.clearError) silero.error = '';
+  }
+
+  function disposeSilero(mode, reason = 'dispose') {
+    const target = probe(mode);
+    const silero = target.silero;
+    const instance = silero.instance;
+    silero.instance = null;
+    silero.loading = false;
+    silero.ready = false;
+    silero.listening = false;
+    if (reason !== 'preserve_error') silero.error = '';
+    resetSileroMetrics(mode, { clearProbabilities: true });
+    if (!instance) return;
+    Promise.resolve()
+      .then(() => {
+        if (typeof instance.destroy === 'function') return instance.destroy();
+        if (typeof instance.pause === 'function') return instance.pause();
+        return null;
+      })
+      .catch(error => {
+        silero.error = error.message || String(error);
+      });
+  }
+
+  function sileroStatusValue(mode) {
+    const silero = probe(mode).silero;
+    if (!state.sileroEnabled) return 'off';
+    if (silero.error) return 'error';
+    if (silero.loading) return 'loading';
+    if (silero.ready) return 'ready';
+    return sileroAvailable() ? 'loaded' : 'idle';
+  }
+
   function resetVad(mode, now = Date.now(), options = {}) {
     const vad = probe(mode).vad;
     vad.speaking = false;
@@ -443,6 +581,246 @@ const VadDevModal = (() => {
       vad.enterThreshold = 0;
       vad.exitThreshold = 0;
       vad.strongEnterThreshold = 0;
+    }
+    if (options.resetSilero) resetSileroMetrics(mode, { clearProbabilities: true, clearError: !!options.clearSileroError });
+  }
+
+  function markSileroCandidate(mode, now = Date.now(), detail = {}) {
+    const target = probe(mode);
+    const vad = target.vad;
+    if (!vad.candidateActive) {
+      vad.candidateActive = true;
+      vad.candidateConfirmed = false;
+      vad.candidateStartedAt = now;
+      vad.candidateFrames = 0;
+      vad.quietFrames = 0;
+      pushAction(mode, 'sileroCandidateStart', {
+        detector: DETECTOR_SILERO,
+        audio_frame: target.framesSent,
+        ...detail,
+      });
+    }
+    vad.candidateFrames += 1;
+    vad.quietFrames = 0;
+  }
+
+  function confirmSileroSpeech(mode, reason = 'speech_real_start', now = Date.now()) {
+    const target = probe(mode);
+    const vad = target.vad;
+    const speechStarted = !vad.speaking;
+    vad.candidateActive = true;
+    vad.candidateConfirmed = true;
+    vad.speaking = true;
+    vad.speechSeenSinceReset = true;
+    vad.lastVoiceAt = now;
+    if (!vad.candidateStartedAt) vad.candidateStartedAt = now;
+    if (speechStarted) {
+      pushAction(mode, 'sileroSpeechConfirmed', {
+        detector: DETECTOR_SILERO,
+        reason,
+        positive_threshold: SILERO_POSITIVE_THRESHOLD,
+        negative_threshold: SILERO_NEGATIVE_THRESHOLD,
+        speech_probability: probe(mode).silero.isSpeechProbability,
+      });
+    }
+    if (speechStarted && target.vadRecordEnabled && !target.recording && !target.finalizing && !target.starting) {
+      setProbeStatus(mode, 'Silero VAD Record triggered; opening STT.');
+      void startRecording(mode, { reason: 'silero_vad_record' });
+    }
+  }
+
+  function updateSileroStop(mode, now = Date.now()) {
+    const target = probe(mode);
+    const vad = target.vad;
+    const timeoutMs = vadResetTimeoutMs();
+    if (
+      target.vadStopEnabled
+      && target.recording
+      && timeoutMs > 0
+      && vad.speechSeenSinceReset
+      && !vad.speaking
+      && vad.lastVoiceAt
+      && now - vad.lastVoiceAt >= timeoutMs
+      && now - vad.lastResetAt > 250
+    ) {
+      vad.lastAutoStopAt = now;
+      stopRecording(mode, 'silero_vad_stop');
+    }
+  }
+
+  function onSileroFrame(mode, probabilities) {
+    const target = probe(mode);
+    if (!state.sileroEnabled || !target.enabled) return;
+    const silero = target.silero;
+    const vad = target.vad;
+    const now = Date.now();
+    const isSpeech = Number(probabilities?.isSpeech);
+    const notSpeech = Number(probabilities?.notSpeech);
+    silero.frameCount += 1;
+    silero.lastFrameAt = now;
+    silero.isSpeechProbability = Number.isFinite(isSpeech) ? Math.max(0, Math.min(1, isSpeech)) : null;
+    silero.notSpeechProbability = Number.isFinite(notSpeech) ? Math.max(0, Math.min(1, notSpeech)) : null;
+    vad.lastEnergy = 0;
+    vad.lastEnergyDb = -80;
+    vad.energyDeltaDb = 0;
+    vad.enterThreshold = SILERO_POSITIVE_THRESHOLD;
+    vad.exitThreshold = SILERO_NEGATIVE_THRESHOLD;
+    vad.strongEnterThreshold = SILERO_POSITIVE_THRESHOLD;
+    vad.enterDeltaDb = SILERO_POSITIVE_THRESHOLD;
+    vad.exitDeltaDb = SILERO_NEGATIVE_THRESHOLD;
+    vad.strongDeltaDb = SILERO_POSITIVE_THRESHOLD;
+    vad.baselinePaused = !!(vad.candidateActive || vad.speaking || target.recording || target.finalizing || target.starting);
+    if (silero.isSpeechProbability != null && silero.isSpeechProbability >= SILERO_POSITIVE_THRESHOLD) {
+      markSileroCandidate(mode, now, {
+        speech_probability: Number(silero.isSpeechProbability.toFixed(3)),
+        not_speech_probability: silero.notSpeechProbability == null ? null : Number(silero.notSpeechProbability.toFixed(3)),
+      });
+      if (vad.speaking) vad.lastVoiceAt = now;
+    }
+    updateSileroStop(mode, now);
+  }
+
+  function onSileroSpeechStart(mode) {
+    if (!state.sileroEnabled || !probe(mode).enabled) return;
+    const now = Date.now();
+    const silero = probe(mode).silero;
+    silero.lastSpeechStartAt = now;
+    markSileroCandidate(mode, now, {
+      reason: 'speech_start',
+      speech_probability: silero.isSpeechProbability,
+    });
+  }
+
+  function onSileroSpeechRealStart(mode) {
+    if (!state.sileroEnabled || !probe(mode).enabled) return;
+    const silero = probe(mode).silero;
+    const now = Date.now();
+    silero.lastSpeechRealStartAt = now;
+    confirmSileroSpeech(mode, 'speech_real_start', now);
+  }
+
+  function onSileroSpeechEnd(mode, audio) {
+    const target = probe(mode);
+    if (!state.sileroEnabled || !target.enabled) return;
+    const vad = target.vad;
+    const silero = target.silero;
+    const now = Date.now();
+    silero.lastSpeechEndAt = now;
+    vad.speaking = false;
+    vad.candidateActive = false;
+    vad.candidateConfirmed = false;
+    vad.quietFrames = 0;
+    vad.lastVoiceAt = now;
+    pushAction(mode, 'sileroSpeechEnd', {
+      detector: DETECTOR_SILERO,
+      audio_samples: Number(audio?.length || 0),
+      timeout_ms: vadResetTimeoutMs(),
+    });
+    updateSileroStop(mode, now);
+  }
+
+  function onSileroMisfire(mode) {
+    const target = probe(mode);
+    if (!state.sileroEnabled || !target.enabled) return;
+    const vad = target.vad;
+    const silero = target.silero;
+    silero.misfires += 1;
+    vad.speaking = false;
+    vad.candidateActive = false;
+    vad.candidateConfirmed = false;
+    vad.quietFrames = 0;
+    pushAction(mode, 'sileroMisfire', {
+      detector: DETECTOR_SILERO,
+      speech_probability: silero.isSpeechProbability,
+      misfires: silero.misfires,
+    });
+  }
+
+  async function ensureSileroForMode(mode, reason = 'ensure') {
+    mode = modeFromInput(mode);
+    if (mode === MODE_MANUAL || !state.sileroEnabled) return false;
+    const target = probe(mode);
+    const silero = target.silero;
+    if (!target.enabled || !target.stream || !target.audioContext) return false;
+    if (silero.instance && silero.ready) {
+      if (!silero.instance.listening) {
+        await silero.instance.start();
+        silero.listening = !!silero.instance.listening;
+      }
+      return true;
+    }
+    if (silero.loading) return false;
+    silero.loading = true;
+    silero.ready = false;
+    silero.error = '';
+    resetVad(mode, Date.now(), { resetSilero: true });
+    pushAction(mode, 'sileroLoad', { detector: DETECTOR_SILERO, model: SILERO_MODEL, reason });
+    setProbeStatus(mode, 'Silero VAD loading.');
+    renderProbeUi(mode);
+    poll({ force: true });
+    let micVad = null;
+    try {
+      await loadSileroLibrary();
+      if (!state.sileroEnabled || !target.enabled || !target.stream || !target.audioContext) {
+        silero.loading = false;
+        return false;
+      }
+      micVad = await window.vad.MicVAD.new({
+        model: SILERO_MODEL,
+        baseAssetPath: SILERO_VAD_ASSET_BASE,
+        onnxWASMBasePath: SILERO_ONNX_WASM_BASE,
+        positiveSpeechThreshold: SILERO_POSITIVE_THRESHOLD,
+        negativeSpeechThreshold: SILERO_NEGATIVE_THRESHOLD,
+        redemptionMs: SILERO_REDEMPTION_MS,
+        minSpeechMs: SILERO_MIN_SPEECH_MS,
+        preSpeechPadMs: SILERO_PRE_SPEECH_PAD_MS,
+        submitUserSpeechOnPause: false,
+        startOnLoad: false,
+        processorType: 'auto',
+        audioContext: target.audioContext,
+        getStream: async () => target.stream,
+        pauseStream: async stream => stream,
+        resumeStream: async () => target.stream,
+        onFrameProcessed: probabilities => onSileroFrame(mode, probabilities),
+        onSpeechStart: () => onSileroSpeechStart(mode),
+        onSpeechRealStart: () => onSileroSpeechRealStart(mode),
+        onSpeechEnd: audio => onSileroSpeechEnd(mode, audio),
+        onVADMisfire: () => onSileroMisfire(mode),
+      });
+      await micVad.start();
+      silero.instance = micVad;
+      silero.loading = false;
+      silero.ready = true;
+      silero.listening = !!micVad.listening;
+      silero.error = '';
+      pushAction(mode, 'sileroReady', {
+        detector: DETECTOR_SILERO,
+        model: SILERO_MODEL,
+        processor: 'auto',
+      });
+      setProbeStatus(mode, 'Silero VAD ready. Speak to test the model detector.');
+      renderProbeUi(mode);
+      poll({ force: true });
+      return true;
+    } catch (error) {
+      if (micVad && !silero.instance) {
+        Promise.resolve()
+          .then(() => (typeof micVad.destroy === 'function' ? micVad.destroy() : micVad.pause?.()))
+          .catch(() => {});
+      }
+      disposeSilero(mode, 'preserve_error');
+      silero.loading = false;
+      silero.ready = false;
+      silero.listening = false;
+      silero.error = error.message || String(error);
+      pushAction(mode, 'sileroError', {
+        detector: DETECTOR_SILERO,
+        error: silero.error,
+      });
+      setProbeStatus(mode, `Silero VAD failed: ${silero.error}`);
+      renderProbeUi(mode);
+      poll({ force: true });
+      return false;
     }
   }
 
@@ -688,7 +1066,8 @@ const VadDevModal = (() => {
     const features = audioFeatures(input);
     addSample(mode, features);
     if (mode !== MODE_MANUAL && (target.vadRecordEnabled || target.vadStopEnabled)) {
-      updateVad(mode, features, Date.now());
+      if (selectedVadDetector() === DETECTOR_SILERO) updateSileroStop(mode, Date.now());
+      else updateVad(mode, features, Date.now());
     }
     if (!target.recording || target.ws?.readyState !== WebSocket.OPEN) return;
     const pcm = downsampleFloat32(input, audioContext.sampleRate);
@@ -739,7 +1118,7 @@ const VadDevModal = (() => {
         target.segmentId = 0;
         clearRearmAutoState();
       }
-      resetVad(mode, Date.now(), { resetNoiseFloor: true });
+      resetVad(mode, Date.now(), { resetNoiseFloor: true, resetSilero: true });
       processor.onaudioprocess = audioEvent => processAudioFrame(mode, audioEvent, audioContext);
       source.connect(processor);
       processor.connect(audioContext.destination);
@@ -747,6 +1126,7 @@ const VadDevModal = (() => {
       setProbeStatus(mode, mode === MODE_MANUAL
         ? 'VAD bypass test mode enabled. Mic is live; press Record to stream.'
         : `${modeConfig(mode).label.replace(' probe', '')} test mode enabled. Mic is live.`);
+      if (mode !== MODE_MANUAL && state.sileroEnabled) await ensureSileroForMode(mode, 'test_enable');
       renderProbeUi(mode);
       poll({ force: true });
     } catch (error) {
@@ -763,6 +1143,7 @@ const VadDevModal = (() => {
     const target = probe(mode);
     const wasTouched = target.enabled || target.ws || target.actions.length || target.events.length;
     closeSocket(mode);
+    disposeSilero(mode);
     cleanupAudio(mode);
     target.enabled = false;
     target.recording = false;
@@ -776,7 +1157,7 @@ const VadDevModal = (() => {
     target.delayFrames = [];
     target.pendingFrames = [];
     if (mode === MODE_REARM) clearRearmAutoState();
-    resetVad(mode, Date.now(), { resetNoiseFloor: true });
+    resetVad(mode, Date.now(), { resetNoiseFloor: true, resetSilero: true, clearSileroError: true });
     if (wasTouched) {
       pushAction(mode, mode === MODE_MANUAL ? 'manualTestMode' : (mode === MODE_REARM ? 'rearmTestMode' : 'vadTestMode'), { reason: 'disabled' });
     }
@@ -832,13 +1213,14 @@ const VadDevModal = (() => {
       pushAction(mode, mode === MODE_MANUAL ? 'manualRecordStart' : (mode === MODE_REARM ? 'rearmProbeRecordStart' : 'vadProbeRecordStart'), {
         route: STT_WS_URL,
         reason: options.reason || 'manual_record',
-        vad: mode === MODE_MANUAL ? 'bypassed' : 'isolated-test',
+        vad: detectorForMode(mode),
         vad_record_enabled: !!target.vadRecordEnabled,
         pre_roll_frames: queued.length,
       });
+      const vadLabel = selectedVadDetector() === DETECTOR_SILERO ? 'Silero VAD test' : 'isolated energy VAD test';
       setProbeStatus(mode, voiceNoiseEnabled()
-        ? `Recording with noise reduction; ${mode === MODE_MANUAL ? 'VAD bypassed.' : 'isolated VAD test.'}`
-        : `Recording without noise reduction; ${mode === MODE_MANUAL ? 'VAD bypassed.' : 'isolated VAD test.'}`);
+        ? `Recording with noise reduction; ${mode === MODE_MANUAL ? 'VAD bypassed.' : vadLabel}.`
+        : `Recording without noise reduction; ${mode === MODE_MANUAL ? 'VAD bypassed.' : vadLabel}.`);
       renderProbeUi(mode);
       poll({ force: true });
     } catch (error) {
@@ -880,7 +1262,8 @@ const VadDevModal = (() => {
     if (mode !== MODE_MANUAL) target.vadRecordEnabled = false;
     const vad = target.vad || {};
     const now = Date.now();
-    const shouldAutoRearm = mode === MODE_REARM && reason === 'vad_stop' && target.vadStopEnabled;
+    const detectorStop = reason === 'vad_stop' || reason === 'silero_vad_stop';
+    const shouldAutoRearm = mode === MODE_REARM && detectorStop && target.vadStopEnabled;
     const speechAge = vad.lastVoiceAt ? Math.max(0, now - vad.lastVoiceAt) : null;
     const recordingMs = target.startedAt ? Math.max(0, now - target.startedAt) : null;
     pushAction(mode, mode === MODE_MANUAL ? 'manualRecordStop' : (mode === MODE_REARM ? 'rearmProbeRecordStop' : 'vadProbeRecordStop'), {
@@ -909,7 +1292,7 @@ const VadDevModal = (() => {
       } else if (mode === MODE_REARM) {
         clearRearmAutoState();
       }
-      if (reason === 'vad_stop') {
+      if (detectorStop) {
         if (mode === MODE_REARM) {
           const finalTimeoutMs = rearmFinalTimeoutMs();
           setProbeStatus(mode, finalTimeoutMs > 0
@@ -943,7 +1326,7 @@ const VadDevModal = (() => {
     target.framesSent = 0;
     target.pendingFrames = [];
     if (mode === MODE_REARM) clearRearmAutoState();
-    resetVad(mode, Date.now(), { resetNoiseFloor: true });
+    resetVad(mode, Date.now(), { resetNoiseFloor: true, resetSilero: true });
     setProbeStatus(mode, target.enabled
       ? (mode === MODE_MANUAL ? 'VAD bypass test mode enabled. Mic is live; press Record to stream.' : `${modeConfig(mode).label.replace(' probe', '')} test mode enabled. Mic is live.`)
       : modeConfig(mode).statusOff);
@@ -951,29 +1334,35 @@ const VadDevModal = (() => {
     poll({ force: true });
   }
 
-  function toggleVadRecordMode(mode, nextValue = null) {
+  async function toggleVadRecordMode(mode, nextValue = null) {
     mode = modeFromInput(mode);
     if (mode === MODE_MANUAL) return;
     const target = probe(mode);
     if (!target.enabled) return;
     target.vadRecordEnabled = nextValue == null ? !target.vadRecordEnabled : !!nextValue;
     resetVad(mode);
-    pushAction(mode, 'vadRecordMode', { enabled: target.vadRecordEnabled });
-    setProbeStatus(mode, target.vadRecordEnabled ? 'VAD Record enabled. Speak to auto-record.' : 'VAD Record disabled.');
+    pushAction(mode, 'vadRecordMode', { enabled: target.vadRecordEnabled, detector: selectedVadDetector() });
+    setProbeStatus(mode, target.vadRecordEnabled
+      ? `${selectedVadDetector() === DETECTOR_SILERO ? 'Silero VAD' : 'Energy VAD'} Record enabled. Speak to auto-record.`
+      : 'VAD Record disabled.');
     renderProbeUi(mode);
     poll({ force: true });
+    if (target.vadRecordEnabled && selectedVadDetector() === DETECTOR_SILERO) await ensureSileroForMode(mode, 'vad_record_enabled');
   }
 
-  function toggleVadStopMode(mode, nextValue = null) {
+  async function toggleVadStopMode(mode, nextValue = null) {
     mode = modeFromInput(mode);
     if (mode === MODE_MANUAL) return;
     const target = probe(mode);
     if (!target.enabled) return;
     target.vadStopEnabled = nextValue == null ? !target.vadStopEnabled : !!nextValue;
-    pushAction(mode, 'vadStopMode', { enabled: target.vadStopEnabled, timeout_ms: vadResetTimeoutMs() });
-    setProbeStatus(mode, target.vadStopEnabled ? 'VAD Stop enabled. Silence will send Stop.' : 'VAD Stop disabled.');
+    pushAction(mode, 'vadStopMode', { enabled: target.vadStopEnabled, detector: selectedVadDetector(), timeout_ms: vadResetTimeoutMs() });
+    setProbeStatus(mode, target.vadStopEnabled
+      ? `${selectedVadDetector() === DETECTOR_SILERO ? 'Silero VAD' : 'Energy VAD'} Stop enabled. Silence will send Stop.`
+      : 'VAD Stop disabled.');
     renderProbeUi(mode);
     poll({ force: true });
+    if (target.vadStopEnabled && selectedVadDetector() === DETECTOR_SILERO) await ensureSileroForMode(mode, 'vad_stop_enabled');
   }
 
   function armRearmAfterSegment(reason) {
@@ -1037,10 +1426,10 @@ const VadDevModal = (() => {
     if (type === 'manualRecordStop') return '#fbbf24';
     if (type === 'manualTestMode') return '#38bdf8';
     if (type === 'manualError') return '#f87171';
-    if (type === 'vadProbeRecordStart' || type === 'vadProbeFinal' || type === 'rearmProbeRecordStart' || type === 'rearmProbeFinal' || type === 'vadCandidateConfirmed') return '#22c55e';
-    if (type === 'vadProbeRecordStop' || type === 'rearmProbeRecordStop' || type === 'vadStopMode') return '#fbbf24';
-    if (type === 'vadRecordMode' || type === 'vadTestMode' || type === 'rearmTestMode' || type === 'vadCandidateStart') return '#38bdf8';
-    if (type === 'vadProbeError' || type === 'rearmProbeError' || type === 'rearmProbeFinalTimeout') return '#f87171';
+    if (type === 'vadProbeRecordStart' || type === 'vadProbeFinal' || type === 'rearmProbeRecordStart' || type === 'rearmProbeFinal' || type === 'vadCandidateConfirmed' || type === 'sileroReady' || type === 'sileroSpeechConfirmed') return '#22c55e';
+    if (type === 'vadProbeRecordStop' || type === 'rearmProbeRecordStop' || type === 'vadStopMode' || type === 'sileroSpeechEnd') return '#fbbf24';
+    if (type === 'vadRecordMode' || type === 'vadDetectorMode' || type === 'vadTestMode' || type === 'rearmTestMode' || type === 'vadCandidateStart' || type === 'sileroLoad' || type === 'sileroCandidateStart') return '#38bdf8';
+    if (type === 'vadProbeError' || type === 'rearmProbeError' || type === 'rearmProbeFinalTimeout' || type === 'sileroError' || type === 'sileroMisfire') return '#f87171';
     if (mode === MODE_REARM && type === 'controlState') return action.disabled ? 'rgba(148,168,179,0.72)' : (action.pressed ? '#38bdf8' : '#aebfca');
     return '#aebfca';
   }
@@ -1054,9 +1443,17 @@ const VadDevModal = (() => {
     if (action.type === 'manualError') return `error ${action.error || ''}`.trim();
     if (action.type === 'vadRecordMode' && action.auto_rearm) return `VAD Record auto rearmed ${action.reason || ''}`.trim();
     if (action.type === 'vadRecordMode') return `VAD Record ${action.enabled ? 'on' : 'off'}`;
+    if (action.type === 'vadDetectorMode') return `detector ${action.detector || ''}`.trim();
     if (action.type === 'vadStopMode') return `VAD Stop ${action.enabled ? 'on' : 'off'}`;
     if (action.type === 'vadCandidateStart') return 'VAD candidate';
     if (action.type === 'vadCandidateConfirmed') return 'VAD strong';
+    if (action.type === 'sileroLoad') return 'Silero loading';
+    if (action.type === 'sileroReady') return 'Silero ready';
+    if (action.type === 'sileroCandidateStart') return 'Silero candidate';
+    if (action.type === 'sileroSpeechConfirmed') return 'Silero speech';
+    if (action.type === 'sileroSpeechEnd') return 'Silero quiet';
+    if (action.type === 'sileroMisfire') return 'Silero misfire';
+    if (action.type === 'sileroError') return `Silero error ${action.error || ''}`.trim();
     if (action.type === 'vadProbeRecordStart' || action.type === 'rearmProbeRecordStart') return `Record ${action.reason || 'start'}`;
     if (action.type === 'vadProbeRecordStop' || action.type === 'rearmProbeRecordStop') return `Stop ${action.reason || 'stop'}`;
     if (action.type === 'vadProbeFinal' || action.type === 'rearmProbeFinal') return 'final transcript';
@@ -1112,16 +1509,22 @@ const VadDevModal = (() => {
   }
 
   function controlsSnapshot() {
+    const detector = selectedVadDetector();
     return {
       noise_reduction_enabled: !!els.noiseToggle?.checked,
       noise_level_db: Number(els.noiseLevel?.value || 6),
       speech_aggregation_timeout_ms: Number(els.aggregation?.value || 80),
       vad_reset_timeout_ms: Number(els.vadReset?.value || 0),
+      detector,
+      vad_detector: detector,
+      silero_enabled: !!state.sileroEnabled,
+      silero_model: SILERO_MODEL,
     };
   }
 
   function probePublic(mode) {
     const target = probe(mode);
+    const silero = target.silero || createSileroState();
     return {
       enabled: !!target.enabled,
       recording: !!target.recording,
@@ -1136,6 +1539,17 @@ const VadDevModal = (() => {
       events_count: target.events.length,
       actions_count: target.actions.length,
       fsm_state: probeFsm(mode),
+      detector: detectorForMode(mode),
+      silero: {
+        enabled: mode !== MODE_MANUAL && !!state.sileroEnabled,
+        loading: !!silero.loading,
+        ready: !!silero.ready,
+        listening: !!silero.listening,
+        error: silero.error || '',
+        model: silero.model || SILERO_MODEL,
+        is_speech_probability: silero.isSpeechProbability,
+        not_speech_probability: silero.notSpeechProbability,
+      },
     };
   }
 
@@ -1147,6 +1561,9 @@ const VadDevModal = (() => {
     const start = now - WINDOW_MS;
     const fsm = probeFsm(mode);
     const vad = target.vad || {};
+    const silero = target.silero || createSileroState();
+    const detector = detectorForMode(mode);
+    const sileroEnabled = mode !== MODE_MANUAL && !!state.sileroEnabled;
     const vadEnabled = mode !== MODE_MANUAL && !!(target.vadRecordEnabled || target.vadStopEnabled);
     const vadSpeech = !!vad.speaking;
     const vadStage = vad.candidateConfirmed ? 'strong' : (vad.candidateActive ? 'candidate' : 'idle');
@@ -1160,12 +1577,23 @@ const VadDevModal = (() => {
       reason: target.enabled ? `${config.label}; isolated browser VAD/STT probe.` : config.statusOff,
       session_id: target.enabled ? config.session : '',
       active_instance_id: 'voice-mode-stt',
+      detector,
+      silero_enabled: sileroEnabled,
+      silero_model: silero.model || SILERO_MODEL,
+      silero_loading: !!silero.loading,
+      silero_ready: !!silero.ready,
+      silero_error: silero.error || '',
+      silero_is_speech_probability: silero.isSpeechProbability,
+      silero_not_speech_probability: silero.notSpeechProbability,
+      silero_positive_threshold: Number(silero.positiveThreshold || SILERO_POSITIVE_THRESHOLD),
+      silero_negative_threshold: Number(silero.negativeThreshold || SILERO_NEGATIVE_THRESHOLD),
       audio_frames_sent: target.framesSent,
       transcript: target.transcript,
       recent_stt_events: target.events,
       recent_actions: target.actions,
       vad_speech_start_reset_armed: mode !== MODE_MANUAL ? !!target.vadRecordEnabled : false,
       vad: {
+        detector,
         speaking: mode === MODE_MANUAL ? !!target.recording : !!vad.speaking,
         candidate_active: !!vad.candidateActive,
         candidate_confirmed: !!vad.candidateConfirmed,
@@ -1188,10 +1616,20 @@ const VadDevModal = (() => {
         energy_db: Number(vad.lastEnergyDb || -80),
         energy_delta_db: Number(vad.energyDeltaDb || 0),
         baseline_paused: !!vad.baselinePaused,
+        silero_enabled: sileroEnabled,
+        silero_model: silero.model || SILERO_MODEL,
+        silero_loading: !!silero.loading,
+        silero_ready: !!silero.ready,
+        silero_listening: !!silero.listening,
+        silero_error: silero.error || '',
+        silero_is_speech_probability: silero.isSpeechProbability,
+        silero_not_speech_probability: silero.notSpeechProbability,
+        silero_positive_threshold: Number(silero.positiveThreshold || SILERO_POSITIVE_THRESHOLD),
+        silero_negative_threshold: Number(silero.negativeThreshold || SILERO_NEGATIVE_THRESHOLD),
       },
       active_send: {
         route: STT_WS_URL,
-        vad: mode === MODE_MANUAL ? 'bypassed' : 'isolated-test',
+        vad: detector,
         vad_record_enabled: !!target.vadRecordEnabled,
         vad_stop_enabled: !!target.vadStopEnabled,
         recording: !!target.recording,
@@ -1212,8 +1650,11 @@ const VadDevModal = (() => {
         { label: 'Frames', value: String(target.framesSent || 0) },
         { label: 'Debug age', value: 'live' },
         { label: 'Level', value: formatDb(target.lastLevel || 0) },
-        { label: 'Noise', value: mode === MODE_MANUAL ? '--' : `${Number(vad.noiseFloorDb || -80).toFixed(1)} dB` },
-        { label: 'Delta', value: mode === MODE_MANUAL ? '--' : `${Number(vad.energyDeltaDb || 0).toFixed(1)} dB` },
+        { label: 'Detector', value: detector },
+        { label: 'Noise', value: mode === MODE_MANUAL || detector === DETECTOR_SILERO ? '--' : `${Number(vad.noiseFloorDb || -80).toFixed(1)} dB` },
+        { label: 'Delta', value: mode === MODE_MANUAL || detector === DETECTOR_SILERO ? '--' : `${Number(vad.energyDeltaDb || 0).toFixed(1)} dB` },
+        { label: 'Silero', value: mode === MODE_MANUAL ? '--' : sileroStatusValue(mode) },
+        { label: 'Speech P', value: mode === MODE_MANUAL || silero.isSpeechProbability == null ? '--' : Number(silero.isSpeechProbability).toFixed(3) },
         { label: 'Candidate', value: mode === MODE_MANUAL ? '--' : `${vadStage}${vad.candidateFrames ? `/${vad.candidateFrames}` : ''}` },
       ],
       source: `${config.label} | ${STT_WS_URL} | ${target.status || 'ready'}`,
@@ -1257,13 +1698,15 @@ const VadDevModal = (() => {
         maxWidth: 340,
       }];
     }
-    return [
+    const detector = selectedVadDetector();
+    const silero = target.silero || createSileroState();
+    const pills = [
       {
-        label: `VAD ${vadEnabled ? 'enabled' : 'off'} | ${vadSpeech ? 'speech' : 'quiet'} | ${vadStage} | record ${target.vadRecordEnabled ? 'on' : 'off'} | stop ${target.vadStopEnabled ? 'on' : 'off'}`,
+        label: `${detector === DETECTOR_SILERO ? 'Silero VAD' : 'Energy VAD'} ${vadEnabled ? 'enabled' : 'off'} | ${vadSpeech ? 'speech' : 'quiet'} | ${vadStage} | record ${target.vadRecordEnabled ? 'on' : 'off'} | stop ${target.vadStopEnabled ? 'on' : 'off'}`,
         background: vadEnabled ? (vadSpeech ? 'rgba(21,128,61,0.34)' : 'rgba(7,24,39,0.94)') : 'rgba(16,24,38,0.9)',
         border: vadEnabled ? (vadSpeech ? 'rgba(34,197,94,0.7)' : 'rgba(56,189,248,0.58)') : 'rgba(148,168,179,0.42)',
         color: '#f1f7fa',
-        maxWidth: 420,
+        maxWidth: 470,
       },
       {
         label: `STT ${target.recording ? 'recording' : (target.finalizing ? 'finalizing' : (target.starting ? 'opening' : 'idle'))} | ${target.bytesSent || 0} bytes`,
@@ -1273,6 +1716,16 @@ const VadDevModal = (() => {
         maxWidth: 280,
       },
     ];
+    if (detector === DETECTOR_SILERO) {
+      pills.splice(1, 0, {
+        label: `Silero ${sileroStatusValue(mode)} | p ${silero.isSpeechProbability == null ? '--' : Number(silero.isSpeechProbability).toFixed(3)} | model ${silero.model || SILERO_MODEL}`,
+        background: silero.error ? 'rgba(69,10,10,0.92)' : (silero.ready ? 'rgba(5,46,22,0.82)' : 'rgba(7,24,39,0.94)'),
+        border: silero.error ? 'rgba(248,113,113,0.75)' : (silero.ready ? 'rgba(74,222,128,0.68)' : 'rgba(56,189,248,0.58)'),
+        color: '#f1f7fa',
+        maxWidth: 340,
+      });
+    }
+    return pills;
   }
 
   function currentMode() {
@@ -1455,8 +1908,63 @@ const VadDevModal = (() => {
     return Number.isFinite(value) ? value : null;
   }
 
+  async function setSileroVadEnabled(enabled, options = {}) {
+    const next = !!enabled;
+    if (state.sileroEnabled === next) {
+      renderSharedControls();
+    } else {
+      state.sileroEnabled = next;
+      MODES.filter(mode => mode !== MODE_MANUAL).forEach(mode => {
+        resetVad(mode, Date.now(), { resetNoiseFloor: !next, resetSilero: true });
+        if (!next) disposeSilero(mode);
+      });
+      renderSharedControls();
+    }
+    const mode = currentMode();
+    if (mode !== MODE_MANUAL) {
+      pushAction(mode, 'vadDetectorMode', {
+        detector: selectedVadDetector(),
+        silero_enabled: state.sileroEnabled,
+        reason: options.reason || 'set_silero_vad',
+      });
+      if (state.sileroEnabled) {
+        const target = probe(mode);
+        setProbeStatus(mode, target.enabled
+          ? 'Silero VAD selected; loading detector.'
+          : 'Silero VAD selected; enable test mode to load the detector.');
+        if (target.enabled) await ensureSileroForMode(mode, options.reason || 'set_silero_vad');
+      } else {
+        setProbeStatus(mode, 'Energy VAD selected.');
+      }
+    } else {
+      status(state.sileroEnabled ? 'Silero VAD selected for VAD modes.' : 'Energy VAD selected for VAD modes.');
+    }
+    renderAllProbeUi();
+    poll({ force: true });
+  }
+
+  async function setVadDetector(value) {
+    const clean = cleanCommandText(value);
+    if (clean === DETECTOR_SILERO || clean === 'silero' || clean === 'silero_vad') {
+      await setSileroVadEnabled(true, { reason: 'set_vad_detector' });
+      return true;
+    }
+    if (clean === DETECTOR_ENERGY || clean === 'energy' || clean === 'browser_energy' || clean === 'energy_vad') {
+      await setSileroVadEnabled(false, { reason: 'set_vad_detector' });
+      return true;
+    }
+    return false;
+  }
+
   async function runSettingsCommand(action, payload) {
     const vm = voiceMode();
+    if (action === 'set_silero_vad') {
+      await setSileroVadEnabled(payloadBool(payload, true), { reason: 'remote_command' });
+      return true;
+    }
+    if (action === 'set_vad_detector') {
+      return setVadDetector(payload?.value ?? payload?.detector ?? payload?.vad_detector);
+    }
     if (action === 'set_noise_reduction') {
       vm?.setSttNoiseReductionEnabled?.(payloadBool(payload, true));
       renderSharedControls();
@@ -1502,12 +2010,12 @@ const VadDevModal = (() => {
     else if (action === 'record') await startRecording(mode, { reason: 'remote_command' });
     else if (action === 'stop') stopRecording(mode, 'remote_command');
     else if (action === 'clear') clearProbe(mode);
-    else if (action === 'enable_vad_record') toggleVadRecordMode(mode, true);
-    else if (action === 'disable_vad_record') toggleVadRecordMode(mode, false);
-    else if (action === 'toggle_vad_record') toggleVadRecordMode(mode);
-    else if (action === 'enable_vad_stop') toggleVadStopMode(mode, true);
-    else if (action === 'disable_vad_stop') toggleVadStopMode(mode, false);
-    else if (action === 'toggle_vad_stop') toggleVadStopMode(mode);
+    else if (action === 'enable_vad_record') await toggleVadRecordMode(mode, true);
+    else if (action === 'disable_vad_record') await toggleVadRecordMode(mode, false);
+    else if (action === 'toggle_vad_record') await toggleVadRecordMode(mode);
+    else if (action === 'enable_vad_stop') await toggleVadStopMode(mode, true);
+    else if (action === 'disable_vad_stop') await toggleVadStopMode(mode, false);
+    else if (action === 'toggle_vad_stop') await toggleVadStopMode(mode);
     else setProbeStatus(mode, `Remote command ignored: ${action || 'blank'}.`);
     poll({ force: true });
   }
@@ -1597,6 +2105,7 @@ const VadDevModal = (() => {
     els.timeline = el('vad-dev-timeline-module');
     els.status = el('vad-dev-status');
     els.noiseToggle = el('vad-dev-noise-toggle');
+    els.sileroToggle = el('vad-dev-silero-toggle');
     els.noiseLevel = el('vad-dev-noise-level');
     els.noiseLevelLabel = el('vad-dev-noise-level-label');
     els.aggregation = el('vad-dev-aggregation-timeout');
@@ -1637,14 +2146,14 @@ const VadDevModal = (() => {
     els.testStop?.addEventListener('click', () => stopRecording(MODE_MANUAL));
     els.testClear?.addEventListener('click', () => clearProbe(MODE_MANUAL));
     els.vadTestMode?.addEventListener('click', () => { if (probe(MODE_VAD).enabled) disableProbeMode(MODE_VAD); else void enableProbeMode(MODE_VAD); });
-    els.vadRecordToggle?.addEventListener('click', () => toggleVadRecordMode(MODE_VAD));
-    els.vadStopToggle?.addEventListener('click', () => toggleVadStopMode(MODE_VAD));
+    els.vadRecordToggle?.addEventListener('click', () => { void toggleVadRecordMode(MODE_VAD); });
+    els.vadStopToggle?.addEventListener('click', () => { void toggleVadStopMode(MODE_VAD); });
     els.vadTestRecord?.addEventListener('click', () => { void startRecording(MODE_VAD, { reason: 'manual_record' }); });
     els.vadTestStop?.addEventListener('click', () => stopRecording(MODE_VAD, 'manual_stop'));
     els.vadTestClear?.addEventListener('click', () => clearProbe(MODE_VAD));
     els.rearmTestMode?.addEventListener('click', () => { if (probe(MODE_REARM).enabled) disableProbeMode(MODE_REARM); else void enableProbeMode(MODE_REARM); });
-    els.rearmRecordToggle?.addEventListener('click', () => toggleVadRecordMode(MODE_REARM));
-    els.rearmStopToggle?.addEventListener('click', () => toggleVadStopMode(MODE_REARM));
+    els.rearmRecordToggle?.addEventListener('click', () => { void toggleVadRecordMode(MODE_REARM); });
+    els.rearmStopToggle?.addEventListener('click', () => { void toggleVadStopMode(MODE_REARM); });
     els.rearmTestRecord?.addEventListener('click', () => { void startRecording(MODE_REARM, { reason: 'manual_record' }); });
     els.rearmTestStop?.addEventListener('click', () => stopRecording(MODE_REARM, 'manual_stop'));
     els.rearmTestClear?.addEventListener('click', () => clearProbe(MODE_REARM));
@@ -1652,6 +2161,9 @@ const VadDevModal = (() => {
       voiceMode()?.setSttNoiseReductionEnabled?.(els.noiseToggle.checked);
       renderSharedControls();
       poll({ force: true });
+    });
+    els.sileroToggle?.addEventListener('change', () => {
+      void setSileroVadEnabled(els.sileroToggle.checked, { reason: 'ui_toggle' });
     });
     els.noiseLevel?.addEventListener('input', () => {
       const level = Number(els.noiseLevel.value || 6);
