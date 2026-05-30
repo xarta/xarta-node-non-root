@@ -52,6 +52,9 @@ const BlueprintsActiveBrowserObserver = (() => {
     if (action === 'vad_dev') return 'open_vad_dev';
     if (action === 'close_vad' || action === 'vad_close') return 'close_vad_dev';
     if (action === 'modal_close') return 'close_modal';
+    if (action === 'page' || action === 'open_tab' || action === 'tab') return 'open_page';
+    if (action === 'modal') return 'open_modal';
+    if (action === 'fn' || action === 'function' || action === 'menu_fn') return 'menu_function';
     if (action === 'synthesis') return 'open_synthesis';
     if (action === 'probes') return 'open_probes';
     if (action === 'settings') return 'open_settings';
@@ -69,6 +72,10 @@ const BlueprintsActiveBrowserObserver = (() => {
   }
 
   function _normalizeSelectorAction(value) {
+    return _cleanText(value).toLowerCase().replace(/[\s_]+/g, '-');
+  }
+
+  function _normalizeGroup(value) {
     return _cleanText(value).toLowerCase().replace(/[\s_]+/g, '-');
   }
 
@@ -174,6 +181,60 @@ const BlueprintsActiveBrowserObserver = (() => {
     return false;
   }
 
+  function _openPage(payload) {
+    if (typeof window.BlueprintsHubMenuBridge?.openPage !== 'function') return false;
+    const result = window.BlueprintsHubMenuBridge.openPage({
+      group: _normalizeGroup(payload?.group || payload?.menu_group),
+      page_id: _cleanText(payload?.page_id || payload?.tab || payload?.menu_item_id),
+      menu_item_id: _cleanText(payload?.menu_item_id),
+    });
+    return result?.ok !== false;
+  }
+
+  function _runMenuFunction(payload) {
+    if (typeof window.BlueprintsHubMenuBridge?.invokeMenuFunction !== 'function') return false;
+    const result = window.BlueprintsHubMenuBridge.invokeMenuFunction({
+      group: _normalizeGroup(payload?.group || payload?.menu_group),
+      page_id: _cleanText(payload?.page_id || payload?.tab),
+      menu_item_id: _cleanText(payload?.menu_item_id || payload?.menu_id),
+      fn: _cleanText(payload?.fn),
+    });
+    return result?.ok !== false;
+  }
+
+  function _openKnownModal(modalId) {
+    const cleanId = _cleanText(modalId);
+    const openers = {
+      'voice-mode-modal': () => typeof window.BlueprintsVoiceMode?.open === 'function' ? window.BlueprintsVoiceMode.open() : false,
+      'stt-noise-tests-modal': () => typeof window.SttNoiseTests?.open === 'function' ? window.SttNoiseTests.open() : false,
+      'vad-dev-modal': () => typeof window.VadDevModal?.open === 'function' ? window.VadDevModal.open() : false,
+      'wake-dev-modal': () => typeof window.WakeDevModal?.open === 'function' ? window.WakeDevModal.open() : false,
+      'wake-queue-modal': () => typeof window.WakeQueueDev?.open === 'function' ? window.WakeQueueDev.open() : false,
+      'matrix-chat-notifier-dnd-modal': () => typeof window.MatrixChat?.openNotifierDnd === 'function' ? window.MatrixChat.openNotifierDnd() : false,
+      'matrix-chat-notifier-tests-modal': () => typeof window.MatrixChat?.openNotifierTests === 'function' ? window.MatrixChat.openNotifierTests() : false,
+    };
+    const opener = openers[cleanId];
+    if (typeof opener === 'function') {
+      const result = opener();
+      return result !== false;
+    }
+    const dialog = document.getElementById(cleanId);
+    if (!_isDialog(dialog)) return false;
+    if (typeof window.HubModal?.open === 'function') {
+      window.HubModal.open(dialog);
+    } else if (typeof dialog.showModal === 'function') {
+      dialog.showModal();
+    }
+    return true;
+  }
+
+  function _openModal(payload) {
+    if (payload?.fn || payload?.menu_item_id || payload?.menu_id) {
+      return _runMenuFunction(payload);
+    }
+    return _openKnownModal(payload?.modal_id);
+  }
+
   function _closeDialog(dialogId) {
     let dialog = null;
     const cleanId = _cleanText(dialogId);
@@ -224,6 +285,21 @@ const BlueprintsActiveBrowserObserver = (() => {
     if (action === 'close_modal') {
       _closeDialog(payload?.modal_id);
       scheduleReport('command-close-modal');
+      return;
+    }
+    if (action === 'open_page') {
+      _openPage(payload);
+      scheduleReport('command-open-page');
+      return;
+    }
+    if (action === 'open_modal') {
+      _openModal(payload);
+      scheduleReport('command-open-modal');
+      return;
+    }
+    if (action === 'menu_function') {
+      _runMenuFunction(payload);
+      scheduleReport('command-menu-function');
       return;
     }
     if (action === 'open_synthesis' || action === 'open_probes' || action === 'open_settings') {
@@ -374,6 +450,13 @@ const BlueprintsActiveBrowserObserver = (() => {
     };
   }
 
+  function _automationState() {
+    if (typeof window.BlueprintsHubMenuBridge?.getAutomationState === 'function') {
+      return window.BlueprintsHubMenuBridge.getAutomationState() || {};
+    }
+    return {};
+  }
+
   function _payload() {
     return {
       browser_id: _browserId(),
@@ -389,6 +472,7 @@ const BlueprintsActiveBrowserObserver = (() => {
       url_search: window.location.search || '',
       url_hash: window.location.hash || '',
       frontend: _frontendVersion(),
+      automation: _automationState(),
       client_now_ms: Date.now(),
     };
   }
@@ -399,6 +483,7 @@ const BlueprintsActiveBrowserObserver = (() => {
     const key = JSON.stringify({
       page: payload.page,
       modals: payload.modals,
+      automation: payload.automation,
       viewport: payload.viewport,
       voice: payload.voice,
       visibility_state: payload.visibility_state,

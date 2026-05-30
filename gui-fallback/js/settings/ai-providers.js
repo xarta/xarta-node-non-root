@@ -568,6 +568,7 @@ async function _showAiPrivateFallbackAlert(item, totalCount) {
       message: 'A PRIVATE AI provider has a non-private fallback in LiteLLM config.',
       detail,
       confirmText: 'Review',
+      autoCloseMs: 5000,
     });
     return;
   }

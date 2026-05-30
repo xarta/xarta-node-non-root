@@ -95,6 +95,7 @@ const HubDialogs = (() => {
 
     function _applyCommon(instance, opts) {
         const tone = opts.tone || 'info';
+        instance.dialog.classList.remove('hub-dialog--auto-closing');
         instance.dialog.dataset.tone = tone;
         instance.badge.textContent = _badgeForTone(tone, opts);
         instance.title.textContent = opts.title || 'Notice';
@@ -113,8 +114,18 @@ const HubDialogs = (() => {
         _applyCommon(instance, opts);
 
         return new Promise(resolve => {
+            let autoCloseTimer = null;
+            let autoCloseFadeTimer = null;
             const onConfirm = () => HubModal.close(instance.dialog);
+            const cleanupAutoClose = () => {
+                if (autoCloseTimer) window.clearTimeout(autoCloseTimer);
+                if (autoCloseFadeTimer) window.clearTimeout(autoCloseFadeTimer);
+                autoCloseTimer = null;
+                autoCloseFadeTimer = null;
+                instance.dialog.classList.remove('hub-dialog--auto-closing');
+            };
             const onClose = () => {
+                cleanupAutoClose();
                 instance.confirmBtn.removeEventListener('click', onConfirm);
                 resolve();
             };
@@ -124,6 +135,17 @@ const HubDialogs = (() => {
             if (toneClass) instance.confirmBtn.classList.add(toneClass);
             instance.confirmBtn.addEventListener('click', onConfirm);
             HubModal.open(instance.dialog, { onClose });
+            const autoCloseMs = Number(opts.autoCloseMs || 0);
+            if (Number.isFinite(autoCloseMs) && autoCloseMs > 0) {
+                const fadeMs = Math.max(120, Math.min(2000, Number(opts.autoCloseFadeMs || 450)));
+                autoCloseTimer = window.setTimeout(() => {
+                    if (!instance.dialog.open) return;
+                    instance.dialog.classList.add('hub-dialog--auto-closing');
+                    autoCloseFadeTimer = window.setTimeout(() => {
+                        if (instance.dialog.open) HubModal.close(instance.dialog);
+                    }, fadeMs);
+                }, autoCloseMs);
+            }
         });
     }
 

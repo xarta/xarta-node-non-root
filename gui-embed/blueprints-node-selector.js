@@ -1612,8 +1612,19 @@
     return { ok: true, handled: true, delayed_ms: delayMs, action: key, event_kind: eventKind };
   }
 
+  function listSelectorAutomationActions() {
+    return Object.entries(BUTTON_DEFS)
+      .map(([action, def]) => ({
+        action,
+        label: def?.label || action,
+        bridge_group: def?.bridgeGroup || '',
+      }))
+      .sort((a, b) => a.action.localeCompare(b.action));
+  }
+
   window.BlueprintsNodeSelectorActions = Object.freeze({
     run: runSelectorAutomationAction,
+    listActions: listSelectorAutomationActions,
     normalizeAction: normalizeSelectorAutomationAction,
     normalizeEventKind: normalizeSelectorAutomationEventKind,
   });

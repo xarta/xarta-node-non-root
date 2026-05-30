@@ -690,6 +690,183 @@ function createHubMenu(cfg) {
             return true;
         },
 
+        _allAutomationItems() {
+            const source = Array.isArray(this.currentMenu) && this.currentMenu.length
+                ? this.currentMenu
+                : this.defaultMenu;
+            const merged = new Map();
+            (source || []).forEach(item => {
+                if (item && item.id) merged.set(item.id, { ...item });
+            });
+            (this.defaultMenu || []).forEach(def => {
+                if (!def || !def.id) return;
+                const current = merged.get(def.id);
+                merged.set(def.id, current ? {
+                    ...current,
+                    fn: def.fn,
+                    activeOn: def.activeOn,
+                    defaultTargetFn: def.defaultTargetFn,
+                    sshTargetId: current.sshTargetId || def.sshTargetId,
+                    sshTargetEnabled: current.sshTargetEnabled ?? def.sshTargetEnabled,
+                } : { ...def });
+            });
+            return [...merged.values()];
+        },
+
+        _findMenuItem(itemId) {
+            if (!itemId) return null;
+            return this._allAutomationItems().find(item => item.id === itemId) || null;
+        },
+
+        _automationChildren(parentId, items) {
+            return (items || this._allAutomationItems())
+                .filter(item => item.parent === parentId)
+                .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+        },
+
+        _functionItemMatchesActiveContext(item, activeId) {
+            if (!item || !item.fn) return false;
+            if (!Array.isArray(item.activeOn)) return true;
+            return !!(activeId && item.activeOn.includes(activeId));
+        },
+
+        _functionItemCapability(item, activeId) {
+            const visible = this._functionItemMatchesActiveContext(item, activeId)
+                && this._isItemVisible(item, activeId);
+            const blocked = !!(item?.fn && this._sshLockBlocksFunction(item.fn));
+            const registered = typeof this._fnRegistry[item?.fn] === 'function';
+            return {
+                id: item?.id || '',
+                label: item ? this._displayLabel(item) : '',
+                fn: item?.fn || '',
+                active_on: Array.isArray(item?.activeOn) ? [...item.activeOn] : [],
+                parent: item?.parent || null,
+                order: Number(item?.order) || 0,
+                current_context: this._functionItemMatchesActiveContext(item, activeId),
+                visible,
+                blocked,
+                registered,
+                invokable: !!(visible && !blocked && registered),
+            };
+        },
+
+        _invokeFunctionItem(item, options = {}) {
+            const activeId = this._activeTabId();
+            const capability = this._functionItemCapability(item, activeId);
+            const closeTargets = () => {
+                if (options.closeContextMenu) this._removeFloatingContextMenu();
+                if (options.closeAnchoredMenus) this.closeAnchoredMenus();
+                if (options.closeMenu) this.closeMenu();
+                if (options.closeDropdowns) this.closeDropdowns();
+            };
+            if (!item?.fn || !capability.visible || capability.blocked) {
+                closeTargets();
+                return { ok: false, handled: false, detail: capability.blocked ? 'blocked' : 'not_visible', item: capability };
+            }
+            this._playItemSound(item.id);
+            const fn = this._fnRegistry[item.fn];
+            if (typeof fn === 'function') {
+                fn();
+            } else {
+                console.warn('[HubMenu] No function registered for:', item.fn);
+                closeTargets();
+                return { ok: false, handled: false, detail: 'function_not_registered', item: capability };
+            }
+            window.setTimeout(() => this.updateActiveTab(this._activeId), 0);
+            closeTargets();
+            return { ok: true, handled: true, item: capability };
+        },
+
+        _navigationTargetForItem(item, items) {
+            if (!item || item.fn) return '';
+            if (item.sshTargetId) return item.sshTargetId;
+            const activeId = this._activeTabId();
+            const navChildren = this._automationChildren(item.id, items).filter(child => !child.fn);
+            if (!item.parent && navChildren.length > 0) {
+                const allNavGroup = [item, ...navChildren];
+                const activeMember = activeId ? allNavGroup.find(member => member.id === activeId) : null;
+                return this._primaryMenuTargetId(item, activeMember, navChildren);
+            }
+            const panel = document.getElementById('tab-' + item.id);
+            return panel ? item.id : (navChildren[0]?.id || item.id);
+        },
+
+        _navigationItemCapability(item, activeId, items) {
+            const targetId = this._navigationTargetForItem(item, items);
+            const blocked = !!(targetId && this._sshLockBlocksNavigation(targetId));
+            return {
+                id: item?.id || '',
+                label: item ? this._displayLabel(item) : '',
+                page_label: item ? (item.pageLabel || this._displayLabel(item)) : '',
+                parent: item?.parent || null,
+                order: Number(item?.order) || 0,
+                target_id: targetId,
+                current: !!(activeId && (item?.id === activeId || targetId === activeId)),
+                visible: this._isItemVisible(item || {}, activeId),
+                blocked,
+                has_panel: !!document.getElementById('tab-' + (item?.id || '')),
+                invokable: !!(targetId && !blocked),
+            };
+        },
+
+        invokeAutomationNavigation(targetId) {
+            const item = this._findMenuItem(targetId);
+            if (!item || item.fn) {
+                return { ok: false, handled: false, detail: 'unknown_page', page_id: targetId || '' };
+            }
+            if (this._openSshTerminalMenuItem(item)) {
+                return { ok: true, handled: true, page_id: item.id, ssh_target_id: item.sshTargetId || '' };
+            }
+            const resolvedTargetId = this._navigationTargetForItem(item);
+            if (!resolvedTargetId) {
+                return { ok: false, handled: false, detail: 'no_navigation_target', page_id: item.id };
+            }
+            if (this._sshLockBlocksNavigation(resolvedTargetId)) {
+                return { ok: false, handled: false, detail: 'navigation_blocked', page_id: item.id, target_id: resolvedTargetId };
+            }
+            this._navigatePrimaryMenuTarget(resolvedTargetId);
+            return { ok: true, handled: true, page_id: item.id, target_id: resolvedTargetId };
+        },
+
+        invokeAutomationFunction(options = {}) {
+            const cleanItemId = String(options.menu_item_id || options.menuItemId || '').trim();
+            const cleanFn = String(options.fn || '').trim();
+            const activeId = this._activeTabId();
+            const candidates = this._allAutomationItems().filter(item => item.fn);
+            const item = candidates.find(candidate => cleanItemId && candidate.id === cleanItemId)
+                || candidates.find(candidate => cleanFn && candidate.fn === cleanFn)
+                || null;
+            if (!item) {
+                return { ok: false, handled: false, detail: 'unknown_function_item', menu_item_id: cleanItemId, fn: cleanFn };
+            }
+            const capability = this._functionItemCapability(item, activeId);
+            if (!capability.invokable) {
+                return { ok: false, handled: false, detail: capability.blocked ? 'blocked' : (capability.registered ? 'not_visible' : 'function_not_registered'), item: capability };
+            }
+            return this._invokeFunctionItem(item, { closeMenu: true, closeDropdowns: true, closeAnchoredMenus: true });
+        },
+
+        automationState() {
+            const activeId = this._activeTabId();
+            const items = this._allAutomationItems();
+            const pages = items
+                .filter(item => item && !item.fn)
+                .map(item => this._navigationItemCapability(item, activeId, items));
+            const functionItems = items
+                .filter(item => item && item.fn)
+                .map(item => this._functionItemCapability(item, activeId));
+            return {
+                group: cfg.group || '',
+                active_id: activeId || '',
+                layout_item_id: cfg.mobilePinnedId || '',
+                pages,
+                function_items: functionItems,
+                current_functions: functionItems.filter(item => item.current_context && item.visible),
+                page_count: pages.length,
+                function_count: functionItems.length,
+            };
+        },
+
         openPrimaryMenuAt(anchorEl) {
             anchorEl = this._resolveLiveOriginAnchor(anchorEl);
             if (!anchorEl || typeof anchorEl.getBoundingClientRect !== 'function') return false;
@@ -783,13 +960,7 @@ function createHubMenu(cfg) {
                     fnBtn.innerHTML = this._iconHtml(item.id, item.icon) + '\u00a0' + this._displayLabel(item);
                     fnBtn.addEventListener('click', (event) => {
                         event.stopPropagation();
-                        if (this._sshLockBlocksFunction(item.fn)) return;
-                        this._playItemSound(item.id);
-                        const fn = this._fnRegistry[item.fn];
-                        if (typeof fn === 'function') fn();
-                        else console.warn('[HubMenu] No function registered for:', item.fn);
-                        window.setTimeout(() => this.updateActiveTab(this._activeId), 0);
-                        this.closeAnchoredMenus();
+                        this._invokeFunctionItem(item, { closeAnchoredMenus: true });
                     });
                     row.appendChild(fnBtn);
                 } else {
@@ -878,13 +1049,7 @@ function createHubMenu(cfg) {
                 btn.innerHTML = this._iconHtml(item.id, item.icon) + '\u00a0' + this._displayLabel(item);
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    if (this._sshLockBlocksFunction(item.fn)) return;
-                    this._playItemSound(item.id);
-                    const fn = this._fnRegistry[item.fn];
-                    if (typeof fn === 'function') fn();
-                    else console.warn('[HubMenu] No function registered for:', item.fn);
-                    this._removeFloatingContextMenu();
-                    window.setTimeout(() => this.updateActiveTab(this._activeId), 0);
+                    this._invokeFunctionItem(item, { closeContextMenu: true });
                 });
                 menu.appendChild(btn);
             });
@@ -1063,14 +1228,10 @@ function createHubMenu(cfg) {
                     dropdown.querySelectorAll('.hub-dropdown-fn').forEach(btn => {
                         btn.addEventListener('click', (e) => {
                             e.stopPropagation();
-                            if (this._sshLockBlocksFunction(btn.dataset.fn)) return;
-                            this._playItemSound(btn.dataset.itemKey);
-                            const fn = this._fnRegistry[btn.dataset.fn];
-                            if (typeof fn === 'function') fn();
-                            else console.warn('[HubMenu] No function registered for:', btn.dataset.fn);
-                            window.setTimeout(() => this.updateActiveTab(this._activeId), 0);
-                            this.closeMenu();
-                            this.closeDropdowns();
+                            const fnItem = sortedFnChildren.find(c => c.id === btn.dataset.itemKey)
+                                || this._findMenuItem(btn.dataset.itemKey)
+                                || { id: btn.dataset.itemKey, fn: btn.dataset.fn, label: btn.textContent.trim(), activeOn: [] };
+                            this._invokeFunctionItem(fnItem, { closeMenu: true, closeDropdowns: true });
                         });
                     });
 
@@ -1083,13 +1244,7 @@ function createHubMenu(cfg) {
                     const itemLabel = this._navLabel(item);
                     btn.innerHTML = this._iconHtml(item.id, item.icon) + (itemLabel ? ('\u00a0' + itemLabel) : '');
                     btn.addEventListener('click', () => {
-                        if (this._sshLockBlocksFunction(item.fn)) return;
-                        this._playItemSound(item.id);
-                        const fn = this._fnRegistry[item.fn];
-                        if (typeof fn === 'function') fn();
-                        else console.warn('[HubMenu] No function registered for:', item.fn);
-                        window.setTimeout(() => this.updateActiveTab(this._activeId), 0);
-                        this.closeMenu();
+                        this._invokeFunctionItem(item, { closeMenu: true });
                     });
                     target.appendChild(btn);
 

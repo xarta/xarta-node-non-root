@@ -67,6 +67,12 @@ function _getActiveGroupMenuConfig() {
   return null;
 }
 
+function _getMenuConfigForGroup(group) {
+  const cleanGroup = String(group || '').trim().toLowerCase();
+  const entry = _groupMenuEntries().find(candidate => candidate.group === cleanGroup);
+  return entry ? entry.menu : null;
+}
+
 function _getActiveGroupLayoutTabId() {
   const menu = _getActiveGroupMenuConfig();
   return menu && menu._cfg ? menu._cfg.mobilePinnedId : null;
@@ -101,6 +107,23 @@ function _menuOwnsTab(menu, tab) {
 
 function _inferGroupForTab(tab) {
   const entry = _groupMenuEntries().find(candidate => _menuOwnsTab(candidate.menu, tab));
+  return entry ? entry.group : null;
+}
+
+function _menuOwnsFunction(menu, fnKey, itemId) {
+  if (!menu) return false;
+  const items = [
+    ...(Array.isArray(menu.defaultMenu) ? menu.defaultMenu : []),
+    ...(Array.isArray(menu.currentMenu) ? menu.currentMenu : []),
+  ];
+  return items.some(item => item && item.fn && (
+    (fnKey && item.fn === fnKey)
+    || (itemId && item.id === itemId)
+  ));
+}
+
+function _inferGroupForFunction(fnKey, itemId) {
+  const entry = _groupMenuEntries().find(candidate => _menuOwnsFunction(candidate.menu, fnKey, itemId));
   return entry ? entry.group : null;
 }
 
@@ -209,6 +232,69 @@ function _emitPageStateChanged(reason) {
 window.BlueprintsPageState = {
   current: _currentPageState,
 };
+
+function _activeBrowserAutomationState() {
+  const page = _currentPageState();
+  const menus = _groupMenuEntries()
+    .map(entry => entry.menu && typeof entry.menu.automationState === 'function'
+      ? entry.menu.automationState()
+      : null)
+    .filter(Boolean);
+  return {
+    current_group: page.group || _selectorOriginMenuGroup || '',
+    current_page_id: page.tab || '',
+    menus,
+    current_menu: menus.find(menu => menu.group === (page.group || _selectorOriginMenuGroup)) || null,
+    selector_actions: typeof window.BlueprintsNodeSelectorActions?.listActions === 'function'
+      ? window.BlueprintsNodeSelectorActions.listActions()
+      : [],
+  };
+}
+
+function _openAutomationPage(options = {}) {
+  const pageId = String(options.page_id || options.pageId || options.tab || options.menu_item_id || options.menuItemId || '').trim();
+  const requestedGroup = String(options.group || options.menu_group || options.menuGroup || '').trim().toLowerCase();
+  const group = requestedGroup || _inferGroupForTab(pageId) || _selectorOriginMenuGroup || _activeGroup || 'synthesis';
+  const menu = _getMenuConfigForGroup(group);
+  if (!menu) return { ok: false, handled: false, detail: 'unknown_group', group };
+  if (group !== _selectorOriginMenuGroup) {
+    switchGroup(group);
+  } else if (typeof menu.showGroup === 'function') {
+    menu.showGroup();
+  }
+  if (!pageId) {
+    return { ok: true, handled: true, group, page_id: '' };
+  }
+  if (typeof menu.invokeAutomationNavigation !== 'function') {
+    return { ok: false, handled: false, detail: 'navigation_bridge_unavailable', group, page_id: pageId };
+  }
+  return { group, ...menu.invokeAutomationNavigation(pageId) };
+}
+
+function _invokeAutomationMenuFunction(options = {}) {
+  const fnKey = String(options.fn || '').trim();
+  const itemId = String(options.menu_item_id || options.menuItemId || '').trim();
+  const pageId = String(options.page_id || options.pageId || options.tab || '').trim();
+  const requestedGroup = String(options.group || options.menu_group || options.menuGroup || '').trim().toLowerCase();
+  const group = requestedGroup
+    || _inferGroupForFunction(fnKey, itemId)
+    || _inferGroupForTab(pageId)
+    || _selectorOriginMenuGroup
+    || _activeGroup
+    || 'synthesis';
+  const menu = _getMenuConfigForGroup(group);
+  if (!menu) return { ok: false, handled: false, detail: 'unknown_group', group, fn: fnKey, menu_item_id: itemId };
+  if (group !== _selectorOriginMenuGroup || (pageId && _currentPageState().tab !== pageId)) {
+    const nav = _openAutomationPage({ group, page_id: pageId });
+    if (pageId && nav.ok === false) return { ok: false, handled: false, detail: 'page_open_failed', group, fn: fnKey, menu_item_id: itemId, navigation: nav };
+  } else if (typeof menu.showGroup === 'function') {
+    menu.showGroup();
+  }
+  if (typeof menu.invokeAutomationFunction !== 'function') {
+    return { ok: false, handled: false, detail: 'function_bridge_unavailable', group, fn: fnKey, menu_item_id: itemId };
+  }
+  return { group, ...menu.invokeAutomationFunction({ fn: fnKey, menu_item_id: itemId }) };
+}
 
 const _originDefaultTtsMessages = {
   tap: '',
@@ -322,10 +408,14 @@ window.BlueprintsHubMenuBridge = {
     return _selectorOriginMenuGroup;
   },
   getActiveMenuConfig: _getActiveGroupMenuConfig,
+  getMenuConfigForGroup: _getMenuConfigForGroup,
   getCurrentPageState: _currentPageState,
+  getAutomationState: _activeBrowserAutomationState,
   getActiveGroupLayoutTabId: _getActiveGroupLayoutTabId,
   isS25StargateOriginMenuMode: _isS25StargateOriginMenuMode,
   closeAnchoredMenus: _closeActiveOriginMenus,
+  openPage: _openAutomationPage,
+  invokeMenuFunction: _invokeAutomationMenuFunction,
   switchGroup,
 };
 window._currentPageState = _currentPageState;
