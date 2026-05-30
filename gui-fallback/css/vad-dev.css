@@ -18,6 +18,36 @@
   padding: 15px 16px 16px;
 }
 
+.vad-dev__controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.vad-dev-settings,
+.vad-dev-test-tabs {
+  align-self: start;
+}
+
+.vad-dev-settings .wake-dev-slider {
+  grid-column: 1 / -1;
+}
+
+#vad-dev-test-tab-manual:checked ~ .wake-dev-test-tablist label[for="vad-dev-test-tab-manual"],
+#vad-dev-test-tab-vad:checked ~ .wake-dev-test-tablist label[for="vad-dev-test-tab-vad"],
+#vad-dev-test-tab-rearm:checked ~ .wake-dev-test-tablist label[for="vad-dev-test-tab-rearm"] {
+  background: rgba(var(--hub-accent-rgb), 0.22);
+  color: #f1f7fa;
+}
+
+#vad-dev-test-tab-manual:checked ~ .wake-dev-test-panels .wake-dev-test-panel--manual,
+#vad-dev-test-tab-vad:checked ~ .wake-dev-test-panels .wake-dev-test-panel--vad,
+#vad-dev-test-tab-rearm:checked ~ .wake-dev-test-panels .wake-dev-test-panel--rearm {
+  display: grid;
+  gap: 9px;
+}
+
 .vad-dev-tabs {
   display: grid;
   align-content: start;
@@ -94,5 +124,9 @@
 
   .vad-dev {
     padding: 12px;
+  }
+
+  .vad-dev__controls {
+    grid-template-columns: 1fr;
   }
 }

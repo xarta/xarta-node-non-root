@@ -691,6 +691,8 @@ const WakeDevModal = (() => {
   }
 
   async function runWakeDevCommand(payload) {
+    const surface = cleanDevCommandText(payload?.surface || 'wake_dev').toLowerCase().replace(/[-\s]+/g, '_');
+    if (surface !== 'wake_dev') return;
     const commandId = cleanDevCommandText(payload?.command_id);
     if (!shouldAcceptDevCommand(payload)) return;
     if (!rememberDevCommand(commandId)) return;

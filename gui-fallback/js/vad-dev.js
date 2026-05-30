@@ -1,28 +1,1430 @@
-// vad-dev.js - shell for VAD development surfaces.
+// vad-dev.js - isolated VAD/STT development surface.
 
 'use strict';
 
 const VadDevModal = (() => {
+  const DEV_STATUS_URL = '/api/v1/voice-mode/dev-status';
+  const STT_WS_URL = '/api/v1/voice-mode/stt/ws';
+  const SAMPLE_RATE = 16000;
+  const AUDIO_BUFFER_SIZE = 4096;
+  const WINDOW_MS = 10000;
+  const POLL_MS = 500;
+  const DEV_COMMAND_EVENT_TYPE = 'voice.mode.dev.command';
+  const DEV_COMMAND_MAX_SEEN = 200;
+  const DEV_STATUS_MIN_MS = 500;
+  const VAD_TEST_DELAY_FRAMES = 0;
+  const VAD_TEST_ABSOLUTE_FLOOR = 0.0012;
+  const VAD_TEST_STRONG_MULTIPLIER = 5;
+  const VAD_TEST_EXIT_HANGOVER_MS = 180;
+  const VAD_RESET_TIMEOUT_MAX_MS = 2000;
+  const SURFACE = 'vad_dev';
+
+  const MODE_MANUAL = 'manual';
+  const MODE_VAD = 'vad';
+  const MODE_REARM = 'vad_rearm';
+  const MODES = [MODE_MANUAL, MODE_VAD, MODE_REARM];
+
+  const MODE_CONFIG = {
+    [MODE_MANUAL]: {
+      label: 'Manual STT probe',
+      session: 'manual-probe',
+      statusOff: 'VAD bypass is off.',
+      states: ['MANUAL_STT_OFF', 'MANUAL_STT_READY', 'MANUAL_STT_RECORDING', 'MANUAL_STT_FINALIZING'],
+    },
+    [MODE_VAD]: {
+      label: 'VAD STT probe',
+      session: 'vad-probe',
+      statusOff: 'VAD STT probe is off.',
+      states: ['VAD_STT_OFF', 'VAD_STT_READY', 'VAD_STT_ARMED', 'VAD_STT_OPENING', 'VAD_STT_RECORDING', 'VAD_STT_FINALIZING'],
+    },
+    [MODE_REARM]: {
+      label: 'VAD ReArm STT probe',
+      session: 'vad-rearm-probe',
+      statusOff: 'VAD ReArm STT probe is off.',
+      states: ['VAD_REARM_STT_OFF', 'VAD_REARM_STT_READY', 'VAD_REARM_STT_ARMED', 'VAD_REARM_STT_OPENING', 'VAD_REARM_STT_RECORDING', 'VAD_REARM_STT_FINALIZING'],
+    },
+  };
+
   const state = {
-    initialized: false,
+    bound: false,
+    open: false,
+    pollTimer: null,
     timeline: null,
     timelinePromise: null,
+    selectedMode: MODE_MANUAL,
+    devCommandIds: [],
+    devStatusLastAt: 0,
+    devStatusSignature: '',
+    devStatusSending: false,
+    probes: {
+      [MODE_MANUAL]: createProbe(MODE_MANUAL),
+      [MODE_VAD]: createProbe(MODE_VAD),
+      [MODE_REARM]: createProbe(MODE_REARM),
+    },
   };
+
   const els = {};
+
+  function createVadState() {
+    return {
+      speaking: false,
+      candidateActive: false,
+      candidateConfirmed: false,
+      speechSeenSinceReset: false,
+      lastVoiceAt: 0,
+      lastResetAt: 0,
+      lastEnergy: 0,
+      noiseFloor: 0,
+      enterThreshold: 0,
+      exitThreshold: 0,
+      strongEnterThreshold: 0,
+      lastAutoStopAt: 0,
+    };
+  }
+
+  function createProbe(mode) {
+    const config = MODE_CONFIG[mode] || MODE_CONFIG[MODE_MANUAL];
+    return {
+      mode,
+      enabled: false,
+      recording: false,
+      finalizing: false,
+      starting: false,
+      vadRecordEnabled: false,
+      vadStopEnabled: false,
+      ws: null,
+      stream: null,
+      audioContext: null,
+      sourceNode: null,
+      processorNode: null,
+      startedAt: 0,
+      bytesSent: 0,
+      framesSent: 0,
+      transcript: '',
+      status: config.statusOff,
+      events: [],
+      actions: [],
+      samples: [],
+      lastLevel: 0,
+      delayFrames: [],
+      pendingFrames: [],
+      segmentId: 0,
+      autoRearmPending: false,
+      autoRearmSegmentId: 0,
+      finalWaitDeadlineAt: 0,
+      finalWaitTimeoutMs: 0,
+      vad: createVadState(),
+    };
+  }
 
   function el(id) {
     return document.getElementById(id);
   }
 
-  function init() {
-    if (state.initialized) return;
-    state.initialized = true;
-    els.modal = el('vad-dev-modal');
-    els.timeline = el('vad-dev-timeline-module');
+  function api(url, options = {}) {
+    const fn = typeof apiFetch === 'function' ? apiFetch : fetch;
+    return fn(url, options);
+  }
+
+  function clone(value) {
+    return JSON.parse(JSON.stringify(value || {}));
+  }
+
+  function text(value, fallback = '--') {
+    const out = String(value ?? '').trim();
+    return out || fallback;
+  }
+
+  function setText(node, value, fallback = '--') {
+    if (node) node.textContent = text(value, fallback);
+  }
+
+  function cleanText(value) {
+    return String(value ?? '').trim();
+  }
+
+  function cleanCommandText(value) {
+    return cleanText(value).toLowerCase().replace(/[-\s]+/g, '_');
+  }
+
+  function voiceMode() {
+    return window.BlueprintsVoiceMode || null;
+  }
+
+  function probe(mode) {
+    return state.probes[mode] || state.probes[MODE_MANUAL];
+  }
+
+  function modeConfig(mode) {
+    return MODE_CONFIG[mode] || MODE_CONFIG[MODE_MANUAL];
+  }
+
+  function modeFromInput(value) {
+    const clean = cleanCommandText(value || state.selectedMode || MODE_MANUAL);
+    if (clean === 'rearm' || clean === 'vad_rearm') return MODE_REARM;
+    if (clean === MODE_VAD) return MODE_VAD;
+    return MODE_MANUAL;
+  }
+
+  function status(message) {
+    setText(els.status, message, '');
+  }
+
+  function setProbeStatus(mode, message) {
+    const target = probe(mode);
+    target.status = message || '';
+    if (mode === MODE_MANUAL) setText(els.testStatus, target.status, '');
+    else if (mode === MODE_VAD) setText(els.vadTestStatus, target.status, '');
+    else if (mode === MODE_REARM) setText(els.rearmTestStatus, target.status, '');
+  }
+
+  function formatDb(level) {
+    const safe = Math.max(0.0001, Math.min(1, Number(level) || 0));
+    return `${Math.max(-80, 20 * Math.log10(safe)).toFixed(1)} dB`;
+  }
+
+  function formatVadResetTimeout(ms) {
+    const value = Math.max(0, Math.min(VAD_RESET_TIMEOUT_MAX_MS, Math.round(Number(ms || 0) / 50) * 50));
+    return value > 0 ? `${value} ms` : 'Off';
+  }
+
+  function renderRangeLabels() {
+    const level = Number(els.noiseLevel?.value || 6);
+    setText(els.noiseLevelLabel, `${level.toFixed(1)} dB`);
+    setText(els.aggregationLabel, `${Number(els.aggregation?.value || 80)} ms`);
+    setText(els.vadResetLabel, formatVadResetTimeout(els.vadReset?.value));
+  }
+
+  function voiceNoiseEnabled() {
+    const vm = voiceMode();
+    if (typeof vm?.sttNoiseReductionSettingEnabled === 'function') return vm.sttNoiseReductionSettingEnabled();
+    if (typeof vm?.sttNoiseReductionEnabled === 'function') return !!vm.sttNoiseReductionEnabled();
+    return false;
+  }
+
+  function voiceNoiseLevelDb() {
+    const level = Number(voiceMode()?.sttNoiseReductionLevelDb?.());
+    return Number.isFinite(level) ? Math.max(0, Math.min(12, level)) : 6;
+  }
+
+  function renderSharedControls() {
+    const vm = voiceMode();
+    if (els.noiseToggle) els.noiseToggle.checked = voiceNoiseEnabled();
+    if (els.noiseLevel) els.noiseLevel.value = String(voiceNoiseLevelDb());
+    const aggregation = Number(vm?.sttAggregationTimeoutMs?.());
+    if (Number.isFinite(aggregation) && els.aggregation) els.aggregation.value = String(aggregation);
+    const vadReset = Number(vm?.vadResetTimeoutMs?.());
+    if (Number.isFinite(vadReset) && els.vadReset) {
+      els.vadReset.value = String(Math.max(0, Math.min(VAD_RESET_TIMEOUT_MAX_MS, Math.round(vadReset / 50) * 50)));
+    }
+    renderRangeLabels();
+  }
+
+  async function loadSharedControls() {
+    renderSharedControls();
+    const vm = voiceMode();
+    try {
+      const agg = await vm?.loadAggregationTimeout?.({ force: true });
+      const value = Number(agg?.aggregation_timeout_ms || agg?.stt?.speech_aggregation_timeout_ms || vm?.sttAggregationTimeoutMs?.() || 80);
+      if (Number.isFinite(value) && els.aggregation) els.aggregation.value = String(value);
+    } catch (_) {}
+    renderSharedControls();
+  }
+
+  function firstServerId() {
+    const settings = voiceMode()?.getWakeSettings?.();
+    return settings?.instances?.local?.matrix_server || 'tb1';
+  }
+
+  async function probeWebsocketUrl() {
+    const url = new URL(STT_WS_URL, window.location.origin);
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    url.searchParams.set('server', firstServerId());
+    if (voiceNoiseEnabled()) {
+      url.searchParams.set('noise_reduction', '1');
+      url.searchParams.set('atten_lim_db', String(voiceNoiseLevelDb()));
+    } else {
+      url.searchParams.set('noise_reduction', '0');
+    }
+    const secret = localStorage.getItem(typeof _LS_SECRET_KEY === 'string' ? _LS_SECRET_KEY : 'blueprints_api_secret') || '';
+    const token = typeof _computeApiToken === 'function'
+      ? await _computeApiToken(secret, `${url.pathname}${url.search}`)
+      : '';
+    if (token) url.searchParams.set('token', token);
+    return url.toString();
+  }
+
+  function downsampleFloat32(input, inputRate, outputRate = SAMPLE_RATE) {
+    if (!input?.length) return null;
+    if (!Number.isFinite(inputRate) || inputRate <= 0 || inputRate === outputRate) {
+      return new Float32Array(input);
+    }
+    const ratio = inputRate / outputRate;
+    const outputLength = Math.max(1, Math.floor(input.length / ratio));
+    const output = new Float32Array(outputLength);
+    for (let i = 0; i < outputLength; i += 1) {
+      const start = Math.floor(i * ratio);
+      const end = Math.min(input.length, Math.floor((i + 1) * ratio));
+      let sum = 0;
+      let count = 0;
+      for (let j = start; j < end; j += 1) {
+        sum += input[j];
+        count += 1;
+      }
+      output[i] = count ? sum / count : input[Math.min(start, input.length - 1)] || 0;
+    }
+    return output;
+  }
+
+  function audioFeatures(input) {
+    if (!input?.length) return { rms: 0, peak: 0, level: 0, vadEnergy: 0 };
+    let sum = 0;
+    let peak = 0;
+    for (let i = 0; i < input.length; i += 1) {
+      const value = Math.abs(input[i] || 0);
+      sum += value * value;
+      if (value > peak) peak = value;
+    }
+    const rms = Math.sqrt(sum / input.length);
+    const level = Math.min(1, Math.max(0, (rms * 16) + (peak * 0.16)));
+    return { rms, peak, level, vadEnergy: rms + (peak * 0.15) };
+  }
+
+  function waitForSocketOpen(socket) {
+    return new Promise((resolve, reject) => {
+      if (socket.readyState === WebSocket.OPEN) {
+        resolve();
+        return;
+      }
+      const timer = window.setTimeout(() => {
+        cleanup();
+        reject(new Error('STT connection timed out'));
+      }, 6000);
+      const cleanup = () => {
+        window.clearTimeout(timer);
+        socket.removeEventListener('open', onOpen);
+        socket.removeEventListener('error', onError);
+      };
+      const onOpen = () => {
+        cleanup();
+        resolve();
+      };
+      const onError = () => {
+        cleanup();
+        reject(new Error('STT connection failed'));
+      };
+      socket.addEventListener('open', onOpen);
+      socket.addEventListener('error', onError);
+    });
+  }
+
+  function pushAction(mode, type, detail = {}) {
+    const target = probe(mode);
+    target.actions.push({
+      at_ms: Date.now(),
+      type,
+      ...(mode === MODE_REARM ? { segment_id: Number(target.segmentId || 0) } : {}),
+      ...detail,
+    });
+    target.actions = target.actions.slice(mode === MODE_REARM ? -160 : -120);
+  }
+
+  function pushEvent(mode, type, textValue, detail = {}) {
+    const target = probe(mode);
+    const clean = cleanSttTranscript(textValue);
+    target.events.push({
+      at_ms: Date.now(),
+      type,
+      text: clean,
+      text_length: clean.length,
+      ...(mode === MODE_REARM ? { segment_id: Number(target.segmentId || 0) } : {}),
+      audio_frames_sent: target.framesSent,
+      ...detail,
+    });
+    target.events = target.events.slice(-160);
+  }
+
+  function cleanSttTranscript(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function sttPayloadDisplayText(payload) {
+    if (!payload || typeof payload !== 'object') return '';
+    const direct = payload.transcript
+      ?? payload.full_text
+      ?? payload.display_text
+      ?? payload.result_text
+      ?? payload.text
+      ?? payload.partial
+      ?? payload.final;
+    if (direct != null) return cleanSttTranscript(direct);
+    const result = payload.result && typeof payload.result === 'object' ? payload.result : null;
+    if (result?.transcript != null) return cleanSttTranscript(result.transcript);
+    if (result?.text != null) return cleanSttTranscript(result.text);
+    const alternatives = Array.isArray(payload.alternatives) ? payload.alternatives : [];
+    if (alternatives[0]?.transcript != null) return cleanSttTranscript(alternatives[0].transcript);
+    if (alternatives[0]?.text != null) return cleanSttTranscript(alternatives[0].text);
+    return '';
+  }
+
+  function closeSocket(mode) {
+    const target = probe(mode);
+    if (target.ws) {
+      try { target.ws.close(); } catch (_) {}
+      target.ws = null;
+    }
+  }
+
+  function cleanupAudio(mode) {
+    const target = probe(mode);
+    if (target.processorNode) {
+      try { target.processorNode.disconnect(); } catch (_) {}
+      target.processorNode.onaudioprocess = null;
+      target.processorNode = null;
+    }
+    if (target.sourceNode) {
+      try { target.sourceNode.disconnect(); } catch (_) {}
+      target.sourceNode = null;
+    }
+    if (target.audioContext) {
+      try { void target.audioContext.close(); } catch (_) {}
+      target.audioContext = null;
+    }
+    if (target.stream) {
+      target.stream.getTracks().forEach(track => track.stop());
+      target.stream = null;
+    }
+  }
+
+  function resetVad(mode, now = Date.now()) {
+    const vad = probe(mode).vad;
+    vad.speaking = false;
+    vad.candidateActive = false;
+    vad.candidateConfirmed = false;
+    vad.speechSeenSinceReset = false;
+    vad.lastVoiceAt = 0;
+    vad.lastResetAt = now;
+    vad.lastEnergy = 0;
+  }
+
+  function vadResetTimeoutMs() {
+    const fromControl = Number(els.vadReset?.value || 0);
+    return Number.isFinite(fromControl) ? Math.max(0, fromControl) : 0;
+  }
+
+  function rearmFinalTimeoutMs() {
+    return vadResetTimeoutMs();
+  }
+
+  function clearRearmAutoState() {
+    const target = probe(MODE_REARM);
+    target.autoRearmPending = false;
+    target.autoRearmSegmentId = 0;
+    target.finalWaitDeadlineAt = 0;
+    target.finalWaitTimeoutMs = 0;
+  }
+
+  function addSample(mode, features) {
+    const target = probe(mode);
+    const level = Math.max(0, Math.min(1, Number(features.level) || 0));
+    target.lastLevel = level;
+    const now = Date.now();
+    target.samples.push({
+      at: now,
+      level,
+      rms: Math.max(0, Number(features.rms) || 0),
+      peak: Math.max(0, Number(features.peak) || 0),
+      vad_energy: mode === MODE_MANUAL ? 0 : Math.max(0, Number(features.vadEnergy) || 0),
+      fsm_state: probeFsm(mode),
+    });
+    target.samples = target.samples.filter(sample => sample.at >= now - WINDOW_MS - 1000);
+  }
+
+  function updateVad(mode, features, now = Date.now()) {
+    if (mode === MODE_MANUAL) return;
+    const target = probe(mode);
+    const vad = target.vad;
+    const energy = Number(features?.vadEnergy || 0);
+    if (!vad.noiseFloor) {
+      vad.noiseFloor = Math.max(0.0005, Math.min(0.02, energy || 0.002));
+    }
+    const enterThreshold = Math.max(VAD_TEST_ABSOLUTE_FLOOR, (vad.noiseFloor * 4.0) + 0.00045);
+    const exitThreshold = Math.max(VAD_TEST_ABSOLUTE_FLOOR * 0.65, (vad.noiseFloor * 2.2) + 0.00025);
+    const strongEnterThreshold = enterThreshold * VAD_TEST_STRONG_MULTIPLIER;
+    const level = Number(features?.level || 0);
+    const speechNow = energy >= enterThreshold || level >= 0.035;
+    const strongSpeechNow = energy >= strongEnterThreshold || level >= (0.035 * VAD_TEST_STRONG_MULTIPLIER);
+    const speechStarted = speechNow && !vad.speaking;
+    vad.lastEnergy = energy;
+    vad.enterThreshold = enterThreshold;
+    vad.exitThreshold = exitThreshold;
+    vad.strongEnterThreshold = strongEnterThreshold;
+
+    if (speechNow) {
+      vad.speaking = true;
+      vad.speechSeenSinceReset = true;
+      vad.lastVoiceAt = now;
+    } else if (vad.speaking && now - vad.lastVoiceAt > VAD_TEST_EXIT_HANGOVER_MS) {
+      vad.speaking = false;
+    }
+    if (!vad.speaking && energy < exitThreshold) {
+      vad.noiseFloor = (vad.noiseFloor * 0.985) + (energy * 0.015);
+    }
+    if (speechStarted) {
+      vad.candidateActive = true;
+      vad.candidateConfirmed = false;
+      pushAction(mode, 'vadCandidateStart', {
+        audio_frame: target.framesSent,
+        delay_frames: VAD_TEST_DELAY_FRAMES,
+      });
+      if (target.vadRecordEnabled && !target.recording && !target.finalizing && !target.starting) {
+        setProbeStatus(mode, 'VAD Record triggered; opening STT.');
+        void startRecording(mode, { reason: 'vad_record' });
+      }
+    }
+    if (vad.candidateActive && !vad.candidateConfirmed && strongSpeechNow) {
+      vad.candidateConfirmed = true;
+      pushAction(mode, 'vadCandidateConfirmed', {
+        start_threshold: 'strong_confirmed',
+        strong_multiplier: VAD_TEST_STRONG_MULTIPLIER,
+      });
+    }
+    const timeoutMs = vadResetTimeoutMs();
+    if (
+      target.vadStopEnabled
+      && target.recording
+      && timeoutMs > 0
+      && vad.speechSeenSinceReset
+      && !vad.speaking
+      && vad.lastVoiceAt
+      && now - vad.lastVoiceAt >= timeoutMs
+      && now - vad.lastResetAt > 250
+    ) {
+      vad.lastAutoStopAt = now;
+      stopRecording(mode, 'vad_stop');
+    }
+  }
+
+  function sendPcm(mode, pcm, source = 'stream') {
+    const target = probe(mode);
+    if (!pcm?.byteLength || target.ws?.readyState !== WebSocket.OPEN) return false;
+    try {
+      target.ws.send(pcm.buffer);
+      target.bytesSent += pcm.byteLength;
+      target.framesSent += 1;
+      if (source !== 'stream') {
+        pushAction(mode, mode === MODE_REARM ? 'rearmProbeFrame' : 'vadProbeFrame', {
+          source,
+          audio_frame: target.framesSent,
+        });
+      }
+      return true;
+    } catch (error) {
+      pushAction(mode, mode === MODE_REARM ? 'rearmProbeError' : 'vadProbeError', { error: error.message || String(error) });
+      return false;
+    }
+  }
+
+  async function handleProbeMessage(mode, event) {
+    const target = probe(mode);
+    let payload = {};
+    try {
+      payload = JSON.parse(event.data || '{}');
+    } catch (_) {
+      return;
+    }
+    if (payload.type === 'partial') {
+      const rawValue = cleanSttTranscript(payload.text ?? payload.partial ?? payload.transcript ?? payload.result_text ?? '');
+      const displayValue = sttPayloadDisplayText(payload) || rawValue || target.transcript;
+      pushEvent(mode, 'partial', displayValue, {
+        detail: displayValue ? '' : 'empty partial',
+        raw_text: rawValue,
+        display_text: displayValue,
+      });
+      if (displayValue) target.transcript = displayValue;
+      renderProbeUi(mode);
+      poll({ force: true });
+      return;
+    }
+    if (payload.type === 'final') {
+      const rawValue = cleanSttTranscript(payload.text ?? payload.final ?? payload.transcript ?? payload.result_text ?? '');
+      const value = sttPayloadDisplayText(payload) || rawValue || target.transcript;
+      target.transcript = value;
+      pushEvent(mode, 'final', value, {
+        detail: mode === MODE_MANUAL ? 'manual stop final' : (mode === MODE_REARM ? 'rearm probe final' : 'vad probe final'),
+        raw_text: rawValue,
+        display_text: value,
+      });
+      pushAction(mode, mode === MODE_MANUAL ? 'manualFinal' : (mode === MODE_REARM ? 'rearmProbeFinal' : 'vadProbeFinal'), { text: value, raw_text: rawValue });
+      target.recording = false;
+      target.finalizing = false;
+      target.starting = false;
+      closeSocket(mode);
+      resetVad(mode);
+      if (mode === MODE_REARM && armRearmAfterSegment('final')) return;
+      setProbeStatus(mode, value ? 'Transcript ready.' : 'No transcript returned.');
+      renderProbeUi(mode);
+      poll({ force: true });
+      return;
+    }
+    if (payload.type === 'error') {
+      const detail = payload.detail || 'unknown error';
+      pushEvent(mode, 'error', '', { detail });
+      pushAction(mode, mode === MODE_MANUAL ? 'manualError' : (mode === MODE_REARM ? 'rearmProbeError' : 'vadProbeError'), { error: detail });
+      target.recording = false;
+      target.finalizing = false;
+      target.starting = false;
+      if (mode === MODE_REARM) clearRearmAutoState();
+      closeSocket(mode);
+      setProbeStatus(mode, `STT failed: ${detail}`);
+      renderProbeUi(mode);
+      poll({ force: true });
+    }
+  }
+
+  function processAudioFrame(mode, event, audioContext) {
+    const target = probe(mode);
+    const output = event.outputBuffer?.getChannelData?.(0);
+    if (output) output.fill(0);
+    const input = event.inputBuffer.getChannelData(0);
+    const features = audioFeatures(input);
+    addSample(mode, features);
+    if (mode !== MODE_MANUAL && (target.vadRecordEnabled || target.vadStopEnabled)) {
+      updateVad(mode, features, Date.now());
+    }
+    if (!target.recording || target.ws?.readyState !== WebSocket.OPEN) return;
+    const pcm = downsampleFloat32(input, audioContext.sampleRate);
+    if (!pcm?.byteLength) return;
+    if (mode !== MODE_MANUAL && VAD_TEST_DELAY_FRAMES > 0) {
+      target.delayFrames.push(pcm);
+      while (target.delayFrames.length > VAD_TEST_DELAY_FRAMES) target.delayFrames.shift();
+    }
+    sendPcm(mode, pcm, 'stream');
+  }
+
+  async function enableProbeMode(mode) {
+    mode = modeFromInput(mode);
+    const target = probe(mode);
+    if (target.enabled) return;
+    MODES.filter(item => item !== mode).forEach(disableProbeMode);
+    selectMode(mode);
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!navigator.mediaDevices?.getUserMedia || typeof WebSocket === 'undefined' || !AudioContextCtor) {
+      setProbeStatus(mode, `${modeConfig(mode).label} is unavailable in this browser.`);
+      renderProbeUi(mode);
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+      const audioContext = new AudioContextCtor();
+      await audioContext.resume?.();
+      const source = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(AUDIO_BUFFER_SIZE, 1, 1);
+      target.stream = stream;
+      target.audioContext = audioContext;
+      target.sourceNode = source;
+      target.processorNode = processor;
+      target.enabled = true;
+      target.recording = false;
+      target.finalizing = false;
+      target.starting = false;
+      target.startedAt = 0;
+      target.delayFrames = [];
+      target.pendingFrames = [];
+      if (mode === MODE_REARM) {
+        target.transcript = '';
+        target.events = [];
+        target.actions = [];
+        target.samples = [];
+        target.segmentId = 0;
+        clearRearmAutoState();
+      }
+      resetVad(mode, Date.now());
+      processor.onaudioprocess = audioEvent => processAudioFrame(mode, audioEvent, audioContext);
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+      pushAction(mode, mode === MODE_MANUAL ? 'manualTestMode' : (mode === MODE_REARM ? 'rearmTestMode' : 'vadTestMode'), { reason: 'enabled' });
+      setProbeStatus(mode, mode === MODE_MANUAL
+        ? 'VAD bypass test mode enabled. Mic is live; press Record to stream.'
+        : `${modeConfig(mode).label.replace(' probe', '')} test mode enabled. Mic is live.`);
+      renderProbeUi(mode);
+      poll({ force: true });
+    } catch (error) {
+      cleanupAudio(mode);
+      target.enabled = false;
+      setProbeStatus(mode, `Test mode unavailable: ${error.message || error}`);
+      renderProbeUi(mode);
+      poll({ force: true });
+    }
+  }
+
+  function disableProbeMode(mode) {
+    mode = modeFromInput(mode);
+    const target = probe(mode);
+    const wasTouched = target.enabled || target.ws || target.actions.length || target.events.length;
+    closeSocket(mode);
+    cleanupAudio(mode);
+    target.enabled = false;
+    target.recording = false;
+    target.finalizing = false;
+    target.starting = false;
+    target.vadRecordEnabled = false;
+    target.vadStopEnabled = false;
+    target.startedAt = 0;
+    target.bytesSent = 0;
+    target.framesSent = 0;
+    target.delayFrames = [];
+    target.pendingFrames = [];
+    if (mode === MODE_REARM) clearRearmAutoState();
+    resetVad(mode);
+    if (wasTouched) {
+      pushAction(mode, mode === MODE_MANUAL ? 'manualTestMode' : (mode === MODE_REARM ? 'rearmTestMode' : 'vadTestMode'), { reason: 'disabled' });
+    }
+    setProbeStatus(mode, modeConfig(mode).statusOff);
+    renderProbeUi(mode);
+    poll({ force: true });
+  }
+
+  async function startRecording(mode, options = {}) {
+    mode = modeFromInput(mode);
+    const target = probe(mode);
+    if (target.recording || target.finalizing || target.starting) return;
+    if (!target.enabled) await enableProbeMode(mode);
+    if (!target.enabled) return;
+    selectMode(mode);
+    closeSocket(mode);
+    target.bytesSent = 0;
+    target.framesSent = 0;
+    target.transcript = '';
+    target.events = [];
+    if (mode === MODE_REARM) {
+      target.segmentId = Number(target.segmentId || 0) + 1;
+      clearRearmAutoState();
+    }
+    target.pendingFrames = [];
+    target.starting = mode !== MODE_MANUAL;
+    renderProbeUi(mode);
+    poll({ force: true });
+    try {
+      const ws = new WebSocket(await probeWebsocketUrl());
+      ws.binaryType = 'arraybuffer';
+      target.ws = ws;
+      ws.addEventListener('message', event => { void handleProbeMessage(mode, event); });
+      ws.addEventListener('close', () => {
+        if (!target.recording && !target.finalizing && !target.starting) return;
+        target.recording = false;
+        target.finalizing = false;
+        target.starting = false;
+        target.ws = null;
+        if (mode === MODE_REARM) clearRearmAutoState();
+        pushAction(mode, mode === MODE_MANUAL ? 'manualError' : (mode === MODE_REARM ? 'rearmProbeError' : 'vadProbeError'), { error: 'socket closed before final transcript' });
+        setProbeStatus(mode, 'STT connection closed before final transcript.');
+        renderProbeUi(mode);
+        poll({ force: true });
+      });
+      await waitForSocketOpen(ws);
+      target.startedAt = Date.now();
+      target.recording = true;
+      target.finalizing = false;
+      target.starting = false;
+      const queued = target.pendingFrames.splice(0);
+      queued.forEach(frame => sendPcm(mode, frame, 'pre_roll'));
+      pushAction(mode, mode === MODE_MANUAL ? 'manualRecordStart' : (mode === MODE_REARM ? 'rearmProbeRecordStart' : 'vadProbeRecordStart'), {
+        route: STT_WS_URL,
+        reason: options.reason || 'manual_record',
+        vad: mode === MODE_MANUAL ? 'bypassed' : 'isolated-test',
+        vad_record_enabled: !!target.vadRecordEnabled,
+        pre_roll_frames: queued.length,
+      });
+      setProbeStatus(mode, voiceNoiseEnabled()
+        ? `Recording with noise reduction; ${mode === MODE_MANUAL ? 'VAD bypassed.' : 'isolated VAD test.'}`
+        : `Recording without noise reduction; ${mode === MODE_MANUAL ? 'VAD bypassed.' : 'isolated VAD test.'}`);
+      renderProbeUi(mode);
+      poll({ force: true });
+    } catch (error) {
+      closeSocket(mode);
+      target.recording = false;
+      target.finalizing = false;
+      target.starting = false;
+      pushAction(mode, mode === MODE_MANUAL ? 'manualError' : (mode === MODE_REARM ? 'rearmProbeError' : 'vadProbeError'), { error: error.message || String(error) });
+      setProbeStatus(mode, `Recording unavailable: ${error.message || error}`);
+      renderProbeUi(mode);
+      poll({ force: true });
+    }
+  }
+
+  function stopRecording(mode, reason = 'manual_stop') {
+    mode = modeFromInput(mode);
+    const target = probe(mode);
+    if (!target.recording || !target.ws) {
+      if (mode !== MODE_MANUAL && (target.starting || target.vadRecordEnabled)) {
+        closeSocket(mode);
+        target.starting = false;
+        target.recording = false;
+        target.finalizing = false;
+        target.vadRecordEnabled = false;
+        if (mode === MODE_REARM) clearRearmAutoState();
+        pushAction(mode, mode === MODE_REARM ? 'rearmProbeRecordStop' : 'vadProbeRecordStop', {
+          reason: 'cancel_armed_record',
+          audio_bytes: target.bytesSent,
+          audio_frames: target.framesSent,
+        });
+        setProbeStatus(mode, 'VAD Record stopped.');
+        renderProbeUi(mode);
+        poll({ force: true });
+      }
+      return;
+    }
+    target.recording = false;
+    target.finalizing = true;
+    if (mode !== MODE_MANUAL) target.vadRecordEnabled = false;
+    const vad = target.vad || {};
+    const now = Date.now();
+    const shouldAutoRearm = mode === MODE_REARM && reason === 'vad_stop' && target.vadStopEnabled;
+    const speechAge = vad.lastVoiceAt ? Math.max(0, now - vad.lastVoiceAt) : null;
+    const recordingMs = target.startedAt ? Math.max(0, now - target.startedAt) : null;
+    pushAction(mode, mode === MODE_MANUAL ? 'manualRecordStop' : (mode === MODE_REARM ? 'rearmProbeRecordStop' : 'vadProbeRecordStop'), {
+      reason,
+      audio_bytes: target.bytesSent,
+      audio_frames: target.framesSent,
+      speech_age_ms: speechAge,
+      recording_ms: recordingMs,
+      timeout_ms: vadResetTimeoutMs(),
+      ...(mode === MODE_REARM ? { final_wait_timeout_ms: rearmFinalTimeoutMs(), auto_rearm: shouldAutoRearm } : {}),
+    });
+    if (target.ws.readyState === WebSocket.OPEN) {
+      const endPayload = {
+        type: 'end',
+        audio_bytes: target.bytesSent,
+        audio_frames: target.framesSent,
+      };
+      if (reason !== 'manual_stop') endPayload.reason = reason;
+      target.ws.send(JSON.stringify(endPayload));
+      if (mode === MODE_REARM && shouldAutoRearm) {
+        const finalTimeoutMs = rearmFinalTimeoutMs();
+        target.autoRearmPending = true;
+        target.autoRearmSegmentId = Number(target.segmentId || 0);
+        target.finalWaitTimeoutMs = finalTimeoutMs;
+        target.finalWaitDeadlineAt = finalTimeoutMs > 0 ? now + finalTimeoutMs : 0;
+      } else if (mode === MODE_REARM) {
+        clearRearmAutoState();
+      }
+      if (reason === 'vad_stop') {
+        if (mode === MODE_REARM) {
+          const finalTimeoutMs = rearmFinalTimeoutMs();
+          setProbeStatus(mode, finalTimeoutMs > 0
+            ? `VAD Stop sent end after ${Math.round(recordingMs || 0)} ms / ${target.framesSent} frames; waiting ${formatVadResetTimeout(finalTimeoutMs)} for final before re-arm.`
+            : `VAD Stop sent end after ${Math.round(recordingMs || 0)} ms / ${target.framesSent} frames; waiting for final with timeout off.`);
+        } else {
+          setProbeStatus(mode, `VAD Stop sent end after ${Math.round(recordingMs || 0)} ms / ${target.framesSent} frames.`);
+        }
+      } else {
+        setProbeStatus(mode, 'Finalizing transcript.');
+      }
+    } else {
+      target.finalizing = false;
+      closeSocket(mode);
+      if (mode === MODE_REARM) clearRearmAutoState();
+      setProbeStatus(mode, 'STT connection was not ready.');
+    }
+    renderProbeUi(mode);
+    poll({ force: true });
+  }
+
+  function clearProbe(mode) {
+    mode = modeFromInput(mode);
+    const target = probe(mode);
+    if (target.recording || target.finalizing || target.starting) return;
+    target.transcript = '';
+    target.events = [];
+    target.actions = [];
+    target.samples = [];
+    target.bytesSent = 0;
+    target.framesSent = 0;
+    target.pendingFrames = [];
+    if (mode === MODE_REARM) clearRearmAutoState();
+    resetVad(mode);
+    setProbeStatus(mode, target.enabled
+      ? (mode === MODE_MANUAL ? 'VAD bypass test mode enabled. Mic is live; press Record to stream.' : `${modeConfig(mode).label.replace(' probe', '')} test mode enabled. Mic is live.`)
+      : modeConfig(mode).statusOff);
+    renderProbeUi(mode);
+    poll({ force: true });
+  }
+
+  function toggleVadRecordMode(mode, nextValue = null) {
+    mode = modeFromInput(mode);
+    if (mode === MODE_MANUAL) return;
+    const target = probe(mode);
+    if (!target.enabled) return;
+    target.vadRecordEnabled = nextValue == null ? !target.vadRecordEnabled : !!nextValue;
+    resetVad(mode);
+    pushAction(mode, 'vadRecordMode', { enabled: target.vadRecordEnabled });
+    setProbeStatus(mode, target.vadRecordEnabled ? 'VAD Record enabled. Speak to auto-record.' : 'VAD Record disabled.');
+    renderProbeUi(mode);
+    poll({ force: true });
+  }
+
+  function toggleVadStopMode(mode, nextValue = null) {
+    mode = modeFromInput(mode);
+    if (mode === MODE_MANUAL) return;
+    const target = probe(mode);
+    if (!target.enabled) return;
+    target.vadStopEnabled = nextValue == null ? !target.vadStopEnabled : !!nextValue;
+    pushAction(mode, 'vadStopMode', { enabled: target.vadStopEnabled, timeout_ms: vadResetTimeoutMs() });
+    setProbeStatus(mode, target.vadStopEnabled ? 'VAD Stop enabled. Silence will send Stop.' : 'VAD Stop disabled.');
+    renderProbeUi(mode);
+    poll({ force: true });
+  }
+
+  function armRearmAfterSegment(reason) {
+    const target = probe(MODE_REARM);
+    if (!target.enabled || !target.vadStopEnabled) return false;
+    if (target.recording || target.finalizing || target.starting) return false;
+    target.vadRecordEnabled = true;
+    clearRearmAutoState();
+    resetVad(MODE_REARM, Date.now());
+    pushAction(MODE_REARM, 'vadRecordMode', {
+      enabled: true,
+      reason,
+      auto_rearm: true,
+    });
+    setProbeStatus(MODE_REARM, reason === 'final_timeout'
+      ? 'VAD Record auto re-armed after final timeout. Speak for the next segment.'
+      : 'VAD Record auto re-armed after final transcript. Speak for the next segment.');
+    renderProbeUi(MODE_REARM);
+    poll({ force: true });
+    return true;
+  }
+
+  function maybeRearmAfterFinalTimeout(now = Date.now()) {
+    const target = probe(MODE_REARM);
+    if (!target.autoRearmPending) return false;
+    const deadline = Number(target.finalWaitDeadlineAt || 0);
+    if (!deadline || now < deadline) return false;
+    pushAction(MODE_REARM, 'rearmProbeFinalTimeout', {
+      wait_ms: target.finalWaitTimeoutMs,
+      reason: 'final_timeout',
+      waited_from: 'stt_end',
+      segment_id: target.autoRearmSegmentId,
+    });
+    target.recording = false;
+    target.finalizing = false;
+    target.starting = false;
+    closeSocket(MODE_REARM);
+    return armRearmAfterSegment('final_timeout');
+  }
+
+  function probeFsm(mode) {
+    const target = probe(mode);
+    if (mode === MODE_MANUAL) {
+      if (!target.enabled) return 'MANUAL_STT_OFF';
+      if (target.recording) return 'MANUAL_STT_RECORDING';
+      if (target.finalizing) return 'MANUAL_STT_FINALIZING';
+      return 'MANUAL_STT_READY';
+    }
+    const prefix = mode === MODE_REARM ? 'VAD_REARM_STT' : 'VAD_STT';
+    if (!target.enabled) return `${prefix}_OFF`;
+    if (target.recording) return `${prefix}_RECORDING`;
+    if (target.finalizing) return `${prefix}_FINALIZING`;
+    if (target.starting) return `${prefix}_OPENING`;
+    if (target.vadRecordEnabled || target.vadStopEnabled) return `${prefix}_ARMED`;
+    return `${prefix}_READY`;
+  }
+
+  function actionColor(mode, action) {
+    const type = action?.type || '';
+    if (type === 'manualRecordStart' || type === 'manualFinal') return '#22c55e';
+    if (type === 'manualRecordStop') return '#fbbf24';
+    if (type === 'manualTestMode') return '#38bdf8';
+    if (type === 'manualError') return '#f87171';
+    if (type === 'vadProbeRecordStart' || type === 'vadProbeFinal' || type === 'rearmProbeRecordStart' || type === 'rearmProbeFinal' || type === 'vadCandidateConfirmed') return '#22c55e';
+    if (type === 'vadProbeRecordStop' || type === 'rearmProbeRecordStop' || type === 'vadStopMode') return '#fbbf24';
+    if (type === 'vadRecordMode' || type === 'vadTestMode' || type === 'rearmTestMode' || type === 'vadCandidateStart') return '#38bdf8';
+    if (type === 'vadProbeError' || type === 'rearmProbeError' || type === 'rearmProbeFinalTimeout') return '#f87171';
+    if (mode === MODE_REARM && type === 'controlState') return action.disabled ? 'rgba(148,168,179,0.72)' : (action.pressed ? '#38bdf8' : '#aebfca');
+    return '#aebfca';
+  }
+
+  function actionLabel(action) {
+    if (!action || typeof action !== 'object') return '';
+    if (action.type === 'manualTestMode' || action.type === 'vadTestMode' || action.type === 'rearmTestMode') return `test ${action.reason || ''}`.trim();
+    if (action.type === 'manualRecordStart') return 'Record manual';
+    if (action.type === 'manualRecordStop') return 'Stop manual';
+    if (action.type === 'manualFinal') return 'final transcript';
+    if (action.type === 'manualError') return `error ${action.error || ''}`.trim();
+    if (action.type === 'vadRecordMode' && action.auto_rearm) return `VAD Record auto rearmed ${action.reason || ''}`.trim();
+    if (action.type === 'vadRecordMode') return `VAD Record ${action.enabled ? 'on' : 'off'}`;
+    if (action.type === 'vadStopMode') return `VAD Stop ${action.enabled ? 'on' : 'off'}`;
+    if (action.type === 'vadCandidateStart') return 'VAD candidate';
+    if (action.type === 'vadCandidateConfirmed') return 'VAD strong';
+    if (action.type === 'vadProbeRecordStart' || action.type === 'rearmProbeRecordStart') return `Record ${action.reason || 'start'}`;
+    if (action.type === 'vadProbeRecordStop' || action.type === 'rearmProbeRecordStop') return `Stop ${action.reason || 'stop'}`;
+    if (action.type === 'vadProbeFinal' || action.type === 'rearmProbeFinal') return 'final transcript';
+    if (action.type === 'rearmProbeFinalTimeout') return `final timeout ${action.wait_ms || ''} ms`.trim();
+    if (action.type === 'vadProbeError' || action.type === 'rearmProbeError') return `error ${action.error || ''}`.trim();
+    return action.type || 'event';
+  }
+
+  function transcriptSpan(mode, now = Date.now()) {
+    const target = probe(mode);
+    const segmentId = Number(target.segmentId || 0);
+    const textEvents = target.events.filter(evt => (
+      (evt.type === 'partial' || evt.type === 'final')
+      && (mode !== MODE_REARM || Number(evt.segment_id || 0) === segmentId)
+      && cleanSttTranscript(evt.display_text || evt.text || '')
+    ));
+    if (!textEvents.length) return null;
+    const first = textEvents.find(evt => evt.type === 'partial') || textEvents[0];
+    const finalEvent = [...textEvents].reverse().find(evt => evt.type === 'final');
+    const latest = textEvents[textEvents.length - 1];
+    let statusValue = 'partial';
+    let endAt = now;
+    if (finalEvent) {
+      statusValue = 'final';
+      endAt = Number(finalEvent.at_ms || now);
+    } else if (mode === MODE_REARM) {
+      const stopAction = [...target.actions].reverse()
+        .find(action => (
+          action.type === 'rearmProbeRecordStop'
+          && Number(action.segment_id || 0) === segmentId
+          && Number(action.at_ms || 0) >= Number(first.at_ms || 0)
+        ));
+      const finalTimeoutMs = Number(stopAction?.final_wait_timeout_ms ?? rearmFinalTimeoutMs());
+      if (!target.recording && finalTimeoutMs > 0 && stopAction?.at_ms && now - Number(stopAction.at_ms) >= finalTimeoutMs) {
+        statusValue = 'timeout';
+        endAt = Number(stopAction.at_ms) + finalTimeoutMs;
+      }
+    }
+    const color = statusValue === 'final' ? '#22c55e' : (statusValue === 'timeout' ? '#f87171' : '#38bdf8');
+    return {
+      atMs: Number(first.at_ms || now),
+      endMs: Math.max(Number(first.at_ms || now) + 80, endAt),
+      text: latest.display_text || target.transcript || latest.text || '',
+      status: statusValue,
+      color,
+      background: statusValue === 'final'
+        ? 'rgba(5,46,22,0.97)'
+        : (statusValue === 'timeout' ? 'rgba(69,10,10,0.97)' : 'rgba(7,24,39,0.97)'),
+      border: statusValue === 'final'
+        ? 'rgba(74,222,128,0.86)'
+        : (statusValue === 'timeout' ? 'rgba(248,113,113,0.86)' : 'rgba(56,189,248,0.82)'),
+    };
+  }
+
+  function controlsSnapshot() {
+    return {
+      noise_reduction_enabled: !!els.noiseToggle?.checked,
+      noise_level_db: Number(els.noiseLevel?.value || 6),
+      speech_aggregation_timeout_ms: Number(els.aggregation?.value || 80),
+      vad_reset_timeout_ms: Number(els.vadReset?.value || 0),
+    };
+  }
+
+  function probePublic(mode) {
+    const target = probe(mode);
+    return {
+      enabled: !!target.enabled,
+      recording: !!target.recording,
+      finalizing: !!target.finalizing,
+      starting: !!target.starting,
+      vad_record_enabled: !!target.vadRecordEnabled,
+      vad_stop_enabled: !!target.vadStopEnabled,
+      transcript: target.transcript || '',
+      status: target.status || '',
+      bytes_sent: target.bytesSent || 0,
+      frames_sent: target.framesSent || 0,
+      events_count: target.events.length,
+      actions_count: target.actions.length,
+      fsm_state: probeFsm(mode),
+    };
+  }
+
+  function snapshotForMode(mode = currentMode()) {
+    mode = modeFromInput(mode);
+    const target = probe(mode);
+    const config = modeConfig(mode);
+    const now = Date.now();
+    const start = now - WINDOW_MS;
+    const fsm = probeFsm(mode);
+    const vad = target.vad || {};
+    const vadEnabled = mode !== MODE_MANUAL && !!(target.vadRecordEnabled || target.vadStopEnabled);
+    const vadSpeech = !!vad.speaking;
+    const vadStage = vad.candidateConfirmed ? 'strong' : (vad.candidateActive ? 'candidate' : 'idle');
+    const span = transcriptSpan(mode, now);
+    const timeoutMarkerExists = mode === MODE_REARM && target.actions.some(action => (
+      action.type === 'rearmProbeFinalTimeout'
+      && Number(action.segment_id || 0) === Number(target.segmentId || 0)
+    ));
+    return {
+      fsm_state: fsm,
+      reason: target.enabled ? `${config.label}; isolated browser VAD/STT probe.` : config.statusOff,
+      session_id: target.enabled ? config.session : '',
+      active_instance_id: 'voice-mode-stt',
+      audio_frames_sent: target.framesSent,
+      transcript: target.transcript,
+      recent_stt_events: target.events,
+      recent_actions: target.actions,
+      vad_speech_start_reset_armed: mode !== MODE_MANUAL ? !!target.vadRecordEnabled : false,
+      vad: {
+        speaking: mode === MODE_MANUAL ? !!target.recording : !!vad.speaking,
+        candidate_active: !!vad.candidateActive,
+        candidate_confirmed: !!vad.candidateConfirmed,
+        speech_seen_since_reset: mode === MODE_MANUAL ? !!target.recording : !!vad.speechSeenSinceReset,
+        last_voice_age_ms: vad.lastVoiceAt ? Math.max(0, now - vad.lastVoiceAt) : (target.recording ? Math.max(0, now - (target.startedAt || now)) : null),
+        silence_age_ms: mode !== MODE_MANUAL && !vad.speaking && vad.lastVoiceAt ? Math.max(0, now - vad.lastVoiceAt) : (target.recording ? 0 : null),
+        reset_timeout_ms: mode === MODE_MANUAL ? 0 : vadResetTimeoutMs(),
+        noise_floor: Number(vad.noiseFloor || 0),
+        enter_threshold: Number(vad.enterThreshold || 0),
+        exit_threshold: Number(vad.exitThreshold || 0),
+        strong_enter_threshold: Number(vad.strongEnterThreshold || 0),
+        energy: Number(vad.lastEnergy || 0),
+      },
+      active_send: {
+        route: STT_WS_URL,
+        vad: mode === MODE_MANUAL ? 'bypassed' : 'isolated-test',
+        vad_record_enabled: !!target.vadRecordEnabled,
+        vad_stop_enabled: !!target.vadStopEnabled,
+        recording: !!target.recording,
+        finalizing: !!target.finalizing,
+        bytes_sent: target.bytesSent,
+        frames_sent: target.framesSent,
+      },
+      controls: controlsSnapshot(),
+      modes: {
+        [MODE_MANUAL]: probePublic(MODE_MANUAL),
+        [MODE_VAD]: probePublic(MODE_VAD),
+        [MODE_REARM]: probePublic(MODE_REARM),
+      },
+      metrics: [
+        { label: 'FSM', value: fsm },
+        { label: 'Session', value: target.enabled ? config.session : '--' },
+        { label: 'Instance', value: 'voice-mode-stt' },
+        { label: 'Frames', value: String(target.framesSent || 0) },
+        { label: 'Debug age', value: 'live' },
+        { label: 'Level', value: formatDb(target.lastLevel || 0) },
+      ],
+      source: `${config.label} | ${STT_WS_URL} | ${target.status || 'ready'}`,
+      activeState: fsm,
+      states: config.states,
+      timeline: {
+        startMs: start,
+        endMs: now,
+        samples: target.samples,
+        markers: [
+          ...target.actions.map((action, index) => ({
+            atMs: action.at_ms,
+            label: actionLabel(action),
+            color: actionColor(mode, action),
+            lane: index % 4,
+          })),
+          ...(mode === MODE_REARM && span?.status === 'timeout' && !timeoutMarkerExists ? [{
+            atMs: span.endMs,
+            label: 'VAD Stop final timeout',
+            color: '#f87171',
+            lane: 0,
+          }] : []),
+        ],
+        text: [],
+        transcriptSpan: span,
+        statuses: statusPills(mode, vadEnabled, vadSpeech, vadStage),
+        startLabel: '10s',
+        endLabel: 'now',
+      },
+    };
+  }
+
+  function statusPills(mode, vadEnabled, vadSpeech, vadStage) {
+    const target = probe(mode);
+    if (mode === MODE_MANUAL) {
+      return [{
+        label: `VAD bypass | STT ${target.recording ? 'recording' : (target.finalizing ? 'finalizing' : 'idle')} | ${target.bytesSent || 0} bytes`,
+        background: target.recording ? 'rgba(5,46,22,0.9)' : 'rgba(16,24,38,0.9)',
+        border: target.recording ? 'rgba(74,222,128,0.72)' : 'rgba(91,156,246,0.42)',
+        color: '#f1f7fa',
+        maxWidth: 340,
+      }];
+    }
+    return [
+      {
+        label: `VAD ${vadEnabled ? 'enabled' : 'off'} | ${vadSpeech ? 'speech' : 'quiet'} | ${vadStage} | record ${target.vadRecordEnabled ? 'on' : 'off'} | stop ${target.vadStopEnabled ? 'on' : 'off'}`,
+        background: vadEnabled ? (vadSpeech ? 'rgba(21,128,61,0.34)' : 'rgba(7,24,39,0.94)') : 'rgba(16,24,38,0.9)',
+        border: vadEnabled ? (vadSpeech ? 'rgba(34,197,94,0.7)' : 'rgba(56,189,248,0.58)') : 'rgba(148,168,179,0.42)',
+        color: '#f1f7fa',
+        maxWidth: 420,
+      },
+      {
+        label: `STT ${target.recording ? 'recording' : (target.finalizing ? 'finalizing' : (target.starting ? 'opening' : 'idle'))} | ${target.bytesSent || 0} bytes`,
+        background: target.recording ? 'rgba(5,46,22,0.9)' : 'rgba(16,24,38,0.9)',
+        border: target.recording ? 'rgba(74,222,128,0.72)' : 'rgba(91,156,246,0.42)',
+        color: '#f1f7fa',
+        maxWidth: 280,
+      },
+    ];
+  }
+
+  function currentMode() {
+    const active = MODES.find(mode => {
+      const target = probe(mode);
+      return target.enabled || target.recording || target.finalizing || target.starting;
+    });
+    return active || state.selectedMode || MODE_MANUAL;
+  }
+
+  function setTimelineSnapshot(snapshot) {
+    if (state.timeline) {
+      state.timeline.setSnapshot?.(snapshot);
+      return;
+    }
+    void mountTimeline().then(view => view?.setSnapshot?.(snapshot));
+  }
+
+  function renderTimeline() {
+    const snapshot = snapshotForMode(currentMode());
+    setTimelineSnapshot(snapshot);
+    return snapshot;
+  }
+
+  function reportDevStatus(snapshot, mode, options = {}) {
+    const vm = voiceMode();
+    const browserId = cleanText(vm?.getBrowserId?.());
+    if (!browserId) return;
+    const signature = JSON.stringify({
+      surface: SURFACE,
+      mode,
+      status: probe(mode).status,
+      transcript: probe(mode).transcript,
+      fsm: snapshot?.fsm_state || '',
+      frames: snapshot?.audio_frames_sent || 0,
+      controls: snapshot?.controls || {},
+      modes: snapshot?.modes || {},
+      actions: Array.isArray(snapshot?.recent_actions) ? snapshot.recent_actions.length : 0,
+      events: Array.isArray(snapshot?.recent_stt_events) ? snapshot.recent_stt_events.length : 0,
+    });
+    const now = Date.now();
+    if (!options.force && signature === state.devStatusSignature && now - state.devStatusLastAt < 2500) return;
+    if (!options.force && now - state.devStatusLastAt < DEV_STATUS_MIN_MS) return;
+    if (state.devStatusSending) return;
+    state.devStatusSignature = signature;
+    state.devStatusLastAt = now;
+    state.devStatusSending = true;
+    api(DEV_STATUS_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        surface: SURFACE,
+        browser_id: browserId,
+        browser_label: vm?.getBrowserLabel?.() || (navigator.platform ? `Browser on ${navigator.platform}` : 'Blueprints browser'),
+        tab_id: vm?.getTabId?.() || '',
+        mode,
+        source: modeConfig(mode).label,
+        status: probe(mode).status || '',
+        transcript: probe(mode).transcript || '',
+        snapshot,
+        client_now_ms: now,
+      }),
+    }).catch(() => {}).finally(() => {
+      state.devStatusSending = false;
+    });
+  }
+
+  function poll(options = {}) {
+    maybeRearmAfterFinalTimeout();
+    const mode = currentMode();
+    const snapshot = renderTimeline();
+    reportDevStatus(snapshot, mode, options);
+  }
+
+  function renderProbeUi(mode) {
+    mode = modeFromInput(mode);
+    const target = probe(mode);
+    if (mode === MODE_MANUAL) {
+      if (els.testMode) {
+        els.testMode.setAttribute('aria-pressed', target.enabled ? 'true' : 'false');
+        els.testMode.textContent = target.enabled ? 'Disable test mode' : 'Enable test mode';
+      }
+      if (els.testRecord) els.testRecord.disabled = !target.enabled || target.recording || target.finalizing;
+      if (els.testStop) els.testStop.disabled = !target.recording;
+      if (els.testClear) els.testClear.disabled = target.recording || target.finalizing;
+      setProbeStatus(mode, target.status);
+      if (els.transcript) els.transcript.textContent = target.transcript || '';
+      return;
+    }
+    const prefix = mode === MODE_REARM ? 'rearm' : 'vad';
+    const testMode = els[`${prefix}TestMode`];
+    const recordToggle = els[`${prefix}RecordToggle`];
+    const stopToggle = els[`${prefix}StopToggle`];
+    const testRecord = els[`${prefix}TestRecord`];
+    const testStop = els[`${prefix}TestStop`];
+    const testClear = els[`${prefix}TestClear`];
+    const transcript = els[`${prefix}Transcript`];
+    if (testMode) {
+      testMode.setAttribute('aria-pressed', target.enabled ? 'true' : 'false');
+      testMode.textContent = target.enabled ? 'Disable test mode' : 'Enable test mode';
+    }
+    if (recordToggle) {
+      recordToggle.disabled = !target.enabled || target.finalizing;
+      recordToggle.setAttribute('aria-pressed', target.vadRecordEnabled ? 'true' : 'false');
+      recordToggle.textContent = target.recording
+        ? 'VAD Recording'
+        : (target.starting ? 'VAD Opening' : (target.vadRecordEnabled ? 'VAD Record Armed' : 'Enable VAD Record'));
+    }
+    if (stopToggle) {
+      stopToggle.disabled = !target.enabled || target.finalizing;
+      stopToggle.setAttribute('aria-pressed', target.vadStopEnabled ? 'true' : 'false');
+      stopToggle.textContent = target.vadStopEnabled ? 'VAD Stop Armed' : 'Enable VAD Stop';
+    }
+    if (testRecord) testRecord.disabled = !target.enabled || target.vadRecordEnabled || target.recording || target.finalizing || target.starting;
+    if (testStop) testStop.disabled = !target.recording && !target.starting && !target.vadRecordEnabled;
+    if (testClear) testClear.disabled = target.recording || target.finalizing || target.starting;
+    setProbeStatus(mode, target.status);
+    if (transcript) transcript.textContent = target.transcript || '';
+  }
+
+  function renderAllProbeUi() {
+    MODES.forEach(renderProbeUi);
+  }
+
+  function selectMode(mode) {
+    mode = modeFromInput(mode);
+    state.selectedMode = mode;
+    const radio = mode === MODE_MANUAL
+      ? els.tabManual
+      : (mode === MODE_VAD ? els.tabVad : els.tabRearm);
+    if (radio) radio.checked = true;
+  }
+
+  function rememberDevCommand(commandId) {
+    const id = cleanText(commandId);
+    if (!id) return false;
+    if (state.devCommandIds.includes(id)) return false;
+    state.devCommandIds.push(id);
+    if (state.devCommandIds.length > DEV_COMMAND_MAX_SEEN) {
+      state.devCommandIds = state.devCommandIds.slice(-DEV_COMMAND_MAX_SEEN);
+    }
+    return true;
+  }
+
+  function localTabId() {
+    return cleanText(voiceMode()?.getTabId?.());
+  }
+
+  function shouldAcceptDevCommand(payload) {
+    const surface = cleanCommandText(payload?.surface || payload?.target_surface || payload?.dev_surface);
+    if (surface !== SURFACE) return false;
+    const targetBrowserId = cleanText(payload?.target_browser_id || payload?.browser_id);
+    const browserId = cleanText(voiceMode()?.getBrowserId?.());
+    if (targetBrowserId && browserId && targetBrowserId !== browserId) return false;
+    const targetTabId = cleanText(payload?.target_tab_id || payload?.tab_id);
+    const tabId = localTabId();
+    if (targetTabId && tabId && targetTabId !== tabId) return false;
+    const createdAt = Number(payload?.created_at || 0);
+    const maxAgeSeconds = Math.max(5, Math.min(300, Number(payload?.max_age_seconds || 60)));
+    if (Number.isFinite(createdAt) && createdAt > 0) {
+      const ageMs = Date.now() - (createdAt * 1000);
+      if (ageMs > maxAgeSeconds * 1000) return false;
+    }
+    return true;
+  }
+
+  function payloadBool(payload, fallback = true) {
+    if (payload?.enabled != null) return !!payload.enabled;
+    if (payload?.value != null) return !['0', 'false', 'off', 'no'].includes(String(payload.value).trim().toLowerCase());
+    return fallback;
+  }
+
+  function payloadNumber(payload, ...keys) {
+    for (const key of keys) {
+      const value = Number(payload?.[key]);
+      if (Number.isFinite(value)) return value;
+    }
+    const value = Number(payload?.value);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  async function runSettingsCommand(action, payload) {
+    const vm = voiceMode();
+    if (action === 'set_noise_reduction') {
+      vm?.setSttNoiseReductionEnabled?.(payloadBool(payload, true));
+      renderSharedControls();
+      poll({ force: true });
+      return true;
+    }
+    if (action === 'set_noise_level' || action === 'set_noise_level_db') {
+      const level = payloadNumber(payload, 'level_db', 'noise_level_db');
+      if (level != null) {
+        vm?.setSttNoiseReductionLevelDb?.(Math.max(0, Math.min(12, level)));
+      }
+      renderSharedControls();
+      poll({ force: true });
+      return true;
+    }
+    if (action === 'set_aggregation_timeout') {
+      const value = payloadNumber(payload, 'aggregation_timeout_ms', 'speech_aggregation_timeout_ms');
+      if (value != null) await vm?.saveAggregationTimeout?.(value);
+      renderSharedControls();
+      poll({ force: true });
+      return true;
+    }
+    if (action === 'set_vad_reset_timeout') {
+      const value = payloadNumber(payload, 'vad_reset_timeout_ms', 'reset_timeout_ms');
+      if (value != null) await vm?.saveVadResetTimeout?.(value);
+      renderSharedControls();
+      poll({ force: true });
+      return true;
+    }
+    return false;
+  }
+
+  async function runVadDevCommand(payload) {
+    if (!shouldAcceptDevCommand(payload)) return;
+    if (!rememberDevCommand(cleanText(payload?.command_id))) return;
+    if (payload?.open_modal && !state.open) open();
+    const mode = modeFromInput(payload?.mode);
+    const action = cleanCommandText(payload?.action);
+    if (await runSettingsCommand(action, payload)) return;
+    selectMode(mode);
+    if (action === 'enable_test') await enableProbeMode(mode);
+    else if (action === 'disable_test') disableProbeMode(mode);
+    else if (action === 'record') await startRecording(mode, { reason: 'remote_command' });
+    else if (action === 'stop') stopRecording(mode, 'remote_command');
+    else if (action === 'clear') clearProbe(mode);
+    else if (action === 'enable_vad_record') toggleVadRecordMode(mode, true);
+    else if (action === 'disable_vad_record') toggleVadRecordMode(mode, false);
+    else if (action === 'toggle_vad_record') toggleVadRecordMode(mode);
+    else if (action === 'enable_vad_stop') toggleVadStopMode(mode, true);
+    else if (action === 'disable_vad_stop') toggleVadStopMode(mode, false);
+    else if (action === 'toggle_vad_stop') toggleVadStopMode(mode);
+    else setProbeStatus(mode, `Remote command ignored: ${action || 'blank'}.`);
+    poll({ force: true });
+  }
+
+  function onVadDevCommandEvent(event) {
+    const appEvent = event?.detail || {};
+    if (appEvent.event_type !== DEV_COMMAND_EVENT_TYPE) return;
+    void runVadDevCommand(appEvent.payload || {});
+  }
+
+  function automationSnapshot() {
+    const mode = currentMode();
+    return {
+      surface: SURFACE,
+      open: !!state.open,
+      selected_mode: state.selectedMode,
+      current_mode: mode,
+      controls: controlsSnapshot(),
+      modes: {
+        [MODE_MANUAL]: probePublic(MODE_MANUAL),
+        [MODE_VAD]: probePublic(MODE_VAD),
+        [MODE_REARM]: probePublic(MODE_REARM),
+      },
+      snapshot: snapshotForMode(mode),
+    };
   }
 
   function mountTimeline() {
-    init();
+    bind();
     if (state.timeline) {
       state.timeline.scheduleRender?.();
       return Promise.resolve(state.timeline);
@@ -43,26 +1445,146 @@ const VadDevModal = (() => {
     return state.timelinePromise;
   }
 
+  function start() {
+    if (state.open) return;
+    state.open = true;
+    loadSharedControls().catch(error => status(error.message || String(error)));
+    void mountTimeline().then(() => poll({ force: true }));
+    state.pollTimer = window.setInterval(poll, POLL_MS);
+    renderAllProbeUi();
+    poll({ force: true });
+  }
+
+  function stop() {
+    state.open = false;
+    if (state.pollTimer) window.clearInterval(state.pollTimer);
+    state.pollTimer = null;
+    MODES.forEach(mode => {
+      const target = probe(mode);
+      if (target.enabled || target.ws) disableProbeMode(mode);
+    });
+  }
+
   function open() {
-    init();
-    if (!els.modal) return;
+    bind();
+    if (!els.modal) return false;
+    renderSharedControls();
     if (window.HubModal?.open) {
-      HubModal.open(els.modal, { onOpen: () => { void mountTimeline(); } });
+      HubModal.open(els.modal, { onOpen: start, onClose: stop });
     } else if (typeof els.modal.showModal === 'function') {
       els.modal.showModal();
-      void mountTimeline();
+      start();
     }
+    return true;
+  }
+
+  function bind() {
+    if (state.bound) return;
+    state.bound = true;
+    els.modal = el('vad-dev-modal');
+    els.timeline = el('vad-dev-timeline-module');
+    els.status = el('vad-dev-status');
+    els.noiseToggle = el('vad-dev-noise-toggle');
+    els.noiseLevel = el('vad-dev-noise-level');
+    els.noiseLevelLabel = el('vad-dev-noise-level-label');
+    els.aggregation = el('vad-dev-aggregation-timeout');
+    els.aggregationLabel = el('vad-dev-aggregation-label');
+    els.vadReset = el('vad-dev-vad-reset-timeout');
+    els.vadResetLabel = el('vad-dev-vad-reset-label');
+    els.tabManual = el('vad-dev-test-tab-manual');
+    els.tabVad = el('vad-dev-test-tab-vad');
+    els.tabRearm = el('vad-dev-test-tab-rearm');
+    els.testMode = el('vad-dev-test-mode');
+    els.testRecord = el('vad-dev-test-record');
+    els.testStop = el('vad-dev-test-stop');
+    els.testClear = el('vad-dev-test-clear');
+    els.testStatus = el('vad-dev-test-status');
+    els.transcript = el('vad-dev-transcript');
+    els.vadTestMode = el('vad-dev-vad-test-mode');
+    els.vadRecordToggle = el('vad-dev-vad-test-record-vad');
+    els.vadStopToggle = el('vad-dev-vad-test-stop-vad');
+    els.vadTestRecord = el('vad-dev-vad-test-record');
+    els.vadTestStop = el('vad-dev-vad-test-stop');
+    els.vadTestClear = el('vad-dev-vad-test-clear');
+    els.vadTestStatus = el('vad-dev-vad-test-status');
+    els.vadTranscript = el('vad-dev-vad-transcript');
+    els.rearmTestMode = el('vad-dev-rearm-test-mode');
+    els.rearmRecordToggle = el('vad-dev-rearm-test-record-vad');
+    els.rearmStopToggle = el('vad-dev-rearm-test-stop-vad');
+    els.rearmTestRecord = el('vad-dev-rearm-test-record');
+    els.rearmTestStop = el('vad-dev-rearm-test-stop');
+    els.rearmTestClear = el('vad-dev-rearm-test-clear');
+    els.rearmTestStatus = el('vad-dev-rearm-test-status');
+    els.rearmTranscript = el('vad-dev-rearm-transcript');
+
+    els.tabManual?.addEventListener('change', () => { if (els.tabManual.checked) { state.selectedMode = MODE_MANUAL; poll({ force: true }); } });
+    els.tabVad?.addEventListener('change', () => { if (els.tabVad.checked) { state.selectedMode = MODE_VAD; poll({ force: true }); } });
+    els.tabRearm?.addEventListener('change', () => { if (els.tabRearm.checked) { state.selectedMode = MODE_REARM; poll({ force: true }); } });
+    els.testMode?.addEventListener('click', () => { if (probe(MODE_MANUAL).enabled) disableProbeMode(MODE_MANUAL); else void enableProbeMode(MODE_MANUAL); });
+    els.testRecord?.addEventListener('click', () => { void startRecording(MODE_MANUAL); });
+    els.testStop?.addEventListener('click', () => stopRecording(MODE_MANUAL));
+    els.testClear?.addEventListener('click', () => clearProbe(MODE_MANUAL));
+    els.vadTestMode?.addEventListener('click', () => { if (probe(MODE_VAD).enabled) disableProbeMode(MODE_VAD); else void enableProbeMode(MODE_VAD); });
+    els.vadRecordToggle?.addEventListener('click', () => toggleVadRecordMode(MODE_VAD));
+    els.vadStopToggle?.addEventListener('click', () => toggleVadStopMode(MODE_VAD));
+    els.vadTestRecord?.addEventListener('click', () => { void startRecording(MODE_VAD, { reason: 'manual_record' }); });
+    els.vadTestStop?.addEventListener('click', () => stopRecording(MODE_VAD, 'manual_stop'));
+    els.vadTestClear?.addEventListener('click', () => clearProbe(MODE_VAD));
+    els.rearmTestMode?.addEventListener('click', () => { if (probe(MODE_REARM).enabled) disableProbeMode(MODE_REARM); else void enableProbeMode(MODE_REARM); });
+    els.rearmRecordToggle?.addEventListener('click', () => toggleVadRecordMode(MODE_REARM));
+    els.rearmStopToggle?.addEventListener('click', () => toggleVadStopMode(MODE_REARM));
+    els.rearmTestRecord?.addEventListener('click', () => { void startRecording(MODE_REARM, { reason: 'manual_record' }); });
+    els.rearmTestStop?.addEventListener('click', () => stopRecording(MODE_REARM, 'manual_stop'));
+    els.rearmTestClear?.addEventListener('click', () => clearProbe(MODE_REARM));
+    els.noiseToggle?.addEventListener('change', () => {
+      voiceMode()?.setSttNoiseReductionEnabled?.(els.noiseToggle.checked);
+      renderSharedControls();
+      poll({ force: true });
+    });
+    els.noiseLevel?.addEventListener('input', () => {
+      const level = Number(els.noiseLevel.value || 6);
+      setText(els.noiseLevelLabel, `${level.toFixed(1)} dB`);
+      voiceMode()?.setSttNoiseReductionLevelDb?.(level);
+      poll({ force: true });
+    });
+    els.aggregation?.addEventListener('input', renderRangeLabels);
+    els.aggregation?.addEventListener('change', () => {
+      voiceMode()?.saveAggregationTimeout?.(els.aggregation.value)
+        ?.then(() => status('Speech aggregation saved.'))
+        ?.catch(error => status(`Aggregation save failed: ${error.message || error}`));
+      poll({ force: true });
+    });
+    els.vadReset?.addEventListener('input', () => {
+      renderRangeLabels();
+      poll({ force: true });
+    });
+    els.vadReset?.addEventListener('change', () => {
+      voiceMode()?.saveVadResetTimeout?.(els.vadReset.value)
+        ?.then(() => status('VAD reset timeout saved.'))
+        ?.catch(error => status(`VAD reset save failed: ${error.message || error}`));
+      poll({ force: true });
+    });
+    window.addEventListener('blueprints:voice-mode:changed', renderSharedControls);
+    window.addEventListener('blueprints:voice-mode:stt-noise-changed', renderSharedControls);
+    window.addEventListener('blueprints:voice-mode:wake-settings-changed', renderSharedControls);
+    document.addEventListener('blueprints:event', onVadDevCommandEvent);
+    els.modal?.addEventListener('close', stop);
+    renderSharedControls();
+    renderAllProbeUi();
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init, { once: true });
+    document.addEventListener('DOMContentLoaded', bind, { once: true });
   } else {
-    init();
+    bind();
   }
 
   return {
+    automationSnapshot,
     mountTimeline,
     open,
+    start,
+    stop,
     timeline: () => state.timeline,
   };
 })();

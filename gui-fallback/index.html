@@ -4635,6 +4635,96 @@
     <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
   </div>
   <div class="hub-modal-body vad-dev">
+    <section class="vad-dev__controls" aria-label="VAD development controls">
+      <div class="wake-dev-card wake-dev-switches vad-dev-settings">
+        <label class="hub-checkbox wake-dev-check">
+          <input class="hub-checkbox__input" type="checkbox" id="vad-dev-noise-toggle" data-vad-dev-control="noise_reduction" />
+          <span class="hub-checkbox__box" aria-hidden="true"></span>
+          <span class="hub-checkbox__label wake-dev-check__label">Noise reduction</span>
+        </label>
+        <label class="wake-dev-slider" for="vad-dev-noise-level">
+          <span>Noise level</span>
+          <input type="range" id="vad-dev-noise-level" min="0" max="12" step="0.5" value="6" autocomplete="off" data-vad-dev-control="noise_level_db" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
+          <output id="vad-dev-noise-level-label" for="vad-dev-noise-level">6.0 dB</output>
+        </label>
+        <label class="wake-dev-slider" for="vad-dev-aggregation-timeout">
+          <span>Speech aggregation</span>
+          <input type="range" id="vad-dev-aggregation-timeout" min="50" max="300" step="10" value="80" autocomplete="off" data-vad-dev-control="speech_aggregation_timeout_ms" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
+          <output id="vad-dev-aggregation-label" for="vad-dev-aggregation-timeout">80 ms</output>
+        </label>
+        <label class="wake-dev-slider" for="vad-dev-vad-reset-timeout">
+          <span>VAD reset timeout</span>
+          <input type="range" id="vad-dev-vad-reset-timeout" min="0" max="2000" step="50" value="300" autocomplete="off" data-vad-dev-control="vad_reset_timeout_ms" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
+          <output id="vad-dev-vad-reset-label" for="vad-dev-vad-reset-timeout">300 ms</output>
+        </label>
+      </div>
+
+      <div class="wake-dev-card wake-dev-test wake-dev-test-tabs vad-dev-test-tabs">
+        <input class="wake-dev-test-tab-radio" type="radio" name="vad-dev-test-tab" id="vad-dev-test-tab-manual" checked>
+        <input class="wake-dev-test-tab-radio" type="radio" name="vad-dev-test-tab" id="vad-dev-test-tab-vad">
+        <input class="wake-dev-test-tab-radio" type="radio" name="vad-dev-test-tab" id="vad-dev-test-tab-rearm">
+        <div class="wake-dev-test-tablist" role="tablist" aria-label="STT test modes">
+          <label class="wake-dev-test-tab" role="tab" for="vad-dev-test-tab-manual">Manual</label>
+          <label class="wake-dev-test-tab" role="tab" for="vad-dev-test-tab-vad">VAD</label>
+          <label class="wake-dev-test-tab" role="tab" for="vad-dev-test-tab-rearm">VAD ReArm</label>
+        </div>
+        <div class="wake-dev-test-panels">
+          <section class="wake-dev-test-panel wake-dev-test-panel--manual" role="tabpanel" aria-label="Manual STT Test Mode">
+            <div class="wake-dev-card__head">
+              <span class="wake-dev-card__title">Manual STT Test Mode</span>
+              <span class="wake-dev-meta" id="vad-dev-test-status">VAD bypass is off.</span>
+            </div>
+            <div class="wake-dev-test__tools">
+              <button class="hub-modal-btn" type="button" id="vad-dev-test-mode" aria-pressed="false" data-vad-dev-control="manual_enable_test">Enable test mode</button>
+              <button class="hub-modal-btn" type="button" id="vad-dev-test-record" data-vad-dev-control="manual_record" disabled>Record</button>
+              <button class="hub-modal-btn" type="button" id="vad-dev-test-stop" data-vad-dev-control="manual_stop" disabled>Stop</button>
+              <button class="hub-modal-btn" type="button" id="vad-dev-test-clear" data-vad-dev-control="manual_clear">Clear</button>
+            </div>
+            <div class="wake-dev-test__transcript">
+              <span class="wake-dev-section-label">Transcript</span>
+              <div class="wake-dev-transcript" id="vad-dev-transcript" aria-live="polite" data-vad-dev-metric="manual_transcript"></div>
+            </div>
+          </section>
+          <section class="wake-dev-test-panel wake-dev-test-panel--vad" role="tabpanel" aria-label="VAD STT Test Mode">
+            <div class="wake-dev-card__head">
+              <span class="wake-dev-card__title">VAD STT Test Mode</span>
+              <span class="wake-dev-meta" id="vad-dev-vad-test-status">VAD STT probe is off.</span>
+            </div>
+            <div class="wake-dev-test__tools wake-dev-test__tools--vad">
+              <button class="hub-modal-btn" type="button" id="vad-dev-vad-test-mode" aria-pressed="false" data-vad-dev-control="vad_enable_test">Enable test mode</button>
+              <button class="hub-modal-btn" type="button" id="vad-dev-vad-test-record-vad" aria-pressed="false" data-vad-dev-control="vad_record_gate" disabled>Enable VAD Record</button>
+              <button class="hub-modal-btn" type="button" id="vad-dev-vad-test-stop-vad" aria-pressed="false" data-vad-dev-control="vad_stop_gate" disabled>Enable VAD Stop</button>
+              <button class="hub-modal-btn" type="button" id="vad-dev-vad-test-record" data-vad-dev-control="vad_record" disabled>Record</button>
+              <button class="hub-modal-btn" type="button" id="vad-dev-vad-test-stop" data-vad-dev-control="vad_stop" disabled>Stop</button>
+              <button class="hub-modal-btn" type="button" id="vad-dev-vad-test-clear" data-vad-dev-control="vad_clear">Clear</button>
+            </div>
+            <div class="wake-dev-test__transcript">
+              <span class="wake-dev-section-label">Transcript</span>
+              <div class="wake-dev-transcript" id="vad-dev-vad-transcript" aria-live="polite" data-vad-dev-metric="vad_transcript"></div>
+            </div>
+          </section>
+          <section class="wake-dev-test-panel wake-dev-test-panel--rearm" role="tabpanel" aria-label="VAD ReArm STT Test Mode">
+            <div class="wake-dev-card__head">
+              <span class="wake-dev-card__title">VAD ReArm STT Test Mode</span>
+              <span class="wake-dev-meta" id="vad-dev-rearm-test-status">VAD ReArm STT probe is off.</span>
+            </div>
+            <div class="wake-dev-test__tools wake-dev-test__tools--vad">
+              <button class="hub-modal-btn" type="button" id="vad-dev-rearm-test-mode" aria-pressed="false" data-vad-dev-control="rearm_enable_test">Enable test mode</button>
+              <button class="hub-modal-btn" type="button" id="vad-dev-rearm-test-record-vad" aria-pressed="false" data-vad-dev-control="rearm_record_gate" disabled>Enable VAD Record</button>
+              <button class="hub-modal-btn" type="button" id="vad-dev-rearm-test-stop-vad" aria-pressed="false" data-vad-dev-control="rearm_stop_gate" disabled>Enable VAD Stop</button>
+              <button class="hub-modal-btn" type="button" id="vad-dev-rearm-test-record" data-vad-dev-control="rearm_record" disabled>Record</button>
+              <button class="hub-modal-btn" type="button" id="vad-dev-rearm-test-stop" data-vad-dev-control="rearm_stop" disabled>Stop</button>
+              <button class="hub-modal-btn" type="button" id="vad-dev-rearm-test-clear" data-vad-dev-control="rearm_clear">Clear</button>
+            </div>
+            <div class="wake-dev-test__transcript">
+              <span class="wake-dev-section-label">Transcript</span>
+              <div class="wake-dev-transcript" id="vad-dev-rearm-transcript" aria-live="polite" data-vad-dev-metric="rearm_transcript"></div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+    <p class="wake-dev-status vad-dev-status" id="vad-dev-status" aria-live="polite"></p>
     <div class="vad-dev-tabs" aria-label="VAD development views">
       <input class="vad-dev-tab-radio" type="radio" name="vad-dev-tab" id="vad-dev-tab-timeline" checked>
       <div class="vad-dev-tablist" role="tablist" aria-label="VAD development views">
