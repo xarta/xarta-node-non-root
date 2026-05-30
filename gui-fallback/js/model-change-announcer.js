@@ -241,7 +241,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
       return;
     }
 
-    _showToast(item.toastOpts);
+    void _showToastForEvent(item.toastOpts, item.event, item.toastCategory);
     _speak(item.text, item).finally(() => _afterAnnouncing(item));
   }
 
@@ -291,6 +291,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
         severity: 'info',
       },
       event: lastEvt || {},
+      toastCategory: 'model_alias',
       isModelChange: true,  // flag: record timestamp after speaking
     });
 
@@ -434,7 +435,35 @@ const BlueprintsModelChangeAnnouncer = (() => {
     return el;
   }
 
-  function _showToast({ title, message, severity }) {
+  function _toastCategoryForEvent(evt, fallback = 'unknown_other') {
+    if (typeof BlueprintsNotifierDnd !== 'undefined' && BlueprintsNotifierDnd.toastCategoryForEvent) {
+      return BlueprintsNotifierDnd.toastCategoryForEvent(evt);
+    }
+    return fallback;
+  }
+
+  function _normalizeToastCategory(category) {
+    if (typeof BlueprintsNotifierDnd !== 'undefined' && BlueprintsNotifierDnd.normalizeToastCategory) {
+      return BlueprintsNotifierDnd.normalizeToastCategory(category);
+    }
+    const value = String(category || '');
+    return value || 'unknown_other';
+  }
+
+  async function _showToastForEvent(toastOpts = {}, event = {}, category = null) {
+    const toastCategory = _normalizeToastCategory(category || toastOpts.category || _toastCategoryForEvent(event));
+    try {
+      if (typeof BlueprintsNotifierDnd !== 'undefined') {
+        const config = await BlueprintsNotifierDnd.loadConfig();
+        if (!BlueprintsNotifierDnd.shouldShowToast(event || {}, toastCategory, config)) return;
+      }
+    } catch (error) {
+      console.warn('[model-change-announcer] toast policy check failed:', error);
+    }
+    _showToast({ ...toastOpts, category: toastCategory });
+  }
+
+  function _showToast({ title, message, severity, category }) {
     const container = _container();
     while (container.children.length >= _TOAST_MAX) {
       container.removeChild(container.firstChild);
@@ -443,6 +472,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
     const toast   = document.createElement('div');
     toast.className = `bp-event-toast bp-event-toast--${severity || 'info'}`;
     toast.setAttribute('role', 'status');
+    if (category) toast.dataset.toastCategory = category;
 
     const iconEl  = document.createElement('span');
     iconEl.className = 'bp-event-toast__icon';
@@ -521,7 +551,8 @@ const BlueprintsModelChangeAnnouncer = (() => {
         _pushAndDrain(
           _speechForAliasTests(false),
           { title: 'Alias Tests Passed', message: evt.message || '', severity: 'info' },
-          evt
+          evt,
+          { toastCategory: 'model_alias' }
         );
         break;
 
@@ -529,7 +560,8 @@ const BlueprintsModelChangeAnnouncer = (() => {
         _pushAndDrain(
           _speechForAliasTests(true),
           { title: 'Alias Tests Failed', message: evt.message || '', severity: 'error' },
-          evt
+          evt,
+          { toastCategory: 'model_alias' }
         );
         break;
 
@@ -541,7 +573,8 @@ const BlueprintsModelChangeAnnouncer = (() => {
             message: evt.message || 'Local Large Language Model is offline.',
             severity: evt.severity || 'error',
           },
-          evt
+          evt,
+          { toastCategory: 'system_health' }
         );
         break;
 
@@ -553,7 +586,8 @@ const BlueprintsModelChangeAnnouncer = (() => {
             message: evt.message || '',
             severity: evt.severity || 'warn',
           },
-          evt
+          evt,
+          { toastCategory: 'system_health' }
         );
         break;
 
@@ -565,7 +599,8 @@ const BlueprintsModelChangeAnnouncer = (() => {
             message: evt.message || '',
             severity: evt.severity || 'error',
           },
-          evt
+          evt,
+          { toastCategory: 'security' }
         );
         break;
 
@@ -577,7 +612,8 @@ const BlueprintsModelChangeAnnouncer = (() => {
             message: evt.message || '',
             severity: evt.severity || 'info',
           },
-          evt
+          evt,
+          { toastCategory: 'security' }
         );
         break;
 
@@ -592,8 +628,28 @@ const BlueprintsModelChangeAnnouncer = (() => {
             severity: evt.severity || 'info',
           },
           evt,
-          { hermesUtterance: true }
+          { hermesUtterance: true, toastCategory: 'hermes_speech' }
         );
+        break;
+      }
+
+      case 'voice.mode.changed':
+        void _showToastForEvent({
+          title: evt.title || 'Active Browser State',
+          message: evt.message || 'Active Browser state changed.',
+          severity: evt.severity || 'info',
+        }, evt, 'active_browser_state');
+        break;
+
+      case 'blueprints.active_browser.command':
+      case 'voice.mode.dev.command': {
+        const payload = evt.payload || {};
+        const action = payload.action || payload.command || payload.mode || '';
+        void _showToastForEvent({
+          title: evt.title || 'Active Browser Command',
+          message: evt.message || (action ? `Action: ${action}` : ''),
+          severity: evt.severity || 'info',
+        }, evt, 'active_browser_commands');
         break;
       }
 
@@ -617,16 +673,17 @@ const BlueprintsModelChangeAnnouncer = (() => {
                 message: evt.message || '',
                 severity: evt.severity || 'info',
               },
-              unknownEvt
+              unknownEvt,
+              { toastCategory: _toastCategoryForEvent(unknownEvt) }
             );
             break;
           }
         }
-        _showToast({
+        void _showToastForEvent({
           title:    evt.title    || evt.event_type,
           message:  evt.message  || '',
           severity: evt.severity || 'info',
-        });
+        }, evt, _toastCategoryForEvent(evt));
         break;
     }
   }
@@ -634,7 +691,11 @@ const BlueprintsModelChangeAnnouncer = (() => {
   /** Push an item directly to the announcement queue (no debounce) and drain
    *  if the machine is currently idle. */
   function _pushAndDrain(text, toastOpts, event = null, extra = {}) {
-    _queue.push({ text, toastOpts, event: event || {}, ...(extra || {}) });
+    const evt = event || {};
+    const toastCategory = _normalizeToastCategory(
+      extra.toastCategory || toastOpts?.category || _toastCategoryForEvent(evt)
+    );
+    _queue.push({ text, toastOpts, event: evt, ...(extra || {}), toastCategory });
     if (_astate === ASTATE.IDLE) _drainQueue();
     // Otherwise the item will be picked up when the current announcement finishes.
   }

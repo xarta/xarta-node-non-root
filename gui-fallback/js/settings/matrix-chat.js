@@ -55,6 +55,7 @@ const MatrixChat = (() => {
     roomTabClickTimer: null,
     notifierDndConfig: null,
     notifierDndSaving: false,
+    notifierToastSaving: false,
     notifierTestEvents: new Map(),
     audioSending: false,
     audioStarting: false,
@@ -1466,6 +1467,7 @@ const MatrixChat = (() => {
     const dangerSound = el('matrix-chat-notifier-danger-sound');
     const dangerVolume = el('matrix-chat-notifier-danger-volume');
     const dangerTest = el('matrix-chat-notifier-danger-test');
+    const toasts = el('matrix-chat-notifier-toasts-open');
     const save = el('matrix-chat-notifier-dnd-save');
     if (mode) mode.value = cfg.mode || 'default';
     if (timeout) timeout.value = String(cfg.manual_timeout_minutes || 60);
@@ -1476,8 +1478,70 @@ const MatrixChat = (() => {
     if (dangerSound) dangerSound.value = cfg.danger_policy?.alarm_sound_path || '';
     if (dangerVolume) dangerVolume.value = String(cfg.danger_policy?.danger_alarm_volume ?? 1);
     if (dangerTest) dangerTest.disabled = !cfg.danger_policy?.alarm_sound_path;
+    if (toasts) toasts.disabled = !state.notifierDndConfig;
     if (save) save.disabled = state.notifierDndSaving || !state.notifierDndConfig;
     renderNotifierSchedules();
+  }
+
+  function setNotifierToastsStatus(message, tone = '') {
+    const node = el('matrix-chat-notifier-toasts-status');
+    if (!node) return;
+    node.textContent = message || '';
+    node.dataset.tone = tone || '';
+  }
+
+  function currentToastPolicy() {
+    if (typeof BlueprintsNotifierDnd !== 'undefined' && BlueprintsNotifierDnd.toastPolicy) {
+      return BlueprintsNotifierDnd.toastPolicy(state.notifierDndConfig || {});
+    }
+    return {};
+  }
+
+  function renderNotifierToastsModal() {
+    const list = el('matrix-chat-notifier-toasts-list');
+    const save = el('matrix-chat-notifier-toasts-save');
+    if (save) save.disabled = state.notifierToastSaving || !state.notifierDndConfig;
+    if (!list) return;
+    clearNode(list);
+    const categories = typeof BlueprintsNotifierDnd !== 'undefined' && Array.isArray(BlueprintsNotifierDnd.toastCategories)
+      ? BlueprintsNotifierDnd.toastCategories
+      : [];
+    const policy = currentToastPolicy();
+    if (!categories.length) {
+      const empty = document.createElement('div');
+      empty.className = 'matrix-chat-notifier-toast-empty';
+      empty.textContent = 'Toast category client unavailable.';
+      list.appendChild(empty);
+      return;
+    }
+    categories.forEach(category => {
+      const row = document.createElement('label');
+      row.className = 'hub-checkbox hub-checkbox--row matrix-chat-notifier-toast-row';
+
+      const input = document.createElement('input');
+      input.className = 'hub-checkbox__input';
+      input.type = 'checkbox';
+      input.dataset.toastCategory = category.key;
+      input.checked = policy[category.key] !== false;
+
+      const box = document.createElement('span');
+      box.className = 'hub-checkbox__box';
+      box.setAttribute('aria-hidden', 'true');
+
+      const label = document.createElement('span');
+      label.className = 'hub-checkbox__label matrix-chat-notifier-toast-label';
+      const name = document.createElement('strong');
+      name.textContent = category.label || category.key;
+      const examples = document.createElement('span');
+      examples.textContent = category.examples || category.key;
+      label.appendChild(name);
+      label.appendChild(examples);
+
+      row.appendChild(input);
+      row.appendChild(box);
+      row.appendChild(label);
+      list.appendChild(row);
+    });
   }
 
   function setNotifierDangerSoundPath(assetPath) {
@@ -1543,6 +1607,7 @@ const MatrixChat = (() => {
     if (!modal) return;
     state.notifierDndConfig = null;
     state.notifierDndSaving = false;
+    state.notifierToastSaving = false;
     setNotifierDndStatus('Loading notification policy...', '');
     renderNotifierDndModal();
     if (typeof HubModal !== 'undefined') HubModal.open(modal);
@@ -1555,6 +1620,25 @@ const MatrixChat = (() => {
       setNotifierDndStatus(`Active speech mode: ${activeMode}`, 'ok');
     } catch (error) {
       setNotifierDndStatus(`Notification policy load failed: ${error.message}`, 'error');
+    }
+  }
+
+  async function openNotifierToastsModal() {
+    const modal = el('matrix-chat-notifier-toasts-modal');
+    if (!modal) return;
+    state.notifierToastSaving = false;
+    setNotifierToastsStatus('Loading toast policy...', '');
+    renderNotifierToastsModal();
+    if (typeof HubModal !== 'undefined') HubModal.open(modal);
+    else modal.showModal?.();
+    try {
+      if (typeof BlueprintsNotifierDnd === 'undefined') throw new Error('policy client unavailable');
+      state.notifierDndConfig = await BlueprintsNotifierDnd.loadConfig({ force: true });
+      renderNotifierDndModal();
+      renderNotifierToastsModal();
+      setNotifierToastsStatus('Toast policy loaded.', 'ok');
+    } catch (error) {
+      setNotifierToastsStatus(`Toast policy load failed: ${error.message}`, 'error');
     }
   }
 
@@ -1604,6 +1688,42 @@ const MatrixChat = (() => {
         danger_alarm_volume: Number(el('matrix-chat-notifier-danger-volume')?.value || 1),
       },
     };
+  }
+
+  function collectNotifierToastPolicy() {
+    const policy = currentToastPolicy();
+    document.querySelectorAll('#matrix-chat-notifier-toasts-list input[data-toast-category]').forEach(input => {
+      const key = input.dataset.toastCategory || '';
+      if (!key) return;
+      policy[key] = Boolean(input.checked);
+    });
+    if (typeof BlueprintsNotifierDnd !== 'undefined' && BlueprintsNotifierDnd.mergeToastPolicy) {
+      return BlueprintsNotifierDnd.mergeToastPolicy(policy);
+    }
+    return policy;
+  }
+
+  async function saveNotifierToastPolicy() {
+    if (state.notifierToastSaving || typeof BlueprintsNotifierDnd === 'undefined') return;
+    const base = state.notifierDndConfig || await BlueprintsNotifierDnd.loadConfig({ force: true });
+    const nextConfig = {
+      ...base,
+      toast_policy: collectNotifierToastPolicy(),
+    };
+    state.notifierToastSaving = true;
+    setNotifierToastsStatus('Saving...', '');
+    renderNotifierToastsModal();
+    try {
+      state.notifierDndConfig = await BlueprintsNotifierDnd.saveConfig(nextConfig);
+      renderNotifierDndModal();
+      renderNotifierToastsModal();
+      setNotifierToastsStatus('Saved.', 'ok');
+    } catch (error) {
+      setNotifierToastsStatus(`Save failed: ${error.message}`, 'error');
+    } finally {
+      state.notifierToastSaving = false;
+      renderNotifierToastsModal();
+    }
   }
 
   async function saveNotifierDndConfig() {
@@ -3019,6 +3139,12 @@ const MatrixChat = (() => {
       void showNotifierModeImpact(false);
     });
     el('matrix-chat-notifier-dnd-save')?.addEventListener('click', saveNotifierDndConfig);
+    el('matrix-chat-notifier-toasts-open')?.addEventListener('click', () => {
+      void openNotifierToastsModal();
+    });
+    el('matrix-chat-notifier-toasts-save')?.addEventListener('click', () => {
+      void saveNotifierToastPolicy();
+    });
     el('matrix-chat-notifier-danger-pick')?.addEventListener('click', openNotifierDangerSoundPicker);
     el('matrix-chat-notifier-danger-test')?.addEventListener('click', event => testNotifierDangerSound(event.currentTarget));
     document.querySelectorAll('[data-notifier-test-id]').forEach(button => {

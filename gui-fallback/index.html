@@ -1166,7 +1166,25 @@
       </div>
       <div class="hub-modal-footer">
         <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
+        <button class="hub-modal-btn secondary" id="matrix-chat-notifier-toasts-open" type="button">TOASTS</button>
         <button class="hub-modal-btn" id="matrix-chat-notifier-dnd-save" type="button">Save</button>
+      </div>
+    </dialog>
+    <dialog class="hub-modal hub-dialog matrix-chat-notifier-toasts-modal" data-tone="info" id="matrix-chat-notifier-toasts-modal" style="width:min(680px,94vw);max-width:94vw">
+      <div class="hub-modal-header">
+        <h2 class="hub-modal-title" style="min-width:0;flex:1">
+          <span class="hub-dialog-badge">TOASTS</span>
+          <span class="hub-dialog-title-text">Toast Categories</span>
+        </h2>
+        <button class="hub-modal-close" type="button">&#8592; Back</button>
+      </div>
+      <div class="hub-modal-body">
+        <div id="matrix-chat-notifier-toasts-list" class="hub-checkbox-list matrix-chat-notifier-toasts-list"></div>
+        <p id="matrix-chat-notifier-toasts-status" class="hub-modal-error matrix-chat-room-admin-status matrix-chat-notifier-status"></p>
+      </div>
+      <div class="hub-modal-footer">
+        <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
+        <button class="hub-modal-btn" id="matrix-chat-notifier-toasts-save" type="button">Save</button>
       </div>
     </dialog>
     <dialog class="hub-modal hub-dialog matrix-chat-notifier-tests-modal" data-tone="warning" id="matrix-chat-notifier-tests-modal" style="width:min(920px,96vw);max-width:96vw">

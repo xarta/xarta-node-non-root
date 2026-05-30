@@ -34,6 +34,60 @@ const BlueprintsNotifierDnd = (() => {
     manual_dnd_1: 'Manual DND 1',
     manual_dnd_2: 'Manual DND 2',
   });
+  const TOAST_CATEGORIES = Object.freeze([
+    {
+      key: 'model_alias',
+      label: 'Model aliases',
+      examples: 'model.changed, alias tests',
+    },
+    {
+      key: 'system_health',
+      label: 'System health',
+      examples: 'memory, local LLM, notifier failure',
+    },
+    {
+      key: 'security',
+      label: 'Security',
+      examples: 'public exposure warnings',
+    },
+    {
+      key: 'notification_tests',
+      label: 'Notification tests',
+      examples: 'notifier test events',
+    },
+    {
+      key: 'hermes_speech',
+      label: 'Hermes speech',
+      examples: 'browser speech requests',
+    },
+    {
+      key: 'active_browser_state',
+      label: 'Active Browser state',
+      examples: 'voice mode changes',
+    },
+    {
+      key: 'active_browser_commands',
+      label: 'Active Browser commands',
+      examples: 'automation command traffic',
+    },
+    {
+      key: 'matrix_chat',
+      label: 'Matrix chat',
+      examples: 'chat and system sync toasts',
+    },
+    {
+      key: 'unknown_other',
+      label: 'Unknown / Other',
+      examples: 'uncategorized event types',
+    },
+  ]);
+  const TOAST_CATEGORY_KEYS = Object.freeze(TOAST_CATEGORIES.map(item => item.key));
+  const DEFAULT_TOAST_POLICY = Object.freeze(
+    TOAST_CATEGORY_KEYS.reduce((acc, key) => {
+      acc[key] = true;
+      return acc;
+    }, {})
+  );
   const DEFAULT_CONFIG = Object.freeze({
     version: 1,
     mode: 'default',
@@ -60,6 +114,7 @@ const BlueprintsNotifierDnd = (() => {
       alarm_sound_path: null,
       danger_alarm_volume: 1.0,
     },
+    toast_policy: DEFAULT_TOAST_POLICY,
     notes: '',
   });
 
@@ -87,8 +142,18 @@ const BlueprintsNotifierDnd = (() => {
       ...data,
       listener_policy: { ...DEFAULT_CONFIG.listener_policy, ...(data.listener_policy || {}) },
       danger_policy: { ...DEFAULT_CONFIG.danger_policy, ...(data.danger_policy || {}) },
+      toast_policy: mergeToastPolicy(data.toast_policy),
       schedules: Array.isArray(data.schedules) ? data.schedules : DEFAULT_CONFIG.schedules,
     };
+  }
+
+  function mergeToastPolicy(raw) {
+    const policy = { ...DEFAULT_TOAST_POLICY };
+    const data = raw && typeof raw === 'object' ? raw : {};
+    TOAST_CATEGORY_KEYS.forEach(key => {
+      if (Object.prototype.hasOwnProperty.call(data, key)) policy[key] = data[key] !== false;
+    });
+    return policy;
   }
 
   async function loadConfig(options = {}) {
@@ -325,6 +390,58 @@ const BlueprintsNotifierDnd = (() => {
     return null;
   }
 
+  function normalizeToastCategory(category) {
+    const value = String(category || '');
+    return TOAST_CATEGORY_KEYS.includes(value) ? value : 'unknown_other';
+  }
+
+  function toastPolicy(config = _config) {
+    return mergeToastPolicy(config?.toast_policy);
+  }
+
+  function toastCategoryForEvent(evt) {
+    const type = String(evt?.event_type || evt?.payload?.event_type || evt?.payload?.blueprints_event_type || '');
+    if (type === 'model.changed' || type === 'alias.tests.completed' || type === 'alias.tests.failed') {
+      return 'model_alias';
+    }
+    if (
+      type === 'system.memory.warning' ||
+      type === 'local.llm.offline' ||
+      type === 'system_bridge_notifier.failure.drill' ||
+      type === 'system_bridge_notifier.failure.drill_attempt'
+    ) {
+      return 'system_health';
+    }
+    if (type === 'security.public_exposure.warning' || type === 'security.public_exposure.recovered') {
+      return 'security';
+    }
+    if (type.startsWith('notifier.tests.') || evt?.payload?.frontend_contract === 'notification-tests-modal') {
+      return 'notification_tests';
+    }
+    if (type === 'tts.utterance.requested') {
+      return 'hermes_speech';
+    }
+    if (type === 'voice.mode.changed') {
+      return 'active_browser_state';
+    }
+    if (type === 'blueprints.active_browser.command' || type === 'voice.mode.dev.command') {
+      return 'active_browser_commands';
+    }
+    if (type.startsWith('matrix.chat.')) {
+      return 'matrix_chat';
+    }
+    return 'unknown_other';
+  }
+
+  function isToastCategoryEnabled(category, config = _config) {
+    const key = normalizeToastCategory(category);
+    return toastPolicy(config)[key] !== false;
+  }
+
+  function shouldShowToast(evt, category = null, config = _config) {
+    return isToastCategoryEnabled(category || toastCategoryForEvent(evt), config);
+  }
+
   function shouldSpeak(evt, config = _config) {
     const required = MODE_MIN[activeMode(config)] || config.minimum_speak_importance || 'neutral';
     const effective = speechPolicyImportance(evt);
@@ -433,6 +550,13 @@ const BlueprintsNotifierDnd = (() => {
     loadConfig,
     saveConfig,
     getConfig: () => _config,
+    toastCategories: TOAST_CATEGORIES,
+    mergeToastPolicy,
+    toastPolicy,
+    toastCategoryForEvent,
+    normalizeToastCategory,
+    isToastCategoryEnabled,
+    shouldShowToast,
     modeLabel,
     activeMode,
     activeModeDetails,
