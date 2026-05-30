@@ -316,6 +316,64 @@ const BlueprintsActiveBrowserObserver = (() => {
     };
   }
 
+  function _media(query) {
+    try {
+      return !!(window.matchMedia && window.matchMedia(query).matches);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function _viewportInfo() {
+    const vv = window.visualViewport || null;
+    const screenObj = window.screen || {};
+    const orientation = screenObj.orientation || {};
+    const maxTouchPoints = Number(navigator.maxTouchPoints || 0);
+    return {
+      innerWidth: Math.round(Number(window.innerWidth || 0)),
+      innerHeight: Math.round(Number(window.innerHeight || 0)),
+      devicePixelRatio: Number(window.devicePixelRatio || 1),
+      screen: {
+        width: Math.round(Number(screenObj.width || 0)),
+        height: Math.round(Number(screenObj.height || 0)),
+        availWidth: Math.round(Number(screenObj.availWidth || 0)),
+        availHeight: Math.round(Number(screenObj.availHeight || 0)),
+      },
+      orientation: {
+        type: orientation.type || '',
+        angle: Number(orientation.angle || window.orientation || 0),
+      },
+      visualViewport: vv ? {
+        width: Number(vv.width || 0),
+        height: Number(vv.height || 0),
+        scale: Number(vv.scale || 1),
+        offsetLeft: Number(vv.offsetLeft || 0),
+        offsetTop: Number(vv.offsetTop || 0),
+        pageLeft: Number(vv.pageLeft || 0),
+        pageTop: Number(vv.pageTop || 0),
+      } : {},
+      pointer: {
+        primary: _media('(pointer: coarse)') ? 'coarse' : (_media('(pointer: fine)') ? 'fine' : 'none'),
+        any: _media('(any-pointer: coarse)') ? 'coarse' : (_media('(any-pointer: fine)') ? 'fine' : 'none'),
+        hover: _media('(hover: hover)') ? 'hover' : (_media('(hover: none)') ? 'none' : ''),
+        anyHover: _media('(any-hover: hover)') ? 'hover' : (_media('(any-hover: none)') ? 'none' : ''),
+        coarse: _media('(pointer: coarse)') || _media('(any-pointer: coarse)'),
+        fine: _media('(pointer: fine)') || _media('(any-pointer: fine)'),
+        touch: maxTouchPoints > 0 || ('ontouchstart' in window),
+        maxTouchPoints,
+      },
+    };
+  }
+
+  function _voiceState() {
+    const local = _voiceMode()?.getLocalState?.();
+    return {
+      stt_enabled: !!local?.stt_enabled,
+      stt_mode: _cleanText(local?.stt_mode),
+      tts_enabled: !!local?.tts_enabled,
+    };
+  }
+
   function _payload() {
     return {
       browser_id: _browserId(),
@@ -323,6 +381,8 @@ const BlueprintsActiveBrowserObserver = (() => {
       tab_id: _tabId(),
       page: _currentPage(),
       modals: _openModals(),
+      viewport: _viewportInfo(),
+      voice: _voiceState(),
       visibility_state: document.visibilityState || 'unknown',
       has_focus: document.hasFocus ? document.hasFocus() : false,
       url_path: window.location.pathname || '',
@@ -339,6 +399,8 @@ const BlueprintsActiveBrowserObserver = (() => {
     const key = JSON.stringify({
       page: payload.page,
       modals: payload.modals,
+      viewport: payload.viewport,
+      voice: payload.voice,
       visibility_state: payload.visibility_state,
       has_focus: payload.has_focus,
       frontend: payload.frontend,
@@ -432,6 +494,12 @@ const BlueprintsActiveBrowserObserver = (() => {
     document.addEventListener('visibilitychange', () => scheduleReport('visibility'));
     window.addEventListener('focus', () => scheduleReport('focus'));
     window.addEventListener('blur', () => scheduleReport('blur'));
+    window.addEventListener('resize', () => scheduleReport('viewport-resize'), { passive: true });
+    window.addEventListener('orientationchange', () => scheduleReport('viewport-orientation'), { passive: true });
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', () => scheduleReport('visual-viewport-resize'), { passive: true });
+      window.visualViewport.addEventListener('scroll', () => scheduleReport('visual-viewport-scroll'), { passive: true });
+    }
     if (navigator.serviceWorker) {
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         _requestServiceWorkerVersion();
@@ -468,6 +536,7 @@ const BlueprintsActiveBrowserObserver = (() => {
 
   return Object.freeze({
     scheduleReport,
+    reportNow: _postReport,
     currentPayload: _payload,
   });
 })();

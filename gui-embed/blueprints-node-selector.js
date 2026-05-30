@@ -2427,20 +2427,20 @@
   //   OPEN   + tap       → CLOSED  / closePanel
   //   CLOSED + doubleTap → CLOSED  / ttsDoubleTap (no-op hook)
   //   OPEN   + doubleTap → OPEN    / ttsDoubleTap (no-op hook)
-  //   CLOSED + longPress → CLOSED  / ttsLongPress (no-op hook)
-  //   OPEN   + longPress → OPEN    / ttsLongPress (no-op hook)
+  //   CLOSED + longPress → CLOSED  / toggleLongPress
+  //   OPEN   + longPress → OPEN    / toggleLongPress
   //
   const ToggleButtonFsm = (() => {
     const _TRANSITIONS = {
       CLOSED: {
         tap:       { next: 'OPEN',   action: 'openPanel'    },
         doubleTap: { next: 'CLOSED', action: 'ttsDoubleTap' },
-        longPress: { next: 'CLOSED', action: 'ttsLongPress' },
+        longPress: { next: 'CLOSED', action: 'toggleLongPress' },
       },
       OPEN: {
         tap:       { next: 'CLOSED', action: 'closePanel'   },
         doubleTap: { next: 'OPEN',   action: 'ttsDoubleTap' },
-        longPress: { next: 'OPEN',   action: 'ttsLongPress' },
+        longPress: { next: 'OPEN',   action: 'toggleLongPress' },
       },
     };
 
@@ -2467,6 +2467,20 @@
         const btn = document.getElementById('bp-ns-toggle');
         if (btn) btn.setAttribute('aria-expanded', 'false');
         return;
+      }
+      if (action === 'toggleLongPress') {
+        const btn = document.getElementById('bp-ns-toggle');
+        const event = new CustomEvent('blueprints:node-selector-toggle-long-press', {
+          bubbles: true,
+          cancelable: true,
+          detail: {
+            button: btn,
+            source: 'node-selector-toggle',
+          },
+        });
+        document.dispatchEvent(event);
+        if (event.defaultPrevented) return;
+        action = 'ttsLongPress';
       }
       if (action === 'ttsDoubleTap' || action === 'ttsLongPress') {
         if (typeof window.BlueprintsTtsClient === 'undefined') return;

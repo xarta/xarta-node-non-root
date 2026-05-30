@@ -1387,6 +1387,7 @@ const BlueprintsVoiceMode = (() => {
     setSttNoiseReductionEnabled: _setSttNoiseReduction,
     setSttNoiseReductionLevelDb: _setSttNoiseLevelDb,
     maybePlayAnnouncementCue,
+    getLocalState: _localState,
     getBrowserId: _browserId,
     getBrowserLabel: _browserLabel,
     getTabId: _tabId,

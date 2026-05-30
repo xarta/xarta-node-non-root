@@ -39,6 +39,7 @@
   <link rel="stylesheet" href="css/hub-dialogs.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/embed-menu-grid.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/tts-pool.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/active-browser-hub.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/voice-mode.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/stt-noise-tests.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/wake-dev.css?v={{$assetVersion}}" />
@@ -4364,6 +4365,45 @@
   </div>
 </dialog>
 
+<!-- Active Browser hub modal -->
+<dialog class="hub-modal hub-dialog" data-tone="info" id="active-browser-hub-modal" style="width:min(520px,95vw)">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">BROWSER</span>
+      <span class="hub-dialog-title-text">Active Browser</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body active-browser-hub">
+    <div class="active-browser-hub__client">
+      <div>
+        <div class="active-browser-hub__label" id="active-browser-hub-label">This browser</div>
+        <div class="active-browser-hub__meta" id="active-browser-hub-meta">tab pending</div>
+      </div>
+      <button class="hub-modal-btn" type="button" id="active-browser-hub-toggle">Activate</button>
+    </div>
+    <div class="active-browser-hub__facts" aria-label="Active Browser state">
+      <div class="active-browser-hub__fact">
+        <span>Lease</span>
+        <strong id="active-browser-hub-active">Checking...</strong>
+      </div>
+      <div class="active-browser-hub__fact">
+        <span>Page</span>
+        <strong id="active-browser-hub-view">Page unknown</strong>
+      </div>
+      <div class="active-browser-hub__fact">
+        <span>Viewport</span>
+        <strong id="active-browser-hub-viewport">unknown</strong>
+      </div>
+      <div class="active-browser-hub__fact">
+        <span>Version</span>
+        <strong id="active-browser-hub-version">unknown</strong>
+      </div>
+    </div>
+    <p class="active-browser-hub__status" id="active-browser-hub-status" aria-live="polite"></p>
+  </div>
+</dialog>
+
 <!-- Voice Mode control modal -->
 <dialog class="hub-modal hub-dialog" data-tone="info" id="voice-mode-modal" style="width:min(720px,95vw)">
   <div class="hub-modal-header">
@@ -5002,6 +5042,7 @@
   <script src="embed/clock-overlay.js?v={{$assetVersion}}"></script>
   <script src="js/app.js?v={{$assetVersion}}"></script>
   <script src="js/active-browser-observer.js?v={{$assetVersion}}"></script>
+  <script src="js/active-browser-hub.js?v={{$assetVersion}}"></script>
   <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {

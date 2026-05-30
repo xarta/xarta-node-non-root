@@ -1,4 +1,4 @@
-const BP_CACHE_VERSION = 'bp-fallback-v340';
+const BP_CACHE_VERSION = 'bp-fallback-v341';
 const STATIC_CACHE = `${BP_CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${BP_CACHE_VERSION}-runtime`;
 
@@ -9,8 +9,10 @@ const STATIC_ASSETS = [
   './assets/icons/fallback.svg',
   './css/tokens.css',
   './css/layout-nav.css',
+  './css/active-browser-hub.css',
   './js/app.js',
   './js/app-mode-diag.js',
+  './js/active-browser-hub.js',
   './js/active-browser-observer.js'
 ];
 
