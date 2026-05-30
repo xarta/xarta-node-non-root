@@ -4,6 +4,7 @@
 
 const WakeDevModal = (() => {
   const DEBUG_URL = '/api/v1/voice-mode/wake-debug';
+  const DEV_STATUS_URL = '/api/v1/voice-mode/dev-status';
   const ROOMS_URL = '/api/v1/matrix-chat/rooms?server=tb1';
   const STT_WS_URL = '/api/v1/voice-mode/stt/ws';
   const SAMPLE_RATE = 16000;
@@ -11,6 +12,9 @@ const WakeDevModal = (() => {
   const WINDOW_MS = 10000;
   const POLL_MS = 500;
   const DRAW_MS = 250;
+  const DEV_COMMAND_EVENT_TYPE = 'voice.mode.dev.command';
+  const DEV_COMMAND_MAX_SEEN = 200;
+  const DEV_STATUS_MIN_MS = 500;
   const VAD_TEST_DELAY_FRAMES = 0;
   const VAD_TEST_ABSOLUTE_FLOOR = 0.0012;
   const VAD_TEST_STRONG_MULTIPLIER = 5;
@@ -43,6 +47,9 @@ const WakeDevModal = (() => {
     pausedAt: 0,
     pausedSamples: [],
     pausedSnapshot: null,
+    devStatusLastAt: 0,
+    devStatusSignature: '',
+    devStatusSending: false,
     probe: {
       enabled: false,
       recording: false,
@@ -147,6 +154,7 @@ const WakeDevModal = (() => {
       },
     },
     outputView: null,
+    devCommandIds: [],
   };
 
   const els = {};
@@ -210,6 +218,27 @@ const WakeDevModal = (() => {
   function rearmProbeStatus(message) {
     state.rearmProbe.status = message || '';
     setText(els.rearmTestStatus, state.rearmProbe.status, '');
+  }
+
+  function devModeForSource(source) {
+    if (source === 'manual STT probe') return 'manual';
+    if (source === 'VAD STT probe') return 'vad';
+    if (source === 'VAD ReArm STT probe') return 'vad_rearm';
+    return '';
+  }
+
+  function devStatusForMode(mode) {
+    if (mode === 'manual') return state.probe.status || '';
+    if (mode === 'vad') return state.vadProbe.status || '';
+    if (mode === 'vad_rearm') return state.rearmProbe.status || '';
+    return '';
+  }
+
+  function devTranscriptForMode(mode) {
+    if (mode === 'manual') return state.probe.transcript || '';
+    if (mode === 'vad') return state.vadProbe.transcript || '';
+    if (mode === 'vad_rearm') return state.rearmProbe.transcript || '';
+    return '';
   }
 
   function voiceMode() {
@@ -615,6 +644,141 @@ const WakeDevModal = (() => {
     if (alternatives[0]?.transcript != null) return cleanSttTranscript(alternatives[0].transcript);
     if (alternatives[0]?.text != null) return cleanSttTranscript(alternatives[0].text);
     return '';
+  }
+
+  function cleanDevCommandText(value) {
+    return String(value ?? '').trim();
+  }
+
+  function rememberDevCommand(commandId) {
+    const id = cleanDevCommandText(commandId);
+    if (!id) return false;
+    if (state.devCommandIds.includes(id)) return false;
+    state.devCommandIds.push(id);
+    if (state.devCommandIds.length > DEV_COMMAND_MAX_SEEN) {
+      state.devCommandIds = state.devCommandIds.slice(-DEV_COMMAND_MAX_SEEN);
+    }
+    return true;
+  }
+
+  function localWakeDevTabId() {
+    return cleanDevCommandText(window.WakeToTalkController?.getDebugSnapshot?.()?.tab_id || state.runtime?.tab_id || '');
+  }
+
+  function shouldAcceptDevCommand(payload) {
+    const targetBrowserId = cleanDevCommandText(payload?.target_browser_id);
+    const browserId = cleanDevCommandText(voiceMode()?.getBrowserId?.());
+    if (targetBrowserId && browserId && targetBrowserId !== browserId) return false;
+
+    const targetTabId = cleanDevCommandText(payload?.target_tab_id);
+    const tabId = localWakeDevTabId();
+    if (targetTabId && tabId && targetTabId !== tabId) return false;
+
+    const createdAt = Number(payload?.created_at || 0);
+    const maxAgeSeconds = Math.max(5, Math.min(300, Number(payload?.max_age_seconds || 60)));
+    if (Number.isFinite(createdAt) && createdAt > 0) {
+      const ageMs = Date.now() - (createdAt * 1000);
+      if (ageMs > maxAgeSeconds * 1000) return false;
+    }
+    return true;
+  }
+
+  function pushDevCommandAction(mode, detail = {}) {
+    const payload = { mode, ...detail };
+    if (mode === 'manual') pushProbeAction('remoteDevCommand', payload);
+    else if (mode === 'vad') pushVadProbeAction('remoteDevCommand', payload);
+    else if (mode === 'vad_rearm') pushRearmProbeAction('remoteDevCommand', payload);
+  }
+
+  async function runWakeDevCommand(payload) {
+    const commandId = cleanDevCommandText(payload?.command_id);
+    if (!shouldAcceptDevCommand(payload)) return;
+    if (!rememberDevCommand(commandId)) return;
+
+    const mode = cleanDevCommandText(payload?.mode).toLowerCase().replace(/[-\s]+/g, '_') || 'manual';
+    const action = cleanDevCommandText(payload?.action).toLowerCase().replace(/[-\s]+/g, '_');
+    if (payload?.open_modal && !state.open) open();
+    pushDevCommandAction(mode, { command_id: commandId, action });
+
+    if (mode === 'manual') {
+      if (action === 'enable_test') await enableProbeMode();
+      else if (action === 'disable_test') disableProbeMode();
+      else if (action === 'record') await startProbeRecording();
+      else if (action === 'stop') stopProbeRecording();
+      else if (action === 'clear') clearProbe();
+      else probeStatus(`Remote command ignored: ${action || 'blank'}.`);
+      return;
+    }
+
+    if (mode === 'vad') {
+      if (action === 'enable_test') await enableVadProbeMode();
+      else if (action === 'disable_test') disableVadProbeMode();
+      else if (action === 'record') await startVadProbeRecording({ reason: 'remote_command' });
+      else if (action === 'stop') stopVadProbeRecording('remote_command');
+      else if (action === 'clear') clearVadProbe();
+      else vadProbeStatus(`Remote command ignored: ${action || 'blank'}.`);
+      return;
+    }
+
+    if (mode === 'vad_rearm') {
+      if (action === 'enable_test') await enableRearmProbeMode();
+      else if (action === 'disable_test') disableRearmProbeMode();
+      else if (action === 'record') await startRearmProbeRecording({ reason: 'remote_command' });
+      else if (action === 'stop') stopRearmProbeRecording('remote_command');
+      else if (action === 'clear') clearRearmProbe();
+      else rearmProbeStatus(`Remote command ignored: ${action || 'blank'}.`);
+    }
+  }
+
+  function onWakeDevCommandEvent(event) {
+    const appEvent = event?.detail || {};
+    if (appEvent.event_type !== DEV_COMMAND_EVENT_TYPE) return;
+    void runWakeDevCommand(appEvent.payload || {});
+  }
+
+  function reportDevStatus(snapshot, source, options = {}) {
+    const mode = devModeForSource(source);
+    if (!mode) return;
+    const vm = voiceMode();
+    const browserId = cleanDevCommandText(vm?.getBrowserId?.());
+    if (!browserId) return;
+
+    const statusText = devStatusForMode(mode);
+    const transcript = devTranscriptForMode(mode);
+    const signature = JSON.stringify({
+      mode,
+      status: statusText,
+      transcript,
+      frames: snapshot?.audio_frames_sent || 0,
+      send: snapshot?.active_send || {},
+      actions: Array.isArray(snapshot?.recent_actions) ? snapshot.recent_actions.length : 0,
+      events: Array.isArray(snapshot?.recent_stt_events) ? snapshot.recent_stt_events.length : 0,
+    });
+    const now = Date.now();
+    if (!options.force && signature === state.devStatusSignature && now - state.devStatusLastAt < 2500) return;
+    if (!options.force && now - state.devStatusLastAt < DEV_STATUS_MIN_MS) return;
+    if (state.devStatusSending) return;
+
+    state.devStatusSignature = signature;
+    state.devStatusLastAt = now;
+    state.devStatusSending = true;
+    api(DEV_STATUS_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        browser_id: browserId,
+        browser_label: navigator.platform ? `Browser on ${navigator.platform}` : 'Blueprints browser',
+        tab_id: localWakeDevTabId(),
+        mode,
+        source,
+        status: statusText,
+        transcript,
+        snapshot,
+        client_now_ms: now,
+      }),
+    }).catch(() => {}).finally(() => {
+      state.devStatusSending = false;
+    });
   }
 
   function buttonSnapshot(control, node) {
@@ -2352,6 +2516,7 @@ const WakeDevModal = (() => {
       : snapshot.active_send || {};
     if (els.sendSnapshot) els.sendSnapshot.textContent = JSON.stringify(send || {}, null, 2);
     renderActions(snapshot.recent_actions || []);
+    reportDevStatus(snapshot, source);
   }
 
   function poll() {
@@ -2853,6 +3018,7 @@ const WakeDevModal = (() => {
     window.addEventListener('blueprints:voice-mode:changed', () => {
       renderControlState();
     });
+    document.addEventListener('blueprints:event', onWakeDevCommandEvent);
     window.addEventListener('blueprints:voice-mode:wake-settings-changed', (event) => {
       if (!state.open) return;
       const settings = event.detail?.wake_settings;
