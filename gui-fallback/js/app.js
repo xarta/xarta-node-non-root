@@ -197,6 +197,19 @@ function _currentPageState() {
   return { group, tab: activeTab };
 }
 
+function _emitPageStateChanged(reason) {
+  document.dispatchEvent(new CustomEvent('blueprints:page-state-changed', {
+    detail: {
+      reason: reason || 'unknown',
+      page: _currentPageState(),
+    },
+  }));
+}
+
+window.BlueprintsPageState = {
+  current: _currentPageState,
+};
+
 const _originDefaultTtsMessages = {
   tap: '',
   double_tap: 'Origin double tap has no assigned action. Awaiting assignment.',
@@ -331,6 +344,7 @@ function switchGroup(group) {
   document.querySelectorAll('.table-nav button[data-group]').forEach(b => {
     b.style.display = b.dataset.group === group ? '' : 'none';
   });
+  _emitPageStateChanged(`switch-group:${group}`);
   // Hide all group wrappers first, then show only the active one.
   // This is required for SPA navigation (switchGroup called without a page reload)
   // because the early-return paths below would otherwise leave a previously-shown
@@ -495,6 +509,7 @@ function switchTab(tab) {
   } else {
     if (_pctPollInterval) { clearInterval(_pctPollInterval); _pctPollInterval = null; }
   }
+  _emitPageStateChanged(`switch-tab:${tab}`);
 }
 
 function _applySemanticFontRoleClasses() {

@@ -298,10 +298,10 @@ const WakeDevModal = (() => {
     setText(
       els.browserMeta,
       activeBrowser && wake
-        ? 'This browser is activated and Wake to Talk is selected.'
+        ? 'This browser is the Active Browser and Wake to Talk is selected.'
         : (wake
-          ? 'Wake to Talk is selected but this browser is not activated.'
-          : (activeBrowser ? 'This browser is activated; Wake to Talk is not selected.' : 'Wake to Talk is not selected.'))
+          ? 'Wake to Talk is selected but this browser is not the Active Browser.'
+          : (activeBrowser ? 'This browser is the Active Browser; Wake to Talk is not selected.' : 'Wake to Talk is not selected.'))
     );
     if (els.activate) els.activate.textContent = activeBrowser ? 'Deactivate' : 'Activate';
   }
@@ -662,7 +662,7 @@ const WakeDevModal = (() => {
   }
 
   function localWakeDevTabId() {
-    return cleanDevCommandText(window.WakeToTalkController?.getDebugSnapshot?.()?.tab_id || state.runtime?.tab_id || '');
+    return cleanDevCommandText(window.WakeToTalkController?.getDebugSnapshot?.()?.tab_id || state.runtime?.tab_id || voiceMode()?.getTabId?.() || '');
   }
 
   function shouldAcceptDevCommand(payload) {
@@ -2471,7 +2471,7 @@ const WakeDevModal = (() => {
     const stateName = String(fsm || '').toUpperCase();
     const detail = String(reason || '').trim();
     if (stateName === 'DISABLED') return detail || 'Wake to Talk is off.';
-    if (stateName === 'SELECTED_INACTIVE') return detail || 'Wake to Talk is selected but this browser is not activated.';
+    if (stateName === 'SELECTED_INACTIVE') return detail || 'Wake to Talk is selected but this browser is not the Active Browser.';
     if (stateName === 'BLOCKED') return detail || 'Wake to Talk is blocked.';
     if (stateName === 'PERMISSION_PENDING') return detail || 'Wake to Talk is requesting the microphone.';
     if (stateName === 'ARMED_IDLE') return detail || 'Wake to Talk is armed.';
@@ -2969,7 +2969,7 @@ const WakeDevModal = (() => {
     els.rearmTestClear?.addEventListener('click', clearRearmProbe);
     els.wakeToggle?.addEventListener('change', () => {
       setWakeMode(els.wakeToggle.checked);
-      status(els.wakeToggle.checked ? 'Wake to Talk selected. Activate this browser to run it.' : 'Wake to Talk deselected.');
+      status(els.wakeToggle.checked ? 'Wake to Talk selected. Make this browser the Active Browser to run it.' : 'Wake to Talk deselected.');
       window.setTimeout(renderControlState, 50);
     });
     els.noiseToggle?.addEventListener('change', () => {

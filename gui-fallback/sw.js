@@ -1,4 +1,4 @@
-const BP_CACHE_VERSION = 'bp-fallback-v336';
+const BP_CACHE_VERSION = 'bp-fallback-v340';
 const STATIC_CACHE = `${BP_CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${BP_CACHE_VERSION}-runtime`;
 
@@ -10,7 +10,8 @@ const STATIC_ASSETS = [
   './css/tokens.css',
   './css/layout-nav.css',
   './js/app.js',
-  './js/app-mode-diag.js'
+  './js/app-mode-diag.js',
+  './js/active-browser-observer.js'
 ];
 
 function isRuntimeCacheableAsset(pathname) {
@@ -83,4 +84,12 @@ self.addEventListener('fetch', event => {
 
     return cached || fetchPromise;
   })());
+});
+
+self.addEventListener('message', event => {
+  if (event.data?.type !== 'BP_SW_VERSION') return;
+  event.ports?.[0]?.postMessage({
+    type: 'BP_SW_VERSION',
+    cache_version: BP_CACHE_VERSION,
+  });
 });

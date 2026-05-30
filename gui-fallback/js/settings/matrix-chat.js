@@ -2779,7 +2779,8 @@ const MatrixChat = (() => {
     state.pollInFlight = true;
     try {
       const data = await apiJson(
-        matrixApi(`/sync?since=${encodeURIComponent(state.nextBatch)}&timeout_ms=${MATRIX_CHAT_SYNC_TIMEOUT_MS}`)
+        matrixApi(`/sync?since=${encodeURIComponent(state.nextBatch)}&timeout_ms=${MATRIX_CHAT_SYNC_TIMEOUT_MS}`),
+        { trackActivity: false }
       );
       if (pollGeneration !== state.pollGeneration || pollServerId !== state.serverId) return;
       applySyncPayload(data);

@@ -80,4 +80,30 @@ else
   exit 1
 fi
 
+run_active_browser_live_checks() {
+  local runner="/root/xarta-node/.xarta/.claude/skills/xarta-blueprints-browser-automation/scripts/active_browser_precommit_test.py"
+  local staged_pattern='^(gui-fallback/|gui-embed/|\.githooks/pre-commit)$'
+
+  if [[ "${XARTA_PRECOMMIT_ACTIVE_BROWSER:-0}" != "1" ]]; then
+    echo "[pre-commit] Active Browser live checks disabled (set XARTA_PRECOMMIT_ACTIVE_BROWSER=1 to enable)."
+    return 0
+  fi
+
+  if ! git diff --cached --name-only --diff-filter=ACMR | grep -Eq "$staged_pattern"; then
+    echo "[pre-commit] No staged GUI automation files; skipping live browser checks."
+    return 0
+  fi
+
+  if [[ ! -x "$runner" ]]; then
+    echo "ERROR: Active Browser pre-commit runner not found at $runner" >&2
+    echo "Install/update private xarta-blueprints-browser-automation skill before committing." >&2
+    exit 1
+  fi
+
+  echo "[pre-commit] Running Active Browser live automation checks..."
+  python3 "$runner"
+}
+
+run_active_browser_live_checks
+
 echo "[pre-commit] OK"

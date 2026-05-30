@@ -189,7 +189,7 @@ const WakeToTalkController = (() => {
     const active = serverState?.active || null;
     const browserId = window.BlueprintsVoiceMode?.getBrowserId?.() || '';
     if (!active || active.browser_id !== browserId) {
-      state.runtimeReason = active ? 'Another browser is activated for Voice Mode.' : 'Voice Mode is not activated.';
+      state.runtimeReason = active ? 'Another browser is the Active Browser.' : 'No Active Browser is selected.';
       state.machine?.dispatch('activationChanged', { stt_mode: 'wake_to_talk', activated: false });
       stop('activation-lost');
       return false;
@@ -197,7 +197,7 @@ const WakeToTalkController = (() => {
     if (window.BlueprintsVoiceMode?.ownsActiveSttMode?.('wake_to_talk') !== true) {
       state.runtimeReason = window.BlueprintsVoiceMode?.isActiveOwner?.() === true
         ? 'Wake to Talk is not selected.'
-        : 'This browser is not activated for Voice Mode.';
+        : 'This browser is not the Active Browser.';
       state.machine?.dispatch('activationChanged', { stt_mode: window.BlueprintsVoiceMode?.sttMode?.() || '', activated: false });
       stop('wake-activation-inactive');
       return false;
@@ -960,7 +960,7 @@ const WakeToTalkController = (() => {
   function shouldRun() {
     if (document.visibilityState === 'hidden') return { ok: false, reason: 'Page hidden.' };
     if (window.BlueprintsVoiceMode?.sttMode?.() !== 'wake_to_talk') return { ok: false, reason: 'Wake to Talk is not selected.' };
-    if (window.BlueprintsVoiceMode?.isActiveOwner?.() !== true) return { ok: false, reason: 'Wake to Talk is selected but this browser is not activated for Voice Mode.' };
+    if (window.BlueprintsVoiceMode?.isActiveOwner?.() !== true) return { ok: false, reason: 'Wake to Talk is selected but this browser is not the Active Browser.' };
     if (!window.WakeToTalkState) return { ok: false, reason: 'Wake to Talk state machine is unavailable.' };
     if (!navigator.mediaDevices?.getUserMedia) return { ok: false, reason: 'Browser microphone capture is unavailable.' };
     if (typeof WebSocket === 'undefined') return { ok: false, reason: 'Browser websocket support is unavailable.' };
@@ -986,9 +986,9 @@ const WakeToTalkController = (() => {
       const browserId = window.BlueprintsVoiceMode?.getBrowserId?.() || '';
       if (!active || active.browser_id !== browserId || window.BlueprintsVoiceMode?.ownsActiveSttMode?.('wake_to_talk') !== true) {
         state.runtimeReason = active && active.browser_id !== browserId
-          ? 'Another browser is activated for Voice Mode.'
+          ? 'Another browser is the Active Browser.'
           : (window.BlueprintsVoiceMode?.sttMode?.() === 'wake_to_talk'
-            ? 'This browser is not activated for Voice Mode.'
+            ? 'This browser is not the Active Browser.'
             : 'Wake to Talk is not selected.');
         publishRuntime('', 0, state.runtimeReason);
         return;

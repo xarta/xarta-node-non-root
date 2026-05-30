@@ -974,6 +974,12 @@
     }
   }
 
+  window.BlueprintsHardRefresh = Object.freeze({
+    run: hardRefreshClientAssets,
+    prepareReloadUrl: HardRefreshStateMachine.prepareReloadUrl,
+    STATE: HardRefreshStateMachine.STATE,
+  });
+
   function clearOriginPressTimer() {
     if (_originPressTimer) {
       clearTimeout(_originPressTimer);
@@ -1479,6 +1485,138 @@
       },
     },
   };
+
+  function normalizeSelectorAutomationAction(value) {
+    return String(value || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
+  }
+
+  function normalizeSelectorAutomationEventKind(value) {
+    const key = String(value || 'click').trim().toLowerCase().replace(/[-\s]+/g, '_');
+    if (key === 'tap' || key === 'single' || key === 'single_click') return 'click';
+    if (key === 'dblclick' || key === 'double' || key === 'double_tap') return 'double_click';
+    if (key === 'long' || key === 'hold' || key === 'long_tap') return 'long_press';
+    if (key === 'double_click' || key === 'long_press') return key;
+    return 'click';
+  }
+
+  function emitSelectorAutomationEvent(action, eventKind, def) {
+    if (typeof CustomEvent === 'undefined') return { defaultPrevented: false };
+    const event = new CustomEvent('blueprints:selector-action-command', {
+      bubbles: true,
+      cancelable: true,
+      detail: {
+        action,
+        event_kind: eventKind,
+        label: def?.label || '',
+        source: 'active-browser-command',
+      },
+    });
+    const target = typeof document !== 'undefined' ? document : window;
+    target.dispatchEvent(event);
+    return event;
+  }
+
+  function runSelectorAutomationAction(action, options = {}) {
+    const key = normalizeSelectorAutomationAction(action);
+    const eventKind = normalizeSelectorAutomationEventKind(options.event_kind || options.eventKind);
+    const def = BUTTON_DEFS[key];
+    const isPaging = key === 'paging-button';
+    const meta = _dbItemMeta[key] || null;
+
+    if (!key || (!def && !isPaging)) {
+      return { ok: false, handled: false, detail: 'unknown_selector_action', action: key, event_kind: eventKind };
+    }
+
+    const event = emitSelectorAutomationEvent(key, eventKind, def);
+    hardRefreshRecordTelemetry('selector-action:automation', {
+      action: key,
+      eventKind,
+      label: def?.label || '',
+      defaultPrevented: !!event.defaultPrevented,
+    });
+    if (event.defaultPrevented) {
+      return { ok: true, handled: false, prevented: true, action: key, event_kind: eventKind };
+    }
+
+    if (eventKind === 'long_press') {
+      if (
+        key === 'settings'
+        && typeof window.BlueprintsVoiceMode !== 'undefined'
+        && typeof window.BlueprintsVoiceMode.open === 'function'
+      ) {
+        window.BlueprintsVoiceMode.open({ source: 'selector-settings-long-press' });
+        return { ok: true, handled: true, action: key, event_kind: eventKind };
+      }
+      if (typeof window.BlueprintsTtsClient !== 'undefined') {
+        window.BlueprintsTtsClient.speak({
+          text: `${def?.label || key} long press.`,
+          interrupt: true,
+          mode: 'stream',
+          eventKind: 'long_press',
+          fallbackKind: 'neutral',
+        }).catch(() => {});
+      }
+      return { ok: true, handled: true, action: key, event_kind: eventKind };
+    }
+
+    if (eventKind === 'double_click') {
+      if (key === 'synthesis') {
+        const clockDef = BUTTON_DEFS.clock;
+        if (clockDef && typeof clockDef.doAction === 'function') {
+          clockDef.doAction();
+          return { ok: true, handled: true, action: key, event_kind: eventKind };
+        }
+      }
+      if (typeof window.BlueprintsTtsClient !== 'undefined') {
+        window.BlueprintsTtsClient.speak({
+          text: `${def?.label || key} double tap.`,
+          interrupt: true,
+          mode: 'stream',
+          eventKind: 'double_tap',
+          fallbackKind: 'neutral',
+        }).catch(() => {});
+      }
+      return { ok: true, handled: true, action: key, event_kind: eventKind };
+    }
+
+    const delayMs = options.play_sound === false ? 0 : playDbActionSound(meta);
+    const runClick = () => {
+      if (isPaging) {
+        const { pages } = getButtonPages();
+        const pageCount = Math.max(1, pages.length);
+        _buttonPage = (_buttonPage + 1) % pageCount;
+        renderActionButtons();
+        return;
+      }
+      if (!def) return;
+      if (typeof def.doAction === 'function') {
+        def.doAction();
+        return;
+      }
+      if (
+        def.bridgeGroup
+        && window.BlueprintsHubMenuBridge
+        && typeof window.BlueprintsHubMenuBridge.switchGroup === 'function'
+      ) {
+        window.BlueprintsHubMenuBridge.switchGroup(def.bridgeGroup);
+        return;
+      }
+      navigateToNodePath(def.buildPath());
+    };
+
+    if (delayMs > 0 && !isPaging) {
+      window.setTimeout(runClick, delayMs);
+    } else {
+      runClick();
+    }
+    return { ok: true, handled: true, delayed_ms: delayMs, action: key, event_kind: eventKind };
+  }
+
+  window.BlueprintsNodeSelectorActions = Object.freeze({
+    run: runSelectorAutomationAction,
+    normalizeAction: normalizeSelectorAutomationAction,
+    normalizeEventKind: normalizeSelectorAutomationEventKind,
+  });
 
   const LS_NODES = 'bp_nodes_v2';
   const LS_CURRENT = 'bp_current_v2';

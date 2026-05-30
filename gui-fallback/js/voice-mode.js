@@ -1,9 +1,10 @@
-// voice-mode.js - browser-local STT/TTS selection plus backend-activated browser state.
+// voice-mode.js - browser-local STT/TTS selection plus backend Active Browser state.
 
 'use strict';
 
 const BlueprintsVoiceMode = (() => {
   const LS_BROWSER_ID = 'blueprints.voice.browser_id';
+  const SS_TAB_ID = 'blueprints.active_browser.tab_id';
   const LS_STT = 'blueprints.voice.stt_enabled';
   const LS_STT_MODE = 'blueprints.voice.stt_mode';
   const LS_STT_NOISE = 'blueprints.voice.stt_noise_reduction_enabled';
@@ -77,6 +78,20 @@ const BlueprintsVoiceMode = (() => {
       return generated;
     } catch (_) {
       return `browser-${Date.now()}`;
+    }
+  }
+
+  function _tabId() {
+    try {
+      const existing = sessionStorage.getItem(SS_TAB_ID);
+      if (existing) return existing;
+      const generated = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+        ? crypto.randomUUID()
+        : `tab-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      sessionStorage.setItem(SS_TAB_ID, generated);
+      return generated;
+    } catch (_) {
+      return `tab-${Date.now()}`;
     }
   }
 
@@ -268,6 +283,7 @@ const BlueprintsVoiceMode = (() => {
     return {
       browser_id: _browserId(),
       browser_label: _browserLabel(),
+      tab_id: _tabId(),
       stt_enabled: Boolean(sttMode),
       stt_mode: sttMode,
       stt_noise_reduction_enabled: _boolFromStorage(LS_STT_NOISE),
@@ -531,7 +547,7 @@ const BlueprintsVoiceMode = (() => {
 
   function _wakeRuntimeLabel(local) {
     if (local.stt_mode !== STT_MODE_WAKE) return 'Wake to Talk is not selected.';
-    if (!_isActiveOwner()) return 'Wake to Talk is selected but this browser is not activated.';
+    if (!_isActiveOwner()) return 'Wake to Talk is selected but this browser is not the Active Browser.';
     const state = String(_wakeRuntime.state || '').toUpperCase();
     if (_wakeRuntime.reason && (!state || state === 'DISABLED' || state === 'SELECTED_INACTIVE')) {
       return _wakeRuntime.reason;
@@ -602,7 +618,7 @@ const BlueprintsVoiceMode = (() => {
 
     if (els.browserLabel) els.browserLabel.textContent = local.browser_label;
     if (els.browserMeta) {
-      els.browserMeta.textContent = `Activated browser: ${_activeBrowserLabel(active)}`;
+      els.browserMeta.textContent = `Active Browser: ${_activeBrowserLabel(active)}`;
     }
     if (els.sttRealtime) els.sttRealtime.checked = local.stt_mode === STT_MODE_REALTIME;
     if (els.sttPush) els.sttPush.checked = local.stt_mode === STT_MODE_PUSH;
@@ -681,7 +697,7 @@ const BlueprintsVoiceMode = (() => {
     }
     if (els.activate) {
       els.activate.textContent = ownsActivation ? 'Deactivate' : 'Activate';
-      els.activate.disabled = !ownsActivation && !local.stt_enabled && !local.tts_enabled;
+      els.activate.disabled = false;
     }
     _syncExternalVoiceState();
     _syncWakeToTalkController();
@@ -953,45 +969,29 @@ const BlueprintsVoiceMode = (() => {
 
   async function activate() {
     const local = _localState();
-    if (!local.stt_enabled && !local.tts_enabled) {
-      _setStatus('Enable STT or TTS before activating this browser.');
-      _render();
-      return;
-    }
-    _setStatus('Activating...');
+    _setStatus('Activating browser...');
     await _post(ACTIVATE_URL, local);
-    _setStatus('Voice Mode activated for this browser.');
+    _setStatus('This browser is now the Active Browser.');
   }
 
   async function deactivate() {
-    _setStatus('Deactivating...');
+    _setStatus('Deactivating browser...');
     await _post(DEACTIVATE_URL, _localState());
-    _setStatus('Voice Mode deactivated for this browser.');
-  }
-
-  async function _deactivateIfNowInvalid() {
-    const local = _localState();
-    if (_isActiveOwner() && !local.stt_enabled && !local.tts_enabled) {
-      await deactivate();
-    }
+    _setStatus('This browser is no longer the Active Browser.');
   }
 
   async function _syncActiveActivationAfterLocalChange() {
     if (!_isActiveOwner() || _activeActivationSyncInFlight) return;
     const local = _localState();
-    if (!local.stt_enabled && !local.tts_enabled) {
-      await deactivate();
-      return;
-    }
     const active = _serverState.active || {};
     const activeMode = _normalizeSttMode(active.stt_mode, Boolean(active.stt_enabled));
     const activeTts = !!active.tts_enabled;
     if (activeMode === local.stt_mode && activeTts === local.tts_enabled) return;
     _activeActivationSyncInFlight = true;
     try {
-      _setStatus('Updating activated Voice Mode state...');
+      _setStatus('Updating Active Browser state...');
       await _post(ACTIVATE_URL, local);
-      _setStatus('Activated Voice Mode state updated.');
+      _setStatus('Active Browser state updated.');
     } finally {
       _activeActivationSyncInFlight = false;
     }
@@ -1388,6 +1388,8 @@ const BlueprintsVoiceMode = (() => {
     setSttNoiseReductionLevelDb: _setSttNoiseLevelDb,
     maybePlayAnnouncementCue,
     getBrowserId: _browserId,
+    getBrowserLabel: _browserLabel,
+    getTabId: _tabId,
   };
 })();
 

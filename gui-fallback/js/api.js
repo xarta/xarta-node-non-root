@@ -4,6 +4,56 @@ const _LS_FE_SETTINGS   = 'bp_fe_settings';
 const _LS_TIME_OFFSETS  = 'blueprints_api_time_offsets_v1';
 const _API_TIME_TTL_MS  = 5 * 60 * 1000;
 const _apiTimeSyncInflight = new Map();
+const _apiActivity = {
+  inFlight: 0,
+  sequence: 0,
+  lastStartedAt: 0,
+  lastFinishedAt: Date.now(),
+};
+
+function _emitApiActivity(reason, detail = {}) {
+  const now = Date.now();
+  const snapshot = {
+    reason,
+    in_flight: _apiActivity.inFlight,
+    sequence: _apiActivity.sequence,
+    last_started_ms: _apiActivity.lastStartedAt,
+    last_finished_ms: _apiActivity.lastFinishedAt,
+    quiet_for_ms: _apiActivity.inFlight > 0 ? 0 : Math.max(0, now - _apiActivity.lastFinishedAt),
+    ...detail,
+  };
+  try {
+    document.dispatchEvent(new CustomEvent('blueprints:api-activity', { detail: snapshot }));
+  } catch (_) {}
+}
+
+function _beginApiActivity(url) {
+  _apiActivity.inFlight += 1;
+  _apiActivity.sequence += 1;
+  _apiActivity.lastStartedAt = Date.now();
+  _emitApiActivity('start', { url: String(url || '') });
+  let done = false;
+  return (status = 0) => {
+    if (done) return;
+    done = true;
+    _apiActivity.inFlight = Math.max(0, _apiActivity.inFlight - 1);
+    _apiActivity.lastFinishedAt = Date.now();
+    _emitApiActivity('finish', { url: String(url || ''), status });
+  };
+}
+
+window.BlueprintsApiActivity = {
+  snapshot() {
+    const now = Date.now();
+    return {
+      in_flight: _apiActivity.inFlight,
+      sequence: _apiActivity.sequence,
+      last_started_ms: _apiActivity.lastStartedAt,
+      last_finished_ms: _apiActivity.lastFinishedAt,
+      quiet_for_ms: _apiActivity.inFlight > 0 ? 0 : Math.max(0, now - _apiActivity.lastFinishedAt),
+    };
+  },
+};
 
 function _apiOriginFor(url) {
   try {
@@ -132,44 +182,56 @@ async function apiFetch(url, options = {}) {
   if (deferDuringColumnResize) {
     await _waitForColumnResizeToEnd();
   }
+  const trackActivity = options.trackActivity !== false;
+  const finishActivity = trackActivity ? _beginApiActivity(url) : null;
   const secret = localStorage.getItem(_LS_SECRET_KEY) || '';
-  const token  = await _computeApiToken(secret, url);
-  const hadToken = !!token;
-  const fetchOptions = { ...options };
-  delete fetchOptions.deferDuringColumnResize;
-  const merged = {
-    ...fetchOptions,
-    headers: { ...(fetchOptions.headers || {}), ...(token ? { 'X-API-Token': token } : {}) },
-  };
-  const r = await fetch(url, merged);
-  if (r.status === 401) {
-    if (!hadToken) {
-      openApiKeyModal(false);
-      return r;
-    }
+  let finalStatus = 0;
+  try {
+    const token  = await _computeApiToken(secret, url);
+    const hadToken = !!token;
+    const fetchOptions = { ...options };
+    delete fetchOptions.deferDuringColumnResize;
+    delete fetchOptions.trackActivity;
+    const merged = {
+      ...fetchOptions,
+      headers: { ...(fetchOptions.headers || {}), ...(token ? { 'X-API-Token': token } : {}) },
+    };
+    const r = await fetch(url, merged);
+    finalStatus = r.status;
+    if (r.status === 401) {
+      if (!hadToken) {
+        openApiKeyModal(false);
+        return r;
+      }
 
-    const likelyAuthFailure = await _isLikelyTotpAuthFailure(r, true);
-    if (!likelyAuthFailure) {
-      return r;
-    }
+      const likelyAuthFailure = await _isLikelyTotpAuthFailure(r, true);
+      if (!likelyAuthFailure) {
+        return r;
+      }
 
-    // Retry once before showing auth-failed UI to avoid false alarms on
-    // occasional boundary timing and transient 401 responses.
-    const retryToken = await _computeApiToken(secret, url, { forceTimeSync: true });
-    if (retryToken) {
-      const retryResp = await fetch(url, {
-        ...fetchOptions,
-        headers: { ...(fetchOptions.headers || {}), 'X-API-Token': retryToken },
-      });
-      if (retryResp.status !== 401) return retryResp;
-      const retryLikelyAuthFailure = await _isLikelyTotpAuthFailure(retryResp, true);
-      if (retryLikelyAuthFailure) openApiKeyModal(true);
-      return retryResp;
-    }
+      // Retry once before showing auth-failed UI to avoid false alarms on
+      // occasional boundary timing and transient 401 responses.
+      const retryToken = await _computeApiToken(secret, url, { forceTimeSync: true });
+      if (retryToken) {
+        const retryResp = await fetch(url, {
+          ...fetchOptions,
+          headers: { ...(fetchOptions.headers || {}), 'X-API-Token': retryToken },
+        });
+        finalStatus = retryResp.status;
+        if (retryResp.status !== 401) return retryResp;
+        const retryLikelyAuthFailure = await _isLikelyTotpAuthFailure(retryResp, true);
+        if (retryLikelyAuthFailure) openApiKeyModal(true);
+        return retryResp;
+      }
 
-    openApiKeyModal(true);
+      openApiKeyModal(true);
+    }
+    return r;
+  } finally {
+    if (finishActivity) {
+      finishActivity(finalStatus);
+    }
   }
-  return r;
 }
 
 function openApiKeyModal(authFailed = false) {
