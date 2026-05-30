@@ -318,6 +318,24 @@ const VadDevModal = (() => {
     return MODE_MANUAL;
   }
 
+  function selectedControlsMode() {
+    return modeFromInput(state.selectedMode || MODE_MANUAL);
+  }
+
+  function vadOnlyControlsRelevant() {
+    return selectedControlsMode() !== MODE_MANUAL;
+  }
+
+  function setSharedControlDisabled(input, disabled) {
+    if (!input) return;
+    const off = !!disabled;
+    input.disabled = off;
+    const wrap = input.closest?.('label');
+    if (!wrap) return;
+    wrap.classList.toggle('is-disabled', off);
+    wrap.setAttribute('aria-disabled', off ? 'true' : 'false');
+  }
+
   function status(message) {
     setText(els.status, message, '');
   }
@@ -379,7 +397,7 @@ const VadDevModal = (() => {
     setText(els.vadResetLabel, formatVadResetTimeout(els.vadReset?.value));
     if (els.noiseThreshold) els.noiseThreshold.value = String(threshold);
     setText(els.noiseThresholdLabel, `${threshold.toFixed(0)} dB`);
-    refreshNoiseControlStates();
+    refreshNoiseControlStates(selectedControlsMode());
   }
 
   function voiceNoiseEnabled() {
@@ -407,6 +425,11 @@ const VadDevModal = (() => {
     if (Number.isFinite(vadReset) && els.vadReset) {
       els.vadReset.value = String(Math.max(0, Math.min(VAD_RESET_TIMEOUT_MAX_MS, Math.round(vadReset / 50) * 50)));
     }
+    const vadRelevant = vadOnlyControlsRelevant();
+    setSharedControlDisabled(els.sileroToggle, !vadRelevant);
+    setSharedControlDisabled(els.autoPreRollToggle, !vadRelevant);
+    setSharedControlDisabled(els.vadReset, !vadRelevant);
+    setSharedControlDisabled(els.noiseThreshold, !vadRelevant);
     renderRangeLabels();
   }
 
@@ -476,11 +499,13 @@ const VadDevModal = (() => {
   }
 
   function refreshNoiseControlStates(mode = currentMode()) {
+    mode = modeFromInput(mode);
+    const vadRelevant = mode !== MODE_MANUAL;
     const noise = applyNoiseThresholdStatus(mode);
     const auto = autoPreRollStatus(mode);
-    if (els.noiseThresholdWrap) els.noiseThresholdWrap.dataset.state = noise.noise_threshold_color;
+    if (els.noiseThresholdWrap) els.noiseThresholdWrap.dataset.state = vadRelevant ? noise.noise_threshold_color : 'neutral';
     if (els.autoPreRollWrap) {
-      els.autoPreRollWrap.classList.toggle('is-active', !!auto.auto_pre_roll_active);
+      els.autoPreRollWrap.classList.toggle('is-active', vadRelevant && !!auto.auto_pre_roll_active);
     }
   }
 
@@ -1895,16 +1920,25 @@ const VadDevModal = (() => {
   function controlsSnapshot() {
     const detector = selectedVadDetector();
     const thresholdDb = noiseThresholdDb();
+    const controlsMode = selectedControlsMode();
+    const vadControlsRelevant = controlsMode !== MODE_MANUAL;
     return {
+      selected_mode: controlsMode,
+      vad_only_controls_relevant: vadControlsRelevant,
       noise_reduction_enabled: !!els.noiseToggle?.checked,
       noise_level_db: Number(els.noiseLevel?.value || 6),
       speech_aggregation_timeout_ms: Number(els.aggregation?.value || 80),
       vad_reset_timeout_ms: Number(els.vadReset?.value || 0),
+      vad_reset_timeout_disabled: !!els.vadReset?.disabled,
       auto_pre_roll_enabled: !!state.autoPreRollEnabled,
+      auto_pre_roll_disabled: !!els.autoPreRollToggle?.disabled,
       noise_threshold_db: thresholdDb,
+      noise_threshold_disabled: !!els.noiseThreshold?.disabled,
+      noise_threshold_state: els.noiseThresholdWrap?.dataset?.state || (vadControlsRelevant ? '' : 'neutral'),
       detector,
       vad_detector: detector,
       silero_enabled: !!state.sileroEnabled,
+      silero_disabled: !!els.sileroToggle?.disabled,
       silero_model: SILERO_MODEL,
     };
   }
@@ -2285,6 +2319,7 @@ const VadDevModal = (() => {
       ? els.tabManual
       : (mode === MODE_VAD ? els.tabVad : els.tabRearm);
     if (radio) radio.checked = true;
+    renderSharedControls();
   }
 
   function rememberDevCommand(commandId) {
@@ -2600,9 +2635,9 @@ const VadDevModal = (() => {
     els.rearmTestStatus = el('vad-dev-rearm-test-status');
     els.rearmTranscript = el('vad-dev-rearm-transcript');
 
-    els.tabManual?.addEventListener('change', () => { if (els.tabManual.checked) { state.selectedMode = MODE_MANUAL; poll({ force: true }); } });
-    els.tabVad?.addEventListener('change', () => { if (els.tabVad.checked) { state.selectedMode = MODE_VAD; poll({ force: true }); } });
-    els.tabRearm?.addEventListener('change', () => { if (els.tabRearm.checked) { state.selectedMode = MODE_REARM; poll({ force: true }); } });
+    els.tabManual?.addEventListener('change', () => { if (els.tabManual.checked) { state.selectedMode = MODE_MANUAL; renderSharedControls(); poll({ force: true }); } });
+    els.tabVad?.addEventListener('change', () => { if (els.tabVad.checked) { state.selectedMode = MODE_VAD; renderSharedControls(); poll({ force: true }); } });
+    els.tabRearm?.addEventListener('change', () => { if (els.tabRearm.checked) { state.selectedMode = MODE_REARM; renderSharedControls(); poll({ force: true }); } });
     els.testMode?.addEventListener('click', () => { if (probe(MODE_MANUAL).enabled) disableProbeMode(MODE_MANUAL); else void enableProbeMode(MODE_MANUAL); });
     els.testRecord?.addEventListener('click', () => { void startRecording(MODE_MANUAL); });
     els.testStop?.addEventListener('click', () => stopRecording(MODE_MANUAL));

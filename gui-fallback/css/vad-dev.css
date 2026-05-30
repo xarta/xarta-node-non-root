@@ -52,6 +52,25 @@
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
+.vad-dev-settings .wake-dev-check.is-disabled,
+.vad-dev-settings .wake-dev-slider.is-disabled {
+  cursor: default;
+  opacity: 0.68;
+}
+
+.vad-dev-settings .wake-dev-slider.is-disabled input[type="range"] {
+  cursor: not-allowed;
+}
+
+.vad-dev-threshold[data-state="neutral"] {
+  border-color: rgba(var(--hub-accent-rgb), 0.2);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.vad-dev-threshold[data-state="neutral"] output {
+  color: var(--hub-accent);
+}
+
 .vad-dev-threshold[data-state="green"] {
   border-color: rgba(74, 222, 128, 0.38);
   background: rgba(22, 101, 52, 0.12);
