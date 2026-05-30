@@ -4647,6 +4647,11 @@
           <span class="hub-checkbox__box" aria-hidden="true"></span>
           <span class="hub-checkbox__label wake-dev-check__label">Silero VAD</span>
         </label>
+        <label class="hub-checkbox wake-dev-check vad-dev-auto-pre-roll" id="vad-dev-auto-pre-roll-wrap">
+          <input class="hub-checkbox__input" type="checkbox" id="vad-dev-auto-pre-roll-toggle" data-vad-dev-control="auto_pre_roll" />
+          <span class="hub-checkbox__box" aria-hidden="true"></span>
+          <span class="hub-checkbox__label wake-dev-check__label">Auto Pre-Roll</span>
+        </label>
         <label class="wake-dev-slider" for="vad-dev-noise-level">
           <span>Noise level</span>
           <input type="range" id="vad-dev-noise-level" min="0" max="12" step="0.5" value="6" autocomplete="off" data-vad-dev-control="noise_level_db" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
@@ -4661,6 +4666,11 @@
           <span>VAD reset timeout</span>
           <input type="range" id="vad-dev-vad-reset-timeout" min="0" max="2000" step="50" value="300" autocomplete="off" data-vad-dev-control="vad_reset_timeout_ms" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
           <output id="vad-dev-vad-reset-label" for="vad-dev-vad-reset-timeout">300 ms</output>
+        </label>
+        <label class="wake-dev-slider vad-dev-threshold" for="vad-dev-noise-threshold" id="vad-dev-noise-threshold-wrap" data-state="green">
+          <span>Noise threshold</span>
+          <input type="range" id="vad-dev-noise-threshold" min="-80" max="0" step="2" value="-40" autocomplete="off" data-vad-dev-control="noise_threshold_db" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
+          <output id="vad-dev-noise-threshold-label" for="vad-dev-noise-threshold">-40 dB</output>
         </label>
       </div>
 

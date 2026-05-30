@@ -27,6 +27,13 @@ const VadDevModal = (() => {
   const VAD_TEST_NOISE_UP_ALPHA = 0.996;
   const VAD_TEST_NOISE_UP_CAP_RATIO = 1.18;
   const VAD_TEST_BASELINE_HOLDOFF_MS = 650;
+  const NOISE_THRESHOLD_DEFAULT_DB = -40;
+  const NOISE_THRESHOLD_MIN_DB = -80;
+  const NOISE_THRESHOLD_MAX_DB = 0;
+  const NOISE_THRESHOLD_STEP_DB = 2;
+  const AUTO_PRE_ROLL_LOOKBACK_FRAMES = 1;
+  const AUTO_PRE_ROLL_BUFFER_MS = 3200;
+  const AUTO_PRE_ROLL_BUFFER_MAX_FRAMES = 96;
   const VAD_RESET_TIMEOUT_MAX_MS = 2000;
   const DETECTOR_ENERGY = 'energy_delta';
   const DETECTOR_SILERO = 'silero_vad';
@@ -76,6 +83,8 @@ const VadDevModal = (() => {
     timelinePromise: null,
     selectedMode: MODE_MANUAL,
     sileroEnabled: false,
+    autoPreRollEnabled: false,
+    noiseThresholdDb: NOISE_THRESHOLD_DEFAULT_DB,
     sileroScriptPromises: {},
     devCommandIds: [],
     devStatusLastAt: 0,
@@ -89,6 +98,29 @@ const VadDevModal = (() => {
   };
 
   const els = {};
+
+  function createPreRollState() {
+    return {
+      frameId: 0,
+      lastCapturedFrameId: 0,
+      buffer: [],
+      bufferMs: 0,
+      lastSentFrameId: 0,
+      vadDetectionFrameId: null,
+      startFrameId: null,
+      selectedFrameIds: [],
+      selectedFrameRange: '',
+      selectedFrames: 0,
+      audioMs: 0,
+      fallbackReason: 'not_requested',
+      sentFrameIds: [],
+      sentFrameRange: '',
+      active: false,
+      applied: false,
+      reason: 'disabled',
+      lookbackFrames: AUTO_PRE_ROLL_LOOKBACK_FRAMES,
+    };
+  }
 
   function createSileroState() {
     return {
@@ -130,6 +162,14 @@ const VadDevModal = (() => {
       energyDeltaDb: 0,
       noiseFloorDb: -80,
       noiseFloor: 0,
+      noiseEstimate: 0,
+      noiseEstimateDb: -80,
+      noiseEstimateState: 'unavailable',
+      noiseThresholdDb: NOISE_THRESHOLD_DEFAULT_DB,
+      noiseThresholdExceeded: false,
+      noiseThresholdColor: 'green',
+      noiseHoldUntil: 0,
+      lastNoiseEstimateAt: 0,
       enterThreshold: 0,
       exitThreshold: 0,
       strongEnterThreshold: 0,
@@ -167,6 +207,7 @@ const VadDevModal = (() => {
       lastLevel: 0,
       delayFrames: [],
       pendingFrames: [],
+      preRoll: createPreRollState(),
       segmentId: 0,
       autoRearmPending: false,
       autoRearmSegmentId: 0,
@@ -299,6 +340,32 @@ const VadDevModal = (() => {
     return Math.max(-80, 20 * Math.log10(safe));
   }
 
+  function clampNoiseThresholdDb(value) {
+    const numeric = Number(value);
+    const safe = Number.isFinite(numeric) ? numeric : NOISE_THRESHOLD_DEFAULT_DB;
+    const stepped = Math.round(safe / NOISE_THRESHOLD_STEP_DB) * NOISE_THRESHOLD_STEP_DB;
+    return Math.max(NOISE_THRESHOLD_MIN_DB, Math.min(NOISE_THRESHOLD_MAX_DB, stepped));
+  }
+
+  function noiseThresholdDb() {
+    const fromControl = els.noiseThreshold ? Number(els.noiseThreshold.value) : state.noiseThresholdDb;
+    state.noiseThresholdDb = clampNoiseThresholdDb(fromControl);
+    return state.noiseThresholdDb;
+  }
+
+  function compactFrameIds(ids) {
+    const clean = (Array.isArray(ids) ? ids : [])
+      .map(value => Number(value))
+      .filter(value => Number.isFinite(value) && value > 0)
+      .sort((a, b) => a - b);
+    if (!clean.length) return '';
+    const first = clean[0];
+    const last = clean[clean.length - 1];
+    const contiguous = clean.every((value, index) => index === 0 || value === clean[index - 1] + 1);
+    if (clean.length === 1) return String(first);
+    return contiguous ? `${first}-${last}` : clean.join(',');
+  }
+
   function formatVadResetTimeout(ms) {
     const value = Math.max(0, Math.min(VAD_RESET_TIMEOUT_MAX_MS, Math.round(Number(ms || 0) / 50) * 50));
     return value > 0 ? `${value} ms` : 'Off';
@@ -306,9 +373,13 @@ const VadDevModal = (() => {
 
   function renderRangeLabels() {
     const level = Number(els.noiseLevel?.value || 6);
+    const threshold = noiseThresholdDb();
     setText(els.noiseLevelLabel, `${level.toFixed(1)} dB`);
     setText(els.aggregationLabel, `${Number(els.aggregation?.value || 80)} ms`);
     setText(els.vadResetLabel, formatVadResetTimeout(els.vadReset?.value));
+    if (els.noiseThreshold) els.noiseThreshold.value = String(threshold);
+    setText(els.noiseThresholdLabel, `${threshold.toFixed(0)} dB`);
+    refreshNoiseControlStates();
   }
 
   function voiceNoiseEnabled() {
@@ -327,6 +398,8 @@ const VadDevModal = (() => {
     const vm = voiceMode();
     if (els.noiseToggle) els.noiseToggle.checked = voiceNoiseEnabled();
     if (els.sileroToggle) els.sileroToggle.checked = !!state.sileroEnabled;
+    if (els.autoPreRollToggle) els.autoPreRollToggle.checked = !!state.autoPreRollEnabled;
+    if (els.noiseThreshold) els.noiseThreshold.value = String(noiseThresholdDb());
     if (els.noiseLevel) els.noiseLevel.value = String(voiceNoiseLevelDb());
     const aggregation = Number(vm?.sttAggregationTimeoutMs?.());
     if (Number.isFinite(aggregation) && els.aggregation) els.aggregation.value = String(aggregation);
@@ -346,6 +419,69 @@ const VadDevModal = (() => {
       if (Number.isFinite(value) && els.aggregation) els.aggregation.value = String(value);
     } catch (_) {}
     renderSharedControls();
+  }
+
+  function applyNoiseThresholdStatus(mode = currentMode()) {
+    mode = modeFromInput(mode);
+    const vad = probe(mode).vad;
+    const thresholdDb = noiseThresholdDb();
+    const estimateDb = Number(vad.noiseEstimateDb ?? vad.noiseFloorDb ?? -80);
+    const available = mode !== MODE_MANUAL
+      && vad.noiseEstimateState !== 'unavailable'
+      && Number.isFinite(estimateDb);
+    const exceeded = !!(available && estimateDb > thresholdDb);
+    const color = exceeded ? 'red' : 'green';
+    vad.noiseThresholdDb = thresholdDb;
+    vad.noiseThresholdExceeded = exceeded;
+    vad.noiseThresholdColor = color;
+    return {
+      noise_floor_db: available ? estimateDb : -80,
+      noise_estimate_db: available ? estimateDb : -80,
+      noise_estimate_state: available ? vad.noiseEstimateState : 'unavailable',
+      noise_threshold_db: thresholdDb,
+      noise_threshold_exceeded: exceeded,
+      noise_threshold_color: color,
+      noise_threshold_available: available,
+    };
+  }
+
+  function autoPreRollStatus(mode = currentMode()) {
+    const noise = applyNoiseThresholdStatus(mode);
+    if (!state.autoPreRollEnabled) {
+      return {
+        auto_pre_roll_enabled: false,
+        auto_pre_roll_active: false,
+        auto_pre_roll_reason: 'disabled',
+      };
+    }
+    if (!noise.noise_threshold_available) {
+      return {
+        auto_pre_roll_enabled: true,
+        auto_pre_roll_active: false,
+        auto_pre_roll_reason: 'noise_estimate_unavailable',
+      };
+    }
+    if (!noise.noise_threshold_exceeded) {
+      return {
+        auto_pre_roll_enabled: true,
+        auto_pre_roll_active: false,
+        auto_pre_roll_reason: 'noise_threshold_green',
+      };
+    }
+    return {
+      auto_pre_roll_enabled: true,
+      auto_pre_roll_active: true,
+      auto_pre_roll_reason: 'noise_threshold_exceeded',
+    };
+  }
+
+  function refreshNoiseControlStates(mode = currentMode()) {
+    const noise = applyNoiseThresholdStatus(mode);
+    const auto = autoPreRollStatus(mode);
+    if (els.noiseThresholdWrap) els.noiseThresholdWrap.dataset.state = noise.noise_threshold_color;
+    if (els.autoPreRollWrap) {
+      els.autoPreRollWrap.classList.toggle('is-active', !!auto.auto_pre_roll_active);
+    }
   }
 
   function firstServerId() {
@@ -578,6 +714,14 @@ const VadDevModal = (() => {
     if (options.resetNoiseFloor) {
       vad.noiseFloor = 0;
       vad.noiseFloorDb = -80;
+      vad.noiseEstimate = 0;
+      vad.noiseEstimateDb = -80;
+      vad.noiseEstimateState = 'unavailable';
+      vad.noiseThresholdDb = noiseThresholdDb();
+      vad.noiseThresholdExceeded = false;
+      vad.noiseThresholdColor = 'green';
+      vad.noiseHoldUntil = 0;
+      vad.lastNoiseEstimateAt = 0;
       vad.enterThreshold = 0;
       vad.exitThreshold = 0;
       vad.strongEnterThreshold = 0;
@@ -596,7 +740,7 @@ const VadDevModal = (() => {
       vad.quietFrames = 0;
       pushAction(mode, 'sileroCandidateStart', {
         detector: DETECTOR_SILERO,
-        audio_frame: target.framesSent,
+        audio_frame: target.preRoll?.lastCapturedFrameId || null,
         ...detail,
       });
     }
@@ -625,7 +769,10 @@ const VadDevModal = (() => {
     }
     if (speechStarted && target.vadRecordEnabled && !target.recording && !target.finalizing && !target.starting) {
       setProbeStatus(mode, 'Silero VAD Record triggered; opening STT.');
-      void startRecording(mode, { reason: 'silero_vad_record' });
+      void startRecording(mode, {
+        reason: 'silero_vad_record',
+        vad_detection_frame_id: target.preRoll?.lastCapturedFrameId || null,
+      });
     }
   }
 
@@ -841,13 +988,14 @@ const VadDevModal = (() => {
     target.finalWaitTimeoutMs = 0;
   }
 
-  function addSample(mode, features) {
+  function addSample(mode, features, frame = null) {
     const target = probe(mode);
     const level = Math.max(0, Math.min(1, Number(features.level) || 0));
     target.lastLevel = level;
     const now = Date.now();
     target.samples.push({
       at: now,
+      frame_id: frame?.frame_id || null,
       level,
       rms: Math.max(0, Number(features.rms) || 0),
       peak: Math.max(0, Number(features.peak) || 0),
@@ -857,7 +1005,114 @@ const VadDevModal = (() => {
     target.samples = target.samples.filter(sample => sample.at >= now - WINDOW_MS - 1000);
   }
 
-  function updateVad(mode, features, now = Date.now()) {
+  function resetPreRollSegment(mode, options = {}) {
+    const preRoll = probe(mode).preRoll || createPreRollState();
+    probe(mode).preRoll = preRoll;
+    preRoll.lastSentFrameId = 0;
+    if (options.clearProof) {
+      preRoll.vadDetectionFrameId = null;
+      preRoll.startFrameId = null;
+      preRoll.selectedFrameIds = [];
+      preRoll.selectedFrameRange = '';
+      preRoll.selectedFrames = 0;
+      preRoll.audioMs = 0;
+      preRoll.fallbackReason = 'not_requested';
+      preRoll.sentFrameIds = [];
+      preRoll.sentFrameRange = '';
+      preRoll.active = false;
+      preRoll.applied = false;
+      preRoll.reason = 'disabled';
+    }
+  }
+
+  function resetPreRollBuffer(mode) {
+    const target = probe(mode);
+    target.preRoll = createPreRollState();
+    target.delayFrames = [];
+    target.pendingFrames = [];
+  }
+
+  function trimPreRollBuffer(preRoll) {
+    preRoll.bufferMs = preRoll.buffer.reduce((sum, frame) => sum + (Number(frame.duration_ms) || 0), 0);
+    while (
+      preRoll.buffer.length > AUTO_PRE_ROLL_BUFFER_MAX_FRAMES
+      || (preRoll.buffer.length > 1 && preRoll.bufferMs > AUTO_PRE_ROLL_BUFFER_MS)
+    ) {
+      const removed = preRoll.buffer.shift();
+      preRoll.bufferMs -= Number(removed?.duration_ms || 0);
+    }
+    preRoll.bufferMs = Math.max(0, preRoll.bufferMs);
+  }
+
+  function captureAudioFrame(mode, input, audioContext, features, now = Date.now()) {
+    const target = probe(mode);
+    const pcm = downsampleFloat32(input, audioContext.sampleRate);
+    if (!pcm?.byteLength) return null;
+    const preRoll = target.preRoll || createPreRollState();
+    target.preRoll = preRoll;
+    preRoll.frameId += 1;
+    preRoll.lastCapturedFrameId = preRoll.frameId;
+    const frame = {
+      frame_id: preRoll.frameId,
+      at_ms: now,
+      duration_ms: input?.length && audioContext.sampleRate
+        ? (input.length / audioContext.sampleRate) * 1000
+        : 0,
+      byte_length: pcm.byteLength,
+      rms: Math.max(0, Number(features?.rms) || 0),
+      peak: Math.max(0, Number(features?.peak) || 0),
+      vad_energy: Math.max(0, Number(features?.vadEnergy) || 0),
+      energy_db: linearToDb(features?.vadEnergy || 0),
+      pcm,
+    };
+    preRoll.buffer.push(frame);
+    trimPreRollBuffer(preRoll);
+    return frame;
+  }
+
+  function updateNoiseEstimate(mode, features, now = Date.now()) {
+    if (mode === MODE_MANUAL) return;
+    const target = probe(mode);
+    const vad = target.vad;
+    const energy = Math.max(0, Number(features?.vadEnergy) || 0);
+    const currentEstimate = Math.max(VAD_TEST_NOISE_MIN, Math.min(VAD_TEST_NOISE_MAX, Number(vad.noiseEstimate || vad.noiseFloor || 0)));
+    const hasEstimate = !!(vad.noiseEstimate || vad.noiseFloor);
+    let estimate = hasEstimate
+      ? currentEstimate
+      : Math.max(VAD_TEST_NOISE_MIN, Math.min(VAD_TEST_NOISE_MAX, energy || 0.002));
+    const detectorBusy = !!(
+      vad.candidateActive
+      || vad.speaking
+      || target.recording
+      || target.finalizing
+      || target.starting
+      || (vad.lastVoiceAt && now - vad.lastVoiceAt < VAD_TEST_BASELINE_HOLDOFF_MS)
+      || (vad.noiseHoldUntil && now < vad.noiseHoldUntil)
+    );
+    const canMeasure = !!target.enabled && !detectorBusy;
+    if (canMeasure) {
+      const limitedEnergy = energy > estimate
+        ? Math.min(energy, estimate * VAD_TEST_NOISE_UP_CAP_RATIO)
+        : energy;
+      const alpha = limitedEnergy < estimate ? VAD_TEST_NOISE_DOWN_ALPHA : VAD_TEST_NOISE_UP_ALPHA;
+      estimate = Math.max(
+        VAD_TEST_NOISE_MIN,
+        Math.min(VAD_TEST_NOISE_MAX, (estimate * alpha) + (limitedEnergy * (1 - alpha))),
+      );
+      vad.noiseEstimateState = 'idle_measuring';
+      vad.lastNoiseEstimateAt = now;
+    } else {
+      vad.noiseEstimateState = hasEstimate ? 'frozen_during_speech' : 'unavailable';
+    }
+    vad.noiseEstimate = estimate;
+    vad.noiseEstimateDb = linearToDb(estimate);
+    vad.noiseFloor = estimate;
+    vad.noiseFloorDb = vad.noiseEstimateDb;
+    vad.baselinePaused = !canMeasure;
+    applyNoiseThresholdStatus(mode);
+  }
+
+  function updateVad(mode, features, now = Date.now(), frame = null) {
     if (mode === MODE_MANUAL) return;
     const target = probe(mode);
     const vad = target.vad;
@@ -895,7 +1150,7 @@ const VadDevModal = (() => {
         vad.candidateFrames = 0;
         vad.quietFrames = 0;
         pushAction(mode, 'vadCandidateStart', {
-          audio_frame: target.framesSent,
+          audio_frame: frame?.frame_id || target.preRoll?.lastCapturedFrameId || null,
           delay_frames: VAD_TEST_DELAY_FRAMES,
           delta_db: Number(deltaDb.toFixed(1)),
           noise_floor_db: Number(noiseFloorDb.toFixed(1)),
@@ -917,24 +1172,6 @@ const VadDevModal = (() => {
 
     const candidateAgeMs = vad.candidateStartedAt ? Math.max(0, now - vad.candidateStartedAt) : 0;
     const candidatePersisted = vad.candidateFrames >= VAD_TEST_CONFIRM_FRAMES || candidateAgeMs >= VAD_TEST_CONFIRM_MIN_MS;
-    const quietEnoughForBaseline = !vad.candidateActive
-      && !vad.speaking
-      && !target.recording
-      && !target.finalizing
-      && !target.starting
-      && (!vad.lastVoiceAt || now - vad.lastVoiceAt >= VAD_TEST_BASELINE_HOLDOFF_MS);
-    vad.baselinePaused = !quietEnoughForBaseline;
-    if (quietEnoughForBaseline) {
-      const limitedEnergy = energy > noiseFloor
-        ? Math.min(energy, noiseFloor * VAD_TEST_NOISE_UP_CAP_RATIO)
-        : energy;
-      const alpha = limitedEnergy < noiseFloor ? VAD_TEST_NOISE_DOWN_ALPHA : VAD_TEST_NOISE_UP_ALPHA;
-      vad.noiseFloor = Math.max(
-        VAD_TEST_NOISE_MIN,
-        Math.min(VAD_TEST_NOISE_MAX, (noiseFloor * alpha) + (limitedEnergy * (1 - alpha))),
-      );
-      vad.noiseFloorDb = linearToDb(vad.noiseFloor);
-    }
     const metricFloor = Math.max(VAD_TEST_NOISE_MIN, Math.min(VAD_TEST_NOISE_MAX, vad.noiseFloor));
     vad.noiseFloorDb = linearToDb(metricFloor);
     vad.enterThreshold = Math.max(VAD_TEST_ABSOLUTE_FLOOR, metricFloor * Math.pow(10, VAD_TEST_ENTER_DELTA_DB / 20));
@@ -957,7 +1194,10 @@ const VadDevModal = (() => {
       });
       if (speechStarted && target.vadRecordEnabled && !target.recording && !target.finalizing && !target.starting) {
         setProbeStatus(mode, 'VAD Record triggered; opening STT.');
-        void startRecording(mode, { reason: 'vad_record' });
+        void startRecording(mode, {
+          reason: 'vad_record',
+          vad_detection_frame_id: frame?.frame_id || target.preRoll?.lastCapturedFrameId || null,
+        });
       }
     } else if (vad.speaking && sustainingFrame) {
       vad.lastVoiceAt = now;
@@ -981,17 +1221,134 @@ const VadDevModal = (() => {
     }
   }
 
-  function sendPcm(mode, pcm, source = 'stream') {
+  function preRollReadiness(mode, detectionFrameId = null) {
+    mode = modeFromInput(mode);
+    const target = probe(mode);
+    const auto = autoPreRollStatus(mode);
+    if (!auto.auto_pre_roll_active) return { ...auto, apply: false, reason: auto.auto_pre_roll_reason };
+    if (mode === MODE_MANUAL) return { ...auto, apply: false, reason: 'manual_mode' };
+    if (!target.enabled) return { ...auto, apply: false, reason: 'test_mode_off' };
+    if (!target.vadRecordEnabled) return { ...auto, apply: false, reason: 'vad_record_not_armed' };
+    if (!Number(detectionFrameId || 0)) return { ...auto, apply: false, reason: 'no_detection_frame' };
+    if (!target.preRoll?.buffer?.length) return { ...auto, apply: false, reason: 'no_pre_roll_frames' };
+    return { ...auto, apply: true, reason: 'noise_threshold_exceeded' };
+  }
+
+  function preparePreRollForRecording(mode, options = {}) {
+    mode = modeFromInput(mode);
+    const target = probe(mode);
+    const preRoll = target.preRoll || createPreRollState();
+    target.preRoll = preRoll;
+    resetPreRollSegment(mode, { clearProof: true });
+    if (mode === MODE_MANUAL) return;
+    const detectionFrameId = Number(options.vad_detection_frame_id || preRoll.lastCapturedFrameId || 0);
+    preRoll.vadDetectionFrameId = detectionFrameId || null;
+    const readiness = preRollReadiness(mode, detectionFrameId);
+    preRoll.active = !!readiness.auto_pre_roll_active;
+    preRoll.reason = readiness.reason;
+    if (!readiness.apply) {
+      preRoll.fallbackReason = readiness.reason;
+      return;
+    }
+    const buffer = preRoll.buffer;
+    const oldest = Number(buffer[0]?.frame_id || 0);
+    const latest = Number(buffer[buffer.length - 1]?.frame_id || 0);
+    let startFrameId = detectionFrameId - AUTO_PRE_ROLL_LOOKBACK_FRAMES;
+    let fallbackReason = '';
+    if (!oldest || !latest) {
+      preRoll.reason = 'no_pre_roll_frames';
+      preRoll.fallbackReason = 'no_pre_roll_frames';
+      return;
+    }
+    if (startFrameId < 1) {
+      startFrameId = detectionFrameId;
+      fallbackReason = 'previous_frame_unavailable';
+    } else if (startFrameId < oldest) {
+      startFrameId = oldest;
+      fallbackReason = detectionFrameId <= oldest ? 'previous_frame_unavailable' : 'previous_frame_rolled_out';
+    }
+    if (startFrameId > latest) {
+      startFrameId = latest;
+      fallbackReason = 'detection_frame_not_in_buffer';
+    }
+    preRoll.startFrameId = startFrameId;
+    preRoll.fallbackReason = fallbackReason;
+    preRoll.applied = true;
+    pushAction(mode, 'autoPreRollSelect', {
+      applied: true,
+      reason: preRoll.reason,
+      lookback_frames: AUTO_PRE_ROLL_LOOKBACK_FRAMES,
+      vad_detection_frame_id: detectionFrameId,
+      pre_roll_start_frame_id: startFrameId,
+      fallback_reason: fallbackReason,
+      buffer_frames: buffer.length,
+    });
+  }
+
+  function collectPreRollFramesForRecording(mode) {
+    const target = probe(mode);
+    const preRoll = target.preRoll || createPreRollState();
+    target.preRoll = preRoll;
+    if (!preRoll.applied || !preRoll.startFrameId) return [];
+    const frames = preRoll.buffer
+      .filter(frame => Number(frame.frame_id) >= Number(preRoll.startFrameId))
+      .sort((a, b) => Number(a.frame_id) - Number(b.frame_id));
+    if (!frames.length) {
+      preRoll.fallbackReason = preRoll.fallbackReason || 'selected_frames_unavailable';
+      preRoll.applied = false;
+      return [];
+    }
+    preRoll.selectedFrameIds = frames.map(frame => Number(frame.frame_id));
+    preRoll.selectedFrameRange = compactFrameIds(preRoll.selectedFrameIds);
+    preRoll.selectedFrames = frames.length;
+    preRoll.audioMs = frames.reduce((sum, frame) => sum + (Number(frame.duration_ms) || 0), 0);
+    return frames;
+  }
+
+  function preRollSnapshot(mode) {
+    const preRoll = probe(mode).preRoll || createPreRollState();
+    const auto = autoPreRollStatus(mode);
+    return {
+      auto_pre_roll_enabled: auto.auto_pre_roll_enabled,
+      auto_pre_roll_active: auto.auto_pre_roll_active,
+      auto_pre_roll_reason: auto.auto_pre_roll_reason,
+      pre_roll_lookback_frames: AUTO_PRE_ROLL_LOOKBACK_FRAMES,
+      pre_roll_buffer_frames: preRoll.buffer.length,
+      pre_roll_buffer_ms: Math.round(preRoll.bufferMs || 0),
+      pre_roll_selected_frames: preRoll.selectedFrames || 0,
+      pre_roll_audio_ms: Math.round(preRoll.audioMs || 0),
+      pre_roll_start_frame_id: preRoll.startFrameId,
+      vad_detection_frame_id: preRoll.vadDetectionFrameId,
+      pre_roll_fallback_reason: preRoll.fallbackReason || '',
+      pre_roll_sent_frame_ids: preRoll.sentFrameRange || compactFrameIds(preRoll.sentFrameIds),
+      pre_roll_sent_frame_range: preRoll.sentFrameRange || compactFrameIds(preRoll.sentFrameIds),
+      pre_roll_selected_frame_ids: preRoll.selectedFrameRange || compactFrameIds(preRoll.selectedFrameIds),
+      pre_roll_selected_frame_range: preRoll.selectedFrameRange || compactFrameIds(preRoll.selectedFrameIds),
+      pre_roll_applied: !!preRoll.applied,
+    };
+  }
+
+  function sendPcm(mode, pcm, source = 'stream', metadata = {}) {
     const target = probe(mode);
     if (!pcm?.byteLength || target.ws?.readyState !== WebSocket.OPEN) return false;
     try {
       target.ws.send(pcm.buffer);
       target.bytesSent += pcm.byteLength;
       target.framesSent += 1;
+      const capturedFrameId = Number(metadata.frameId || 0);
+      if (mode !== MODE_MANUAL && capturedFrameId) {
+        const preRoll = target.preRoll || createPreRollState();
+        target.preRoll = preRoll;
+        preRoll.lastSentFrameId = Math.max(Number(preRoll.lastSentFrameId || 0), capturedFrameId);
+        preRoll.sentFrameIds.push(capturedFrameId);
+        preRoll.sentFrameIds = preRoll.sentFrameIds.slice(-80);
+        preRoll.sentFrameRange = compactFrameIds(preRoll.sentFrameIds);
+      }
       if (source !== 'stream') {
         pushAction(mode, mode === MODE_REARM ? 'rearmProbeFrame' : 'vadProbeFrame', {
           source,
           audio_frame: target.framesSent,
+          captured_frame_id: capturedFrameId || null,
         });
       }
       return true;
@@ -999,6 +1356,18 @@ const VadDevModal = (() => {
       pushAction(mode, mode === MODE_REARM ? 'rearmProbeError' : 'vadProbeError', { error: error.message || String(error) });
       return false;
     }
+  }
+
+  function sendAudioFrame(mode, frame, source = 'stream') {
+    if (!frame?.pcm?.byteLength) return false;
+    const preRoll = probe(mode).preRoll || createPreRollState();
+    if (mode !== MODE_MANUAL && source === 'stream' && Number(frame.frame_id || 0) <= Number(preRoll.lastSentFrameId || 0)) {
+      return false;
+    }
+    return sendPcm(mode, frame.pcm, source, {
+      frameId: frame.frame_id,
+      frameDurationMs: frame.duration_ms,
+    });
   }
 
   async function handleProbeMessage(mode, event) {
@@ -1063,20 +1432,17 @@ const VadDevModal = (() => {
     const output = event.outputBuffer?.getChannelData?.(0);
     if (output) output.fill(0);
     const input = event.inputBuffer.getChannelData(0);
+    const now = Date.now();
     const features = audioFeatures(input);
-    addSample(mode, features);
+    const frame = captureAudioFrame(mode, input, audioContext, features, now);
+    addSample(mode, features, frame);
     if (mode !== MODE_MANUAL && (target.vadRecordEnabled || target.vadStopEnabled)) {
-      if (selectedVadDetector() === DETECTOR_SILERO) updateSileroStop(mode, Date.now());
-      else updateVad(mode, features, Date.now());
+      if (selectedVadDetector() === DETECTOR_SILERO) updateSileroStop(mode, now);
+      else updateVad(mode, features, now, frame);
     }
+    if (mode !== MODE_MANUAL) updateNoiseEstimate(mode, features, now);
     if (!target.recording || target.ws?.readyState !== WebSocket.OPEN) return;
-    const pcm = downsampleFloat32(input, audioContext.sampleRate);
-    if (!pcm?.byteLength) return;
-    if (mode !== MODE_MANUAL && VAD_TEST_DELAY_FRAMES > 0) {
-      target.delayFrames.push(pcm);
-      while (target.delayFrames.length > VAD_TEST_DELAY_FRAMES) target.delayFrames.shift();
-    }
-    sendPcm(mode, pcm, 'stream');
+    sendAudioFrame(mode, frame, 'stream');
   }
 
   async function enableProbeMode(mode) {
@@ -1110,6 +1476,7 @@ const VadDevModal = (() => {
       target.startedAt = 0;
       target.delayFrames = [];
       target.pendingFrames = [];
+      resetPreRollBuffer(mode);
       if (mode === MODE_REARM) {
         target.transcript = '';
         target.events = [];
@@ -1156,6 +1523,7 @@ const VadDevModal = (() => {
     target.framesSent = 0;
     target.delayFrames = [];
     target.pendingFrames = [];
+    resetPreRollBuffer(mode);
     if (mode === MODE_REARM) clearRearmAutoState();
     resetVad(mode, Date.now(), { resetNoiseFloor: true, resetSilero: true, clearSileroError: true });
     if (wasTouched) {
@@ -1183,6 +1551,7 @@ const VadDevModal = (() => {
       clearRearmAutoState();
     }
     target.pendingFrames = [];
+    preparePreRollForRecording(mode, options);
     target.starting = mode !== MODE_MANUAL;
     renderProbeUi(mode);
     poll({ force: true });
@@ -1208,14 +1577,22 @@ const VadDevModal = (() => {
       target.recording = true;
       target.finalizing = false;
       target.starting = false;
-      const queued = target.pendingFrames.splice(0);
-      queued.forEach(frame => sendPcm(mode, frame, 'pre_roll'));
+      const queued = collectPreRollFramesForRecording(mode);
+      queued.forEach(frame => sendAudioFrame(mode, frame, 'pre_roll'));
+      const preRoll = preRollSnapshot(mode);
       pushAction(mode, mode === MODE_MANUAL ? 'manualRecordStart' : (mode === MODE_REARM ? 'rearmProbeRecordStart' : 'vadProbeRecordStart'), {
         route: STT_WS_URL,
         reason: options.reason || 'manual_record',
         vad: detectorForMode(mode),
         vad_record_enabled: !!target.vadRecordEnabled,
+        noise_reduction_enabled: voiceNoiseEnabled(),
+        noise_level_db: voiceNoiseLevelDb(),
         pre_roll_frames: queued.length,
+        pre_roll_audio_ms: preRoll.pre_roll_audio_ms,
+        pre_roll_start_frame_id: preRoll.pre_roll_start_frame_id,
+        vad_detection_frame_id: preRoll.vad_detection_frame_id,
+        pre_roll_fallback_reason: preRoll.pre_roll_fallback_reason,
+        pre_roll_sent_frame_ids: preRoll.pre_roll_sent_frame_ids,
       });
       const vadLabel = selectedVadDetector() === DETECTOR_SILERO ? 'Silero VAD test' : 'isolated energy VAD test';
       setProbeStatus(mode, voiceNoiseEnabled()
@@ -1245,6 +1622,7 @@ const VadDevModal = (() => {
         target.recording = false;
         target.finalizing = false;
         target.vadRecordEnabled = false;
+        resetPreRollSegment(mode);
         if (mode === MODE_REARM) clearRearmAutoState();
         pushAction(mode, mode === MODE_REARM ? 'rearmProbeRecordStop' : 'vadProbeRecordStop', {
           reason: 'cancel_armed_record',
@@ -1259,6 +1637,7 @@ const VadDevModal = (() => {
     }
     target.recording = false;
     target.finalizing = true;
+    if (mode !== MODE_MANUAL) resetPreRollSegment(mode);
     if (mode !== MODE_MANUAL) target.vadRecordEnabled = false;
     const vad = target.vad || {};
     const now = Date.now();
@@ -1325,6 +1704,7 @@ const VadDevModal = (() => {
     target.bytesSent = 0;
     target.framesSent = 0;
     target.pendingFrames = [];
+    resetPreRollBuffer(mode);
     if (mode === MODE_REARM) clearRearmAutoState();
     resetVad(mode, Date.now(), { resetNoiseFloor: true, resetSilero: true });
     setProbeStatus(mode, target.enabled
@@ -1428,6 +1808,8 @@ const VadDevModal = (() => {
     if (type === 'manualError') return '#f87171';
     if (type === 'vadProbeRecordStart' || type === 'vadProbeFinal' || type === 'rearmProbeRecordStart' || type === 'rearmProbeFinal' || type === 'vadCandidateConfirmed' || type === 'sileroReady' || type === 'sileroSpeechConfirmed') return '#22c55e';
     if (type === 'vadProbeRecordStop' || type === 'rearmProbeRecordStop' || type === 'vadStopMode' || type === 'sileroSpeechEnd') return '#fbbf24';
+    if (type === 'autoPreRollSelect') return action.applied ? '#22c55e' : '#fbbf24';
+    if (type === 'autoPreRollMode') return action.enabled ? '#22c55e' : '#aebfca';
     if (type === 'vadRecordMode' || type === 'vadDetectorMode' || type === 'vadTestMode' || type === 'rearmTestMode' || type === 'vadCandidateStart' || type === 'sileroLoad' || type === 'sileroCandidateStart') return '#38bdf8';
     if (type === 'vadProbeError' || type === 'rearmProbeError' || type === 'rearmProbeFinalTimeout' || type === 'sileroError' || type === 'sileroMisfire') return '#f87171';
     if (mode === MODE_REARM && type === 'controlState') return action.disabled ? 'rgba(148,168,179,0.72)' : (action.pressed ? '#38bdf8' : '#aebfca');
@@ -1447,6 +1829,8 @@ const VadDevModal = (() => {
     if (action.type === 'vadStopMode') return `VAD Stop ${action.enabled ? 'on' : 'off'}`;
     if (action.type === 'vadCandidateStart') return 'VAD candidate';
     if (action.type === 'vadCandidateConfirmed') return 'VAD strong';
+    if (action.type === 'autoPreRollSelect') return action.applied ? 'pre-roll selected' : `pre-roll ${action.reason || 'skipped'}`;
+    if (action.type === 'autoPreRollMode') return `pre-roll ${action.enabled ? 'on' : 'off'}`;
     if (action.type === 'sileroLoad') return 'Silero loading';
     if (action.type === 'sileroReady') return 'Silero ready';
     if (action.type === 'sileroCandidateStart') return 'Silero candidate';
@@ -1510,11 +1894,14 @@ const VadDevModal = (() => {
 
   function controlsSnapshot() {
     const detector = selectedVadDetector();
+    const thresholdDb = noiseThresholdDb();
     return {
       noise_reduction_enabled: !!els.noiseToggle?.checked,
       noise_level_db: Number(els.noiseLevel?.value || 6),
       speech_aggregation_timeout_ms: Number(els.aggregation?.value || 80),
       vad_reset_timeout_ms: Number(els.vadReset?.value || 0),
+      auto_pre_roll_enabled: !!state.autoPreRollEnabled,
+      noise_threshold_db: thresholdDb,
       detector,
       vad_detector: detector,
       silero_enabled: !!state.sileroEnabled,
@@ -1525,6 +1912,7 @@ const VadDevModal = (() => {
   function probePublic(mode) {
     const target = probe(mode);
     const silero = target.silero || createSileroState();
+    const preRoll = mode === MODE_MANUAL ? {} : preRollSnapshot(mode);
     return {
       enabled: !!target.enabled,
       recording: !!target.recording,
@@ -1540,6 +1928,7 @@ const VadDevModal = (() => {
       actions_count: target.actions.length,
       fsm_state: probeFsm(mode),
       detector: detectorForMode(mode),
+      ...preRoll,
       silero: {
         enabled: mode !== MODE_MANUAL && !!state.sileroEnabled,
         loading: !!silero.loading,
@@ -1568,6 +1957,9 @@ const VadDevModal = (() => {
     const vadSpeech = !!vad.speaking;
     const vadStage = vad.candidateConfirmed ? 'strong' : (vad.candidateActive ? 'candidate' : 'idle');
     const span = transcriptSpan(mode, now);
+    const noiseStatus = applyNoiseThresholdStatus(mode);
+    const preRoll = preRollSnapshot(mode);
+    const controls = controlsSnapshot();
     const timeoutMarkerExists = mode === MODE_REARM && target.actions.some(action => (
       action.type === 'rearmProbeFinalTimeout'
       && Number(action.segment_id || 0) === Number(target.segmentId || 0)
@@ -1588,6 +1980,13 @@ const VadDevModal = (() => {
       silero_positive_threshold: Number(silero.positiveThreshold || SILERO_POSITIVE_THRESHOLD),
       silero_negative_threshold: Number(silero.negativeThreshold || SILERO_NEGATIVE_THRESHOLD),
       audio_frames_sent: target.framesSent,
+      noise_floor_db: noiseStatus.noise_floor_db,
+      noise_estimate_db: noiseStatus.noise_estimate_db,
+      noise_estimate_state: noiseStatus.noise_estimate_state,
+      noise_threshold_db: noiseStatus.noise_threshold_db,
+      noise_threshold_exceeded: noiseStatus.noise_threshold_exceeded,
+      noise_threshold_color: noiseStatus.noise_threshold_color,
+      ...preRoll,
       transcript: target.transcript,
       recent_stt_events: target.events,
       recent_actions: target.actions,
@@ -1605,7 +2004,12 @@ const VadDevModal = (() => {
         silence_age_ms: mode !== MODE_MANUAL && !vad.speaking && vad.lastVoiceAt ? Math.max(0, now - vad.lastVoiceAt) : (target.recording ? 0 : null),
         reset_timeout_ms: mode === MODE_MANUAL ? 0 : vadResetTimeoutMs(),
         noise_floor: Number(vad.noiseFloor || 0),
-        noise_floor_db: Number(vad.noiseFloorDb || -80),
+        noise_floor_db: noiseStatus.noise_floor_db,
+        noise_estimate_db: noiseStatus.noise_estimate_db,
+        noise_estimate_state: noiseStatus.noise_estimate_state,
+        noise_threshold_db: noiseStatus.noise_threshold_db,
+        noise_threshold_exceeded: noiseStatus.noise_threshold_exceeded,
+        noise_threshold_color: noiseStatus.noise_threshold_color,
         enter_threshold: Number(vad.enterThreshold || 0),
         exit_threshold: Number(vad.exitThreshold || 0),
         strong_enter_threshold: Number(vad.strongEnterThreshold || 0),
@@ -1632,12 +2036,15 @@ const VadDevModal = (() => {
         vad: detector,
         vad_record_enabled: !!target.vadRecordEnabled,
         vad_stop_enabled: !!target.vadStopEnabled,
+        noise_reduction_enabled: controls.noise_reduction_enabled,
+        noise_level_db: controls.noise_level_db,
         recording: !!target.recording,
         finalizing: !!target.finalizing,
         bytes_sent: target.bytesSent,
         frames_sent: target.framesSent,
+        ...preRoll,
       },
-      controls: controlsSnapshot(),
+      controls,
       modes: {
         [MODE_MANUAL]: probePublic(MODE_MANUAL),
         [MODE_VAD]: probePublic(MODE_VAD),
@@ -1651,8 +2058,10 @@ const VadDevModal = (() => {
         { label: 'Debug age', value: 'live' },
         { label: 'Level', value: formatDb(target.lastLevel || 0) },
         { label: 'Detector', value: detector },
-        { label: 'Noise', value: mode === MODE_MANUAL || detector === DETECTOR_SILERO ? '--' : `${Number(vad.noiseFloorDb || -80).toFixed(1)} dB` },
+        { label: 'Noise', value: mode === MODE_MANUAL || noiseStatus.noise_estimate_state === 'unavailable' ? '--' : `${Number(noiseStatus.noise_estimate_db || -80).toFixed(1)} dB` },
         { label: 'Delta', value: mode === MODE_MANUAL || detector === DETECTOR_SILERO ? '--' : `${Number(vad.energyDeltaDb || 0).toFixed(1)} dB` },
+        { label: 'Threshold', value: mode === MODE_MANUAL ? '--' : `${noiseStatus.noise_threshold_color} ${Number(noiseStatus.noise_threshold_db).toFixed(0)} dB` },
+        { label: 'Pre-roll', value: mode === MODE_MANUAL ? '--' : (preRoll.auto_pre_roll_active ? `on ${preRoll.pre_roll_buffer_frames}f` : preRoll.auto_pre_roll_reason) },
         { label: 'Silero', value: mode === MODE_MANUAL ? '--' : sileroStatusValue(mode) },
         { label: 'Speech P', value: mode === MODE_MANUAL || silero.isSpeechProbability == null ? '--' : Number(silero.isSpeechProbability).toFixed(3) },
         { label: 'Candidate', value: mode === MODE_MANUAL ? '--' : `${vadStage}${vad.candidateFrames ? `/${vad.candidateFrames}` : ''}` },
@@ -1700,6 +2109,7 @@ const VadDevModal = (() => {
     }
     const detector = selectedVadDetector();
     const silero = target.silero || createSileroState();
+    const preRoll = preRollSnapshot(mode);
     const pills = [
       {
         label: `${detector === DETECTOR_SILERO ? 'Silero VAD' : 'Energy VAD'} ${vadEnabled ? 'enabled' : 'off'} | ${vadSpeech ? 'speech' : 'quiet'} | ${vadStage} | record ${target.vadRecordEnabled ? 'on' : 'off'} | stop ${target.vadStopEnabled ? 'on' : 'off'}`,
@@ -1716,6 +2126,15 @@ const VadDevModal = (() => {
         maxWidth: 280,
       },
     ];
+    if (preRoll.auto_pre_roll_enabled) {
+      pills.push({
+        label: `Pre-roll ${preRoll.auto_pre_roll_active ? 'active' : 'idle'} | ${preRoll.pre_roll_buffer_frames} frames | ${preRoll.auto_pre_roll_reason}`,
+        background: preRoll.auto_pre_roll_active ? 'rgba(5,46,22,0.82)' : 'rgba(16,24,38,0.9)',
+        border: preRoll.auto_pre_roll_active ? 'rgba(74,222,128,0.68)' : 'rgba(148,168,179,0.42)',
+        color: '#f1f7fa',
+        maxWidth: 430,
+      });
+    }
     if (detector === DETECTOR_SILERO) {
       pills.splice(1, 0, {
         label: `Silero ${sileroStatusValue(mode)} | p ${silero.isSpeechProbability == null ? '--' : Number(silero.isSpeechProbability).toFixed(3)} | model ${silero.model || SILERO_MODEL}`,
@@ -1766,6 +2185,13 @@ const VadDevModal = (() => {
       actions: Array.isArray(snapshot?.recent_actions) ? snapshot.recent_actions.length : 0,
       events: Array.isArray(snapshot?.recent_stt_events) ? snapshot.recent_stt_events.length : 0,
       vad: snapshot?.vad || {},
+      pre_roll: {
+        buffer_frames: snapshot?.pre_roll_buffer_frames || 0,
+        buffer_ms: snapshot?.pre_roll_buffer_ms || 0,
+        selected_frames: snapshot?.pre_roll_selected_frames || 0,
+        sent: snapshot?.pre_roll_sent_frame_ids || '',
+        detection: snapshot?.vad_detection_frame_id || null,
+      },
     });
     const now = Date.now();
     if (!options.force && signature === state.devStatusSignature && now - state.devStatusLastAt < 2500) return;
@@ -1798,6 +2224,7 @@ const VadDevModal = (() => {
     maybeRearmAfterFinalTimeout();
     const mode = currentMode();
     const snapshot = renderTimeline();
+    refreshNoiseControlStates(mode);
     reportDevStatus(snapshot, mode, options);
   }
 
@@ -1956,8 +2383,38 @@ const VadDevModal = (() => {
     return false;
   }
 
+  function setAutoPreRollEnabled(enabled, options = {}) {
+    state.autoPreRollEnabled = !!enabled;
+    renderSharedControls();
+    const mode = currentMode();
+    if (mode !== MODE_MANUAL) {
+      pushAction(mode, 'autoPreRollMode', {
+        enabled: state.autoPreRollEnabled,
+        reason: options.reason || 'set_auto_pre_roll',
+        noise_threshold_db: noiseThresholdDb(),
+      });
+    }
+    poll({ force: true });
+  }
+
+  function setNoiseThreshold(value) {
+    state.noiseThresholdDb = clampNoiseThresholdDb(value);
+    if (els.noiseThreshold) els.noiseThreshold.value = String(state.noiseThresholdDb);
+    renderRangeLabels();
+    poll({ force: true });
+  }
+
   async function runSettingsCommand(action, payload) {
     const vm = voiceMode();
+    if (action === 'set_auto_pre_roll') {
+      setAutoPreRollEnabled(payloadBool(payload, true), { reason: 'remote_command' });
+      return true;
+    }
+    if (action === 'set_noise_threshold' || action === 'set_noise_threshold_db') {
+      const threshold = payloadNumber(payload, 'noise_threshold_db', 'threshold_db');
+      if (threshold != null) setNoiseThreshold(threshold);
+      return true;
+    }
     if (action === 'set_silero_vad') {
       await setSileroVadEnabled(payloadBool(payload, true), { reason: 'remote_command' });
       return true;
@@ -2106,12 +2563,17 @@ const VadDevModal = (() => {
     els.status = el('vad-dev-status');
     els.noiseToggle = el('vad-dev-noise-toggle');
     els.sileroToggle = el('vad-dev-silero-toggle');
+    els.autoPreRollWrap = el('vad-dev-auto-pre-roll-wrap');
+    els.autoPreRollToggle = el('vad-dev-auto-pre-roll-toggle');
     els.noiseLevel = el('vad-dev-noise-level');
     els.noiseLevelLabel = el('vad-dev-noise-level-label');
     els.aggregation = el('vad-dev-aggregation-timeout');
     els.aggregationLabel = el('vad-dev-aggregation-label');
     els.vadReset = el('vad-dev-vad-reset-timeout');
     els.vadResetLabel = el('vad-dev-vad-reset-label');
+    els.noiseThresholdWrap = el('vad-dev-noise-threshold-wrap');
+    els.noiseThreshold = el('vad-dev-noise-threshold');
+    els.noiseThresholdLabel = el('vad-dev-noise-threshold-label');
     els.tabManual = el('vad-dev-test-tab-manual');
     els.tabVad = el('vad-dev-test-tab-vad');
     els.tabRearm = el('vad-dev-test-tab-rearm');
@@ -2165,10 +2627,18 @@ const VadDevModal = (() => {
     els.sileroToggle?.addEventListener('change', () => {
       void setSileroVadEnabled(els.sileroToggle.checked, { reason: 'ui_toggle' });
     });
+    els.autoPreRollToggle?.addEventListener('change', () => {
+      setAutoPreRollEnabled(els.autoPreRollToggle.checked, { reason: 'ui_toggle' });
+    });
     els.noiseLevel?.addEventListener('input', () => {
       const level = Number(els.noiseLevel.value || 6);
       setText(els.noiseLevelLabel, `${level.toFixed(1)} dB`);
       voiceMode()?.setSttNoiseReductionLevelDb?.(level);
+      poll({ force: true });
+    });
+    els.noiseThreshold?.addEventListener('input', () => {
+      state.noiseThresholdDb = clampNoiseThresholdDb(els.noiseThreshold.value);
+      renderRangeLabels();
       poll({ force: true });
     });
     els.aggregation?.addEventListener('input', renderRangeLabels);

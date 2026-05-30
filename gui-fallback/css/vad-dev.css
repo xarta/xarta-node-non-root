@@ -34,6 +34,42 @@
   grid-column: 1 / -1;
 }
 
+.vad-dev-auto-pre-roll.is-active .hub-checkbox__box {
+  border-color: rgba(74, 222, 128, 0.78);
+  background: rgba(22, 163, 74, 0.2);
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.11);
+}
+
+.vad-dev-auto-pre-roll.is-active .hub-checkbox__box::after {
+  border-color: #4ade80;
+}
+
+.vad-dev-auto-pre-roll.is-active .wake-dev-check__label {
+  color: #bbf7d0;
+}
+
+.vad-dev-threshold {
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.vad-dev-threshold[data-state="green"] {
+  border-color: rgba(74, 222, 128, 0.38);
+  background: rgba(22, 101, 52, 0.12);
+}
+
+.vad-dev-threshold[data-state="green"] output {
+  color: #bbf7d0;
+}
+
+.vad-dev-threshold[data-state="red"] {
+  border-color: rgba(248, 113, 113, 0.58);
+  background: rgba(127, 29, 29, 0.2);
+}
+
+.vad-dev-threshold[data-state="red"] output {
+  color: #fecaca;
+}
+
 #vad-dev-test-tab-manual:checked ~ .wake-dev-test-tablist label[for="vad-dev-test-tab-manual"],
 #vad-dev-test-tab-vad:checked ~ .wake-dev-test-tablist label[for="vad-dev-test-tab-vad"],
 #vad-dev-test-tab-rearm:checked ~ .wake-dev-test-tablist label[for="vad-dev-test-tab-rearm"] {
