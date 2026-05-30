@@ -14,8 +14,19 @@ const VadDevModal = (() => {
   const DEV_STATUS_MIN_MS = 500;
   const VAD_TEST_DELAY_FRAMES = 0;
   const VAD_TEST_ABSOLUTE_FLOOR = 0.0012;
-  const VAD_TEST_STRONG_MULTIPLIER = 5;
+  const VAD_TEST_ENTER_DELTA_DB = 5.5;
+  const VAD_TEST_EXIT_DELTA_DB = 2.5;
+  const VAD_TEST_STRONG_DELTA_DB = 8.5;
+  const VAD_TEST_CONFIRM_FRAMES = 2;
+  const VAD_TEST_CONFIRM_MIN_MS = 80;
+  const VAD_TEST_RELEASE_FRAMES = 2;
   const VAD_TEST_EXIT_HANGOVER_MS = 180;
+  const VAD_TEST_NOISE_MIN = 0.00035;
+  const VAD_TEST_NOISE_MAX = 0.08;
+  const VAD_TEST_NOISE_DOWN_ALPHA = 0.92;
+  const VAD_TEST_NOISE_UP_ALPHA = 0.996;
+  const VAD_TEST_NOISE_UP_CAP_RATIO = 1.18;
+  const VAD_TEST_BASELINE_HOLDOFF_MS = 650;
   const VAD_RESET_TIMEOUT_MAX_MS = 2000;
   const SURFACE = 'vad_dev';
 
@@ -70,14 +81,24 @@ const VadDevModal = (() => {
       speaking: false,
       candidateActive: false,
       candidateConfirmed: false,
+      candidateStartedAt: 0,
+      candidateFrames: 0,
+      quietFrames: 0,
       speechSeenSinceReset: false,
       lastVoiceAt: 0,
       lastResetAt: 0,
       lastEnergy: 0,
+      lastEnergyDb: -80,
+      energyDeltaDb: 0,
+      noiseFloorDb: -80,
       noiseFloor: 0,
       enterThreshold: 0,
       exitThreshold: 0,
       strongEnterThreshold: 0,
+      enterDeltaDb: VAD_TEST_ENTER_DELTA_DB,
+      exitDeltaDb: VAD_TEST_EXIT_DELTA_DB,
+      strongDeltaDb: VAD_TEST_STRONG_DELTA_DB,
+      baselinePaused: false,
       lastAutoStopAt: 0,
     };
   }
@@ -181,6 +202,11 @@ const VadDevModal = (() => {
   function formatDb(level) {
     const safe = Math.max(0.0001, Math.min(1, Number(level) || 0));
     return `${Math.max(-80, 20 * Math.log10(safe)).toFixed(1)} dB`;
+  }
+
+  function linearToDb(value) {
+    const safe = Math.max(0.000001, Math.min(1, Number(value) || 0));
+    return Math.max(-80, 20 * Math.log10(safe));
   }
 
   function formatVadResetTimeout(ms) {
@@ -396,15 +422,28 @@ const VadDevModal = (() => {
     }
   }
 
-  function resetVad(mode, now = Date.now()) {
+  function resetVad(mode, now = Date.now(), options = {}) {
     const vad = probe(mode).vad;
     vad.speaking = false;
     vad.candidateActive = false;
     vad.candidateConfirmed = false;
+    vad.candidateStartedAt = 0;
+    vad.candidateFrames = 0;
+    vad.quietFrames = 0;
     vad.speechSeenSinceReset = false;
     vad.lastVoiceAt = 0;
     vad.lastResetAt = now;
     vad.lastEnergy = 0;
+    vad.lastEnergyDb = -80;
+    vad.energyDeltaDb = 0;
+    vad.baselinePaused = false;
+    if (options.resetNoiseFloor) {
+      vad.noiseFloor = 0;
+      vad.noiseFloorDb = -80;
+      vad.enterThreshold = 0;
+      vad.exitThreshold = 0;
+      vad.strongEnterThreshold = 0;
+    }
   }
 
   function vadResetTimeoutMs() {
@@ -446,49 +485,108 @@ const VadDevModal = (() => {
     const vad = target.vad;
     const energy = Number(features?.vadEnergy || 0);
     if (!vad.noiseFloor) {
-      vad.noiseFloor = Math.max(0.0005, Math.min(0.02, energy || 0.002));
+      vad.noiseFloor = Math.max(VAD_TEST_NOISE_MIN, Math.min(VAD_TEST_NOISE_MAX, energy || 0.002));
     }
-    const enterThreshold = Math.max(VAD_TEST_ABSOLUTE_FLOOR, (vad.noiseFloor * 4.0) + 0.00045);
-    const exitThreshold = Math.max(VAD_TEST_ABSOLUTE_FLOOR * 0.65, (vad.noiseFloor * 2.2) + 0.00025);
-    const strongEnterThreshold = enterThreshold * VAD_TEST_STRONG_MULTIPLIER;
-    const level = Number(features?.level || 0);
-    const speechNow = energy >= enterThreshold || level >= 0.035;
-    const strongSpeechNow = energy >= strongEnterThreshold || level >= (0.035 * VAD_TEST_STRONG_MULTIPLIER);
-    const speechStarted = speechNow && !vad.speaking;
+    const noiseFloor = Math.max(VAD_TEST_NOISE_MIN, Math.min(VAD_TEST_NOISE_MAX, vad.noiseFloor));
+    const energyDb = linearToDb(energy);
+    const noiseFloorDb = linearToDb(noiseFloor);
+    const deltaDb = Math.max(-30, Math.min(60, energyDb - noiseFloorDb));
+    const enterThreshold = Math.max(VAD_TEST_ABSOLUTE_FLOOR, noiseFloor * Math.pow(10, VAD_TEST_ENTER_DELTA_DB / 20));
+    const exitThreshold = Math.max(VAD_TEST_ABSOLUTE_FLOOR * 0.65, noiseFloor * Math.pow(10, VAD_TEST_EXIT_DELTA_DB / 20));
+    const strongEnterThreshold = Math.max(VAD_TEST_ABSOLUTE_FLOOR, noiseFloor * Math.pow(10, VAD_TEST_STRONG_DELTA_DB / 20));
+    const aboveAbsoluteFloor = energy >= VAD_TEST_ABSOLUTE_FLOOR;
+    const candidateFrame = aboveAbsoluteFloor && deltaDb >= VAD_TEST_ENTER_DELTA_DB;
+    const sustainingFrame = energy >= (VAD_TEST_ABSOLUTE_FLOOR * 0.65) && deltaDb >= VAD_TEST_EXIT_DELTA_DB;
+    const strongFrame = aboveAbsoluteFloor && deltaDb >= VAD_TEST_STRONG_DELTA_DB;
     vad.lastEnergy = energy;
+    vad.lastEnergyDb = energyDb;
+    vad.energyDeltaDb = deltaDb;
+    vad.noiseFloorDb = noiseFloorDb;
     vad.enterThreshold = enterThreshold;
     vad.exitThreshold = exitThreshold;
     vad.strongEnterThreshold = strongEnterThreshold;
+    vad.enterDeltaDb = VAD_TEST_ENTER_DELTA_DB;
+    vad.exitDeltaDb = VAD_TEST_EXIT_DELTA_DB;
+    vad.strongDeltaDb = VAD_TEST_STRONG_DELTA_DB;
 
-    if (speechNow) {
+    if (candidateFrame) {
+      if (!vad.candidateActive) {
+        vad.candidateActive = true;
+        vad.candidateConfirmed = false;
+        vad.candidateStartedAt = now;
+        vad.candidateFrames = 0;
+        vad.quietFrames = 0;
+        pushAction(mode, 'vadCandidateStart', {
+          audio_frame: target.framesSent,
+          delay_frames: VAD_TEST_DELAY_FRAMES,
+          delta_db: Number(deltaDb.toFixed(1)),
+          noise_floor_db: Number(noiseFloorDb.toFixed(1)),
+        });
+      }
+      vad.candidateFrames += 1;
+      vad.quietFrames = 0;
+    } else if (vad.candidateActive && sustainingFrame) {
+      vad.quietFrames = 0;
+    } else if (vad.candidateActive) {
+      vad.quietFrames += 1;
+      if (!vad.speaking && vad.quietFrames >= VAD_TEST_RELEASE_FRAMES) {
+        vad.candidateActive = false;
+        vad.candidateConfirmed = false;
+        vad.candidateStartedAt = 0;
+        vad.candidateFrames = 0;
+      }
+    }
+
+    const candidateAgeMs = vad.candidateStartedAt ? Math.max(0, now - vad.candidateStartedAt) : 0;
+    const candidatePersisted = vad.candidateFrames >= VAD_TEST_CONFIRM_FRAMES || candidateAgeMs >= VAD_TEST_CONFIRM_MIN_MS;
+    const quietEnoughForBaseline = !vad.candidateActive
+      && !vad.speaking
+      && !target.recording
+      && !target.finalizing
+      && !target.starting
+      && (!vad.lastVoiceAt || now - vad.lastVoiceAt >= VAD_TEST_BASELINE_HOLDOFF_MS);
+    vad.baselinePaused = !quietEnoughForBaseline;
+    if (quietEnoughForBaseline) {
+      const limitedEnergy = energy > noiseFloor
+        ? Math.min(energy, noiseFloor * VAD_TEST_NOISE_UP_CAP_RATIO)
+        : energy;
+      const alpha = limitedEnergy < noiseFloor ? VAD_TEST_NOISE_DOWN_ALPHA : VAD_TEST_NOISE_UP_ALPHA;
+      vad.noiseFloor = Math.max(
+        VAD_TEST_NOISE_MIN,
+        Math.min(VAD_TEST_NOISE_MAX, (noiseFloor * alpha) + (limitedEnergy * (1 - alpha))),
+      );
+      vad.noiseFloorDb = linearToDb(vad.noiseFloor);
+    }
+    const metricFloor = Math.max(VAD_TEST_NOISE_MIN, Math.min(VAD_TEST_NOISE_MAX, vad.noiseFloor));
+    vad.noiseFloorDb = linearToDb(metricFloor);
+    vad.enterThreshold = Math.max(VAD_TEST_ABSOLUTE_FLOOR, metricFloor * Math.pow(10, VAD_TEST_ENTER_DELTA_DB / 20));
+    vad.exitThreshold = Math.max(VAD_TEST_ABSOLUTE_FLOOR * 0.65, metricFloor * Math.pow(10, VAD_TEST_EXIT_DELTA_DB / 20));
+    vad.strongEnterThreshold = Math.max(VAD_TEST_ABSOLUTE_FLOOR, metricFloor * Math.pow(10, VAD_TEST_STRONG_DELTA_DB / 20));
+
+    if (vad.candidateActive && !vad.candidateConfirmed && candidatePersisted && (strongFrame || vad.candidateFrames >= VAD_TEST_CONFIRM_FRAMES)) {
+      const speechStarted = !vad.speaking;
+      vad.candidateConfirmed = true;
       vad.speaking = true;
       vad.speechSeenSinceReset = true;
+      vad.lastVoiceAt = now;
+      pushAction(mode, 'vadCandidateConfirmed', {
+        start_threshold: strongFrame ? 'delta_strong_confirmed' : 'delta_persistent_confirmed',
+        enter_delta_db: VAD_TEST_ENTER_DELTA_DB,
+        strong_delta_db: VAD_TEST_STRONG_DELTA_DB,
+        candidate_age_ms: candidateAgeMs,
+        candidate_frames: vad.candidateFrames,
+        delta_db: Number(deltaDb.toFixed(1)),
+      });
+      if (speechStarted && target.vadRecordEnabled && !target.recording && !target.finalizing && !target.starting) {
+        setProbeStatus(mode, 'VAD Record triggered; opening STT.');
+        void startRecording(mode, { reason: 'vad_record' });
+      }
+    } else if (vad.speaking && sustainingFrame) {
       vad.lastVoiceAt = now;
     } else if (vad.speaking && now - vad.lastVoiceAt > VAD_TEST_EXIT_HANGOVER_MS) {
       vad.speaking = false;
     }
-    if (!vad.speaking && energy < exitThreshold) {
-      vad.noiseFloor = (vad.noiseFloor * 0.985) + (energy * 0.015);
-    }
-    if (speechStarted) {
-      vad.candidateActive = true;
-      vad.candidateConfirmed = false;
-      pushAction(mode, 'vadCandidateStart', {
-        audio_frame: target.framesSent,
-        delay_frames: VAD_TEST_DELAY_FRAMES,
-      });
-      if (target.vadRecordEnabled && !target.recording && !target.finalizing && !target.starting) {
-        setProbeStatus(mode, 'VAD Record triggered; opening STT.');
-        void startRecording(mode, { reason: 'vad_record' });
-      }
-    }
-    if (vad.candidateActive && !vad.candidateConfirmed && strongSpeechNow) {
-      vad.candidateConfirmed = true;
-      pushAction(mode, 'vadCandidateConfirmed', {
-        start_threshold: 'strong_confirmed',
-        strong_multiplier: VAD_TEST_STRONG_MULTIPLIER,
-      });
-    }
+
     const timeoutMs = vadResetTimeoutMs();
     if (
       target.vadStopEnabled
@@ -641,7 +739,7 @@ const VadDevModal = (() => {
         target.segmentId = 0;
         clearRearmAutoState();
       }
-      resetVad(mode, Date.now());
+      resetVad(mode, Date.now(), { resetNoiseFloor: true });
       processor.onaudioprocess = audioEvent => processAudioFrame(mode, audioEvent, audioContext);
       source.connect(processor);
       processor.connect(audioContext.destination);
@@ -678,7 +776,7 @@ const VadDevModal = (() => {
     target.delayFrames = [];
     target.pendingFrames = [];
     if (mode === MODE_REARM) clearRearmAutoState();
-    resetVad(mode);
+    resetVad(mode, Date.now(), { resetNoiseFloor: true });
     if (wasTouched) {
       pushAction(mode, mode === MODE_MANUAL ? 'manualTestMode' : (mode === MODE_REARM ? 'rearmTestMode' : 'vadTestMode'), { reason: 'disabled' });
     }
@@ -845,7 +943,7 @@ const VadDevModal = (() => {
     target.framesSent = 0;
     target.pendingFrames = [];
     if (mode === MODE_REARM) clearRearmAutoState();
-    resetVad(mode);
+    resetVad(mode, Date.now(), { resetNoiseFloor: true });
     setProbeStatus(mode, target.enabled
       ? (mode === MODE_MANUAL ? 'VAD bypass test mode enabled. Mic is live; press Record to stream.' : `${modeConfig(mode).label.replace(' probe', '')} test mode enabled. Mic is live.`)
       : modeConfig(mode).statusOff);
@@ -1071,15 +1169,25 @@ const VadDevModal = (() => {
         speaking: mode === MODE_MANUAL ? !!target.recording : !!vad.speaking,
         candidate_active: !!vad.candidateActive,
         candidate_confirmed: !!vad.candidateConfirmed,
+        candidate_age_ms: vad.candidateStartedAt ? Math.max(0, now - vad.candidateStartedAt) : 0,
+        candidate_frames: Number(vad.candidateFrames || 0),
+        quiet_frames: Number(vad.quietFrames || 0),
         speech_seen_since_reset: mode === MODE_MANUAL ? !!target.recording : !!vad.speechSeenSinceReset,
         last_voice_age_ms: vad.lastVoiceAt ? Math.max(0, now - vad.lastVoiceAt) : (target.recording ? Math.max(0, now - (target.startedAt || now)) : null),
         silence_age_ms: mode !== MODE_MANUAL && !vad.speaking && vad.lastVoiceAt ? Math.max(0, now - vad.lastVoiceAt) : (target.recording ? 0 : null),
         reset_timeout_ms: mode === MODE_MANUAL ? 0 : vadResetTimeoutMs(),
         noise_floor: Number(vad.noiseFloor || 0),
+        noise_floor_db: Number(vad.noiseFloorDb || -80),
         enter_threshold: Number(vad.enterThreshold || 0),
         exit_threshold: Number(vad.exitThreshold || 0),
         strong_enter_threshold: Number(vad.strongEnterThreshold || 0),
+        enter_delta_db: Number(vad.enterDeltaDb || VAD_TEST_ENTER_DELTA_DB),
+        exit_delta_db: Number(vad.exitDeltaDb || VAD_TEST_EXIT_DELTA_DB),
+        strong_delta_db: Number(vad.strongDeltaDb || VAD_TEST_STRONG_DELTA_DB),
         energy: Number(vad.lastEnergy || 0),
+        energy_db: Number(vad.lastEnergyDb || -80),
+        energy_delta_db: Number(vad.energyDeltaDb || 0),
+        baseline_paused: !!vad.baselinePaused,
       },
       active_send: {
         route: STT_WS_URL,
@@ -1104,6 +1212,9 @@ const VadDevModal = (() => {
         { label: 'Frames', value: String(target.framesSent || 0) },
         { label: 'Debug age', value: 'live' },
         { label: 'Level', value: formatDb(target.lastLevel || 0) },
+        { label: 'Noise', value: mode === MODE_MANUAL ? '--' : `${Number(vad.noiseFloorDb || -80).toFixed(1)} dB` },
+        { label: 'Delta', value: mode === MODE_MANUAL ? '--' : `${Number(vad.energyDeltaDb || 0).toFixed(1)} dB` },
+        { label: 'Candidate', value: mode === MODE_MANUAL ? '--' : `${vadStage}${vad.candidateFrames ? `/${vad.candidateFrames}` : ''}` },
       ],
       source: `${config.label} | ${STT_WS_URL} | ${target.status || 'ready'}`,
       activeState: fsm,
@@ -1201,6 +1312,7 @@ const VadDevModal = (() => {
       modes: snapshot?.modes || {},
       actions: Array.isArray(snapshot?.recent_actions) ? snapshot.recent_actions.length : 0,
       events: Array.isArray(snapshot?.recent_stt_events) ? snapshot.recent_stt_events.length : 0,
+      vad: snapshot?.vad || {},
     });
     const now = Date.now();
     if (!options.force && signature === state.devStatusSignature && now - state.devStatusLastAt < 2500) return;
