@@ -4647,42 +4647,47 @@
           <span class="hub-checkbox__box" aria-hidden="true"></span>
           <span class="hub-checkbox__label wake-dev-check__label">Silero VAD</span>
         </label>
-        <label class="hub-checkbox wake-dev-check vad-dev-auto-pre-roll" id="vad-dev-auto-pre-roll-wrap">
+        <label class="hub-checkbox wake-dev-check vad-dev-pre-roll-toggle vad-dev-auto-pre-roll" id="vad-dev-auto-pre-roll-wrap">
           <input class="hub-checkbox__input" type="checkbox" id="vad-dev-auto-pre-roll-toggle" data-vad-dev-control="auto_pre_roll" />
           <span class="hub-checkbox__box" aria-hidden="true"></span>
           <span class="hub-checkbox__label wake-dev-check__label">Auto Pre-Roll</span>
+        </label>
+        <label class="hub-checkbox wake-dev-check vad-dev-pre-roll-toggle vad-dev-always-pre-roll" id="vad-dev-always-pre-roll-wrap">
+          <input class="hub-checkbox__input" type="checkbox" id="vad-dev-always-pre-roll-toggle" data-vad-dev-control="always_pre_roll" />
+          <span class="hub-checkbox__box" aria-hidden="true"></span>
+          <span class="hub-checkbox__label wake-dev-check__label">Always Pre-Roll</span>
         </label>
         <label class="wake-dev-slider" for="vad-dev-pre-roll-frames">
           <span>NUM PRE-ROLL</span>
           <input type="range" id="vad-dev-pre-roll-frames" min="1" max="4" step="1" value="1" autocomplete="off" data-vad-dev-control="pre_roll_frames" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
           <output id="vad-dev-pre-roll-frames-label" for="vad-dev-pre-roll-frames">1</output>
         </label>
-        <label class="wake-dev-slider" for="vad-dev-noise-level">
-          <span>Noise level</span>
-          <input type="range" id="vad-dev-noise-level" min="0" max="12" step="0.5" value="6" autocomplete="off" data-vad-dev-control="noise_level_db" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
-          <output id="vad-dev-noise-level-label" for="vad-dev-noise-level">6.0 dB</output>
-        </label>
-        <label class="wake-dev-slider" for="vad-dev-aggregation-timeout">
-          <span>Speech aggregation</span>
-          <input type="range" id="vad-dev-aggregation-timeout" min="50" max="300" step="10" value="80" autocomplete="off" data-vad-dev-control="speech_aggregation_timeout_ms" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
-          <output id="vad-dev-aggregation-label" for="vad-dev-aggregation-timeout">80 ms</output>
+        <label class="wake-dev-slider vad-dev-threshold" for="vad-dev-noise-threshold" id="vad-dev-noise-threshold-wrap" data-state="green">
+          <span>VAD PRE-ROLL</span>
+          <input type="range" id="vad-dev-noise-threshold" min="-80" max="0" step="2" value="-40" autocomplete="off" data-vad-dev-control="vad_pre_roll_db" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
+          <output id="vad-dev-noise-threshold-label" for="vad-dev-noise-threshold">-40 dB</output>
         </label>
         <label class="wake-dev-slider" for="vad-dev-vad-reset-timeout">
           <span>VAD reset timeout</span>
           <input type="range" id="vad-dev-vad-reset-timeout" min="0" max="2000" step="50" value="300" autocomplete="off" data-vad-dev-control="vad_reset_timeout_ms" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
           <output id="vad-dev-vad-reset-label" for="vad-dev-vad-reset-timeout">300 ms</output>
         </label>
-        <label class="wake-dev-slider vad-dev-threshold" for="vad-dev-noise-threshold" id="vad-dev-noise-threshold-wrap" data-state="green">
-          <span>Noise threshold</span>
-          <input type="range" id="vad-dev-noise-threshold" min="-80" max="0" step="2" value="-40" autocomplete="off" data-vad-dev-control="noise_threshold_db" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
-          <output id="vad-dev-noise-threshold-label" for="vad-dev-noise-threshold">-40 dB</output>
+        <label class="wake-dev-slider" for="vad-dev-noise-level">
+          <span>STT NOISE RED.</span>
+          <input type="range" id="vad-dev-noise-level" min="0" max="12" step="0.5" value="6" autocomplete="off" data-vad-dev-control="noise_level_db" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
+          <output id="vad-dev-noise-level-label" for="vad-dev-noise-level">6.0 dB</output>
+        </label>
+        <label class="wake-dev-slider" for="vad-dev-aggregation-timeout">
+          <span>STT AGGREGATION</span>
+          <input type="range" id="vad-dev-aggregation-timeout" min="50" max="300" step="10" value="80" autocomplete="off" data-vad-dev-control="speech_aggregation_timeout_ms" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
+          <output id="vad-dev-aggregation-label" for="vad-dev-aggregation-timeout">80 ms</output>
         </label>
       </div>
 
       <div class="wake-dev-card wake-dev-test wake-dev-test-tabs vad-dev-test-tabs">
-        <input class="wake-dev-test-tab-radio" type="radio" name="vad-dev-test-tab" id="vad-dev-test-tab-manual" checked>
+        <input class="wake-dev-test-tab-radio" type="radio" name="vad-dev-test-tab" id="vad-dev-test-tab-manual">
         <input class="wake-dev-test-tab-radio" type="radio" name="vad-dev-test-tab" id="vad-dev-test-tab-vad">
-        <input class="wake-dev-test-tab-radio" type="radio" name="vad-dev-test-tab" id="vad-dev-test-tab-rearm">
+        <input class="wake-dev-test-tab-radio" type="radio" name="vad-dev-test-tab" id="vad-dev-test-tab-rearm" checked>
         <div class="wake-dev-test-tablist" role="tablist" aria-label="STT test modes">
           <label class="wake-dev-test-tab" role="tab" for="vad-dev-test-tab-manual">Manual</label>
           <label class="wake-dev-test-tab" role="tab" for="vad-dev-test-tab-vad">VAD</label>

@@ -271,10 +271,18 @@ const BlueprintsVoiceMode = (() => {
       pre_roll_frames: Number.isFinite(preRollFrames)
         ? Math.max(STT_PRE_ROLL_FRAMES_MIN, Math.min(STT_PRE_ROLL_FRAMES_MAX, Math.round(preRollFrames / STT_PRE_ROLL_FRAMES_STEP) * STT_PRE_ROLL_FRAMES_STEP))
         : STT_PRE_ROLL_FRAMES_DEFAULT,
+      silero_vad_enabled: _policyBool(raw.silero_vad_enabled ?? raw.silero_enabled, false),
+      always_pre_roll_enabled: _policyBool(raw.always_pre_roll_enabled ?? raw.always_pre_roll, false),
       silence_reset_timeout_ms: Number.isFinite(silenceResetMs)
         ? Math.max(STT_SILENCE_RESET_MIN_MS, Math.min(STT_SILENCE_RESET_MAX_MS, Math.round(silenceResetMs / STT_SILENCE_RESET_STEP_MS) * STT_SILENCE_RESET_STEP_MS))
         : STT_SILENCE_RESET_DEFAULT_MS,
     };
+  }
+
+  function _policyBool(value, fallback = false) {
+    if (value == null) return !!fallback;
+    if (typeof value === 'boolean') return value;
+    return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
   }
 
   function _cleanPolicy(value) {
@@ -882,6 +890,52 @@ const BlueprintsVoiceMode = (() => {
     return nextStt;
   }
 
+  async function saveSileroVadEnabled(enabled) {
+    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
+    const nextStt = {
+      ...currentPolicy,
+      silero_vad_enabled: _cleanSttPolicy({ silero_vad_enabled: enabled }).silero_vad_enabled,
+    };
+    const response = await apiFetch(WAKE_SETTINGS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        wake_to_talk: getWakeSettings(),
+        stt: nextStt,
+      }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
+    _applyServerState(payload);
+    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
+      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
+    }));
+    return nextStt;
+  }
+
+  async function saveAlwaysPreRollEnabled(enabled) {
+    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
+    const nextStt = {
+      ...currentPolicy,
+      always_pre_roll_enabled: _cleanSttPolicy({ always_pre_roll_enabled: enabled }).always_pre_roll_enabled,
+    };
+    const response = await apiFetch(WAKE_SETTINGS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        wake_to_talk: getWakeSettings(),
+        stt: nextStt,
+      }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
+    _applyServerState(payload);
+    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
+      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
+    }));
+    return nextStt;
+  }
+
   async function saveSilenceResetTimeout(ms) {
     const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
     const nextStt = {
@@ -1094,6 +1148,14 @@ const BlueprintsVoiceMode = (() => {
 
   function preRollFrames() {
     return _cleanSttPolicy(_serverState.policy?.stt).pre_roll_frames;
+  }
+
+  function sileroVadEnabled() {
+    return _cleanSttPolicy(_serverState.policy?.stt).silero_vad_enabled;
+  }
+
+  function alwaysPreRollEnabled() {
+    return _cleanSttPolicy(_serverState.policy?.stt).always_pre_roll_enabled;
   }
 
   function silenceResetTimeoutMs() {
@@ -1405,6 +1467,8 @@ const BlueprintsVoiceMode = (() => {
     sttAggregationTimeoutMs,
     vadResetTimeoutMs,
     preRollFrames,
+    sileroVadEnabled,
+    alwaysPreRollEnabled,
     silenceResetTimeoutMs,
     sttMode,
     sttModeEnabled,
@@ -1419,6 +1483,8 @@ const BlueprintsVoiceMode = (() => {
     saveAggregationTimeout,
     saveVadResetTimeout,
     savePreRollFrames,
+    saveSileroVadEnabled,
+    saveAlwaysPreRollEnabled,
     saveSilenceResetTimeout,
     setSttMode: _setSttMode,
     setSttNoiseReductionEnabled: _setSttNoiseReduction,

@@ -35,6 +35,8 @@ const VadDevModal = (() => {
   const PRE_ROLL_FRAMES_MIN = 1;
   const PRE_ROLL_FRAMES_MAX = 4;
   const PRE_ROLL_FRAMES_STEP = 1;
+  const LS_AUTO_PRE_ROLL = 'blueprints.vad_dev.auto_pre_roll_enabled';
+  const LS_NOISE_THRESHOLD_DB = 'blueprints.vad_dev.noise_threshold_db';
   const AUTO_PRE_ROLL_BUFFER_MS = 3200;
   const AUTO_PRE_ROLL_BUFFER_MAX_FRAMES = 96;
   const VAD_RESET_TIMEOUT_MAX_MS = 2000;
@@ -84,11 +86,14 @@ const VadDevModal = (() => {
     pollTimer: null,
     timeline: null,
     timelinePromise: null,
-    selectedMode: MODE_MANUAL,
+    selectedMode: MODE_REARM,
     sileroEnabled: false,
-    autoPreRollEnabled: false,
+    autoPreRollEnabled: storedBool(LS_AUTO_PRE_ROLL, false),
+    alwaysPreRollEnabled: false,
     preRollFrames: PRE_ROLL_FRAMES_DEFAULT,
-    noiseThresholdDb: NOISE_THRESHOLD_DEFAULT_DB,
+    noiseThresholdDb: storedNoiseThresholdDb(),
+    sileroSaveInFlight: false,
+    alwaysPreRollSaveInFlight: false,
     sileroScriptPromises: {},
     devCommandIds: [],
     devStatusLastAt: 0,
@@ -235,6 +240,34 @@ const VadDevModal = (() => {
     return JSON.parse(JSON.stringify(value || {}));
   }
 
+  function storedBool(key, fallback = false) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw == null) return !!fallback;
+      return ['1', 'true', 'yes', 'on'].includes(String(raw).trim().toLowerCase());
+    } catch (_) {
+      return !!fallback;
+    }
+  }
+
+  function writeStoredBool(key, value) {
+    try { localStorage.setItem(key, value ? 'true' : 'false'); } catch (_) {}
+  }
+
+  function storedNoiseThresholdDb() {
+    try {
+      const raw = localStorage.getItem(LS_NOISE_THRESHOLD_DB);
+      if (raw == null || raw === '') return NOISE_THRESHOLD_DEFAULT_DB;
+      return clampNoiseThresholdDb(raw);
+    } catch (_) {
+      return NOISE_THRESHOLD_DEFAULT_DB;
+    }
+  }
+
+  function writeStoredNoiseThresholdDb(value) {
+    try { localStorage.setItem(LS_NOISE_THRESHOLD_DB, String(clampNoiseThresholdDb(value))); } catch (_) {}
+  }
+
   function frontendAssetVersion() {
     return cleanText(window.BLUEPRINTS_FRONTEND_VERSION?.asset_version || '');
   }
@@ -316,14 +349,14 @@ const VadDevModal = (() => {
   }
 
   function modeFromInput(value) {
-    const clean = cleanCommandText(value || state.selectedMode || MODE_MANUAL);
+    const clean = cleanCommandText(value || state.selectedMode || MODE_REARM);
     if (clean === 'rearm' || clean === 'vad_rearm') return MODE_REARM;
     if (clean === MODE_VAD) return MODE_VAD;
     return MODE_MANUAL;
   }
 
   function selectedControlsMode() {
-    return modeFromInput(state.selectedMode || MODE_MANUAL);
+    return modeFromInput(state.selectedMode || MODE_REARM);
   }
 
   function vadOnlyControlsRelevant() {
@@ -432,11 +465,26 @@ const VadDevModal = (() => {
     return Number.isFinite(level) ? Math.max(0, Math.min(12, level)) : 6;
   }
 
+  function alwaysPreRollEnabled() {
+    return !!state.alwaysPreRollEnabled;
+  }
+
+  function syncServerVadSettings(vm = voiceMode()) {
+    if (!state.sileroSaveInFlight && typeof vm?.sileroVadEnabled === 'function') {
+      state.sileroEnabled = !!vm.sileroVadEnabled();
+    }
+    if (!state.alwaysPreRollSaveInFlight && typeof vm?.alwaysPreRollEnabled === 'function') {
+      state.alwaysPreRollEnabled = !!vm.alwaysPreRollEnabled();
+    }
+  }
+
   function renderSharedControls() {
     const vm = voiceMode();
+    syncServerVadSettings(vm);
     if (els.noiseToggle) els.noiseToggle.checked = voiceNoiseEnabled();
     if (els.sileroToggle) els.sileroToggle.checked = !!state.sileroEnabled;
     if (els.autoPreRollToggle) els.autoPreRollToggle.checked = !!state.autoPreRollEnabled;
+    if (els.alwaysPreRollToggle) els.alwaysPreRollToggle.checked = alwaysPreRollEnabled();
     if (els.noiseThreshold) els.noiseThreshold.value = String(noiseThresholdDb());
     if (els.noiseLevel) els.noiseLevel.value = String(voiceNoiseLevelDb());
     const aggregation = Number(vm?.sttAggregationTimeoutMs?.());
@@ -451,8 +499,10 @@ const VadDevModal = (() => {
       els.preRollFrames.value = String(state.preRollFrames);
     }
     const vadRelevant = vadOnlyControlsRelevant();
+    const always = alwaysPreRollEnabled();
     setSharedControlDisabled(els.sileroToggle, !vadRelevant);
-    setSharedControlDisabled(els.autoPreRollToggle, !vadRelevant);
+    setSharedControlDisabled(els.alwaysPreRollToggle, !vadRelevant);
+    setSharedControlDisabled(els.autoPreRollToggle, !vadRelevant || always);
     setSharedControlDisabled(els.preRollFrames, !vadRelevant);
     setSharedControlDisabled(els.vadReset, !vadRelevant);
     setSharedControlDisabled(els.noiseThreshold, !vadRelevant);
@@ -463,6 +513,7 @@ const VadDevModal = (() => {
     renderSharedControls();
     const vm = voiceMode();
     try {
+      await vm?.loadWakeSettings?.({ force: true });
       const agg = await vm?.loadAggregationTimeout?.({ force: true });
       const value = Number(agg?.aggregation_timeout_ms || agg?.stt?.speech_aggregation_timeout_ms || vm?.sttAggregationTimeoutMs?.() || 80);
       if (Number.isFinite(value) && els.aggregation) els.aggregation.value = String(value);
@@ -479,7 +530,7 @@ const VadDevModal = (() => {
       && vad.noiseEstimateState !== 'unavailable'
       && Number.isFinite(estimateDb);
     const exceeded = !!(available && estimateDb > thresholdDb);
-    const color = exceeded ? 'red' : 'green';
+    const color = available ? (exceeded ? 'red' : 'green') : 'neutral';
     vad.noiseThresholdDb = thresholdDb;
     vad.noiseThresholdExceeded = exceeded;
     vad.noiseThresholdColor = color;
@@ -495,30 +546,57 @@ const VadDevModal = (() => {
   }
 
   function autoPreRollStatus(mode = currentMode()) {
+    mode = modeFromInput(mode);
     const noise = applyNoiseThresholdStatus(mode);
+    const autoEnabled = !!state.autoPreRollEnabled;
+    const alwaysEnabled = alwaysPreRollEnabled();
+    const base = {
+      auto_pre_roll_enabled: autoEnabled,
+      always_pre_roll_enabled: alwaysEnabled,
+      pre_roll_policy_enabled: false,
+      auto_pre_roll_overridden_by_always: mode !== MODE_MANUAL && alwaysEnabled,
+    };
+    if (mode === MODE_MANUAL) {
+      return {
+        ...base,
+        auto_pre_roll_active: false,
+        auto_pre_roll_reason: 'manual_mode',
+      };
+    }
+    if (alwaysEnabled) {
+      return {
+        ...base,
+        pre_roll_policy_enabled: true,
+        auto_pre_roll_active: true,
+        auto_pre_roll_reason: 'always_pre_roll',
+      };
+    }
     if (!state.autoPreRollEnabled) {
       return {
-        auto_pre_roll_enabled: false,
+        ...base,
         auto_pre_roll_active: false,
         auto_pre_roll_reason: 'disabled',
       };
     }
     if (!noise.noise_threshold_available) {
       return {
-        auto_pre_roll_enabled: true,
+        ...base,
+        pre_roll_policy_enabled: true,
         auto_pre_roll_active: false,
         auto_pre_roll_reason: 'noise_estimate_unavailable',
       };
     }
     if (!noise.noise_threshold_exceeded) {
       return {
-        auto_pre_roll_enabled: true,
+        ...base,
+        pre_roll_policy_enabled: true,
         auto_pre_roll_active: false,
         auto_pre_roll_reason: 'noise_threshold_green',
       };
     }
     return {
-      auto_pre_roll_enabled: true,
+      ...base,
+      pre_roll_policy_enabled: true,
       auto_pre_roll_active: true,
       auto_pre_roll_reason: 'noise_threshold_exceeded',
     };
@@ -531,7 +609,10 @@ const VadDevModal = (() => {
     const auto = autoPreRollStatus(mode);
     if (els.noiseThresholdWrap) els.noiseThresholdWrap.dataset.state = vadRelevant ? noise.noise_threshold_color : 'neutral';
     if (els.autoPreRollWrap) {
-      els.autoPreRollWrap.classList.toggle('is-active', vadRelevant && !!auto.auto_pre_roll_active);
+      els.autoPreRollWrap.classList.toggle('is-active', vadRelevant && !!auto.auto_pre_roll_active && !auto.always_pre_roll_enabled);
+    }
+    if (els.alwaysPreRollWrap) {
+      els.alwaysPreRollWrap.classList.toggle('is-active', vadRelevant && !!auto.always_pre_roll_enabled);
     }
   }
 
@@ -1283,7 +1364,7 @@ const VadDevModal = (() => {
     if (!target.vadRecordEnabled) return { ...auto, apply: false, reason: 'vad_record_not_armed' };
     if (!Number(detectionFrameId || 0)) return { ...auto, apply: false, reason: 'no_detection_frame' };
     if (!target.preRoll?.buffer?.length) return { ...auto, apply: false, reason: 'no_pre_roll_frames' };
-    return { ...auto, apply: true, reason: 'noise_threshold_exceeded' };
+    return { ...auto, apply: true, reason: auto.auto_pre_roll_reason || 'pre_roll_active' };
   }
 
   function preparePreRollForRecording(mode, options = {}) {
@@ -1372,6 +1453,9 @@ const VadDevModal = (() => {
       : configuredFrames;
     return {
       auto_pre_roll_enabled: auto.auto_pre_roll_enabled,
+      always_pre_roll_enabled: auto.always_pre_roll_enabled,
+      pre_roll_policy_enabled: auto.pre_roll_policy_enabled,
+      auto_pre_roll_overridden_by_always: auto.auto_pre_roll_overridden_by_always,
       auto_pre_roll_active: auto.auto_pre_roll_active,
       auto_pre_roll_reason: auto.auto_pre_roll_reason,
       pre_roll_frames: lookbackFrames,
@@ -1880,6 +1964,7 @@ const VadDevModal = (() => {
     if (type === 'vadProbeRecordStop' || type === 'rearmProbeRecordStop' || type === 'vadStopMode' || type === 'sileroSpeechEnd') return '#fbbf24';
     if (type === 'autoPreRollSelect') return action.applied ? '#22c55e' : '#fbbf24';
     if (type === 'autoPreRollMode') return action.enabled ? '#22c55e' : '#aebfca';
+    if (type === 'alwaysPreRollMode') return action.enabled ? '#22c55e' : '#aebfca';
     if (type === 'vadRecordMode' || type === 'vadDetectorMode' || type === 'vadTestMode' || type === 'rearmTestMode' || type === 'vadCandidateStart' || type === 'sileroLoad' || type === 'sileroCandidateStart') return '#38bdf8';
     if (type === 'vadProbeError' || type === 'rearmProbeError' || type === 'rearmProbeFinalTimeout' || type === 'sileroError' || type === 'sileroMisfire') return '#f87171';
     if (mode === MODE_REARM && type === 'controlState') return action.disabled ? 'rgba(148,168,179,0.72)' : (action.pressed ? '#38bdf8' : '#aebfca');
@@ -1901,6 +1986,7 @@ const VadDevModal = (() => {
     if (action.type === 'vadCandidateConfirmed') return 'VAD strong';
     if (action.type === 'autoPreRollSelect') return action.applied ? 'pre-roll selected' : `pre-roll ${action.reason || 'skipped'}`;
     if (action.type === 'autoPreRollMode') return `pre-roll ${action.enabled ? 'on' : 'off'}`;
+    if (action.type === 'alwaysPreRollMode') return `always pre-roll ${action.enabled ? 'on' : 'off'}`;
     if (action.type === 'sileroLoad') return 'Silero loading';
     if (action.type === 'sileroReady') return 'Silero ready';
     if (action.type === 'sileroCandidateStart') return 'Silero candidate';
@@ -1968,6 +2054,7 @@ const VadDevModal = (() => {
     const configuredPreRollFrames = preRollFrames();
     const controlsMode = selectedControlsMode();
     const vadControlsRelevant = controlsMode !== MODE_MANUAL;
+    const auto = autoPreRollStatus(controlsMode);
     return {
       selected_mode: controlsMode,
       vad_only_controls_relevant: vadControlsRelevant,
@@ -1978,10 +2065,16 @@ const VadDevModal = (() => {
       vad_reset_timeout_disabled: !!els.vadReset?.disabled,
       auto_pre_roll_enabled: !!state.autoPreRollEnabled,
       auto_pre_roll_disabled: !!els.autoPreRollToggle?.disabled,
+      always_pre_roll_enabled: alwaysPreRollEnabled(),
+      always_pre_roll_disabled: !!els.alwaysPreRollToggle?.disabled,
+      auto_pre_roll_overridden_by_always: !!auto.auto_pre_roll_overridden_by_always,
+      pre_roll_policy_enabled: !!auto.pre_roll_policy_enabled,
       pre_roll_frames: configuredPreRollFrames,
       num_pre_roll_frames: configuredPreRollFrames,
       pre_roll_frames_disabled: !!els.preRollFrames?.disabled,
       noise_threshold_db: thresholdDb,
+      vad_pre_roll_db: thresholdDb,
+      vad_pre_roll_threshold_db: thresholdDb,
       noise_threshold_disabled: !!els.noiseThreshold?.disabled,
       noise_threshold_state: els.noiseThresholdWrap?.dataset?.state || (vadControlsRelevant ? '' : 'neutral'),
       detector,
@@ -2067,6 +2160,8 @@ const VadDevModal = (() => {
       noise_estimate_db: noiseStatus.noise_estimate_db,
       noise_estimate_state: noiseStatus.noise_estimate_state,
       noise_threshold_db: noiseStatus.noise_threshold_db,
+      vad_pre_roll_db: noiseStatus.noise_threshold_db,
+      vad_pre_roll_threshold_db: noiseStatus.noise_threshold_db,
       noise_threshold_exceeded: noiseStatus.noise_threshold_exceeded,
       noise_threshold_color: noiseStatus.noise_threshold_color,
       ...preRoll,
@@ -2091,6 +2186,8 @@ const VadDevModal = (() => {
         noise_estimate_db: noiseStatus.noise_estimate_db,
         noise_estimate_state: noiseStatus.noise_estimate_state,
         noise_threshold_db: noiseStatus.noise_threshold_db,
+        vad_pre_roll_db: noiseStatus.noise_threshold_db,
+        vad_pre_roll_threshold_db: noiseStatus.noise_threshold_db,
         noise_threshold_exceeded: noiseStatus.noise_threshold_exceeded,
         noise_threshold_color: noiseStatus.noise_threshold_color,
         enter_threshold: Number(vad.enterThreshold || 0),
@@ -2143,7 +2240,7 @@ const VadDevModal = (() => {
         { label: 'Detector', value: detector },
         { label: 'Noise', value: mode === MODE_MANUAL || noiseStatus.noise_estimate_state === 'unavailable' ? '--' : `${Number(noiseStatus.noise_estimate_db || -80).toFixed(1)} dB` },
         { label: 'Delta', value: mode === MODE_MANUAL || detector === DETECTOR_SILERO ? '--' : `${Number(vad.energyDeltaDb || 0).toFixed(1)} dB` },
-        { label: 'Threshold', value: mode === MODE_MANUAL ? '--' : `${noiseStatus.noise_threshold_color} ${Number(noiseStatus.noise_threshold_db).toFixed(0)} dB` },
+        { label: 'VAD Pre', value: mode === MODE_MANUAL ? '--' : `${noiseStatus.noise_threshold_color} ${Number(noiseStatus.noise_threshold_db).toFixed(0)} dB` },
         { label: 'Pre-roll', value: mode === MODE_MANUAL ? '--' : (preRoll.auto_pre_roll_active ? `on ${preRoll.pre_roll_buffer_frames}f / ${preRoll.pre_roll_lookback_frames} before` : preRoll.auto_pre_roll_reason) },
         { label: 'Silero', value: mode === MODE_MANUAL ? '--' : sileroStatusValue(mode) },
         { label: 'Speech P', value: mode === MODE_MANUAL || silero.isSpeechProbability == null ? '--' : Number(silero.isSpeechProbability).toFixed(3) },
@@ -2209,9 +2306,10 @@ const VadDevModal = (() => {
         maxWidth: 280,
       },
     ];
-    if (preRoll.auto_pre_roll_enabled) {
+    if (preRoll.pre_roll_policy_enabled) {
+      const preRollLabel = preRoll.always_pre_roll_enabled ? 'Always pre-roll' : 'Pre-roll';
       pills.push({
-        label: `Pre-roll ${preRoll.auto_pre_roll_active ? 'active' : 'idle'} | ${preRoll.pre_roll_lookback_frames} before | ${preRoll.pre_roll_buffer_frames} queued | ${preRoll.auto_pre_roll_reason}`,
+        label: `${preRollLabel} ${preRoll.auto_pre_roll_active ? 'active' : 'idle'} | ${preRoll.pre_roll_lookback_frames} before | ${preRoll.pre_roll_buffer_frames} queued | ${preRoll.auto_pre_roll_reason}`,
         background: preRoll.auto_pre_roll_active ? 'rgba(5,46,22,0.82)' : 'rgba(16,24,38,0.9)',
         border: preRoll.auto_pre_roll_active ? 'rgba(74,222,128,0.68)' : 'rgba(148,168,179,0.42)',
         color: '#f1f7fa',
@@ -2235,7 +2333,7 @@ const VadDevModal = (() => {
       const target = probe(mode);
       return target.enabled || target.recording || target.finalizing || target.starting;
     });
-    return active || state.selectedMode || MODE_MANUAL;
+    return active || state.selectedMode || MODE_REARM;
   }
 
   function setTimelineSnapshot(snapshot) {
@@ -2404,9 +2502,12 @@ const VadDevModal = (() => {
     return true;
   }
 
-  function payloadBool(payload, fallback = true) {
-    if (payload?.enabled != null) return !!payload.enabled;
-    if (payload?.value != null) return !['0', 'false', 'off', 'no'].includes(String(payload.value).trim().toLowerCase());
+  function payloadBool(payload, fallback = true, ...preferredKeys) {
+    const keys = [...preferredKeys, 'enabled', 'checked', 'auto_pre_roll_enabled', 'always_pre_roll_enabled', 'silero_vad_enabled', 'silero_enabled', 'value'];
+    for (const key of keys) {
+      if (payload?.[key] == null) continue;
+      return !['0', 'false', 'off', 'no'].includes(String(payload[key]).trim().toLowerCase());
+    }
     return fallback;
   }
 
@@ -2425,16 +2526,16 @@ const VadDevModal = (() => {
 
   async function setSileroVadEnabled(enabled, options = {}) {
     const next = !!enabled;
-    if (state.sileroEnabled === next) {
-      renderSharedControls();
-    } else {
-      state.sileroEnabled = next;
+    const changed = state.sileroEnabled !== next;
+    state.sileroSaveInFlight = true;
+    state.sileroEnabled = next;
+    if (changed) {
       MODES.filter(mode => mode !== MODE_MANUAL).forEach(mode => {
         resetVad(mode, Date.now(), { resetNoiseFloor: !next, resetSilero: true });
         if (!next) disposeSilero(mode);
       });
-      renderSharedControls();
     }
+    renderSharedControls();
     const mode = currentMode();
     if (mode !== MODE_MANUAL) {
       pushAction(mode, 'vadDetectorMode', {
@@ -2453,6 +2554,15 @@ const VadDevModal = (() => {
       }
     } else {
       status(state.sileroEnabled ? 'Silero VAD selected for VAD modes.' : 'Energy VAD selected for VAD modes.');
+    }
+    try {
+      await voiceMode()?.saveSileroVadEnabled?.(next);
+      status(options.status || (next ? 'Silero VAD saved for VAD modes.' : 'Energy VAD saved for VAD modes.'));
+    } catch (error) {
+      status(`Silero VAD save failed: ${error.message || error}`);
+    } finally {
+      state.sileroSaveInFlight = false;
+      renderSharedControls();
     }
     renderAllProbeUi();
     poll({ force: true });
@@ -2473,14 +2583,41 @@ const VadDevModal = (() => {
 
   function setAutoPreRollEnabled(enabled, options = {}) {
     state.autoPreRollEnabled = !!enabled;
+    writeStoredBool(LS_AUTO_PRE_ROLL, state.autoPreRollEnabled);
     renderSharedControls();
     const mode = currentMode();
     if (mode !== MODE_MANUAL) {
       pushAction(mode, 'autoPreRollMode', {
         enabled: state.autoPreRollEnabled,
+        overridden_by_always: alwaysPreRollEnabled(),
         reason: options.reason || 'set_auto_pre_roll',
         noise_threshold_db: noiseThresholdDb(),
       });
+    }
+    poll({ force: true });
+  }
+
+  async function setAlwaysPreRollEnabled(enabled, options = {}) {
+    const next = !!enabled;
+    state.alwaysPreRollSaveInFlight = true;
+    state.alwaysPreRollEnabled = next;
+    renderSharedControls();
+    const mode = currentMode();
+    if (mode !== MODE_MANUAL) {
+      pushAction(mode, 'alwaysPreRollMode', {
+        enabled: state.alwaysPreRollEnabled,
+        auto_pre_roll_enabled: !!state.autoPreRollEnabled,
+        reason: options.reason || 'set_always_pre_roll',
+      });
+    }
+    try {
+      await voiceMode()?.saveAlwaysPreRollEnabled?.(next);
+      status(options.status || (next ? 'ALWAYS PRE-ROLL saved.' : 'ALWAYS PRE-ROLL disabled.'));
+    } catch (error) {
+      status(`ALWAYS PRE-ROLL save failed: ${error.message || error}`);
+    } finally {
+      state.alwaysPreRollSaveInFlight = false;
+      renderSharedControls();
     }
     poll({ force: true });
   }
@@ -2516,6 +2653,7 @@ const VadDevModal = (() => {
 
   function setNoiseThreshold(value) {
     state.noiseThresholdDb = clampNoiseThresholdDb(value);
+    writeStoredNoiseThresholdDb(state.noiseThresholdDb);
     if (els.noiseThreshold) els.noiseThreshold.value = String(state.noiseThresholdDb);
     renderRangeLabels();
     poll({ force: true });
@@ -2524,7 +2662,11 @@ const VadDevModal = (() => {
   async function runSettingsCommand(action, payload) {
     const vm = voiceMode();
     if (action === 'set_auto_pre_roll') {
-      setAutoPreRollEnabled(payloadBool(payload, true), { reason: 'remote_command' });
+      setAutoPreRollEnabled(payloadBool(payload, true, 'auto_pre_roll_enabled'), { reason: 'remote_command' });
+      return true;
+    }
+    if (action === 'set_always_pre_roll') {
+      await setAlwaysPreRollEnabled(payloadBool(payload, true, 'always_pre_roll_enabled'), { reason: 'remote_command', status: 'ALWAYS PRE-ROLL saved by automation.' });
       return true;
     }
     if (action === 'set_pre_roll_frames' || action === 'set_num_pre_roll' || action === 'set_num_pre_roll_frames') {
@@ -2532,20 +2674,20 @@ const VadDevModal = (() => {
       if (value != null) await setPreRollFrames(value, { reason: 'remote_command', status: 'NUM PRE-ROLL saved by automation.' });
       return true;
     }
-    if (action === 'set_noise_threshold' || action === 'set_noise_threshold_db') {
-      const threshold = payloadNumber(payload, 'noise_threshold_db', 'threshold_db');
+    if (action === 'set_noise_threshold' || action === 'set_noise_threshold_db' || action === 'set_vad_pre_roll' || action === 'set_vad_pre_roll_db' || action === 'set_vad_pre_roll_threshold') {
+      const threshold = payloadNumber(payload, 'vad_pre_roll_db', 'vad_pre_roll_threshold_db', 'noise_threshold_db', 'threshold_db');
       if (threshold != null) setNoiseThreshold(threshold);
       return true;
     }
     if (action === 'set_silero_vad') {
-      await setSileroVadEnabled(payloadBool(payload, true), { reason: 'remote_command' });
+      await setSileroVadEnabled(payloadBool(payload, true, 'silero_vad_enabled', 'silero_enabled'), { reason: 'remote_command' });
       return true;
     }
     if (action === 'set_vad_detector') {
       return setVadDetector(payload?.value ?? payload?.detector ?? payload?.vad_detector);
     }
     if (action === 'set_noise_reduction') {
-      vm?.setSttNoiseReductionEnabled?.(payloadBool(payload, true));
+      vm?.setSttNoiseReductionEnabled?.(payloadBool(payload, true, 'noise_reduction_enabled'));
       renderSharedControls();
       poll({ force: true });
       return true;
@@ -2687,6 +2829,8 @@ const VadDevModal = (() => {
     els.sileroToggle = el('vad-dev-silero-toggle');
     els.autoPreRollWrap = el('vad-dev-auto-pre-roll-wrap');
     els.autoPreRollToggle = el('vad-dev-auto-pre-roll-toggle');
+    els.alwaysPreRollWrap = el('vad-dev-always-pre-roll-wrap');
+    els.alwaysPreRollToggle = el('vad-dev-always-pre-roll-toggle');
     els.preRollFrames = el('vad-dev-pre-roll-frames');
     els.preRollFramesLabel = el('vad-dev-pre-roll-frames-label');
     els.noiseLevel = el('vad-dev-noise-level');
@@ -2754,6 +2898,9 @@ const VadDevModal = (() => {
     els.autoPreRollToggle?.addEventListener('change', () => {
       setAutoPreRollEnabled(els.autoPreRollToggle.checked, { reason: 'ui_toggle' });
     });
+    els.alwaysPreRollToggle?.addEventListener('change', () => {
+      void setAlwaysPreRollEnabled(els.alwaysPreRollToggle.checked, { reason: 'ui_toggle' });
+    });
     els.preRollFrames?.addEventListener('input', () => {
       state.preRollFrames = clampPreRollFrames(els.preRollFrames.value);
       renderRangeLabels();
@@ -2769,9 +2916,7 @@ const VadDevModal = (() => {
       poll({ force: true });
     });
     els.noiseThreshold?.addEventListener('input', () => {
-      state.noiseThresholdDb = clampNoiseThresholdDb(els.noiseThreshold.value);
-      renderRangeLabels();
-      poll({ force: true });
+      setNoiseThreshold(els.noiseThreshold.value);
     });
     els.aggregation?.addEventListener('input', renderRangeLabels);
     els.aggregation?.addEventListener('change', () => {
@@ -2795,7 +2940,7 @@ const VadDevModal = (() => {
     window.addEventListener('blueprints:voice-mode:wake-settings-changed', renderSharedControls);
     document.addEventListener('blueprints:event', onVadDevCommandEvent);
     els.modal?.addEventListener('close', stop);
-    renderSharedControls();
+    selectMode(state.selectedMode);
     renderAllProbeUi();
   }
 

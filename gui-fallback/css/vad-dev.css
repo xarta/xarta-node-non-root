@@ -32,19 +32,21 @@
 
 .vad-dev-settings .wake-dev-slider {
   grid-column: 1 / -1;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  column-gap: 5px;
 }
 
-.vad-dev-auto-pre-roll.is-active .hub-checkbox__box {
+.vad-dev-pre-roll-toggle.is-active .hub-checkbox__box {
   border-color: rgba(74, 222, 128, 0.78);
   background: rgba(22, 163, 74, 0.2);
   box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.11);
 }
 
-.vad-dev-auto-pre-roll.is-active .hub-checkbox__box::after {
+.vad-dev-pre-roll-toggle.is-active .hub-checkbox__box::after {
   border-color: #4ade80;
 }
 
-.vad-dev-auto-pre-roll.is-active .wake-dev-check__label {
+.vad-dev-pre-roll-toggle.is-active .wake-dev-check__label {
   color: #bbf7d0;
 }
 
