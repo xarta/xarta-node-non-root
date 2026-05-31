@@ -31,7 +31,10 @@ const VadDevModal = (() => {
   const NOISE_THRESHOLD_MIN_DB = -80;
   const NOISE_THRESHOLD_MAX_DB = 0;
   const NOISE_THRESHOLD_STEP_DB = 2;
-  const AUTO_PRE_ROLL_LOOKBACK_FRAMES = 1;
+  const PRE_ROLL_FRAMES_DEFAULT = 1;
+  const PRE_ROLL_FRAMES_MIN = 1;
+  const PRE_ROLL_FRAMES_MAX = 4;
+  const PRE_ROLL_FRAMES_STEP = 1;
   const AUTO_PRE_ROLL_BUFFER_MS = 3200;
   const AUTO_PRE_ROLL_BUFFER_MAX_FRAMES = 96;
   const VAD_RESET_TIMEOUT_MAX_MS = 2000;
@@ -84,6 +87,7 @@ const VadDevModal = (() => {
     selectedMode: MODE_MANUAL,
     sileroEnabled: false,
     autoPreRollEnabled: false,
+    preRollFrames: PRE_ROLL_FRAMES_DEFAULT,
     noiseThresholdDb: NOISE_THRESHOLD_DEFAULT_DB,
     sileroScriptPromises: {},
     devCommandIds: [],
@@ -118,7 +122,7 @@ const VadDevModal = (() => {
       active: false,
       applied: false,
       reason: 'disabled',
-      lookbackFrames: AUTO_PRE_ROLL_LOOKBACK_FRAMES,
+      lookbackFrames: PRE_ROLL_FRAMES_DEFAULT,
     };
   }
 
@@ -371,6 +375,19 @@ const VadDevModal = (() => {
     return state.noiseThresholdDb;
   }
 
+  function clampPreRollFrames(value) {
+    const numeric = Number(value);
+    const safe = Number.isFinite(numeric) ? numeric : PRE_ROLL_FRAMES_DEFAULT;
+    const stepped = Math.round(safe / PRE_ROLL_FRAMES_STEP) * PRE_ROLL_FRAMES_STEP;
+    return Math.max(PRE_ROLL_FRAMES_MIN, Math.min(PRE_ROLL_FRAMES_MAX, stepped));
+  }
+
+  function preRollFrames() {
+    const fromControl = els.preRollFrames ? Number(els.preRollFrames.value) : state.preRollFrames;
+    state.preRollFrames = clampPreRollFrames(fromControl);
+    return state.preRollFrames;
+  }
+
   function compactFrameIds(ids) {
     const clean = (Array.isArray(ids) ? ids : [])
       .map(value => Number(value))
@@ -395,6 +412,9 @@ const VadDevModal = (() => {
     setText(els.noiseLevelLabel, `${level.toFixed(1)} dB`);
     setText(els.aggregationLabel, `${Number(els.aggregation?.value || 80)} ms`);
     setText(els.vadResetLabel, formatVadResetTimeout(els.vadReset?.value));
+    const lookbackFrames = preRollFrames();
+    if (els.preRollFrames) els.preRollFrames.value = String(lookbackFrames);
+    setText(els.preRollFramesLabel, String(lookbackFrames));
     if (els.noiseThreshold) els.noiseThreshold.value = String(threshold);
     setText(els.noiseThresholdLabel, `${threshold.toFixed(0)} dB`);
     refreshNoiseControlStates(selectedControlsMode());
@@ -425,9 +445,15 @@ const VadDevModal = (() => {
     if (Number.isFinite(vadReset) && els.vadReset) {
       els.vadReset.value = String(Math.max(0, Math.min(VAD_RESET_TIMEOUT_MAX_MS, Math.round(vadReset / 50) * 50)));
     }
+    const savedPreRollFrames = Number(vm?.preRollFrames?.());
+    if (Number.isFinite(savedPreRollFrames) && els.preRollFrames) {
+      state.preRollFrames = clampPreRollFrames(savedPreRollFrames);
+      els.preRollFrames.value = String(state.preRollFrames);
+    }
     const vadRelevant = vadOnlyControlsRelevant();
     setSharedControlDisabled(els.sileroToggle, !vadRelevant);
     setSharedControlDisabled(els.autoPreRollToggle, !vadRelevant);
+    setSharedControlDisabled(els.preRollFrames, !vadRelevant);
     setSharedControlDisabled(els.vadReset, !vadRelevant);
     setSharedControlDisabled(els.noiseThreshold, !vadRelevant);
     renderRangeLabels();
@@ -1034,6 +1060,7 @@ const VadDevModal = (() => {
     const preRoll = probe(mode).preRoll || createPreRollState();
     probe(mode).preRoll = preRoll;
     preRoll.lastSentFrameId = 0;
+    preRoll.lookbackFrames = preRollFrames();
     if (options.clearProof) {
       preRoll.vadDetectionFrameId = null;
       preRoll.startFrameId = null;
@@ -1278,19 +1305,22 @@ const VadDevModal = (() => {
     const buffer = preRoll.buffer;
     const oldest = Number(buffer[0]?.frame_id || 0);
     const latest = Number(buffer[buffer.length - 1]?.frame_id || 0);
-    let startFrameId = detectionFrameId - AUTO_PRE_ROLL_LOOKBACK_FRAMES;
+    const lookbackFrames = preRollFrames();
+    preRoll.lookbackFrames = lookbackFrames;
+    let startFrameId = detectionFrameId - lookbackFrames;
     let fallbackReason = '';
     if (!oldest || !latest) {
       preRoll.reason = 'no_pre_roll_frames';
       preRoll.fallbackReason = 'no_pre_roll_frames';
       return;
     }
-    if (startFrameId < 1) {
-      startFrameId = detectionFrameId;
-      fallbackReason = 'previous_frame_unavailable';
-    } else if (startFrameId < oldest) {
+    if (startFrameId < oldest) {
       startFrameId = oldest;
-      fallbackReason = detectionFrameId <= oldest ? 'previous_frame_unavailable' : 'previous_frame_rolled_out';
+      if (detectionFrameId <= oldest) {
+        fallbackReason = 'previous_frame_unavailable';
+      } else {
+        fallbackReason = oldest <= 1 ? 'previous_frames_limited' : 'previous_frame_rolled_out';
+      }
     }
     if (startFrameId > latest) {
       startFrameId = latest;
@@ -1302,7 +1332,9 @@ const VadDevModal = (() => {
     pushAction(mode, 'autoPreRollSelect', {
       applied: true,
       reason: preRoll.reason,
-      lookback_frames: AUTO_PRE_ROLL_LOOKBACK_FRAMES,
+      lookback_frames: lookbackFrames,
+      pre_roll_frames: lookbackFrames,
+      num_pre_roll_frames: lookbackFrames,
       vad_detection_frame_id: detectionFrameId,
       pre_roll_start_frame_id: startFrameId,
       fallback_reason: fallbackReason,
@@ -1333,11 +1365,20 @@ const VadDevModal = (() => {
   function preRollSnapshot(mode) {
     const preRoll = probe(mode).preRoll || createPreRollState();
     const auto = autoPreRollStatus(mode);
+    const configuredFrames = preRollFrames();
+    const segmentLookbackFrames = Number(preRoll.lookbackFrames);
+    const lookbackFrames = preRoll.applied && Number.isFinite(segmentLookbackFrames)
+      ? clampPreRollFrames(segmentLookbackFrames)
+      : configuredFrames;
     return {
       auto_pre_roll_enabled: auto.auto_pre_roll_enabled,
       auto_pre_roll_active: auto.auto_pre_roll_active,
       auto_pre_roll_reason: auto.auto_pre_roll_reason,
-      pre_roll_lookback_frames: AUTO_PRE_ROLL_LOOKBACK_FRAMES,
+      pre_roll_frames: lookbackFrames,
+      num_pre_roll_frames: lookbackFrames,
+      pre_roll_lookback_frames: lookbackFrames,
+      pre_roll_requested_frames: lookbackFrames,
+      pre_roll_configured_frames: configuredFrames,
       pre_roll_buffer_frames: preRoll.buffer.length,
       pre_roll_buffer_ms: Math.round(preRoll.bufferMs || 0),
       pre_roll_selected_frames: preRoll.selectedFrames || 0,
@@ -1612,7 +1653,11 @@ const VadDevModal = (() => {
         vad_record_enabled: !!target.vadRecordEnabled,
         noise_reduction_enabled: voiceNoiseEnabled(),
         noise_level_db: voiceNoiseLevelDb(),
-        pre_roll_frames: queued.length,
+        pre_roll_frames: preRoll.pre_roll_lookback_frames,
+        num_pre_roll_frames: preRoll.pre_roll_lookback_frames,
+        pre_roll_selected_frames: queued.length,
+        pre_roll_sent_frames: queued.length,
+        pre_roll_lookback_frames: preRoll.pre_roll_lookback_frames,
         pre_roll_audio_ms: preRoll.pre_roll_audio_ms,
         pre_roll_start_frame_id: preRoll.pre_roll_start_frame_id,
         vad_detection_frame_id: preRoll.vad_detection_frame_id,
@@ -1920,6 +1965,7 @@ const VadDevModal = (() => {
   function controlsSnapshot() {
     const detector = selectedVadDetector();
     const thresholdDb = noiseThresholdDb();
+    const configuredPreRollFrames = preRollFrames();
     const controlsMode = selectedControlsMode();
     const vadControlsRelevant = controlsMode !== MODE_MANUAL;
     return {
@@ -1932,6 +1978,9 @@ const VadDevModal = (() => {
       vad_reset_timeout_disabled: !!els.vadReset?.disabled,
       auto_pre_roll_enabled: !!state.autoPreRollEnabled,
       auto_pre_roll_disabled: !!els.autoPreRollToggle?.disabled,
+      pre_roll_frames: configuredPreRollFrames,
+      num_pre_roll_frames: configuredPreRollFrames,
+      pre_roll_frames_disabled: !!els.preRollFrames?.disabled,
       noise_threshold_db: thresholdDb,
       noise_threshold_disabled: !!els.noiseThreshold?.disabled,
       noise_threshold_state: els.noiseThresholdWrap?.dataset?.state || (vadControlsRelevant ? '' : 'neutral'),
@@ -2095,7 +2144,7 @@ const VadDevModal = (() => {
         { label: 'Noise', value: mode === MODE_MANUAL || noiseStatus.noise_estimate_state === 'unavailable' ? '--' : `${Number(noiseStatus.noise_estimate_db || -80).toFixed(1)} dB` },
         { label: 'Delta', value: mode === MODE_MANUAL || detector === DETECTOR_SILERO ? '--' : `${Number(vad.energyDeltaDb || 0).toFixed(1)} dB` },
         { label: 'Threshold', value: mode === MODE_MANUAL ? '--' : `${noiseStatus.noise_threshold_color} ${Number(noiseStatus.noise_threshold_db).toFixed(0)} dB` },
-        { label: 'Pre-roll', value: mode === MODE_MANUAL ? '--' : (preRoll.auto_pre_roll_active ? `on ${preRoll.pre_roll_buffer_frames}f` : preRoll.auto_pre_roll_reason) },
+        { label: 'Pre-roll', value: mode === MODE_MANUAL ? '--' : (preRoll.auto_pre_roll_active ? `on ${preRoll.pre_roll_buffer_frames}f / ${preRoll.pre_roll_lookback_frames} before` : preRoll.auto_pre_roll_reason) },
         { label: 'Silero', value: mode === MODE_MANUAL ? '--' : sileroStatusValue(mode) },
         { label: 'Speech P', value: mode === MODE_MANUAL || silero.isSpeechProbability == null ? '--' : Number(silero.isSpeechProbability).toFixed(3) },
         { label: 'Candidate', value: mode === MODE_MANUAL ? '--' : `${vadStage}${vad.candidateFrames ? `/${vad.candidateFrames}` : ''}` },
@@ -2162,7 +2211,7 @@ const VadDevModal = (() => {
     ];
     if (preRoll.auto_pre_roll_enabled) {
       pills.push({
-        label: `Pre-roll ${preRoll.auto_pre_roll_active ? 'active' : 'idle'} | ${preRoll.pre_roll_buffer_frames} frames | ${preRoll.auto_pre_roll_reason}`,
+        label: `Pre-roll ${preRoll.auto_pre_roll_active ? 'active' : 'idle'} | ${preRoll.pre_roll_lookback_frames} before | ${preRoll.pre_roll_buffer_frames} queued | ${preRoll.auto_pre_roll_reason}`,
         background: preRoll.auto_pre_roll_active ? 'rgba(5,46,22,0.82)' : 'rgba(16,24,38,0.9)',
         border: preRoll.auto_pre_roll_active ? 'rgba(74,222,128,0.68)' : 'rgba(148,168,179,0.42)',
         color: '#f1f7fa',
@@ -2363,10 +2412,14 @@ const VadDevModal = (() => {
 
   function payloadNumber(payload, ...keys) {
     for (const key of keys) {
-      const value = Number(payload?.[key]);
+      const raw = payload?.[key];
+      if (raw == null || raw === '') continue;
+      const value = Number(raw);
       if (Number.isFinite(value)) return value;
     }
-    const value = Number(payload?.value);
+    const rawValue = payload?.value;
+    if (rawValue == null || rawValue === '') return null;
+    const value = Number(rawValue);
     return Number.isFinite(value) ? value : null;
   }
 
@@ -2432,6 +2485,35 @@ const VadDevModal = (() => {
     poll({ force: true });
   }
 
+  async function setPreRollFrames(value, options = {}) {
+    const frames = clampPreRollFrames(value);
+    state.preRollFrames = frames;
+    if (els.preRollFrames) els.preRollFrames.value = String(frames);
+    MODES.forEach(mode => {
+      const preRoll = probe(mode).preRoll || createPreRollState();
+      probe(mode).preRoll = preRoll;
+      preRoll.lookbackFrames = frames;
+    });
+    renderRangeLabels();
+    const mode = currentMode();
+    if (mode !== MODE_MANUAL) {
+      pushAction(mode, 'preRollFramesMode', {
+        pre_roll_frames: frames,
+        num_pre_roll_frames: frames,
+        reason: options.reason || 'set_pre_roll_frames',
+      });
+    }
+    try {
+      await voiceMode()?.savePreRollFrames?.(frames);
+      status(options.status || 'NUM PRE-ROLL saved.');
+    } catch (error) {
+      status(`NUM PRE-ROLL save failed: ${error.message || error}`);
+    }
+    renderSharedControls();
+    poll({ force: true });
+    return frames;
+  }
+
   function setNoiseThreshold(value) {
     state.noiseThresholdDb = clampNoiseThresholdDb(value);
     if (els.noiseThreshold) els.noiseThreshold.value = String(state.noiseThresholdDb);
@@ -2443,6 +2525,11 @@ const VadDevModal = (() => {
     const vm = voiceMode();
     if (action === 'set_auto_pre_roll') {
       setAutoPreRollEnabled(payloadBool(payload, true), { reason: 'remote_command' });
+      return true;
+    }
+    if (action === 'set_pre_roll_frames' || action === 'set_num_pre_roll' || action === 'set_num_pre_roll_frames') {
+      const value = payloadNumber(payload, 'pre_roll_frames', 'num_pre_roll_frames', 'num_pre_roll', 'frames');
+      if (value != null) await setPreRollFrames(value, { reason: 'remote_command', status: 'NUM PRE-ROLL saved by automation.' });
       return true;
     }
     if (action === 'set_noise_threshold' || action === 'set_noise_threshold_db') {
@@ -2600,6 +2687,8 @@ const VadDevModal = (() => {
     els.sileroToggle = el('vad-dev-silero-toggle');
     els.autoPreRollWrap = el('vad-dev-auto-pre-roll-wrap');
     els.autoPreRollToggle = el('vad-dev-auto-pre-roll-toggle');
+    els.preRollFrames = el('vad-dev-pre-roll-frames');
+    els.preRollFramesLabel = el('vad-dev-pre-roll-frames-label');
     els.noiseLevel = el('vad-dev-noise-level');
     els.noiseLevelLabel = el('vad-dev-noise-level-label');
     els.aggregation = el('vad-dev-aggregation-timeout');
@@ -2664,6 +2753,14 @@ const VadDevModal = (() => {
     });
     els.autoPreRollToggle?.addEventListener('change', () => {
       setAutoPreRollEnabled(els.autoPreRollToggle.checked, { reason: 'ui_toggle' });
+    });
+    els.preRollFrames?.addEventListener('input', () => {
+      state.preRollFrames = clampPreRollFrames(els.preRollFrames.value);
+      renderRangeLabels();
+      poll({ force: true });
+    });
+    els.preRollFrames?.addEventListener('change', () => {
+      void setPreRollFrames(els.preRollFrames.value, { reason: 'ui_slider' });
     });
     els.noiseLevel?.addEventListener('input', () => {
       const level = Number(els.noiseLevel.value || 6);

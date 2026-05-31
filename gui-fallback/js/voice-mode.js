@@ -34,6 +34,10 @@ const BlueprintsVoiceMode = (() => {
   const STT_VAD_RESET_MIN_MS = 0;
   const STT_VAD_RESET_MAX_MS = 2000;
   const STT_VAD_RESET_STEP_MS = 50;
+  const STT_PRE_ROLL_FRAMES_DEFAULT = 1;
+  const STT_PRE_ROLL_FRAMES_MIN = 1;
+  const STT_PRE_ROLL_FRAMES_MAX = 4;
+  const STT_PRE_ROLL_FRAMES_STEP = 1;
   const STT_SILENCE_RESET_DEFAULT_MS = 2100;
   const STT_SILENCE_RESET_MIN_MS = 0;
   const STT_SILENCE_RESET_MAX_MS = 3000;
@@ -257,12 +261,16 @@ const BlueprintsVoiceMode = (() => {
     const raw = value && typeof value === 'object' ? value : {};
     const aggregationMs = Number(raw.speech_aggregation_timeout_ms);
     const vadResetMs = Number(raw.vad_reset_timeout_ms);
+    const preRollFrames = Number(raw.pre_roll_frames ?? raw.num_pre_roll_frames ?? raw.num_pre_roll);
     const silenceResetMs = Number(raw.silence_reset_timeout_ms);
     return {
       speech_aggregation_timeout_ms: Number.isFinite(aggregationMs) ? Math.max(50, Math.min(300, Math.round(aggregationMs / 10) * 10)) : 80,
       vad_reset_timeout_ms: Number.isFinite(vadResetMs)
         ? Math.max(STT_VAD_RESET_MIN_MS, Math.min(STT_VAD_RESET_MAX_MS, Math.round(vadResetMs / STT_VAD_RESET_STEP_MS) * STT_VAD_RESET_STEP_MS))
         : STT_VAD_RESET_DEFAULT_MS,
+      pre_roll_frames: Number.isFinite(preRollFrames)
+        ? Math.max(STT_PRE_ROLL_FRAMES_MIN, Math.min(STT_PRE_ROLL_FRAMES_MAX, Math.round(preRollFrames / STT_PRE_ROLL_FRAMES_STEP) * STT_PRE_ROLL_FRAMES_STEP))
+        : STT_PRE_ROLL_FRAMES_DEFAULT,
       silence_reset_timeout_ms: Number.isFinite(silenceResetMs)
         ? Math.max(STT_SILENCE_RESET_MIN_MS, Math.min(STT_SILENCE_RESET_MAX_MS, Math.round(silenceResetMs / STT_SILENCE_RESET_STEP_MS) * STT_SILENCE_RESET_STEP_MS))
         : STT_SILENCE_RESET_DEFAULT_MS,
@@ -851,6 +859,29 @@ const BlueprintsVoiceMode = (() => {
     return nextStt;
   }
 
+  async function savePreRollFrames(frames) {
+    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
+    const nextStt = {
+      ...currentPolicy,
+      pre_roll_frames: _cleanSttPolicy({ pre_roll_frames: frames }).pre_roll_frames,
+    };
+    const response = await apiFetch(WAKE_SETTINGS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        wake_to_talk: getWakeSettings(),
+        stt: nextStt,
+      }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
+    _applyServerState(payload);
+    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
+      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
+    }));
+    return nextStt;
+  }
+
   async function saveSilenceResetTimeout(ms) {
     const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
     const nextStt = {
@@ -1059,6 +1090,10 @@ const BlueprintsVoiceMode = (() => {
 
   function vadResetTimeoutMs() {
     return _cleanSttPolicy(_serverState.policy?.stt).vad_reset_timeout_ms;
+  }
+
+  function preRollFrames() {
+    return _cleanSttPolicy(_serverState.policy?.stt).pre_roll_frames;
   }
 
   function silenceResetTimeoutMs() {
@@ -1369,6 +1404,7 @@ const BlueprintsVoiceMode = (() => {
     sttNoiseReductionLevelDb,
     sttAggregationTimeoutMs,
     vadResetTimeoutMs,
+    preRollFrames,
     silenceResetTimeoutMs,
     sttMode,
     sttModeEnabled,
@@ -1382,6 +1418,7 @@ const BlueprintsVoiceMode = (() => {
     loadAggregationTimeout,
     saveAggregationTimeout,
     saveVadResetTimeout,
+    savePreRollFrames,
     saveSilenceResetTimeout,
     setSttMode: _setSttMode,
     setSttNoiseReductionEnabled: _setSttNoiseReduction,

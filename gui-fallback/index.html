@@ -4652,6 +4652,11 @@
           <span class="hub-checkbox__box" aria-hidden="true"></span>
           <span class="hub-checkbox__label wake-dev-check__label">Auto Pre-Roll</span>
         </label>
+        <label class="wake-dev-slider" for="vad-dev-pre-roll-frames">
+          <span>NUM PRE-ROLL</span>
+          <input type="range" id="vad-dev-pre-roll-frames" min="1" max="4" step="1" value="1" autocomplete="off" data-vad-dev-control="pre_roll_frames" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
+          <output id="vad-dev-pre-roll-frames-label" for="vad-dev-pre-roll-frames">1</output>
+        </label>
         <label class="wake-dev-slider" for="vad-dev-noise-level">
           <span>Noise level</span>
           <input type="range" id="vad-dev-noise-level" min="0" max="12" step="0.5" value="6" autocomplete="off" data-vad-dev-control="noise_level_db" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
