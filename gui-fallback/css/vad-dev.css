@@ -210,6 +210,27 @@
   min-width: 0;
 }
 
+.vad-dev-word__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-width: 0;
+}
+
+.vad-dev-word__options--prefix {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.vad-dev-word__check {
+  min-width: 0;
+}
+
+.vad-dev-word__check .hub-checkbox__label {
+  min-width: 0;
+  white-space: normal;
+}
+
 .vad-dev-word__input {
   width: 100%;
   min-width: 0;
@@ -302,6 +323,10 @@
   }
 
   .vad-dev-word__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .vad-dev-word__options--prefix {
     grid-template-columns: 1fr;
   }
 

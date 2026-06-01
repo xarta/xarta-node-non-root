@@ -263,6 +263,15 @@ const BlueprintsVoiceMode = (() => {
     const vadResetMs = Number(raw.vad_reset_timeout_ms);
     const preRollFrames = Number(raw.pre_roll_frames ?? raw.num_pre_roll_frames ?? raw.num_pre_roll);
     const silenceResetMs = Number(raw.silence_reset_timeout_ms);
+    let prefixPartialInterruptTts = _policyBool(
+      raw.word_detection_prefix_partial_interrupt_tts_enabled ?? raw.match_prefix_partial_interrupt_tts,
+      false,
+    );
+    const prefixFinalInterruptTts = _policyBool(
+      raw.word_detection_prefix_final_interrupt_tts_enabled ?? raw.match_prefix_final_interrupt_tts,
+      false,
+    );
+    if (prefixPartialInterruptTts && prefixFinalInterruptTts) prefixPartialInterruptTts = false;
     return {
       speech_aggregation_timeout_ms: Number.isFinite(aggregationMs) ? Math.max(50, Math.min(300, Math.round(aggregationMs / 10) * 10)) : 80,
       vad_reset_timeout_ms: Number.isFinite(vadResetMs)
@@ -273,6 +282,12 @@ const BlueprintsVoiceMode = (() => {
         : STT_PRE_ROLL_FRAMES_DEFAULT,
       silero_vad_enabled: _policyBool(raw.silero_vad_enabled ?? raw.silero_enabled, false),
       vad_interrupt_tts_enabled: _policyBool(raw.vad_interrupt_tts_enabled ?? raw.vad_interrupt_tts, false),
+      word_detection_match_interrupt_tts_enabled: _policyBool(
+        raw.word_detection_match_interrupt_tts_enabled ?? raw.match_interrupt_tts,
+        false,
+      ),
+      word_detection_prefix_partial_interrupt_tts_enabled: prefixPartialInterruptTts,
+      word_detection_prefix_final_interrupt_tts_enabled: prefixFinalInterruptTts,
       always_pre_roll_enabled: _policyBool(raw.always_pre_roll_enabled ?? raw.always_pre_roll, false),
       silence_reset_timeout_ms: Number.isFinite(silenceResetMs)
         ? Math.max(STT_SILENCE_RESET_MIN_MS, Math.min(STT_SILENCE_RESET_MAX_MS, Math.round(silenceResetMs / STT_SILENCE_RESET_STEP_MS) * STT_SILENCE_RESET_STEP_MS))
@@ -937,6 +952,83 @@ const BlueprintsVoiceMode = (() => {
     return nextStt;
   }
 
+  async function saveWordDetectionMatchInterruptTtsEnabled(enabled) {
+    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
+    const nextStt = {
+      ...currentPolicy,
+      word_detection_match_interrupt_tts_enabled: _cleanSttPolicy({
+        word_detection_match_interrupt_tts_enabled: enabled,
+      }).word_detection_match_interrupt_tts_enabled,
+    };
+    const response = await apiFetch(WAKE_SETTINGS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        wake_to_talk: getWakeSettings(),
+        stt: nextStt,
+      }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
+    _applyServerState(payload);
+    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
+      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
+    }));
+    return nextStt;
+  }
+
+  async function saveWordDetectionPrefixPartialInterruptTtsEnabled(enabled) {
+    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
+    const next = _cleanSttPolicy({
+      ...currentPolicy,
+      word_detection_prefix_partial_interrupt_tts_enabled: enabled,
+      word_detection_prefix_final_interrupt_tts_enabled: enabled
+        ? false
+        : currentPolicy.word_detection_prefix_final_interrupt_tts_enabled,
+    });
+    const response = await apiFetch(WAKE_SETTINGS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        wake_to_talk: getWakeSettings(),
+        stt: next,
+      }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
+    _applyServerState(payload);
+    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
+      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
+    }));
+    return next;
+  }
+
+  async function saveWordDetectionPrefixFinalInterruptTtsEnabled(enabled) {
+    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
+    const next = _cleanSttPolicy({
+      ...currentPolicy,
+      word_detection_prefix_partial_interrupt_tts_enabled: enabled
+        ? false
+        : currentPolicy.word_detection_prefix_partial_interrupt_tts_enabled,
+      word_detection_prefix_final_interrupt_tts_enabled: enabled,
+    });
+    const response = await apiFetch(WAKE_SETTINGS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        wake_to_talk: getWakeSettings(),
+        stt: next,
+      }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
+    _applyServerState(payload);
+    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
+      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
+    }));
+    return next;
+  }
+
   async function saveAlwaysPreRollEnabled(enabled) {
     const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
     const nextStt = {
@@ -1180,6 +1272,18 @@ const BlueprintsVoiceMode = (() => {
 
   function vadInterruptTtsEnabled() {
     return _cleanSttPolicy(_serverState.policy?.stt).vad_interrupt_tts_enabled;
+  }
+
+  function wordDetectionMatchInterruptTtsEnabled() {
+    return _cleanSttPolicy(_serverState.policy?.stt).word_detection_match_interrupt_tts_enabled;
+  }
+
+  function wordDetectionPrefixPartialInterruptTtsEnabled() {
+    return _cleanSttPolicy(_serverState.policy?.stt).word_detection_prefix_partial_interrupt_tts_enabled;
+  }
+
+  function wordDetectionPrefixFinalInterruptTtsEnabled() {
+    return _cleanSttPolicy(_serverState.policy?.stt).word_detection_prefix_final_interrupt_tts_enabled;
   }
 
   function alwaysPreRollEnabled() {
@@ -1497,6 +1601,9 @@ const BlueprintsVoiceMode = (() => {
     preRollFrames,
     sileroVadEnabled,
     vadInterruptTtsEnabled,
+    wordDetectionMatchInterruptTtsEnabled,
+    wordDetectionPrefixPartialInterruptTtsEnabled,
+    wordDetectionPrefixFinalInterruptTtsEnabled,
     alwaysPreRollEnabled,
     silenceResetTimeoutMs,
     sttMode,
@@ -1514,6 +1621,9 @@ const BlueprintsVoiceMode = (() => {
     savePreRollFrames,
     saveSileroVadEnabled,
     saveVadInterruptTtsEnabled,
+    saveWordDetectionMatchInterruptTtsEnabled,
+    saveWordDetectionPrefixPartialInterruptTtsEnabled,
+    saveWordDetectionPrefixFinalInterruptTtsEnabled,
     saveAlwaysPreRollEnabled,
     saveSilenceResetTimeout,
     setSttMode: _setSttMode,

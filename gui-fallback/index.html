@@ -4776,6 +4776,13 @@
           <span class="wake-dev-section-label">Sense words</span>
           <input class="vad-dev-word__input" type="text" id="vad-dev-word-detection-aliases" autocomplete="off" aria-label="Sense words separated by semicolons" data-vad-dev-control="word_detection_aliases" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
         </label>
+        <div class="vad-dev-word__options" aria-label="Word Detection TTS interrupt options">
+          <label class="hub-checkbox wake-dev-check vad-dev-word__check">
+            <input class="hub-checkbox__input" type="checkbox" id="vad-dev-word-detection-interrupt-tts-toggle" data-vad-dev-control="word_detection_match_interrupt_tts" />
+            <span class="hub-checkbox__box" aria-hidden="true"></span>
+            <span class="hub-checkbox__label wake-dev-check__label">MATCH INTERRUPT TTS</span>
+          </label>
+        </div>
         <div class="vad-dev-word__grid">
           <div class="vad-dev-word__readout vad-dev-word__readout--final">
             <span class="wake-dev-section-label">Last final</span>
@@ -4795,6 +4802,18 @@
         <div class="vad-dev-word__head">
           <span class="wake-dev-card__title">Word Detection Prefix</span>
           <span class="wake-dev-meta" id="vad-dev-word-prefix-state" data-vad-dev-metric="word_detection_prefix_state">No partial match.</span>
+        </div>
+        <div class="vad-dev-word__options vad-dev-word__options--prefix" aria-label="Word Detection Prefix TTS interrupt options">
+          <label class="hub-checkbox wake-dev-check vad-dev-word__check">
+            <input class="hub-checkbox__input" type="checkbox" id="vad-dev-word-prefix-partial-interrupt-tts-toggle" data-vad-dev-control="word_detection_prefix_partial_interrupt_tts" />
+            <span class="hub-checkbox__box" aria-hidden="true"></span>
+            <span class="hub-checkbox__label wake-dev-check__label">MATCH PREFIX PARTIAL INTERRUPT TTS</span>
+          </label>
+          <label class="hub-checkbox wake-dev-check vad-dev-word__check">
+            <input class="hub-checkbox__input" type="checkbox" id="vad-dev-word-prefix-final-interrupt-tts-toggle" data-vad-dev-control="word_detection_prefix_final_interrupt_tts" />
+            <span class="hub-checkbox__box" aria-hidden="true"></span>
+            <span class="hub-checkbox__label wake-dev-check__label">MATCH PREFIX FINAL INTERRUPT TTS</span>
+          </label>
         </div>
         <div class="vad-dev-word__grid vad-dev-word__grid--prefix">
           <div class="vad-dev-word__readout vad-dev-word__readout--payload">

@@ -90,12 +90,16 @@ const VadDevModal = (() => {
     selectedMode: MODE_REARM,
     sileroEnabled: false,
     vadInterruptTtsEnabled: false,
+    wordDetectionMatchInterruptTtsEnabled: false,
+    wordDetectionPrefixPartialInterruptTtsEnabled: false,
+    wordDetectionPrefixFinalInterruptTtsEnabled: false,
     autoPreRollEnabled: storedBool(LS_AUTO_PRE_ROLL, false),
     alwaysPreRollEnabled: false,
     preRollFrames: PRE_ROLL_FRAMES_DEFAULT,
     noiseThresholdDb: storedNoiseThresholdDb(),
     sileroSaveInFlight: false,
     vadInterruptTtsSaveInFlight: false,
+    wordDetectionInterruptTtsSaveInFlight: false,
     alwaysPreRollSaveInFlight: false,
     lastTtsInterruptAt: 0,
     sileroScriptPromises: {},
@@ -528,12 +532,38 @@ const VadDevModal = (() => {
     return !!state.vadInterruptTtsEnabled;
   }
 
+  function wordDetectionMatchInterruptTtsEnabled() {
+    return !!state.wordDetectionMatchInterruptTtsEnabled;
+  }
+
+  function wordDetectionPrefixPartialInterruptTtsEnabled() {
+    return !!state.wordDetectionPrefixPartialInterruptTtsEnabled;
+  }
+
+  function wordDetectionPrefixFinalInterruptTtsEnabled() {
+    return !!state.wordDetectionPrefixFinalInterruptTtsEnabled;
+  }
+
   function syncServerVadSettings(vm = voiceMode()) {
     if (!state.sileroSaveInFlight && typeof vm?.sileroVadEnabled === 'function') {
       state.sileroEnabled = !!vm.sileroVadEnabled();
     }
     if (!state.vadInterruptTtsSaveInFlight && typeof vm?.vadInterruptTtsEnabled === 'function') {
       state.vadInterruptTtsEnabled = !!vm.vadInterruptTtsEnabled();
+    }
+    if (!state.wordDetectionInterruptTtsSaveInFlight) {
+      if (typeof vm?.wordDetectionMatchInterruptTtsEnabled === 'function') {
+        state.wordDetectionMatchInterruptTtsEnabled = !!vm.wordDetectionMatchInterruptTtsEnabled();
+      }
+      if (typeof vm?.wordDetectionPrefixPartialInterruptTtsEnabled === 'function') {
+        state.wordDetectionPrefixPartialInterruptTtsEnabled = !!vm.wordDetectionPrefixPartialInterruptTtsEnabled();
+      }
+      if (typeof vm?.wordDetectionPrefixFinalInterruptTtsEnabled === 'function') {
+        state.wordDetectionPrefixFinalInterruptTtsEnabled = !!vm.wordDetectionPrefixFinalInterruptTtsEnabled();
+      }
+      if (state.wordDetectionPrefixPartialInterruptTtsEnabled && state.wordDetectionPrefixFinalInterruptTtsEnabled) {
+        state.wordDetectionPrefixPartialInterruptTtsEnabled = false;
+      }
     }
     if (!state.alwaysPreRollSaveInFlight && typeof vm?.alwaysPreRollEnabled === 'function') {
       state.alwaysPreRollEnabled = !!vm.alwaysPreRollEnabled();
@@ -570,6 +600,7 @@ const VadDevModal = (() => {
     setSharedControlDisabled(els.vadReset, !vadRelevant);
     setSharedControlDisabled(els.noiseThreshold, !vadRelevant);
     renderRangeLabels();
+    renderWordDetectionUi();
   }
 
   async function loadSharedControls() {
@@ -862,6 +893,7 @@ const VadDevModal = (() => {
       aliases_text: word.aliasesText,
       aliases: [...word.aliases],
       aliases_count: word.aliases.length,
+      match_interrupt_tts_enabled: wordDetectionMatchInterruptTtsEnabled(),
       awaiting_payload: !!word.awaitingPayload,
       payload: word.payload || '',
       last_final: word.lastFinal || '',
@@ -882,6 +914,8 @@ const VadDevModal = (() => {
     const prefix = state.wordDetection.prefix || createWordDetectionPrefixState();
     return {
       enabled: state.wordDetection.aliases.length > 0,
+      partial_interrupt_tts_enabled: wordDetectionPrefixPartialInterruptTtsEnabled(),
+      final_interrupt_tts_enabled: wordDetectionPrefixFinalInterruptTtsEnabled(),
       payload1: prefix.partialPayload || '',
       payload2: prefix.finalPayload || '',
       partial_payload: prefix.partialPayload || '',
@@ -911,6 +945,9 @@ const VadDevModal = (() => {
     setText(els.wordDetectionPayload, word.payload, '');
     setText(els.wordDetectionFinal, word.lastFinal, '');
     setText(els.wordDetectionMatch, word.lastMatchedAlias, '--');
+    if (els.wordDetectionInterruptToggle) {
+      els.wordDetectionInterruptToggle.checked = wordDetectionMatchInterruptTtsEnabled();
+    }
     if (els.wordDetectionBlock) {
       els.wordDetectionBlock.dataset.state = word.awaitingPayload ? 'armed' : (word.payload ? 'captured' : 'idle');
     }
@@ -920,6 +957,12 @@ const VadDevModal = (() => {
     setText(els.wordPrefixState, prefixLabel, '');
     setText(els.wordPrefixPayload1, prefix.partialPayload, '');
     setText(els.wordPrefixPayload2, prefix.finalPayload, '');
+    if (els.wordPrefixPartialInterruptToggle) {
+      els.wordPrefixPartialInterruptToggle.checked = wordDetectionPrefixPartialInterruptTtsEnabled();
+    }
+    if (els.wordPrefixFinalInterruptToggle) {
+      els.wordPrefixFinalInterruptToggle.checked = wordDetectionPrefixFinalInterruptTtsEnabled();
+    }
     if (els.wordPrefixBlock) {
       els.wordPrefixBlock.dataset.state = prefix.finalPayload ? 'captured' : (prefix.lastMatchedAlias ? 'armed' : 'idle');
     }
@@ -954,6 +997,12 @@ const VadDevModal = (() => {
       word.lastMatchedAlias = matchedAlias;
       word.lastSenseAt = Date.now();
       word.detections += 1;
+      if (wordDetectionMatchInterruptTtsEnabled()) {
+        void interruptTtsForWordDetection(mode, 'word_detection_final_match', {
+          matched_alias: matchedAlias,
+          final_text: finalText,
+        });
+      }
     } else if (word.awaitingPayload) {
       word.payload = finalText;
       word.lastPayloadFinal = finalText;
@@ -980,6 +1029,13 @@ const VadDevModal = (() => {
       prefix.lastSegmentKey = segmentKey;
       prefix.lastMatchAt = Date.now();
       if (firstMatchInSegment) prefix.detections += 1;
+      if (wordDetectionPrefixPartialInterruptTtsEnabled()) {
+        void interruptTtsForWordDetection(mode, 'word_detection_prefix_partial_match', {
+          matched_alias: match.alias,
+          payload: match.payload,
+          segment_key: segmentKey,
+        });
+      }
     }
     renderWordDetectionUi();
   }
@@ -996,6 +1052,13 @@ const VadDevModal = (() => {
       prefix.finalPayload = match.payload;
       prefix.lastFinalMatchedAlias = match.alias;
       prefix.finalCaptures += 1;
+      if (wordDetectionPrefixFinalInterruptTtsEnabled()) {
+        void interruptTtsForWordDetection(mode, 'word_detection_prefix_final_match', {
+          matched_alias: match.alias,
+          payload: match.payload,
+          final_text: finalText,
+        });
+      }
     } else {
       prefix.finalPayload = '';
       prefix.lastFinalMatchedAlias = '';
@@ -2244,13 +2307,13 @@ const VadDevModal = (() => {
     if (type === 'manualRecordStop') return '#fbbf24';
     if (type === 'manualTestMode') return '#38bdf8';
     if (type === 'manualError') return '#f87171';
-    if (type === 'vadProbeRecordStart' || type === 'vadProbeFinal' || type === 'rearmProbeRecordStart' || type === 'rearmProbeFinal' || type === 'vadCandidateConfirmed' || type === 'sileroReady' || type === 'sileroSpeechConfirmed' || type === 'vadInterruptTts') return '#22c55e';
+    if (type === 'vadProbeRecordStart' || type === 'vadProbeFinal' || type === 'rearmProbeRecordStart' || type === 'rearmProbeFinal' || type === 'vadCandidateConfirmed' || type === 'sileroReady' || type === 'sileroSpeechConfirmed' || type === 'vadInterruptTts' || type === 'wordDetectionInterruptTts') return '#22c55e';
     if (type === 'vadProbeRecordStop' || type === 'rearmProbeRecordStop' || type === 'vadStopMode' || type === 'sileroSpeechEnd') return '#fbbf24';
     if (type === 'autoPreRollSelect') return action.applied ? '#22c55e' : '#fbbf24';
     if (type === 'autoPreRollMode') return action.enabled ? '#22c55e' : '#aebfca';
     if (type === 'alwaysPreRollMode') return action.enabled ? '#22c55e' : '#aebfca';
-    if (type === 'vadRecordMode' || type === 'vadDetectorMode' || type === 'vadInterruptTtsMode' || type === 'vadTestMode' || type === 'rearmTestMode' || type === 'vadCandidateStart' || type === 'sileroLoad' || type === 'sileroCandidateStart') return '#38bdf8';
-    if (type === 'vadProbeError' || type === 'rearmProbeError' || type === 'rearmProbeFinalTimeout' || type === 'sileroError' || type === 'sileroMisfire' || type === 'vadInterruptTtsError') return '#f87171';
+    if (type === 'vadRecordMode' || type === 'vadDetectorMode' || type === 'vadInterruptTtsMode' || type === 'wordDetectionInterruptTtsMode' || type === 'vadTestMode' || type === 'rearmTestMode' || type === 'vadCandidateStart' || type === 'sileroLoad' || type === 'sileroCandidateStart') return '#38bdf8';
+    if (type === 'vadProbeError' || type === 'rearmProbeError' || type === 'rearmProbeFinalTimeout' || type === 'sileroError' || type === 'sileroMisfire' || type === 'vadInterruptTtsError' || type === 'wordDetectionInterruptTtsError') return '#f87171';
     if (mode === MODE_REARM && type === 'controlState') return action.disabled ? 'rgba(148,168,179,0.72)' : (action.pressed ? '#38bdf8' : '#aebfca');
     return '#aebfca';
   }
@@ -2266,6 +2329,7 @@ const VadDevModal = (() => {
     if (action.type === 'vadRecordMode') return `VAD Record ${action.enabled ? 'on' : 'off'}`;
     if (action.type === 'vadDetectorMode') return `detector ${action.detector || ''}`.trim();
     if (action.type === 'vadInterruptTtsMode') return `VAD interrupt TTS ${action.enabled ? 'on' : 'off'}`;
+    if (action.type === 'wordDetectionInterruptTtsMode') return `${action.label || 'word interrupt TTS'} ${action.enabled ? 'on' : 'off'}`;
     if (action.type === 'vadStopMode') return `VAD Stop ${action.enabled ? 'on' : 'off'}`;
     if (action.type === 'vadCandidateStart') return 'VAD candidate';
     if (action.type === 'vadCandidateConfirmed') return 'VAD strong';
@@ -2278,6 +2342,8 @@ const VadDevModal = (() => {
     if (action.type === 'sileroSpeechConfirmed') return 'Silero speech';
     if (action.type === 'vadInterruptTts') return 'VAD interrupted TTS';
     if (action.type === 'vadInterruptTtsError') return `VAD TTS interrupt error ${action.error || ''}`.trim();
+    if (action.type === 'wordDetectionInterruptTts') return 'word interrupted TTS';
+    if (action.type === 'wordDetectionInterruptTtsError') return `word TTS interrupt error ${action.error || ''}`.trim();
     if (action.type === 'sileroSpeechEnd') return 'Silero quiet';
     if (action.type === 'sileroMisfire') return 'Silero misfire';
     if (action.type === 'sileroError') return `Silero error ${action.error || ''}`.trim();
@@ -2374,8 +2440,14 @@ const VadDevModal = (() => {
       word_detection_aliases: state.wordDetection.aliasesText || '',
       word_detection_aliases_normalized: [...state.wordDetection.aliases],
       word_detection_aliases_count: state.wordDetection.aliases.length,
+      word_detection_match_interrupt_tts_enabled: wordDetectionMatchInterruptTtsEnabled(),
+      word_detection_match_interrupt_tts_disabled: !!els.wordDetectionInterruptToggle?.disabled,
       word_detection_awaiting_payload: !!state.wordDetection.awaitingPayload,
       word_detection_payload: state.wordDetection.payload || '',
+      word_detection_prefix_partial_interrupt_tts_enabled: wordDetectionPrefixPartialInterruptTtsEnabled(),
+      word_detection_prefix_partial_interrupt_tts_disabled: !!els.wordPrefixPartialInterruptToggle?.disabled,
+      word_detection_prefix_final_interrupt_tts_enabled: wordDetectionPrefixFinalInterruptTtsEnabled(),
+      word_detection_prefix_final_interrupt_tts_disabled: !!els.wordPrefixFinalInterruptToggle?.disabled,
       word_detection_prefix_payload1: state.wordDetection.prefix?.partialPayload || '',
       word_detection_prefix_payload2: state.wordDetection.prefix?.finalPayload || '',
       word_detection_prefix_last_matched_alias: state.wordDetection.prefix?.lastMatchedAlias || '',
@@ -2834,12 +2906,11 @@ const VadDevModal = (() => {
     return String(payload.value);
   }
 
-  async function interruptTtsForVad(mode, reason, detail = {}) {
-    if (!vadInterruptTtsEnabled()) return false;
+  async function interruptTts(mode, actionType, errorType, reason, detail = {}) {
     const now = Date.now();
     if (now - state.lastTtsInterruptAt < 600) return false;
     state.lastTtsInterruptAt = now;
-    pushAction(mode, 'vadInterruptTts', {
+    pushAction(mode, actionType, {
       reason,
       ...detail,
     });
@@ -2855,13 +2926,22 @@ const VadDevModal = (() => {
       poll({ force: true });
       return true;
     } catch (error) {
-      pushAction(mode, 'vadInterruptTtsError', {
+      pushAction(mode, errorType, {
         reason,
         error: error.message || String(error),
       });
       poll({ force: true });
       return false;
     }
+  }
+
+  async function interruptTtsForVad(mode, reason, detail = {}) {
+    if (!vadInterruptTtsEnabled()) return false;
+    return interruptTts(mode, 'vadInterruptTts', 'vadInterruptTtsError', reason, detail);
+  }
+
+  async function interruptTtsForWordDetection(mode, reason, detail = {}) {
+    return interruptTts(mode, 'wordDetectionInterruptTts', 'wordDetectionInterruptTtsError', reason, detail);
   }
 
   async function setSileroVadEnabled(enabled, options = {}) {
@@ -2926,6 +3006,83 @@ const VadDevModal = (() => {
     } finally {
       state.vadInterruptTtsSaveInFlight = false;
       renderSharedControls();
+    }
+    poll({ force: true });
+  }
+
+  async function setWordDetectionMatchInterruptTtsEnabled(enabled, options = {}) {
+    const next = !!enabled;
+    state.wordDetectionInterruptTtsSaveInFlight = true;
+    state.wordDetectionMatchInterruptTtsEnabled = next;
+    renderWordDetectionUi();
+    const mode = currentMode();
+    pushAction(mode, 'wordDetectionInterruptTtsMode', {
+      enabled: next,
+      label: 'match interrupt TTS',
+      scope: 'final_match',
+      reason: options.reason || 'set_word_detection_match_interrupt_tts',
+    });
+    try {
+      await voiceMode()?.saveWordDetectionMatchInterruptTtsEnabled?.(next);
+      status(options.status || (next ? 'MATCH INTERRUPT TTS saved.' : 'MATCH INTERRUPT TTS disabled.'));
+    } catch (error) {
+      status(`MATCH INTERRUPT TTS save failed: ${error.message || error}`);
+    } finally {
+      state.wordDetectionInterruptTtsSaveInFlight = false;
+      renderSharedControls();
+      renderWordDetectionUi();
+    }
+    poll({ force: true });
+  }
+
+  async function setWordDetectionPrefixPartialInterruptTtsEnabled(enabled, options = {}) {
+    const next = !!enabled;
+    state.wordDetectionInterruptTtsSaveInFlight = true;
+    state.wordDetectionPrefixPartialInterruptTtsEnabled = next;
+    if (next) state.wordDetectionPrefixFinalInterruptTtsEnabled = false;
+    renderWordDetectionUi();
+    const mode = currentMode();
+    pushAction(mode, 'wordDetectionInterruptTtsMode', {
+      enabled: next,
+      label: 'prefix partial interrupt TTS',
+      scope: 'prefix_partial',
+      reason: options.reason || 'set_word_detection_prefix_partial_interrupt_tts',
+    });
+    try {
+      await voiceMode()?.saveWordDetectionPrefixPartialInterruptTtsEnabled?.(next);
+      status(options.status || (next ? 'MATCH PREFIX PARTIAL INTERRUPT TTS saved.' : 'MATCH PREFIX PARTIAL INTERRUPT TTS disabled.'));
+    } catch (error) {
+      status(`MATCH PREFIX PARTIAL INTERRUPT TTS save failed: ${error.message || error}`);
+    } finally {
+      state.wordDetectionInterruptTtsSaveInFlight = false;
+      renderSharedControls();
+      renderWordDetectionUi();
+    }
+    poll({ force: true });
+  }
+
+  async function setWordDetectionPrefixFinalInterruptTtsEnabled(enabled, options = {}) {
+    const next = !!enabled;
+    state.wordDetectionInterruptTtsSaveInFlight = true;
+    state.wordDetectionPrefixFinalInterruptTtsEnabled = next;
+    if (next) state.wordDetectionPrefixPartialInterruptTtsEnabled = false;
+    renderWordDetectionUi();
+    const mode = currentMode();
+    pushAction(mode, 'wordDetectionInterruptTtsMode', {
+      enabled: next,
+      label: 'prefix final interrupt TTS',
+      scope: 'prefix_final',
+      reason: options.reason || 'set_word_detection_prefix_final_interrupt_tts',
+    });
+    try {
+      await voiceMode()?.saveWordDetectionPrefixFinalInterruptTtsEnabled?.(next);
+      status(options.status || (next ? 'MATCH PREFIX FINAL INTERRUPT TTS saved.' : 'MATCH PREFIX FINAL INTERRUPT TTS disabled.'));
+    } catch (error) {
+      status(`MATCH PREFIX FINAL INTERRUPT TTS save failed: ${error.message || error}`);
+    } finally {
+      state.wordDetectionInterruptTtsSaveInFlight = false;
+      renderSharedControls();
+      renderWordDetectionUi();
     }
     poll({ force: true });
   }
@@ -3049,6 +3206,27 @@ const VadDevModal = (() => {
       await setVadInterruptTtsEnabled(payloadBool(payload, true, 'vad_interrupt_tts_enabled', 'vad_interrupt_tts'), {
         reason: 'remote_command',
         status: 'VAD INTERRUPT TTS saved by automation.',
+      });
+      return true;
+    }
+    if (action === 'set_word_detection_match_interrupt_tts' || action === 'set_word_detection_match_interrupt_tts_enabled') {
+      await setWordDetectionMatchInterruptTtsEnabled(payloadBool(payload, true, 'word_detection_match_interrupt_tts_enabled', 'match_interrupt_tts'), {
+        reason: 'remote_command',
+        status: 'MATCH INTERRUPT TTS saved by automation.',
+      });
+      return true;
+    }
+    if (action === 'set_word_detection_prefix_partial_interrupt_tts' || action === 'set_word_detection_prefix_partial_interrupt_tts_enabled') {
+      await setWordDetectionPrefixPartialInterruptTtsEnabled(payloadBool(payload, true, 'word_detection_prefix_partial_interrupt_tts_enabled', 'match_prefix_partial_interrupt_tts'), {
+        reason: 'remote_command',
+        status: 'MATCH PREFIX PARTIAL INTERRUPT TTS saved by automation.',
+      });
+      return true;
+    }
+    if (action === 'set_word_detection_prefix_final_interrupt_tts' || action === 'set_word_detection_prefix_final_interrupt_tts_enabled') {
+      await setWordDetectionPrefixFinalInterruptTtsEnabled(payloadBool(payload, true, 'word_detection_prefix_final_interrupt_tts_enabled', 'match_prefix_final_interrupt_tts'), {
+        reason: 'remote_command',
+        status: 'MATCH PREFIX FINAL INTERRUPT TTS saved by automation.',
       });
       return true;
     }
@@ -3248,11 +3426,14 @@ const VadDevModal = (() => {
     els.wordDetectionBlock = el('vad-dev-word-detection');
     els.wordDetectionAliases = el('vad-dev-word-detection-aliases');
     els.wordDetectionState = el('vad-dev-word-detection-state');
+    els.wordDetectionInterruptToggle = el('vad-dev-word-detection-interrupt-tts-toggle');
     els.wordDetectionPayload = el('vad-dev-word-detection-payload');
     els.wordDetectionFinal = el('vad-dev-word-detection-final');
     els.wordDetectionMatch = el('vad-dev-word-detection-match');
     els.wordPrefixBlock = el('vad-dev-word-prefix');
     els.wordPrefixState = el('vad-dev-word-prefix-state');
+    els.wordPrefixPartialInterruptToggle = el('vad-dev-word-prefix-partial-interrupt-tts-toggle');
+    els.wordPrefixFinalInterruptToggle = el('vad-dev-word-prefix-final-interrupt-tts-toggle');
     els.wordPrefixPayload1 = el('vad-dev-word-prefix-payload1');
     els.wordPrefixPayload2 = el('vad-dev-word-prefix-payload2');
 
@@ -3328,6 +3509,15 @@ const VadDevModal = (() => {
     });
     els.wordDetectionAliases?.addEventListener('input', () => {
       setWordDetectionAliases(els.wordDetectionAliases.value);
+    });
+    els.wordDetectionInterruptToggle?.addEventListener('change', () => {
+      void setWordDetectionMatchInterruptTtsEnabled(els.wordDetectionInterruptToggle.checked, { reason: 'ui_toggle' });
+    });
+    els.wordPrefixPartialInterruptToggle?.addEventListener('change', () => {
+      void setWordDetectionPrefixPartialInterruptTtsEnabled(els.wordPrefixPartialInterruptToggle.checked, { reason: 'ui_toggle' });
+    });
+    els.wordPrefixFinalInterruptToggle?.addEventListener('change', () => {
+      void setWordDetectionPrefixFinalInterruptTtsEnabled(els.wordPrefixFinalInterruptToggle.checked, { reason: 'ui_toggle' });
     });
     window.addEventListener('blueprints:voice-mode:changed', renderSharedControls);
     window.addEventListener('blueprints:voice-mode:stt-noise-changed', renderSharedControls);
