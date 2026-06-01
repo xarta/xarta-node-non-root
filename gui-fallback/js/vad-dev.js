@@ -246,6 +246,23 @@ const VadDevModal = (() => {
       lastUpdatedAt: 0,
       detections: 0,
       captures: 0,
+      prefix: createWordDetectionPrefixState(),
+    };
+  }
+
+  function createWordDetectionPrefixState() {
+    return {
+      partialPayload: '',
+      finalPayload: '',
+      lastPartial: '',
+      lastFinal: '',
+      lastMatchedAlias: '',
+      lastFinalMatchedAlias: '',
+      lastSegmentKey: '',
+      lastMatchAt: 0,
+      lastFinalAt: 0,
+      detections: 0,
+      finalCaptures: 0,
     };
   }
 
@@ -772,6 +789,52 @@ const VadDevModal = (() => {
     return String(value ?? '').toLowerCase().split(',').join('').split('.').join('').trim();
   }
 
+  function isAsciiAlphaNumeric(value) {
+    if (!value) return false;
+    const code = String(value).charCodeAt(0);
+    return (code >= 48 && code <= 57)
+      || (code >= 65 && code <= 90)
+      || (code >= 97 && code <= 122);
+  }
+
+  function isWordDetectionPayloadLead(value) {
+    return ',.;:!?-"\'`)]}'.includes(String(value || '').charAt(0));
+  }
+
+  function trimWordDetectionPayload(value) {
+    let text = String(value ?? '').trim();
+    while (text && isWordDetectionPayloadLead(text.charAt(0))) {
+      text = text.slice(1).trimStart();
+    }
+    return text.trim();
+  }
+
+  function wordDetectionPrefixMatch(value) {
+    const text = String(value ?? '').trimStart();
+    const lower = text.toLowerCase();
+    const aliases = [...state.wordDetection.aliases].sort((a, b) => b.length - a.length);
+    for (const alias of aliases) {
+      if (!alias || !lower.startsWith(alias)) continue;
+      const next = lower.charAt(alias.length);
+      if (next && isAsciiAlphaNumeric(next)) continue;
+      return {
+        alias,
+        text,
+        payload: trimWordDetectionPayload(text.slice(alias.length)),
+      };
+    }
+    return {
+      alias: '',
+      text,
+      payload: '',
+    };
+  }
+
+  function wordDetectionSegmentKey(mode) {
+    const target = probe(mode);
+    return `${mode}:${Number(target.segmentId || 0)}`;
+  }
+
   function wordDetectionAliases(value) {
     const aliases = [];
     String(value ?? '').split(';').forEach(part => {
@@ -800,11 +863,33 @@ const VadDevModal = (() => {
       last_updated_at_ms: Number(word.lastUpdatedAt || 0),
       detections: Number(word.detections || 0),
       captures: Number(word.captures || 0),
+      prefix: wordDetectionPrefixSnapshot(),
+    };
+  }
+
+  function wordDetectionPrefixSnapshot() {
+    const prefix = state.wordDetection.prefix || createWordDetectionPrefixState();
+    return {
+      enabled: state.wordDetection.aliases.length > 0,
+      payload1: prefix.partialPayload || '',
+      payload2: prefix.finalPayload || '',
+      partial_payload: prefix.partialPayload || '',
+      final_payload: prefix.finalPayload || '',
+      last_partial: prefix.lastPartial || '',
+      last_final: prefix.lastFinal || '',
+      last_matched_alias: prefix.lastMatchedAlias || '',
+      last_final_matched_alias: prefix.lastFinalMatchedAlias || '',
+      last_segment_key: prefix.lastSegmentKey || '',
+      last_match_at_ms: Number(prefix.lastMatchAt || 0),
+      last_final_at_ms: Number(prefix.lastFinalAt || 0),
+      detections: Number(prefix.detections || 0),
+      final_captures: Number(prefix.finalCaptures || 0),
     };
   }
 
   function renderWordDetectionUi() {
     const word = state.wordDetection;
+    const prefix = word.prefix || createWordDetectionPrefixState();
     if (els.wordDetectionAliases && document.activeElement !== els.wordDetectionAliases) {
       els.wordDetectionAliases.value = word.aliasesText || '';
     }
@@ -817,6 +902,15 @@ const VadDevModal = (() => {
     setText(els.wordDetectionMatch, word.lastMatchedAlias, '--');
     if (els.wordDetectionBlock) {
       els.wordDetectionBlock.dataset.state = word.awaitingPayload ? 'armed' : (word.payload ? 'captured' : 'idle');
+    }
+    const prefixLabel = word.aliases.length
+      ? (prefix.finalPayload ? 'Final payload captured' : (prefix.lastMatchedAlias ? 'Partial prefix seen' : 'Idle'))
+      : 'No sense word.';
+    setText(els.wordPrefixState, prefixLabel, '');
+    setText(els.wordPrefixPayload1, prefix.partialPayload, '');
+    setText(els.wordPrefixPayload2, prefix.finalPayload, '');
+    if (els.wordPrefixBlock) {
+      els.wordPrefixBlock.dataset.state = prefix.finalPayload ? 'captured' : (prefix.lastMatchedAlias ? 'armed' : 'idle');
     }
   }
 
@@ -855,6 +949,45 @@ const VadDevModal = (() => {
       word.lastPayloadAt = Date.now();
       word.awaitingPayload = false;
       word.captures += 1;
+    }
+    renderWordDetectionUi();
+  }
+
+  function handleWordDetectionPrefixPartial(mode, textValue, rawValue = '') {
+    const word = state.wordDetection;
+    const prefix = word.prefix || createWordDetectionPrefixState();
+    word.prefix = prefix;
+    const partialText = String(textValue || rawValue || '').trimStart();
+    const match = wordDetectionPrefixMatch(partialText);
+    prefix.lastPartial = match.text || partialText;
+    if (match.alias) {
+      const segmentKey = wordDetectionSegmentKey(mode);
+      const firstMatchInSegment = prefix.lastSegmentKey !== segmentKey;
+      prefix.partialPayload = match.payload;
+      prefix.finalPayload = '';
+      prefix.lastMatchedAlias = match.alias;
+      prefix.lastSegmentKey = segmentKey;
+      prefix.lastMatchAt = Date.now();
+      if (firstMatchInSegment) prefix.detections += 1;
+    }
+    renderWordDetectionUi();
+  }
+
+  function handleWordDetectionPrefixFinal(mode, textValue, rawValue = '') {
+    const word = state.wordDetection;
+    const prefix = word.prefix || createWordDetectionPrefixState();
+    word.prefix = prefix;
+    const finalText = String(textValue || rawValue || '').trimStart();
+    const match = wordDetectionPrefixMatch(finalText);
+    prefix.lastFinal = match.text || finalText;
+    prefix.lastFinalAt = Date.now();
+    if (match.alias) {
+      prefix.finalPayload = match.payload;
+      prefix.lastFinalMatchedAlias = match.alias;
+      prefix.finalCaptures += 1;
+    } else {
+      prefix.finalPayload = '';
+      prefix.lastFinalMatchedAlias = '';
     }
     renderWordDetectionUi();
   }
@@ -1663,6 +1796,7 @@ const VadDevModal = (() => {
         display_text: displayValue,
       });
       if (displayValue) target.transcript = displayValue;
+      handleWordDetectionPrefixPartial(mode, displayValue, rawValue);
       renderProbeUi(mode);
       poll({ force: true });
       return;
@@ -1678,6 +1812,7 @@ const VadDevModal = (() => {
       });
       pushAction(mode, mode === MODE_MANUAL ? 'manualFinal' : (mode === MODE_REARM ? 'rearmProbeFinal' : 'vadProbeFinal'), { text: value, raw_text: rawValue });
       handleWordDetectionFinal(mode, value, rawValue);
+      handleWordDetectionPrefixFinal(mode, value, rawValue);
       target.recording = false;
       target.finalizing = false;
       target.starting = false;
@@ -2214,6 +2349,10 @@ const VadDevModal = (() => {
       word_detection_aliases_count: state.wordDetection.aliases.length,
       word_detection_awaiting_payload: !!state.wordDetection.awaitingPayload,
       word_detection_payload: state.wordDetection.payload || '',
+      word_detection_prefix_payload1: state.wordDetection.prefix?.partialPayload || '',
+      word_detection_prefix_payload2: state.wordDetection.prefix?.finalPayload || '',
+      word_detection_prefix_last_matched_alias: state.wordDetection.prefix?.lastMatchedAlias || '',
+      word_detection_prefix_last_final_matched_alias: state.wordDetection.prefix?.lastFinalMatchedAlias || '',
     };
   }
 
@@ -3025,6 +3164,10 @@ const VadDevModal = (() => {
     els.wordDetectionPayload = el('vad-dev-word-detection-payload');
     els.wordDetectionFinal = el('vad-dev-word-detection-final');
     els.wordDetectionMatch = el('vad-dev-word-detection-match');
+    els.wordPrefixBlock = el('vad-dev-word-prefix');
+    els.wordPrefixState = el('vad-dev-word-prefix-state');
+    els.wordPrefixPayload1 = el('vad-dev-word-prefix-payload1');
+    els.wordPrefixPayload2 = el('vad-dev-word-prefix-payload2');
 
     els.tabManual?.addEventListener('change', () => { if (els.tabManual.checked) { state.selectedMode = MODE_MANUAL; renderSharedControls(); poll({ force: true }); } });
     els.tabVad?.addEventListener('change', () => { if (els.tabVad.checked) { state.selectedMode = MODE_VAD; renderSharedControls(); poll({ force: true }); } });

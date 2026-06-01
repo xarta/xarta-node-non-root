@@ -237,6 +237,10 @@
   min-width: 0;
 }
 
+.vad-dev-word__grid--prefix {
+  grid-template-columns: 1fr;
+}
+
 .vad-dev-word__readout {
   display: grid;
   align-content: start;
