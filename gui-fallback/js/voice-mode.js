@@ -272,6 +272,7 @@ const BlueprintsVoiceMode = (() => {
         ? Math.max(STT_PRE_ROLL_FRAMES_MIN, Math.min(STT_PRE_ROLL_FRAMES_MAX, Math.round(preRollFrames / STT_PRE_ROLL_FRAMES_STEP) * STT_PRE_ROLL_FRAMES_STEP))
         : STT_PRE_ROLL_FRAMES_DEFAULT,
       silero_vad_enabled: _policyBool(raw.silero_vad_enabled ?? raw.silero_enabled, false),
+      vad_interrupt_tts_enabled: _policyBool(raw.vad_interrupt_tts_enabled ?? raw.vad_interrupt_tts, false),
       always_pre_roll_enabled: _policyBool(raw.always_pre_roll_enabled ?? raw.always_pre_roll, false),
       silence_reset_timeout_ms: Number.isFinite(silenceResetMs)
         ? Math.max(STT_SILENCE_RESET_MIN_MS, Math.min(STT_SILENCE_RESET_MAX_MS, Math.round(silenceResetMs / STT_SILENCE_RESET_STEP_MS) * STT_SILENCE_RESET_STEP_MS))
@@ -913,6 +914,29 @@ const BlueprintsVoiceMode = (() => {
     return nextStt;
   }
 
+  async function saveVadInterruptTtsEnabled(enabled) {
+    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
+    const nextStt = {
+      ...currentPolicy,
+      vad_interrupt_tts_enabled: _cleanSttPolicy({ vad_interrupt_tts_enabled: enabled }).vad_interrupt_tts_enabled,
+    };
+    const response = await apiFetch(WAKE_SETTINGS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        wake_to_talk: getWakeSettings(),
+        stt: nextStt,
+      }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
+    _applyServerState(payload);
+    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
+      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
+    }));
+    return nextStt;
+  }
+
   async function saveAlwaysPreRollEnabled(enabled) {
     const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
     const nextStt = {
@@ -1152,6 +1176,10 @@ const BlueprintsVoiceMode = (() => {
 
   function sileroVadEnabled() {
     return _cleanSttPolicy(_serverState.policy?.stt).silero_vad_enabled;
+  }
+
+  function vadInterruptTtsEnabled() {
+    return _cleanSttPolicy(_serverState.policy?.stt).vad_interrupt_tts_enabled;
   }
 
   function alwaysPreRollEnabled() {
@@ -1468,6 +1496,7 @@ const BlueprintsVoiceMode = (() => {
     vadResetTimeoutMs,
     preRollFrames,
     sileroVadEnabled,
+    vadInterruptTtsEnabled,
     alwaysPreRollEnabled,
     silenceResetTimeoutMs,
     sttMode,
@@ -1484,6 +1513,7 @@ const BlueprintsVoiceMode = (() => {
     saveVadResetTimeout,
     savePreRollFrames,
     saveSileroVadEnabled,
+    saveVadInterruptTtsEnabled,
     saveAlwaysPreRollEnabled,
     saveSilenceResetTimeout,
     setSttMode: _setSttMode,

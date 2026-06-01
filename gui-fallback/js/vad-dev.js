@@ -89,12 +89,15 @@ const VadDevModal = (() => {
     timelinePromise: null,
     selectedMode: MODE_REARM,
     sileroEnabled: false,
+    vadInterruptTtsEnabled: false,
     autoPreRollEnabled: storedBool(LS_AUTO_PRE_ROLL, false),
     alwaysPreRollEnabled: false,
     preRollFrames: PRE_ROLL_FRAMES_DEFAULT,
     noiseThresholdDb: storedNoiseThresholdDb(),
     sileroSaveInFlight: false,
+    vadInterruptTtsSaveInFlight: false,
     alwaysPreRollSaveInFlight: false,
+    lastTtsInterruptAt: 0,
     sileroScriptPromises: {},
     devCommandIds: [],
     devStatusLastAt: 0,
@@ -521,9 +524,16 @@ const VadDevModal = (() => {
     return !!state.alwaysPreRollEnabled;
   }
 
+  function vadInterruptTtsEnabled() {
+    return !!state.vadInterruptTtsEnabled;
+  }
+
   function syncServerVadSettings(vm = voiceMode()) {
     if (!state.sileroSaveInFlight && typeof vm?.sileroVadEnabled === 'function') {
       state.sileroEnabled = !!vm.sileroVadEnabled();
+    }
+    if (!state.vadInterruptTtsSaveInFlight && typeof vm?.vadInterruptTtsEnabled === 'function') {
+      state.vadInterruptTtsEnabled = !!vm.vadInterruptTtsEnabled();
     }
     if (!state.alwaysPreRollSaveInFlight && typeof vm?.alwaysPreRollEnabled === 'function') {
       state.alwaysPreRollEnabled = !!vm.alwaysPreRollEnabled();
@@ -537,6 +547,7 @@ const VadDevModal = (() => {
     if (els.sileroToggle) els.sileroToggle.checked = !!state.sileroEnabled;
     if (els.autoPreRollToggle) els.autoPreRollToggle.checked = !!state.autoPreRollEnabled;
     if (els.alwaysPreRollToggle) els.alwaysPreRollToggle.checked = alwaysPreRollEnabled();
+    if (els.vadInterruptTtsToggle) els.vadInterruptTtsToggle.checked = vadInterruptTtsEnabled();
     if (els.noiseThreshold) els.noiseThreshold.value = String(noiseThresholdDb());
     if (els.noiseLevel) els.noiseLevel.value = String(voiceNoiseLevelDb());
     const aggregation = Number(vm?.sttAggregationTimeoutMs?.());
@@ -1157,6 +1168,10 @@ const VadDevModal = (() => {
         negative_threshold: SILERO_NEGATIVE_THRESHOLD,
         speech_probability: probe(mode).silero.isSpeechProbability,
       });
+      void interruptTtsForVad(mode, 'silero_speech_confirmed', {
+        detector: DETECTOR_SILERO,
+        speech_probability: probe(mode).silero.isSpeechProbability,
+      });
     }
     if (speechStarted && target.vadRecordEnabled && !target.recording && !target.finalizing && !target.starting) {
       setProbeStatus(mode, 'Silero VAD Record triggered; opening STT.');
@@ -1584,6 +1599,13 @@ const VadDevModal = (() => {
         candidate_frames: vad.candidateFrames,
         delta_db: Number(deltaDb.toFixed(1)),
       });
+      if (speechStarted) {
+        void interruptTtsForVad(mode, 'energy_vad_confirmed', {
+          detector: DETECTOR_ENERGY,
+          start_threshold: strongFrame ? 'delta_strong_confirmed' : 'delta_persistent_confirmed',
+          delta_db: Number(deltaDb.toFixed(1)),
+        });
+      }
       if (speechStarted && target.vadRecordEnabled && !target.recording && !target.finalizing && !target.starting) {
         setProbeStatus(mode, 'VAD Record triggered; opening STT.');
         void startRecording(mode, {
@@ -2222,13 +2244,13 @@ const VadDevModal = (() => {
     if (type === 'manualRecordStop') return '#fbbf24';
     if (type === 'manualTestMode') return '#38bdf8';
     if (type === 'manualError') return '#f87171';
-    if (type === 'vadProbeRecordStart' || type === 'vadProbeFinal' || type === 'rearmProbeRecordStart' || type === 'rearmProbeFinal' || type === 'vadCandidateConfirmed' || type === 'sileroReady' || type === 'sileroSpeechConfirmed') return '#22c55e';
+    if (type === 'vadProbeRecordStart' || type === 'vadProbeFinal' || type === 'rearmProbeRecordStart' || type === 'rearmProbeFinal' || type === 'vadCandidateConfirmed' || type === 'sileroReady' || type === 'sileroSpeechConfirmed' || type === 'vadInterruptTts') return '#22c55e';
     if (type === 'vadProbeRecordStop' || type === 'rearmProbeRecordStop' || type === 'vadStopMode' || type === 'sileroSpeechEnd') return '#fbbf24';
     if (type === 'autoPreRollSelect') return action.applied ? '#22c55e' : '#fbbf24';
     if (type === 'autoPreRollMode') return action.enabled ? '#22c55e' : '#aebfca';
     if (type === 'alwaysPreRollMode') return action.enabled ? '#22c55e' : '#aebfca';
-    if (type === 'vadRecordMode' || type === 'vadDetectorMode' || type === 'vadTestMode' || type === 'rearmTestMode' || type === 'vadCandidateStart' || type === 'sileroLoad' || type === 'sileroCandidateStart') return '#38bdf8';
-    if (type === 'vadProbeError' || type === 'rearmProbeError' || type === 'rearmProbeFinalTimeout' || type === 'sileroError' || type === 'sileroMisfire') return '#f87171';
+    if (type === 'vadRecordMode' || type === 'vadDetectorMode' || type === 'vadInterruptTtsMode' || type === 'vadTestMode' || type === 'rearmTestMode' || type === 'vadCandidateStart' || type === 'sileroLoad' || type === 'sileroCandidateStart') return '#38bdf8';
+    if (type === 'vadProbeError' || type === 'rearmProbeError' || type === 'rearmProbeFinalTimeout' || type === 'sileroError' || type === 'sileroMisfire' || type === 'vadInterruptTtsError') return '#f87171';
     if (mode === MODE_REARM && type === 'controlState') return action.disabled ? 'rgba(148,168,179,0.72)' : (action.pressed ? '#38bdf8' : '#aebfca');
     return '#aebfca';
   }
@@ -2243,6 +2265,7 @@ const VadDevModal = (() => {
     if (action.type === 'vadRecordMode' && action.auto_rearm) return `VAD Record auto rearmed ${action.reason || ''}`.trim();
     if (action.type === 'vadRecordMode') return `VAD Record ${action.enabled ? 'on' : 'off'}`;
     if (action.type === 'vadDetectorMode') return `detector ${action.detector || ''}`.trim();
+    if (action.type === 'vadInterruptTtsMode') return `VAD interrupt TTS ${action.enabled ? 'on' : 'off'}`;
     if (action.type === 'vadStopMode') return `VAD Stop ${action.enabled ? 'on' : 'off'}`;
     if (action.type === 'vadCandidateStart') return 'VAD candidate';
     if (action.type === 'vadCandidateConfirmed') return 'VAD strong';
@@ -2253,6 +2276,8 @@ const VadDevModal = (() => {
     if (action.type === 'sileroReady') return 'Silero ready';
     if (action.type === 'sileroCandidateStart') return 'Silero candidate';
     if (action.type === 'sileroSpeechConfirmed') return 'Silero speech';
+    if (action.type === 'vadInterruptTts') return 'VAD interrupted TTS';
+    if (action.type === 'vadInterruptTtsError') return `VAD TTS interrupt error ${action.error || ''}`.trim();
     if (action.type === 'sileroSpeechEnd') return 'Silero quiet';
     if (action.type === 'sileroMisfire') return 'Silero misfire';
     if (action.type === 'sileroError') return `Silero error ${action.error || ''}`.trim();
@@ -2330,6 +2355,8 @@ const VadDevModal = (() => {
       always_pre_roll_enabled: alwaysPreRollEnabled(),
       always_pre_roll_disabled: !!els.alwaysPreRollToggle?.disabled,
       auto_pre_roll_overridden_by_always: !!auto.auto_pre_roll_overridden_by_always,
+      vad_interrupt_tts_enabled: vadInterruptTtsEnabled(),
+      vad_interrupt_tts_disabled: !!els.vadInterruptTtsToggle?.disabled,
       pre_roll_policy_enabled: !!auto.pre_roll_policy_enabled,
       pre_roll_frames: configuredPreRollFrames,
       num_pre_roll_frames: configuredPreRollFrames,
@@ -2807,6 +2834,36 @@ const VadDevModal = (() => {
     return String(payload.value);
   }
 
+  async function interruptTtsForVad(mode, reason, detail = {}) {
+    if (!vadInterruptTtsEnabled()) return false;
+    const now = Date.now();
+    if (now - state.lastTtsInterruptAt < 600) return false;
+    state.lastTtsInterruptAt = now;
+    pushAction(mode, 'vadInterruptTts', {
+      reason,
+      ...detail,
+    });
+    try {
+      if (typeof window.BlueprintsTtsClient?.stop === 'function') {
+        await window.BlueprintsTtsClient.stop();
+      } else if (typeof window.stopTtsWrapperSpeak === 'function') {
+        await window.stopTtsWrapperSpeak();
+      }
+      try {
+        window.speechSynthesis?.cancel?.();
+      } catch (_) {}
+      poll({ force: true });
+      return true;
+    } catch (error) {
+      pushAction(mode, 'vadInterruptTtsError', {
+        reason,
+        error: error.message || String(error),
+      });
+      poll({ force: true });
+      return false;
+    }
+  }
+
   async function setSileroVadEnabled(enabled, options = {}) {
     const next = !!enabled;
     const changed = state.sileroEnabled !== next;
@@ -2848,6 +2905,28 @@ const VadDevModal = (() => {
       renderSharedControls();
     }
     renderAllProbeUi();
+    poll({ force: true });
+  }
+
+  async function setVadInterruptTtsEnabled(enabled, options = {}) {
+    const next = !!enabled;
+    state.vadInterruptTtsSaveInFlight = true;
+    state.vadInterruptTtsEnabled = next;
+    renderSharedControls();
+    const mode = currentMode();
+    pushAction(mode, 'vadInterruptTtsMode', {
+      enabled: state.vadInterruptTtsEnabled,
+      reason: options.reason || 'set_vad_interrupt_tts',
+    });
+    try {
+      await voiceMode()?.saveVadInterruptTtsEnabled?.(next);
+      status(options.status || (next ? 'VAD INTERRUPT TTS saved.' : 'VAD INTERRUPT TTS disabled.'));
+    } catch (error) {
+      status(`VAD INTERRUPT TTS save failed: ${error.message || error}`);
+    } finally {
+      state.vadInterruptTtsSaveInFlight = false;
+      renderSharedControls();
+    }
     poll({ force: true });
   }
 
@@ -2964,6 +3043,13 @@ const VadDevModal = (() => {
     }
     if (action === 'set_silero_vad') {
       await setSileroVadEnabled(payloadBool(payload, true, 'silero_vad_enabled', 'silero_enabled'), { reason: 'remote_command' });
+      return true;
+    }
+    if (action === 'set_vad_interrupt_tts' || action === 'set_vad_interrupt_tts_enabled') {
+      await setVadInterruptTtsEnabled(payloadBool(payload, true, 'vad_interrupt_tts_enabled', 'vad_interrupt_tts'), {
+        reason: 'remote_command',
+        status: 'VAD INTERRUPT TTS saved by automation.',
+      });
       return true;
     }
     if (action === 'set_vad_detector') {
@@ -3118,6 +3204,7 @@ const VadDevModal = (() => {
     els.status = el('vad-dev-status');
     els.noiseToggle = el('vad-dev-noise-toggle');
     els.sileroToggle = el('vad-dev-silero-toggle');
+    els.vadInterruptTtsToggle = el('vad-dev-interrupt-tts-toggle');
     els.autoPreRollWrap = el('vad-dev-auto-pre-roll-wrap');
     els.autoPreRollToggle = el('vad-dev-auto-pre-roll-toggle');
     els.alwaysPreRollWrap = el('vad-dev-always-pre-roll-wrap');
@@ -3195,6 +3282,9 @@ const VadDevModal = (() => {
     });
     els.sileroToggle?.addEventListener('change', () => {
       void setSileroVadEnabled(els.sileroToggle.checked, { reason: 'ui_toggle' });
+    });
+    els.vadInterruptTtsToggle?.addEventListener('change', () => {
+      void setVadInterruptTtsEnabled(els.vadInterruptTtsToggle.checked, { reason: 'ui_toggle' });
     });
     els.autoPreRollToggle?.addEventListener('change', () => {
       setAutoPreRollEnabled(els.autoPreRollToggle.checked, { reason: 'ui_toggle' });
