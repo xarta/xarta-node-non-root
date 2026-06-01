@@ -4586,13 +4586,11 @@
           <div class="voice-mode-form-grid">
             <label>Wake word<input type="text" data-wake-instance="local" data-wake-key="wake_word" /></label>
             <label>Matrix room<select data-wake-instance="local" data-wake-key="matrix_room_id"></select></label>
-            <label>Pause after wake<input type="range" min="0" max="2000" step="50" data-wake-instance="local" data-wake-key="post_wake_pause_ms" /><output data-wake-instance="local" data-wake-output="post_wake_pause_ms">500 ms</output></label>
-            <label>No-speech cancel<input type="range" min="0" max="2000" step="50" data-wake-instance="local" data-wake-key="initial_silence_cancel_ms" /><output data-wake-instance="local" data-wake-output="initial_silence_cancel_ms">1000 ms</output></label>
-            <label>Pause reset<input type="range" min="5" max="120" step="5" data-wake-instance="local" data-wake-key="pause_reset_seconds" /><output data-wake-instance="local" data-wake-output="pause_reset_seconds">30s</output></label>
             <label>Auto execute<input type="range" min="0" max="3000" step="300" data-wake-instance="local" data-wake-key="auto_execute_silence_ms" /><output data-wake-instance="local" data-wake-output="auto_execute_silence_ms">Off</output></label>
+            <label>Execute cancel<input type="range" min="0" max="3000" step="300" data-wake-instance="local" data-wake-key="execute_cancel_ms" /><output data-wake-instance="local" data-wake-output="execute_cancel_ms">Off</output></label>
             <label>Pause command<input type="text" data-wake-instance="local" data-wake-key="commands.pause" /></label>
-            <label>Resume command<input type="text" data-wake-instance="local" data-wake-key="commands.resume" /></label>
             <label>Execute command<input type="text" data-wake-instance="local" data-wake-key="commands.execute" /></label>
+            <label>Resume command<input type="text" data-wake-instance="local" data-wake-key="commands.resume" /></label>
             <label>Cancel command<input type="text" data-wake-instance="local" data-wake-key="commands.cancel" /></label>
           </div>
         </div>
@@ -4606,13 +4604,11 @@
           <div class="voice-mode-form-grid">
             <label>Wake word<input type="text" data-wake-instance="vps" data-wake-key="wake_word" /></label>
             <label>Matrix room<select data-wake-instance="vps" data-wake-key="matrix_room_id"></select></label>
-            <label>Pause after wake<input type="range" min="0" max="2000" step="50" data-wake-instance="vps" data-wake-key="post_wake_pause_ms" /><output data-wake-instance="vps" data-wake-output="post_wake_pause_ms">500 ms</output></label>
-            <label>No-speech cancel<input type="range" min="0" max="2000" step="50" data-wake-instance="vps" data-wake-key="initial_silence_cancel_ms" /><output data-wake-instance="vps" data-wake-output="initial_silence_cancel_ms">1000 ms</output></label>
-            <label>Pause reset<input type="range" min="5" max="120" step="5" data-wake-instance="vps" data-wake-key="pause_reset_seconds" /><output data-wake-instance="vps" data-wake-output="pause_reset_seconds">30s</output></label>
             <label>Auto execute<input type="range" min="0" max="3000" step="300" data-wake-instance="vps" data-wake-key="auto_execute_silence_ms" /><output data-wake-instance="vps" data-wake-output="auto_execute_silence_ms">Off</output></label>
+            <label>Execute cancel<input type="range" min="0" max="3000" step="300" data-wake-instance="vps" data-wake-key="execute_cancel_ms" /><output data-wake-instance="vps" data-wake-output="execute_cancel_ms">Off</output></label>
             <label>Pause command<input type="text" data-wake-instance="vps" data-wake-key="commands.pause" /></label>
-            <label>Resume command<input type="text" data-wake-instance="vps" data-wake-key="commands.resume" /></label>
             <label>Execute command<input type="text" data-wake-instance="vps" data-wake-key="commands.execute" /></label>
+            <label>Resume command<input type="text" data-wake-instance="vps" data-wake-key="commands.resume" /></label>
             <label>Cancel command<input type="text" data-wake-instance="vps" data-wake-key="commands.cancel" /></label>
           </div>
         </div>
@@ -4858,161 +4854,50 @@
     <section class="wake-dev__controls" aria-label="Wake-to-talk local controls">
       <div class="wake-dev-card wake-dev-browser">
         <div class="wake-dev-browser__copy">
-          <div class="wake-dev-card__title">Local Hermes Wake-to-Talk</div>
+          <div class="wake-dev-card__title">Hermes Wake-to-Talk</div>
           <div class="wake-dev-meta" id="wake-dev-browser-meta">Checking browser lease...</div>
         </div>
         <button class="hub-modal-btn wake-dev-browser__activate" type="button" id="wake-dev-activate-btn">Activate</button>
       </div>
 
-      <div class="wake-dev-card wake-dev-switches">
-        <label class="hub-checkbox wake-dev-check">
-          <input class="hub-checkbox__input" type="checkbox" id="wake-dev-stt-wake-toggle" />
-          <span class="hub-checkbox__box" aria-hidden="true"></span>
-          <span class="hub-checkbox__label wake-dev-check__label">Wake to talk</span>
-        </label>
-        <label class="hub-checkbox wake-dev-check">
-          <input class="hub-checkbox__input" type="checkbox" id="wake-dev-noise-toggle" />
-          <span class="hub-checkbox__box" aria-hidden="true"></span>
-          <span class="hub-checkbox__label wake-dev-check__label">Noise reduction</span>
-        </label>
-        <label class="wake-dev-slider" for="wake-dev-noise-level">
-          <span>Noise level</span>
-          <input type="range" id="wake-dev-noise-level" min="0" max="12" step="0.5" value="6" autocomplete="off" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
-          <output id="wake-dev-noise-level-label" for="wake-dev-noise-level">6.0 dB</output>
-        </label>
-        <label class="wake-dev-slider" for="wake-dev-aggregation-timeout">
-          <span>Speech aggregation</span>
-          <input type="range" id="wake-dev-aggregation-timeout" min="50" max="300" step="10" value="80" autocomplete="off" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
-          <output id="wake-dev-aggregation-label" for="wake-dev-aggregation-timeout">80 ms</output>
-        </label>
-        <label class="wake-dev-slider" for="wake-dev-vad-reset-timeout">
-          <span>VAD reset timeout</span>
-          <input type="range" id="wake-dev-vad-reset-timeout" min="0" max="2000" step="50" value="300" autocomplete="off" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
-          <output id="wake-dev-vad-reset-label" for="wake-dev-vad-reset-timeout">300 ms</output>
-        </label>
+      <div class="wake-dev-card wake-dev-vad-link">
+        <div class="wake-dev-browser__copy">
+          <div class="wake-dev-card__title">VAD Dev</div>
+          <div class="wake-dev-meta">Use VAD Dev for VAD capture, noise, pre-roll, and test settings.</div>
+        </div>
+        <button class="hub-modal-btn" type="button" id="wake-dev-open-vad-dev">VAD Dev</button>
       </div>
 
-      <div class="wake-dev-card wake-dev-test wake-dev-test-tabs">
-        <input class="wake-dev-test-tab-radio" type="radio" name="wake-dev-test-tab" id="wake-dev-test-tab-manual" checked>
-        <input class="wake-dev-test-tab-radio" type="radio" name="wake-dev-test-tab" id="wake-dev-test-tab-vad">
-        <input class="wake-dev-test-tab-radio" type="radio" name="wake-dev-test-tab" id="wake-dev-test-tab-rearm">
-        <div class="wake-dev-test-tablist" role="tablist" aria-label="STT test modes">
-          <label class="wake-dev-test-tab" role="tab" for="wake-dev-test-tab-manual">Manual</label>
-          <label class="wake-dev-test-tab" role="tab" for="wake-dev-test-tab-vad">VAD</label>
-          <label class="wake-dev-test-tab" role="tab" for="wake-dev-test-tab-rearm">VAD ReArm</label>
-        </div>
-        <div class="wake-dev-test-panels">
-          <section class="wake-dev-test-panel wake-dev-test-panel--manual" role="tabpanel" aria-label="Manual STT Test Mode">
-            <div class="wake-dev-card__head">
-              <span class="wake-dev-card__title">Manual STT Test Mode</span>
-              <span class="wake-dev-meta" id="wake-dev-test-status">VAD bypass is off.</span>
-            </div>
-            <div class="wake-dev-test__tools">
-              <button class="hub-modal-btn" type="button" id="wake-dev-test-mode" aria-pressed="false">Enable test mode</button>
-              <button class="hub-modal-btn" type="button" id="wake-dev-test-record" disabled>Record</button>
-              <button class="hub-modal-btn" type="button" id="wake-dev-test-stop" disabled>Stop</button>
-              <button class="hub-modal-btn" type="button" id="wake-dev-test-clear">Clear</button>
-            </div>
-            <div class="wake-dev-test__transcript">
-              <span class="wake-dev-section-label">Transcript</span>
-              <div class="wake-dev-transcript" id="wake-dev-transcript" aria-live="polite"></div>
-            </div>
-          </section>
-          <section class="wake-dev-test-panel wake-dev-test-panel--vad" role="tabpanel" aria-label="VAD STT Test Mode">
-            <div class="wake-dev-card__head">
-              <span class="wake-dev-card__title">VAD STT Test Mode</span>
-              <span class="wake-dev-meta" id="wake-dev-vad-test-status">VAD STT probe is off.</span>
-            </div>
-            <div class="wake-dev-test__tools wake-dev-test__tools--vad">
-              <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-mode" aria-pressed="false">Enable test mode</button>
-              <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-record-vad" aria-pressed="false" disabled>Enable VAD Record</button>
-              <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-stop-vad" aria-pressed="false" disabled>Enable VAD Stop</button>
-              <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-record" disabled>Record</button>
-              <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-stop" disabled>Stop</button>
-              <button class="hub-modal-btn" type="button" id="wake-dev-vad-test-clear">Clear</button>
-            </div>
-            <div class="wake-dev-test__transcript">
-              <span class="wake-dev-section-label">Transcript</span>
-              <div class="wake-dev-transcript" id="wake-dev-vad-transcript" aria-live="polite"></div>
-            </div>
-          </section>
-          <section class="wake-dev-test-panel wake-dev-test-panel--rearm" role="tabpanel" aria-label="VAD ReArm STT Test Mode">
-            <div class="wake-dev-card__head">
-              <span class="wake-dev-card__title">VAD ReArm STT Test Mode</span>
-              <span class="wake-dev-meta" id="wake-dev-rearm-test-status">VAD ReArm STT probe is off.</span>
-            </div>
-            <div class="wake-dev-test__tools wake-dev-test__tools--vad">
-              <button class="hub-modal-btn" type="button" id="wake-dev-rearm-test-mode" aria-pressed="false">Enable test mode</button>
-              <button class="hub-modal-btn" type="button" id="wake-dev-rearm-test-record-vad" aria-pressed="false" disabled>Enable VAD Record</button>
-              <button class="hub-modal-btn" type="button" id="wake-dev-rearm-test-stop-vad" aria-pressed="false" disabled>Enable VAD Stop</button>
-              <button class="hub-modal-btn" type="button" id="wake-dev-rearm-test-record" disabled>Record</button>
-              <button class="hub-modal-btn" type="button" id="wake-dev-rearm-test-stop" disabled>Stop</button>
-              <button class="hub-modal-btn" type="button" id="wake-dev-rearm-test-clear">Clear</button>
-            </div>
-            <div class="wake-dev-test__transcript">
-              <span class="wake-dev-section-label">Transcript</span>
-              <div class="wake-dev-transcript" id="wake-dev-rearm-transcript" aria-live="polite"></div>
-            </div>
-          </section>
-        </div>
-      </div>
-
-      <div class="wake-dev-card wake-dev-settings">
-        <div class="wake-dev-card__title">Local Wake Settings</div>
-        <div class="wake-dev-form">
-          <label>Wake word<input type="text" id="wake-dev-wake-word" data-wake-dev-key="wake_word" /></label>
-          <label>Matrix room<select id="wake-dev-matrix-room" data-wake-dev-key="matrix_room_id"></select></label>
-          <label>Pause after wake<input type="range" min="0" max="2000" step="50" id="wake-dev-post-wake" data-wake-dev-key="post_wake_pause_ms" /><output id="wake-dev-post-wake-label">500 ms</output></label>
-          <label>No-speech cancel<input type="range" min="0" max="2000" step="50" id="wake-dev-initial-cancel" data-wake-dev-key="initial_silence_cancel_ms" /><output id="wake-dev-initial-cancel-label">1000 ms</output></label>
-          <label>Pause reset<input type="range" min="5" max="120" step="5" id="wake-dev-pause-reset" data-wake-dev-key="pause_reset_seconds" /><output id="wake-dev-pause-reset-label">30s</output></label>
-          <label>Auto execute<input type="range" min="0" max="3000" step="300" id="wake-dev-auto-execute" data-wake-dev-key="auto_execute_silence_ms" /><output id="wake-dev-auto-execute-label">Off</output></label>
-          <label>Pause command<input type="text" id="wake-dev-pause-command" data-wake-dev-key="commands.pause" /></label>
-          <label>Resume command<input type="text" id="wake-dev-resume-command" data-wake-dev-key="commands.resume" /></label>
-          <label>Execute command<input type="text" id="wake-dev-execute-command" data-wake-dev-key="commands.execute" /></label>
-          <label>Cancel command<input type="text" id="wake-dev-cancel-command" data-wake-dev-key="commands.cancel" /></label>
-        </div>
+      <div class="wake-dev-settings-grid">
+        <section class="wake-dev-settings-panel" data-wake-dev-panel="local">
+          <div class="wake-dev-card__title">Hermes Local Wake Settings</div>
+          <div class="wake-dev-form">
+            <label>Wake word<input type="text" data-wake-dev-instance="local" data-wake-dev-key="wake_word" /></label>
+            <label>Matrix room<select data-wake-dev-instance="local" data-wake-dev-key="matrix_room_id"></select></label>
+            <label>Auto execute<input type="range" min="0" max="3000" step="300" data-wake-dev-instance="local" data-wake-dev-key="auto_execute_silence_ms" /><output data-wake-dev-instance="local" data-wake-dev-output="auto_execute_silence_ms">Off</output></label>
+            <label>Execute cancel<input type="range" min="0" max="3000" step="300" data-wake-dev-instance="local" data-wake-dev-key="execute_cancel_ms" /><output data-wake-dev-instance="local" data-wake-dev-output="execute_cancel_ms">Off</output></label>
+            <label>Pause command<input type="text" data-wake-dev-instance="local" data-wake-dev-key="commands.pause" /></label>
+            <label>Execute command<input type="text" data-wake-dev-instance="local" data-wake-dev-key="commands.execute" /></label>
+            <label>Resume command<input type="text" data-wake-dev-instance="local" data-wake-dev-key="commands.resume" /></label>
+            <label>Cancel command<input type="text" data-wake-dev-instance="local" data-wake-dev-key="commands.cancel" /></label>
+          </div>
+        </section>
+        <section class="wake-dev-settings-panel" data-wake-dev-panel="vps">
+          <div class="wake-dev-card__title">Hermes VPS Wake Settings</div>
+          <div class="wake-dev-form">
+            <label>Wake word<input type="text" data-wake-dev-instance="vps" data-wake-dev-key="wake_word" /></label>
+            <label>Matrix room<select data-wake-dev-instance="vps" data-wake-dev-key="matrix_room_id"></select></label>
+            <label>Auto execute<input type="range" min="0" max="3000" step="300" data-wake-dev-instance="vps" data-wake-dev-key="auto_execute_silence_ms" /><output data-wake-dev-instance="vps" data-wake-dev-output="auto_execute_silence_ms">Off</output></label>
+            <label>Execute cancel<input type="range" min="0" max="3000" step="300" data-wake-dev-instance="vps" data-wake-dev-key="execute_cancel_ms" /><output data-wake-dev-instance="vps" data-wake-dev-output="execute_cancel_ms">Off</output></label>
+            <label>Pause command<input type="text" data-wake-dev-instance="vps" data-wake-dev-key="commands.pause" /></label>
+            <label>Execute command<input type="text" data-wake-dev-instance="vps" data-wake-dev-key="commands.execute" /></label>
+            <label>Resume command<input type="text" data-wake-dev-instance="vps" data-wake-dev-key="commands.resume" /></label>
+            <label>Cancel command<input type="text" data-wake-dev-instance="vps" data-wake-dev-key="commands.cancel" /></label>
+          </div>
+        </section>
       </div>
 
       <p class="wake-dev-status" id="wake-dev-status" aria-live="polite"></p>
-    </section>
-
-    <section class="wake-dev__debug" aria-label="Wake-to-talk diagnostics">
-      <div class="wake-dev-debug-tabs" aria-label="Wake-to-talk diagnostics views">
-        <input class="wake-dev-debug-tab-radio" type="radio" name="wake-dev-debug-view" id="wake-dev-debug-view-old" checked>
-        <input class="wake-dev-debug-tab-radio" type="radio" name="wake-dev-debug-view" id="wake-dev-debug-view-new">
-        <div class="wake-dev-debug-tablist" role="tablist" aria-label="Wake-to-talk diagnostics views">
-          <label class="wake-dev-debug-tab" role="tab" for="wake-dev-debug-view-old">OLD</label>
-          <label class="wake-dev-debug-tab" role="tab" for="wake-dev-debug-view-new">NEW</label>
-        </div>
-        <div class="wake-dev-debug-panels">
-          <div class="wake-dev-debug-panel wake-dev-debug-panel--old" role="tabpanel" aria-label="Old wake-to-talk diagnostics">
-            <div class="wake-dev-metrics">
-              <div><span>FSM</span><strong id="wake-dev-fsm-state">--</strong></div>
-              <div><span>Session</span><strong id="wake-dev-session">--</strong></div>
-              <div><span>Instance</span><strong id="wake-dev-instance">--</strong></div>
-              <div><span>Frames</span><strong id="wake-dev-frames">--</strong></div>
-              <div><span>Debug age</span><strong id="wake-dev-age">--</strong></div>
-              <div><span>Level</span><strong id="wake-dev-db">--</strong></div>
-            </div>
-
-            <div class="wake-dev-card wake-dev-wave">
-              <div class="wake-dev-card__head">
-                <span class="wake-dev-card__title">Input Level and FSM Events</span>
-                <div class="wake-dev-wave__tools">
-                  <span class="wake-dev-meta" id="wake-dev-debug-source">Waiting for wake runtime...</span>
-                  <button class="wake-dev-icon-btn" type="button" id="wake-dev-pause-timeline" aria-pressed="false" title="Pause timeline">Pause</button>
-                </div>
-              </div>
-              <canvas id="wake-dev-wave-canvas" width="1200" height="260" aria-label="Ten second wake-to-talk audio level and event timeline"></canvas>
-            </div>
-
-            <div class="wake-dev-states" id="wake-dev-states" aria-label="Wake-to-talk FSM state list"></div>
-          </div>
-          <div class="wake-dev-debug-panel wake-dev-debug-panel--new" role="tabpanel" aria-label="New wake-to-talk diagnostics">
-            <div class="wake-dev-output-view" id="wake-dev-output-view"></div>
-          </div>
-        </div>
-      </div>
     </section>
   </div>
 </dialog>
@@ -5109,69 +4994,6 @@
   </div>
 </dialog>
 
-<!-- Wake-to-Talk queue diagnostics -->
-<dialog class="hub-modal hub-dialog wake-queue-modal" data-tone="info" id="wake-queue-modal">
-  <div class="hub-modal-header">
-    <h2 class="hub-modal-title">
-      <span class="hub-dialog-badge">QUEUE</span>
-      <span class="hub-dialog-title-text">Wake Queue Dev</span>
-    </h2>
-    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
-  </div>
-  <div class="hub-modal-body wake-queue-dev">
-    <section class="wake-queue-strip" aria-label="Wake-to-talk stream status">
-      <div><span>Source</span><strong id="wake-queue-source">connecting</strong></div>
-      <div><span>Age</span><strong id="wake-queue-age">--</strong></div>
-      <div><span>Active browser</span><strong id="wake-queue-active-browser">--</strong></div>
-      <div><span>Reporter</span><strong id="wake-queue-reporter">--</strong></div>
-      <div><span>FSM</span><strong id="wake-queue-fsm">--</strong></div>
-      <div><span>Session</span><strong id="wake-queue-session">--</strong></div>
-      <div><span>Mode</span><strong>Read-only</strong></div>
-    </section>
-
-    <section class="wake-queue-columns" aria-label="Wake-to-talk queues">
-      <div class="wake-dev-card wake-queue-panel">
-        <div class="wake-dev-card__title">Input Queue</div>
-        <div class="wake-queue-list" id="wake-queue-input"></div>
-      </div>
-      <div class="wake-dev-card wake-queue-panel">
-        <div class="wake-dev-card__title">Pending Commands</div>
-        <div class="wake-queue-list" id="wake-queue-pending"></div>
-      </div>
-      <div class="wake-dev-card wake-queue-panel">
-        <div class="wake-dev-card__title">Message Queue</div>
-        <div class="wake-queue-list" id="wake-queue-message"></div>
-      </div>
-    </section>
-
-    <section class="wake-queue-detail" aria-label="Wake-to-talk command matching diagnostics">
-      <div class="wake-dev-card wake-queue-panel">
-        <div class="wake-dev-card__title">Command Candidate</div>
-        <dl class="wake-queue-kv" id="wake-queue-command"></dl>
-      </div>
-      <div class="wake-dev-card wake-queue-panel">
-        <div class="wake-dev-card__title">Normalized Text</div>
-        <dl class="wake-queue-kv" id="wake-queue-normalized"></dl>
-      </div>
-      <div class="wake-dev-card wake-queue-panel">
-        <div class="wake-dev-card__title">Wake Aliases and Commands</div>
-        <dl class="wake-queue-kv" id="wake-queue-aliases"></dl>
-      </div>
-    </section>
-
-    <section class="wake-queue-log-grid" aria-label="Wake-to-talk queue event logs">
-      <div class="wake-dev-card wake-queue-panel">
-        <div class="wake-dev-card__title">Recent STT Payloads</div>
-        <div class="wake-queue-list wake-queue-list--dense" id="wake-queue-stt"></div>
-      </div>
-      <div class="wake-dev-card wake-queue-panel">
-        <div class="wake-dev-card__title">Queue FSM Actions</div>
-        <div class="wake-queue-list wake-queue-list--dense" id="wake-queue-actions"></div>
-      </div>
-    </section>
-  </div>
-</dialog>
-
 <script src="js/utils.js?v={{$assetVersion}}"></script>
 <script src="js/api.js?v={{$assetVersion}}"></script>
 <script src="js/state.js?v={{$assetVersion}}"></script>
@@ -5186,14 +5008,10 @@
 <script src="js/sound-manager.js?v={{$assetVersion}}"></script>
 <script src="js/tts-wrapper-client.js?v={{$assetVersion}}"></script>
 <script src="js/events-stream.js?v={{$assetVersion}}"></script>
-<script src="js/wake-to-talk-state.js?v={{$assetVersion}}"></script>
 <script src="js/voice-mode.js?v={{$assetVersion}}"></script>
-<script src="js/wake-to-talk.js?v={{$assetVersion}}"></script>
 <script src="js/wake-dev.js?v={{$assetVersion}}"></script>
-<script src="js/wake-dev-output-view.js?v={{$assetVersion}}"></script>
 <script src="js/voice-timeline-module.js?v={{$assetVersion}}"></script>
 <script src="js/vad-dev.js?v={{$assetVersion}}"></script>
-<script src="js/wake-queue-dev.js?v={{$assetVersion}}"></script>
 <script src="js/stt-noise-tests.js?v={{$assetVersion}}"></script>
 <script src="js/notifier-dnd-policy.js?v={{$assetVersion}}"></script>
 <script src="js/notifier-danger2-alert.js?v={{$assetVersion}}"></script>

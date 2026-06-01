@@ -112,9 +112,8 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'chat-fn-noise-tests', label: 'Noise Tests',     icon: 'icons/ui/microphone-blue.svg', fn: 'chat.noiseTests', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 4 },
         { id: 'chat-fn-vad-dev', label: 'VAD Dev',             icon: 'icons/ui/microphone-blue.svg', fn: 'chat.vadDev', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 5 },
         { id: 'chat-fn-wake-dev', label: 'Wake Dev',           icon: 'icons/ui/microphone-blue.svg', fn: 'chat.wakeDev', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 6 },
-        { id: 'chat-fn-wake-queues', label: 'Wake Queue Dev',   icon: 'icons/ui/microphone-blue.svg', fn: 'chat.wakeQueues', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 7 },
-        { id: 'chat-fn-notifier', label: 'Notification Controls', icon: HIEROGLYPHS.shen,    fn: 'chat.notifier', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 8 },
-        { id: 'chat-fn-notifier-tests', label: 'Notification Tests', icon: HIEROGLYPHS.eyeOfHorus, fn: 'chat.notifierTests', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 9 },
+        { id: 'chat-fn-notifier', label: 'Notification Controls', icon: HIEROGLYPHS.shen,    fn: 'chat.notifier', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 7 },
+        { id: 'chat-fn-notifier-tests', label: 'Notification Tests', icon: HIEROGLYPHS.eyeOfHorus, fn: 'chat.notifierTests', activeOn: ['matrix-chat'], parent: 'settings-layout', order: 8 },
         { id: 'chat-admin-fn-refresh', label: 'Refresh Admin', icon: HIEROGLYPHS.nefer,     fn: 'chatAdmin.refresh', activeOn: ['matrix-chat-admin'], parent: 'settings-layout', order: 0 },
 
         // ── Manual ARP page function items ────────────────────────────────
@@ -384,7 +383,6 @@ const SettingsMenuConfig = createHubMenu({
             'chat-fn-noise-tests',
             'chat-fn-vad-dev',
             'chat-fn-wake-dev',
-            'chat-fn-wake-queues',
             'chat-fn-notifier',
             'chat-fn-notifier-tests',
         ].forEach(id => {
@@ -1148,7 +1146,6 @@ SettingsMenuConfig.registerFunctions({
     'chat.noiseTests': () => window.SttNoiseTests?.open?.(),
     'chat.vadDev':    () => window.VadDevModal?.open?.(),
     'chat.wakeDev':   () => window.WakeDevModal?.open?.(),
-    'chat.wakeQueues': () => window.WakeQueueDev?.open?.(),
     'chat.notifier':  () => window.MatrixChat?.openNotifierDnd?.(),
     'chat.notifierTests': () => window.MatrixChat?.openNotifierTests?.(),
     'chatAdmin.refresh': () => window.MatrixChatAdmin?.refresh?.(),

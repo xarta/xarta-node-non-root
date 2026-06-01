@@ -17,7 +17,6 @@
     { key: 'chat-noise-tests', rank: 20, patterns: [/chat-fn-noise-tests/, /\bnoise tests\b/] },
     { key: 'chat-vad-dev', rank: 21, patterns: [/chat-fn-vad-dev/, /\bvad dev\b/] },
     { key: 'chat-wake-dev', rank: 22, patterns: [/chat-fn-wake-dev/, /\bwake dev\b/] },
-    { key: 'chat-wake-queues', rank: 23, patterns: [/chat-fn-wake-queues/, /\bwake queue dev\b/, /\bwake queues\b/] },
     { key: 'chat-notifier', rank: 24, patterns: [/chat-fn-notifier/, /\bnotification controls\b/] },
     { key: 'connect', rank: 12, patterns: [/\bconnect\b/] },
     { key: 'disconnect', rank: 14, patterns: [/\bdisconnect\b/] },

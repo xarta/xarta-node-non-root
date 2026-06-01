@@ -46,6 +46,9 @@ const BlueprintsVoiceMode = (() => {
   const STT_WORD_DETECTION_PAYLOAD0_TIMEOUT_MIN_MS = 0;
   const STT_WORD_DETECTION_PAYLOAD0_TIMEOUT_MAX_MS = 3000;
   const STT_WORD_DETECTION_PAYLOAD0_TIMEOUT_STEP_MS = 300;
+  const WAKE_ACTION_DELAY_MIN_MS = 0;
+  const WAKE_ACTION_DELAY_MAX_MS = 3000;
+  const WAKE_ACTION_DELAY_STEP_MS = 300;
   const STT_MODE_NONE = '';
   const STT_MODE_REALTIME = 'realtime_conversation';
   const STT_MODE_PUSH = 'push_to_talk';
@@ -71,7 +74,6 @@ const BlueprintsVoiceMode = (() => {
   let _aggregationTimeout = null;
   let _aggregationTimeoutInFlight = false;
   let _activeModalTab = 'general';
-  let _wakeRuntime = { state: '', reason: '', running: false, starting: false };
   let _lastWakeControllerSyncKey = '';
   let _activeActivationSyncInFlight = false;
 
@@ -208,46 +210,39 @@ const BlueprintsVoiceMode = (() => {
   }
 
   function _defaultWakeSettings() {
-    if (window.WakeToTalkState?.mergedConfig) {
-      return window.WakeToTalkState.mergedConfig({});
-    }
     return {
       instances: {
         local: {
           enabled: true,
-          label: 'local',
+          label: 'hermes-local',
           matrix_server: 'tb1',
           matrix_room_id: '',
           wake_word: 'Computer',
           wake_aliases: ['computer'],
           hermes_prefix: 'hermes: ',
-          post_wake_pause_ms: 500,
-          initial_silence_cancel_ms: 1000,
-          pause_reset_seconds: 30,
           auto_execute_silence_ms: 0,
+          execute_cancel_ms: 0,
           commands: {
             pause: 'pause-dictation',
-            resume: 'resume-dictation',
             execute: 'execute',
+            resume: 'resume-dictation',
             cancel: 'cancel-dictation',
           },
         },
         vps: {
           enabled: true,
-          label: 'vps',
+          label: 'hermes-VPS',
           matrix_server: 'vps',
           matrix_room_id: '',
           wake_word: 'Mini-Me',
           wake_aliases: ['mini-me', 'mini me', 'minime'],
           hermes_prefix: 'hermes-vps: ',
-          post_wake_pause_ms: 500,
-          initial_silence_cancel_ms: 1000,
-          pause_reset_seconds: 30,
           auto_execute_silence_ms: 0,
+          execute_cancel_ms: 0,
           commands: {
             pause: 'pause-dictation',
-            resume: 'resume-dictation',
             execute: 'execute',
+            resume: 'resume-dictation',
             cancel: 'cancel-dictation',
           },
         },
@@ -255,10 +250,73 @@ const BlueprintsVoiceMode = (() => {
     };
   }
 
+  function _cleanWakeString(value, fallback = '', maxLength = 255) {
+    const text = String(value == null ? fallback : value).trim();
+    return (text || fallback).slice(0, maxLength);
+  }
+
+  function _cleanWakeDelayMs(value, fallback = 0) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return _cleanWakeDelayMs(fallback, 0);
+    const clamped = Math.max(WAKE_ACTION_DELAY_MIN_MS, Math.min(WAKE_ACTION_DELAY_MAX_MS, parsed));
+    return Math.round(clamped / WAKE_ACTION_DELAY_STEP_MS) * WAKE_ACTION_DELAY_STEP_MS;
+  }
+
+  function _wakeAliases(wakeWord, configured) {
+    const aliases = [];
+    const values = [];
+    String(wakeWord || '').split(';').forEach(part => values.push(part));
+    if (Array.isArray(configured)) configured.forEach(value => values.push(value));
+    values.forEach(value => {
+      const normalized = String(value || '').trim().toLowerCase().replace(/-/g, ' ').replace(/[.,]/g, '');
+      const spaced = normalized.split(/\s+/).filter(Boolean).join(' ');
+      const compact = spaced.replace(/\s+/g, '');
+      const hyphenated = spaced.replace(/\s+/g, '-');
+      [spaced, compact, hyphenated].forEach(candidate => {
+        if (candidate && !aliases.includes(candidate)) aliases.push(candidate);
+      });
+    });
+    return aliases.slice(0, 16);
+  }
+
+  function _cleanWakeCommands(value) {
+    const raw = value && typeof value === 'object' ? value : {};
+    return {
+      pause: _cleanWakeString(raw.pause, 'pause-dictation', 80),
+      execute: _cleanWakeString(raw.execute, 'execute', 80),
+      resume: _cleanWakeString(raw.resume, 'resume-dictation', 80),
+      cancel: _cleanWakeString(raw.cancel, 'cancel-dictation', 80),
+    };
+  }
+
+  function _cleanWakeInstance(instanceId, value) {
+    const defaults = _defaultWakeSettings().instances[instanceId] || _defaultWakeSettings().instances.local;
+    const raw = value && typeof value === 'object' ? value : {};
+    const matrixServer = instanceId === 'vps' ? 'vps' : 'tb1';
+    const wakeWord = _cleanWakeString(raw.wake_word, defaults.wake_word, 160);
+    return {
+      enabled: true,
+      label: defaults.label,
+      matrix_server: matrixServer,
+      matrix_room_id: _cleanWakeString(raw.matrix_room_id, defaults.matrix_room_id, 255),
+      wake_word: wakeWord,
+      wake_aliases: _wakeAliases(wakeWord, raw.wake_aliases),
+      hermes_prefix: _cleanWakeString(raw.hermes_prefix, defaults.hermes_prefix, 40),
+      auto_execute_silence_ms: _cleanWakeDelayMs(raw.auto_execute_silence_ms, defaults.auto_execute_silence_ms),
+      execute_cancel_ms: _cleanWakeDelayMs(raw.execute_cancel_ms, defaults.execute_cancel_ms),
+      commands: _cleanWakeCommands(raw.commands),
+    };
+  }
+
   function _cleanWakeSettings(value) {
-    return window.WakeToTalkState?.mergedConfig
-      ? window.WakeToTalkState.mergedConfig(value || {})
-      : { ..._defaultWakeSettings(), ...(value || {}) };
+    const raw = value && typeof value === 'object' ? value : {};
+    const instances = raw.instances && typeof raw.instances === 'object' ? raw.instances : {};
+    return {
+      instances: {
+        local: _cleanWakeInstance('local', instances.local),
+        vps: _cleanWakeInstance('vps', instances.vps),
+      },
+    };
   }
 
   function _cleanSttPolicy(value) {
@@ -446,7 +504,7 @@ const BlueprintsVoiceMode = (() => {
     } catch (_) {}
   }
 
-  function _syncWakeToTalkController() {
+  function _publishVoiceModeChanged() {
     try {
       const syncPayload = {
         stt_mode: sttMode(),
@@ -460,7 +518,6 @@ const BlueprintsVoiceMode = (() => {
       window.dispatchEvent(new CustomEvent('blueprints:voice-mode:changed', {
         detail: syncPayload,
       }));
-      window.WakeToTalkController?.sync?.();
     } catch (_) {}
   }
 
@@ -521,13 +578,11 @@ const BlueprintsVoiceMode = (() => {
     const keys = [
       'matrix_room_id',
       'wake_word',
-      'post_wake_pause_ms',
-      'initial_silence_cancel_ms',
-      'pause_reset_seconds',
       'auto_execute_silence_ms',
+      'execute_cancel_ms',
       'commands.pause',
-      'commands.resume',
       'commands.execute',
+      'commands.resume',
       'commands.cancel',
     ];
     keys.forEach(key => {
@@ -538,9 +593,11 @@ const BlueprintsVoiceMode = (() => {
       _setControlValue(el, value);
       const output = document.querySelector(`[data-wake-instance="${instanceId}"][data-wake-output="${key}"]`);
       if (output) {
-        if (key === 'pause_reset_seconds') output.textContent = `${value}s`;
-        else if (key === 'auto_execute_silence_ms') output.textContent = Number(value) > 0 ? `${value} ms` : 'Off';
-        else output.textContent = `${value} ms`;
+        if (key === 'auto_execute_silence_ms' || key === 'execute_cancel_ms') {
+          output.textContent = Number(value) > 0 ? `${value} ms` : 'Off';
+        } else {
+          output.textContent = `${value} ms`;
+        }
       }
     });
   }
@@ -590,28 +647,12 @@ const BlueprintsVoiceMode = (() => {
   function _wakeRuntimeLabel(local) {
     if (local.stt_mode !== STT_MODE_WAKE) return 'Wake to Talk is not selected.';
     if (!_isActiveOwner()) return 'Wake to Talk is selected but this browser is not the Active Browser.';
-    const state = String(_wakeRuntime.state || '').toUpperCase();
-    if (_wakeRuntime.reason && (!state || state === 'DISABLED' || state === 'SELECTED_INACTIVE')) {
-      return _wakeRuntime.reason;
-    }
-    if (state === 'BLOCKED') return _wakeRuntime.reason || 'Wake to Talk is blocked.';
-    if (_wakeRuntime.starting || state === 'PERMISSION_PENDING') return 'Wake to Talk is requesting the microphone.';
-    if (state === 'ARMED_IDLE') return 'Wake to Talk armed. Waiting for wake word.';
-    if (state === 'WAKE_CANDIDATE') return 'Wake word heard. Waiting for the configured pause.';
-    if (state === 'WAKE_CONFIRMED_WAITING_SPEECH') return 'Wake confirmed. Waiting for speech.';
-    if (state === 'CAPTURING' || state === 'COMMAND_CANDIDATE') return 'Wake to Talk is capturing dictation.';
-    if (state === 'PAUSED') return 'Wake to Talk dictation is paused.';
-    if (state === 'EXECUTING') return 'Wake to Talk is sending the transcript.';
-    if (state === 'SENT_FEEDBACK') return 'Wake to Talk sent the transcript.';
-    if (state === 'ERROR_FEEDBACK') return _wakeRuntime.reason || 'Wake to Talk hit an error.';
-    if (!local.stt_enabled) return 'Wake to Talk is not selected.';
-    return _wakeRuntime.reason || 'Wake to Talk is idle.';
+    return 'Wake to Talk is selected; VAD-backed capture is pending rewrite.';
   }
 
   function _renderWakeRuntime(local, els = _els()) {
     if (!els.wakeRuntime || !els.wakeRuntimeLabel) return;
-    const state = String(_wakeRuntime.state || '').toLowerCase().replace(/_/g, '-') || 'disabled';
-    els.wakeRuntime.dataset.state = local.stt_mode === STT_MODE_WAKE ? state : 'disabled';
+    els.wakeRuntime.dataset.state = local.stt_mode === STT_MODE_WAKE && _isActiveOwner() ? 'selected-inactive' : 'disabled';
     els.wakeRuntimeLabel.textContent = _wakeRuntimeLabel(local);
   }
 
@@ -623,18 +664,16 @@ const BlueprintsVoiceMode = (() => {
       instance.enabled = true;
       instance.matrix_room_id = _instanceValue(instanceId, 'matrix_room_id', instance.matrix_room_id);
       instance.wake_word = _instanceValue(instanceId, 'wake_word', instance.wake_word);
-      instance.post_wake_pause_ms = Number(_instanceValue(instanceId, 'post_wake_pause_ms', instance.post_wake_pause_ms));
-      instance.initial_silence_cancel_ms = Number(_instanceValue(instanceId, 'initial_silence_cancel_ms', instance.initial_silence_cancel_ms));
-      instance.pause_reset_seconds = Number(_instanceValue(instanceId, 'pause_reset_seconds', instance.pause_reset_seconds));
       instance.auto_execute_silence_ms = Number(_instanceValue(instanceId, 'auto_execute_silence_ms', instance.auto_execute_silence_ms));
+      instance.execute_cancel_ms = Number(_instanceValue(instanceId, 'execute_cancel_ms', instance.execute_cancel_ms));
       instance.commands = {
         pause: _instanceValue(instanceId, 'commands.pause', instance.commands?.pause || 'pause-dictation'),
-        resume: _instanceValue(instanceId, 'commands.resume', instance.commands?.resume || 'resume-dictation'),
         execute: _instanceValue(instanceId, 'commands.execute', instance.commands?.execute || 'execute'),
+        resume: _instanceValue(instanceId, 'commands.resume', instance.commands?.resume || 'resume-dictation'),
         cancel: _instanceValue(instanceId, 'commands.cancel', instance.commands?.cancel || 'cancel-dictation'),
       };
     });
-    return window.WakeToTalkState?.mergedConfig ? window.WakeToTalkState.mergedConfig(next) : next;
+    return _cleanWakeSettings(next);
   }
 
   function _scheduleWakeSettingsSave() {
@@ -742,7 +781,7 @@ const BlueprintsVoiceMode = (() => {
       els.activate.disabled = false;
     }
     _syncExternalVoiceState();
-    _syncWakeToTalkController();
+    _publishVoiceModeChanged();
   }
 
   function _applyServerState(payload) {
@@ -1579,8 +1618,7 @@ const BlueprintsVoiceMode = (() => {
         const instanceId = control.dataset.wakeInstance;
         const output = document.querySelector(`[data-wake-instance="${instanceId}"][data-wake-output="${outputKey}"]`);
         if (output) {
-          if (outputKey === 'pause_reset_seconds') output.textContent = `${control.value}s`;
-          else if (outputKey === 'auto_execute_silence_ms') output.textContent = Number(control.value) > 0 ? `${control.value} ms` : 'Off';
+          if (outputKey === 'auto_execute_silence_ms' || outputKey === 'execute_cancel_ms') output.textContent = Number(control.value) > 0 ? `${control.value} ms` : 'Off';
           else output.textContent = `${control.value} ms`;
         }
         _scheduleWakeSettingsSave();
@@ -1588,14 +1626,6 @@ const BlueprintsVoiceMode = (() => {
       control.addEventListener('change', () => {
         _scheduleWakeSettingsSave();
       });
-    });
-
-    window.addEventListener('blueprints:voice-mode:wake-runtime', (event) => {
-      _wakeRuntime = {
-        ..._wakeRuntime,
-        ...(event.detail || {}),
-      };
-      _renderWakeRuntime(_localState());
     });
 
     document.addEventListener('blueprints:event', (event) => {
