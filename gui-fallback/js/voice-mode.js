@@ -1531,15 +1531,13 @@ const BlueprintsVoiceMode = (() => {
     const platform = String(metadata.platform || '').toLowerCase();
     const hermesInstance = String(metadata.hermes_instance || '').toLowerCase();
     if (source === 'codex' || agentId === 'codex' || purpose === 'codex_status') return true;
-    if (
-      (source === 'hermes-local' || hermesInstance === 'hermes-local')
-      && (
-        agentId === 'tts-companion'
-        || subagentId === 'xarta-tts-companion'
-        || platform === 'matrix'
-        || purpose === 'tts_companion'
-      )
-    ) return true;
+    const hermesSpeechSource = source.startsWith('hermes-') || hermesInstance.startsWith('hermes-');
+    const ttsCompanionSpeech = agentId === 'tts-companion'
+      || subagentId === 'xarta-tts-companion'
+      || platform === 'matrix'
+      || purpose === 'tts_companion'
+      || String(metadata.schema || '').toLowerCase() === 'xarta.tts-companion.v1';
+    if (hermesSpeechSource && ttsCompanionSpeech) return true;
     return explicit === true || explicit === 'true' || explicit === 'auto' || explicit === 'force';
   }
 
