@@ -42,6 +42,10 @@ const BlueprintsVoiceMode = (() => {
   const STT_SILENCE_RESET_MIN_MS = 0;
   const STT_SILENCE_RESET_MAX_MS = 3000;
   const STT_SILENCE_RESET_STEP_MS = 300;
+  const STT_WORD_DETECTION_PAYLOAD0_TIMEOUT_DEFAULT_MS = 0;
+  const STT_WORD_DETECTION_PAYLOAD0_TIMEOUT_MIN_MS = 0;
+  const STT_WORD_DETECTION_PAYLOAD0_TIMEOUT_MAX_MS = 3000;
+  const STT_WORD_DETECTION_PAYLOAD0_TIMEOUT_STEP_MS = 300;
   const STT_MODE_NONE = '';
   const STT_MODE_REALTIME = 'realtime_conversation';
   const STT_MODE_PUSH = 'push_to_talk';
@@ -263,6 +267,9 @@ const BlueprintsVoiceMode = (() => {
     const vadResetMs = Number(raw.vad_reset_timeout_ms);
     const preRollFrames = Number(raw.pre_roll_frames ?? raw.num_pre_roll_frames ?? raw.num_pre_roll);
     const silenceResetMs = Number(raw.silence_reset_timeout_ms);
+    const payload0TimeoutMs = Number(
+      raw.word_detection_payload0_timeout_ms ?? raw.vad_payload0_timeout_ms ?? raw.payload0_timeout_ms,
+    );
     let prefixPartialInterruptTts = _policyBool(
       raw.word_detection_prefix_partial_interrupt_tts_enabled ?? raw.match_prefix_partial_interrupt_tts,
       false,
@@ -288,6 +295,9 @@ const BlueprintsVoiceMode = (() => {
       ),
       word_detection_prefix_partial_interrupt_tts_enabled: prefixPartialInterruptTts,
       word_detection_prefix_final_interrupt_tts_enabled: prefixFinalInterruptTts,
+      word_detection_payload0_timeout_ms: Number.isFinite(payload0TimeoutMs)
+        ? Math.max(STT_WORD_DETECTION_PAYLOAD0_TIMEOUT_MIN_MS, Math.min(STT_WORD_DETECTION_PAYLOAD0_TIMEOUT_MAX_MS, Math.round(payload0TimeoutMs / STT_WORD_DETECTION_PAYLOAD0_TIMEOUT_STEP_MS) * STT_WORD_DETECTION_PAYLOAD0_TIMEOUT_STEP_MS))
+        : STT_WORD_DETECTION_PAYLOAD0_TIMEOUT_DEFAULT_MS,
       always_pre_roll_enabled: _policyBool(raw.always_pre_roll_enabled ?? raw.always_pre_roll, false),
       silence_reset_timeout_ms: Number.isFinite(silenceResetMs)
         ? Math.max(STT_SILENCE_RESET_MIN_MS, Math.min(STT_SILENCE_RESET_MAX_MS, Math.round(silenceResetMs / STT_SILENCE_RESET_STEP_MS) * STT_SILENCE_RESET_STEP_MS))
@@ -1029,6 +1039,31 @@ const BlueprintsVoiceMode = (() => {
     return next;
   }
 
+  async function saveWordDetectionPayload0TimeoutMs(value) {
+    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
+    const nextStt = {
+      ...currentPolicy,
+      word_detection_payload0_timeout_ms: _cleanSttPolicy({
+        word_detection_payload0_timeout_ms: value,
+      }).word_detection_payload0_timeout_ms,
+    };
+    const response = await apiFetch(WAKE_SETTINGS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        wake_to_talk: getWakeSettings(),
+        stt: nextStt,
+      }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
+    _applyServerState(payload);
+    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
+      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
+    }));
+    return nextStt;
+  }
+
   async function saveAlwaysPreRollEnabled(enabled) {
     const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
     const nextStt = {
@@ -1284,6 +1319,10 @@ const BlueprintsVoiceMode = (() => {
 
   function wordDetectionPrefixFinalInterruptTtsEnabled() {
     return _cleanSttPolicy(_serverState.policy?.stt).word_detection_prefix_final_interrupt_tts_enabled;
+  }
+
+  function wordDetectionPayload0TimeoutMs() {
+    return _cleanSttPolicy(_serverState.policy?.stt).word_detection_payload0_timeout_ms;
   }
 
   function alwaysPreRollEnabled() {
@@ -1604,6 +1643,7 @@ const BlueprintsVoiceMode = (() => {
     wordDetectionMatchInterruptTtsEnabled,
     wordDetectionPrefixPartialInterruptTtsEnabled,
     wordDetectionPrefixFinalInterruptTtsEnabled,
+    wordDetectionPayload0TimeoutMs,
     alwaysPreRollEnabled,
     silenceResetTimeoutMs,
     sttMode,
@@ -1624,6 +1664,7 @@ const BlueprintsVoiceMode = (() => {
     saveWordDetectionMatchInterruptTtsEnabled,
     saveWordDetectionPrefixPartialInterruptTtsEnabled,
     saveWordDetectionPrefixFinalInterruptTtsEnabled,
+    saveWordDetectionPayload0TimeoutMs,
     saveAlwaysPreRollEnabled,
     saveSilenceResetTimeout,
     setSttMode: _setSttMode,

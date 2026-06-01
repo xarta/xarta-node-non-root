@@ -41,6 +41,9 @@ const VadDevModal = (() => {
   const AUTO_PRE_ROLL_BUFFER_MS = 3200;
   const AUTO_PRE_ROLL_BUFFER_MAX_FRAMES = 96;
   const VAD_RESET_TIMEOUT_MAX_MS = 2000;
+  const WORD_DETECTION_PAYLOAD0_TIMEOUT_MIN_MS = 0;
+  const WORD_DETECTION_PAYLOAD0_TIMEOUT_MAX_MS = 3000;
+  const WORD_DETECTION_PAYLOAD0_TIMEOUT_STEP_MS = 300;
   const DETECTOR_ENERGY = 'energy_delta';
   const DETECTOR_SILERO = 'silero_vad';
   const SILERO_MODEL = 'v5';
@@ -93,6 +96,7 @@ const VadDevModal = (() => {
     wordDetectionMatchInterruptTtsEnabled: false,
     wordDetectionPrefixPartialInterruptTtsEnabled: false,
     wordDetectionPrefixFinalInterruptTtsEnabled: false,
+    wordDetectionPayload0TimeoutMs: 0,
     autoPreRollEnabled: storedBool(LS_AUTO_PRE_ROLL, false),
     alwaysPreRollEnabled: false,
     preRollFrames: PRE_ROLL_FRAMES_DEFAULT,
@@ -100,6 +104,7 @@ const VadDevModal = (() => {
     sileroSaveInFlight: false,
     vadInterruptTtsSaveInFlight: false,
     wordDetectionInterruptTtsSaveInFlight: false,
+    wordDetectionPayload0TimeoutSaveInFlight: false,
     alwaysPreRollSaveInFlight: false,
     lastTtsInterruptAt: 0,
     sileroScriptPromises: {},
@@ -250,9 +255,18 @@ const VadDevModal = (() => {
       lastPayloadFinal: '',
       lastSenseAt: 0,
       lastPayloadAt: 0,
+      lastPayloadTimeoutAt: 0,
+      lastPayload0VadStartAt: 0,
+      lastPayload0VadEndAt: 0,
       lastUpdatedAt: 0,
       detections: 0,
       captures: 0,
+      payloadTimeouts: 0,
+      payload0VadActive: false,
+      payload0TimeoutTimer: null,
+      payload0TimeoutStartedAt: 0,
+      payload0TimeoutDeadlineAt: 0,
+      payload0TimeoutReason: '',
       prefix: createWordDetectionPrefixState(),
     };
   }
@@ -498,12 +512,32 @@ const VadDevModal = (() => {
     return value > 0 ? `${value} ms` : 'Off';
   }
 
+  function clampWordDetectionPayload0TimeoutMs(value) {
+    const numeric = Number(value);
+    const safe = Number.isFinite(numeric) ? numeric : WORD_DETECTION_PAYLOAD0_TIMEOUT_MIN_MS;
+    const stepped = Math.round(safe / WORD_DETECTION_PAYLOAD0_TIMEOUT_STEP_MS) * WORD_DETECTION_PAYLOAD0_TIMEOUT_STEP_MS;
+    return Math.max(WORD_DETECTION_PAYLOAD0_TIMEOUT_MIN_MS, Math.min(WORD_DETECTION_PAYLOAD0_TIMEOUT_MAX_MS, stepped));
+  }
+
+  function wordDetectionPayload0TimeoutMs() {
+    state.wordDetectionPayload0TimeoutMs = clampWordDetectionPayload0TimeoutMs(state.wordDetectionPayload0TimeoutMs);
+    return state.wordDetectionPayload0TimeoutMs;
+  }
+
+  function formatWordDetectionPayload0Timeout(ms) {
+    const value = clampWordDetectionPayload0TimeoutMs(ms);
+    return value > 0 ? `${value} ms` : 'Off';
+  }
+
   function renderRangeLabels() {
     const level = Number(els.noiseLevel?.value || 6);
     const threshold = noiseThresholdDb();
+    const payload0Timeout = wordDetectionPayload0TimeoutMs();
     setText(els.noiseLevelLabel, `${level.toFixed(1)} dB`);
     setText(els.aggregationLabel, `${Number(els.aggregation?.value || 80)} ms`);
     setText(els.vadResetLabel, formatVadResetTimeout(els.vadReset?.value));
+    if (els.wordDetectionPayload0Timeout) els.wordDetectionPayload0Timeout.value = String(payload0Timeout);
+    setText(els.wordDetectionPayload0TimeoutLabel, formatWordDetectionPayload0Timeout(payload0Timeout));
     const lookbackFrames = preRollFrames();
     if (els.preRollFrames) els.preRollFrames.value = String(lookbackFrames);
     setText(els.preRollFramesLabel, String(lookbackFrames));
@@ -564,6 +598,9 @@ const VadDevModal = (() => {
       if (state.wordDetectionPrefixPartialInterruptTtsEnabled && state.wordDetectionPrefixFinalInterruptTtsEnabled) {
         state.wordDetectionPrefixPartialInterruptTtsEnabled = false;
       }
+    }
+    if (!state.wordDetectionPayload0TimeoutSaveInFlight && typeof vm?.wordDetectionPayload0TimeoutMs === 'function') {
+      state.wordDetectionPayload0TimeoutMs = clampWordDetectionPayload0TimeoutMs(vm.wordDetectionPayload0TimeoutMs());
     }
     if (!state.alwaysPreRollSaveInFlight && typeof vm?.alwaysPreRollEnabled === 'function') {
       state.alwaysPreRollEnabled = !!vm.alwaysPreRollEnabled();
@@ -888,6 +925,10 @@ const VadDevModal = (() => {
 
   function wordDetectionSnapshot() {
     const word = state.wordDetection;
+    const now = Date.now();
+    const timeoutMs = wordDetectionPayload0TimeoutMs();
+    const deadlineAt = Number(word.payload0TimeoutDeadlineAt || 0);
+    const timeoutRemainingMs = deadlineAt ? Math.max(0, deadlineAt - now) : 0;
     return {
       enabled: word.aliases.length > 0,
       aliases_text: word.aliasesText,
@@ -895,7 +936,18 @@ const VadDevModal = (() => {
       aliases_count: word.aliases.length,
       match_interrupt_tts_enabled: wordDetectionMatchInterruptTtsEnabled(),
       awaiting_payload: !!word.awaitingPayload,
+      awaiting_payload0: !!word.awaitingPayload,
       payload: word.payload || '',
+      payload0: word.payload || '',
+      payload0_timeout_ms: timeoutMs,
+      vad_payload0_timeout_ms: timeoutMs,
+      payload0_timeout_enabled: timeoutMs > 0,
+      payload0_timeout_active: !!(word.awaitingPayload && deadlineAt && timeoutRemainingMs > 0 && !word.payload0VadActive),
+      payload0_timeout_started_at_ms: Number(word.payload0TimeoutStartedAt || 0),
+      payload0_timeout_deadline_at_ms: deadlineAt,
+      payload0_timeout_remaining_ms: timeoutRemainingMs,
+      payload0_timeout_reason: word.payload0TimeoutReason || '',
+      payload0_vad_active: !!word.payload0VadActive,
       last_final: word.lastFinal || '',
       last_normalized_final: word.lastNormalizedFinal || '',
       last_sense_final: word.lastSenseFinal || '',
@@ -903,9 +955,13 @@ const VadDevModal = (() => {
       last_payload_final: word.lastPayloadFinal || '',
       last_sense_at_ms: Number(word.lastSenseAt || 0),
       last_payload_at_ms: Number(word.lastPayloadAt || 0),
+      last_payload0_timeout_at_ms: Number(word.lastPayloadTimeoutAt || 0),
+      last_payload0_vad_start_at_ms: Number(word.lastPayload0VadStartAt || 0),
+      last_payload0_vad_end_at_ms: Number(word.lastPayload0VadEndAt || 0),
       last_updated_at_ms: Number(word.lastUpdatedAt || 0),
       detections: Number(word.detections || 0),
       captures: Number(word.captures || 0),
+      payload0_timeouts: Number(word.payloadTimeouts || 0),
       prefix: wordDetectionPrefixSnapshot(),
     };
   }
@@ -938,13 +994,20 @@ const VadDevModal = (() => {
     if (els.wordDetectionAliases && document.activeElement !== els.wordDetectionAliases) {
       els.wordDetectionAliases.value = word.aliasesText || '';
     }
+    const payload0Timeout = wordDetectionPayload0TimeoutMs();
     const stateLabel = word.aliases.length
-      ? (word.awaitingPayload ? 'Awaiting payload' : (word.payload ? 'Payload captured' : 'Idle'))
+      ? (word.awaitingPayload
+        ? (word.payload0VadActive ? 'Holding for VAD' : 'Awaiting payload0')
+        : (word.payload ? 'Payload0 captured' : 'Idle'))
       : 'No sense word.';
     setText(els.wordDetectionState, stateLabel, '');
     setText(els.wordDetectionPayload, word.payload, '');
     setText(els.wordDetectionFinal, word.lastFinal, '');
     setText(els.wordDetectionMatch, word.lastMatchedAlias, '--');
+    if (els.wordDetectionPayload0Timeout) {
+      els.wordDetectionPayload0Timeout.value = String(payload0Timeout);
+    }
+    setText(els.wordDetectionPayload0TimeoutLabel, formatWordDetectionPayload0Timeout(payload0Timeout));
     if (els.wordDetectionInterruptToggle) {
       els.wordDetectionInterruptToggle.checked = wordDetectionMatchInterruptTtsEnabled();
     }
@@ -974,11 +1037,145 @@ const VadDevModal = (() => {
     word.aliasesText = textValue;
     word.aliases = wordDetectionAliases(textValue);
     word.lastUpdatedAt = Date.now();
-    if (!word.aliases.length) word.awaitingPayload = false;
+    if (!word.aliases.length) {
+      word.awaitingPayload = false;
+      word.payload0VadActive = false;
+      clearWordDetectionPayload0Timer();
+    }
     writeStoredString(LS_WORD_DETECTION_ALIASES, textValue);
     renderWordDetectionUi();
     if (options.status) status(options.status);
     poll({ force: true });
+  }
+
+  function clearWordDetectionPayload0Timer() {
+    const word = state.wordDetection;
+    if (word.payload0TimeoutTimer) {
+      window.clearTimeout(word.payload0TimeoutTimer);
+    }
+    word.payload0TimeoutTimer = null;
+    word.payload0TimeoutStartedAt = 0;
+    word.payload0TimeoutDeadlineAt = 0;
+    word.payload0TimeoutReason = '';
+  }
+
+  function scheduleWordDetectionPayload0Timeout(mode, reason = 'payload0_wait', now = Date.now()) {
+    const word = state.wordDetection;
+    if (!word.awaitingPayload) {
+      clearWordDetectionPayload0Timer();
+      return false;
+    }
+    const timeoutMs = wordDetectionPayload0TimeoutMs();
+    if (timeoutMs <= 0) {
+      word.payload0VadActive = false;
+      clearWordDetectionPayload0Timer();
+      return false;
+    }
+    const vadIsActive = mode !== MODE_MANUAL && !!probe(mode).vad?.speaking;
+    if (word.payload0VadActive || vadIsActive) {
+      clearWordDetectionPayload0Timer();
+      if (vadIsActive && !word.payload0VadActive) {
+        word.payload0VadActive = true;
+        word.lastPayload0VadStartAt = now;
+        pushAction(mode, 'wordDetectionPayload0VadHold', {
+          reason,
+          timeout_ms: timeoutMs,
+          matched_alias: word.lastMatchedAlias || '',
+        });
+      }
+      word.payload0TimeoutReason = 'vad_active';
+      return false;
+    }
+    if (word.payload0TimeoutTimer) {
+      window.clearTimeout(word.payload0TimeoutTimer);
+    }
+    word.payload0TimeoutStartedAt = now;
+    word.payload0TimeoutDeadlineAt = now + timeoutMs;
+    word.payload0TimeoutReason = reason;
+    word.payload0TimeoutTimer = window.setTimeout(() => {
+      expireWordDetectionPayload0(mode, reason);
+    }, timeoutMs);
+    return true;
+  }
+
+  function expireWordDetectionPayload0(mode, reason = 'payload0_timeout') {
+    const word = state.wordDetection;
+    const now = Date.now();
+    if (!word.awaitingPayload || word.payload0VadActive) return false;
+    const deadline = Number(word.payload0TimeoutDeadlineAt || 0);
+    if (deadline && now < deadline - 5) {
+      const remaining = Math.max(1, deadline - now);
+      if (word.payload0TimeoutTimer) window.clearTimeout(word.payload0TimeoutTimer);
+      word.payload0TimeoutTimer = window.setTimeout(() => expireWordDetectionPayload0(mode, reason), remaining);
+      return false;
+    }
+    const startedAt = Number(word.payload0TimeoutStartedAt || now);
+    clearWordDetectionPayload0Timer();
+    word.payload0TimeoutReason = reason;
+    word.awaitingPayload = false;
+    word.payload0VadActive = false;
+    word.lastPayloadTimeoutAt = now;
+    word.lastUpdatedAt = now;
+    word.payloadTimeouts += 1;
+    pushAction(mode, 'wordDetectionPayload0Timeout', {
+      reason,
+      timeout_ms: wordDetectionPayload0TimeoutMs(),
+      waited_ms: Math.max(0, now - startedAt),
+      matched_alias: word.lastMatchedAlias || '',
+    });
+    renderWordDetectionUi();
+    poll({ force: true });
+    return true;
+  }
+
+  function noteWordDetectionPayload0VadActivity(mode, active, reason, now = Date.now()) {
+    const word = state.wordDetection;
+    if (!word.awaitingPayload || wordDetectionPayload0TimeoutMs() <= 0) return false;
+    const nextActive = !!active;
+    if (nextActive) {
+      if (!word.payload0VadActive) {
+        clearWordDetectionPayload0Timer();
+        word.payload0VadActive = true;
+        word.lastPayload0VadStartAt = now;
+        pushAction(mode, 'wordDetectionPayload0VadHold', {
+          reason,
+          timeout_ms: wordDetectionPayload0TimeoutMs(),
+          matched_alias: word.lastMatchedAlias || '',
+        });
+        renderWordDetectionUi();
+        poll({ force: true });
+      }
+      return true;
+    }
+    if (!word.payload0VadActive) return false;
+    word.payload0VadActive = false;
+    word.lastPayload0VadEndAt = now;
+    pushAction(mode, 'wordDetectionPayload0VadRelease', {
+      reason,
+      timeout_ms: wordDetectionPayload0TimeoutMs(),
+      matched_alias: word.lastMatchedAlias || '',
+    });
+    scheduleWordDetectionPayload0Timeout(mode, reason || 'vad_end', now);
+    renderWordDetectionUi();
+    poll({ force: true });
+    return true;
+  }
+
+  function captureWordDetectionPayload0(mode, finalText, now = Date.now()) {
+    const word = state.wordDetection;
+    clearWordDetectionPayload0Timer();
+    word.payload = finalText;
+    word.lastPayloadFinal = finalText;
+    word.lastPayloadAt = now;
+    word.lastUpdatedAt = now;
+    word.awaitingPayload = false;
+    word.payload0VadActive = false;
+    word.captures += 1;
+    pushAction(mode, 'wordDetectionPayload0Captured', {
+      payload0_length: finalText.length,
+      matched_alias: word.lastMatchedAlias || '',
+      timeout_ms: wordDetectionPayload0TimeoutMs(),
+    });
   }
 
   function handleWordDetectionFinal(mode, textValue, rawValue = '') {
@@ -986,17 +1183,23 @@ const VadDevModal = (() => {
     const finalText = cleanSttTranscript(textValue || rawValue || '');
     const normalized = normalizeWordDetectionText(finalText);
     const matchedAlias = normalized ? (word.aliases.find(alias => alias === normalized) || '') : '';
+    const now = Date.now();
     word.lastFinal = finalText;
     word.lastNormalizedFinal = normalized;
     if (matchedAlias) {
+      clearWordDetectionPayload0Timer();
       word.payload = '';
       word.lastPayloadFinal = '';
       word.lastPayloadAt = 0;
+      word.lastPayloadTimeoutAt = 0;
       word.awaitingPayload = true;
+      word.payload0VadActive = false;
       word.lastSenseFinal = finalText;
       word.lastMatchedAlias = matchedAlias;
-      word.lastSenseAt = Date.now();
+      word.lastSenseAt = now;
+      word.lastUpdatedAt = now;
       word.detections += 1;
+      scheduleWordDetectionPayload0Timeout(mode, 'final_match', now);
       if (wordDetectionMatchInterruptTtsEnabled()) {
         void interruptTtsForWordDetection(mode, 'word_detection_final_match', {
           matched_alias: matchedAlias,
@@ -1004,11 +1207,7 @@ const VadDevModal = (() => {
         });
       }
     } else if (word.awaitingPayload) {
-      word.payload = finalText;
-      word.lastPayloadFinal = finalText;
-      word.lastPayloadAt = Date.now();
-      word.awaitingPayload = false;
-      word.captures += 1;
+      captureWordDetectionPayload0(mode, finalText, now);
     }
     renderWordDetectionUi();
   }
@@ -1231,6 +1430,7 @@ const VadDevModal = (() => {
         negative_threshold: SILERO_NEGATIVE_THRESHOLD,
         speech_probability: probe(mode).silero.isSpeechProbability,
       });
+      noteWordDetectionPayload0VadActivity(mode, true, 'silero_speech_confirmed', now);
       void interruptTtsForVad(mode, 'silero_speech_confirmed', {
         detector: DETECTOR_SILERO,
         speech_probability: probe(mode).silero.isSpeechProbability,
@@ -1332,6 +1532,7 @@ const VadDevModal = (() => {
       audio_samples: Number(audio?.length || 0),
       timeout_ms: vadResetTimeoutMs(),
     });
+    noteWordDetectionPayload0VadActivity(mode, false, 'silero_speech_end', now);
     updateSileroStop(mode, now);
   }
 
@@ -1663,6 +1864,7 @@ const VadDevModal = (() => {
         delta_db: Number(deltaDb.toFixed(1)),
       });
       if (speechStarted) {
+        noteWordDetectionPayload0VadActivity(mode, true, 'energy_vad_confirmed', now);
         void interruptTtsForVad(mode, 'energy_vad_confirmed', {
           detector: DETECTOR_ENERGY,
           start_threshold: strongFrame ? 'delta_strong_confirmed' : 'delta_persistent_confirmed',
@@ -1680,6 +1882,7 @@ const VadDevModal = (() => {
       vad.lastVoiceAt = now;
     } else if (vad.speaking && now - vad.lastVoiceAt > VAD_TEST_EXIT_HANGOVER_MS) {
       vad.speaking = false;
+      noteWordDetectionPayload0VadActivity(mode, false, 'energy_vad_hangover_end', now);
     }
 
     const timeoutMs = vadResetTimeoutMs();
@@ -2307,13 +2510,13 @@ const VadDevModal = (() => {
     if (type === 'manualRecordStop') return '#fbbf24';
     if (type === 'manualTestMode') return '#38bdf8';
     if (type === 'manualError') return '#f87171';
-    if (type === 'vadProbeRecordStart' || type === 'vadProbeFinal' || type === 'rearmProbeRecordStart' || type === 'rearmProbeFinal' || type === 'vadCandidateConfirmed' || type === 'sileroReady' || type === 'sileroSpeechConfirmed' || type === 'vadInterruptTts' || type === 'wordDetectionInterruptTts') return '#22c55e';
-    if (type === 'vadProbeRecordStop' || type === 'rearmProbeRecordStop' || type === 'vadStopMode' || type === 'sileroSpeechEnd') return '#fbbf24';
+    if (type === 'vadProbeRecordStart' || type === 'vadProbeFinal' || type === 'rearmProbeRecordStart' || type === 'rearmProbeFinal' || type === 'vadCandidateConfirmed' || type === 'sileroReady' || type === 'sileroSpeechConfirmed' || type === 'vadInterruptTts' || type === 'wordDetectionInterruptTts' || type === 'wordDetectionPayload0Captured') return '#22c55e';
+    if (type === 'vadProbeRecordStop' || type === 'rearmProbeRecordStop' || type === 'vadStopMode' || type === 'sileroSpeechEnd' || type === 'wordDetectionPayload0VadRelease') return '#fbbf24';
     if (type === 'autoPreRollSelect') return action.applied ? '#22c55e' : '#fbbf24';
     if (type === 'autoPreRollMode') return action.enabled ? '#22c55e' : '#aebfca';
     if (type === 'alwaysPreRollMode') return action.enabled ? '#22c55e' : '#aebfca';
-    if (type === 'vadRecordMode' || type === 'vadDetectorMode' || type === 'vadInterruptTtsMode' || type === 'wordDetectionInterruptTtsMode' || type === 'vadTestMode' || type === 'rearmTestMode' || type === 'vadCandidateStart' || type === 'sileroLoad' || type === 'sileroCandidateStart') return '#38bdf8';
-    if (type === 'vadProbeError' || type === 'rearmProbeError' || type === 'rearmProbeFinalTimeout' || type === 'sileroError' || type === 'sileroMisfire' || type === 'vadInterruptTtsError' || type === 'wordDetectionInterruptTtsError') return '#f87171';
+    if (type === 'vadRecordMode' || type === 'vadDetectorMode' || type === 'vadInterruptTtsMode' || type === 'wordDetectionInterruptTtsMode' || type === 'wordDetectionPayload0TimeoutMode' || type === 'wordDetectionPayload0VadHold' || type === 'vadTestMode' || type === 'rearmTestMode' || type === 'vadCandidateStart' || type === 'sileroLoad' || type === 'sileroCandidateStart') return '#38bdf8';
+    if (type === 'vadProbeError' || type === 'rearmProbeError' || type === 'rearmProbeFinalTimeout' || type === 'wordDetectionPayload0Timeout' || type === 'sileroError' || type === 'sileroMisfire' || type === 'vadInterruptTtsError' || type === 'wordDetectionInterruptTtsError') return '#f87171';
     if (mode === MODE_REARM && type === 'controlState') return action.disabled ? 'rgba(148,168,179,0.72)' : (action.pressed ? '#38bdf8' : '#aebfca');
     return '#aebfca';
   }
@@ -2330,6 +2533,11 @@ const VadDevModal = (() => {
     if (action.type === 'vadDetectorMode') return `detector ${action.detector || ''}`.trim();
     if (action.type === 'vadInterruptTtsMode') return `VAD interrupt TTS ${action.enabled ? 'on' : 'off'}`;
     if (action.type === 'wordDetectionInterruptTtsMode') return `${action.label || 'word interrupt TTS'} ${action.enabled ? 'on' : 'off'}`;
+    if (action.type === 'wordDetectionPayload0TimeoutMode') return `payload0 timeout ${action.timeout_ms || 0} ms`;
+    if (action.type === 'wordDetectionPayload0VadHold') return 'payload0 VAD hold';
+    if (action.type === 'wordDetectionPayload0VadRelease') return 'payload0 VAD release';
+    if (action.type === 'wordDetectionPayload0Captured') return 'payload0 captured';
+    if (action.type === 'wordDetectionPayload0Timeout') return `payload0 timeout ${action.timeout_ms || ''} ms`.trim();
     if (action.type === 'vadStopMode') return `VAD Stop ${action.enabled ? 'on' : 'off'}`;
     if (action.type === 'vadCandidateStart') return 'VAD candidate';
     if (action.type === 'vadCandidateConfirmed') return 'VAD strong';
@@ -2443,7 +2651,12 @@ const VadDevModal = (() => {
       word_detection_match_interrupt_tts_enabled: wordDetectionMatchInterruptTtsEnabled(),
       word_detection_match_interrupt_tts_disabled: !!els.wordDetectionInterruptToggle?.disabled,
       word_detection_awaiting_payload: !!state.wordDetection.awaitingPayload,
+      word_detection_awaiting_payload0: !!state.wordDetection.awaitingPayload,
       word_detection_payload: state.wordDetection.payload || '',
+      word_detection_payload0: state.wordDetection.payload || '',
+      word_detection_payload0_timeout_ms: wordDetectionPayload0TimeoutMs(),
+      vad_payload0_timeout_ms: wordDetectionPayload0TimeoutMs(),
+      word_detection_payload0_timeout_disabled: !!els.wordDetectionPayload0Timeout?.disabled,
       word_detection_prefix_partial_interrupt_tts_enabled: wordDetectionPrefixPartialInterruptTtsEnabled(),
       word_detection_prefix_partial_interrupt_tts_disabled: !!els.wordPrefixPartialInterruptToggle?.disabled,
       word_detection_prefix_final_interrupt_tts_enabled: wordDetectionPrefixFinalInterruptTtsEnabled(),
@@ -3035,6 +3248,35 @@ const VadDevModal = (() => {
     poll({ force: true });
   }
 
+  async function setWordDetectionPayload0TimeoutMs(value, options = {}) {
+    const next = clampWordDetectionPayload0TimeoutMs(value);
+    state.wordDetectionPayload0TimeoutSaveInFlight = true;
+    state.wordDetectionPayload0TimeoutMs = next;
+    if (els.wordDetectionPayload0Timeout) els.wordDetectionPayload0Timeout.value = String(next);
+    if (state.wordDetection.awaitingPayload) {
+      scheduleWordDetectionPayload0Timeout(currentMode(), options.reason || 'payload0_timeout_changed');
+    }
+    renderWordDetectionUi();
+    const mode = currentMode();
+    pushAction(mode, 'wordDetectionPayload0TimeoutMode', {
+      enabled: next > 0,
+      timeout_ms: next,
+      reason: options.reason || 'set_word_detection_payload0_timeout',
+    });
+    try {
+      await voiceMode()?.saveWordDetectionPayload0TimeoutMs?.(next);
+      status(options.status || (next > 0 ? `VAD PAYLOAD0 TIMEOUT saved: ${next} ms.` : 'VAD PAYLOAD0 TIMEOUT disabled.'));
+    } catch (error) {
+      status(`VAD PAYLOAD0 TIMEOUT save failed: ${error.message || error}`);
+    } finally {
+      state.wordDetectionPayload0TimeoutSaveInFlight = false;
+      renderSharedControls();
+      renderWordDetectionUi();
+    }
+    poll({ force: true });
+    return next;
+  }
+
   async function setWordDetectionPrefixPartialInterruptTtsEnabled(enabled, options = {}) {
     const next = !!enabled;
     state.wordDetectionInterruptTtsSaveInFlight = true;
@@ -3214,6 +3456,16 @@ const VadDevModal = (() => {
         reason: 'remote_command',
         status: 'MATCH INTERRUPT TTS saved by automation.',
       });
+      return true;
+    }
+    if (action === 'set_word_detection_payload0_timeout' || action === 'set_word_detection_payload0_timeout_ms' || action === 'set_vad_payload0_timeout' || action === 'set_vad_payload0_timeout_ms') {
+      const value = payloadNumber(payload, 'word_detection_payload0_timeout_ms', 'vad_payload0_timeout_ms', 'payload0_timeout_ms', 'timeout_ms');
+      if (value != null) {
+        await setWordDetectionPayload0TimeoutMs(value, {
+          reason: 'remote_command',
+          status: 'VAD PAYLOAD0 TIMEOUT saved by automation.',
+        });
+      }
       return true;
     }
     if (action === 'set_word_detection_prefix_partial_interrupt_tts' || action === 'set_word_detection_prefix_partial_interrupt_tts_enabled') {
@@ -3427,6 +3679,8 @@ const VadDevModal = (() => {
     els.wordDetectionAliases = el('vad-dev-word-detection-aliases');
     els.wordDetectionState = el('vad-dev-word-detection-state');
     els.wordDetectionInterruptToggle = el('vad-dev-word-detection-interrupt-tts-toggle');
+    els.wordDetectionPayload0Timeout = el('vad-dev-word-detection-payload0-timeout');
+    els.wordDetectionPayload0TimeoutLabel = el('vad-dev-word-detection-payload0-timeout-label');
     els.wordDetectionPayload = el('vad-dev-word-detection-payload');
     els.wordDetectionFinal = el('vad-dev-word-detection-final');
     els.wordDetectionMatch = el('vad-dev-word-detection-match');
@@ -3512,6 +3766,18 @@ const VadDevModal = (() => {
     });
     els.wordDetectionInterruptToggle?.addEventListener('change', () => {
       void setWordDetectionMatchInterruptTtsEnabled(els.wordDetectionInterruptToggle.checked, { reason: 'ui_toggle' });
+    });
+    els.wordDetectionPayload0Timeout?.addEventListener('input', () => {
+      state.wordDetectionPayload0TimeoutMs = clampWordDetectionPayload0TimeoutMs(els.wordDetectionPayload0Timeout.value);
+      renderRangeLabels();
+      renderWordDetectionUi();
+      if (state.wordDetection.awaitingPayload) {
+        scheduleWordDetectionPayload0Timeout(currentMode(), 'ui_slider_preview');
+      }
+      poll({ force: true });
+    });
+    els.wordDetectionPayload0Timeout?.addEventListener('change', () => {
+      void setWordDetectionPayload0TimeoutMs(els.wordDetectionPayload0Timeout.value, { reason: 'ui_slider' });
     });
     els.wordPrefixPartialInterruptToggle?.addEventListener('change', () => {
       void setWordDetectionPrefixPartialInterruptTtsEnabled(els.wordPrefixPartialInterruptToggle.checked, { reason: 'ui_toggle' });

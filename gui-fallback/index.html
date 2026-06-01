@@ -4782,6 +4782,11 @@
             <span class="hub-checkbox__box" aria-hidden="true"></span>
             <span class="hub-checkbox__label wake-dev-check__label">MATCH INTERRUPT TTS</span>
           </label>
+          <label class="wake-dev-slider vad-dev-word__slider" for="vad-dev-word-detection-payload0-timeout">
+            <span>VAD PAYLOAD0 TIMEOUT</span>
+            <input type="range" id="vad-dev-word-detection-payload0-timeout" min="0" max="3000" step="300" value="0" data-vad-dev-control="word_detection_payload0_timeout_ms" />
+            <output id="vad-dev-word-detection-payload0-timeout-label" data-vad-dev-metric="word_detection_payload0_timeout_ms">Off</output>
+          </label>
         </div>
         <div class="vad-dev-word__grid">
           <div class="vad-dev-word__readout vad-dev-word__readout--final">
@@ -4793,8 +4798,8 @@
             <div id="vad-dev-word-detection-match" class="vad-dev-word__value" data-vad-dev-metric="word_detection_match"></div>
           </div>
           <div class="vad-dev-word__readout vad-dev-word__readout--payload">
-            <span class="wake-dev-section-label">Payload</span>
-            <div id="vad-dev-word-detection-payload" class="vad-dev-word__value" data-vad-dev-metric="word_detection_payload"></div>
+            <span class="wake-dev-section-label">Payload0 (next final after separate sense word)</span>
+            <div id="vad-dev-word-detection-payload" class="vad-dev-word__value" data-vad-dev-metric="word_detection_payload0"></div>
           </div>
         </div>
       </div>
@@ -4817,11 +4822,11 @@
         </div>
         <div class="vad-dev-word__grid vad-dev-word__grid--prefix">
           <div class="vad-dev-word__readout vad-dev-word__readout--payload">
-            <span class="wake-dev-section-label">Payload1</span>
+            <span class="wake-dev-section-label">Payload1 (rest after sense word, partials)</span>
             <div id="vad-dev-word-prefix-payload1" class="vad-dev-word__value" data-vad-dev-metric="word_detection_prefix_payload1"></div>
           </div>
           <div class="vad-dev-word__readout vad-dev-word__readout--payload">
-            <span class="wake-dev-section-label">Payload2</span>
+            <span class="wake-dev-section-label">Payload2 (rest after sense word, final)</span>
             <div id="vad-dev-word-prefix-payload2" class="vad-dev-word__value" data-vad-dev-metric="word_detection_prefix_payload2"></div>
           </div>
         </div>

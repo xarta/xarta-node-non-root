@@ -231,6 +231,13 @@
   white-space: normal;
 }
 
+.vad-dev-word__slider {
+  flex: 1 1 260px;
+  min-width: 240px;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  column-gap: 5px;
+}
+
 .vad-dev-word__input {
   width: 100%;
   min-width: 0;
