@@ -37,6 +37,7 @@ const VadDevModal = (() => {
   const PRE_ROLL_FRAMES_STEP = 1;
   const LS_AUTO_PRE_ROLL = 'blueprints.vad_dev.auto_pre_roll_enabled';
   const LS_NOISE_THRESHOLD_DB = 'blueprints.vad_dev.noise_threshold_db';
+  const LS_WORD_DETECTION_ALIASES = 'blueprints.vad_dev.word_detection_aliases';
   const AUTO_PRE_ROLL_BUFFER_MS = 3200;
   const AUTO_PRE_ROLL_BUFFER_MAX_FRAMES = 96;
   const VAD_RESET_TIMEOUT_MAX_MS = 2000;
@@ -99,6 +100,7 @@ const VadDevModal = (() => {
     devStatusLastAt: 0,
     devStatusSignature: '',
     devStatusSending: false,
+    wordDetection: createWordDetectionState(),
     probes: {
       [MODE_MANUAL]: createProbe(MODE_MANUAL),
       [MODE_VAD]: createProbe(MODE_VAD),
@@ -227,6 +229,26 @@ const VadDevModal = (() => {
     };
   }
 
+  function createWordDetectionState() {
+    const aliasesText = storedString(LS_WORD_DETECTION_ALIASES, '');
+    return {
+      aliasesText,
+      aliases: wordDetectionAliases(aliasesText),
+      awaitingPayload: false,
+      payload: '',
+      lastFinal: '',
+      lastNormalizedFinal: '',
+      lastSenseFinal: '',
+      lastMatchedAlias: '',
+      lastPayloadFinal: '',
+      lastSenseAt: 0,
+      lastPayloadAt: 0,
+      lastUpdatedAt: 0,
+      detections: 0,
+      captures: 0,
+    };
+  }
+
   function el(id) {
     return document.getElementById(id);
   }
@@ -252,6 +274,19 @@ const VadDevModal = (() => {
 
   function writeStoredBool(key, value) {
     try { localStorage.setItem(key, value ? 'true' : 'false'); } catch (_) {}
+  }
+
+  function storedString(key, fallback = '') {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw == null ? String(fallback || '') : String(raw);
+    } catch (_) {
+      return String(fallback || '');
+    }
+  }
+
+  function writeStoredString(key, value) {
+    try { localStorage.setItem(key, String(value ?? '')); } catch (_) {}
   }
 
   function storedNoiseThresholdDb() {
@@ -731,6 +766,97 @@ const VadDevModal = (() => {
 
   function cleanSttTranscript(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function normalizeWordDetectionText(value) {
+    return String(value ?? '').toLowerCase().split(',').join('').split('.').join('').trim();
+  }
+
+  function wordDetectionAliases(value) {
+    const aliases = [];
+    String(value ?? '').split(';').forEach(part => {
+      const clean = normalizeWordDetectionText(part);
+      if (clean && !aliases.includes(clean)) aliases.push(clean);
+    });
+    return aliases.slice(0, 32);
+  }
+
+  function wordDetectionSnapshot() {
+    const word = state.wordDetection;
+    return {
+      enabled: word.aliases.length > 0,
+      aliases_text: word.aliasesText,
+      aliases: [...word.aliases],
+      aliases_count: word.aliases.length,
+      awaiting_payload: !!word.awaitingPayload,
+      payload: word.payload || '',
+      last_final: word.lastFinal || '',
+      last_normalized_final: word.lastNormalizedFinal || '',
+      last_sense_final: word.lastSenseFinal || '',
+      last_matched_alias: word.lastMatchedAlias || '',
+      last_payload_final: word.lastPayloadFinal || '',
+      last_sense_at_ms: Number(word.lastSenseAt || 0),
+      last_payload_at_ms: Number(word.lastPayloadAt || 0),
+      last_updated_at_ms: Number(word.lastUpdatedAt || 0),
+      detections: Number(word.detections || 0),
+      captures: Number(word.captures || 0),
+    };
+  }
+
+  function renderWordDetectionUi() {
+    const word = state.wordDetection;
+    if (els.wordDetectionAliases && document.activeElement !== els.wordDetectionAliases) {
+      els.wordDetectionAliases.value = word.aliasesText || '';
+    }
+    const stateLabel = word.aliases.length
+      ? (word.awaitingPayload ? 'Awaiting payload' : (word.payload ? 'Payload captured' : 'Idle'))
+      : 'No sense word.';
+    setText(els.wordDetectionState, stateLabel, '');
+    setText(els.wordDetectionPayload, word.payload, '');
+    setText(els.wordDetectionFinal, word.lastFinal, '');
+    setText(els.wordDetectionMatch, word.lastMatchedAlias, '--');
+    if (els.wordDetectionBlock) {
+      els.wordDetectionBlock.dataset.state = word.awaitingPayload ? 'armed' : (word.payload ? 'captured' : 'idle');
+    }
+  }
+
+  function setWordDetectionAliases(value, options = {}) {
+    const textValue = String(value ?? '').slice(0, 500);
+    const word = state.wordDetection;
+    word.aliasesText = textValue;
+    word.aliases = wordDetectionAliases(textValue);
+    word.lastUpdatedAt = Date.now();
+    if (!word.aliases.length) word.awaitingPayload = false;
+    writeStoredString(LS_WORD_DETECTION_ALIASES, textValue);
+    renderWordDetectionUi();
+    if (options.status) status(options.status);
+    poll({ force: true });
+  }
+
+  function handleWordDetectionFinal(mode, textValue, rawValue = '') {
+    const word = state.wordDetection;
+    const finalText = cleanSttTranscript(textValue || rawValue || '');
+    const normalized = normalizeWordDetectionText(finalText);
+    const matchedAlias = normalized ? (word.aliases.find(alias => alias === normalized) || '') : '';
+    word.lastFinal = finalText;
+    word.lastNormalizedFinal = normalized;
+    if (matchedAlias) {
+      word.payload = '';
+      word.lastPayloadFinal = '';
+      word.lastPayloadAt = 0;
+      word.awaitingPayload = true;
+      word.lastSenseFinal = finalText;
+      word.lastMatchedAlias = matchedAlias;
+      word.lastSenseAt = Date.now();
+      word.detections += 1;
+    } else if (word.awaitingPayload) {
+      word.payload = finalText;
+      word.lastPayloadFinal = finalText;
+      word.lastPayloadAt = Date.now();
+      word.awaitingPayload = false;
+      word.captures += 1;
+    }
+    renderWordDetectionUi();
   }
 
   function sttPayloadDisplayText(payload) {
@@ -1551,6 +1677,7 @@ const VadDevModal = (() => {
         display_text: value,
       });
       pushAction(mode, mode === MODE_MANUAL ? 'manualFinal' : (mode === MODE_REARM ? 'rearmProbeFinal' : 'vadProbeFinal'), { text: value, raw_text: rawValue });
+      handleWordDetectionFinal(mode, value, rawValue);
       target.recording = false;
       target.finalizing = false;
       target.starting = false;
@@ -2082,6 +2209,11 @@ const VadDevModal = (() => {
       silero_enabled: !!state.sileroEnabled,
       silero_disabled: !!els.sileroToggle?.disabled,
       silero_model: SILERO_MODEL,
+      word_detection_aliases: state.wordDetection.aliasesText || '',
+      word_detection_aliases_normalized: [...state.wordDetection.aliases],
+      word_detection_aliases_count: state.wordDetection.aliases.length,
+      word_detection_awaiting_payload: !!state.wordDetection.awaitingPayload,
+      word_detection_payload: state.wordDetection.payload || '',
     };
   }
 
@@ -2136,6 +2268,7 @@ const VadDevModal = (() => {
     const noiseStatus = applyNoiseThresholdStatus(mode);
     const preRoll = preRollSnapshot(mode);
     const controls = controlsSnapshot();
+    const wordDetection = wordDetectionSnapshot();
     const timeoutMarkerExists = mode === MODE_REARM && target.actions.some(action => (
       action.type === 'rearmProbeFinalTimeout'
       && Number(action.segment_id || 0) === Number(target.segmentId || 0)
@@ -2168,6 +2301,7 @@ const VadDevModal = (() => {
       transcript: target.transcript,
       recent_stt_events: target.events,
       recent_actions: target.actions,
+      word_detection: wordDetection,
       vad_speech_start_reset_armed: mode !== MODE_MANUAL ? !!target.vadRecordEnabled : false,
       vad: {
         detector,
@@ -2373,6 +2507,7 @@ const VadDevModal = (() => {
         sent: snapshot?.pre_roll_sent_frame_ids || '',
         detection: snapshot?.vad_detection_frame_id || null,
       },
+      word_detection: snapshot?.word_detection || {},
     });
     const now = Date.now();
     if (!options.force && signature === state.devStatusSignature && now - state.devStatusLastAt < 2500) return;
@@ -2522,6 +2657,15 @@ const VadDevModal = (() => {
     if (rawValue == null || rawValue === '') return null;
     const value = Number(rawValue);
     return Number.isFinite(value) ? value : null;
+  }
+
+  function payloadText(payload, ...keys) {
+    for (const key of keys) {
+      if (payload?.[key] == null) continue;
+      return String(payload[key]);
+    }
+    if (payload?.value == null) return '';
+    return String(payload.value);
   }
 
   async function setSileroVadEnabled(enabled, options = {}) {
@@ -2686,6 +2830,13 @@ const VadDevModal = (() => {
     if (action === 'set_vad_detector') {
       return setVadDetector(payload?.value ?? payload?.detector ?? payload?.vad_detector);
     }
+    if (action === 'set_word_detection_aliases' || action === 'set_word_detection_words' || action === 'set_sense_word' || action === 'set_sense_words') {
+      setWordDetectionAliases(payloadText(payload, 'word_detection_aliases', 'sense_words', 'sense_word'), {
+        reason: 'remote_command',
+        status: 'Word detection saved by automation.',
+      });
+      return true;
+    }
     if (action === 'set_noise_reduction') {
       vm?.setSttNoiseReductionEnabled?.(payloadBool(payload, true, 'noise_reduction_enabled'));
       renderSharedControls();
@@ -2755,6 +2906,7 @@ const VadDevModal = (() => {
       selected_mode: state.selectedMode,
       current_mode: mode,
       controls: controlsSnapshot(),
+      word_detection: wordDetectionSnapshot(),
       modes: {
         [MODE_MANUAL]: probePublic(MODE_MANUAL),
         [MODE_VAD]: probePublic(MODE_VAD),
@@ -2867,6 +3019,12 @@ const VadDevModal = (() => {
     els.rearmTestClear = el('vad-dev-rearm-test-clear');
     els.rearmTestStatus = el('vad-dev-rearm-test-status');
     els.rearmTranscript = el('vad-dev-rearm-transcript');
+    els.wordDetectionBlock = el('vad-dev-word-detection');
+    els.wordDetectionAliases = el('vad-dev-word-detection-aliases');
+    els.wordDetectionState = el('vad-dev-word-detection-state');
+    els.wordDetectionPayload = el('vad-dev-word-detection-payload');
+    els.wordDetectionFinal = el('vad-dev-word-detection-final');
+    els.wordDetectionMatch = el('vad-dev-word-detection-match');
 
     els.tabManual?.addEventListener('change', () => { if (els.tabManual.checked) { state.selectedMode = MODE_MANUAL; renderSharedControls(); poll({ force: true }); } });
     els.tabVad?.addEventListener('change', () => { if (els.tabVad.checked) { state.selectedMode = MODE_VAD; renderSharedControls(); poll({ force: true }); } });
@@ -2935,6 +3093,9 @@ const VadDevModal = (() => {
         ?.catch(error => status(`VAD reset save failed: ${error.message || error}`));
       poll({ force: true });
     });
+    els.wordDetectionAliases?.addEventListener('input', () => {
+      setWordDetectionAliases(els.wordDetectionAliases.value);
+    });
     window.addEventListener('blueprints:voice-mode:changed', renderSharedControls);
     window.addEventListener('blueprints:voice-mode:stt-noise-changed', renderSharedControls);
     window.addEventListener('blueprints:voice-mode:wake-settings-changed', renderSharedControls);
@@ -2942,6 +3103,7 @@ const VadDevModal = (() => {
     els.modal?.addEventListener('close', stop);
     selectMode(state.selectedMode);
     renderAllProbeUi();
+    renderWordDetectionUi();
   }
 
   if (document.readyState === 'loading') {

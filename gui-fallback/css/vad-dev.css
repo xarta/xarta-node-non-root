@@ -168,8 +168,109 @@
 
 #vad-dev-tab-timeline:checked ~ .vad-dev-tab-panels .vad-dev-tab-panel--timeline {
   display: grid;
+  min-width: 0;
+}
+
+.vad-dev-lower-blocks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   min-width: 0;
+}
+
+.vad-dev-word {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  background: rgba(2, 8, 14, 0.72);
+}
+
+.vad-dev-word[data-state="armed"] {
+  border-color: rgba(56, 189, 248, 0.46);
+  background: rgba(7, 24, 39, 0.74);
+}
+
+.vad-dev-word[data-state="captured"] {
+  border-color: rgba(74, 222, 128, 0.38);
+  background: rgba(5, 46, 22, 0.2);
+}
+
+.vad-dev-word__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.vad-dev-word__field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.vad-dev-word__input {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.28);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.28);
+  color: #f1f7fa;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.25;
+  outline: none;
+}
+
+.vad-dev-word__input:focus {
+  border-color: rgba(var(--hub-accent-rgb), 0.62);
+  box-shadow: 0 0 0 3px rgba(var(--hub-accent-rgb), 0.12);
+}
+
+.vad-dev-word__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.vad-dev-word__readout {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.vad-dev-word__value {
+  box-sizing: border-box;
+  height: 34px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.18);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  color: #f1f7fa;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.vad-dev-word__readout--final {
+  grid-column: span 3;
+}
+
+.vad-dev-word__readout--match {
+  grid-column: span 1;
+}
+
+.vad-dev-word__readout--payload {
+  grid-column: 1 / -1;
 }
 
 @media (max-width: 760px) {
@@ -185,5 +286,24 @@
 
   .vad-dev__controls {
     grid-template-columns: 1fr;
+  }
+
+  .vad-dev-lower-blocks {
+    grid-template-columns: 1fr;
+  }
+
+  .vad-dev-word__head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .vad-dev-word__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .vad-dev-word__readout--final,
+  .vad-dev-word__readout--match,
+  .vad-dev-word__readout--payload {
+    grid-column: auto;
   }
 }

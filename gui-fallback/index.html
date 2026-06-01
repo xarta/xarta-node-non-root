@@ -4761,6 +4761,32 @@
         </section>
       </div>
     </div>
+    <section class="vad-dev-lower-blocks" aria-label="VAD development lower controls">
+      <div class="wake-dev-card vad-dev-word" id="vad-dev-word-detection" data-state="idle">
+        <div class="vad-dev-word__head">
+          <span class="wake-dev-card__title">Word Detection</span>
+          <span class="wake-dev-meta" id="vad-dev-word-detection-state" data-vad-dev-metric="word_detection_state">No sense word.</span>
+        </div>
+        <label class="vad-dev-word__field" for="vad-dev-word-detection-aliases">
+          <span class="wake-dev-section-label">Sense words</span>
+          <input class="vad-dev-word__input" type="text" id="vad-dev-word-detection-aliases" autocomplete="off" aria-label="Sense words separated by semicolons" data-vad-dev-control="word_detection_aliases" data-lpignore="true" data-form-type="other" data-1p-ignore="true" data-bwignore="true" />
+        </label>
+        <div class="vad-dev-word__grid">
+          <div class="vad-dev-word__readout vad-dev-word__readout--final">
+            <span class="wake-dev-section-label">Last final</span>
+            <div id="vad-dev-word-detection-final" class="vad-dev-word__value" data-vad-dev-metric="word_detection_last_final"></div>
+          </div>
+          <div class="vad-dev-word__readout vad-dev-word__readout--match">
+            <span class="wake-dev-section-label">Match</span>
+            <div id="vad-dev-word-detection-match" class="vad-dev-word__value" data-vad-dev-metric="word_detection_match"></div>
+          </div>
+          <div class="vad-dev-word__readout vad-dev-word__readout--payload">
+            <span class="wake-dev-section-label">Payload</span>
+            <div id="vad-dev-word-detection-payload" class="vad-dev-word__value" data-vad-dev-metric="word_detection_payload"></div>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
 </dialog>
 
