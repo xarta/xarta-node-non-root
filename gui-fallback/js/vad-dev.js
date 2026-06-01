@@ -44,6 +44,8 @@ const VadDevModal = (() => {
   const WORD_DETECTION_PAYLOAD0_TIMEOUT_MIN_MS = 0;
   const WORD_DETECTION_PAYLOAD0_TIMEOUT_MAX_MS = 3000;
   const WORD_DETECTION_PAYLOAD0_TIMEOUT_STEP_MS = 300;
+  const WORD_DETECTION_AGENT_CANDIDATE_VISIBLE_MS = 3000;
+  const WORD_DETECTION_AGENT_CANDIDATE_FADE_MS = 650;
   const DETECTOR_ENERGY = 'energy_delta';
   const DETECTOR_SILERO = 'silero_vad';
   const SILERO_MODEL = 'v5';
@@ -267,7 +269,25 @@ const VadDevModal = (() => {
       payload0TimeoutStartedAt: 0,
       payload0TimeoutDeadlineAt: 0,
       payload0TimeoutReason: '',
+      agentCandidate: createWordDetectionAgentCandidateState(),
       prefix: createWordDetectionPrefixState(),
+    };
+  }
+
+  function createWordDetectionAgentCandidateState() {
+    return {
+      source: '',
+      sourceLabel: '',
+      text: '',
+      tone: '',
+      visible: false,
+      fading: false,
+      lastUpdatedAt: 0,
+      lastClearedAt: 0,
+      activeUntilAt: 0,
+      updates: 0,
+      hideTimer: null,
+      clearTimer: null,
     };
   }
 
@@ -962,6 +982,7 @@ const VadDevModal = (() => {
       detections: Number(word.detections || 0),
       captures: Number(word.captures || 0),
       payload0_timeouts: Number(word.payloadTimeouts || 0),
+      agent_candidate: wordDetectionAgentCandidateSnapshot(),
       prefix: wordDetectionPrefixSnapshot(),
     };
   }
@@ -986,6 +1007,115 @@ const VadDevModal = (() => {
       detections: Number(prefix.detections || 0),
       final_captures: Number(prefix.finalCaptures || 0),
     };
+  }
+
+  function wordDetectionAgentCandidateSnapshot() {
+    const candidate = state.wordDetection.agentCandidate || createWordDetectionAgentCandidateState();
+    state.wordDetection.agentCandidate = candidate;
+    const now = Date.now();
+    const textValue = candidate.text || '';
+    const activeUntilAt = Number(candidate.activeUntilAt || 0);
+    const visible = !!(candidate.visible && textValue);
+    const fading = !!(candidate.fading && textValue);
+    return {
+      active: visible || fading,
+      visible,
+      fading,
+      source: candidate.source || '',
+      source_label: candidate.sourceLabel || '',
+      tone: candidate.tone || '',
+      candidate: textValue,
+      text: textValue,
+      utterance: textValue,
+      state: visible ? 'active' : (fading ? 'fading' : 'idle'),
+      last_updated_at_ms: Number(candidate.lastUpdatedAt || 0),
+      last_cleared_at_ms: Number(candidate.lastClearedAt || 0),
+      active_until_at_ms: activeUntilAt,
+      remaining_ms: visible && activeUntilAt ? Math.max(0, activeUntilAt - now) : 0,
+      updates: Number(candidate.updates || 0),
+    };
+  }
+
+  function wordDetectionAgentCandidateSourceLabel(source) {
+    if (source === 'payload0') return 'PAYLOAD0 candidate';
+    if (source === 'payload1') return 'PAYLOAD1 candidate';
+    if (source === 'payload2') return 'PAYLOAD2 candidate';
+    return 'No candidate';
+  }
+
+  function clearWordDetectionAgentCandidateTimers(candidate) {
+    const target = candidate || state.wordDetection.agentCandidate;
+    if (!target) return;
+    if (target.hideTimer) window.clearTimeout(target.hideTimer);
+    if (target.clearTimer) window.clearTimeout(target.clearTimer);
+    target.hideTimer = null;
+    target.clearTimer = null;
+  }
+
+  function fadeWordDetectionAgentCandidate(reason = 'candidate_elapsed') {
+    const candidate = state.wordDetection.agentCandidate || createWordDetectionAgentCandidateState();
+    state.wordDetection.agentCandidate = candidate;
+    if (!candidate.text && !candidate.visible && !candidate.fading) return false;
+    if (candidate.hideTimer) window.clearTimeout(candidate.hideTimer);
+    candidate.hideTimer = null;
+    candidate.visible = false;
+    candidate.fading = true;
+    candidate.activeUntilAt = 0;
+    candidate.clearTimer = window.setTimeout(() => {
+      if (!candidate.fading) return;
+      clearWordDetectionAgentCandidateTimers(candidate);
+      candidate.source = '';
+      candidate.sourceLabel = '';
+      candidate.text = '';
+      candidate.tone = '';
+      candidate.visible = false;
+      candidate.fading = false;
+      candidate.activeUntilAt = 0;
+      candidate.lastClearedAt = Date.now();
+      renderWordDetectionUi();
+      poll({ force: true });
+    }, WORD_DETECTION_AGENT_CANDIDATE_FADE_MS);
+    renderWordDetectionUi();
+    poll({ force: true });
+    return !!reason;
+  }
+
+  function showWordDetectionAgentCandidate(source, value, tone) {
+    const textValue = cleanSttTranscript(value);
+    if (!textValue) return false;
+    const candidate = state.wordDetection.agentCandidate || createWordDetectionAgentCandidateState();
+    state.wordDetection.agentCandidate = candidate;
+    clearWordDetectionAgentCandidateTimers(candidate);
+    const now = Date.now();
+    candidate.source = source || '';
+    candidate.sourceLabel = wordDetectionAgentCandidateSourceLabel(source);
+    candidate.text = textValue;
+    candidate.tone = tone || 'green';
+    candidate.visible = true;
+    candidate.fading = false;
+    candidate.lastUpdatedAt = now;
+    candidate.activeUntilAt = now + WORD_DETECTION_AGENT_CANDIDATE_VISIBLE_MS;
+    candidate.updates += 1;
+    candidate.hideTimer = window.setTimeout(() => {
+      fadeWordDetectionAgentCandidate('candidate_elapsed');
+    }, WORD_DETECTION_AGENT_CANDIDATE_VISIBLE_MS);
+    renderWordDetectionUi();
+    poll({ force: true });
+    return true;
+  }
+
+  function renderWordDetectionAgentCandidateUi() {
+    const snapshot = wordDetectionAgentCandidateSnapshot();
+    const stateLabel = snapshot.visible
+      ? (snapshot.source_label || 'Candidate')
+      : (snapshot.fading ? 'Fading' : 'Idle');
+    setText(els.wordAgentCandidateState, stateLabel, '');
+    setText(els.wordAgentCandidateSource, snapshot.source_label || 'No candidate', '');
+    setText(els.wordAgentCandidateText, snapshot.text, '');
+    if (els.wordAgentCandidateBlock) {
+      els.wordAgentCandidateBlock.dataset.state = snapshot.visible ? 'active' : (snapshot.fading ? 'fading' : 'idle');
+      els.wordAgentCandidateBlock.dataset.tone = snapshot.tone || 'idle';
+    }
   }
 
   function renderWordDetectionUi() {
@@ -1029,6 +1159,7 @@ const VadDevModal = (() => {
     if (els.wordPrefixBlock) {
       els.wordPrefixBlock.dataset.state = prefix.finalPayload ? 'captured' : (prefix.lastMatchedAlias ? 'armed' : 'idle');
     }
+    renderWordDetectionAgentCandidateUi();
   }
 
   function setWordDetectionAliases(value, options = {}) {
@@ -1176,6 +1307,7 @@ const VadDevModal = (() => {
       matched_alias: word.lastMatchedAlias || '',
       timeout_ms: wordDetectionPayload0TimeoutMs(),
     });
+    showWordDetectionAgentCandidate('payload0', finalText, 'green');
   }
 
   function handleWordDetectionFinal(mode, textValue, rawValue = '') {
@@ -1222,12 +1354,16 @@ const VadDevModal = (() => {
     if (match.alias) {
       const segmentKey = wordDetectionSegmentKey(mode);
       const firstMatchInSegment = prefix.lastSegmentKey !== segmentKey;
+      const previousPayload = prefix.partialPayload || '';
       prefix.partialPayload = match.payload;
       prefix.finalPayload = '';
       prefix.lastMatchedAlias = match.alias;
       prefix.lastSegmentKey = segmentKey;
       prefix.lastMatchAt = Date.now();
       if (firstMatchInSegment) prefix.detections += 1;
+      if (match.payload && match.payload !== previousPayload) {
+        showWordDetectionAgentCandidate('payload1', match.payload, 'amber');
+      }
       if (wordDetectionPrefixPartialInterruptTtsEnabled()) {
         void interruptTtsForWordDetection(mode, 'word_detection_prefix_partial_match', {
           matched_alias: match.alias,
@@ -1251,6 +1387,7 @@ const VadDevModal = (() => {
       prefix.finalPayload = match.payload;
       prefix.lastFinalMatchedAlias = match.alias;
       prefix.finalCaptures += 1;
+      showWordDetectionAgentCandidate('payload2', match.payload, 'green');
       if (wordDetectionPrefixFinalInterruptTtsEnabled()) {
         void interruptTtsForWordDetection(mode, 'word_detection_prefix_final_match', {
           matched_alias: match.alias,
@@ -2616,6 +2753,7 @@ const VadDevModal = (() => {
     const controlsMode = selectedControlsMode();
     const vadControlsRelevant = controlsMode !== MODE_MANUAL;
     const auto = autoPreRollStatus(controlsMode);
+    const agentCandidate = wordDetectionAgentCandidateSnapshot();
     return {
       selected_mode: controlsMode,
       vad_only_controls_relevant: vadControlsRelevant,
@@ -2665,6 +2803,14 @@ const VadDevModal = (() => {
       word_detection_prefix_payload2: state.wordDetection.prefix?.finalPayload || '',
       word_detection_prefix_last_matched_alias: state.wordDetection.prefix?.lastMatchedAlias || '',
       word_detection_prefix_last_final_matched_alias: state.wordDetection.prefix?.lastFinalMatchedAlias || '',
+      word_detection_agent_candidate_active: !!agentCandidate.active,
+      word_detection_agent_candidate_visible: !!agentCandidate.visible,
+      word_detection_agent_candidate_fading: !!agentCandidate.fading,
+      word_detection_agent_candidate: agentCandidate.text || '',
+      word_detection_agent_candidate_text: agentCandidate.text || '',
+      word_detection_agent_candidate_source: agentCandidate.source || '',
+      word_detection_agent_candidate_source_label: agentCandidate.source_label || '',
+      word_detection_agent_candidate_tone: agentCandidate.tone || '',
     };
   }
 
@@ -3690,6 +3836,10 @@ const VadDevModal = (() => {
     els.wordPrefixFinalInterruptToggle = el('vad-dev-word-prefix-final-interrupt-tts-toggle');
     els.wordPrefixPayload1 = el('vad-dev-word-prefix-payload1');
     els.wordPrefixPayload2 = el('vad-dev-word-prefix-payload2');
+    els.wordAgentCandidateBlock = el('vad-dev-word-agent-candidate');
+    els.wordAgentCandidateState = el('vad-dev-word-agent-candidate-state');
+    els.wordAgentCandidateSource = el('vad-dev-word-agent-candidate-source');
+    els.wordAgentCandidateText = el('vad-dev-word-agent-candidate-text');
 
     els.tabManual?.addEventListener('change', () => { if (els.tabManual.checked) { state.selectedMode = MODE_MANUAL; renderSharedControls(); poll({ force: true }); } });
     els.tabVad?.addEventListener('change', () => { if (els.tabVad.checked) { state.selectedMode = MODE_VAD; renderSharedControls(); poll({ force: true }); } });

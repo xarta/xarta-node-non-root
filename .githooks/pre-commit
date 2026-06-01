@@ -106,4 +106,26 @@ run_active_browser_live_checks() {
 
 run_active_browser_live_checks
 
+# ── Ruff: lint staged Python files ───────────────────────────────────────────
+mapfile -t STAGED_PY < <(git diff --cached --name-only --diff-filter=ACMR | grep '\.py$' || true)
+
+if [[ ${#STAGED_PY[@]} -gt 0 ]]; then
+  if ! command -v ruff >/dev/null 2>&1; then
+    echo "[pre-commit] BLOCKED: ruff not found. Run: bash /root/xarta-node/setup-python-dev-tools.sh" >&2
+    exit 1
+  fi
+
+  echo "[pre-commit] Running ruff check on ${#STAGED_PY[@]} staged Python file(s)..."
+  ruff check --select E,F,W,I --ignore E501 --line-length 100 "${STAGED_PY[@]}" || {
+    echo "[pre-commit] BLOCKED: ruff found lint errors." >&2
+    exit 1
+  }
+
+  echo "[pre-commit] Running ruff format check on ${#STAGED_PY[@]} staged Python file(s)..."
+  ruff format --check --line-length 100 "${STAGED_PY[@]}" || {
+    echo "[pre-commit] BLOCKED: ruff found formatting drift." >&2
+    exit 1
+  }
+fi
+
 echo "[pre-commit] OK"
