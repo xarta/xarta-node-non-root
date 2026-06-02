@@ -85,6 +85,12 @@ const BlueprintsModelChangeAnnouncer = (() => {
 
   // Dedup: prevent speaking the same event_id twice (replay overlap guard).
   const _seenIds     = new Set();
+  let _speechSequence = 0;
+  let _lastSpeechState = {
+    sequence: 0,
+    status: 'idle',
+    at: Date.now(),
+  };
 
   // ── FSM core ───────────────────────────────────────────────────────────────
 
@@ -305,13 +311,61 @@ const BlueprintsModelChangeAnnouncer = (() => {
     return localStorage.getItem('events.tts.muted') === 'true';
   }
 
-  function _emitSpeechSuppressed(reason, item = {}) {
+  function _previewText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 180);
+  }
+
+  function _errorMessage(error) {
+    return String(error?.message || error || '').slice(0, 240);
+  }
+
+  function _eventSummary(evt = {}) {
+    const payload = evt.payload && typeof evt.payload === 'object' ? evt.payload : {};
+    return {
+      event_id: String(evt.event_id || ''),
+      event_type: String(evt.event_type || ''),
+      source: String(evt.source || payload.source || ''),
+      agent_id: String(payload.agent_id || ''),
+      utterance_id: String(payload.utterance_id || ''),
+      client_id: String(payload.client_id || ''),
+      created_at: Number(payload.created_at || evt.created_at || 0),
+    };
+  }
+
+  function _recordSpeechState(status, item = {}, extra = {}) {
+    const detail = {
+      sequence: ++_speechSequence,
+      status,
+      at: Date.now(),
+      announcer_state: _astate,
+      queue_length: _queue.length,
+      stash_length: _stash.length,
+      muted: _isMuted(),
+      hermes_utterance: !!item.hermesUtterance,
+      title: item.toastOpts?.title || '',
+      text_preview: _previewText(item.text),
+      event: _eventSummary(item.event || {}),
+      ...extra,
+    };
+    _lastSpeechState = detail;
+    try {
+      document.dispatchEvent(new CustomEvent('blueprints:notification-speech-state', {
+        detail,
+        bubbles: false,
+      }));
+    } catch (_) {}
+    return detail;
+  }
+
+  function _emitSpeechSuppressed(reason, item = {}, extra = {}) {
+    _recordSpeechState('suppressed', item, { reason, ...(extra || {}) });
     try {
       document.dispatchEvent(new CustomEvent('blueprints:notification-speech-suppressed', {
         detail: {
           reason,
           event: item.event || {},
           title: item.toastOpts?.title || '',
+          ...(extra || {}),
         },
         bubbles: false,
       }));
@@ -320,6 +374,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
 
   async function _speak(text, item = {}) {
     const evt = item.event || {};
+    _recordSpeechState('received', item);
     const testBroadcast = evt?.payload?.frontend_contract === 'notification-tests-modal'
       && evt?.payload?.test_broadcast_speech === true;
     if (_isMuted()) {
@@ -387,10 +442,13 @@ const BlueprintsModelChangeAnnouncer = (() => {
             elapsedMs: Math.round(performance.now() - cueStartedAt),
           });
         }
-        await BlueprintsTtsClient.speak({
+        _recordSpeechState('speaking', item);
+        const result = await BlueprintsTtsClient.speak({
           text,
           voice: typeof payload.voice === 'string' && payload.voice ? payload.voice : undefined,
           clientId: typeof payload.client_id === 'string' ? payload.client_id : undefined,
+          utteranceId: typeof payload.utterance_id === 'string' ? payload.utterance_id : undefined,
+          eventId: typeof evt.event_id === 'string' ? evt.event_id : undefined,
           interrupt: typeof payload.interrupt === 'boolean' ? payload.interrupt : false,
           mode: typeof payload.mode === 'string' ? payload.mode : 'stream',
           format: typeof payload.format === 'string' ? payload.format : 'wav',
@@ -405,19 +463,30 @@ const BlueprintsModelChangeAnnouncer = (() => {
           debugTiming: true,
           timingLabel: 'hermes.conversation',
         });
+        _recordSpeechState('completed', item, {
+          engine: result?.engine || '',
+          playback_sequence: Number(result?.playback_sequence || 0),
+        });
         return;
       }
-      await BlueprintsTtsClient.speak({
+      _recordSpeechState('speaking', item);
+      const result = await BlueprintsTtsClient.speak({
         text,
+        eventId: typeof evt.event_id === 'string' ? evt.event_id : undefined,
         interrupt: false,
         mode: 'stream',
         fallbackKind: 'neutral',
         eventKind: 'notification',
         volume: item.volume,
       });
+      _recordSpeechState('completed', item, {
+        engine: result?.engine || '',
+        playback_sequence: Number(result?.playback_sequence || 0),
+      });
     } catch (e) {
       console.warn('[model-change-announcer] TTS error (non-fatal):', e);
-      _emitSpeechSuppressed('tts_error', item);
+      _recordSpeechState('error', item, { error: _errorMessage(e) });
+      _emitSpeechSuppressed('tts_error', item, { error: _errorMessage(e) });
     }
   }
 
@@ -695,7 +764,9 @@ const BlueprintsModelChangeAnnouncer = (() => {
     const toastCategory = _normalizeToastCategory(
       extra.toastCategory || toastOpts?.category || _toastCategoryForEvent(evt)
     );
-    _queue.push({ text, toastOpts, event: evt, ...(extra || {}), toastCategory });
+    const item = { text, toastOpts, event: evt, ...(extra || {}), toastCategory };
+    _queue.push(item);
+    _recordSpeechState('queued', item);
     if (_astate === ASTATE.IDLE) _drainQueue();
     // Otherwise the item will be picked up when the current announcement finishes.
   }
@@ -793,6 +864,16 @@ const BlueprintsModelChangeAnnouncer = (() => {
     /** @returns {number} Model-change events sitting in the debounce stash. */
     getStashLength() { return _stash.length; },
 
+    getRuntimeState() {
+      return {
+        state: _astate,
+        queue_length: _queue.length,
+        stash_length: _stash.length,
+        muted: _isMuted(),
+        last_speech: _lastSpeechState,
+      };
+    },
+
     /**
      * Directly announce text + optional toast.  Bypasses the debounce path.
      * Safe to call from test code or ad-hoc operator notices.
@@ -813,3 +894,5 @@ const BlueprintsModelChangeAnnouncer = (() => {
   });
 
 })();
+
+window.BlueprintsModelChangeAnnouncer = BlueprintsModelChangeAnnouncer;

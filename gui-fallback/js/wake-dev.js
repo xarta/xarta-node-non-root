@@ -11,6 +11,13 @@ const WakeDevModal = (() => {
   const POLL_MS = 500;
   const WAKE_RUNTIME_EVENT = 'blueprints:vad-dev:wake-runtime-changed';
   const INSTANCE_IDS = ['local', 'vps'];
+  const CANDIDATE_SOURCES = new Set(['payload0', 'payload1', 'payload2']);
+  const COMMAND_KINDS = ['execute', 'cancel', 'pause', 'resume'];
+  const COMMAND_SEPARATOR_RE = /[\s_-]+/g;
+  const COMMAND_TRAILING_PUNCTUATION_RE = '\\s*[.!?]+';
+  const SPEECH_COMMAND_VARIANTS = {
+    execute: ['executes'],
+  };
   const DEFAULT_COMMANDS = {
     pause: 'pause-dictation',
     execute: 'execute',
@@ -25,6 +32,8 @@ const WakeDevModal = (() => {
         matrix_server: 'tb1',
         matrix_room_id: '',
         wake_word: 'Computer',
+        wake_aliases: ['computer'],
+        hermes_prefix: 'hermes: ',
         auto_execute_silence_ms: 0,
         execute_cancel_ms: 0,
         commands: { ...DEFAULT_COMMANDS },
@@ -35,6 +44,8 @@ const WakeDevModal = (() => {
         matrix_server: 'vps',
         matrix_room_id: '',
         wake_word: 'Mini-Me',
+        wake_aliases: ['mini me', 'minime', 'mini-me'],
+        hermes_prefix: 'hermes-vps: ',
         auto_execute_silence_ms: 0,
         execute_cancel_ms: 0,
         commands: { ...DEFAULT_COMMANDS },
@@ -52,6 +63,10 @@ const WakeDevModal = (() => {
     devStatusSignature: '',
     devStatusSending: false,
     settings: null,
+    wakeMemory: {
+      local: createWakeMemoryState('local'),
+      vps: createWakeMemoryState('vps'),
+    },
   };
 
   const els = {};
@@ -84,17 +99,61 @@ const WakeDevModal = (() => {
     return Math.max(0, Math.min(3000, Math.round(parsed / 300) * 300));
   }
 
+  function splitVariants(value) {
+    if (Array.isArray(value)) {
+      return value.flatMap(item => splitVariants(item));
+    }
+    return String(value == null ? '' : value)
+      .split(';')
+      .map(item => item.trim())
+      .filter(Boolean);
+  }
+
+  function uniquePush(list, value) {
+    const text = String(value || '').trim();
+    if (text && !list.includes(text)) list.push(text);
+  }
+
+  function wakeAliases(wakeWord, configured) {
+    const aliases = [];
+    splitVariants(wakeWord).concat(splitVariants(configured)).forEach(value => {
+      const normalized = String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[-_,.]+/g, ' ')
+        .split(/\s+/)
+        .filter(Boolean)
+        .join(' ');
+      if (!normalized) return;
+      uniquePush(aliases, normalized);
+      uniquePush(aliases, normalized.replace(/\s+/g, ''));
+      uniquePush(aliases, normalized.replace(/\s+/g, '-'));
+    });
+    return aliases.slice(0, 16);
+  }
+
+  function cleanHermesPrefix(value, fallback = '') {
+    const raw = cleanText(value, fallback).replace(/[\r\n]+/g, ' ');
+    const compact = raw.split(/\s+/).filter(Boolean).join(' ');
+    if (!compact) return fallback || '';
+    const withColon = compact.endsWith(':') ? compact : `${compact.replace(/:+$/, '')}:`;
+    return `${withColon} `;
+  }
+
   function cleanInstance(instanceId, value) {
     const defaults = DEFAULT_SETTINGS.instances[instanceId] || DEFAULT_SETTINGS.instances.local;
     const raw = value && typeof value === 'object' ? value : {};
     const rawCommands = raw.commands && typeof raw.commands === 'object' ? raw.commands : {};
     const matrixServer = instanceId === 'vps' ? 'vps' : 'tb1';
+    const wakeWord = cleanText(raw.wake_word, defaults.wake_word);
     return {
       enabled: true,
       label: defaults.label,
       matrix_server: matrixServer,
       matrix_room_id: cleanText(raw.matrix_room_id, defaults.matrix_room_id),
-      wake_word: cleanText(raw.wake_word, defaults.wake_word),
+      wake_word: wakeWord,
+      wake_aliases: wakeAliases(wakeWord, raw.wake_aliases || defaults.wake_aliases),
+      hermes_prefix: cleanHermesPrefix(raw.hermes_prefix, defaults.hermes_prefix),
       auto_execute_silence_ms: cleanStepMs(raw.auto_execute_silence_ms),
       execute_cancel_ms: cleanStepMs(raw.execute_cancel_ms),
       commands: {
@@ -208,30 +267,560 @@ const WakeDevModal = (() => {
     return 'Idle';
   }
 
+  function renderTimerText(memorySnapshot) {
+    const parts = [];
+    if (memorySnapshot.auto_execute_remaining_ms > 0) {
+      parts.push(`Auto ${Math.ceil(memorySnapshot.auto_execute_remaining_ms / 1000)}s`);
+    }
+    if (memorySnapshot.execute_cancel_remaining_ms > 0) {
+      parts.push(`Cancel ${Math.ceil(memorySnapshot.execute_cancel_remaining_ms / 1000)}s`);
+    }
+    return parts.length ? parts.join(' / ') : 'Timers idle';
+  }
+
   function renderCandidate(instanceId, runtime) {
     const instance = runtime?.instances?.[instanceId] || {};
     const candidate = instance.candidate || runtime?.candidates?.[instanceId] || {};
+    const memorySnapshot = wakeMemorySnapshotFor(instanceId);
     const block = els.candidateBlocks?.[instanceId];
     const source = metric(instanceId, 'candidate_source');
     const text = metric(instanceId, 'candidate_text');
     const stateNode = metric(instanceId, 'candidate_state');
+    const viableSource = metric(instanceId, 'viable_candidate_source');
+    const viableText = metric(instanceId, 'viable_candidate_text');
+    const timerState = metric(instanceId, 'timer_state');
+    const sendState = metric(instanceId, 'send_state');
     const visible = !!candidate.visible;
     const fading = !!candidate.fading;
     const armed = !!instance.awaiting_payload;
-    if (stateNode) stateNode.textContent = candidateStateLabel(candidate, instance);
+    if (stateNode) {
+      stateNode.textContent = candidateStateLabel(candidate, instance);
+      if (!visible && !fading && !armed && memorySnapshot.viable_candidate_text) {
+        stateNode.textContent = 'Viable staged';
+      }
+    }
     if (source) {
       source.textContent = candidate.source_label
         || (armed ? 'Wake word matched' : (instance.enabled ? 'No candidate' : 'No wake word'));
     }
     if (text) text.textContent = candidate.text || '';
+    if (viableSource) {
+      viableSource.textContent = memorySnapshot.viable_candidate_source
+        ? `Staged ${memorySnapshot.viable_candidate_source}`
+        : 'No staged candidate';
+    }
+    if (viableText) viableText.textContent = memorySnapshot.viable_candidate_text || '';
+    if (timerState) timerState.textContent = renderTimerText(memorySnapshot);
+    if (sendState) {
+      const send = memorySnapshot.last_send || {};
+      const lastCommand = memorySnapshot.last_command || {};
+      const pieces = [];
+      if (memorySnapshot.last_status) pieces.push(memorySnapshot.last_status);
+      if (send.event_id) pieces.push(`Event ${send.event_id}`);
+      if (send.error) pieces.push(send.error);
+      if (lastCommand.pending) pieces.push('Pending command behavior');
+      sendState.textContent = pieces.join(' | ');
+    }
     if (block) {
       block.dataset.state = visible ? 'active' : (fading ? 'fading' : (armed ? 'armed' : 'idle'));
       block.dataset.tone = candidate.tone || (armed ? 'amber' : 'idle');
+      block.dataset.viable = memorySnapshot.viable_candidate_text ? 'true' : 'false';
+      block.dataset.sendState = memorySnapshot.last_send_status || 'idle';
     }
   }
 
-  function renderWakeRuntime() {
-    const runtime = wakeRuntimeSnapshot();
+  function createWakeMemoryState(instanceId) {
+    return {
+      instance_id: instanceId,
+      incomingSignature: '',
+      revisionCounter: 0,
+      viable: null,
+      commandSignature: '',
+      commandProcessedAtMs: 0,
+      autoTimer: null,
+      autoStartedAt: 0,
+      autoDeadlineAt: 0,
+      autoRevision: '',
+      cancelTimer: null,
+      cancelStartedAt: 0,
+      cancelDeadlineAt: 0,
+      cancelRevision: '',
+      lastCommand: {
+        kind: '',
+        status: '',
+        candidate_text: '',
+        incoming_text: '',
+        wake_word: '',
+        command_text: '',
+        recognized_at_ms: 0,
+        pending: false,
+      },
+      lastSend: {
+        state: 'idle',
+        status: 'idle',
+        room_id: '',
+        server: '',
+        event_id: '',
+        error: '',
+        command_source: '',
+        candidate_revision: '',
+        candidate_text: '',
+        sent_at_ms: 0,
+        updated_at_ms: 0,
+        body: '',
+      },
+      lastStatus: 'Idle.',
+    };
+  }
+
+  function memoryFor(instanceId) {
+    if (!state.wakeMemory[instanceId]) {
+      state.wakeMemory[instanceId] = createWakeMemoryState(instanceId);
+    }
+    return state.wakeMemory[instanceId];
+  }
+
+  function clearWakeMemoryTimers(memory) {
+    if (!memory) return;
+    if (memory.autoTimer) window.clearTimeout(memory.autoTimer);
+    if (memory.cancelTimer) window.clearTimeout(memory.cancelTimer);
+    memory.autoTimer = null;
+    memory.cancelTimer = null;
+    memory.autoStartedAt = 0;
+    memory.autoDeadlineAt = 0;
+    memory.autoRevision = '';
+    memory.cancelStartedAt = 0;
+    memory.cancelDeadlineAt = 0;
+    memory.cancelRevision = '';
+  }
+
+  function regexEscape(value) {
+    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function normalizeCommandText(value) {
+    return String(value == null ? '' : value)
+      .trim()
+      .toLowerCase()
+      .replace(COMMAND_SEPARATOR_RE, ' ')
+      .split(/\s+/)
+      .filter(Boolean)
+      .join(' ');
+  }
+
+  function commandPattern(value) {
+    const normalized = normalizeCommandText(value);
+    if (!normalized) return '';
+    return normalized.split(' ').map(regexEscape).join('[\\s_-]+');
+  }
+
+  function commandVariantsFor(instance, kind) {
+    const variants = [];
+    splitVariants(instance?.commands?.[kind] || DEFAULT_COMMANDS[kind]).forEach(value => {
+      uniquePush(variants, value);
+    });
+    if (variants.some(value => normalizeCommandText(value) === normalizeCommandText(DEFAULT_COMMANDS[kind]))) {
+      (SPEECH_COMMAND_VARIANTS[kind] || []).forEach(value => uniquePush(variants, value));
+    }
+    return variants;
+  }
+
+  function parseWakeCommandSuffix(instance, text) {
+    const incomingText = cleanText(text);
+    if (!incomingText) return null;
+    const wakeValues = splitVariants(instance?.wake_word).concat(splitVariants(instance?.wake_aliases));
+    const wakePatterns = wakeValues
+      .map(value => ({ value, pattern: commandPattern(value) }))
+      .filter(item => item.pattern);
+    if (!wakePatterns.length) return null;
+
+    const matches = [];
+    COMMAND_KINDS.forEach(kind => {
+      commandVariantsFor(instance, kind).forEach(commandValue => {
+        const commandRe = commandPattern(commandValue);
+        if (!commandRe) return;
+        wakePatterns.forEach(wake => {
+          const re = new RegExp(`(?:^|[\\s_-]+)(${wake.pattern})[\\s_-]+(${commandRe})(?:${COMMAND_TRAILING_PUNCTUATION_RE})?\\s*$`, 'i');
+          const match = re.exec(incomingText);
+          if (!match) return;
+          const strippedText = incomingText.slice(0, match.index).trim();
+          matches.push({
+            kind,
+            stripped_text: strippedText,
+            command_only: !strippedText,
+            wake_word: wake.value,
+            command_text: commandValue,
+            suffix_text: match[0].trim(),
+            score: match[0].length,
+          });
+        });
+      });
+    });
+    matches.sort((a, b) => b.score - a.score);
+    return matches[0] || null;
+  }
+
+  function sourceLabelForCandidate(candidate) {
+    return candidate?.source_label || candidate?.sourceLabel || candidate?.source || 'Candidate';
+  }
+
+  function nextCandidateRevision(memory, instanceId) {
+    memory.revisionCounter += 1;
+    return `wake-${instanceId}-${Date.now()}-${memory.revisionCounter}`;
+  }
+
+  function stageViableCandidate(instanceId, detail, options = {}) {
+    const memory = memoryFor(instanceId);
+    const now = Date.now();
+    clearWakeMemoryTimers(memory);
+    const revision = detail.revision || nextCandidateRevision(memory, instanceId);
+    const viable = {
+      text: cleanText(detail.text),
+      source: cleanText(detail.source),
+      source_label: detail.source_label || detail.source || 'Candidate',
+      instance: instanceId,
+      revision,
+      created_at_ms: now,
+      updated_at_ms: now,
+      incoming_text: detail.incoming_text || detail.text || '',
+      stripped_command: detail.stripped_command || '',
+      wake_word: detail.wake_word || '',
+    };
+    if (!viable.text) return null;
+    memory.viable = viable;
+    memory.lastStatus = `Viable candidate staged from ${viable.source_label}.`;
+    if (options.scheduleTimers !== false) scheduleViableCandidateTimers(instanceId, viable);
+    renderWakeRuntime();
+    reportDevStatus(automationSnapshot(), { force: true });
+    return viable;
+  }
+
+  function scheduleViableCandidateTimers(instanceId, viable) {
+    const memory = memoryFor(instanceId);
+    const instance = cleanSettings(state.settings || voiceMode()?.getWakeSettings?.() || DEFAULT_SETTINGS).instances[instanceId];
+    const autoMs = cleanStepMs(instance?.auto_execute_silence_ms);
+    const cancelMs = cleanStepMs(instance?.execute_cancel_ms);
+    const now = Date.now();
+    if (autoMs > 0) {
+      memory.autoStartedAt = now;
+      memory.autoDeadlineAt = now + autoMs;
+      memory.autoRevision = viable.revision;
+      memory.autoTimer = window.setTimeout(() => {
+        if (memory.viable?.revision !== viable.revision) return;
+        executeViableCandidate(instanceId, 'auto_execute', viable.revision).catch(() => {});
+      }, autoMs);
+    }
+    if (cancelMs > 0) {
+      memory.cancelStartedAt = now;
+      memory.cancelDeadlineAt = now + cancelMs;
+      memory.cancelRevision = viable.revision;
+      memory.cancelTimer = window.setTimeout(() => {
+        if (memory.viable?.revision !== viable.revision) return;
+        clearViableCandidate(instanceId, 'execute_cancel_timer', {
+          kind: 'cancel',
+          stripped_text: viable.text,
+          wake_word: viable.wake_word,
+          command_text: 'execute_cancel_ms',
+        });
+      }, cancelMs);
+    }
+  }
+
+  function recordCommand(instanceId, command, statusText, pending = false) {
+    const memory = memoryFor(instanceId);
+    memory.lastCommand = {
+      kind: command?.kind || '',
+      status: statusText || '',
+      candidate_text: command?.stripped_text || '',
+      incoming_text: command?.incoming_text || '',
+      wake_word: command?.wake_word || '',
+      command_text: command?.command_text || '',
+      recognized_at_ms: Date.now(),
+      pending: !!pending,
+    };
+    memory.lastStatus = statusText || memory.lastStatus;
+  }
+
+  function commandSignatureFor(instanceId, candidate, command) {
+    return JSON.stringify([
+      instanceId,
+      cleanText(candidate?.source),
+      normalizeCommandText(candidate?.text || ''),
+      command?.kind || '',
+      normalizeCommandText(command?.stripped_text || ''),
+      normalizeCommandText(command?.wake_word || ''),
+      normalizeCommandText(command?.command_text || ''),
+    ]);
+  }
+
+  function rememberCommandCandidate(instanceId, candidate, command) {
+    const memory = memoryFor(instanceId);
+    const signature = commandSignatureFor(instanceId, candidate, command);
+    const now = Date.now();
+    if (signature === memory.commandSignature && now - Number(memory.commandProcessedAtMs || 0) < 12000) {
+      return false;
+    }
+    memory.commandSignature = signature;
+    memory.commandProcessedAtMs = now;
+    return true;
+  }
+
+  function clearViableCandidate(instanceId, reason, command = {}) {
+    const memory = memoryFor(instanceId);
+    clearWakeMemoryTimers(memory);
+    const previous = memory.viable;
+    memory.viable = null;
+    const label = reason === 'execute_cancel_timer'
+      ? 'Execute cancel timer cleared the viable candidate.'
+      : 'Cancel command cleared the viable candidate.';
+    recordCommand(instanceId, {
+      ...command,
+      kind: command.kind || 'cancel',
+      stripped_text: command.stripped_text || previous?.text || '',
+    }, label);
+    renderWakeRuntime();
+    reportDevStatus(automationSnapshot(), { force: true });
+  }
+
+  function setSendState(instanceId, patch) {
+    const memory = memoryFor(instanceId);
+    memory.lastSend = {
+      ...memory.lastSend,
+      ...patch,
+      updated_at_ms: Date.now(),
+    };
+    if (patch.status) memory.lastStatus = patch.status;
+    renderWakeRuntime();
+    reportDevStatus(automationSnapshot(), { force: true });
+  }
+
+  async function executeViableCandidate(instanceId, commandSource, expectedRevision = '') {
+    const memory = memoryFor(instanceId);
+    const viable = memory.viable;
+    if (!viable || (expectedRevision && viable.revision !== expectedRevision)) {
+      const statusText = expectedRevision ? 'Stale viable candidate timer ignored.' : 'No viable candidate to execute.';
+      recordCommand(instanceId, { kind: commandSource === 'auto_execute' ? 'auto_execute' : 'execute' }, statusText);
+      setSendState(instanceId, { state: 'idle', status: statusText, error: '', command_source: commandSource });
+      return null;
+    }
+    clearWakeMemoryTimers(memory);
+    const settings = cleanSettings(state.settings || voiceMode()?.getWakeSettings?.() || DEFAULT_SETTINGS);
+    const instance = settings.instances[instanceId] || {};
+    const roomId = cleanText(instance.matrix_room_id);
+    const server = instance.matrix_server || (instanceId === 'vps' ? 'vps' : 'tb1');
+    if (!roomId) {
+      const statusText = 'No Matrix room configured for Wake To Talk candidate.';
+      setSendState(instanceId, {
+        state: 'error',
+        status: statusText,
+        error: statusText,
+        server,
+        room_id: '',
+        command_source: commandSource,
+        candidate_revision: viable.revision,
+        candidate_text: viable.text,
+      });
+      return null;
+    }
+
+    setSendState(instanceId, {
+      state: 'pending',
+      status: 'Sending Wake To Talk candidate through Matrix Chat.',
+      error: '',
+      server,
+      room_id: roomId,
+      command_source: commandSource,
+      candidate_revision: viable.revision,
+      candidate_text: viable.text,
+      event_id: '',
+      body: '',
+    });
+
+    try {
+      const url = `/api/v1/matrix-chat/rooms/${encodeURIComponent(roomId)}/wake-stt?server=${encodeURIComponent(server)}`;
+      const response = await apiFetchCompat(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: viable.text,
+          instance: instanceId,
+          candidate_source: viable.source,
+          command: commandSource,
+          wake_word: viable.wake_word || instance.wake_word || '',
+          candidate_revision: viable.revision,
+          hermes_prefix: instance.hermes_prefix || '',
+        }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json();
+      if (memory.viable?.revision === viable.revision) memory.viable = null;
+      setSendState(instanceId, {
+        state: 'sent',
+        status: 'Wake To Talk candidate sent.',
+        error: '',
+        server,
+        room_id: roomId,
+        event_id: payload.event_id || '',
+        body: payload.body || '',
+        command_source: commandSource,
+        candidate_revision: viable.revision,
+        candidate_text: viable.text,
+        sent_at_ms: Date.now(),
+      });
+      return payload;
+    } catch (error) {
+      setSendState(instanceId, {
+        state: 'error',
+        status: 'Wake To Talk Matrix send failed.',
+        error: error.message || String(error),
+        server,
+        room_id: roomId,
+        command_source: commandSource,
+        candidate_revision: viable.revision,
+        candidate_text: viable.text,
+      });
+      return null;
+    }
+  }
+
+  function handleIncomingWakeCommand(instanceId, candidate, command) {
+    const incomingText = cleanText(candidate?.text);
+    const source = cleanText(candidate?.source);
+    const sourceLabel = sourceLabelForCandidate(candidate);
+    const commandWithIncoming = { ...command, incoming_text: incomingText };
+    if (!rememberCommandCandidate(instanceId, { ...candidate, source, text: incomingText }, command)) {
+      recordCommand(instanceId, commandWithIncoming, 'Duplicate command candidate ignored.');
+      renderWakeRuntime();
+      reportDevStatus(automationSnapshot(), { force: true });
+      return;
+    }
+    if (command.kind === 'execute') {
+      recordCommand(instanceId, commandWithIncoming, 'Execute command recognized.');
+      const viable = command.stripped_text
+        ? stageViableCandidate(instanceId, {
+            text: command.stripped_text,
+            source,
+            source_label: sourceLabel,
+            incoming_text: incomingText,
+            stripped_command: command.kind,
+            wake_word: command.wake_word,
+          }, { scheduleTimers: false })
+        : memoryFor(instanceId).viable;
+      if (!viable) {
+        recordCommand(instanceId, commandWithIncoming, 'No viable candidate to execute.');
+        setSendState(instanceId, { state: 'idle', status: 'No viable candidate to execute.', error: '', command_source: 'execute' });
+        return;
+      }
+      executeViableCandidate(instanceId, 'execute', viable.revision).catch(() => {});
+      return;
+    }
+    if (command.kind === 'cancel') {
+      clearViableCandidate(instanceId, 'cancel_command', commandWithIncoming);
+      return;
+    }
+    recordCommand(
+      instanceId,
+      commandWithIncoming,
+      `${command.kind === 'pause' ? 'Pause' : 'Resume'} command recognized; dictation handling is pending.`,
+      true,
+    );
+    renderWakeRuntime();
+    reportDevStatus(automationSnapshot(), { force: true });
+  }
+
+  function processIncomingCandidate(instanceId, candidateInput) {
+    const candidate = candidateInput || {};
+    const source = cleanText(candidate.source);
+    const text = cleanText(candidate.text);
+    if (!CANDIDATE_SOURCES.has(source) || !text) return;
+    const memory = memoryFor(instanceId);
+    const signature = JSON.stringify([
+      source,
+      text,
+      Number(candidate.last_updated_at_ms || candidate.updated_at_ms || 0),
+      Number(candidate.updates || 0),
+    ]);
+    if (signature === memory.incomingSignature) return;
+    memory.incomingSignature = signature;
+    const settings = cleanSettings(state.settings || voiceMode()?.getWakeSettings?.() || DEFAULT_SETTINGS);
+    const instance = settings.instances[instanceId] || {};
+    const command = parseWakeCommandSuffix(instance, text);
+    if (command) {
+      if (source === 'payload1') {
+        recordCommand(instanceId, {
+          ...command,
+          incoming_text: text,
+        }, 'Partial command candidate waiting for final transcript.', true);
+        renderWakeRuntime();
+        reportDevStatus(automationSnapshot(), { force: true });
+        return;
+      }
+      handleIncomingWakeCommand(instanceId, { ...candidate, source, text }, command);
+      return;
+    }
+    stageViableCandidate(instanceId, {
+      text,
+      source,
+      source_label: sourceLabelForCandidate(candidate),
+      incoming_text: text,
+      wake_word: instance.wake_word || '',
+    });
+  }
+
+  function syncWakeCandidatesFromRuntime(runtime) {
+    INSTANCE_IDS.forEach(instanceId => {
+      const instance = runtime?.instances?.[instanceId] || {};
+      const candidate = instance.candidate || runtime?.candidates?.[instanceId] || {};
+      processIncomingCandidate(instanceId, candidate);
+    });
+  }
+
+  function wakeMemorySnapshotFor(instanceId) {
+    const memory = memoryFor(instanceId);
+    const settings = cleanSettings(state.settings || voiceMode()?.getWakeSettings?.() || DEFAULT_SETTINGS);
+    const instance = settings.instances[instanceId] || {};
+    const now = Date.now();
+    const viable = memory.viable ? { ...memory.viable } : null;
+    const autoRemaining = memory.autoDeadlineAt ? Math.max(0, memory.autoDeadlineAt - now) : 0;
+    const cancelRemaining = memory.cancelDeadlineAt ? Math.max(0, memory.cancelDeadlineAt - now) : 0;
+    return {
+      viable_candidate: viable,
+      viable_candidate_text: viable?.text || '',
+      viable_candidate_source: viable?.source || '',
+      viable_candidate_revision: viable?.revision || '',
+      viable_candidate_created_at_ms: Number(viable?.created_at_ms || 0),
+      viable_candidate_updated_at_ms: Number(viable?.updated_at_ms || 0),
+      last_command: { ...memory.lastCommand },
+      last_command_kind: memory.lastCommand.kind || '',
+      last_command_candidate_text: memory.lastCommand.candidate_text || '',
+      auto_execute_enabled: cleanStepMs(instance.auto_execute_silence_ms) > 0,
+      auto_execute_deadline_at_ms: Number(memory.autoDeadlineAt || 0),
+      auto_execute_remaining_ms: autoRemaining,
+      auto_execute_revision: memory.autoRevision || '',
+      execute_cancel_enabled: cleanStepMs(instance.execute_cancel_ms) > 0,
+      execute_cancel_deadline_at_ms: Number(memory.cancelDeadlineAt || 0),
+      execute_cancel_remaining_ms: cancelRemaining,
+      execute_cancel_revision: memory.cancelRevision || '',
+      last_send: { ...memory.lastSend },
+      last_send_status: memory.lastSend.state || 'idle',
+      last_send_event_id: memory.lastSend.event_id || '',
+      last_send_error: memory.lastSend.error || '',
+      last_status: memory.lastStatus || '',
+    };
+  }
+
+  function wakeMemorySnapshot() {
+    const instances = {};
+    const viableCandidates = {};
+    INSTANCE_IDS.forEach(instanceId => {
+      instances[instanceId] = wakeMemorySnapshotFor(instanceId);
+      viableCandidates[instanceId] = instances[instanceId].viable_candidate;
+    });
+    return { instances, viable_candidates: viableCandidates };
+  }
+
+  function renderWakeRuntime(runtimeInput) {
+    const runtime = runtimeInput || wakeRuntimeSnapshot();
     INSTANCE_IDS.forEach(instanceId => renderCandidate(instanceId, runtime));
     return runtime;
   }
@@ -330,6 +919,8 @@ const WakeDevModal = (() => {
     INSTANCE_IDS.forEach(instanceId => {
       const instance = next.instances[instanceId];
       instance.wake_word = cleanText(controlValue(instanceId, 'wake_word', instance.wake_word), instance.wake_word);
+      instance.wake_aliases = wakeAliases(instance.wake_word, instance.wake_aliases);
+      instance.hermes_prefix = cleanHermesPrefix(instance.hermes_prefix, DEFAULT_SETTINGS.instances[instanceId].hermes_prefix);
       instance.matrix_room_id = cleanText(controlValue(instanceId, 'matrix_room_id', instance.matrix_room_id));
       instance.auto_execute_silence_ms = cleanStepMs(controlValue(instanceId, 'auto_execute_silence_ms', instance.auto_execute_silence_ms));
       instance.execute_cancel_ms = cleanStepMs(controlValue(instanceId, 'execute_cancel_ms', instance.execute_cancel_ms));
@@ -391,7 +982,17 @@ const WakeDevModal = (() => {
 
   function automationSnapshot() {
     const vm = voiceMode();
-    const runtime = renderWakeRuntime();
+    const runtime = wakeRuntimeSnapshot();
+    syncWakeCandidatesFromRuntime(runtime);
+    renderWakeRuntime(runtime);
+    const downstream = wakeMemorySnapshot();
+    const instances = {};
+    INSTANCE_IDS.forEach(instanceId => {
+      instances[instanceId] = {
+        ...(runtime.instances?.[instanceId] || {}),
+        ...(downstream.instances?.[instanceId] || {}),
+      };
+    });
     return {
       surface: SURFACE,
       open: !!state.open,
@@ -411,7 +1012,9 @@ const WakeDevModal = (() => {
       settings: clone(state.settings || DEFAULT_SETTINGS),
       runtime,
       candidates: runtime.candidates || {},
-      instances: runtime.instances || {},
+      viable_candidates: downstream.viable_candidates || {},
+      downstream,
+      instances,
     };
   }
 
@@ -431,6 +1034,8 @@ const WakeDevModal = (() => {
         fsm_state: snapshot.runtime?.fsm_state,
       },
       candidates: snapshot.candidates,
+      viable_candidates: snapshot.viable_candidates,
+      downstream: snapshot.downstream,
       settings: snapshot.settings,
     });
     const now = Date.now();
@@ -462,7 +1067,9 @@ const WakeDevModal = (() => {
 
   function poll(options = {}) {
     renderBrowserState();
-    renderWakeRuntime();
+    const runtime = wakeRuntimeSnapshot();
+    syncWakeCandidatesFromRuntime(runtime);
+    renderWakeRuntime(runtime);
     reportDevStatus(automationSnapshot(), options);
   }
 
@@ -627,7 +1234,8 @@ const WakeDevModal = (() => {
       renderWakeRuntime();
       poll({ force: true });
     });
-    window.addEventListener(WAKE_RUNTIME_EVENT, () => {
+    window.addEventListener(WAKE_RUNTIME_EVENT, event => {
+      syncWakeCandidatesFromRuntime(event.detail?.snapshot || wakeRuntimeSnapshot());
       renderBrowserState();
       renderWakeRuntime();
       poll({ force: true });

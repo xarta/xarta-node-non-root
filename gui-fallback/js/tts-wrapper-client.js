@@ -6,6 +6,72 @@ const BlueprintsTtsClient = (() => {
   let _activeSpeechAudio = null;
   let _activeStream = null;
   let _activeSpeakAbortController = null;
+  let _playbackSequence = 0;
+  let _lastPlayback = {
+    sequence: 0,
+    status: 'idle',
+    at: Date.now(),
+  };
+
+  function _previewText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 180);
+  }
+
+  function _errorMessage(error) {
+    return String(error?.message || error || '').slice(0, 240);
+  }
+
+  function _publishPlayback(status, opts = {}, details = {}) {
+    const detail = {
+      sequence: ++_playbackSequence,
+      status,
+      at: Date.now(),
+      event_kind: String(opts.eventKind || opts.event_kind || ''),
+      timing_label: String(opts.timingLabel || opts.timing_label || ''),
+      utterance_id: String(opts.utteranceId || opts.utterance_id || ''),
+      event_id: String(opts.eventId || opts.event_id || ''),
+      client_id: String(opts.clientId || opts.client_id || ''),
+      text_preview: _previewText(opts.text),
+      text_length: String(opts.text || '').length,
+      ...details,
+    };
+    _lastPlayback = detail;
+    try {
+      document.dispatchEvent(new CustomEvent('blueprints:tts-playback', {
+        detail,
+        bubbles: false,
+      }));
+    } catch (_) {}
+    return detail;
+  }
+
+  function getPlaybackState() {
+    return {
+      ..._lastPlayback,
+      active_audio: _activeSpeechAudio ? {
+        paused: !!_activeSpeechAudio.paused,
+        ended: !!_activeSpeechAudio.ended,
+        current_time: Number(_activeSpeechAudio.currentTime || 0),
+        duration: Number(_activeSpeechAudio.duration || 0),
+        volume: Number(_activeSpeechAudio.volume || 0),
+      } : null,
+      active_stream: _activeStream ? {
+        stopped: !!_activeStream.stopped,
+        paused: !!_activeStream.paused,
+        audio_context_state: _activeStream.audioCtx?.state || '',
+      } : null,
+    };
+  }
+
+  function _audioElementClock(audio) {
+    return {
+      current_time: Number(audio?.currentTime || 0),
+      duration: Number(audio?.duration || 0),
+      paused: !!audio?.paused,
+      ended: !!audio?.ended,
+      volume: Number(audio?.volume || 0),
+    };
+  }
 
   function _clamp01(value, fallback) {
     const parsed = parseFloat(value);
@@ -103,7 +169,7 @@ const BlueprintsTtsClient = (() => {
     return { ok: false, resumed: false };
   }
 
-  async function _playAudioBlob(blob, engine, volumeOverride = null) {
+  async function _playAudioBlob(blob, engine, volumeOverride = null, telemetry = {}) {
     if (!blob || !blob.size) {
       throw new Error('Wrapper returned empty audio payload.');
     }
@@ -113,18 +179,94 @@ const BlueprintsTtsClient = (() => {
     const useFallbackVolume = String(engine || '').toLowerCase() === 'sound_fallback';
     audio.volume = volumeOverride ?? (useFallbackVolume ? getTtsFallbackVolume() : getTtsVolume());
     _activeSpeechAudio = audio;
+    _publishPlayback('blob-created', telemetry, {
+      engine,
+      media_kind: 'audio_element',
+      bytes: blob.size,
+      volume: audio.volume,
+    });
 
     audio.addEventListener('ended', () => {
+      _publishPlayback('ended', telemetry, {
+        engine,
+        media_kind: 'audio_element',
+        ..._audioElementClock(audio),
+      });
       URL.revokeObjectURL(blobUrl);
       if (_activeSpeechAudio === audio) _activeSpeechAudio = null;
     }, { once: true });
 
     audio.addEventListener('error', () => {
+      const code = audio.error?.code ? `media error ${audio.error.code}` : 'audio element error';
+      _publishPlayback('error', telemetry, {
+        engine,
+        media_kind: 'audio_element',
+        error: code,
+      });
       URL.revokeObjectURL(blobUrl);
       if (_activeSpeechAudio === audio) _activeSpeechAudio = null;
     }, { once: true });
 
-    await audio.play();
+    _publishPlayback('play-starting', telemetry, {
+      engine,
+      media_kind: 'audio_element',
+      volume: audio.volume,
+    });
+    try {
+      const playStartedAt = performance.now();
+      const initialTime = Number(audio.currentTime || 0);
+      await audio.play();
+      _publishPlayback('playing', telemetry, {
+        engine,
+        media_kind: 'audio_element',
+        ..._audioElementClock(audio),
+      });
+      window.setTimeout(() => {
+        if (_activeSpeechAudio !== audio || audio.paused || audio.ended) return;
+        const currentTime = Number(audio.currentTime || 0);
+        const progressedBy = currentTime - initialTime;
+        const elapsedMs = Math.round(performance.now() - playStartedAt);
+        if (progressedBy < 0.12) {
+          _publishPlayback('stalled', telemetry, {
+            engine,
+            media_kind: 'audio_element',
+            elapsed_ms: elapsedMs,
+            progressed_by_seconds: Number(progressedBy.toFixed(3)),
+            ..._audioElementClock(audio),
+          });
+          return;
+        }
+        _publishPlayback('progress', telemetry, {
+          engine,
+          media_kind: 'audio_element',
+          elapsed_ms: elapsedMs,
+          progressed_by_seconds: Number(progressedBy.toFixed(3)),
+          ..._audioElementClock(audio),
+        });
+      }, 1500);
+      window.setTimeout(() => {
+        if (_activeSpeechAudio !== audio || audio.paused || audio.ended) return;
+        const currentTime = Number(audio.currentTime || 0);
+        const progressedBy = currentTime - initialTime;
+        const elapsedMs = Math.round(performance.now() - playStartedAt);
+        if (progressedBy < 0.5) {
+          _publishPlayback('stalled', telemetry, {
+            engine,
+            media_kind: 'audio_element',
+            elapsed_ms: elapsedMs,
+            progressed_by_seconds: Number(progressedBy.toFixed(3)),
+            ..._audioElementClock(audio),
+          });
+        }
+      }, 3000);
+    } catch (error) {
+      _publishPlayback('error', telemetry, {
+        engine,
+        media_kind: 'audio_element',
+        error: _errorMessage(error),
+      });
+      throw error;
+    }
   }
 
   function _ttsTimingHeaders(response) {
@@ -158,7 +300,29 @@ const BlueprintsTtsClient = (() => {
     const sampleRate = 24000;
     const WAV_HEADER_BYTES = 44;
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate });
-    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    _publishPlayback('audio-context-created', timing || {}, {
+      engine,
+      media_kind: 'audio_context',
+      audio_context_state: audioCtx.state || '',
+    });
+    if (audioCtx.state === 'suspended') {
+      await audioCtx.resume();
+      _publishPlayback('audio-context-resumed', timing || {}, {
+        engine,
+        media_kind: 'audio_context',
+        audio_context_state: audioCtx.state || '',
+      });
+    }
+    if (audioCtx.state !== 'running') {
+      const message = `Browser AudioContext is ${audioCtx.state || 'unknown'} after resume.`;
+      _publishPlayback('error', timing || {}, {
+        engine,
+        media_kind: 'audio_context',
+        audio_context_state: audioCtx.state || '',
+        error: message,
+      });
+      throw new Error(message);
+    }
 
     const streamState = {
       stopped: false,
@@ -225,6 +389,12 @@ const BlueprintsTtsClient = (() => {
             elapsedMs: Math.round(performance.now() - timing.startedAt),
             bytes: pcmData.length,
           });
+          _publishPlayback('playing', timing || {}, {
+            engine,
+            media_kind: 'audio_context',
+            audio_context_state: audioCtx.state || '',
+            bytes: pcmData.length,
+          });
         }
 
         const sampleCount = pcmData.length / 2;
@@ -261,6 +431,11 @@ const BlueprintsTtsClient = (() => {
             }
           }
           if (audioCtx.state !== 'closed') await audioCtx.close();
+          _publishPlayback(streamState.stopped ? 'stopped' : 'ended', timing || {}, {
+            engine,
+            media_kind: 'audio_context',
+            audio_context_state: audioCtx.state || '',
+          });
         } catch (_) {}
         _activeStream = null;
       }
@@ -285,6 +460,12 @@ const BlueprintsTtsClient = (() => {
       allow_llm_sanitizer: typeof opts.allowLlmSanitizer === 'boolean' ? opts.allowLlmSanitizer : undefined,
     };
     const volumeOverride = _overrideVolume(opts.volume);
+    _publishPlayback('requested', opts, {
+      interrupt: payload.interrupt,
+      mode: payload.mode || '',
+      format: payload.format || '',
+      volume: volumeOverride,
+    });
 
     if (payload.interrupt) {
       try {
@@ -305,6 +486,12 @@ const BlueprintsTtsClient = (() => {
         body: JSON.stringify(payload),
         signal: abortController.signal,
       });
+    } catch (error) {
+      _publishPlayback('error', opts, {
+        stage: 'request',
+        error: _errorMessage(error),
+      });
+      throw error;
     } finally {
       if (_activeSpeakAbortController === abortController) _activeSpeakAbortController = null;
     }
@@ -312,9 +499,17 @@ const BlueprintsTtsClient = (() => {
       elapsedMs: Math.round(performance.now() - startedAt),
       backend: _ttsTimingHeaders(response),
     });
+    _publishPlayback('response', opts, {
+      http_status: Number(response.status || 0),
+      content_type: response.headers.get('content-type') || '',
+    });
 
     if (!response.ok) {
       const detail = await response.text();
+      _publishPlayback('error', opts, {
+        http_status: Number(response.status || 0),
+        error: detail || `HTTP ${response.status}`,
+      });
       throw new Error(detail || `HTTP ${response.status}`);
     }
 
@@ -338,9 +533,9 @@ const BlueprintsTtsClient = (() => {
         if (!blob.size) {
           throw new Error('Wrapper returned empty audio payload.');
         }
-        await _playAudioBlob(blob, engine, volumeOverride);
+        await _playAudioBlob(blob, engine, volumeOverride, opts);
       }
-      return { ok: true, engine };
+      return { ok: true, engine, playback_sequence: _lastPlayback.sequence };
     }
 
     let responsePayload = null;
@@ -416,6 +611,7 @@ const BlueprintsTtsClient = (() => {
     getTtsVolume,
     setTtsFallbackVolume,
     getTtsFallbackVolume,
+    getPlaybackState,
   };
 })();
 

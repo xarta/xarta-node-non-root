@@ -449,6 +449,19 @@ const BlueprintsActiveBrowserObserver = (() => {
     };
   }
 
+  function _ttsRuntimeState() {
+    const client = window.BlueprintsTtsClient || null;
+    const announcer = (typeof BlueprintsModelChangeAnnouncer !== 'undefined')
+      ? BlueprintsModelChangeAnnouncer
+      : (window.BlueprintsModelChangeAnnouncer || null);
+    return {
+      client_available: !!client,
+      client: typeof client?.getPlaybackState === 'function' ? client.getPlaybackState() : null,
+      announcer_available: !!announcer,
+      announcer: typeof announcer?.getRuntimeState === 'function' ? announcer.getRuntimeState() : null,
+    };
+  }
+
   function _automationState() {
     if (typeof window.BlueprintsHubMenuBridge?.getAutomationState === 'function') {
       return window.BlueprintsHubMenuBridge.getAutomationState() || {};
@@ -465,6 +478,7 @@ const BlueprintsActiveBrowserObserver = (() => {
       modals: _openModals(),
       viewport: _viewportInfo(),
       voice: _voiceState(),
+      tts: _ttsRuntimeState(),
       visibility_state: document.visibilityState || 'unknown',
       has_focus: document.hasFocus ? document.hasFocus() : false,
       url_path: window.location.pathname || '',
@@ -483,6 +497,7 @@ const BlueprintsActiveBrowserObserver = (() => {
       page: payload.page,
       modals: payload.modals,
       automation: payload.automation,
+      tts: payload.tts,
       viewport: payload.viewport,
       voice: payload.voice,
       visibility_state: payload.visibility_state,
@@ -576,6 +591,9 @@ const BlueprintsActiveBrowserObserver = (() => {
       });
     }
     document.addEventListener('visibilitychange', () => scheduleReport('visibility'));
+    document.addEventListener('blueprints:tts-playback', () => scheduleReport('tts-playback'));
+    document.addEventListener('blueprints:notification-speech-state', () => scheduleReport('tts-speech-state'));
+    document.addEventListener('blueprints:notification-speech-suppressed', () => scheduleReport('tts-suppressed'));
     window.addEventListener('focus', () => scheduleReport('focus'));
     window.addEventListener('blur', () => scheduleReport('blur'));
     window.addEventListener('resize', () => scheduleReport('viewport-resize'), { passive: true });
