@@ -46,6 +46,10 @@ const VadDevModal = (() => {
   const WORD_DETECTION_PAYLOAD0_TIMEOUT_STEP_MS = 300;
   const WORD_DETECTION_AGENT_CANDIDATE_VISIBLE_MS = 3000;
   const WORD_DETECTION_AGENT_CANDIDATE_FADE_MS = 650;
+  const WAKE_RUNTIME_POLL_MS = 500;
+  const WAKE_RUNTIME_CANDIDATE_VISIBLE_MS = 5000;
+  const WAKE_RUNTIME_EVENT = 'blueprints:vad-dev:wake-runtime-changed';
+  const WAKE_RUNTIME_INSTANCES = ['local', 'vps'];
   const DETECTOR_ENERGY = 'energy_delta';
   const DETECTOR_SILERO = 'silero_vad';
   const SILERO_MODEL = 'v5';
@@ -115,6 +119,7 @@ const VadDevModal = (() => {
     devStatusSignature: '',
     devStatusSending: false,
     wordDetection: createWordDetectionState(),
+    wakeRuntime: createWakeRuntimeState(),
     probes: {
       [MODE_MANUAL]: createProbe(MODE_MANUAL),
       [MODE_VAD]: createProbe(MODE_VAD),
@@ -304,6 +309,72 @@ const VadDevModal = (() => {
       lastFinalAt: 0,
       detections: 0,
       finalCaptures: 0,
+    };
+  }
+
+  function createWakeRuntimeCandidateState() {
+    return {
+      source: '',
+      sourceLabel: '',
+      text: '',
+      tone: '',
+      visible: false,
+      fading: false,
+      lastUpdatedAt: 0,
+      lastClearedAt: 0,
+      activeUntilAt: 0,
+      updates: 0,
+      hideTimer: null,
+      clearTimer: null,
+    };
+  }
+
+  function createWakeRuntimeInstanceState() {
+    return {
+      aliases: [],
+      aliasesText: '',
+      awaitingPayload: false,
+      payload: '',
+      lastFinal: '',
+      lastNormalizedFinal: '',
+      lastSenseFinal: '',
+      lastMatchedAlias: '',
+      lastPayloadFinal: '',
+      lastSenseAt: 0,
+      lastPayloadAt: 0,
+      lastPayloadTimeoutAt: 0,
+      lastUpdatedAt: 0,
+      detections: 0,
+      captures: 0,
+      payloadTimeouts: 0,
+      payload0TimeoutTimer: null,
+      payload0TimeoutStartedAt: 0,
+      payload0TimeoutDeadlineAt: 0,
+      payload0TimeoutReason: '',
+      prefix: createWordDetectionPrefixState(),
+      candidate: createWakeRuntimeCandidateState(),
+    };
+  }
+
+  function createWakeRuntimeState() {
+    return {
+      desired: false,
+      running: false,
+      starting: false,
+      stopping: false,
+      syncing: false,
+      ownsProbe: false,
+      timer: null,
+      lastDesired: false,
+      lastSyncAt: 0,
+      startedAt: 0,
+      stoppedAt: 0,
+      error: '',
+      status: 'Wake-to-Talk VAD runtime is idle.',
+      instances: {
+        local: createWakeRuntimeInstanceState(),
+        vps: createWakeRuntimeInstanceState(),
+      },
     };
   }
 
@@ -908,10 +979,10 @@ const VadDevModal = (() => {
     return text.trim();
   }
 
-  function wordDetectionPrefixMatch(value) {
+  function prefixMatchForAliases(value, aliasesInput) {
     const text = String(value ?? '').trimStart();
     const lower = text.toLowerCase();
-    const aliases = [...state.wordDetection.aliases].sort((a, b) => b.length - a.length);
+    const aliases = [...(Array.isArray(aliasesInput) ? aliasesInput : [])].sort((a, b) => b.length - a.length);
     for (const alias of aliases) {
       if (!alias || !lower.startsWith(alias)) continue;
       const next = lower.charAt(alias.length);
@@ -927,6 +998,10 @@ const VadDevModal = (() => {
       text,
       payload: '',
     };
+  }
+
+  function wordDetectionPrefixMatch(value) {
+    return prefixMatchForAliases(value, state.wordDetection.aliases);
   }
 
   function wordDetectionSegmentKey(mode) {
@@ -1041,6 +1116,272 @@ const VadDevModal = (() => {
     if (source === 'payload1') return 'PAYLOAD1 candidate';
     if (source === 'payload2') return 'PAYLOAD2 candidate';
     return 'No candidate';
+  }
+
+  function wakeRuntimeCandidateSourceLabel(source) {
+    return wordDetectionAgentCandidateSourceLabel(source);
+  }
+
+  function wakeRuntimeInstanceLabel(instanceId) {
+    return instanceId === 'vps' ? 'Hermes VPS' : 'Hermes Local';
+  }
+
+  function wakeRuntimeDesired() {
+    const vm = voiceMode();
+    if (!vm) return false;
+    if (typeof vm.ownsActiveSttMode === 'function') return vm.ownsActiveSttMode('wake_to_talk') === true;
+    return vm.isActiveOwner?.() === true && vm.sttMode?.() === 'wake_to_talk';
+  }
+
+  function wakeRuntimeAliasParts(value, out) {
+    const target = Array.isArray(out) ? out : [];
+    if (Array.isArray(value)) {
+      value.forEach(item => wakeRuntimeAliasParts(item, target));
+      return target;
+    }
+    String(value ?? '').split(/[;\n]+/).forEach(part => {
+      const clean = cleanText(part);
+      if (clean) target.push(clean);
+    });
+    return target;
+  }
+
+  function wakeRuntimeAliasesForInstance(instanceId) {
+    const settings = voiceMode()?.getWakeSettings?.() || {};
+    const instance = settings.instances?.[instanceId] || {};
+    const parts = [];
+    wakeRuntimeAliasParts(instance.wake_word, parts);
+    wakeRuntimeAliasParts(instance.wake_words, parts);
+    wakeRuntimeAliasParts(instance.wake_aliases, parts);
+    return wordDetectionAliases(parts.join(';'));
+  }
+
+  function refreshWakeRuntimeAliases() {
+    const runtime = state.wakeRuntime;
+    WAKE_RUNTIME_INSTANCES.forEach(instanceId => {
+      const instance = runtime.instances[instanceId] || createWakeRuntimeInstanceState();
+      runtime.instances[instanceId] = instance;
+      const aliases = wakeRuntimeAliasesForInstance(instanceId);
+      const aliasesText = aliases.join(';');
+      if (instance.aliasesText !== aliasesText) {
+        clearWakeRuntimePayload0Timer(instance);
+        instance.aliases = aliases;
+        instance.aliasesText = aliasesText;
+        instance.awaitingPayload = false;
+        instance.prefix = createWordDetectionPrefixState();
+        instance.lastUpdatedAt = Date.now();
+      }
+    });
+  }
+
+  function wakeRuntimeCandidateSnapshot(candidateInput) {
+    const candidate = candidateInput || createWakeRuntimeCandidateState();
+    const now = Date.now();
+    const textValue = candidate.text || '';
+    const activeUntilAt = Number(candidate.activeUntilAt || 0);
+    const visible = !!(candidate.visible && textValue);
+    const fading = !!(candidate.fading && textValue);
+    return {
+      active: visible || fading,
+      visible,
+      fading,
+      source: candidate.source || '',
+      source_label: candidate.sourceLabel || '',
+      tone: candidate.tone || '',
+      candidate: textValue,
+      text: textValue,
+      utterance: textValue,
+      state: visible ? 'active' : (fading ? 'fading' : 'idle'),
+      last_updated_at_ms: Number(candidate.lastUpdatedAt || 0),
+      last_cleared_at_ms: Number(candidate.lastClearedAt || 0),
+      active_until_at_ms: activeUntilAt,
+      remaining_ms: visible && activeUntilAt ? Math.max(0, activeUntilAt - now) : 0,
+      updates: Number(candidate.updates || 0),
+    };
+  }
+
+  function wakeRuntimeInstanceSnapshot(instanceId) {
+    const instance = state.wakeRuntime.instances[instanceId] || createWakeRuntimeInstanceState();
+    const now = Date.now();
+    const timeoutMs = wordDetectionPayload0TimeoutMs();
+    const deadlineAt = Number(instance.payload0TimeoutDeadlineAt || 0);
+    const timeoutRemainingMs = deadlineAt ? Math.max(0, deadlineAt - now) : 0;
+    return {
+      id: instanceId,
+      label: wakeRuntimeInstanceLabel(instanceId),
+      enabled: instance.aliases.length > 0,
+      aliases_text: instance.aliasesText || '',
+      aliases: [...instance.aliases],
+      aliases_count: instance.aliases.length,
+      awaiting_payload: !!instance.awaitingPayload,
+      awaiting_payload0: !!instance.awaitingPayload,
+      payload: instance.payload || '',
+      payload0: instance.payload || '',
+      payload0_timeout_ms: timeoutMs,
+      vad_payload0_timeout_ms: timeoutMs,
+      payload0_timeout_enabled: timeoutMs > 0,
+      payload0_timeout_active: !!(instance.awaitingPayload && deadlineAt && timeoutRemainingMs > 0),
+      payload0_timeout_started_at_ms: Number(instance.payload0TimeoutStartedAt || 0),
+      payload0_timeout_deadline_at_ms: deadlineAt,
+      payload0_timeout_remaining_ms: timeoutRemainingMs,
+      payload0_timeout_reason: instance.payload0TimeoutReason || '',
+      last_final: instance.lastFinal || '',
+      last_normalized_final: instance.lastNormalizedFinal || '',
+      last_sense_final: instance.lastSenseFinal || '',
+      last_matched_alias: instance.lastMatchedAlias || '',
+      last_payload_final: instance.lastPayloadFinal || '',
+      last_sense_at_ms: Number(instance.lastSenseAt || 0),
+      last_payload_at_ms: Number(instance.lastPayloadAt || 0),
+      last_payload0_timeout_at_ms: Number(instance.lastPayloadTimeoutAt || 0),
+      last_updated_at_ms: Number(instance.lastUpdatedAt || 0),
+      detections: Number(instance.detections || 0),
+      captures: Number(instance.captures || 0),
+      payload0_timeouts: Number(instance.payloadTimeouts || 0),
+      candidate: wakeRuntimeCandidateSnapshot(instance.candidate),
+      prefix: {
+        ...wordDetectionPrefixSnapshotFor(instance.prefix),
+        enabled: instance.aliases.length > 0,
+      },
+    };
+  }
+
+  function wordDetectionPrefixSnapshotFor(prefixInput) {
+    const prefix = prefixInput || createWordDetectionPrefixState();
+    return {
+      partial_payload: prefix.partialPayload || '',
+      final_payload: prefix.finalPayload || '',
+      payload1: prefix.partialPayload || '',
+      payload2: prefix.finalPayload || '',
+      last_partial: prefix.lastPartial || '',
+      last_final: prefix.lastFinal || '',
+      last_matched_alias: prefix.lastMatchedAlias || '',
+      last_final_matched_alias: prefix.lastFinalMatchedAlias || '',
+      last_segment_key: prefix.lastSegmentKey || '',
+      last_match_at_ms: Number(prefix.lastMatchAt || 0),
+      last_final_at_ms: Number(prefix.lastFinalAt || 0),
+      detections: Number(prefix.detections || 0),
+      final_captures: Number(prefix.finalCaptures || 0),
+    };
+  }
+
+  function getWakeRuntimeSnapshot() {
+    refreshWakeRuntimeAliases();
+    const runtime = state.wakeRuntime;
+    const target = probe(MODE_REARM);
+    const desired = wakeRuntimeDesired();
+    runtime.desired = desired;
+    runtime.running = desired && !!(target.enabled && target.vadRecordEnabled && target.vadStopEnabled);
+    const candidates = {};
+    const instances = {};
+    WAKE_RUNTIME_INSTANCES.forEach(instanceId => {
+      const instanceSnapshot = wakeRuntimeInstanceSnapshot(instanceId);
+      instances[instanceId] = instanceSnapshot;
+      candidates[instanceId] = instanceSnapshot.candidate;
+    });
+    return {
+      desired,
+      running: !!runtime.running,
+      starting: !!runtime.starting,
+      stopping: !!runtime.stopping,
+      owns_probe: !!runtime.ownsProbe,
+      status: runtime.status || '',
+      error: runtime.error || '',
+      started_at_ms: Number(runtime.startedAt || 0),
+      stopped_at_ms: Number(runtime.stoppedAt || 0),
+      active_owner: voiceMode()?.isActiveOwner?.() === true,
+      stt_mode: voiceMode()?.sttMode?.() || '',
+      active_stt_mode: voiceMode()?.activeSttMode?.() || '',
+      fsm_state: probeFsm(MODE_REARM),
+      detector: detectorForMode(MODE_REARM),
+      aliases: {
+        local: instances.local?.aliases || [],
+        vps: instances.vps?.aliases || [],
+      },
+      candidates,
+      instances,
+    };
+  }
+
+  function dispatchWakeRuntimeChanged(reason = 'changed') {
+    try {
+      window.dispatchEvent(new CustomEvent(WAKE_RUNTIME_EVENT, {
+        detail: {
+          reason,
+          snapshot: getWakeRuntimeSnapshot(),
+        },
+      }));
+    } catch (_) {}
+  }
+
+  function clearWakeRuntimeCandidateTimers(candidate) {
+    if (!candidate) return;
+    if (candidate.hideTimer) window.clearTimeout(candidate.hideTimer);
+    if (candidate.clearTimer) window.clearTimeout(candidate.clearTimer);
+    candidate.hideTimer = null;
+    candidate.clearTimer = null;
+  }
+
+  function fadeWakeRuntimeCandidate(instanceId, reason = 'candidate_elapsed') {
+    const instance = state.wakeRuntime.instances[instanceId] || createWakeRuntimeInstanceState();
+    state.wakeRuntime.instances[instanceId] = instance;
+    const candidate = instance.candidate || createWakeRuntimeCandidateState();
+    instance.candidate = candidate;
+    if (!candidate.text && !candidate.visible && !candidate.fading) return false;
+    if (candidate.hideTimer) window.clearTimeout(candidate.hideTimer);
+    candidate.hideTimer = null;
+    candidate.visible = false;
+    candidate.fading = true;
+    candidate.activeUntilAt = 0;
+    candidate.clearTimer = window.setTimeout(() => {
+      if (!candidate.fading) return;
+      clearWakeRuntimeCandidateTimers(candidate);
+      candidate.source = '';
+      candidate.sourceLabel = '';
+      candidate.text = '';
+      candidate.tone = '';
+      candidate.visible = false;
+      candidate.fading = false;
+      candidate.activeUntilAt = 0;
+      candidate.lastClearedAt = Date.now();
+      dispatchWakeRuntimeChanged(`${reason}:clear`);
+      poll({ force: true });
+    }, WORD_DETECTION_AGENT_CANDIDATE_FADE_MS);
+    dispatchWakeRuntimeChanged(reason);
+    poll({ force: true });
+    return true;
+  }
+
+  function showWakeRuntimeCandidate(instanceId, source, value, tone, detail = {}) {
+    const textValue = cleanSttTranscript(value);
+    if (!textValue) return false;
+    const instance = state.wakeRuntime.instances[instanceId] || createWakeRuntimeInstanceState();
+    state.wakeRuntime.instances[instanceId] = instance;
+    const candidate = instance.candidate || createWakeRuntimeCandidateState();
+    instance.candidate = candidate;
+    clearWakeRuntimeCandidateTimers(candidate);
+    const now = Date.now();
+    candidate.source = source || '';
+    candidate.sourceLabel = wakeRuntimeCandidateSourceLabel(source);
+    candidate.text = textValue;
+    candidate.tone = tone || 'green';
+    candidate.visible = true;
+    candidate.fading = false;
+    candidate.lastUpdatedAt = now;
+    candidate.activeUntilAt = now + WAKE_RUNTIME_CANDIDATE_VISIBLE_MS;
+    candidate.updates += 1;
+    candidate.hideTimer = window.setTimeout(() => {
+      fadeWakeRuntimeCandidate(instanceId, 'candidate_elapsed');
+    }, WAKE_RUNTIME_CANDIDATE_VISIBLE_MS);
+    pushAction(MODE_REARM, 'wakeRuntimeCandidate', {
+      instance: instanceId,
+      source,
+      tone: candidate.tone,
+      candidate_length: textValue.length,
+      ...detail,
+    });
+    dispatchWakeRuntimeChanged('candidate');
+    poll({ force: true });
+    return true;
   }
 
   function clearWordDetectionAgentCandidateTimers(candidate) {
@@ -1400,6 +1741,230 @@ const VadDevModal = (() => {
       prefix.lastFinalMatchedAlias = '';
     }
     renderWordDetectionUi();
+  }
+
+  function wakeRuntimeSegmentKey(mode, instanceId) {
+    const target = probe(mode);
+    return `${mode}:${instanceId}:${Number(target.segmentId || 0)}`;
+  }
+
+  function wakeRuntimeActiveForMode(mode) {
+    return modeFromInput(mode) === MODE_REARM && (state.wakeRuntime.desired || wakeRuntimeDesired());
+  }
+
+  function handleWakeRuntimePartial(mode, textValue, rawValue = '') {
+    if (!wakeRuntimeActiveForMode(mode)) return;
+    refreshWakeRuntimeAliases();
+    const partialText = String(textValue || rawValue || '').trimStart();
+    WAKE_RUNTIME_INSTANCES.forEach(instanceId => {
+      const instance = state.wakeRuntime.instances[instanceId] || createWakeRuntimeInstanceState();
+      state.wakeRuntime.instances[instanceId] = instance;
+      const prefix = instance.prefix || createWordDetectionPrefixState();
+      instance.prefix = prefix;
+      const match = prefixMatchForAliases(partialText, instance.aliases);
+      prefix.lastPartial = match.text || partialText;
+      if (!match.alias) return;
+      const segmentKey = wakeRuntimeSegmentKey(mode, instanceId);
+      const firstMatchInSegment = prefix.lastSegmentKey !== segmentKey;
+      const previousPayload = prefix.partialPayload || '';
+      prefix.partialPayload = match.payload;
+      prefix.finalPayload = '';
+      prefix.lastMatchedAlias = match.alias;
+      prefix.lastSegmentKey = segmentKey;
+      prefix.lastMatchAt = Date.now();
+      instance.lastUpdatedAt = prefix.lastMatchAt;
+      if (firstMatchInSegment) prefix.detections += 1;
+      if (match.payload && match.payload !== previousPayload) {
+        showWakeRuntimeCandidate(instanceId, 'payload1', match.payload, 'amber', {
+          matched_alias: match.alias,
+          segment_key: segmentKey,
+          match_type: 'prefix_partial',
+        });
+      }
+      if (wordDetectionPrefixPartialInterruptTtsEnabled()) {
+        void interruptTtsForWordDetection(mode, 'wake_runtime_prefix_partial_match', {
+          instance: instanceId,
+          matched_alias: match.alias,
+          payload: match.payload,
+          segment_key: segmentKey,
+        });
+      }
+    });
+    dispatchWakeRuntimeChanged('partial');
+  }
+
+  function clearWakeRuntimePayload0Timer(instance) {
+    if (!instance) return;
+    if (instance.payload0TimeoutTimer) window.clearTimeout(instance.payload0TimeoutTimer);
+    instance.payload0TimeoutTimer = null;
+    instance.payload0TimeoutStartedAt = 0;
+    instance.payload0TimeoutDeadlineAt = 0;
+    instance.payload0TimeoutReason = '';
+  }
+
+  function expireWakeRuntimePayload0(mode, instanceId, reason = 'payload0_timeout') {
+    const instance = state.wakeRuntime.instances[instanceId] || createWakeRuntimeInstanceState();
+    state.wakeRuntime.instances[instanceId] = instance;
+    const now = Date.now();
+    if (!instance.awaitingPayload) return false;
+    const deadline = Number(instance.payload0TimeoutDeadlineAt || 0);
+    if (deadline && now < deadline - 5) {
+      const remaining = Math.max(1, deadline - now);
+      if (instance.payload0TimeoutTimer) window.clearTimeout(instance.payload0TimeoutTimer);
+      instance.payload0TimeoutTimer = window.setTimeout(() => expireWakeRuntimePayload0(mode, instanceId, reason), remaining);
+      return false;
+    }
+    const startedAt = Number(instance.payload0TimeoutStartedAt || now);
+    clearWakeRuntimePayload0Timer(instance);
+    instance.awaitingPayload = false;
+    instance.lastPayloadTimeoutAt = now;
+    instance.lastUpdatedAt = now;
+    instance.payloadTimeouts += 1;
+    pushAction(mode, 'wakeRuntimePayload0Timeout', {
+      instance: instanceId,
+      reason,
+      timeout_ms: wordDetectionPayload0TimeoutMs(),
+      waited_ms: Math.max(0, now - startedAt),
+      matched_alias: instance.lastMatchedAlias || '',
+    });
+    dispatchWakeRuntimeChanged('payload0_timeout');
+    poll({ force: true });
+    return true;
+  }
+
+  function scheduleWakeRuntimePayload0Timeout(mode, instanceId, reason = 'payload0_wait', now = Date.now()) {
+    const instance = state.wakeRuntime.instances[instanceId] || createWakeRuntimeInstanceState();
+    state.wakeRuntime.instances[instanceId] = instance;
+    if (!instance.awaitingPayload) {
+      clearWakeRuntimePayload0Timer(instance);
+      return false;
+    }
+    const timeoutMs = wordDetectionPayload0TimeoutMs();
+    if (timeoutMs <= 0) {
+      clearWakeRuntimePayload0Timer(instance);
+      return false;
+    }
+    if (instance.payload0TimeoutTimer) window.clearTimeout(instance.payload0TimeoutTimer);
+    instance.payload0TimeoutStartedAt = now;
+    instance.payload0TimeoutDeadlineAt = now + timeoutMs;
+    instance.payload0TimeoutReason = reason;
+    instance.payload0TimeoutTimer = window.setTimeout(() => {
+      expireWakeRuntimePayload0(mode, instanceId, reason);
+    }, timeoutMs);
+    return true;
+  }
+
+  function captureWakeRuntimePayload0(mode, instanceId, finalText, now = Date.now()) {
+    const instance = state.wakeRuntime.instances[instanceId] || createWakeRuntimeInstanceState();
+    state.wakeRuntime.instances[instanceId] = instance;
+    clearWakeRuntimePayload0Timer(instance);
+    instance.payload = finalText;
+    instance.lastPayloadFinal = finalText;
+    instance.lastPayloadAt = now;
+    instance.lastUpdatedAt = now;
+    instance.awaitingPayload = false;
+    instance.captures += 1;
+    pushAction(mode, 'wakeRuntimePayload0Captured', {
+      instance: instanceId,
+      payload0_length: finalText.length,
+      matched_alias: instance.lastMatchedAlias || '',
+    });
+    showWakeRuntimeCandidate(instanceId, 'payload0', finalText, 'green', {
+      matched_alias: instance.lastMatchedAlias || '',
+      match_type: 'payload0',
+    });
+  }
+
+  function armWakeRuntimePayload0(mode, instanceId, finalText, matchedAlias, now = Date.now()) {
+    const instance = state.wakeRuntime.instances[instanceId] || createWakeRuntimeInstanceState();
+    state.wakeRuntime.instances[instanceId] = instance;
+    instance.payload = '';
+    instance.lastPayloadFinal = '';
+    instance.lastPayloadAt = 0;
+    instance.lastPayloadTimeoutAt = 0;
+    instance.awaitingPayload = true;
+    instance.lastSenseFinal = finalText;
+    instance.lastMatchedAlias = matchedAlias;
+    instance.lastSenseAt = now;
+    instance.lastUpdatedAt = now;
+    instance.detections += 1;
+    pushAction(mode, 'wakeRuntimeSenseWordMatched', {
+      instance: instanceId,
+      matched_alias: matchedAlias,
+      final_text: finalText,
+    });
+    scheduleWakeRuntimePayload0Timeout(mode, instanceId, 'final_match', now);
+    if (wordDetectionMatchInterruptTtsEnabled()) {
+      void interruptTtsForWordDetection(mode, 'wake_runtime_final_match', {
+        instance: instanceId,
+        matched_alias: matchedAlias,
+        final_text: finalText,
+      });
+    }
+  }
+
+  function handleWakeRuntimeFinal(mode, textValue, rawValue = '') {
+    if (!wakeRuntimeActiveForMode(mode)) return;
+    refreshWakeRuntimeAliases();
+    const finalText = cleanSttTranscript(textValue || rawValue || '');
+    const normalized = normalizeWordDetectionText(finalText);
+    const now = Date.now();
+    const exactMatches = [];
+    WAKE_RUNTIME_INSTANCES.forEach(instanceId => {
+      const instance = state.wakeRuntime.instances[instanceId] || createWakeRuntimeInstanceState();
+      state.wakeRuntime.instances[instanceId] = instance;
+      instance.lastFinal = finalText;
+      instance.lastNormalizedFinal = normalized;
+      const matchedAlias = normalized ? (instance.aliases.find(alias => alias === normalized) || '') : '';
+      if (matchedAlias) exactMatches.push({ instanceId, matchedAlias });
+    });
+    if (exactMatches.length) {
+      WAKE_RUNTIME_INSTANCES.forEach(instanceId => {
+        if (!exactMatches.some(match => match.instanceId === instanceId)) {
+          clearWakeRuntimePayload0Timer(state.wakeRuntime.instances[instanceId]);
+          state.wakeRuntime.instances[instanceId].awaitingPayload = false;
+        }
+      });
+      exactMatches.forEach(match => {
+        armWakeRuntimePayload0(mode, match.instanceId, finalText, match.matchedAlias, now);
+      });
+      dispatchWakeRuntimeChanged('final_match');
+      return;
+    }
+    WAKE_RUNTIME_INSTANCES.forEach(instanceId => {
+      const instance = state.wakeRuntime.instances[instanceId] || createWakeRuntimeInstanceState();
+      state.wakeRuntime.instances[instanceId] = instance;
+      const prefix = instance.prefix || createWordDetectionPrefixState();
+      instance.prefix = prefix;
+      const prefixMatch = prefixMatchForAliases(finalText, instance.aliases);
+      prefix.lastFinal = prefixMatch.text || finalText;
+      prefix.lastFinalAt = now;
+      if (prefixMatch.alias) {
+        prefix.finalPayload = prefixMatch.payload;
+        prefix.lastFinalMatchedAlias = prefixMatch.alias;
+        prefix.finalCaptures += 1;
+        instance.lastUpdatedAt = now;
+        if (prefixMatch.payload) {
+          showWakeRuntimeCandidate(instanceId, 'payload2', prefixMatch.payload, 'green', {
+            matched_alias: prefixMatch.alias,
+            match_type: 'prefix_final',
+          });
+        }
+        if (wordDetectionPrefixFinalInterruptTtsEnabled()) {
+          void interruptTtsForWordDetection(mode, 'wake_runtime_prefix_final_match', {
+            instance: instanceId,
+            matched_alias: prefixMatch.alias,
+            payload: prefixMatch.payload,
+            final_text: finalText,
+          });
+        }
+      } else {
+        prefix.finalPayload = '';
+        prefix.lastFinalMatchedAlias = '';
+        if (instance.awaitingPayload) captureWakeRuntimePayload0(mode, instanceId, finalText, now);
+      }
+    });
+    dispatchWakeRuntimeChanged('final');
   }
 
   function sttPayloadDisplayText(payload) {
@@ -2222,6 +2787,7 @@ const VadDevModal = (() => {
       });
       if (displayValue) target.transcript = displayValue;
       handleWordDetectionPrefixPartial(mode, displayValue, rawValue);
+      handleWakeRuntimePartial(mode, displayValue, rawValue);
       renderProbeUi(mode);
       poll({ force: true });
       return;
@@ -2238,6 +2804,7 @@ const VadDevModal = (() => {
       pushAction(mode, mode === MODE_MANUAL ? 'manualFinal' : (mode === MODE_REARM ? 'rearmProbeFinal' : 'vadProbeFinal'), { text: value, raw_text: rawValue });
       handleWordDetectionFinal(mode, value, rawValue);
       handleWordDetectionPrefixFinal(mode, value, rawValue);
+      handleWakeRuntimeFinal(mode, value, rawValue);
       target.recording = false;
       target.finalizing = false;
       target.starting = false;
@@ -2624,6 +3191,135 @@ const VadDevModal = (() => {
     return armRearmAfterSegment('final_timeout');
   }
 
+  function wakeRuntimeProbeReady() {
+    const target = probe(MODE_REARM);
+    return !!(target.enabled && target.vadStopEnabled && (target.vadRecordEnabled || target.recording || target.starting || target.finalizing));
+  }
+
+  async function ensureWakeRuntime(reason = 'sync') {
+    const runtime = state.wakeRuntime;
+    const target = probe(MODE_REARM);
+    if (!wakeRuntimeDesired()) return false;
+    refreshWakeRuntimeAliases();
+    runtime.desired = true;
+    if (wakeRuntimeProbeReady() && !runtime.starting) {
+      runtime.running = true;
+      runtime.status = target.recording || target.starting || target.finalizing
+        ? 'Wake-to-Talk VAD ReArm is capturing.'
+        : 'Wake-to-Talk VAD ReArm is armed.';
+      return true;
+    }
+    if (runtime.starting) return false;
+    runtime.starting = true;
+    runtime.error = '';
+    runtime.status = 'Starting Wake-to-Talk VAD ReArm runtime.';
+    runtime.ownsProbe = runtime.ownsProbe || !target.enabled;
+    dispatchWakeRuntimeChanged('starting');
+    try {
+      await loadSharedControls();
+      await enableProbeMode(MODE_REARM);
+      if (!probe(MODE_REARM).enabled) {
+        throw new Error(probe(MODE_REARM).status || 'VAD ReArm runtime could not access the microphone.');
+      }
+      if (!probe(MODE_REARM).vadStopEnabled) await toggleVadStopMode(MODE_REARM, true);
+      const rearm = probe(MODE_REARM);
+      if (!rearm.vadRecordEnabled && !rearm.recording && !rearm.starting && !rearm.finalizing) {
+        await toggleVadRecordMode(MODE_REARM, true);
+      }
+      runtime.running = wakeRuntimeProbeReady();
+      runtime.startedAt = Date.now();
+      runtime.stoppedAt = 0;
+      runtime.status = runtime.running
+        ? 'Wake-to-Talk VAD ReArm is armed.'
+        : 'Wake-to-Talk VAD ReArm is waiting for VAD arm.';
+      pushAction(MODE_REARM, 'wakeRuntimeStart', {
+        reason,
+        detector: selectedVadDetector(),
+        aliases: {
+          local: [...(runtime.instances.local?.aliases || [])],
+          vps: [...(runtime.instances.vps?.aliases || [])],
+        },
+      });
+      poll({ force: true });
+      return runtime.running;
+    } catch (error) {
+      runtime.running = false;
+      runtime.error = error.message || String(error);
+      runtime.status = `Wake-to-Talk VAD runtime unavailable: ${runtime.error}`;
+      pushAction(MODE_REARM, 'wakeRuntimeError', { reason, error: runtime.error });
+      poll({ force: true });
+      return false;
+    } finally {
+      runtime.starting = false;
+      dispatchWakeRuntimeChanged('started');
+    }
+  }
+
+  function stopWakeRuntime(reason = 'inactive') {
+    const runtime = state.wakeRuntime;
+    const target = probe(MODE_REARM);
+    runtime.desired = false;
+    runtime.starting = false;
+    runtime.stopping = true;
+    try {
+      if (runtime.ownsProbe || !state.open) {
+        if (target.enabled || target.ws) disableProbeMode(MODE_REARM);
+      } else {
+        target.vadRecordEnabled = false;
+        target.vadStopEnabled = false;
+        clearRearmAutoState();
+        resetVad(MODE_REARM);
+        renderProbeUi(MODE_REARM);
+      }
+      runtime.running = false;
+      runtime.ownsProbe = false;
+      runtime.stoppedAt = Date.now();
+      runtime.status = 'Wake-to-Talk VAD runtime is idle.';
+      runtime.error = '';
+      pushAction(MODE_REARM, 'wakeRuntimeStop', { reason });
+    } finally {
+      runtime.stopping = false;
+      dispatchWakeRuntimeChanged('stopped');
+      poll({ force: true });
+    }
+  }
+
+  async function syncWakeRuntime(reason = 'sync') {
+    const runtime = state.wakeRuntime;
+    if (runtime.syncing) return;
+    runtime.syncing = true;
+    try {
+      const desired = wakeRuntimeDesired();
+      runtime.desired = desired;
+      runtime.lastSyncAt = Date.now();
+      if (desired) {
+        await ensureWakeRuntime(reason);
+      } else if (runtime.running || runtime.starting || runtime.ownsProbe) {
+        stopWakeRuntime(reason);
+      } else {
+        runtime.running = false;
+        runtime.status = 'Wake-to-Talk VAD runtime is idle.';
+      }
+      if (!state.open && (runtime.running || runtime.starting)) poll();
+      if (runtime.lastDesired !== desired) {
+        runtime.lastDesired = desired;
+        dispatchWakeRuntimeChanged('desired');
+      }
+    } finally {
+      runtime.syncing = false;
+    }
+  }
+
+  function tickWakeRuntime() {
+    void syncWakeRuntime('timer');
+  }
+
+  function startWakeRuntimeMonitor() {
+    if (state.wakeRuntime.timer) return;
+    state.wakeRuntime.timer = window.setInterval(tickWakeRuntime, WAKE_RUNTIME_POLL_MS);
+    tickWakeRuntime();
+  }
+
   function probeFsm(mode) {
     const target = probe(mode);
     if (mode === MODE_MANUAL) {
@@ -2647,13 +3343,13 @@ const VadDevModal = (() => {
     if (type === 'manualRecordStop') return '#fbbf24';
     if (type === 'manualTestMode') return '#38bdf8';
     if (type === 'manualError') return '#f87171';
-    if (type === 'vadProbeRecordStart' || type === 'vadProbeFinal' || type === 'rearmProbeRecordStart' || type === 'rearmProbeFinal' || type === 'vadCandidateConfirmed' || type === 'sileroReady' || type === 'sileroSpeechConfirmed' || type === 'vadInterruptTts' || type === 'wordDetectionInterruptTts' || type === 'wordDetectionPayload0Captured') return '#22c55e';
+    if (type === 'vadProbeRecordStart' || type === 'vadProbeFinal' || type === 'rearmProbeRecordStart' || type === 'rearmProbeFinal' || type === 'vadCandidateConfirmed' || type === 'sileroReady' || type === 'sileroSpeechConfirmed' || type === 'vadInterruptTts' || type === 'wordDetectionInterruptTts' || type === 'wordDetectionPayload0Captured' || type === 'wakeRuntimeStart' || type === 'wakeRuntimePayload0Captured' || type === 'wakeRuntimeCandidate') return '#22c55e';
     if (type === 'vadProbeRecordStop' || type === 'rearmProbeRecordStop' || type === 'vadStopMode' || type === 'sileroSpeechEnd' || type === 'wordDetectionPayload0VadRelease') return '#fbbf24';
     if (type === 'autoPreRollSelect') return action.applied ? '#22c55e' : '#fbbf24';
     if (type === 'autoPreRollMode') return action.enabled ? '#22c55e' : '#aebfca';
     if (type === 'alwaysPreRollMode') return action.enabled ? '#22c55e' : '#aebfca';
-    if (type === 'vadRecordMode' || type === 'vadDetectorMode' || type === 'vadInterruptTtsMode' || type === 'wordDetectionInterruptTtsMode' || type === 'wordDetectionPayload0TimeoutMode' || type === 'wordDetectionPayload0VadHold' || type === 'vadTestMode' || type === 'rearmTestMode' || type === 'vadCandidateStart' || type === 'sileroLoad' || type === 'sileroCandidateStart') return '#38bdf8';
-    if (type === 'vadProbeError' || type === 'rearmProbeError' || type === 'rearmProbeFinalTimeout' || type === 'wordDetectionPayload0Timeout' || type === 'sileroError' || type === 'sileroMisfire' || type === 'vadInterruptTtsError' || type === 'wordDetectionInterruptTtsError') return '#f87171';
+    if (type === 'vadRecordMode' || type === 'vadDetectorMode' || type === 'vadInterruptTtsMode' || type === 'wordDetectionInterruptTtsMode' || type === 'wordDetectionPayload0TimeoutMode' || type === 'wordDetectionPayload0VadHold' || type === 'vadTestMode' || type === 'rearmTestMode' || type === 'vadCandidateStart' || type === 'sileroLoad' || type === 'sileroCandidateStart' || type === 'wakeRuntimeSenseWordMatched') return '#38bdf8';
+    if (type === 'vadProbeError' || type === 'rearmProbeError' || type === 'rearmProbeFinalTimeout' || type === 'wordDetectionPayload0Timeout' || type === 'wakeRuntimePayload0Timeout' || type === 'sileroError' || type === 'sileroMisfire' || type === 'vadInterruptTtsError' || type === 'wordDetectionInterruptTtsError' || type === 'wakeRuntimeError') return '#f87171';
     if (mode === MODE_REARM && type === 'controlState') return action.disabled ? 'rgba(148,168,179,0.72)' : (action.pressed ? '#38bdf8' : '#aebfca');
     return '#aebfca';
   }
@@ -2675,6 +3371,13 @@ const VadDevModal = (() => {
     if (action.type === 'wordDetectionPayload0VadRelease') return 'payload0 VAD release';
     if (action.type === 'wordDetectionPayload0Captured') return 'payload0 captured';
     if (action.type === 'wordDetectionPayload0Timeout') return `payload0 timeout ${action.timeout_ms || ''} ms`.trim();
+    if (action.type === 'wakeRuntimeStart') return 'Wake runtime start';
+    if (action.type === 'wakeRuntimeStop') return 'Wake runtime stop';
+    if (action.type === 'wakeRuntimeSenseWordMatched') return `Wake ${action.instance || ''} matched`.trim();
+    if (action.type === 'wakeRuntimePayload0Captured') return `Wake ${action.instance || ''} payload0`.trim();
+    if (action.type === 'wakeRuntimePayload0Timeout') return `Wake ${action.instance || ''} timeout`.trim();
+    if (action.type === 'wakeRuntimeCandidate') return `Wake ${action.instance || ''} ${action.source || 'candidate'}`.trim();
+    if (action.type === 'wakeRuntimeError') return `Wake error ${action.error || ''}`.trim();
     if (action.type === 'vadStopMode') return `VAD Stop ${action.enabled ? 'on' : 'off'}`;
     if (action.type === 'vadCandidateStart') return 'VAD candidate';
     if (action.type === 'vadCandidateConfirmed') return 'VAD strong';
@@ -2866,6 +3569,7 @@ const VadDevModal = (() => {
     const preRoll = preRollSnapshot(mode);
     const controls = controlsSnapshot();
     const wordDetection = wordDetectionSnapshot();
+    const wakeRuntime = getWakeRuntimeSnapshot();
     const timeoutMarkerExists = mode === MODE_REARM && target.actions.some(action => (
       action.type === 'rearmProbeFinalTimeout'
       && Number(action.segment_id || 0) === Number(target.segmentId || 0)
@@ -2899,6 +3603,7 @@ const VadDevModal = (() => {
       recent_stt_events: target.events,
       recent_actions: target.actions,
       word_detection: wordDetection,
+      wake_runtime: wakeRuntime,
       vad_speech_start_reset_armed: mode !== MODE_MANUAL ? !!target.vadRecordEnabled : false,
       vad: {
         detector,
@@ -3105,6 +3810,7 @@ const VadDevModal = (() => {
         detection: snapshot?.vad_detection_frame_id || null,
       },
       word_detection: snapshot?.word_detection || {},
+      wake_runtime: snapshot?.wake_runtime || {},
     });
     const now = Date.now();
     if (!options.force && signature === state.devStatusSignature && now - state.devStatusLastAt < 2500) return;
@@ -3402,6 +4108,11 @@ const VadDevModal = (() => {
     if (state.wordDetection.awaitingPayload) {
       scheduleWordDetectionPayload0Timeout(currentMode(), options.reason || 'payload0_timeout_changed');
     }
+    WAKE_RUNTIME_INSTANCES.forEach(instanceId => {
+      if (state.wakeRuntime.instances[instanceId]?.awaitingPayload) {
+        scheduleWakeRuntimePayload0Timeout(MODE_REARM, instanceId, options.reason || 'payload0_timeout_changed');
+      }
+    });
     renderWordDetectionUi();
     const mode = currentMode();
     pushAction(mode, 'wordDetectionPayload0TimeoutMode', {
@@ -3708,6 +4419,7 @@ const VadDevModal = (() => {
       current_mode: mode,
       controls: controlsSnapshot(),
       word_detection: wordDetectionSnapshot(),
+      wake_runtime: getWakeRuntimeSnapshot(),
       modes: {
         [MODE_MANUAL]: probePublic(MODE_MANUAL),
         [MODE_VAD]: probePublic(MODE_VAD),
@@ -3755,6 +4467,10 @@ const VadDevModal = (() => {
     state.pollTimer = null;
     MODES.forEach(mode => {
       const target = probe(mode);
+      if (mode === MODE_REARM && wakeRuntimeDesired()) {
+        void ensureWakeRuntime('vad_dev_closed');
+        return;
+      }
       if (target.enabled || target.ws) disableProbeMode(mode);
     });
   }
@@ -3935,14 +4651,15 @@ const VadDevModal = (() => {
     els.wordPrefixFinalInterruptToggle?.addEventListener('change', () => {
       void setWordDetectionPrefixFinalInterruptTtsEnabled(els.wordPrefixFinalInterruptToggle.checked, { reason: 'ui_toggle' });
     });
-    window.addEventListener('blueprints:voice-mode:changed', renderSharedControls);
-    window.addEventListener('blueprints:voice-mode:stt-noise-changed', renderSharedControls);
-    window.addEventListener('blueprints:voice-mode:wake-settings-changed', renderSharedControls);
+    window.addEventListener('blueprints:voice-mode:changed', () => { renderSharedControls(); void syncWakeRuntime('voice_mode_changed'); });
+    window.addEventListener('blueprints:voice-mode:stt-noise-changed', () => { renderSharedControls(); void syncWakeRuntime('stt_noise_changed'); });
+    window.addEventListener('blueprints:voice-mode:wake-settings-changed', () => { renderSharedControls(); void syncWakeRuntime('wake_settings_changed'); });
     document.addEventListener('blueprints:event', onVadDevCommandEvent);
     els.modal?.addEventListener('close', stop);
     selectMode(state.selectedMode);
     renderAllProbeUi();
     renderWordDetectionUi();
+    startWakeRuntimeMonitor();
   }
 
   if (document.readyState === 'loading') {
@@ -3957,6 +4674,7 @@ const VadDevModal = (() => {
     open,
     start,
     stop,
+    getWakeRuntimeSnapshot,
     timeline: () => state.timeline,
   };
 })();

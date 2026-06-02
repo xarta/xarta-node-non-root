@@ -4857,6 +4857,11 @@
           <div class="wake-dev-card__title">Hermes Wake-to-Talk</div>
           <div class="wake-dev-meta" id="wake-dev-browser-meta">Checking browser lease...</div>
         </div>
+        <label class="hub-checkbox wake-dev-mode-toggle" for="wake-dev-wake-mode-toggle">
+          <input class="hub-checkbox__input" type="checkbox" id="wake-dev-wake-mode-toggle" data-wake-dev-control="wake_to_talk" />
+          <span class="hub-checkbox__box" aria-hidden="true"></span>
+          <span class="hub-checkbox__label wake-dev-check__label">Wake To Talk</span>
+        </label>
         <button class="hub-modal-btn wake-dev-browser__activate" type="button" id="wake-dev-activate-btn">Activate</button>
       </div>
 
@@ -4881,6 +4886,16 @@
             <label>Resume command<input type="text" data-wake-dev-instance="local" data-wake-dev-key="commands.resume" /></label>
             <label>Cancel command<input type="text" data-wake-dev-instance="local" data-wake-dev-key="commands.cancel" /></label>
           </div>
+          <div class="wake-dev-candidate" id="wake-dev-local-candidate" data-wake-dev-candidate="local" data-state="idle" data-tone="idle">
+            <div class="wake-dev-candidate__head">
+              <div class="wake-dev-card__title">Candidate</div>
+              <div class="wake-dev-meta" data-wake-dev-instance="local" data-wake-dev-metric="candidate_state">Idle</div>
+            </div>
+            <div class="wake-dev-candidate__body">
+              <div class="wake-dev-section-label" data-wake-dev-instance="local" data-wake-dev-metric="candidate_source">No candidate</div>
+              <div class="wake-dev-candidate__value" data-wake-dev-instance="local" data-wake-dev-metric="candidate_text"></div>
+            </div>
+          </div>
         </section>
         <section class="wake-dev-settings-panel" data-wake-dev-panel="vps">
           <div class="wake-dev-card__title">Hermes VPS Wake Settings</div>
@@ -4893,6 +4908,16 @@
             <label>Execute command<input type="text" data-wake-dev-instance="vps" data-wake-dev-key="commands.execute" /></label>
             <label>Resume command<input type="text" data-wake-dev-instance="vps" data-wake-dev-key="commands.resume" /></label>
             <label>Cancel command<input type="text" data-wake-dev-instance="vps" data-wake-dev-key="commands.cancel" /></label>
+          </div>
+          <div class="wake-dev-candidate" id="wake-dev-vps-candidate" data-wake-dev-candidate="vps" data-state="idle" data-tone="idle">
+            <div class="wake-dev-candidate__head">
+              <div class="wake-dev-card__title">Candidate</div>
+              <div class="wake-dev-meta" data-wake-dev-instance="vps" data-wake-dev-metric="candidate_state">Idle</div>
+            </div>
+            <div class="wake-dev-candidate__body">
+              <div class="wake-dev-section-label" data-wake-dev-instance="vps" data-wake-dev-metric="candidate_source">No candidate</div>
+              <div class="wake-dev-candidate__value" data-wake-dev-instance="vps" data-wake-dev-metric="candidate_text"></div>
+            </div>
           </div>
         </section>
       </div>

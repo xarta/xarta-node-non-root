@@ -647,12 +647,19 @@ const BlueprintsVoiceMode = (() => {
   function _wakeRuntimeLabel(local) {
     if (local.stt_mode !== STT_MODE_WAKE) return 'Wake to Talk is not selected.';
     if (!_isActiveOwner()) return 'Wake to Talk is selected but this browser is not the Active Browser.';
-    return 'Wake to Talk is selected; VAD-backed capture is pending rewrite.';
+    const runtime = window.VadDevModal?.getWakeRuntimeSnapshot?.();
+    if (runtime?.running) return 'Wake to Talk is active; VAD ReArm is armed.';
+    if (runtime?.starting) return 'Wake to Talk is active; VAD ReArm is starting.';
+    if (runtime?.status) return runtime.status;
+    return 'Wake to Talk is active; VAD ReArm will arm automatically.';
   }
 
   function _renderWakeRuntime(local, els = _els()) {
     if (!els.wakeRuntime || !els.wakeRuntimeLabel) return;
-    els.wakeRuntime.dataset.state = local.stt_mode === STT_MODE_WAKE && _isActiveOwner() ? 'selected-inactive' : 'disabled';
+    const runtime = window.VadDevModal?.getWakeRuntimeSnapshot?.();
+    els.wakeRuntime.dataset.state = local.stt_mode === STT_MODE_WAKE && _isActiveOwner()
+      ? (runtime?.running ? 'active' : (runtime?.starting ? 'starting' : 'selected-inactive'))
+      : 'disabled';
     els.wakeRuntimeLabel.textContent = _wakeRuntimeLabel(local);
   }
 
