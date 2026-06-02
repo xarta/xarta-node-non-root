@@ -90,6 +90,30 @@ const VadDevModal = (() => {
     },
   };
 
+  const WORD_DETECTION_CUE_CONFIG = {
+    match: {
+      enabledKey: 'word_detection_match_cue_enabled',
+      soundKey: 'word_detection_match_cue_sound',
+      label: 'MATCH CUE',
+      pickerTitle: 'Choose sense match cue',
+      savedStatus: 'MATCH CUE saved.',
+    },
+    payload0_timeout: {
+      enabledKey: 'word_detection_payload0_timeout_cue_enabled',
+      soundKey: 'word_detection_payload0_timeout_cue_sound',
+      label: 'PAYLOAD0 TIMEOUT CUE',
+      pickerTitle: 'Choose payload0 timeout cue',
+      savedStatus: 'PAYLOAD0 TIMEOUT CUE saved.',
+    },
+    agent_candidate: {
+      enabledKey: 'word_detection_agent_candidate_cue_enabled',
+      soundKey: 'word_detection_agent_candidate_cue_sound',
+      label: 'AGENT CANDIDATE CUE',
+      pickerTitle: 'Choose agent candidate cue',
+      savedStatus: 'AGENT CANDIDATE CUE saved.',
+    },
+  };
+
   const state = {
     bound: false,
     open: false,
@@ -103,6 +127,7 @@ const VadDevModal = (() => {
     wordDetectionPrefixPartialInterruptTtsEnabled: false,
     wordDetectionPrefixFinalInterruptTtsEnabled: false,
     wordDetectionPayload0TimeoutMs: 0,
+    wordDetectionCues: createWordDetectionCueSettings(),
     autoPreRollEnabled: storedBool(LS_AUTO_PRE_ROLL, false),
     alwaysPreRollEnabled: false,
     preRollFrames: PRE_ROLL_FRAMES_DEFAULT,
@@ -111,6 +136,7 @@ const VadDevModal = (() => {
     vadInterruptTtsSaveInFlight: false,
     wordDetectionInterruptTtsSaveInFlight: false,
     wordDetectionPayload0TimeoutSaveInFlight: false,
+    wordDetectionCueSaveInFlight: false,
     alwaysPreRollSaveInFlight: false,
     lastTtsInterruptAt: 0,
     sileroScriptPromises: {},
@@ -312,6 +338,13 @@ const VadDevModal = (() => {
     };
   }
 
+  function createWordDetectionCueSettings() {
+    return Object.fromEntries(Object.keys(WORD_DETECTION_CUE_CONFIG).map(key => [
+      key,
+      { enabled: false, sound: '' },
+    ]));
+  }
+
   function createWakeRuntimeCandidateState() {
     return {
       source: '',
@@ -343,13 +376,10 @@ const VadDevModal = (() => {
       lastSenseAt: 0,
       lastPayloadAt: 0,
       lastPayloadTimeoutAt: 0,
-      lastPayload0VadStartAt: 0,
-      lastPayload0VadEndAt: 0,
       lastUpdatedAt: 0,
       detections: 0,
       captures: 0,
       payloadTimeouts: 0,
-      payload0VadActive: false,
       payload0TimeoutTimer: null,
       payload0TimeoutStartedAt: 0,
       payload0TimeoutDeadlineAt: 0,
@@ -623,6 +653,40 @@ const VadDevModal = (() => {
     return value > 0 ? `${value} ms` : 'Off';
   }
 
+  function cleanCueSound(value) {
+    return String(value ?? '').trim().replace(/\\/g, '/').slice(0, 255);
+  }
+
+  function cleanCueSettings(value) {
+    const raw = value && typeof value === 'object' ? value : {};
+    const settings = createWordDetectionCueSettings();
+    Object.entries(WORD_DETECTION_CUE_CONFIG).forEach(([key, config]) => {
+      const nested = raw[key] && typeof raw[key] === 'object' ? raw[key] : {};
+      settings[key] = {
+        enabled: !!(nested.enabled ?? raw[config.enabledKey]),
+        sound: cleanCueSound(nested.sound ?? nested.sound_path ?? raw[config.soundKey]),
+      };
+    });
+    return settings;
+  }
+
+  function cueSetting(key) {
+    const settings = state.wordDetectionCues || createWordDetectionCueSettings();
+    state.wordDetectionCues = settings;
+    return settings[key] || { enabled: false, sound: '' };
+  }
+
+  function cueSnapshot() {
+    return cleanCueSettings(state.wordDetectionCues);
+  }
+
+  function assetUrl(assetPath) {
+    const path = cleanCueSound(assetPath);
+    if (!path) return '';
+    if (/^https?:\/\//i.test(path) || path.startsWith('/')) return path;
+    return `/fallback-ui/assets/${path}`;
+  }
+
   function renderRangeLabels() {
     const level = Number(els.noiseLevel?.value || 6);
     const threshold = noiseThresholdDb();
@@ -695,6 +759,9 @@ const VadDevModal = (() => {
     }
     if (!state.wordDetectionPayload0TimeoutSaveInFlight && typeof vm?.wordDetectionPayload0TimeoutMs === 'function') {
       state.wordDetectionPayload0TimeoutMs = clampWordDetectionPayload0TimeoutMs(vm.wordDetectionPayload0TimeoutMs());
+    }
+    if (!state.wordDetectionCueSaveInFlight && typeof vm?.wordDetectionCueSettings === 'function') {
+      state.wordDetectionCues = cleanCueSettings(vm.wordDetectionCueSettings());
     }
     if (!state.alwaysPreRollSaveInFlight && typeof vm?.alwaysPreRollEnabled === 'function') {
       state.alwaysPreRollEnabled = !!vm.alwaysPreRollEnabled();
@@ -1060,6 +1127,7 @@ const VadDevModal = (() => {
       detections: Number(word.detections || 0),
       captures: Number(word.captures || 0),
       payload0_timeouts: Number(word.payloadTimeouts || 0),
+      cues: cueSnapshot(),
       agent_candidate: wordDetectionAgentCandidateSnapshot(),
       prefix: wordDetectionPrefixSnapshot(),
     };
@@ -1223,12 +1291,11 @@ const VadDevModal = (() => {
       payload0_timeout_ms: timeoutMs,
       vad_payload0_timeout_ms: timeoutMs,
       payload0_timeout_enabled: timeoutMs > 0,
-      payload0_timeout_active: !!(instance.awaitingPayload && deadlineAt && timeoutRemainingMs > 0 && !instance.payload0VadActive),
+      payload0_timeout_active: !!(instance.awaitingPayload && deadlineAt && timeoutRemainingMs > 0),
       payload0_timeout_started_at_ms: Number(instance.payload0TimeoutStartedAt || 0),
       payload0_timeout_deadline_at_ms: deadlineAt,
       payload0_timeout_remaining_ms: timeoutRemainingMs,
       payload0_timeout_reason: instance.payload0TimeoutReason || '',
-      payload0_vad_active: !!instance.payload0VadActive,
       last_final: instance.lastFinal || '',
       last_normalized_final: instance.lastNormalizedFinal || '',
       last_sense_final: instance.lastSenseFinal || '',
@@ -1237,8 +1304,6 @@ const VadDevModal = (() => {
       last_sense_at_ms: Number(instance.lastSenseAt || 0),
       last_payload_at_ms: Number(instance.lastPayloadAt || 0),
       last_payload0_timeout_at_ms: Number(instance.lastPayloadTimeoutAt || 0),
-      last_payload0_vad_start_at_ms: Number(instance.lastPayload0VadStartAt || 0),
-      last_payload0_vad_end_at_ms: Number(instance.lastPayload0VadEndAt || 0),
       last_updated_at_ms: Number(instance.lastUpdatedAt || 0),
       detections: Number(instance.detections || 0),
       captures: Number(instance.captures || 0),
@@ -1364,12 +1429,14 @@ const VadDevModal = (() => {
     state.wakeRuntime.instances[instanceId] = instance;
     const candidate = instance.candidate || createWakeRuntimeCandidateState();
     instance.candidate = candidate;
+    const previousSignature = `${candidate.source || ''}\n${candidate.tone || ''}\n${candidate.text || ''}`;
     clearWakeRuntimeCandidateTimers(candidate);
     const now = Date.now();
     candidate.source = source || '';
     candidate.sourceLabel = wakeRuntimeCandidateSourceLabel(source);
     candidate.text = textValue;
     candidate.tone = tone || 'green';
+    const nextSignature = `${candidate.source || ''}\n${candidate.tone || ''}\n${candidate.text || ''}`;
     candidate.visible = true;
     candidate.fading = false;
     candidate.lastUpdatedAt = now;
@@ -1385,6 +1452,13 @@ const VadDevModal = (() => {
       candidate_length: textValue.length,
       ...detail,
     });
+    if (nextSignature !== previousSignature) {
+      playWordDetectionCue('agent_candidate', {
+        mode: MODE_REARM,
+        reason: 'wake_runtime_agent_candidate',
+        instance: instanceId,
+      });
+    }
     dispatchWakeRuntimeChanged('candidate');
     poll({ force: true });
     return true;
@@ -1432,12 +1506,14 @@ const VadDevModal = (() => {
     if (!textValue) return false;
     const candidate = state.wordDetection.agentCandidate || createWordDetectionAgentCandidateState();
     state.wordDetection.agentCandidate = candidate;
+    const previousSignature = `${candidate.source || ''}\n${candidate.tone || ''}\n${candidate.text || ''}`;
     clearWordDetectionAgentCandidateTimers(candidate);
     const now = Date.now();
     candidate.source = source || '';
     candidate.sourceLabel = wordDetectionAgentCandidateSourceLabel(source);
     candidate.text = textValue;
     candidate.tone = tone || 'green';
+    const nextSignature = `${candidate.source || ''}\n${candidate.tone || ''}\n${candidate.text || ''}`;
     candidate.visible = true;
     candidate.fading = false;
     candidate.lastUpdatedAt = now;
@@ -1446,6 +1522,12 @@ const VadDevModal = (() => {
     candidate.hideTimer = window.setTimeout(() => {
       fadeWordDetectionAgentCandidate('candidate_elapsed');
     }, WORD_DETECTION_AGENT_CANDIDATE_VISIBLE_MS);
+    if (nextSignature !== previousSignature) {
+      playWordDetectionCue('agent_candidate', {
+        mode: currentMode(),
+        reason: 'word_detection_agent_candidate',
+      });
+    }
     renderWordDetectionUi();
     poll({ force: true });
     return true;
@@ -1463,6 +1545,21 @@ const VadDevModal = (() => {
       els.wordAgentCandidateBlock.dataset.state = snapshot.visible ? 'active' : (snapshot.fading ? 'fading' : 'idle');
       els.wordAgentCandidateBlock.dataset.tone = snapshot.tone || 'idle';
     }
+  }
+
+  function renderWordDetectionCueControls() {
+    const cues = cueSnapshot();
+    Object.entries(WORD_DETECTION_CUE_CONFIG).forEach(([key]) => {
+      const controls = els.wordDetectionCues?.[key] || {};
+      const setting = cues[key] || { enabled: false, sound: '' };
+      if (controls.toggle) controls.toggle.checked = !!setting.enabled;
+      if (controls.sound) controls.sound.value = setting.sound || '';
+      if (controls.preview) controls.preview.disabled = !setting.sound;
+      const url = assetUrl(setting.sound);
+      if (url && typeof SoundManager !== 'undefined' && typeof SoundManager.preload === 'function') {
+        SoundManager.preload(url).catch(() => {});
+      }
+    });
   }
 
   function renderWordDetectionUi() {
@@ -1507,6 +1604,80 @@ const VadDevModal = (() => {
       els.wordPrefixBlock.dataset.state = prefix.finalPayload ? 'captured' : (prefix.lastMatchedAlias ? 'armed' : 'idle');
     }
     renderWordDetectionAgentCandidateUi();
+    renderWordDetectionCueControls();
+  }
+
+  function playWordDetectionCue(key, detail = {}) {
+    const setting = cueSetting(key);
+    const url = setting.enabled ? assetUrl(setting.sound) : '';
+    if (!url || typeof SoundManager === 'undefined' || typeof SoundManager.playOneShot !== 'function') return false;
+    SoundManager.playOneShot(url, { waitForEnd: false }).catch(() => {});
+    pushAction(detail.mode || currentMode(), 'wordDetectionCue', {
+      cue: key,
+      sound: setting.sound,
+      reason: detail.reason || key,
+      ...(detail.instance ? { instance: detail.instance } : {}),
+    });
+    return true;
+  }
+
+  async function setWordDetectionCueSetting(key, patch = {}, options = {}) {
+    const config = WORD_DETECTION_CUE_CONFIG[key];
+    if (!config) return false;
+    state.wordDetectionCueSaveInFlight = true;
+    const next = cleanCueSettings(state.wordDetectionCues);
+    next[key] = {
+      enabled: patch.enabled == null ? !!next[key]?.enabled : !!patch.enabled,
+      sound: patch.sound == null ? cleanCueSound(next[key]?.sound) : cleanCueSound(patch.sound),
+    };
+    state.wordDetectionCues = next;
+    renderWordDetectionUi();
+    try {
+      await voiceMode()?.saveWordDetectionCueSetting?.(key, patch);
+      status(options.status || config.savedStatus);
+    } catch (error) {
+      status(`${config.label} save failed: ${error.message || error}`);
+    } finally {
+      state.wordDetectionCueSaveInFlight = false;
+      syncServerVadSettings();
+      renderSharedControls();
+      renderWordDetectionUi();
+    }
+    poll({ force: true });
+    return true;
+  }
+
+  function setWordDetectionCueEnabled(key, enabled, options = {}) {
+    return setWordDetectionCueSetting(key, { enabled: !!enabled }, options);
+  }
+
+  function setWordDetectionCueSound(key, sound, options = {}) {
+    return setWordDetectionCueSetting(key, { enabled: true, sound: cleanCueSound(sound) }, options);
+  }
+
+  function openWordDetectionCuePicker(key) {
+    const config = WORD_DETECTION_CUE_CONFIG[key];
+    if (!config) return;
+    if (typeof AssetPicker === 'undefined') {
+      status('Sound picker unavailable.');
+      return;
+    }
+    AssetPicker.open({
+      title: config.pickerTitle,
+      kind: 'sound',
+      browseUrl: '/api/v1/nav-items/assets?type=sounds',
+      emptyMessage: 'No sound assets uploaded yet.',
+      onSelect: async (assetPath) => {
+        await setWordDetectionCueSound(key, assetPath, { status: `${config.label} selected.` });
+      },
+    });
+  }
+
+  function previewWordDetectionCue(key, button) {
+    const setting = cueSetting(key);
+    const url = assetUrl(setting.sound);
+    if (!url || typeof SoundManager === 'undefined') return;
+    SoundManager.previewToggle(url, { button });
   }
 
   function setWordDetectionAliases(value, options = {}) {
@@ -1601,6 +1772,10 @@ const VadDevModal = (() => {
       waited_ms: Math.max(0, now - startedAt),
       matched_alias: word.lastMatchedAlias || '',
     });
+    playWordDetectionCue('payload0_timeout', {
+      mode,
+      reason: 'word_detection_payload0_timeout',
+    });
     renderWordDetectionUi();
     poll({ force: true });
     return true;
@@ -1679,6 +1854,10 @@ const VadDevModal = (() => {
       word.lastUpdatedAt = now;
       word.detections += 1;
       scheduleWordDetectionPayload0Timeout(mode, 'final_match', now);
+      playWordDetectionCue('match', {
+        mode,
+        reason: 'word_detection_final_match',
+      });
       if (wordDetectionMatchInterruptTtsEnabled()) {
         void interruptTtsForWordDetection(mode, 'word_detection_final_match', {
           matched_alias: matchedAlias,
@@ -1812,7 +1991,7 @@ const VadDevModal = (() => {
     const instance = state.wakeRuntime.instances[instanceId] || createWakeRuntimeInstanceState();
     state.wakeRuntime.instances[instanceId] = instance;
     const now = Date.now();
-    if (!instance.awaitingPayload || instance.payload0VadActive) return false;
+    if (!instance.awaitingPayload) return false;
     const deadline = Number(instance.payload0TimeoutDeadlineAt || 0);
     if (deadline && now < deadline - 5) {
       const remaining = Math.max(1, deadline - now);
@@ -1823,7 +2002,6 @@ const VadDevModal = (() => {
     const startedAt = Number(instance.payload0TimeoutStartedAt || now);
     clearWakeRuntimePayload0Timer(instance);
     instance.awaitingPayload = false;
-    instance.payload0VadActive = false;
     instance.lastPayloadTimeoutAt = now;
     instance.lastUpdatedAt = now;
     instance.payloadTimeouts += 1;
@@ -1833,6 +2011,11 @@ const VadDevModal = (() => {
       timeout_ms: wordDetectionPayload0TimeoutMs(),
       waited_ms: Math.max(0, now - startedAt),
       matched_alias: instance.lastMatchedAlias || '',
+    });
+    playWordDetectionCue('payload0_timeout', {
+      mode,
+      reason: 'wake_runtime_payload0_timeout',
+      instance: instanceId,
     });
     dispatchWakeRuntimeChanged('payload0_timeout');
     poll({ force: true });
@@ -1848,26 +2031,7 @@ const VadDevModal = (() => {
     }
     const timeoutMs = wordDetectionPayload0TimeoutMs();
     if (timeoutMs <= 0) {
-      instance.payload0VadActive = false;
       clearWakeRuntimePayload0Timer(instance);
-      return false;
-    }
-    const vadIsActive = mode !== MODE_MANUAL && !!probe(mode).vad?.speaking;
-    if (instance.payload0VadActive || vadIsActive) {
-      clearWakeRuntimePayload0Timer(instance);
-      if (vadIsActive && !instance.payload0VadActive) {
-        instance.payload0VadActive = true;
-        instance.lastPayload0VadStartAt = now;
-        instance.payload0TimeoutReason = 'vad_active';
-        pushAction(mode, 'wakeRuntimePayload0VadHold', {
-          instance: instanceId,
-          reason,
-          timeout_ms: timeoutMs,
-          matched_alias: instance.lastMatchedAlias || '',
-        });
-      }
-      instance.payload0TimeoutReason = 'vad_active';
-      dispatchWakeRuntimeChanged('payload0_vad_hold');
       return false;
     }
     if (instance.payload0TimeoutTimer) window.clearTimeout(instance.payload0TimeoutTimer);
@@ -1880,50 +2044,6 @@ const VadDevModal = (() => {
     return true;
   }
 
-  function noteWakeRuntimePayload0VadActivity(mode, active, reason, now = Date.now()) {
-    if (!wakeRuntimeActiveForMode(mode) || wordDetectionPayload0TimeoutMs() <= 0) return false;
-    const nextActive = !!active;
-    let changed = false;
-    WAKE_RUNTIME_INSTANCES.forEach(instanceId => {
-      const instance = state.wakeRuntime.instances[instanceId] || createWakeRuntimeInstanceState();
-      state.wakeRuntime.instances[instanceId] = instance;
-      if (!instance.awaitingPayload) return;
-      if (nextActive) {
-        if (instance.payload0VadActive) return;
-        clearWakeRuntimePayload0Timer(instance);
-        instance.payload0VadActive = true;
-        instance.lastPayload0VadStartAt = now;
-        instance.payload0TimeoutReason = 'vad_active';
-        instance.lastUpdatedAt = now;
-        pushAction(mode, 'wakeRuntimePayload0VadHold', {
-          instance: instanceId,
-          reason,
-          timeout_ms: wordDetectionPayload0TimeoutMs(),
-          matched_alias: instance.lastMatchedAlias || '',
-        });
-        changed = true;
-        return;
-      }
-      if (!instance.payload0VadActive) return;
-      instance.payload0VadActive = false;
-      instance.lastPayload0VadEndAt = now;
-      instance.lastUpdatedAt = now;
-      pushAction(mode, 'wakeRuntimePayload0VadRelease', {
-        instance: instanceId,
-        reason,
-        timeout_ms: wordDetectionPayload0TimeoutMs(),
-        matched_alias: instance.lastMatchedAlias || '',
-      });
-      scheduleWakeRuntimePayload0Timeout(mode, instanceId, reason || 'vad_end', now);
-      changed = true;
-    });
-    if (changed) {
-      dispatchWakeRuntimeChanged(nextActive ? 'payload0_vad_hold' : 'payload0_vad_release');
-      poll({ force: true });
-    }
-    return changed;
-  }
-
   function captureWakeRuntimePayload0(mode, instanceId, finalText, now = Date.now()) {
     const instance = state.wakeRuntime.instances[instanceId] || createWakeRuntimeInstanceState();
     state.wakeRuntime.instances[instanceId] = instance;
@@ -1933,7 +2053,6 @@ const VadDevModal = (() => {
     instance.lastPayloadAt = now;
     instance.lastUpdatedAt = now;
     instance.awaitingPayload = false;
-    instance.payload0VadActive = false;
     instance.captures += 1;
     pushAction(mode, 'wakeRuntimePayload0Captured', {
       instance: instanceId,
@@ -1954,9 +2073,6 @@ const VadDevModal = (() => {
     instance.lastPayloadAt = 0;
     instance.lastPayloadTimeoutAt = 0;
     instance.awaitingPayload = true;
-    instance.payload0VadActive = false;
-    instance.lastPayload0VadStartAt = 0;
-    instance.lastPayload0VadEndAt = 0;
     instance.lastSenseFinal = finalText;
     instance.lastMatchedAlias = matchedAlias;
     instance.lastSenseAt = now;
@@ -1966,6 +2082,11 @@ const VadDevModal = (() => {
       instance: instanceId,
       matched_alias: matchedAlias,
       final_text: finalText,
+    });
+    playWordDetectionCue('match', {
+      mode,
+      reason: 'wake_runtime_final_match',
+      instance: instanceId,
     });
     scheduleWakeRuntimePayload0Timeout(mode, instanceId, 'final_match', now);
     if (wordDetectionMatchInterruptTtsEnabled()) {
@@ -1997,7 +2118,6 @@ const VadDevModal = (() => {
         if (!exactMatches.some(match => match.instanceId === instanceId)) {
           clearWakeRuntimePayload0Timer(state.wakeRuntime.instances[instanceId]);
           state.wakeRuntime.instances[instanceId].awaitingPayload = false;
-          state.wakeRuntime.instances[instanceId].payload0VadActive = false;
         }
       });
       exactMatches.forEach(match => {
@@ -2208,7 +2328,6 @@ const VadDevModal = (() => {
         speech_probability: probe(mode).silero.isSpeechProbability,
       });
       noteWordDetectionPayload0VadActivity(mode, true, 'silero_speech_confirmed', now);
-      noteWakeRuntimePayload0VadActivity(mode, true, 'silero_speech_confirmed', now);
       void interruptTtsForVad(mode, 'silero_speech_confirmed', {
         detector: DETECTOR_SILERO,
         speech_probability: probe(mode).silero.isSpeechProbability,
@@ -2311,7 +2430,6 @@ const VadDevModal = (() => {
       timeout_ms: vadResetTimeoutMs(),
     });
     noteWordDetectionPayload0VadActivity(mode, false, 'silero_speech_end', now);
-    noteWakeRuntimePayload0VadActivity(mode, false, 'silero_speech_end', now);
     updateSileroStop(mode, now);
   }
 
@@ -2644,7 +2762,6 @@ const VadDevModal = (() => {
       });
       if (speechStarted) {
         noteWordDetectionPayload0VadActivity(mode, true, 'energy_vad_confirmed', now);
-        noteWakeRuntimePayload0VadActivity(mode, true, 'energy_vad_confirmed', now);
         void interruptTtsForVad(mode, 'energy_vad_confirmed', {
           detector: DETECTOR_ENERGY,
           start_threshold: strongFrame ? 'delta_strong_confirmed' : 'delta_persistent_confirmed',
@@ -2663,7 +2780,6 @@ const VadDevModal = (() => {
     } else if (vad.speaking && now - vad.lastVoiceAt > VAD_TEST_EXIT_HANGOVER_MS) {
       vad.speaking = false;
       noteWordDetectionPayload0VadActivity(mode, false, 'energy_vad_hangover_end', now);
-      noteWakeRuntimePayload0VadActivity(mode, false, 'energy_vad_hangover_end', now);
     }
 
     const timeoutMs = vadResetTimeoutMs();
@@ -3422,12 +3538,12 @@ const VadDevModal = (() => {
     if (type === 'manualRecordStop') return '#fbbf24';
     if (type === 'manualTestMode') return '#38bdf8';
     if (type === 'manualError') return '#f87171';
-    if (type === 'vadProbeRecordStart' || type === 'vadProbeFinal' || type === 'rearmProbeRecordStart' || type === 'rearmProbeFinal' || type === 'vadCandidateConfirmed' || type === 'sileroReady' || type === 'sileroSpeechConfirmed' || type === 'vadInterruptTts' || type === 'wordDetectionInterruptTts' || type === 'wordDetectionPayload0Captured' || type === 'wakeRuntimeStart' || type === 'wakeRuntimePayload0Captured' || type === 'wakeRuntimeCandidate') return '#22c55e';
-    if (type === 'vadProbeRecordStop' || type === 'rearmProbeRecordStop' || type === 'vadStopMode' || type === 'sileroSpeechEnd' || type === 'wordDetectionPayload0VadRelease' || type === 'wakeRuntimePayload0VadRelease') return '#fbbf24';
+    if (type === 'vadProbeRecordStart' || type === 'vadProbeFinal' || type === 'rearmProbeRecordStart' || type === 'rearmProbeFinal' || type === 'vadCandidateConfirmed' || type === 'sileroReady' || type === 'sileroSpeechConfirmed' || type === 'vadInterruptTts' || type === 'wordDetectionInterruptTts' || type === 'wordDetectionPayload0Captured' || type === 'wordDetectionCue' || type === 'wakeRuntimeStart' || type === 'wakeRuntimePayload0Captured' || type === 'wakeRuntimeCandidate') return '#22c55e';
+    if (type === 'vadProbeRecordStop' || type === 'rearmProbeRecordStop' || type === 'vadStopMode' || type === 'sileroSpeechEnd' || type === 'wordDetectionPayload0VadRelease') return '#fbbf24';
     if (type === 'autoPreRollSelect') return action.applied ? '#22c55e' : '#fbbf24';
     if (type === 'autoPreRollMode') return action.enabled ? '#22c55e' : '#aebfca';
     if (type === 'alwaysPreRollMode') return action.enabled ? '#22c55e' : '#aebfca';
-    if (type === 'vadRecordMode' || type === 'vadDetectorMode' || type === 'vadInterruptTtsMode' || type === 'wordDetectionInterruptTtsMode' || type === 'wordDetectionPayload0TimeoutMode' || type === 'wordDetectionPayload0VadHold' || type === 'wakeRuntimePayload0VadHold' || type === 'vadTestMode' || type === 'rearmTestMode' || type === 'vadCandidateStart' || type === 'sileroLoad' || type === 'sileroCandidateStart' || type === 'wakeRuntimeSenseWordMatched') return '#38bdf8';
+    if (type === 'vadRecordMode' || type === 'vadDetectorMode' || type === 'vadInterruptTtsMode' || type === 'wordDetectionInterruptTtsMode' || type === 'wordDetectionPayload0TimeoutMode' || type === 'wordDetectionPayload0VadHold' || type === 'vadTestMode' || type === 'rearmTestMode' || type === 'vadCandidateStart' || type === 'sileroLoad' || type === 'sileroCandidateStart' || type === 'wakeRuntimeSenseWordMatched') return '#38bdf8';
     if (type === 'vadProbeError' || type === 'rearmProbeError' || type === 'rearmProbeFinalTimeout' || type === 'wordDetectionPayload0Timeout' || type === 'wakeRuntimePayload0Timeout' || type === 'sileroError' || type === 'sileroMisfire' || type === 'vadInterruptTtsError' || type === 'wordDetectionInterruptTtsError' || type === 'wakeRuntimeError') return '#f87171';
     if (mode === MODE_REARM && type === 'controlState') return action.disabled ? 'rgba(148,168,179,0.72)' : (action.pressed ? '#38bdf8' : '#aebfca');
     return '#aebfca';
@@ -3450,11 +3566,10 @@ const VadDevModal = (() => {
     if (action.type === 'wordDetectionPayload0VadRelease') return 'payload0 VAD release';
     if (action.type === 'wordDetectionPayload0Captured') return 'payload0 captured';
     if (action.type === 'wordDetectionPayload0Timeout') return `payload0 timeout ${action.timeout_ms || ''} ms`.trim();
+    if (action.type === 'wordDetectionCue') return `${action.cue || 'word'} cue`;
     if (action.type === 'wakeRuntimeStart') return 'Wake runtime start';
     if (action.type === 'wakeRuntimeStop') return 'Wake runtime stop';
     if (action.type === 'wakeRuntimeSenseWordMatched') return `Wake ${action.instance || ''} matched`.trim();
-    if (action.type === 'wakeRuntimePayload0VadHold') return `Wake ${action.instance || ''} payload0 hold`.trim();
-    if (action.type === 'wakeRuntimePayload0VadRelease') return `Wake ${action.instance || ''} payload0 release`.trim();
     if (action.type === 'wakeRuntimePayload0Captured') return `Wake ${action.instance || ''} payload0`.trim();
     if (action.type === 'wakeRuntimePayload0Timeout') return `Wake ${action.instance || ''} timeout`.trim();
     if (action.type === 'wakeRuntimeCandidate') return `Wake ${action.instance || ''} ${action.source || 'candidate'}`.trim();
@@ -3538,6 +3653,7 @@ const VadDevModal = (() => {
     const vadControlsRelevant = controlsMode !== MODE_MANUAL;
     const auto = autoPreRollStatus(controlsMode);
     const agentCandidate = wordDetectionAgentCandidateSnapshot();
+    const cues = cueSnapshot();
     return {
       selected_mode: controlsMode,
       vad_only_controls_relevant: vadControlsRelevant,
@@ -3579,6 +3695,12 @@ const VadDevModal = (() => {
       word_detection_payload0_timeout_ms: wordDetectionPayload0TimeoutMs(),
       vad_payload0_timeout_ms: wordDetectionPayload0TimeoutMs(),
       word_detection_payload0_timeout_disabled: !!els.wordDetectionPayload0Timeout?.disabled,
+      word_detection_match_cue_enabled: !!cues.match?.enabled,
+      word_detection_match_cue_sound: cues.match?.sound || '',
+      word_detection_payload0_timeout_cue_enabled: !!cues.payload0_timeout?.enabled,
+      word_detection_payload0_timeout_cue_sound: cues.payload0_timeout?.sound || '',
+      word_detection_agent_candidate_cue_enabled: !!cues.agent_candidate?.enabled,
+      word_detection_agent_candidate_cue_sound: cues.agent_candidate?.sound || '',
       word_detection_prefix_partial_interrupt_tts_enabled: wordDetectionPrefixPartialInterruptTtsEnabled(),
       word_detection_prefix_partial_interrupt_tts_disabled: !!els.wordPrefixPartialInterruptToggle?.disabled,
       word_detection_prefix_final_interrupt_tts_enabled: wordDetectionPrefixFinalInterruptTtsEnabled(),
@@ -4358,6 +4480,30 @@ const VadDevModal = (() => {
     poll({ force: true });
   }
 
+  function payloadHasAny(payload, ...keys) {
+    return keys.some(key => payload?.[key] != null);
+  }
+
+  async function setWordDetectionCueFromPayload(key, payload, options = {}) {
+    const config = WORD_DETECTION_CUE_CONFIG[key];
+    if (!config) return false;
+    const patch = {};
+    const includeEnabled = options.includeEnabled !== false;
+    const includeSound = options.includeSound !== false;
+    if (includeEnabled && payloadHasAny(payload, config.enabledKey, 'cue_enabled', 'sound_enabled', 'enabled', 'checked')) {
+      patch.enabled = payloadBool(payload, true, config.enabledKey, 'cue_enabled', 'sound_enabled');
+    }
+    if (includeSound && payloadHasAny(payload, config.soundKey, 'cue_sound', 'sound_path', 'sound', 'value')) {
+      patch.sound = payloadText(payload, config.soundKey, 'cue_sound', 'sound_path', 'sound');
+    }
+    if (!Object.keys(patch).length && includeEnabled) patch.enabled = payloadBool(payload, true, config.enabledKey);
+    await setWordDetectionCueSetting(key, patch, {
+      reason: 'remote_command',
+      status: `${config.label} saved by automation.`,
+    });
+    return true;
+  }
+
   async function runSettingsCommand(action, payload) {
     const vm = voiceMode();
     if (action === 'set_auto_pre_roll') {
@@ -4405,6 +4551,33 @@ const VadDevModal = (() => {
         });
       }
       return true;
+    }
+    if (action === 'set_word_detection_match_cue') {
+      return setWordDetectionCueFromPayload('match', payload);
+    }
+    if (action === 'set_word_detection_match_cue_enabled') {
+      return setWordDetectionCueFromPayload('match', payload, { includeSound: false });
+    }
+    if (action === 'set_word_detection_match_cue_sound') {
+      return setWordDetectionCueFromPayload('match', payload, { includeEnabled: false });
+    }
+    if (action === 'set_word_detection_payload0_timeout_cue') {
+      return setWordDetectionCueFromPayload('payload0_timeout', payload);
+    }
+    if (action === 'set_word_detection_payload0_timeout_cue_enabled') {
+      return setWordDetectionCueFromPayload('payload0_timeout', payload, { includeSound: false });
+    }
+    if (action === 'set_word_detection_payload0_timeout_cue_sound') {
+      return setWordDetectionCueFromPayload('payload0_timeout', payload, { includeEnabled: false });
+    }
+    if (action === 'set_word_detection_agent_candidate_cue') {
+      return setWordDetectionCueFromPayload('agent_candidate', payload);
+    }
+    if (action === 'set_word_detection_agent_candidate_cue_enabled') {
+      return setWordDetectionCueFromPayload('agent_candidate', payload, { includeSound: false });
+    }
+    if (action === 'set_word_detection_agent_candidate_cue_sound') {
+      return setWordDetectionCueFromPayload('agent_candidate', payload, { includeEnabled: false });
     }
     if (action === 'set_word_detection_prefix_partial_interrupt_tts' || action === 'set_word_detection_prefix_partial_interrupt_tts_enabled') {
       await setWordDetectionPrefixPartialInterruptTtsEnabled(payloadBool(payload, true, 'word_detection_prefix_partial_interrupt_tts_enabled', 'match_prefix_partial_interrupt_tts'), {
@@ -4627,6 +4800,26 @@ const VadDevModal = (() => {
     els.wordDetectionPayload = el('vad-dev-word-detection-payload');
     els.wordDetectionFinal = el('vad-dev-word-detection-final');
     els.wordDetectionMatch = el('vad-dev-word-detection-match');
+    els.wordDetectionCues = {
+      match: {
+        toggle: el('vad-dev-word-detection-match-cue-toggle'),
+        sound: el('vad-dev-word-detection-match-cue-sound'),
+        pick: el('vad-dev-word-detection-match-cue-pick'),
+        preview: el('vad-dev-word-detection-match-cue-preview'),
+      },
+      payload0_timeout: {
+        toggle: el('vad-dev-word-detection-timeout-cue-toggle'),
+        sound: el('vad-dev-word-detection-timeout-cue-sound'),
+        pick: el('vad-dev-word-detection-timeout-cue-pick'),
+        preview: el('vad-dev-word-detection-timeout-cue-preview'),
+      },
+      agent_candidate: {
+        toggle: el('vad-dev-word-agent-candidate-cue-toggle'),
+        sound: el('vad-dev-word-agent-candidate-cue-sound'),
+        pick: el('vad-dev-word-agent-candidate-cue-pick'),
+        preview: el('vad-dev-word-agent-candidate-cue-preview'),
+      },
+    };
     els.wordPrefixBlock = el('vad-dev-word-prefix');
     els.wordPrefixState = el('vad-dev-word-prefix-state');
     els.wordPrefixPartialInterruptToggle = el('vad-dev-word-prefix-partial-interrupt-tts-toggle');
@@ -4725,6 +4918,13 @@ const VadDevModal = (() => {
     });
     els.wordDetectionPayload0Timeout?.addEventListener('change', () => {
       void setWordDetectionPayload0TimeoutMs(els.wordDetectionPayload0Timeout.value, { reason: 'ui_slider' });
+    });
+    Object.entries(els.wordDetectionCues || {}).forEach(([key, controls]) => {
+      controls.toggle?.addEventListener('change', () => {
+        void setWordDetectionCueEnabled(key, controls.toggle.checked, { reason: 'ui_toggle' });
+      });
+      controls.pick?.addEventListener('click', () => openWordDetectionCuePicker(key));
+      controls.preview?.addEventListener('click', () => previewWordDetectionCue(key, controls.preview));
     });
     els.wordPrefixPartialInterruptToggle?.addEventListener('change', () => {
       void setWordDetectionPrefixPartialInterruptTtsEnabled(els.wordPrefixPartialInterruptToggle.checked, { reason: 'ui_toggle' });

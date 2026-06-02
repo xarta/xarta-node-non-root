@@ -4784,6 +4784,32 @@
             <output id="vad-dev-word-detection-payload0-timeout-label" data-vad-dev-metric="word_detection_payload0_timeout_ms">Off</output>
           </label>
         </div>
+        <div class="vad-dev-word__cues" aria-label="Word Detection sound cues">
+          <div class="vad-dev-cue" aria-label="Sense match cue">
+            <label class="hub-checkbox wake-dev-check vad-dev-word__check">
+              <input class="hub-checkbox__input" type="checkbox" id="vad-dev-word-detection-match-cue-toggle" data-vad-dev-control="word_detection_match_cue_enabled" />
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label wake-dev-check__label">MATCH CUE</span>
+            </label>
+            <div class="vad-dev-cue__row">
+              <input class="vad-dev-cue__input" type="text" id="vad-dev-word-detection-match-cue-sound" readonly placeholder="sounds/..." aria-label="Sense match cue sound" data-vad-dev-control="word_detection_match_cue_sound" />
+              <button class="btn-small secondary" type="button" id="vad-dev-word-detection-match-cue-pick">Pick</button>
+              <button class="btn-small secondary" type="button" id="vad-dev-word-detection-match-cue-preview">Preview</button>
+            </div>
+          </div>
+          <div class="vad-dev-cue" aria-label="Payload0 timeout cue">
+            <label class="hub-checkbox wake-dev-check vad-dev-word__check">
+              <input class="hub-checkbox__input" type="checkbox" id="vad-dev-word-detection-timeout-cue-toggle" data-vad-dev-control="word_detection_payload0_timeout_cue_enabled" />
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label wake-dev-check__label">PAYLOAD0 TIMEOUT CUE</span>
+            </label>
+            <div class="vad-dev-cue__row">
+              <input class="vad-dev-cue__input" type="text" id="vad-dev-word-detection-timeout-cue-sound" readonly placeholder="sounds/..." aria-label="Payload0 timeout cue sound" data-vad-dev-control="word_detection_payload0_timeout_cue_sound" />
+              <button class="btn-small secondary" type="button" id="vad-dev-word-detection-timeout-cue-pick">Pick</button>
+              <button class="btn-small secondary" type="button" id="vad-dev-word-detection-timeout-cue-preview">Preview</button>
+            </div>
+          </div>
+        </div>
         <div class="vad-dev-word__grid">
           <div class="vad-dev-word__readout vad-dev-word__readout--final">
             <span class="wake-dev-section-label">Last final</span>
@@ -4835,6 +4861,18 @@
         <div class="vad-dev-agent-candidate__body">
           <span class="wake-dev-section-label" id="vad-dev-word-agent-candidate-source" data-vad-dev-metric="word_detection_agent_candidate_source_label">No candidate</span>
           <div id="vad-dev-word-agent-candidate-text" class="vad-dev-word__value vad-dev-agent-candidate__value" data-vad-dev-metric="word_detection_agent_candidate_text"></div>
+          <div class="vad-dev-cue vad-dev-cue--candidate" aria-label="Agent candidate cue">
+            <label class="hub-checkbox wake-dev-check vad-dev-word__check">
+              <input class="hub-checkbox__input" type="checkbox" id="vad-dev-word-agent-candidate-cue-toggle" data-vad-dev-control="word_detection_agent_candidate_cue_enabled" />
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label wake-dev-check__label">AGENT CANDIDATE CUE</span>
+            </label>
+            <div class="vad-dev-cue__row">
+              <input class="vad-dev-cue__input" type="text" id="vad-dev-word-agent-candidate-cue-sound" readonly placeholder="sounds/..." aria-label="Agent candidate cue sound" data-vad-dev-control="word_detection_agent_candidate_cue_sound" />
+              <button class="btn-small secondary" type="button" id="vad-dev-word-agent-candidate-cue-pick">Pick</button>
+              <button class="btn-small secondary" type="button" id="vad-dev-word-agent-candidate-cue-preview">Preview</button>
+            </div>
+          </div>
         </div>
       </div>
     </section>
