@@ -90,6 +90,30 @@ const VadDevModal = (() => {
     },
   };
 
+  const WORD_DETECTION_CUE_CONFIG = {
+    match: {
+      enabledKey: 'word_detection_match_cue_enabled',
+      soundKey: 'word_detection_match_cue_sound',
+      label: 'MATCH CUE',
+      pickerTitle: 'Choose sense match cue',
+      savedStatus: 'MATCH CUE saved.',
+    },
+    payload0_timeout: {
+      enabledKey: 'word_detection_payload0_timeout_cue_enabled',
+      soundKey: 'word_detection_payload0_timeout_cue_sound',
+      label: 'PAYLOAD0 TIMEOUT CUE',
+      pickerTitle: 'Choose payload0 timeout cue',
+      savedStatus: 'PAYLOAD0 TIMEOUT CUE saved.',
+    },
+    agent_candidate: {
+      enabledKey: 'word_detection_agent_candidate_cue_enabled',
+      soundKey: 'word_detection_agent_candidate_cue_sound',
+      label: 'AGENT CANDIDATE CUE',
+      pickerTitle: 'Choose agent candidate cue',
+      savedStatus: 'AGENT CANDIDATE CUE saved.',
+    },
+  };
+
   const state = {
     bound: false,
     open: false,
@@ -103,6 +127,7 @@ const VadDevModal = (() => {
     wordDetectionPrefixPartialInterruptTtsEnabled: false,
     wordDetectionPrefixFinalInterruptTtsEnabled: false,
     wordDetectionPayload0TimeoutMs: 0,
+    wordDetectionCues: createWordDetectionCueSettings(),
     autoPreRollEnabled: storedBool(LS_AUTO_PRE_ROLL, false),
     alwaysPreRollEnabled: false,
     preRollFrames: PRE_ROLL_FRAMES_DEFAULT,
@@ -111,6 +136,7 @@ const VadDevModal = (() => {
     vadInterruptTtsSaveInFlight: false,
     wordDetectionInterruptTtsSaveInFlight: false,
     wordDetectionPayload0TimeoutSaveInFlight: false,
+    wordDetectionCueSaveInFlight: false,
     alwaysPreRollSaveInFlight: false,
     lastTtsInterruptAt: 0,
     sileroScriptPromises: {},
@@ -310,6 +336,13 @@ const VadDevModal = (() => {
       detections: 0,
       finalCaptures: 0,
     };
+  }
+
+  function createWordDetectionCueSettings() {
+    return Object.fromEntries(Object.keys(WORD_DETECTION_CUE_CONFIG).map(key => [
+      key,
+      { enabled: false, sound: '' },
+    ]));
   }
 
   function createWakeRuntimeCandidateState() {
@@ -623,6 +656,40 @@ const VadDevModal = (() => {
     return value > 0 ? `${value} ms` : 'Off';
   }
 
+  function cleanCueSound(value) {
+    return String(value ?? '').trim().replace(/\\/g, '/').slice(0, 255);
+  }
+
+  function cleanCueSettings(value) {
+    const raw = value && typeof value === 'object' ? value : {};
+    const settings = createWordDetectionCueSettings();
+    Object.entries(WORD_DETECTION_CUE_CONFIG).forEach(([key, config]) => {
+      const nested = raw[key] && typeof raw[key] === 'object' ? raw[key] : {};
+      settings[key] = {
+        enabled: !!(nested.enabled ?? raw[config.enabledKey]),
+        sound: cleanCueSound(nested.sound ?? nested.sound_path ?? raw[config.soundKey]),
+      };
+    });
+    return settings;
+  }
+
+  function cueSetting(key) {
+    const settings = state.wordDetectionCues || createWordDetectionCueSettings();
+    state.wordDetectionCues = settings;
+    return settings[key] || { enabled: false, sound: '' };
+  }
+
+  function cueSnapshot() {
+    return cleanCueSettings(state.wordDetectionCues);
+  }
+
+  function assetUrl(assetPath) {
+    const path = cleanCueSound(assetPath);
+    if (!path) return '';
+    if (/^https?:\/\//i.test(path) || path.startsWith('/')) return path;
+    return `/fallback-ui/assets/${path}`;
+  }
+
   function renderRangeLabels() {
     const level = Number(els.noiseLevel?.value || 6);
     const threshold = noiseThresholdDb();
@@ -695,6 +762,9 @@ const VadDevModal = (() => {
     }
     if (!state.wordDetectionPayload0TimeoutSaveInFlight && typeof vm?.wordDetectionPayload0TimeoutMs === 'function') {
       state.wordDetectionPayload0TimeoutMs = clampWordDetectionPayload0TimeoutMs(vm.wordDetectionPayload0TimeoutMs());
+    }
+    if (!state.wordDetectionCueSaveInFlight && typeof vm?.wordDetectionCueSettings === 'function') {
+      state.wordDetectionCues = cleanCueSettings(vm.wordDetectionCueSettings());
     }
     if (!state.alwaysPreRollSaveInFlight && typeof vm?.alwaysPreRollEnabled === 'function') {
       state.alwaysPreRollEnabled = !!vm.alwaysPreRollEnabled();
@@ -1060,6 +1130,7 @@ const VadDevModal = (() => {
       detections: Number(word.detections || 0),
       captures: Number(word.captures || 0),
       payload0_timeouts: Number(word.payloadTimeouts || 0),
+      cues: cueSnapshot(),
       agent_candidate: wordDetectionAgentCandidateSnapshot(),
       prefix: wordDetectionPrefixSnapshot(),
     };
@@ -1364,6 +1435,7 @@ const VadDevModal = (() => {
     state.wakeRuntime.instances[instanceId] = instance;
     const candidate = instance.candidate || createWakeRuntimeCandidateState();
     instance.candidate = candidate;
+    const previousCueSignature = `${candidate.source || ''}\n${candidate.tone || ''}`;
     clearWakeRuntimeCandidateTimers(candidate);
     const now = Date.now();
     candidate.source = source || '';
@@ -1385,6 +1457,14 @@ const VadDevModal = (() => {
       candidate_length: textValue.length,
       ...detail,
     });
+    const nextCueSignature = `${candidate.source || ''}\n${candidate.tone || ''}`;
+    if (nextCueSignature !== previousCueSignature) {
+      playWordDetectionCue('agent_candidate', {
+        mode: MODE_REARM,
+        reason: 'wake_runtime_agent_candidate',
+        instance: instanceId,
+      });
+    }
     dispatchWakeRuntimeChanged('candidate');
     poll({ force: true });
     return true;
@@ -1432,6 +1512,7 @@ const VadDevModal = (() => {
     if (!textValue) return false;
     const candidate = state.wordDetection.agentCandidate || createWordDetectionAgentCandidateState();
     state.wordDetection.agentCandidate = candidate;
+    const previousCueSignature = `${candidate.source || ''}\n${candidate.tone || ''}`;
     clearWordDetectionAgentCandidateTimers(candidate);
     const now = Date.now();
     candidate.source = source || '';
@@ -1446,6 +1527,13 @@ const VadDevModal = (() => {
     candidate.hideTimer = window.setTimeout(() => {
       fadeWordDetectionAgentCandidate('candidate_elapsed');
     }, WORD_DETECTION_AGENT_CANDIDATE_VISIBLE_MS);
+    const nextCueSignature = `${candidate.source || ''}\n${candidate.tone || ''}`;
+    if (nextCueSignature !== previousCueSignature) {
+      playWordDetectionCue('agent_candidate', {
+        mode: currentMode(),
+        reason: 'word_detection_agent_candidate',
+      });
+    }
     renderWordDetectionUi();
     poll({ force: true });
     return true;
@@ -1463,6 +1551,21 @@ const VadDevModal = (() => {
       els.wordAgentCandidateBlock.dataset.state = snapshot.visible ? 'active' : (snapshot.fading ? 'fading' : 'idle');
       els.wordAgentCandidateBlock.dataset.tone = snapshot.tone || 'idle';
     }
+  }
+
+  function renderWordDetectionCueControls() {
+    const cues = cueSnapshot();
+    Object.entries(WORD_DETECTION_CUE_CONFIG).forEach(([key]) => {
+      const controls = els.wordDetectionCues?.[key] || {};
+      const setting = cues[key] || { enabled: false, sound: '' };
+      if (controls.toggle) controls.toggle.checked = !!setting.enabled;
+      if (controls.sound) controls.sound.value = setting.sound || '';
+      if (controls.preview) controls.preview.disabled = !setting.sound;
+      const url = assetUrl(setting.sound);
+      if (url && typeof SoundManager !== 'undefined' && typeof SoundManager.preload === 'function') {
+        SoundManager.preload(url).catch(() => {});
+      }
+    });
   }
 
   function renderWordDetectionUi() {
@@ -1507,6 +1610,80 @@ const VadDevModal = (() => {
       els.wordPrefixBlock.dataset.state = prefix.finalPayload ? 'captured' : (prefix.lastMatchedAlias ? 'armed' : 'idle');
     }
     renderWordDetectionAgentCandidateUi();
+    renderWordDetectionCueControls();
+  }
+
+  async function setWordDetectionCueSetting(key, patch = {}, options = {}) {
+    const config = WORD_DETECTION_CUE_CONFIG[key];
+    if (!config) return false;
+    state.wordDetectionCueSaveInFlight = true;
+    const next = cleanCueSettings(state.wordDetectionCues);
+    next[key] = {
+      enabled: patch.enabled == null ? !!next[key]?.enabled : !!patch.enabled,
+      sound: patch.sound == null ? cleanCueSound(next[key]?.sound) : cleanCueSound(patch.sound),
+    };
+    state.wordDetectionCues = next;
+    renderWordDetectionUi();
+    try {
+      await voiceMode()?.saveWordDetectionCueSetting?.(key, patch);
+      status(options.status || config.savedStatus);
+    } catch (error) {
+      status(`${config.label} save failed: ${error.message || error}`);
+    } finally {
+      state.wordDetectionCueSaveInFlight = false;
+      syncServerVadSettings();
+      renderSharedControls();
+      renderWordDetectionUi();
+    }
+    poll({ force: true });
+    return true;
+  }
+
+  function setWordDetectionCueEnabled(key, enabled, options = {}) {
+    return setWordDetectionCueSetting(key, { enabled: !!enabled }, options);
+  }
+
+  function setWordDetectionCueSound(key, sound, options = {}) {
+    return setWordDetectionCueSetting(key, { enabled: true, sound: cleanCueSound(sound) }, options);
+  }
+
+  function openWordDetectionCuePicker(key) {
+    const config = WORD_DETECTION_CUE_CONFIG[key];
+    if (!config) return;
+    if (typeof AssetPicker === 'undefined') {
+      status('Sound picker unavailable.');
+      return;
+    }
+    AssetPicker.open({
+      title: config.pickerTitle,
+      kind: 'sound',
+      browseUrl: '/api/v1/nav-items/assets?type=sounds',
+      emptyMessage: 'No sound assets uploaded yet.',
+      onSelect: async (assetPath) => {
+        await setWordDetectionCueSound(key, assetPath, { status: `${config.label} selected.` });
+      },
+    });
+  }
+
+  function previewWordDetectionCue(key, button) {
+    const setting = cueSetting(key);
+    const url = assetUrl(setting.sound);
+    if (!url || typeof SoundManager === 'undefined') return;
+    SoundManager.previewToggle(url, { button });
+  }
+
+  function playWordDetectionCue(key, detail = {}) {
+    const setting = cueSetting(key);
+    const url = setting.enabled ? assetUrl(setting.sound) : '';
+    if (!url || typeof SoundManager === 'undefined' || typeof SoundManager.playOneShot !== 'function') return false;
+    SoundManager.playOneShot(url, { waitForEnd: false }).catch(() => {});
+    pushAction(detail.mode || currentMode(), 'wordDetectionCue', {
+      cue: key,
+      sound: setting.sound,
+      reason: detail.reason || key,
+      ...(detail.instance ? { instance: detail.instance } : {}),
+    });
+    return true;
   }
 
   function setWordDetectionAliases(value, options = {}) {
@@ -1601,6 +1778,10 @@ const VadDevModal = (() => {
       waited_ms: Math.max(0, now - startedAt),
       matched_alias: word.lastMatchedAlias || '',
     });
+    playWordDetectionCue('payload0_timeout', {
+      mode,
+      reason: 'word_detection_payload0_timeout',
+    });
     renderWordDetectionUi();
     poll({ force: true });
     return true;
@@ -1679,6 +1860,10 @@ const VadDevModal = (() => {
       word.lastUpdatedAt = now;
       word.detections += 1;
       scheduleWordDetectionPayload0Timeout(mode, 'final_match', now);
+      playWordDetectionCue('match', {
+        mode,
+        reason: 'word_detection_final_match',
+      });
       if (wordDetectionMatchInterruptTtsEnabled()) {
         void interruptTtsForWordDetection(mode, 'word_detection_final_match', {
           matched_alias: matchedAlias,
@@ -1834,6 +2019,11 @@ const VadDevModal = (() => {
       waited_ms: Math.max(0, now - startedAt),
       matched_alias: instance.lastMatchedAlias || '',
     });
+    playWordDetectionCue('payload0_timeout', {
+      mode,
+      reason: 'wake_runtime_payload0_timeout',
+      instance: instanceId,
+    });
     dispatchWakeRuntimeChanged('payload0_timeout');
     poll({ force: true });
     return true;
@@ -1966,6 +2156,11 @@ const VadDevModal = (() => {
       instance: instanceId,
       matched_alias: matchedAlias,
       final_text: finalText,
+    });
+    playWordDetectionCue('match', {
+      mode,
+      reason: 'wake_runtime_final_match',
+      instance: instanceId,
     });
     scheduleWakeRuntimePayload0Timeout(mode, instanceId, 'final_match', now);
     if (wordDetectionMatchInterruptTtsEnabled()) {
@@ -3422,7 +3617,7 @@ const VadDevModal = (() => {
     if (type === 'manualRecordStop') return '#fbbf24';
     if (type === 'manualTestMode') return '#38bdf8';
     if (type === 'manualError') return '#f87171';
-    if (type === 'vadProbeRecordStart' || type === 'vadProbeFinal' || type === 'rearmProbeRecordStart' || type === 'rearmProbeFinal' || type === 'vadCandidateConfirmed' || type === 'sileroReady' || type === 'sileroSpeechConfirmed' || type === 'vadInterruptTts' || type === 'wordDetectionInterruptTts' || type === 'wordDetectionPayload0Captured' || type === 'wakeRuntimeStart' || type === 'wakeRuntimePayload0Captured' || type === 'wakeRuntimeCandidate') return '#22c55e';
+    if (type === 'vadProbeRecordStart' || type === 'vadProbeFinal' || type === 'rearmProbeRecordStart' || type === 'rearmProbeFinal' || type === 'vadCandidateConfirmed' || type === 'sileroReady' || type === 'sileroSpeechConfirmed' || type === 'vadInterruptTts' || type === 'wordDetectionInterruptTts' || type === 'wordDetectionPayload0Captured' || type === 'wordDetectionCue' || type === 'wakeRuntimeStart' || type === 'wakeRuntimePayload0Captured' || type === 'wakeRuntimeCandidate') return '#22c55e';
     if (type === 'vadProbeRecordStop' || type === 'rearmProbeRecordStop' || type === 'vadStopMode' || type === 'sileroSpeechEnd' || type === 'wordDetectionPayload0VadRelease' || type === 'wakeRuntimePayload0VadRelease') return '#fbbf24';
     if (type === 'autoPreRollSelect') return action.applied ? '#22c55e' : '#fbbf24';
     if (type === 'autoPreRollMode') return action.enabled ? '#22c55e' : '#aebfca';
@@ -3450,6 +3645,7 @@ const VadDevModal = (() => {
     if (action.type === 'wordDetectionPayload0VadRelease') return 'payload0 VAD release';
     if (action.type === 'wordDetectionPayload0Captured') return 'payload0 captured';
     if (action.type === 'wordDetectionPayload0Timeout') return `payload0 timeout ${action.timeout_ms || ''} ms`.trim();
+    if (action.type === 'wordDetectionCue') return `${action.cue || 'word'} cue`;
     if (action.type === 'wakeRuntimeStart') return 'Wake runtime start';
     if (action.type === 'wakeRuntimeStop') return 'Wake runtime stop';
     if (action.type === 'wakeRuntimeSenseWordMatched') return `Wake ${action.instance || ''} matched`.trim();
@@ -3538,6 +3734,7 @@ const VadDevModal = (() => {
     const vadControlsRelevant = controlsMode !== MODE_MANUAL;
     const auto = autoPreRollStatus(controlsMode);
     const agentCandidate = wordDetectionAgentCandidateSnapshot();
+    const cues = cueSnapshot();
     return {
       selected_mode: controlsMode,
       vad_only_controls_relevant: vadControlsRelevant,
@@ -3579,6 +3776,12 @@ const VadDevModal = (() => {
       word_detection_payload0_timeout_ms: wordDetectionPayload0TimeoutMs(),
       vad_payload0_timeout_ms: wordDetectionPayload0TimeoutMs(),
       word_detection_payload0_timeout_disabled: !!els.wordDetectionPayload0Timeout?.disabled,
+      word_detection_match_cue_enabled: !!cues.match?.enabled,
+      word_detection_match_cue_sound: cues.match?.sound || '',
+      word_detection_payload0_timeout_cue_enabled: !!cues.payload0_timeout?.enabled,
+      word_detection_payload0_timeout_cue_sound: cues.payload0_timeout?.sound || '',
+      word_detection_agent_candidate_cue_enabled: !!cues.agent_candidate?.enabled,
+      word_detection_agent_candidate_cue_sound: cues.agent_candidate?.sound || '',
       word_detection_prefix_partial_interrupt_tts_enabled: wordDetectionPrefixPartialInterruptTtsEnabled(),
       word_detection_prefix_partial_interrupt_tts_disabled: !!els.wordPrefixPartialInterruptToggle?.disabled,
       word_detection_prefix_final_interrupt_tts_enabled: wordDetectionPrefixFinalInterruptTtsEnabled(),
@@ -4358,6 +4561,30 @@ const VadDevModal = (() => {
     poll({ force: true });
   }
 
+  function payloadHasAny(payload, ...keys) {
+    return keys.some(key => payload?.[key] != null);
+  }
+
+  async function setWordDetectionCueFromPayload(key, payload, options = {}) {
+    const config = WORD_DETECTION_CUE_CONFIG[key];
+    if (!config) return false;
+    const patch = {};
+    const includeEnabled = options.includeEnabled !== false;
+    const includeSound = options.includeSound !== false;
+    if (includeEnabled && payloadHasAny(payload, config.enabledKey, 'cue_enabled', 'sound_enabled', 'enabled', 'checked')) {
+      patch.enabled = payloadBool(payload, true, config.enabledKey, 'cue_enabled', 'sound_enabled');
+    }
+    if (includeSound && payloadHasAny(payload, config.soundKey, 'cue_sound', 'sound_path', 'sound', 'value')) {
+      patch.sound = payloadText(payload, config.soundKey, 'cue_sound', 'sound_path', 'sound');
+    }
+    if (!Object.keys(patch).length && includeEnabled) patch.enabled = payloadBool(payload, true, config.enabledKey);
+    await setWordDetectionCueSetting(key, patch, {
+      reason: 'remote_command',
+      status: `${config.label} saved by automation.`,
+    });
+    return true;
+  }
+
   async function runSettingsCommand(action, payload) {
     const vm = voiceMode();
     if (action === 'set_auto_pre_roll') {
@@ -4405,6 +4632,33 @@ const VadDevModal = (() => {
         });
       }
       return true;
+    }
+    if (action === 'set_word_detection_match_cue') {
+      return setWordDetectionCueFromPayload('match', payload);
+    }
+    if (action === 'set_word_detection_match_cue_enabled') {
+      return setWordDetectionCueFromPayload('match', payload, { includeSound: false });
+    }
+    if (action === 'set_word_detection_match_cue_sound') {
+      return setWordDetectionCueFromPayload('match', payload, { includeEnabled: false });
+    }
+    if (action === 'set_word_detection_payload0_timeout_cue') {
+      return setWordDetectionCueFromPayload('payload0_timeout', payload);
+    }
+    if (action === 'set_word_detection_payload0_timeout_cue_enabled') {
+      return setWordDetectionCueFromPayload('payload0_timeout', payload, { includeSound: false });
+    }
+    if (action === 'set_word_detection_payload0_timeout_cue_sound') {
+      return setWordDetectionCueFromPayload('payload0_timeout', payload, { includeEnabled: false });
+    }
+    if (action === 'set_word_detection_agent_candidate_cue') {
+      return setWordDetectionCueFromPayload('agent_candidate', payload);
+    }
+    if (action === 'set_word_detection_agent_candidate_cue_enabled') {
+      return setWordDetectionCueFromPayload('agent_candidate', payload, { includeSound: false });
+    }
+    if (action === 'set_word_detection_agent_candidate_cue_sound') {
+      return setWordDetectionCueFromPayload('agent_candidate', payload, { includeEnabled: false });
     }
     if (action === 'set_word_detection_prefix_partial_interrupt_tts' || action === 'set_word_detection_prefix_partial_interrupt_tts_enabled') {
       await setWordDetectionPrefixPartialInterruptTtsEnabled(payloadBool(payload, true, 'word_detection_prefix_partial_interrupt_tts_enabled', 'match_prefix_partial_interrupt_tts'), {
@@ -4627,6 +4881,26 @@ const VadDevModal = (() => {
     els.wordDetectionPayload = el('vad-dev-word-detection-payload');
     els.wordDetectionFinal = el('vad-dev-word-detection-final');
     els.wordDetectionMatch = el('vad-dev-word-detection-match');
+    els.wordDetectionCues = {
+      match: {
+        toggle: el('vad-dev-word-detection-match-cue-toggle'),
+        sound: el('vad-dev-word-detection-match-cue-sound'),
+        pick: el('vad-dev-word-detection-match-cue-pick'),
+        preview: el('vad-dev-word-detection-match-cue-preview'),
+      },
+      payload0_timeout: {
+        toggle: el('vad-dev-word-detection-timeout-cue-toggle'),
+        sound: el('vad-dev-word-detection-timeout-cue-sound'),
+        pick: el('vad-dev-word-detection-timeout-cue-pick'),
+        preview: el('vad-dev-word-detection-timeout-cue-preview'),
+      },
+      agent_candidate: {
+        toggle: el('vad-dev-word-agent-candidate-cue-toggle'),
+        sound: el('vad-dev-word-agent-candidate-cue-sound'),
+        pick: el('vad-dev-word-agent-candidate-cue-pick'),
+        preview: el('vad-dev-word-agent-candidate-cue-preview'),
+      },
+    };
     els.wordPrefixBlock = el('vad-dev-word-prefix');
     els.wordPrefixState = el('vad-dev-word-prefix-state');
     els.wordPrefixPartialInterruptToggle = el('vad-dev-word-prefix-partial-interrupt-tts-toggle');
@@ -4725,6 +4999,13 @@ const VadDevModal = (() => {
     });
     els.wordDetectionPayload0Timeout?.addEventListener('change', () => {
       void setWordDetectionPayload0TimeoutMs(els.wordDetectionPayload0Timeout.value, { reason: 'ui_slider' });
+    });
+    Object.entries(els.wordDetectionCues || {}).forEach(([key, controls]) => {
+      controls.toggle?.addEventListener('change', () => {
+        void setWordDetectionCueEnabled(key, controls.toggle.checked, { reason: 'ui_toggle' });
+      });
+      controls.pick?.addEventListener('click', () => openWordDetectionCuePicker(key));
+      controls.preview?.addEventListener('click', () => previewWordDetectionCue(key, controls.preview));
     });
     els.wordPrefixPartialInterruptToggle?.addEventListener('change', () => {
       void setWordDetectionPrefixPartialInterruptTtsEnabled(els.wordPrefixPartialInterruptToggle.checked, { reason: 'ui_toggle' });

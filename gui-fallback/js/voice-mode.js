@@ -46,6 +46,20 @@ const BlueprintsVoiceMode = (() => {
   const STT_WORD_DETECTION_PAYLOAD0_TIMEOUT_MIN_MS = 0;
   const STT_WORD_DETECTION_PAYLOAD0_TIMEOUT_MAX_MS = 3000;
   const STT_WORD_DETECTION_PAYLOAD0_TIMEOUT_STEP_MS = 300;
+  const STT_WORD_DETECTION_CUE_CONFIG = {
+    match: {
+      enabledKey: 'word_detection_match_cue_enabled',
+      soundKey: 'word_detection_match_cue_sound',
+    },
+    payload0_timeout: {
+      enabledKey: 'word_detection_payload0_timeout_cue_enabled',
+      soundKey: 'word_detection_payload0_timeout_cue_sound',
+    },
+    agent_candidate: {
+      enabledKey: 'word_detection_agent_candidate_cue_enabled',
+      soundKey: 'word_detection_agent_candidate_cue_sound',
+    },
+  };
   const WAKE_ACTION_DELAY_MIN_MS = 0;
   const WAKE_ACTION_DELAY_MAX_MS = 3000;
   const WAKE_ACTION_DELAY_STEP_MS = 300;
@@ -148,6 +162,11 @@ const BlueprintsVoiceMode = (() => {
     if (!Number.isFinite(parsed)) return STT_NOISE_DEFAULT_DB;
     const clamped = Math.max(STT_NOISE_MIN_DB, Math.min(STT_NOISE_MAX_DB, parsed));
     return Math.round(clamped / STT_NOISE_STEP_DB) * STT_NOISE_STEP_DB;
+  }
+
+  function _cleanCueSound(value) {
+    const raw = String(value || '').trim();
+    return raw.replace(/^\/?fallback-ui\/assets\//, '').replace(/^\/?assets\//, '').replace(/^\/+/, '');
   }
 
   function _normalizeSttMode(value) {
@@ -356,6 +375,33 @@ const BlueprintsVoiceMode = (() => {
       word_detection_payload0_timeout_ms: Number.isFinite(payload0TimeoutMs)
         ? Math.max(STT_WORD_DETECTION_PAYLOAD0_TIMEOUT_MIN_MS, Math.min(STT_WORD_DETECTION_PAYLOAD0_TIMEOUT_MAX_MS, Math.round(payload0TimeoutMs / STT_WORD_DETECTION_PAYLOAD0_TIMEOUT_STEP_MS) * STT_WORD_DETECTION_PAYLOAD0_TIMEOUT_STEP_MS))
         : STT_WORD_DETECTION_PAYLOAD0_TIMEOUT_DEFAULT_MS,
+      word_detection_match_cue_enabled: _policyBool(
+        raw.word_detection_match_cue_enabled ?? raw.word_detection_match_sound_enabled,
+        false,
+      ),
+      word_detection_match_cue_sound: _cleanCueSound(
+        raw.word_detection_match_cue_sound
+          ?? raw.word_detection_match_sound_path
+          ?? raw.word_detection_match_sound,
+      ),
+      word_detection_payload0_timeout_cue_enabled: _policyBool(
+        raw.word_detection_payload0_timeout_cue_enabled ?? raw.word_detection_payload0_timeout_sound_enabled,
+        false,
+      ),
+      word_detection_payload0_timeout_cue_sound: _cleanCueSound(
+        raw.word_detection_payload0_timeout_cue_sound
+          ?? raw.word_detection_payload0_timeout_sound_path
+          ?? raw.word_detection_payload0_timeout_sound,
+      ),
+      word_detection_agent_candidate_cue_enabled: _policyBool(
+        raw.word_detection_agent_candidate_cue_enabled ?? raw.word_detection_agent_candidate_sound_enabled,
+        false,
+      ),
+      word_detection_agent_candidate_cue_sound: _cleanCueSound(
+        raw.word_detection_agent_candidate_cue_sound
+          ?? raw.word_detection_agent_candidate_sound_path
+          ?? raw.word_detection_agent_candidate_sound,
+      ),
       always_pre_roll_enabled: _policyBool(raw.always_pre_roll_enabled ?? raw.always_pre_roll, false),
       silence_reset_timeout_ms: Number.isFinite(silenceResetMs)
         ? Math.max(STT_SILENCE_RESET_MIN_MS, Math.min(STT_SILENCE_RESET_MAX_MS, Math.round(silenceResetMs / STT_SILENCE_RESET_STEP_MS) * STT_SILENCE_RESET_STEP_MS))
@@ -1110,6 +1156,52 @@ const BlueprintsVoiceMode = (() => {
     return nextStt;
   }
 
+  function _wordDetectionCueConfig(cueKey) {
+    return STT_WORD_DETECTION_CUE_CONFIG[String(cueKey || '').trim()] || null;
+  }
+
+  function wordDetectionCueSettings() {
+    const stt = _cleanSttPolicy(_serverState.policy?.stt);
+    return Object.fromEntries(Object.entries(STT_WORD_DETECTION_CUE_CONFIG).map(([key, config]) => [
+      key,
+      {
+        enabled: !!stt[config.enabledKey],
+        sound: stt[config.soundKey] || '',
+      },
+    ]));
+  }
+
+  async function saveWordDetectionCueSetting(cueKey, patch = {}) {
+    const config = _wordDetectionCueConfig(cueKey);
+    if (!config) throw new Error(`Unknown Word Detection cue: ${cueKey || 'blank'}`);
+    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
+    const nextStt = { ...currentPolicy };
+    if (Object.prototype.hasOwnProperty.call(patch, 'enabled')) {
+      nextStt[config.enabledKey] = _policyBool(patch.enabled, false);
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'sound')) {
+      nextStt[config.soundKey] = _cleanCueSound(patch.sound);
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'sound_path')) {
+      nextStt[config.soundKey] = _cleanCueSound(patch.sound_path);
+    }
+    const response = await apiFetch(WAKE_SETTINGS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        wake_to_talk: getWakeSettings(),
+        stt: nextStt,
+      }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
+    _applyServerState(payload);
+    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
+      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
+    }));
+    return wordDetectionCueSettings();
+  }
+
   async function saveAlwaysPreRollEnabled(enabled) {
     const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
     const nextStt = {
@@ -1369,6 +1461,18 @@ const BlueprintsVoiceMode = (() => {
 
   function wordDetectionPayload0TimeoutMs() {
     return _cleanSttPolicy(_serverState.policy?.stt).word_detection_payload0_timeout_ms;
+  }
+
+  function wordDetectionMatchCueEnabled() {
+    return wordDetectionCueSettings().match.enabled;
+  }
+
+  function wordDetectionPayload0TimeoutCueEnabled() {
+    return wordDetectionCueSettings().payload0_timeout.enabled;
+  }
+
+  function wordDetectionAgentCandidateCueEnabled() {
+    return wordDetectionCueSettings().agent_candidate.enabled;
   }
 
   function alwaysPreRollEnabled() {
@@ -1635,7 +1739,17 @@ const BlueprintsVoiceMode = (() => {
 
     document.addEventListener('blueprints:event', (event) => {
       if (event.detail?.event_type === 'voice.mode.changed') {
-        _applyServerState(event.detail.payload || {});
+        const payload = event.detail.payload || {};
+        _applyServerState(payload);
+        const nextPolicy = payload.policy || {};
+        if (nextPolicy.wake_to_talk || nextPolicy.stt || payload.wake_to_talk || payload.stt) {
+          window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
+            detail: {
+              wake_settings: getWakeSettings(),
+              stt: _cleanSttPolicy(payload.stt || nextPolicy.stt),
+            },
+          }));
+        }
       }
     });
     window.addEventListener('focus', () => {
@@ -1679,6 +1793,10 @@ const BlueprintsVoiceMode = (() => {
     wordDetectionPrefixPartialInterruptTtsEnabled,
     wordDetectionPrefixFinalInterruptTtsEnabled,
     wordDetectionPayload0TimeoutMs,
+    wordDetectionCueSettings,
+    wordDetectionMatchCueEnabled,
+    wordDetectionPayload0TimeoutCueEnabled,
+    wordDetectionAgentCandidateCueEnabled,
     alwaysPreRollEnabled,
     silenceResetTimeoutMs,
     sttMode,
@@ -1700,6 +1818,7 @@ const BlueprintsVoiceMode = (() => {
     saveWordDetectionPrefixPartialInterruptTtsEnabled,
     saveWordDetectionPrefixFinalInterruptTtsEnabled,
     saveWordDetectionPayload0TimeoutMs,
+    saveWordDetectionCueSetting,
     saveAlwaysPreRollEnabled,
     saveSilenceResetTimeout,
     setSttMode: _setSttMode,
