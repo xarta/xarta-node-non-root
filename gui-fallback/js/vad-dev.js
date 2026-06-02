@@ -1196,6 +1196,10 @@ const VadDevModal = (() => {
     return wordDetectionAgentCandidateSourceLabel(source);
   }
 
+  function shouldPlayWordDetectionAgentCandidateCue(source) {
+    return source === 'payload0' || source === 'payload2';
+  }
+
   function wakeRuntimeInstanceLabel(instanceId) {
     return instanceId === 'vps' ? 'Hermes VPS' : 'Hermes Local';
   }
@@ -1458,7 +1462,7 @@ const VadDevModal = (() => {
       ...detail,
     });
     const nextCueSignature = `${candidate.source || ''}\n${candidate.tone || ''}`;
-    if (nextCueSignature !== previousCueSignature) {
+    if (nextCueSignature !== previousCueSignature && shouldPlayWordDetectionAgentCandidateCue(source)) {
       playWordDetectionCue('agent_candidate', {
         mode: MODE_REARM,
         reason: 'wake_runtime_agent_candidate',
@@ -1528,7 +1532,7 @@ const VadDevModal = (() => {
       fadeWordDetectionAgentCandidate('candidate_elapsed');
     }, WORD_DETECTION_AGENT_CANDIDATE_VISIBLE_MS);
     const nextCueSignature = `${candidate.source || ''}\n${candidate.tone || ''}`;
-    if (nextCueSignature !== previousCueSignature) {
+    if (nextCueSignature !== previousCueSignature && shouldPlayWordDetectionAgentCandidateCue(source)) {
       playWordDetectionCue('agent_candidate', {
         mode: currentMode(),
         reason: 'word_detection_agent_candidate',
