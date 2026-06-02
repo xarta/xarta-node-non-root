@@ -241,6 +241,7 @@ const BlueprintsVoiceMode = (() => {
           hermes_prefix: 'hermes: ',
           auto_execute_silence_ms: 0,
           execute_cancel_ms: 0,
+          partial_settle_ms: 0,
           commands: {
             pause: 'pause-dictation',
             execute: 'execute',
@@ -258,6 +259,7 @@ const BlueprintsVoiceMode = (() => {
           hermes_prefix: 'hermes-vps: ',
           auto_execute_silence_ms: 0,
           execute_cancel_ms: 0,
+          partial_settle_ms: 0,
           commands: {
             pause: 'pause-dictation',
             execute: 'execute',
@@ -323,6 +325,10 @@ const BlueprintsVoiceMode = (() => {
       hermes_prefix: _cleanWakeString(raw.hermes_prefix, defaults.hermes_prefix, 40),
       auto_execute_silence_ms: _cleanWakeDelayMs(raw.auto_execute_silence_ms, defaults.auto_execute_silence_ms),
       execute_cancel_ms: _cleanWakeDelayMs(raw.execute_cancel_ms, defaults.execute_cancel_ms),
+      partial_settle_ms: _cleanWakeDelayMs(
+        raw.partial_settle_ms ?? raw.partial_settle_timeout_ms,
+        defaults.partial_settle_ms,
+      ),
       commands: _cleanWakeCommands(raw.commands),
     };
   }
@@ -626,6 +632,7 @@ const BlueprintsVoiceMode = (() => {
       'wake_word',
       'auto_execute_silence_ms',
       'execute_cancel_ms',
+      'partial_settle_ms',
       'commands.pause',
       'commands.execute',
       'commands.resume',
@@ -639,7 +646,7 @@ const BlueprintsVoiceMode = (() => {
       _setControlValue(el, value);
       const output = document.querySelector(`[data-wake-instance="${instanceId}"][data-wake-output="${key}"]`);
       if (output) {
-        if (key === 'auto_execute_silence_ms' || key === 'execute_cancel_ms') {
+        if (key === 'auto_execute_silence_ms' || key === 'execute_cancel_ms' || key === 'partial_settle_ms') {
           output.textContent = Number(value) > 0 ? `${value} ms` : 'Off';
         } else {
           output.textContent = `${value} ms`;
@@ -719,6 +726,7 @@ const BlueprintsVoiceMode = (() => {
       instance.wake_word = _instanceValue(instanceId, 'wake_word', instance.wake_word);
       instance.auto_execute_silence_ms = Number(_instanceValue(instanceId, 'auto_execute_silence_ms', instance.auto_execute_silence_ms));
       instance.execute_cancel_ms = Number(_instanceValue(instanceId, 'execute_cancel_ms', instance.execute_cancel_ms));
+      instance.partial_settle_ms = Number(_instanceValue(instanceId, 'partial_settle_ms', instance.partial_settle_ms));
       instance.commands = {
         pause: _instanceValue(instanceId, 'commands.pause', instance.commands?.pause || 'pause-dictation'),
         execute: _instanceValue(instanceId, 'commands.execute', instance.commands?.execute || 'execute'),
@@ -948,7 +956,6 @@ const BlueprintsVoiceMode = (() => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         wake_to_talk: next,
-        stt: _cleanSttPolicy(_serverState.policy?.stt),
       }),
     });
     const payload = await response.json().catch(() => null);
@@ -962,198 +969,90 @@ const BlueprintsVoiceMode = (() => {
     return _wakeSettings;
   }
 
-  async function saveVadResetTimeout(ms) {
-    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
-    const nextStt = {
-      ...currentPolicy,
-      vad_reset_timeout_ms: _cleanSttPolicy({ vad_reset_timeout_ms: ms }).vad_reset_timeout_ms,
-    };
+  async function saveSttPolicyPatch(patch = {}) {
     const response = await apiFetch(WAKE_SETTINGS_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        wake_to_talk: getWakeSettings(),
-        stt: nextStt,
+        stt: patch,
       }),
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
     _applyServerState(payload);
+    const stt = _cleanSttPolicy(payload.stt || payload.policy?.stt);
     window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
-      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
+      detail: { wake_settings: getWakeSettings(), stt },
     }));
-    return nextStt;
+    return stt;
+  }
+
+  async function saveVadResetTimeout(ms) {
+    return saveSttPolicyPatch({
+      vad_reset_timeout_ms: _cleanSttPolicy({ vad_reset_timeout_ms: ms }).vad_reset_timeout_ms,
+    });
   }
 
   async function savePreRollFrames(frames) {
-    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
-    const nextStt = {
-      ...currentPolicy,
+    return saveSttPolicyPatch({
       pre_roll_frames: _cleanSttPolicy({ pre_roll_frames: frames }).pre_roll_frames,
-    };
-    const response = await apiFetch(WAKE_SETTINGS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        wake_to_talk: getWakeSettings(),
-        stt: nextStt,
-      }),
     });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
-    _applyServerState(payload);
-    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
-      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
-    }));
-    return nextStt;
   }
 
   async function saveSileroVadEnabled(enabled) {
-    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
-    const nextStt = {
-      ...currentPolicy,
+    return saveSttPolicyPatch({
       silero_vad_enabled: _cleanSttPolicy({ silero_vad_enabled: enabled }).silero_vad_enabled,
-    };
-    const response = await apiFetch(WAKE_SETTINGS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        wake_to_talk: getWakeSettings(),
-        stt: nextStt,
-      }),
     });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
-    _applyServerState(payload);
-    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
-      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
-    }));
-    return nextStt;
   }
 
   async function saveVadInterruptTtsEnabled(enabled) {
-    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
-    const nextStt = {
-      ...currentPolicy,
+    return saveSttPolicyPatch({
       vad_interrupt_tts_enabled: _cleanSttPolicy({ vad_interrupt_tts_enabled: enabled }).vad_interrupt_tts_enabled,
-    };
-    const response = await apiFetch(WAKE_SETTINGS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        wake_to_talk: getWakeSettings(),
-        stt: nextStt,
-      }),
     });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
-    _applyServerState(payload);
-    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
-      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
-    }));
-    return nextStt;
   }
 
   async function saveWordDetectionMatchInterruptTtsEnabled(enabled) {
-    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
-    const nextStt = {
-      ...currentPolicy,
+    return saveSttPolicyPatch({
       word_detection_match_interrupt_tts_enabled: _cleanSttPolicy({
         word_detection_match_interrupt_tts_enabled: enabled,
       }).word_detection_match_interrupt_tts_enabled,
-    };
-    const response = await apiFetch(WAKE_SETTINGS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        wake_to_talk: getWakeSettings(),
-        stt: nextStt,
-      }),
     });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
-    _applyServerState(payload);
-    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
-      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
-    }));
-    return nextStt;
   }
 
   async function saveWordDetectionPrefixPartialInterruptTtsEnabled(enabled) {
-    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
-    const next = _cleanSttPolicy({
-      ...currentPolicy,
+    const clean = _cleanSttPolicy({
       word_detection_prefix_partial_interrupt_tts_enabled: enabled,
-      word_detection_prefix_final_interrupt_tts_enabled: enabled
-        ? false
-        : currentPolicy.word_detection_prefix_final_interrupt_tts_enabled,
+      word_detection_prefix_final_interrupt_tts_enabled: false,
     });
-    const response = await apiFetch(WAKE_SETTINGS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        wake_to_talk: getWakeSettings(),
-        stt: next,
-      }),
-    });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
-    _applyServerState(payload);
-    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
-      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
-    }));
-    return next;
+    const next = {
+      word_detection_prefix_partial_interrupt_tts_enabled: clean.word_detection_prefix_partial_interrupt_tts_enabled,
+    };
+    if (enabled) {
+      next.word_detection_prefix_final_interrupt_tts_enabled = clean.word_detection_prefix_final_interrupt_tts_enabled;
+    }
+    return saveSttPolicyPatch(next);
   }
 
   async function saveWordDetectionPrefixFinalInterruptTtsEnabled(enabled) {
-    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
-    const next = _cleanSttPolicy({
-      ...currentPolicy,
-      word_detection_prefix_partial_interrupt_tts_enabled: enabled
-        ? false
-        : currentPolicy.word_detection_prefix_partial_interrupt_tts_enabled,
+    const clean = _cleanSttPolicy({
+      word_detection_prefix_partial_interrupt_tts_enabled: false,
       word_detection_prefix_final_interrupt_tts_enabled: enabled,
     });
-    const response = await apiFetch(WAKE_SETTINGS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        wake_to_talk: getWakeSettings(),
-        stt: next,
-      }),
-    });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
-    _applyServerState(payload);
-    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
-      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
-    }));
-    return next;
+    const next = {
+      word_detection_prefix_final_interrupt_tts_enabled: clean.word_detection_prefix_final_interrupt_tts_enabled,
+    };
+    if (enabled) {
+      next.word_detection_prefix_partial_interrupt_tts_enabled = clean.word_detection_prefix_partial_interrupt_tts_enabled;
+    }
+    return saveSttPolicyPatch(next);
   }
 
   async function saveWordDetectionPayload0TimeoutMs(value) {
-    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
-    const nextStt = {
-      ...currentPolicy,
+    return saveSttPolicyPatch({
       word_detection_payload0_timeout_ms: _cleanSttPolicy({
         word_detection_payload0_timeout_ms: value,
       }).word_detection_payload0_timeout_ms,
-    };
-    const response = await apiFetch(WAKE_SETTINGS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        wake_to_talk: getWakeSettings(),
-        stt: nextStt,
-      }),
     });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
-    _applyServerState(payload);
-    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
-      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
-    }));
-    return nextStt;
   }
 
   function _wordDetectionCueConfig(cueKey) {
@@ -1174,8 +1073,7 @@ const BlueprintsVoiceMode = (() => {
   async function saveWordDetectionCueSetting(cueKey, patch = {}) {
     const config = _wordDetectionCueConfig(cueKey);
     if (!config) throw new Error(`Unknown Word Detection cue: ${cueKey || 'blank'}`);
-    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
-    const nextStt = { ...currentPolicy };
+    const nextStt = {};
     if (Object.prototype.hasOwnProperty.call(patch, 'enabled')) {
       nextStt[config.enabledKey] = _policyBool(patch.enabled, false);
     }
@@ -1185,67 +1083,20 @@ const BlueprintsVoiceMode = (() => {
     if (Object.prototype.hasOwnProperty.call(patch, 'sound_path')) {
       nextStt[config.soundKey] = _cleanCueSound(patch.sound_path);
     }
-    const response = await apiFetch(WAKE_SETTINGS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        wake_to_talk: getWakeSettings(),
-        stt: nextStt,
-      }),
-    });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
-    _applyServerState(payload);
-    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
-      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
-    }));
+    await saveSttPolicyPatch(nextStt);
     return wordDetectionCueSettings();
   }
 
   async function saveAlwaysPreRollEnabled(enabled) {
-    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
-    const nextStt = {
-      ...currentPolicy,
+    return saveSttPolicyPatch({
       always_pre_roll_enabled: _cleanSttPolicy({ always_pre_roll_enabled: enabled }).always_pre_roll_enabled,
-    };
-    const response = await apiFetch(WAKE_SETTINGS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        wake_to_talk: getWakeSettings(),
-        stt: nextStt,
-      }),
     });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
-    _applyServerState(payload);
-    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
-      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
-    }));
-    return nextStt;
   }
 
   async function saveSilenceResetTimeout(ms) {
-    const currentPolicy = _cleanSttPolicy(_serverState.policy?.stt);
-    const nextStt = {
-      ...currentPolicy,
+    return saveSttPolicyPatch({
       silence_reset_timeout_ms: _cleanSttPolicy({ silence_reset_timeout_ms: ms }).silence_reset_timeout_ms,
-    };
-    const response = await apiFetch(WAKE_SETTINGS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        wake_to_talk: getWakeSettings(),
-        stt: nextStt,
-      }),
     });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || payload?.ok === false) throw new Error(payload?.detail || `HTTP ${response.status}`);
-    _applyServerState(payload);
-    window.dispatchEvent(new CustomEvent('blueprints:voice-mode:wake-settings-changed', {
-      detail: { wake_settings: getWakeSettings(), stt: _cleanSttPolicy(payload.stt || payload.policy?.stt) },
-    }));
-    return nextStt;
   }
 
   async function loadAggregationTimeout(options = {}) {
@@ -1727,7 +1578,7 @@ const BlueprintsVoiceMode = (() => {
         const instanceId = control.dataset.wakeInstance;
         const output = document.querySelector(`[data-wake-instance="${instanceId}"][data-wake-output="${outputKey}"]`);
         if (output) {
-          if (outputKey === 'auto_execute_silence_ms' || outputKey === 'execute_cancel_ms') output.textContent = Number(control.value) > 0 ? `${control.value} ms` : 'Off';
+          if (outputKey === 'auto_execute_silence_ms' || outputKey === 'execute_cancel_ms' || outputKey === 'partial_settle_ms') output.textContent = Number(control.value) > 0 ? `${control.value} ms` : 'Off';
           else output.textContent = `${control.value} ms`;
         }
         _scheduleWakeSettingsSave();

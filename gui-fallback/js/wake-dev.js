@@ -36,6 +36,7 @@ const WakeDevModal = (() => {
         hermes_prefix: 'hermes: ',
         auto_execute_silence_ms: 0,
         execute_cancel_ms: 0,
+        partial_settle_ms: 0,
         commands: { ...DEFAULT_COMMANDS },
       },
       vps: {
@@ -48,6 +49,7 @@ const WakeDevModal = (() => {
         hermes_prefix: 'hermes-vps: ',
         auto_execute_silence_ms: 0,
         execute_cancel_ms: 0,
+        partial_settle_ms: 0,
         commands: { ...DEFAULT_COMMANDS },
       },
     },
@@ -156,6 +158,7 @@ const WakeDevModal = (() => {
       hermes_prefix: cleanHermesPrefix(raw.hermes_prefix, defaults.hermes_prefix),
       auto_execute_silence_ms: cleanStepMs(raw.auto_execute_silence_ms),
       execute_cancel_ms: cleanStepMs(raw.execute_cancel_ms),
+      partial_settle_ms: cleanStepMs(raw.partial_settle_ms ?? raw.partial_settle_timeout_ms),
       commands: {
         pause: cleanText(rawCommands.pause, DEFAULT_COMMANDS.pause),
         execute: cleanText(rawCommands.execute, DEFAULT_COMMANDS.execute),
@@ -228,18 +231,27 @@ const WakeDevModal = (() => {
     setControlValue(instanceId, 'matrix_room_id', instance.matrix_room_id);
     setControlValue(instanceId, 'auto_execute_silence_ms', instance.auto_execute_silence_ms);
     setControlValue(instanceId, 'execute_cancel_ms', instance.execute_cancel_ms);
+    setControlValue(instanceId, 'partial_settle_ms', instance.partial_settle_ms);
     setControlValue(instanceId, 'commands.pause', instance.commands.pause);
     setControlValue(instanceId, 'commands.execute', instance.commands.execute);
     setControlValue(instanceId, 'commands.resume', instance.commands.resume);
     setControlValue(instanceId, 'commands.cancel', instance.commands.cancel);
     renderDelayOutput(instanceId, 'auto_execute_silence_ms', instance.auto_execute_silence_ms);
     renderDelayOutput(instanceId, 'execute_cancel_ms', instance.execute_cancel_ms);
+    renderDelayOutput(instanceId, 'partial_settle_ms', instance.partial_settle_ms);
   }
 
   function renderSettings(settings) {
     const clean = cleanSettings(settings);
     state.settings = clean;
-    INSTANCE_IDS.forEach(instanceId => renderInstance(instanceId, clean.instances[instanceId]));
+    INSTANCE_IDS.forEach(instanceId => {
+      const memory = memoryFor(instanceId);
+      if (cleanStepMs(clean.instances[instanceId]?.partial_settle_ms) <= 0 && memory.partialTimer) {
+        clearPartialSettleTimer(memory, { clearCandidate: true });
+        memory.lastStatus = 'Partial settle disabled; pending partial cleared.';
+      }
+      renderInstance(instanceId, clean.instances[instanceId]);
+    });
   }
 
   function wakeRuntimeSnapshot() {
@@ -269,6 +281,9 @@ const WakeDevModal = (() => {
 
   function renderTimerText(memorySnapshot) {
     const parts = [];
+    if (memorySnapshot.partial_settle_remaining_ms > 0) {
+      parts.push(`Partial ${Math.ceil(memorySnapshot.partial_settle_remaining_ms / 1000)}s`);
+    }
     if (memorySnapshot.auto_execute_remaining_ms > 0) {
       parts.push(`Auto ${Math.ceil(memorySnapshot.auto_execute_remaining_ms / 1000)}s`);
     }
@@ -306,7 +321,7 @@ const WakeDevModal = (() => {
     if (text) text.textContent = candidate.text || '';
     if (viableSource) {
       viableSource.textContent = memorySnapshot.viable_candidate_source
-        ? `Staged ${memorySnapshot.viable_candidate_source}`
+        ? `Staged ${memorySnapshot.viable_candidate_source}${memorySnapshot.viable_candidate_finality === 'settled_partial' ? ' settled partial' : ''}`
         : 'No staged candidate';
     }
     if (viableText) viableText.textContent = memorySnapshot.viable_candidate_text || '';
@@ -335,6 +350,12 @@ const WakeDevModal = (() => {
       incomingSignature: '',
       revisionCounter: 0,
       viable: null,
+      latestPartial: null,
+      lastSettledPartial: null,
+      partialTimer: null,
+      partialStartedAt: 0,
+      partialDeadlineAt: 0,
+      partialRevision: '',
       commandSignature: '',
       commandProcessedAtMs: 0,
       autoTimer: null,
@@ -352,6 +373,8 @@ const WakeDevModal = (() => {
         incoming_text: '',
         wake_word: '',
         command_text: '',
+        candidate_source: '',
+        candidate_finality: '',
         recognized_at_ms: 0,
         pending: false,
       },
@@ -380,8 +403,19 @@ const WakeDevModal = (() => {
     return state.wakeMemory[instanceId];
   }
 
+  function clearPartialSettleTimer(memory, options = {}) {
+    if (!memory) return;
+    if (memory.partialTimer) window.clearTimeout(memory.partialTimer);
+    memory.partialTimer = null;
+    memory.partialStartedAt = 0;
+    memory.partialDeadlineAt = 0;
+    memory.partialRevision = '';
+    if (options.clearCandidate) memory.latestPartial = null;
+  }
+
   function clearWakeMemoryTimers(memory) {
     if (!memory) return;
+    clearPartialSettleTimer(memory);
     if (memory.autoTimer) window.clearTimeout(memory.autoTimer);
     if (memory.cancelTimer) window.clearTimeout(memory.cancelTimer);
     memory.autoTimer = null;
@@ -464,6 +498,10 @@ const WakeDevModal = (() => {
     return candidate?.source_label || candidate?.sourceLabel || candidate?.source || 'Candidate';
   }
 
+  function finalityForSource(source) {
+    return source === 'payload1' ? 'settled_partial' : 'final';
+  }
+
   function nextCandidateRevision(memory, instanceId) {
     memory.revisionCounter += 1;
     return `wake-${instanceId}-${Date.now()}-${memory.revisionCounter}`;
@@ -478,6 +516,7 @@ const WakeDevModal = (() => {
       text: cleanText(detail.text),
       source: cleanText(detail.source),
       source_label: detail.source_label || detail.source || 'Candidate',
+      finality: detail.finality || finalityForSource(cleanText(detail.source)),
       instance: instanceId,
       revision,
       created_at_ms: now,
@@ -488,7 +527,8 @@ const WakeDevModal = (() => {
     };
     if (!viable.text) return null;
     memory.viable = viable;
-    memory.lastStatus = `Viable candidate staged from ${viable.source_label}.`;
+    const finalityLabel = viable.finality === 'settled_partial' ? 'settled partial' : 'final';
+    memory.lastStatus = `Viable ${finalityLabel} candidate staged from ${viable.source_label}.`;
     if (options.scheduleTimers !== false) scheduleViableCandidateTimers(instanceId, viable);
     renderWakeRuntime();
     reportDevStatus(automationSnapshot(), { force: true });
@@ -535,6 +575,8 @@ const WakeDevModal = (() => {
       incoming_text: command?.incoming_text || '',
       wake_word: command?.wake_word || '',
       command_text: command?.command_text || '',
+      candidate_source: command?.candidate_source || '',
+      candidate_finality: command?.candidate_finality || '',
       recognized_at_ms: Date.now(),
       pending: !!pending,
     };
@@ -544,8 +586,6 @@ const WakeDevModal = (() => {
   function commandSignatureFor(instanceId, candidate, command) {
     return JSON.stringify([
       instanceId,
-      cleanText(candidate?.source),
-      normalizeCommandText(candidate?.text || ''),
       command?.kind || '',
       normalizeCommandText(command?.stripped_text || ''),
       normalizeCommandText(command?.wake_word || ''),
@@ -687,7 +727,13 @@ const WakeDevModal = (() => {
     const incomingText = cleanText(candidate?.text);
     const source = cleanText(candidate?.source);
     const sourceLabel = sourceLabelForCandidate(candidate);
-    const commandWithIncoming = { ...command, incoming_text: incomingText };
+    const candidateFinality = candidate?.finality || finalityForSource(source);
+    const commandWithIncoming = {
+      ...command,
+      incoming_text: incomingText,
+      candidate_source: source,
+      candidate_finality: candidateFinality,
+    };
     if (!rememberCommandCandidate(instanceId, { ...candidate, source, text: incomingText }, command)) {
       recordCommand(instanceId, commandWithIncoming, 'Duplicate command candidate ignored.');
       renderWakeRuntime();
@@ -701,6 +747,8 @@ const WakeDevModal = (() => {
             text: command.stripped_text,
             source,
             source_label: sourceLabel,
+            finality: candidateFinality,
+            revision: candidate.revision || '',
             incoming_text: incomingText,
             stripped_command: command.kind,
             wake_word: command.wake_word,
@@ -728,6 +776,95 @@ const WakeDevModal = (() => {
     reportDevStatus(automationSnapshot(), { force: true });
   }
 
+  function cancelPartialSettleForFinal(instanceId) {
+    const memory = memoryFor(instanceId);
+    if (!memory.partialTimer && !memory.latestPartial) return;
+    clearPartialSettleTimer(memory, { clearCandidate: true });
+  }
+
+  function rememberLatestPartialCandidate(instanceId, candidate, command) {
+    const memory = memoryFor(instanceId);
+    const settings = cleanSettings(state.settings || voiceMode()?.getWakeSettings?.() || DEFAULT_SETTINGS);
+    const instance = settings.instances[instanceId] || {};
+    const partialMs = cleanStepMs(instance.partial_settle_ms);
+    const now = Date.now();
+    const revision = nextCandidateRevision(memory, instanceId);
+    clearPartialSettleTimer(memory);
+    const partial = {
+      text: cleanText(candidate.text),
+      source: 'payload1',
+      source_label: sourceLabelForCandidate(candidate),
+      finality: 'settled_partial',
+      instance: instanceId,
+      revision,
+      incoming_text: cleanText(candidate.text),
+      wake_word: instance.wake_word || '',
+      command_pending: !!command,
+      source_updated_at_ms: Number(candidate.last_updated_at_ms || candidate.updated_at_ms || 0),
+      updated_at_ms: now,
+    };
+    memory.latestPartial = partial;
+    if (partialMs <= 0) {
+      memory.lastStatus = 'Partial candidate observed; Partial Settle is Off.';
+      if (command) {
+        recordCommand(instanceId, {
+          ...command,
+          incoming_text: partial.text,
+          candidate_source: 'payload1',
+          candidate_finality: '',
+        }, 'Partial command candidate observed; Partial Settle is Off.', true);
+      }
+      renderWakeRuntime();
+      reportDevStatus(automationSnapshot(), { force: true });
+      return;
+    }
+    memory.partialStartedAt = now;
+    memory.partialDeadlineAt = now + partialMs;
+    memory.partialRevision = revision;
+    memory.lastStatus = `Partial candidate settling for ${partialMs} ms.`;
+    if (command) {
+      recordCommand(instanceId, {
+        ...command,
+        incoming_text: partial.text,
+        candidate_source: 'payload1',
+        candidate_finality: '',
+      }, `Partial command candidate settling for ${partialMs} ms.`, true);
+    }
+    memory.partialTimer = window.setTimeout(() => {
+      promoteSettledPartialCandidate(instanceId, revision);
+    }, partialMs);
+    renderWakeRuntime();
+    reportDevStatus(automationSnapshot(), { force: true });
+  }
+
+  function promoteSettledPartialCandidate(instanceId, expectedRevision) {
+    const memory = memoryFor(instanceId);
+    const partial = memory.latestPartial;
+    if (!partial || partial.revision !== expectedRevision) return null;
+    clearPartialSettleTimer(memory);
+    const settings = cleanSettings(state.settings || voiceMode()?.getWakeSettings?.() || DEFAULT_SETTINGS);
+    const instance = settings.instances[instanceId] || {};
+    const promotedAt = Date.now();
+    memory.lastSettledPartial = {
+      ...partial,
+      promoted_at_ms: promotedAt,
+    };
+    const command = parseWakeCommandSuffix(instance, partial.text);
+    if (command) {
+      handleIncomingWakeCommand(instanceId, partial, command);
+      return memory.viable;
+    }
+    return stageViableCandidate(instanceId, {
+      text: partial.text,
+      source: 'payload1',
+      source_label: partial.source_label,
+      finality: 'settled_partial',
+      revision: partial.revision,
+      incoming_text: partial.incoming_text,
+      wake_word: partial.wake_word || instance.wake_word || '',
+    });
+  }
+
   function processIncomingCandidate(instanceId, candidateInput) {
     const candidate = candidateInput || {};
     const source = cleanText(candidate.source);
@@ -745,23 +882,25 @@ const WakeDevModal = (() => {
     const settings = cleanSettings(state.settings || voiceMode()?.getWakeSettings?.() || DEFAULT_SETTINGS);
     const instance = settings.instances[instanceId] || {};
     const command = parseWakeCommandSuffix(instance, text);
+    if (source === 'payload1') {
+      rememberLatestPartialCandidate(instanceId, { ...candidate, source, text }, command);
+      return;
+    }
+    cancelPartialSettleForFinal(instanceId);
     if (command) {
-      if (source === 'payload1') {
-        recordCommand(instanceId, {
-          ...command,
-          incoming_text: text,
-        }, 'Partial command candidate waiting for final transcript.', true);
-        renderWakeRuntime();
-        reportDevStatus(automationSnapshot(), { force: true });
-        return;
-      }
-      handleIncomingWakeCommand(instanceId, { ...candidate, source, text }, command);
+      handleIncomingWakeCommand(instanceId, {
+        ...candidate,
+        source,
+        text,
+        finality: 'final',
+      }, command);
       return;
     }
     stageViableCandidate(instanceId, {
       text,
       source,
       source_label: sourceLabelForCandidate(candidate),
+      finality: 'final',
       incoming_text: text,
       wake_word: instance.wake_word || '',
     });
@@ -781,18 +920,36 @@ const WakeDevModal = (() => {
     const instance = settings.instances[instanceId] || {};
     const now = Date.now();
     const viable = memory.viable ? { ...memory.viable } : null;
+    const latestPartial = memory.latestPartial ? { ...memory.latestPartial } : null;
+    const lastSettledPartial = memory.lastSettledPartial ? { ...memory.lastSettledPartial } : null;
+    const partialRemaining = memory.partialDeadlineAt ? Math.max(0, memory.partialDeadlineAt - now) : 0;
     const autoRemaining = memory.autoDeadlineAt ? Math.max(0, memory.autoDeadlineAt - now) : 0;
     const cancelRemaining = memory.cancelDeadlineAt ? Math.max(0, memory.cancelDeadlineAt - now) : 0;
+    const partialSettleMs = cleanStepMs(instance.partial_settle_ms);
     return {
       viable_candidate: viable,
       viable_candidate_text: viable?.text || '',
       viable_candidate_source: viable?.source || '',
+      viable_candidate_finality: viable?.finality || '',
       viable_candidate_revision: viable?.revision || '',
       viable_candidate_created_at_ms: Number(viable?.created_at_ms || 0),
       viable_candidate_updated_at_ms: Number(viable?.updated_at_ms || 0),
+      partial_settle_enabled: partialSettleMs > 0,
+      partial_settle_ms: partialSettleMs,
+      partial_settle_deadline_at_ms: Number(memory.partialDeadlineAt || 0),
+      partial_settle_remaining_ms: partialRemaining,
+      partial_settle_revision: memory.partialRevision || '',
+      latest_partial_candidate: latestPartial,
+      latest_partial_candidate_text: latestPartial?.text || '',
+      latest_partial_candidate_updated_at_ms: Number(latestPartial?.updated_at_ms || 0),
+      last_settled_partial: lastSettledPartial,
+      last_settled_partial_revision: lastSettledPartial?.revision || '',
+      last_settled_partial_promoted_at_ms: Number(lastSettledPartial?.promoted_at_ms || 0),
       last_command: { ...memory.lastCommand },
       last_command_kind: memory.lastCommand.kind || '',
       last_command_candidate_text: memory.lastCommand.candidate_text || '',
+      last_command_candidate_source: memory.lastCommand.candidate_source || '',
+      last_command_candidate_finality: memory.lastCommand.candidate_finality || '',
       auto_execute_enabled: cleanStepMs(instance.auto_execute_silence_ms) > 0,
       auto_execute_deadline_at_ms: Number(memory.autoDeadlineAt || 0),
       auto_execute_remaining_ms: autoRemaining,
@@ -924,6 +1081,7 @@ const WakeDevModal = (() => {
       instance.matrix_room_id = cleanText(controlValue(instanceId, 'matrix_room_id', instance.matrix_room_id));
       instance.auto_execute_silence_ms = cleanStepMs(controlValue(instanceId, 'auto_execute_silence_ms', instance.auto_execute_silence_ms));
       instance.execute_cancel_ms = cleanStepMs(controlValue(instanceId, 'execute_cancel_ms', instance.execute_cancel_ms));
+      instance.partial_settle_ms = cleanStepMs(controlValue(instanceId, 'partial_settle_ms', instance.partial_settle_ms));
       instance.commands = {
         pause: cleanText(controlValue(instanceId, 'commands.pause', instance.commands.pause), DEFAULT_COMMANDS.pause),
         execute: cleanText(controlValue(instanceId, 'commands.execute', instance.commands.execute), DEFAULT_COMMANDS.execute),
@@ -932,6 +1090,7 @@ const WakeDevModal = (() => {
       };
       renderDelayOutput(instanceId, 'auto_execute_silence_ms', instance.auto_execute_silence_ms);
       renderDelayOutput(instanceId, 'execute_cancel_ms', instance.execute_cancel_ms);
+      renderDelayOutput(instanceId, 'partial_settle_ms', instance.partial_settle_ms);
     });
     return next;
   }

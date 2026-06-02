@@ -1689,6 +1689,8 @@ const VadDevModal = (() => {
   function setWordDetectionAliases(value, options = {}) {
     const textValue = String(value ?? '').slice(0, 500);
     const word = state.wordDetection;
+    const previousAliasesText = word.aliasesText || '';
+    const previousAliases = [...(word.aliases || [])];
     word.aliasesText = textValue;
     word.aliases = wordDetectionAliases(textValue);
     word.lastUpdatedAt = Date.now();
@@ -1698,6 +1700,14 @@ const VadDevModal = (() => {
       clearWordDetectionPayload0Timer();
     }
     writeStoredString(LS_WORD_DETECTION_ALIASES, textValue);
+    pushAction(currentMode(), 'wordDetectionAliases', {
+      reason: options.reason || 'ui_input',
+      aliases_text: textValue,
+      aliases_count: word.aliases.length,
+      aliases_empty: word.aliases.length === 0,
+      previous_aliases_text: previousAliasesText,
+      previous_aliases_count: previousAliases.length,
+    });
     renderWordDetectionUi();
     if (options.status) status(options.status);
     poll({ force: true });
@@ -4678,7 +4688,29 @@ const VadDevModal = (() => {
       return setVadDetector(payload?.value ?? payload?.detector ?? payload?.vad_detector);
     }
     if (action === 'set_word_detection_aliases' || action === 'set_word_detection_words' || action === 'set_sense_word' || action === 'set_sense_words') {
-      setWordDetectionAliases(payloadText(payload, 'word_detection_aliases', 'sense_words', 'sense_word'), {
+      const hasAliasPayload = !!payload && (
+        Object.prototype.hasOwnProperty.call(payload, 'word_detection_aliases')
+        || Object.prototype.hasOwnProperty.call(payload, 'sense_words')
+        || Object.prototype.hasOwnProperty.call(payload, 'sense_word')
+        || Object.prototype.hasOwnProperty.call(payload, 'value')
+      );
+      if (!hasAliasPayload) {
+        pushAction(currentMode(), 'wordDetectionAliasesIgnored', {
+          reason: 'remote_command_missing_payload',
+        });
+        status('Word detection automation ignored: no sense words payload.');
+        return true;
+      }
+      const nextAliases = payloadText(payload, 'word_detection_aliases', 'sense_words', 'sense_word', 'value');
+      if (!nextAliases.trim() && payload?.enabled !== false) {
+        pushAction(currentMode(), 'wordDetectionAliasesIgnored', {
+          reason: 'remote_command_blank_without_explicit_clear',
+          aliases_text: nextAliases,
+        });
+        status('Word detection automation ignored blank sense words; send enabled:false to clear.');
+        return true;
+      }
+      setWordDetectionAliases(nextAliases, {
         reason: 'remote_command',
         status: 'Word detection saved by automation.',
       });
