@@ -298,6 +298,12 @@
 
 .wake-dev-form label:has(input[type="range"]) input {
   grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.wake-dev-form label:has(input[type="range"]) output {
+  grid-column: 2;
+  grid-row: 1;
 }
 
 .wake-dev-form input[type="text"],
@@ -478,5 +484,75 @@
 
   .wake-dev-candidate__readback {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) and (orientation: portrait) {
+  .wake-dev {
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .wake-dev__controls {
+    gap: 10px;
+  }
+
+  .wake-dev-card,
+  .wake-dev-settings-panel {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .wake-dev-browser {
+    grid-template-columns: minmax(0, 1fr) minmax(104px, 0.42fr);
+    gap: 8px;
+  }
+
+  .wake-dev-browser > .wake-dev-browser__copy {
+    grid-column: 1 / -1;
+  }
+
+  .wake-dev-mode-toggle {
+    justify-self: start;
+    min-height: 30px;
+  }
+
+  .wake-dev-browser__activate {
+    justify-self: stretch;
+    min-width: 0;
+    min-height: 30px;
+    padding-inline: 8px;
+  }
+
+  .wake-dev-vad-link {
+    grid-template-columns: minmax(0, 1fr) minmax(92px, 0.34fr);
+    gap: 8px;
+  }
+
+  .wake-dev-vad-link .hub-modal-btn {
+    justify-self: stretch;
+    min-width: 0;
+    min-height: 30px;
+    padding-inline: 8px;
+  }
+
+  .wake-dev-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 9px;
+  }
+
+  .wake-dev-form label {
+    gap: 5px;
+  }
+
+  .wake-dev-form input[type="text"],
+  .wake-dev-form select {
+    min-height: 32px;
+    padding: 6px 8px;
+  }
+
+  .wake-dev-form select {
+    padding-right: 26px;
+    background-position: right 10px center;
   }
 }
