@@ -1206,6 +1206,7 @@ const WakeDevModal = (() => {
     state.devStatusSending = true;
     apiFetchCompat(DEV_STATUS_URL, {
       method: 'POST',
+      trackActivity: false,
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         surface: SURFACE,
