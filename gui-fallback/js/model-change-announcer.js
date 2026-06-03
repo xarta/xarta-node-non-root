@@ -460,6 +460,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
           transformProfile: typeof payload.transform_profile === 'string' ? payload.transform_profile : 'conversation',
           allowLlmSanitizer: payload.allow_llm_sanitizer === true,
           volume: item.volume,
+          volumeGain: Number.isFinite(Number(payload.volume_gain)) ? Number(payload.volume_gain) : undefined,
           debugTiming: true,
           timingLabel: 'hermes.conversation',
         });

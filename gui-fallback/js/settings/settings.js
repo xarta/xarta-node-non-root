@@ -23,7 +23,7 @@ const _TTS_SETTING_META = {
     description: 'Default speech text used when callers omit text',
   },
   'tts.volume': {
-    description: 'Default playback volume for streamed TTS audio (0-1)',
+    description: 'Default TTS scalar: 0-1 controls browser playback, above 1 adds synthesis-side boost',
   },
   'tts.fallback.volume': {
     description: 'Fallback sound effect volume for wrapper fallback path (0-1)',
@@ -526,6 +526,19 @@ function _settingValueOrDefault(key) {
   return '';
 }
 
+function _clampTtsVolumeScalar(value) {
+  const parsed = parseFloat(value);
+  if (!Number.isFinite(parsed)) return 0.85;
+  return Math.max(0, Math.min(3, parsed));
+}
+
+function _formatTtsVolumeLabel(value) {
+  const scalar = _clampTtsVolumeScalar(value);
+  const percent = Math.round(scalar * 100);
+  if (scalar <= 1) return `${percent}%`;
+  return `${percent}% / ${scalar.toFixed(1)}x`;
+}
+
 function initTtsSettingsPanel() {
   const voiceInput = document.getElementById('tts-default-voice');
   const messageInput = document.getElementById('tts-default-message');
@@ -544,7 +557,7 @@ function initTtsSettingsPanel() {
   negInput.value = _settingValueOrDefault('tts.fallback.negative_sound_path');
   if (neutInput) neutInput.value = _settingValueOrDefault('tts.fallback.neutral_sound_path');
 
-  const ttsVol = Math.max(0, Math.min(1, parseFloat(_settingValueOrDefault('tts.volume')) || 0.85));
+  const ttsVol = _clampTtsVolumeScalar(_settingValueOrDefault('tts.volume') || 0.85);
   const sfxVol = Math.max(0, Math.min(1, parseFloat(_settingValueOrDefault('tts.fallback.volume')) || 0.70));
   ttsSlider.value = String(Math.round(ttsVol * 100));
   sfxSlider.value = String(Math.round(sfxVol * 100));
@@ -554,15 +567,15 @@ function initTtsSettingsPanel() {
     BlueprintsTtsClient.setTtsFallbackVolume(sfxVol);
   }
 
-  if (ttsLabel) ttsLabel.textContent = `${Math.round(ttsVol * 100)}%`;
+  if (ttsLabel) ttsLabel.textContent = _formatTtsVolumeLabel(ttsVol);
   if (sfxLabel) sfxLabel.textContent = `${Math.round(sfxVol * 100)}%`;
 }
 
 function setTtsVolume(pct) {
-  const as01 = Math.max(0, Math.min(100, parseInt(pct, 10))) / 100;
-  if (typeof BlueprintsTtsClient !== 'undefined') BlueprintsTtsClient.setTtsVolume(as01);
+  const scalar = Math.max(0, Math.min(300, parseInt(pct, 10))) / 100;
+  if (typeof BlueprintsTtsClient !== 'undefined') BlueprintsTtsClient.setTtsVolume(scalar);
   const label = document.getElementById('tts-volume-label');
-  if (label) label.textContent = `${Math.round(as01 * 100)}%`;
+  if (label) label.textContent = _formatTtsVolumeLabel(scalar);
 }
 
 function setTtsFallbackVolume(pct) {
@@ -664,7 +677,7 @@ async function saveTtsSettings() {
   const posPath = (document.getElementById('tts-fallback-positive-path')?.value || '').trim();
   const negPath = (document.getElementById('tts-fallback-negative-path')?.value || '').trim();
   const neutPath = (document.getElementById('tts-fallback-neutral-path')?.value || '').trim();
-  const ttsVol = (parseInt(document.getElementById('tts-volume-slider')?.value || '85', 10) / 100).toFixed(2);
+  const ttsVol = (Math.max(0, Math.min(300, parseInt(document.getElementById('tts-volume-slider')?.value || '85', 10))) / 100).toFixed(2);
   const sfxVol = (parseInt(document.getElementById('tts-fallback-volume-slider')?.value || '70', 10) / 100).toFixed(2);
 
   try {

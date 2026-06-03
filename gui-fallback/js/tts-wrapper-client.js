@@ -79,14 +79,37 @@ const BlueprintsTtsClient = (() => {
     return Math.max(0, Math.min(1, parsed));
   }
 
+  function _clampTtsVolume(value, fallback) {
+    const parsed = parseFloat(value);
+    if (Number.isNaN(parsed)) return fallback;
+    return Math.max(0, Math.min(3, parsed));
+  }
+
+  function _playbackVolume(value) {
+    return Math.max(0, Math.min(1, Number(value)));
+  }
+
+  function _volumeGain(value) {
+    return Math.max(1, Math.min(3, Number(value)));
+  }
+
   function getTtsVolume() {
-    return _clamp01(localStorage.getItem('tts.volume') ?? '0.85', 0.85);
+    return _clampTtsVolume(localStorage.getItem('tts.volume') ?? '0.85', 0.85);
+  }
+
+  function getTtsPlaybackVolume() {
+    return _playbackVolume(getTtsVolume());
+  }
+
+  function getTtsVolumeGain() {
+    return _volumeGain(getTtsVolume());
   }
 
   function setTtsVolume(value) {
-    const volume = _clamp01(value, 0.85);
+    const volume = _clampTtsVolume(value, 0.85);
     localStorage.setItem('tts.volume', String(volume));
-    if (_activeSpeechAudio) _activeSpeechAudio.volume = volume;
+    if (_activeSpeechAudio) _activeSpeechAudio.volume = _playbackVolume(volume);
+    if (_activeStream?.gainNode) _activeStream.gainNode.gain.value = _playbackVolume(volume);
     return volume;
   }
 
@@ -177,7 +200,7 @@ const BlueprintsTtsClient = (() => {
     const blobUrl = URL.createObjectURL(blob);
     const audio = new Audio(blobUrl);
     const useFallbackVolume = String(engine || '').toLowerCase() === 'sound_fallback';
-    audio.volume = volumeOverride ?? (useFallbackVolume ? getTtsFallbackVolume() : getTtsVolume());
+    audio.volume = volumeOverride ?? (useFallbackVolume ? getTtsFallbackVolume() : getTtsPlaybackVolume());
     _activeSpeechAudio = audio;
     _publishPlayback('blob-created', telemetry, {
       engine,
@@ -334,7 +357,8 @@ const BlueprintsTtsClient = (() => {
 
     const useFallbackVolume = String(engine || '').toLowerCase() === 'sound_fallback';
     const gainNode = audioCtx.createGain();
-    gainNode.gain.value = volumeOverride ?? (useFallbackVolume ? getTtsFallbackVolume() : getTtsVolume());
+    streamState.gainNode = gainNode;
+    gainNode.gain.value = volumeOverride ?? (useFallbackVolume ? getTtsFallbackVolume() : getTtsPlaybackVolume());
     gainNode.connect(audioCtx.destination);
 
     let nextStartTime = audioCtx.currentTime + 0.08;
@@ -458,6 +482,7 @@ const BlueprintsTtsClient = (() => {
       sanitize_text: typeof opts.sanitizeText === 'boolean' ? opts.sanitizeText : undefined,
       transform_profile: typeof opts.transformProfile === 'string' ? opts.transformProfile : undefined,
       allow_llm_sanitizer: typeof opts.allowLlmSanitizer === 'boolean' ? opts.allowLlmSanitizer : undefined,
+      volume_gain: Number.isFinite(Number(opts.volumeGain)) ? Number(opts.volumeGain) : getTtsVolumeGain(),
     };
     const volumeOverride = _overrideVolume(opts.volume);
     _publishPlayback('requested', opts, {
@@ -465,6 +490,7 @@ const BlueprintsTtsClient = (() => {
       mode: payload.mode || '',
       format: payload.format || '',
       volume: volumeOverride,
+      volume_gain: payload.volume_gain,
     });
 
     if (payload.interrupt) {
@@ -565,6 +591,7 @@ const BlueprintsTtsClient = (() => {
       sanitize_text: typeof opts.sanitizeText === 'boolean' ? opts.sanitizeText : undefined,
       transform_profile: typeof opts.transformProfile === 'string' ? opts.transformProfile : undefined,
       allow_llm_sanitizer: typeof opts.allowLlmSanitizer === 'boolean' ? opts.allowLlmSanitizer : undefined,
+      volume_gain: Number.isFinite(Number(opts.volumeGain)) ? Number(opts.volumeGain) : getTtsVolumeGain(),
     };
 
     const response = await apiFetch('/api/v1/tts/speak', {
@@ -609,6 +636,8 @@ const BlueprintsTtsClient = (() => {
     resume,
     setTtsVolume,
     getTtsVolume,
+    getTtsPlaybackVolume,
+    getTtsVolumeGain,
     setTtsFallbackVolume,
     getTtsFallbackVolume,
     getPlaybackState,
