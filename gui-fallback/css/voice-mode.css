@@ -489,6 +489,21 @@
 }
 
 @media (max-width: 560px) and (orientation: portrait) {
+  #voice-mode-modal .voice-mode-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  #voice-mode-modal .voice-mode-tab {
+    min-height: 30px;
+    padding: 0 4px;
+    overflow: hidden;
+    font-size: 11px;
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .voice-mode-control {
     align-items: center;
     flex-direction: row;
