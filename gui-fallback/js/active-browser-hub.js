@@ -103,6 +103,11 @@ const BlueprintsActiveBrowserHub = (() => {
     status.dataset.tone = tone;
   }
 
+  function _isOpen() {
+    const { modal } = _els();
+    return !!(modal && modal.open);
+  }
+
   function _render() {
     const els = _els();
     const local = _localClient();
@@ -207,7 +212,7 @@ const BlueprintsActiveBrowserHub = (() => {
     });
     document.addEventListener('blueprints:event', event => {
       if (event.detail?.event_type === 'voice.mode.changed') {
-        refresh().catch(() => {});
+        if (_isOpen()) refresh().catch(() => {});
       }
     });
   }

@@ -60,7 +60,15 @@ const BlueprintsActiveBrowserObserver = (() => {
     if (action === 'probes') return 'open_probes';
     if (action === 'settings') return 'open_settings';
     if (action === 'selector') return 'selector_action';
+    if (action === 'body_shade' || action === 'shade' || action === 'shade_up') return 'set_body_shade';
     return action;
+  }
+
+  function _normalizeBodyShade(value) {
+    const state = _cleanText(value || 'up').toLowerCase().replace(/[-\s]+/g, '_');
+    if (state === 'down' || state === 'lower' || state === 'lowered' || state === 'closed' || state === 'off' || state === 'false' || state === '0') return 'down';
+    if (state === 'toggle' || state === 'flip') return 'toggle';
+    return 'up';
   }
 
   function _normalizeEventKind(value) {
@@ -255,6 +263,25 @@ const BlueprintsActiveBrowserObserver = (() => {
     return false;
   }
 
+  function _setBodyShade(payload) {
+    const bodyShade = window.BodyShade || null;
+    if (!bodyShade) return false;
+    const requested = _normalizeBodyShade(payload?.body_shade || payload?.shade);
+    const isUp = !!(document.body && document.body.classList.contains('shade-is-up'));
+    const target = requested === 'toggle' ? (isUp ? 'down' : 'up') : requested;
+    const instant = !!payload?.instant;
+    if (typeof bodyShade.syncActiveHandle === 'function') {
+      bodyShade.syncActiveHandle({ reset: false });
+    }
+    if (target === 'down') {
+      if (typeof bodyShade.snapDown !== 'function') return false;
+      bodyShade.snapDown({ instant });
+      return true;
+    }
+    if (typeof bodyShade.snapUp !== 'function') return false;
+    return bodyShade.snapUp({ instant }) !== false;
+  }
+
   function _closeDialog(dialogId) {
     let dialog = null;
     const cleanId = _cleanText(dialogId);
@@ -320,6 +347,11 @@ const BlueprintsActiveBrowserObserver = (() => {
     if (action === 'open_doc') {
       await _openDoc(payload);
       scheduleReport('command-open-doc');
+      return;
+    }
+    if (action === 'set_body_shade') {
+      _setBodyShade(payload);
+      scheduleReport('command-set-body-shade');
       return;
     }
     if (action === 'menu_function') {
@@ -502,6 +534,17 @@ const BlueprintsActiveBrowserObserver = (() => {
     return {};
   }
 
+  function _bodyShadeState() {
+    const activePanel = document.querySelector('#body-shade .tab-panel.active[id]');
+    return {
+      available: !!window.BodyShade,
+      is_up: !!(document.body && document.body.classList.contains('shade-is-up')),
+      state: document.body && document.body.classList.contains('shade-is-up') ? 'up' : 'down',
+      active_panel_id: activePanel ? activePanel.id : '',
+      handle_present: !!(activePanel && activePanel.querySelector('.body-shade-handle')),
+    };
+  }
+
   function _payload() {
     return {
       browser_id: _browserId(),
@@ -520,6 +563,7 @@ const BlueprintsActiveBrowserObserver = (() => {
       frontend: _frontendVersion(),
       automation: _automationState(),
       docs: _docsState(),
+      body_shade: _bodyShadeState(),
       client_now_ms: Date.now(),
     };
   }
@@ -532,6 +576,7 @@ const BlueprintsActiveBrowserObserver = (() => {
       modals: payload.modals,
       automation: payload.automation,
       docs: payload.docs,
+      body_shade: payload.body_shade,
       tts: payload.tts,
       viewport: payload.viewport,
       voice: payload.voice,
@@ -629,6 +674,7 @@ const BlueprintsActiveBrowserObserver = (() => {
     document.addEventListener('blueprints:tts-playback', () => scheduleReport('tts-playback'));
     document.addEventListener('blueprints:notification-speech-state', () => scheduleReport('tts-speech-state'));
     document.addEventListener('blueprints:notification-speech-suppressed', () => scheduleReport('tts-suppressed'));
+    document.addEventListener('bodyshadechange', () => scheduleReport('body-shade'));
     window.addEventListener('focus', () => scheduleReport('focus'));
     window.addEventListener('blur', () => scheduleReport('blur'));
     window.addEventListener('resize', () => scheduleReport('viewport-resize'), { passive: true });
