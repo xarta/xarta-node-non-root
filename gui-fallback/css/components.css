@@ -76,6 +76,79 @@
   letter-spacing: 0.02em;
 }
 
+/* ── Fleet health panel ── */
+.fleet-health-panel {
+  margin-top: 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.fleet-health-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.fleet-health-panel__title-block {
+  min-width: 0;
+}
+.fleet-health-panel__title-block h2 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.25;
+}
+.fleet-health-panel__log-path {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.fleet-health-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.fleet-health-panel__actions button {
+  min-width: 58px;
+  padding: 5px 10px;
+  font-size: 11px;
+}
+.fleet-health-output {
+  display: block;
+  width: 100%;
+  min-height: 190px;
+  max-height: 52vh;
+  resize: vertical;
+  overflow: auto;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(7, 10, 18, 0.45);
+  color: var(--text);
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre;
+}
+.fleet-health-output:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.fleet-health-panel__status {
+  min-height: 1.2em;
+  margin: 7px 0 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 /* ── Toolbar ── */
 .toolbar { display: flex; gap: 10px; margin-bottom: 14px; align-items: center; flex-wrap: wrap; }
 input[type=text] { background: var(--surface); border: 1px solid var(--border);
@@ -176,6 +249,11 @@ button.secondary:hover { color: var(--text); border-color: var(--text-dim); }
   .sync-item { padding: 9px 10px; }
   .sync-item__label { font-size: 10px; }
   .sync-item__value { font-size: 13px; }
+  .fleet-health-panel { padding: 10px 12px; }
+  .fleet-health-panel__header { flex-direction: column; align-items: stretch; }
+  .fleet-health-panel__actions { justify-content: stretch; }
+  .fleet-health-panel__actions button { flex: 1 1 70px; }
+  .fleet-health-output { min-height: 170px; font-size: 11px; }
   .toolbar { gap: 6px; margin-bottom: 10px; }
 }
 

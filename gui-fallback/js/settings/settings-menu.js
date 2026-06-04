@@ -1057,6 +1057,22 @@ async function submitFleetUpdate() {
         if (closeBtn) closeBtn.textContent = 'CLOSE';
         closeBtns.forEach(btn => { btn.disabled = false; });
         loadNodes();
+        if (typeof runFleetHealthChecks === 'function') {
+            _fleetUpdateAppendLog('Starting post-update fleet health checks. Results will appear in the Fleet health panel.', '');
+            runFleetHealthChecks({ source: 'fleet-update', expectedVersions })
+                .then(result => {
+                    const problems = Number(result?.summary?.problems_found || 0);
+                    const blocked = Number(result?.summary?.checks_not_run || 0);
+                    if (problems || blocked) {
+                        _fleetUpdateAppendLog(`Post-update health completed with problems=${problems}, blocked_checks=${blocked}.`, 'warn');
+                    } else {
+                        _fleetUpdateAppendLog('Post-update health completed with no problems.', 'ok');
+                    }
+                })
+                .catch(e => {
+                    _fleetUpdateAppendLog(`Post-update health check did not complete: ${e.message}`, 'warn');
+                });
+        }
     } catch (e) {
         dialog.dataset.busy = '0';
         if (error) error.textContent = `Fleet update failed: ${e.message}`;
@@ -1065,6 +1081,9 @@ async function submitFleetUpdate() {
             status.style.color = 'var(--err,#f85149)';
         }
         _fleetUpdateAppendLog(`Fleet update failed: ${e.message}`, 'err');
+        if (typeof recordFleetHealthBlockedReport === 'function') {
+            recordFleetHealthBlockedReport(e.message, { source: 'fleet-update' });
+        }
         closeBtns.forEach(btn => { btn.disabled = false; });
         if (confirmBtn) confirmBtn.disabled = false;
         return;

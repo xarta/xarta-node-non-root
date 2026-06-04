@@ -702,6 +702,22 @@
     </div>
     <p id="nodes-error" class="error-msg" hidden></p>
 
+    <section class="fleet-health-panel" aria-labelledby="fleet-health-title">
+      <div class="fleet-health-panel__header">
+        <div class="fleet-health-panel__title-block">
+          <h2 id="fleet-health-title">Fleet health</h2>
+          <span class="fleet-health-panel__log-path">Logs: /xarta-node/.lone-wolf/state/fleet-health-checks</span>
+        </div>
+        <div class="fleet-health-panel__actions">
+          <button class="secondary" id="fleet-health-run-btn" type="button" title="Run fleet health checks">RUN</button>
+          <button class="secondary" id="fleet-health-copy-btn" type="button" title="Copy fleet health report">COPY</button>
+          <button class="secondary" id="fleet-health-clear-btn" type="button" title="Clear fleet health report">CLEAR</button>
+        </div>
+      </div>
+      <textarea id="fleet-health-output" class="fleet-health-output" readonly spellcheck="false" rows="10"></textarea>
+      <p id="fleet-health-status" class="fleet-health-panel__status" aria-live="polite"></p>
+    </section>
+
     <section style="margin-top:24px">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px">
         <h2 style="margin:0">Sync status</h2>

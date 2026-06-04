@@ -20,6 +20,7 @@ let _nodesTableView = null;
 let _nodeRestartLongPressTimer = null;
 let _nodeRestartLongPressFiredAt = 0;
 let _nodeRestartSuppressNextClick = false;
+let _fleetHealthRunning = false;
 
 document.addEventListener('DOMContentLoaded', () => {
   const retouchBtn = document.getElementById('retouch-btn');
@@ -40,6 +41,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (typeof loadSyncStatus === 'function') loadSyncStatus();
     });
   }
+  document.getElementById('fleet-health-run-btn')?.addEventListener('click', () => {
+    runFleetHealthChecks({ source: 'manual' });
+  });
+  document.getElementById('fleet-health-copy-btn')?.addEventListener('click', copyFleetHealthReport);
+  document.getElementById('fleet-health-clear-btn')?.addEventListener('click', clearFleetHealthReport);
   const actionConfirmBtn = document.getElementById('node-action-modal-confirm');
   if (actionConfirmBtn && !actionConfirmBtn.dataset.bound) {
     actionConfirmBtn.addEventListener('click', submitNodeActionModal);
@@ -1031,6 +1037,142 @@ async function enrichNodeVersions() {
   renderNodes();
   const sortKey = _nodesTableView?.getSortState().key;
   if (sortKey === 'gen' || sortKey === 'commit' || sortKey === 'commit_non_root' || sortKey === 'commit_inner') renderNodes();
+}
+
+function _fleetHealthEls() {
+  return {
+    output: document.getElementById('fleet-health-output'),
+    status: document.getElementById('fleet-health-status'),
+    runBtn: document.getElementById('fleet-health-run-btn'),
+    copyBtn: document.getElementById('fleet-health-copy-btn'),
+    clearBtn: document.getElementById('fleet-health-clear-btn'),
+  };
+}
+
+function _setFleetHealthStatus(message, tone) {
+  const { status } = _fleetHealthEls();
+  if (!status) return;
+  status.textContent = message || '';
+  if (tone === 'ok') status.style.color = 'var(--ok,#3fb950)';
+  else if (tone === 'warn') status.style.color = 'var(--warn,#e6a817)';
+  else if (tone === 'err') status.style.color = 'var(--err,#f85149)';
+  else status.style.color = 'var(--text-dim)';
+}
+
+function _appendFleetHealthReport(text) {
+  const { output } = _fleetHealthEls();
+  if (!output) return;
+  const report = String(text || '').trimEnd();
+  if (!report) return;
+  output.value = output.value.trim()
+    ? `${output.value.trimEnd()}\n\n${report}\n`
+    : `${report}\n`;
+  output.scrollTop = output.scrollHeight;
+}
+
+function recordFleetHealthBlockedReport(reason, options = {}) {
+  const source = options.source || 'fleet-update';
+  const stamp = new Date().toISOString();
+  _appendFleetHealthReport([
+    `Fleet health check: not run`,
+    `Source: ${source}`,
+    `Generated: ${stamp}`,
+    `Nodes checked: 0/0`,
+    `Nodes not checked: unknown`,
+    `Problems found: 1`,
+    `Checks not run: 1`,
+    `Blocked: ${reason || 'unknown blocker'}`,
+    `Log directory: /xarta-node/.lone-wolf/state/fleet-health-checks`,
+  ].join('\n'));
+  _setFleetHealthStatus('Fleet health checks were not run.', 'warn');
+}
+
+async function runFleetHealthChecks(options = {}) {
+  const { runBtn } = _fleetHealthEls();
+  if (_fleetHealthRunning) {
+    _setFleetHealthStatus('Fleet health check already running.', 'warn');
+    return null;
+  }
+  _fleetHealthRunning = true;
+  if (runBtn) runBtn.disabled = true;
+  _setFleetHealthStatus('Running fleet health checks...', '');
+  const body = {
+    source: options.source || 'manual',
+    timeout_seconds: options.timeoutSeconds || 190,
+  };
+  if (options.expectedVersions) body.expected_versions = options.expectedVersions;
+
+  try {
+    const fetchOptions = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    };
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+      fetchOptions.signal = AbortSignal.timeout((body.timeout_seconds + 25) * 1000);
+    }
+    const r = await apiFetch('/api/v1/nodes/fleet-health-check', fetchOptions);
+    let data = null;
+    try {
+      data = await r.json();
+    } catch {
+      data = null;
+    }
+    if (!r.ok) {
+      throw new Error(`HTTP ${r.status}`);
+    }
+    const report = data?.text_report || JSON.stringify(data || {}, null, 2);
+    _appendFleetHealthReport(report);
+    const summary = data?.summary || {};
+    const problems = Number(summary.problems_found || 0);
+    const blocked = Number(summary.checks_not_run || 0);
+    const checked = Number(summary.nodes_checked || 0);
+    const targeted = Number(summary.nodes_targeted || 0);
+    const saved = data?.log_path ? ` Saved: ${data.log_path}` : '';
+    const tone = problems ? 'warn' : 'ok';
+    _setFleetHealthStatus(`Checked ${checked}/${targeted}; problems ${problems}; blocked checks ${blocked}.${saved}`, tone);
+    return data;
+  } catch (e) {
+    const message = e?.message || String(e);
+    _appendFleetHealthReport([
+      `Fleet health check: failed`,
+      `Source: ${body.source}`,
+      `Generated: ${new Date().toISOString()}`,
+      `Nodes checked: 0/0`,
+      `Problems found: 1`,
+      `Checks not run: 1`,
+      `Error: ${message}`,
+      `Log directory: /xarta-node/.lone-wolf/state/fleet-health-checks`,
+    ].join('\n'));
+    _setFleetHealthStatus(`Fleet health check failed: ${message}`, 'err');
+    throw e;
+  } finally {
+    _fleetHealthRunning = false;
+    if (runBtn) runBtn.disabled = false;
+  }
+}
+
+async function copyFleetHealthReport() {
+  const { output } = _fleetHealthEls();
+  if (!output || !output.value.trim()) {
+    _setFleetHealthStatus('No fleet health report to copy.', 'warn');
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(output.value);
+    _setFleetHealthStatus('Fleet health report copied.', 'ok');
+  } catch {
+    output.focus();
+    output.select();
+    document.execCommand('copy');
+    _setFleetHealthStatus('Fleet health report copied.', 'ok');
+  }
+}
+
+function clearFleetHealthReport() {
+  const { output } = _fleetHealthEls();
+  if (output) output.value = '';
+  _setFleetHealthStatus('', '');
 }
 
 async function fleetUpdate(btn) {
