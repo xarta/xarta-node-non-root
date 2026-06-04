@@ -455,13 +455,14 @@ function _mlRefreshInterfaceLockUi() {
   const locked = _mlInterfaceLocked();
   document.body?.classList.toggle('manual-links-grid-locked', locked);
   document.getElementById('tab-manual-links')?.classList.toggle('ml-grid-locked', locked);
+  if (locked) _mlClearPanelResizeUi();
   if (typeof SynthesisMenuConfig !== 'undefined') {
     SynthesisMenuConfig.renderNavbar?.(SynthesisMenuConfig._activeId);
     SynthesisMenuConfig.updateActiveTab?.(SynthesisMenuConfig._activeId);
   }
 }
 
-function _mlSetInterfaceLocked(locked, { quiet = false, render = true } = {}) {
+function _mlSetInterfaceLocked(locked, { render = true } = {}) {
   const next = !!locked;
   localStorage.setItem(_ML_GRID_LOCK_KEY, next ? '1' : '0');
   if (next) {
@@ -472,14 +473,6 @@ function _mlSetInterfaceLocked(locked, { quiet = false, render = true } = {}) {
   _mlRefreshInterfaceLockUi();
   if (render && document.getElementById('ml-grid-view')?.style.display !== 'none') {
     renderManualLinksGrid();
-  }
-  if (!quiet && typeof HubDialogs !== 'undefined') {
-    HubDialogs.alert?.({
-      title: 'Manual Links Interface',
-      message: next ? 'Cards are locked in place.' : 'Cards can be moved again.',
-      tone: next ? 'info' : 'success',
-      badge: 'Manual',
-    });
   }
   return next;
 }
@@ -2093,8 +2086,23 @@ function _mlSuppressGridClickBriefly() {
   _mlGridInteractionFsm.dispatch('suppressClick');
 }
 
+function _mlClearPanelResizeUi() {
+  if (_mlPanelResizeRevealTimer) {
+    window.clearTimeout(_mlPanelResizeRevealTimer);
+    _mlPanelResizeRevealTimer = null;
+  }
+  document.querySelectorAll('.ml-grid-panel.is-resize-ready').forEach(panel => panel.classList.remove('is-resize-ready'));
+  if (_mlPanelResizeState) {
+    _mlPanelResizeState.card?.classList.remove('is-resizing');
+    _mlPanelResizeState = null;
+  }
+}
+
 function _mlRevealPanelResizeHandles(panel) {
-  if (!panel) return;
+  if (!panel || _mlInterfaceLocked()) {
+    _mlClearPanelResizeUi();
+    return;
+  }
   document.querySelectorAll('.ml-grid-panel.is-resize-ready').forEach(openPanel => {
     if (openPanel !== panel) openPanel.classList.remove('is-resize-ready');
   });
@@ -3143,7 +3151,7 @@ async function _mlFinishTouchCategoryDrag(event) {
       }
       return;
     }
-    if (state.dragKind === 'category' && state.handle?.matches?.('[data-ml-panel-drag-handle]')) {
+    if (state.dragKind === 'category' && state.handle?.matches?.('[data-ml-panel-drag-handle]') && !_mlInterfaceLocked()) {
       _mlRevealPanelResizeHandles(state.card);
       return;
     }

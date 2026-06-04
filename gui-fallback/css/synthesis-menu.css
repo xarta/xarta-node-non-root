@@ -472,6 +472,7 @@
 .ml-grid-panel {
   --ml-panel-accent: var(--hub-accent);
   --ml-panel-cols: 1;
+  --ml-panel-item-min: 150px;
   position: relative;
   min-width: 0;
   grid-column: span 1;
@@ -553,7 +554,7 @@
 
 .ml-grid-panel-body {
   display: grid;
-  grid-template-columns: repeat(var(--ml-panel-cols), minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--ml-panel-item-min)), 1fr));
   gap: 8px;
   align-items: start;
   align-content: start;
@@ -896,6 +897,7 @@ body.shade-is-up #tab-manual-links.ml-grid-active .tab-scroll-shell {
 }
 
 #tab-manual-links.ml-grid-locked .ml-panel-resize {
+  opacity: 0;
   pointer-events: none;
 }
 
