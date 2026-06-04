@@ -54,6 +54,7 @@ const BlueprintsActiveBrowserObserver = (() => {
     if (action === 'modal_close') return 'close_modal';
     if (action === 'page' || action === 'open_tab' || action === 'tab') return 'open_page';
     if (action === 'modal') return 'open_modal';
+    if (action === 'doc' || action === 'document') return 'open_doc';
     if (action === 'fn' || action === 'function' || action === 'menu_fn') return 'menu_function';
     if (action === 'synthesis') return 'open_synthesis';
     if (action === 'probes') return 'open_probes';
@@ -234,6 +235,26 @@ const BlueprintsActiveBrowserObserver = (() => {
     return _openKnownModal(payload?.modal_id);
   }
 
+  async function _openDoc(payload) {
+    const docId = _cleanText(payload?.doc_id);
+    const docPath = _cleanText(payload?.path || payload?.doc_path);
+    const highlightTerms = Array.isArray(payload?.highlight_terms)
+      ? payload.highlight_terms.map(term => _cleanText(term)).filter(Boolean).slice(0, 8)
+      : [];
+    _openPage({ group: 'settings', page_id: 'docs' });
+    if (docId && typeof window.BlueprintsDocsViewer?.openDoc === 'function') {
+      return await window.BlueprintsDocsViewer.openDoc(docId, { highlightTerms });
+    }
+    if (docPath && typeof window.docsOpenByPath === 'function') {
+      window.docsOpenByPath(docPath);
+      if (highlightTerms.length && typeof window.docsHighlightTerms === 'function') {
+        window.setTimeout(() => window.docsHighlightTerms(highlightTerms), 80);
+      }
+      return true;
+    }
+    return false;
+  }
+
   function _closeDialog(dialogId) {
     let dialog = null;
     const cleanId = _cleanText(dialogId);
@@ -294,6 +315,11 @@ const BlueprintsActiveBrowserObserver = (() => {
     if (action === 'open_modal') {
       _openModal(payload);
       scheduleReport('command-open-modal');
+      return;
+    }
+    if (action === 'open_doc') {
+      await _openDoc(payload);
+      scheduleReport('command-open-doc');
       return;
     }
     if (action === 'menu_function') {
@@ -469,6 +495,13 @@ const BlueprintsActiveBrowserObserver = (() => {
     return {};
   }
 
+  function _docsState() {
+    if (typeof window.BlueprintsDocsViewer?.activeState === 'function') {
+      return window.BlueprintsDocsViewer.activeState() || {};
+    }
+    return {};
+  }
+
   function _payload() {
     return {
       browser_id: _browserId(),
@@ -486,6 +519,7 @@ const BlueprintsActiveBrowserObserver = (() => {
       url_hash: window.location.hash || '',
       frontend: _frontendVersion(),
       automation: _automationState(),
+      docs: _docsState(),
       client_now_ms: Date.now(),
     };
   }
@@ -497,6 +531,7 @@ const BlueprintsActiveBrowserObserver = (() => {
       page: payload.page,
       modals: payload.modals,
       automation: payload.automation,
+      docs: payload.docs,
       tts: payload.tts,
       viewport: payload.viewport,
       voice: payload.voice,

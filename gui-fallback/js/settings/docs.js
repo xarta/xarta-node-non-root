@@ -2179,6 +2179,32 @@ function openDocsFolderSearchModal(options = {}) {
   docsListOpenGroupFolder(groupId, treeOptions);
 }
 
+window.BlueprintsDocsViewer = Object.freeze({
+  async openDoc(docId, options = {}) {
+    const cleanDocId = String(docId || '').trim();
+    if (!cleanDocId) return false;
+    if (!_docsAll.length) await loadDocs();
+    const ok = await docsListOpenDoc(cleanDocId);
+    const terms = Array.isArray(options.highlightTerms) ? options.highlightTerms : [];
+    if (ok && terms.length) window.setTimeout(() => docsHighlightTerms(terms), 80);
+    return ok;
+  },
+  activeState() {
+    const activeDoc = _docsAll.find(d => d.doc_id === _docsActiveId) || null;
+    return {
+      loaded_count: Array.isArray(_docsAll) ? _docsAll.length : 0,
+      active_doc_id: _docsActiveId || '',
+      active_doc: activeDoc ? {
+        doc_id: activeDoc.doc_id || '',
+        label: activeDoc.label || '',
+        path: activeDoc.path || '',
+        group_id: activeDoc.group_id || null,
+        tags: activeDoc.tags || '',
+      } : null,
+    };
+  },
+});
+
 async function _docsFolderTreeLoad(path, requestSeq = _docsFolderTreeRequestSeq) {
   const list = document.getElementById('docs-folder-tree-list');
   const errEl = document.getElementById('docs-folder-tree-error');
