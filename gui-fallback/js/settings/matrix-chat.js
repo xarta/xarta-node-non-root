@@ -5,6 +5,9 @@
 const MATRIX_CHAT_SERVER_STORAGE_KEY = 'blueprintsMatrixChatServer';
 const MATRIX_CHAT_STORAGE_KEY = 'blueprintsMatrixChatActiveRoom';
 const MATRIX_CHAT_COMPOSER_HEIGHT_STORAGE_KEY = 'blueprintsMatrixChatComposerHeight';
+const MATRIX_CHAT_COMPOSER_HEIGHT_MOBILE_PORTRAIT_STORAGE_KEY = 'blueprintsMatrixChatComposerHeight:mobilePortrait';
+const MATRIX_CHAT_MOBILE_PORTRAIT_DEFAULT_COMPOSER_HEIGHT = 132;
+const MATRIX_CHAT_KEYBOARD_COMPOSER_GAP_PX = 3;
 const MATRIX_CHAT_INITIAL_MESSAGE_LIMIT = 60;
 const MATRIX_CHAT_OLDER_MESSAGE_LIMIT = 60;
 const MATRIX_CHAT_MAX_MESSAGES_PER_ROOM = 600;
@@ -2918,11 +2921,27 @@ const MatrixChat = (() => {
     }
   }
 
+  function isMobilePortraitLayout() {
+    const width = window.innerWidth || document.documentElement.clientWidth || 0;
+    const height = window.innerHeight || document.documentElement.clientHeight || 0;
+    return width > 0
+      && height > 0
+      && width <= 820
+      && height >= width;
+  }
+
+  function composerHeightStorageKey() {
+    return isMobilePortraitLayout()
+      ? MATRIX_CHAT_COMPOSER_HEIGHT_MOBILE_PORTRAIT_STORAGE_KEY
+      : MATRIX_CHAT_COMPOSER_HEIGHT_STORAGE_KEY;
+  }
+
   function composerHeightBounds() {
     const main = el('matrix-chat-main');
     const mainRect = main?.getBoundingClientRect();
-    const mainHeight = mainRect?.height || window.innerHeight || 600;
-    const min = isMobileLayout() ? 92 : 56;
+    const measuredHeight = mainRect?.height || 0;
+    const mainHeight = measuredHeight > 180 ? measuredHeight : (window.innerHeight || 600);
+    const min = isMobilePortraitLayout() ? 108 : (isMobileLayout() ? 92 : 56);
     const max = Math.max(min, Math.min(Math.round(mainHeight * 0.62), isMobileLayout() ? 320 : 440));
     return { min, max };
   }
@@ -2940,7 +2959,7 @@ const MatrixChat = (() => {
     main.style.setProperty('--matrix-chat-composer-height', `${height}px`);
     if (persist) {
       try {
-        localStorage.setItem(MATRIX_CHAT_COMPOSER_HEIGHT_STORAGE_KEY, String(height));
+        localStorage.setItem(composerHeightStorageKey(), String(height));
       } catch (_) {}
     }
     scheduleViewportFit();
@@ -2948,9 +2967,55 @@ const MatrixChat = (() => {
 
   function restoreComposerHeight() {
     try {
-      const stored = Number(localStorage.getItem(MATRIX_CHAT_COMPOSER_HEIGHT_STORAGE_KEY) || '');
+      const stored = Number(
+        localStorage.getItem(composerHeightStorageKey())
+          || (isMobilePortraitLayout() ? '' : localStorage.getItem(MATRIX_CHAT_COMPOSER_HEIGHT_STORAGE_KEY))
+          || ''
+      );
       if (Number.isFinite(stored) && stored > 0) setComposerHeight(stored, false);
+      else if (isMobilePortraitLayout()) setComposerHeight(MATRIX_CHAT_MOBILE_PORTRAIT_DEFAULT_COMPOSER_HEIGHT, false);
     } catch (_) {}
+  }
+
+  function clearComposerKeyboardFit() {
+    const main = el('matrix-chat-main');
+    if (!main) return;
+    main.classList.remove('is-keyboard-fit');
+    main.style.removeProperty('--matrix-chat-keyboard-height');
+  }
+
+  function syncComposerKeyboardFit() {
+    const main = el('matrix-chat-main');
+    const composer = el('matrix-chat-composer');
+    if (!main || !composer) return;
+    const focused = document.activeElement === composer;
+    if (!focused || !isActive() || !isMobilePortraitLayout()) {
+      clearComposerKeyboardFit();
+      return;
+    }
+
+    const viewport = window.visualViewport;
+    const viewportHeight = (viewport && Number.isFinite(viewport.height) && viewport.height > 0)
+      ? viewport.height
+      : window.innerHeight;
+    const layoutHeight = window.innerHeight || document.documentElement.clientHeight || viewportHeight;
+    const keyboardLikely = viewportHeight < layoutHeight - 80;
+    if (!keyboardLikely) {
+      clearComposerKeyboardFit();
+      return;
+    }
+
+    const top = Math.max(0, main.getBoundingClientRect().top);
+    const height = Math.max(176, Math.round(viewportHeight - top - MATRIX_CHAT_KEYBOARD_COMPOSER_GAP_PX));
+    main.style.setProperty('--matrix-chat-keyboard-height', `${height}px`);
+    main.classList.add('is-keyboard-fit');
+    window.scrollTo?.(0, 0);
+  }
+
+  function scheduleComposerKeyboardFit() {
+    [40, 140, 320].forEach(delay => {
+      window.setTimeout(syncComposerKeyboardFit, delay);
+    });
   }
 
   function initComposerResize() {
@@ -3167,7 +3232,13 @@ const MatrixChat = (() => {
       if (domEvt.detail) handleNotifierSpeechSuppressed(domEvt.detail);
     });
     el('matrix-chat-composer')?.addEventListener('input', scheduleComposerSuggestions);
-    el('matrix-chat-composer')?.addEventListener('focus', scheduleComposerSuggestions);
+    el('matrix-chat-composer')?.addEventListener('focus', () => {
+      scheduleComposerSuggestions();
+      scheduleComposerKeyboardFit();
+    });
+    el('matrix-chat-composer')?.addEventListener('blur', () => {
+      window.setTimeout(clearComposerKeyboardFit, 120);
+    });
     el('matrix-chat-composer')?.addEventListener('click', scheduleComposerSuggestions);
     el('matrix-chat-composer')?.addEventListener('keyup', event => {
       if (!['ArrowDown', 'ArrowUp', 'Enter', 'Escape', 'Tab'].includes(event.key)) {
@@ -3178,10 +3249,16 @@ const MatrixChat = (() => {
     initComposerResize();
     window.addEventListener('resize', () => {
       syncRailForViewport();
+      syncComposerKeyboardFit();
+      if (el('matrix-chat-main')?.classList.contains('is-keyboard-fit')) return;
       const main = el('matrix-chat-main');
       const current = parseFloat(getComputedStyle(main || document.documentElement).getPropertyValue('--matrix-chat-composer-height'));
       if (Number.isFinite(current)) setComposerHeight(current, false);
     });
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', scheduleComposerKeyboardFit, { passive: true });
+      window.visualViewport.addEventListener('scroll', scheduleComposerKeyboardFit, { passive: true });
+    }
     syncRailForViewport();
   }
 

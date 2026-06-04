@@ -2019,9 +2019,9 @@ dialog.matrix-chat-notifier-info-modal {
   }
 }
 
-@media (max-width: 820px) and (orientation: portrait) {
+@media (max-width: 820px) and (orientation: portrait), (max-width: 600px) and (min-height: 700px) {
   .matrix-chat-main {
-    --matrix-chat-composer-height: 116px;
+    --matrix-chat-composer-height: 132px;
   }
 
   .matrix-chat-composer-tools {
@@ -2045,6 +2045,23 @@ dialog.matrix-chat-notifier-info-modal {
   #matrix-chat-mobile-rail-toggle {
     flex: 0 0 auto;
     margin-left: 0;
+  }
+
+  #tab-matrix-chat.active .matrix-chat-main.is-keyboard-fit {
+    height: var(--matrix-chat-keyboard-height) !important;
+    max-height: var(--matrix-chat-keyboard-height) !important;
+    min-height: 176px;
+  }
+
+  #tab-matrix-chat.active .matrix-chat-main.is-keyboard-fit .matrix-chat-timeline {
+    min-height: 0;
+  }
+
+  #tab-matrix-chat.active .matrix-chat-composer-suggestions {
+    right: 8px;
+    bottom: calc(100% - 8px);
+    left: 8px;
+    max-height: min(220px, 34dvh);
   }
 }
 
