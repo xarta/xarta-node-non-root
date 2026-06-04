@@ -200,6 +200,14 @@ const BlueprintsSplashScreens = (() => {
   }
 
   function dismissToManualDefault() {
+    try {
+      if (window.BodyShade && typeof window.BodyShade.snapDown === 'function') {
+        window.BodyShade.snapDown({ instant: true });
+      }
+      window.scrollTo(0, 0);
+      if (document.documentElement) document.documentElement.scrollTop = 0;
+      if (document.body) document.body.scrollTop = 0;
+    } catch (_) {}
     if (typeof BlueprintsManualLinks !== 'undefined' && typeof BlueprintsManualLinks.openDefault === 'function') {
       BlueprintsManualLinks.openDefault();
     } else if (typeof switchTab === 'function') {

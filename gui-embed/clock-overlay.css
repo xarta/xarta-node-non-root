@@ -31,7 +31,8 @@
   background: transparent;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
+  touch-action: none;
+  overscroll-behavior: none;
 }
 
 /* Notification container — future timed or dismissible modals rendered here.

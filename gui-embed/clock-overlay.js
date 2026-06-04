@@ -33,6 +33,10 @@
   var _dismiss      = null;
   var _frameLoaded  = false;
   var _openedAt     = 0;  // timestamp of last open call
+  var _previousRootOverflow = '';
+  var _previousRootTouchAction = '';
+  var _previousBodyOverflow = '';
+  var _previousBodyTouchAction = '';
 
   function _ensureRefs() {
     if (!_overlay) _overlay = document.getElementById('clock-overlay');
@@ -45,8 +49,12 @@
     _ensureRefs();
     if (!_overlay) return;
     _overlay.classList.remove('is-active');
-    document.documentElement.style.overflow = '';
-    document.documentElement.style.touchAction = '';
+    document.documentElement.style.overflow = _previousRootOverflow;
+    document.documentElement.style.touchAction = _previousRootTouchAction;
+    if (document.body) {
+      document.body.style.overflow = _previousBodyOverflow;
+      document.body.style.touchAction = _previousBodyTouchAction;
+    }
   }
 
   function openClockOverlay(clockSrc) {
@@ -60,9 +68,19 @@
     }
 
     _openedAt = Date.now();
+    if (!_overlay.classList.contains('is-active')) {
+      _previousRootOverflow = document.documentElement.style.overflow || '';
+      _previousRootTouchAction = document.documentElement.style.touchAction || '';
+      _previousBodyOverflow = document.body ? (document.body.style.overflow || '') : '';
+      _previousBodyTouchAction = document.body ? (document.body.style.touchAction || '') : '';
+    }
     _overlay.classList.add('is-active');
     document.documentElement.style.overflow = 'hidden';
     document.documentElement.style.touchAction = 'none';
+    if (document.body) {
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+    }
   }
 
   // Wire dismiss layer once DOM is ready.
@@ -73,7 +91,13 @@
   });
 
   function _wireDismiss() {
+    function preventOverlayPan(e) {
+      if (e.cancelable) e.preventDefault();
+    }
+
     _dismiss.addEventListener('click', _close);
+    _dismiss.addEventListener('pointermove', preventOverlayPan);
+    _dismiss.addEventListener('touchmove', preventOverlayPan, { passive: false });
 
     // touchend with preventDefault to avoid the 300ms tap-delay on mobile.
     _dismiss.addEventListener('touchend', function (e) {

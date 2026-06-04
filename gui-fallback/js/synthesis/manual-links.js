@@ -398,7 +398,22 @@ function _mlSetActiveAsDefault() {
   return _mlSetDefaultTab(_mlCurrentManualTabId());
 }
 
+function _mlResetShadeForManualEntry() {
+  if (typeof window === 'undefined') return;
+  try {
+    if (window.BodyShade && typeof window.BodyShade.snapDown === 'function') {
+      window.BodyShade.snapDown({ instant: true });
+    }
+  } catch (_) {}
+  try {
+    window.scrollTo(0, 0);
+    if (document.documentElement) document.documentElement.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+  } catch (_) {}
+}
+
 function _mlOpenDefaultPage() {
+  _mlResetShadeForManualEntry();
   switchTab(_mlGetDefaultTabId());
 }
 
