@@ -55,6 +55,12 @@
       document.body.style.overflow = _previousBodyOverflow;
       document.body.style.touchAction = _previousBodyTouchAction;
     }
+    try {
+      window.BlueprintsManualLinks?.lockInterface?.();
+    } catch (_) {}
+    try {
+      document.dispatchEvent(new CustomEvent('blueprints:clock-overlay-closed'));
+    } catch (_) {}
   }
 
   function openClockOverlay(clockSrc) {

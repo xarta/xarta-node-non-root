@@ -73,8 +73,9 @@ const SynthesisMenuConfig = createHubMenu({
         { id: 'ml-fn-refresh',  label: 'Refresh',      icon: HIEROGLYPHS.nefer,    fn: 'ml.refresh',  activeOn: ['manual-links', 'manual-links-rendered', 'manual-links-grid', 'manual-links-table'], parent: 'synthesis-layout', order: 2 },
         { id: 'ml-fn-set-default', label: 'Set as default', icon: HIEROGLYPHS.starDuat, fn: 'ml.setDefault', activeOn: ['manual-links', 'manual-links-rendered', 'manual-links-grid', 'manual-links-table'], parent: 'synthesis-layout', order: 3 },
         { id: 'ml-fn-grid-autofit', label: 'Auto Fit Interface', icon: 'icons/ui/table-columns-blue.svg', fn: 'ml.gridAutoFit', activeOn: ['manual-links-grid'], parent: 'synthesis-layout', order: 4 },
-        { id: 'ml-fn-grid-debug', label: 'Debug Cells: Off', icon: HIEROGLYPHS.eyeOfHorus, fn: 'ml.gridDebug', activeOn: ['manual-links-grid'], parent: 'synthesis-layout', order: 5 },
-        { id: 'ml-fn-demote-page', label: 'Demote', icon: HIEROGLYPHS.kheper, fn: 'ml.demotePage', activeOn: [], parent: 'synthesis-layout', order: 6 },
+        { id: 'ml-fn-grid-lock', label: 'Unlock Cards', icon: HIEROGLYPHS.kheper, fn: 'ml.gridLock', activeOn: ['manual-links', 'manual-links-rendered', 'manual-links-grid', 'manual-links-table'], parent: 'synthesis-layout', order: 5 },
+        { id: 'ml-fn-grid-debug', label: 'Debug Cells: Off', icon: HIEROGLYPHS.eyeOfHorus, fn: 'ml.gridDebug', activeOn: ['manual-links-grid'], parent: 'synthesis-layout', order: 6 },
+        { id: 'ml-fn-demote-page', label: 'Demote', icon: HIEROGLYPHS.kheper, fn: 'ml.demotePage', activeOn: [], parent: 'synthesis-layout', order: 7 },
         { id: 'ml-fn-cols',     label: 'Columns',      icon: HIEROGLYPHS.khaHorizon, fn: 'ml.columns', activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 6 },
         { id: 'ml-fn-scroll',   label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'ml.scroll', activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 7 },
         { id: 'ml-fn-autofit',  label: 'Auto Fit Widths', icon: 'icons/ui/table-columns-blue.svg', fn: 'ml.autoFit', activeOn: ['manual-links-table'], parent: 'synthesis-layout', order: 8 },
@@ -165,6 +166,7 @@ function syncSynthesisManualLinksPageMenu(pageCategories) {
     setActiveOn('ml-fn-add-category', gridContextIds);
     setActiveOn('ml-fn-refresh', refreshContextIds);
     setActiveOn('ml-fn-set-default', refreshContextIds);
+    setActiveOn('ml-fn-grid-lock', refreshContextIds);
     setActiveOn('ml-fn-grid-autofit', gridContextIds);
     setActiveOn('ml-fn-grid-debug', gridContextIds);
     setActiveOn('ml-fn-demote-page', dynamicPageIds);
@@ -209,6 +211,7 @@ SynthesisMenuConfig.registerFunctions({
     'ml.scroll':    () => toggleManualLinksHorizontalScroll(),
     'ml.autoFit':   () => _synthesisAutoFitLayout(() => _ensureManualLinksLayoutController()),
     'ml.gridAutoFit': () => BlueprintsManualLinks.autoFitInterface(),
+    'ml.gridLock': () => BlueprintsManualLinks.toggleInterfaceLocked(),
     'ml.gridDebug': () => BlueprintsManualLinks.toggleDebugCells(),
     'ml.demotePage': () => BlueprintsManualLinks.demoteActivePage(),
     'ml.grpNone':   () => mlSetGroupBy('none'),
@@ -224,6 +227,7 @@ SynthesisMenuConfig.registerLabelGetters({
     'svc-fn-scroll': () => _synthesisHorizontalScrollLabel('Horiz Scroll', () => _ensureServicesLayoutController()),
     'mch-fn-scroll': () => _synthesisHorizontalScrollLabel('Horiz Scroll', () => _ensureMachinesLayoutController()),
     'ml-fn-scroll':  () => _synthesisHorizontalScrollLabel('Horiz Scroll', () => _ensureManualLinksLayoutController()),
+    'ml-fn-grid-lock': () => BlueprintsManualLinks.interfaceLocked() ? 'Unlock Cards' : 'Lock Cards',
     'ml-fn-grid-debug': () => `Debug Cells: ${BlueprintsManualLinks.debugCellsEnabled() ? 'On' : 'Off'}`,
     'splash-fn-debug': () => BlueprintsSplashScreens.debugTelemetryLabel(),
 });
