@@ -120,6 +120,7 @@ const VadDevModal = (() => {
     pollTimer: null,
     timeline: null,
     timelinePromise: null,
+    timelineExpanded: false,
     selectedMode: MODE_REARM,
     sileroEnabled: false,
     vadInterruptTtsEnabled: false,
@@ -4823,6 +4824,23 @@ const VadDevModal = (() => {
     return state.timelinePromise;
   }
 
+  function setTimelineExpanded(expanded) {
+    state.timelineExpanded = expanded === true;
+    els.timelineTabs?.classList.toggle('is-timeline-expanded', state.timelineExpanded);
+    els.timelineTabLabel?.setAttribute('aria-expanded', state.timelineExpanded ? 'true' : 'false');
+    if (state.timelineExpanded) state.timeline?.scheduleRender?.();
+  }
+
+  function timelineCollapseEnabled() {
+    return window.matchMedia?.('(max-width: 560px) and (orientation: portrait)')?.matches === true;
+  }
+
+  function toggleTimelineCollapse(event) {
+    if (!timelineCollapseEnabled()) return;
+    event.preventDefault();
+    setTimelineExpanded(!state.timelineExpanded);
+  }
+
   function start() {
     if (state.open) return;
     state.open = true;
@@ -4865,6 +4883,10 @@ const VadDevModal = (() => {
     state.bound = true;
     els.modal = el('vad-dev-modal');
     els.timeline = el('vad-dev-timeline-module');
+    els.timelineTabs = els.modal?.querySelector('.vad-dev-tabs');
+    els.timelineTabLabel = els.modal?.querySelector('label[for="vad-dev-tab-timeline"]');
+    els.timelineTabLabel?.setAttribute('tabindex', '0');
+    els.timelineTabLabel?.setAttribute('aria-controls', 'vad-dev-timeline-module');
     els.status = el('vad-dev-status');
     els.noiseToggle = el('vad-dev-noise-toggle');
     els.sileroToggle = el('vad-dev-silero-toggle');
@@ -5050,6 +5072,11 @@ const VadDevModal = (() => {
     els.wordPrefixFinalInterruptToggle?.addEventListener('change', () => {
       void setWordDetectionPrefixFinalInterruptTtsEnabled(els.wordPrefixFinalInterruptToggle.checked, { reason: 'ui_toggle' });
     });
+    els.timelineTabLabel?.addEventListener('click', toggleTimelineCollapse);
+    els.timelineTabLabel?.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      toggleTimelineCollapse(event);
+    });
     window.addEventListener('blueprints:voice-mode:changed', () => { renderSharedControls(); void syncWakeRuntime('voice_mode_changed'); });
     window.addEventListener('blueprints:voice-mode:stt-noise-changed', () => { renderSharedControls(); void syncWakeRuntime('stt_noise_changed'); });
     window.addEventListener('blueprints:voice-mode:wake-settings-changed', () => { renderSharedControls(); void syncWakeRuntime('wake_settings_changed'); });
@@ -5058,6 +5085,7 @@ const VadDevModal = (() => {
     selectMode(state.selectedMode);
     renderAllProbeUi();
     renderWordDetectionUi();
+    setTimelineExpanded(false);
     startWakeRuntimeMonitor();
   }
 
