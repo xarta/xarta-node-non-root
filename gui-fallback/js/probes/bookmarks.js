@@ -1825,6 +1825,27 @@ function promoteVisitToBookmark(url, title) {
 
 // ── Add / Edit modal ────────────────────────────────────────────────────
 
+function _bmApiErrorMessage(detail, fallback = 'Request failed') {
+  if (Array.isArray(detail)) {
+    const parts = detail.map(item => {
+      if (!item || typeof item !== 'object') return String(item);
+      const loc = Array.isArray(item.loc)
+        ? item.loc.filter(part => part !== 'body').join('.')
+        : '';
+      const msg = item.msg || item.message || JSON.stringify(item);
+      return loc ? `${loc}: ${msg}` : msg;
+    }).filter(Boolean);
+    return parts.join('; ') || fallback;
+  }
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (detail && typeof detail === 'object') {
+    if (typeof detail.message === 'string' && detail.message.trim()) return detail.message;
+    if (typeof detail.error === 'string' && detail.error.trim()) return detail.error;
+    try { return JSON.stringify(detail); } catch (_) { return fallback; }
+  }
+  return fallback;
+}
+
 async function openBookmarkModal(id) {
   const modal = document.getElementById('bm-modal');
   const badge = document.getElementById('bm-modal-badge');
@@ -1868,11 +1889,11 @@ async function saveBookmark() {
 
   const body = {
     url,
-    title:       document.getElementById('bm-modal-title-input').value.trim() || null,
-    description: document.getElementById('bm-modal-desc').value.trim() || null,
+    title:       document.getElementById('bm-modal-title-input').value.trim(),
+    description: document.getElementById('bm-modal-desc').value.trim(),
     tags:        document.getElementById('bm-modal-tags').value.split(',').map(t => t.trim()).filter(Boolean),
-    folder:      document.getElementById('bm-modal-folder').value.trim() || null,
-    notes:       document.getElementById('bm-modal-notes').value.trim() || null,
+    folder:      document.getElementById('bm-modal-folder').value.trim(),
+    notes:       document.getElementById('bm-modal-notes').value.trim(),
     source:      id ? undefined : 'manual',
     archived:    document.getElementById('bm-modal-archived').checked,
   };
@@ -1884,7 +1905,10 @@ async function saveBookmark() {
           { method: 'PUT',  headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
       : await apiFetch('/api/v1/bookmarks',
           { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
-    if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || `HTTP ${r.status}`); }
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      throw new Error(_bmApiErrorMessage(d.detail || d, `HTTP ${r.status}`));
+    }
     HubModal.close(document.getElementById('bm-modal'));
     await loadBookmarks();
   } catch (e) {
