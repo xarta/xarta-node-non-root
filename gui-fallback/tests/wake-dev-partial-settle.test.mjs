@@ -23,6 +23,14 @@ function baseSettings(overrides = {}) {
         wake_word: 'Computer',
         wake_aliases: ['computer'],
         hermes_prefix: 'hermes: ',
+        delivery_mode: 'matrix',
+        direct_available: true,
+        direct_enabled: false,
+        direct_route_enabled: false,
+        direct_status: 'disabled',
+        direct_requested: false,
+        direct_rollback_applied: false,
+        direct_rollback_reason: '',
         auto_execute_silence_ms: 0,
         execute_cancel_ms: 0,
         partial_settle_ms: 0,
@@ -42,6 +50,14 @@ function baseSettings(overrides = {}) {
         wake_word: 'Mini-Me',
         wake_aliases: ['mini me', 'minime', 'mini-me'],
         hermes_prefix: 'hermes-vps: ',
+        delivery_mode: 'matrix',
+        direct_available: false,
+        direct_enabled: false,
+        direct_route_enabled: false,
+        direct_status: 'not_available',
+        direct_requested: false,
+        direct_rollback_applied: false,
+        direct_rollback_reason: '',
         auto_execute_silence_ms: 0,
         execute_cancel_ms: 0,
         partial_settle_ms: 0,
@@ -109,7 +125,30 @@ async function createHarness(settingsOverrides = {}) {
       status: 200,
       json: async () => {
         if (String(url).includes('/wake-stt')) {
-          return { event_id: `$wake-${fetchCalls.length}`, body: body?.text || '' };
+          const requested = body?.delivery_mode || 'matrix';
+          const direct = requested === 'direct_local';
+          return {
+            event_id: direct ? '' : `$wake-${fetchCalls.length}`,
+            body: body?.text || '',
+            delivery: {
+              ok: true,
+              status: direct ? 'delivered' : 'matrix_delivered',
+              route: direct ? 'direct_local' : 'matrix',
+              fallback_reason: '',
+              diagnostic_scheduled: direct,
+              readback: {
+                requested_delivery_mode: requested,
+                requested_direct_enabled: direct,
+                delivery_mode: direct ? 'direct_local' : 'matrix',
+                direct_available: true,
+                direct_enabled: direct,
+                direct_route_enabled: true,
+                direct_status: direct ? 'enabled' : 'disabled',
+                rollback_applied: false,
+                rollback_reason: '',
+              },
+            },
+          };
         }
         return { ok: true };
       },
@@ -247,9 +286,38 @@ async function testSettledPartialCommandThenFinalDoesNotSendTwice() {
   assert.equal(local.last_command.status, 'Duplicate command candidate ignored.');
 }
 
+async function testDirectLocalDeliveryPayloadAndReadback() {
+  const harness = await createHarness({
+    local: {
+      matrix_room_id: '!wake:test',
+      delivery_mode: 'direct_local',
+      direct_available: true,
+      direct_enabled: true,
+      direct_route_enabled: true,
+      direct_status: 'enabled',
+    },
+  });
+  harness.setCandidate('local', 'payload2', 'What time is it Computer execute');
+  await sleep(80);
+  const sends = harness.matrixSends();
+  assert.equal(sends.length, 1);
+  assert.equal(sends[0].body.delivery_mode, 'direct_local');
+  assert.equal(sends[0].body.direct_enabled, true);
+  assert.equal(sends[0].body.direct_diagnostic_enabled, true);
+  assert.equal(sends[0].body.direct_await_diagnostic, false);
+
+  const snapshot = harness.snapshot();
+  const local = snapshot.instances.local;
+  assert.equal(local.last_send_status, 'sent');
+  assert.equal(local.last_send.delivery_mode, 'direct_local');
+  assert.equal(local.last_send.diagnostic_scheduled, true);
+  assert.equal(local.last_status, 'Wake To Talk candidate delivered by direct hermes-stt.');
+}
+
 await testPartialOffDoesNotStage();
 await testPartialRestartPromotesNewestOnly();
 await testFinalCancelsPendingPartial();
 await testSettledPartialCommandThenFinalDoesNotSendTwice();
+await testDirectLocalDeliveryPayloadAndReadback();
 
 console.log('wake-dev partial settle tests passed');

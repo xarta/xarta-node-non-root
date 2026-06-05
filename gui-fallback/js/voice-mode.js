@@ -239,6 +239,14 @@ const BlueprintsVoiceMode = (() => {
           wake_word: 'Computer',
           wake_aliases: ['computer'],
           hermes_prefix: 'hermes: ',
+          delivery_mode: 'matrix',
+          direct_available: true,
+          direct_enabled: false,
+          direct_route_enabled: false,
+          direct_status: 'disabled',
+          direct_requested: false,
+          direct_rollback_applied: false,
+          direct_rollback_reason: '',
           auto_execute_silence_ms: 0,
           execute_cancel_ms: 0,
           partial_settle_ms: 0,
@@ -257,6 +265,14 @@ const BlueprintsVoiceMode = (() => {
           wake_word: 'Mini-Me',
           wake_aliases: ['mini-me', 'mini me', 'minime'],
           hermes_prefix: 'hermes-vps: ',
+          delivery_mode: 'matrix',
+          direct_available: false,
+          direct_enabled: false,
+          direct_route_enabled: false,
+          direct_status: 'not_available',
+          direct_requested: false,
+          direct_rollback_applied: false,
+          direct_rollback_reason: '',
           auto_execute_silence_ms: 0,
           execute_cancel_ms: 0,
           partial_settle_ms: 0,
@@ -269,6 +285,35 @@ const BlueprintsVoiceMode = (() => {
         },
       },
     };
+  }
+
+  function _cleanBool(value, fallback = false) {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    if (typeof value === 'string') {
+      const raw = value.trim().toLowerCase();
+      if (['1', 'true', 'yes', 'on', 'enabled'].includes(raw)) return true;
+      if (['0', 'false', 'no', 'off', 'disabled'].includes(raw)) return false;
+    }
+    return !!fallback;
+  }
+
+  function _cleanDeliveryMode(value) {
+    return String(value || '').trim().toLowerCase() === 'direct_local'
+      ? 'direct_local'
+      : 'matrix';
+  }
+
+  function _canSelectDirect(instanceId, instance) {
+    return instanceId === 'local'
+      && _cleanBool(instance?.direct_available)
+      && _cleanBool(instance?.direct_route_enabled);
+  }
+
+  function _effectiveDeliveryMode(instanceId, instance) {
+    return _canSelectDirect(instanceId, instance) && _cleanDeliveryMode(instance?.delivery_mode) === 'direct_local'
+      ? 'direct_local'
+      : 'matrix';
   }
 
   function _cleanWakeString(value, fallback = '', maxLength = 255) {
@@ -315,6 +360,12 @@ const BlueprintsVoiceMode = (() => {
     const raw = value && typeof value === 'object' ? value : {};
     const matrixServer = instanceId === 'vps' ? 'vps' : 'tb1';
     const wakeWord = _cleanWakeString(raw.wake_word, defaults.wake_word, 160);
+    const directAvailable = instanceId === 'local' && _cleanBool(raw.direct_available, defaults.direct_available);
+    const directRouteEnabled = _cleanBool(raw.direct_route_enabled, defaults.direct_route_enabled);
+    const requestedDeliveryMode = _cleanDeliveryMode(raw.delivery_mode || defaults.delivery_mode);
+    const deliveryMode = directAvailable && directRouteEnabled && requestedDeliveryMode === 'direct_local'
+      ? 'direct_local'
+      : 'matrix';
     return {
       enabled: true,
       label: defaults.label,
@@ -323,6 +374,14 @@ const BlueprintsVoiceMode = (() => {
       wake_word: wakeWord,
       wake_aliases: _wakeAliases(wakeWord, raw.wake_aliases),
       hermes_prefix: _cleanWakeString(raw.hermes_prefix, defaults.hermes_prefix, 40),
+      delivery_mode: deliveryMode,
+      direct_available: directAvailable,
+      direct_enabled: deliveryMode === 'direct_local' && _cleanBool(raw.direct_enabled, deliveryMode === 'direct_local'),
+      direct_route_enabled: directRouteEnabled,
+      direct_status: _cleanWakeString(raw.direct_status, defaults.direct_status, 80),
+      direct_requested: requestedDeliveryMode === 'direct_local' || _cleanBool(raw.direct_requested),
+      direct_rollback_applied: _cleanBool(raw.direct_rollback_applied),
+      direct_rollback_reason: _cleanWakeString(raw.direct_rollback_reason, '', 120),
       auto_execute_silence_ms: _cleanWakeDelayMs(raw.auto_execute_silence_ms, defaults.auto_execute_silence_ms),
       execute_cancel_ms: _cleanWakeDelayMs(raw.execute_cancel_ms, defaults.execute_cancel_ms),
       partial_settle_ms: _cleanWakeDelayMs(
@@ -630,6 +689,7 @@ const BlueprintsVoiceMode = (() => {
     const keys = [
       'matrix_room_id',
       'wake_word',
+      'delivery_mode',
       'auto_execute_silence_ms',
       'execute_cancel_ms',
       'partial_settle_ms',
@@ -643,11 +703,28 @@ const BlueprintsVoiceMode = (() => {
       const value = key.startsWith('commands.')
         ? instance.commands?.[key.split('.')[1]]
         : instance[key];
-      _setControlValue(el, value);
+      if (key === 'delivery_mode' && el) {
+        const directOption = Array.from(el.options || []).find(option => option.value === 'direct_local');
+        const directSelectable = _canSelectDirect(instanceId, instance);
+        if (directOption) {
+          directOption.disabled = !directSelectable;
+          directOption.textContent = instanceId === 'local'
+            ? (directSelectable ? 'Direct hermes-stt' : 'Direct hermes-stt unavailable')
+            : 'Direct not available';
+        }
+        _setControlValue(el, _effectiveDeliveryMode(instanceId, instance));
+        el.disabled = instanceId !== 'local' || !directSelectable;
+      } else {
+        _setControlValue(el, value);
+      }
       const output = document.querySelector(`[data-wake-instance="${instanceId}"][data-wake-output="${key}"]`);
       if (output) {
         if (key === 'auto_execute_silence_ms' || key === 'execute_cancel_ms' || key === 'partial_settle_ms') {
           output.textContent = Number(value) > 0 ? `${value} ms` : 'Off';
+        } else if (key === 'delivery_mode') {
+          output.textContent = _effectiveDeliveryMode(instanceId, instance) === 'direct_local'
+            ? 'Direct hermes-stt'
+            : 'Matrix room';
         } else {
           output.textContent = `${value} ms`;
         }
@@ -724,6 +801,12 @@ const BlueprintsVoiceMode = (() => {
       instance.enabled = true;
       instance.matrix_room_id = _instanceValue(instanceId, 'matrix_room_id', instance.matrix_room_id);
       instance.wake_word = _instanceValue(instanceId, 'wake_word', instance.wake_word);
+      instance.delivery_mode = _effectiveDeliveryMode(instanceId, {
+        ...instance,
+        delivery_mode: _instanceValue(instanceId, 'delivery_mode', instance.delivery_mode),
+      });
+      instance.direct_enabled = instance.delivery_mode === 'direct_local';
+      instance.direct_requested = instance.delivery_mode === 'direct_local';
       instance.auto_execute_silence_ms = Number(_instanceValue(instanceId, 'auto_execute_silence_ms', instance.auto_execute_silence_ms));
       instance.execute_cancel_ms = Number(_instanceValue(instanceId, 'execute_cancel_ms', instance.execute_cancel_ms));
       instance.partial_settle_ms = Number(_instanceValue(instanceId, 'partial_settle_ms', instance.partial_settle_ms));

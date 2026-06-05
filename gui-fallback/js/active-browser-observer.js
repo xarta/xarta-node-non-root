@@ -6,6 +6,7 @@ const BlueprintsActiveBrowserObserver = (() => {
   const REPORT_URL = '/api/v1/voice-mode/browser-view';
   const ACTIVE_BROWSER_COMMAND_EVENT = 'blueprints.active_browser.command';
   const REPORT_DEBOUNCE_MS = 300;
+  const MODAL_COMMAND_SETTLE_MS = 650;
   const REPORT_HEARTBEAT_MS = 10000;
   const PAGE_READY_QUIET_MS = 350;
   const LS_HANDLED_COMMANDS = 'blueprints.active_browser.handled_commands';
@@ -20,6 +21,7 @@ const BlueprintsActiveBrowserObserver = (() => {
   let _commandListenerInstalled = false;
   let _handledCommands = {};
   let _pageReadyTimer = null;
+  let _lastCommandResult = null;
 
   function _voiceMode() {
     return window.BlueprintsVoiceMode || null;
@@ -236,6 +238,20 @@ const BlueprintsActiveBrowserObserver = (() => {
     return true;
   }
 
+  function _recordCommandResult(payload, ok, error) {
+    _lastCommandResult = {
+      command_id: _cleanText(payload?.command_id),
+      action: _normalizeAction(payload?.action),
+      modal_id: _cleanText(payload?.modal_id),
+      group: _normalizeGroup(payload?.group || payload?.menu_group),
+      page_id: _cleanText(payload?.page_id || payload?.tab),
+      fn: _cleanText(payload?.fn),
+      ok: !!ok,
+      error: error ? _cleanText(error).slice(0, 180) : '',
+      recorded_at_ms: Date.now(),
+    };
+  }
+
   function _openModal(payload) {
     if (payload?.fn || payload?.menu_item_id || payload?.menu_id) {
       return _runMenuFunction(payload);
@@ -289,13 +305,13 @@ const BlueprintsActiveBrowserObserver = (() => {
       dialog = document.getElementById(cleanId);
     } else {
       const openDialogs = Array.from(document.querySelectorAll('dialog[id]'))
-        .filter(node => node.open);
+        .filter(node => _dialogLooksOpen(node));
       dialog = openDialogs.length ? openDialogs[openDialogs.length - 1] : null;
     }
-    if (!_isDialog(dialog) || !dialog.open) return false;
+    if (!_isDialog(dialog) || !_dialogLooksOpen(dialog)) return false;
     if (typeof window.HubModal?.close === 'function') {
       window.HubModal.close(dialog);
-    } else if (typeof dialog.close === 'function') {
+    } else if (typeof dialog.close === 'function' && dialog.open) {
       dialog.close();
     }
     return true;
@@ -325,14 +341,14 @@ const BlueprintsActiveBrowserObserver = (() => {
       return;
     }
     if (action === 'close_vad_dev') {
-      _closeDialog('vad-dev-modal');
-      scheduleReport('command-close-vad-dev');
-      return;
+      const ok = _closeDialog('vad-dev-modal');
+      scheduleReport('command-close-vad-dev', MODAL_COMMAND_SETTLE_MS);
+      return ok;
     }
     if (action === 'close_modal') {
-      _closeDialog(payload?.modal_id);
-      scheduleReport('command-close-modal');
-      return;
+      const ok = _closeDialog(payload?.modal_id);
+      scheduleReport('command-close-modal', MODAL_COMMAND_SETTLE_MS);
+      return ok;
     }
     if (action === 'open_page') {
       _openPage(payload);
@@ -340,9 +356,9 @@ const BlueprintsActiveBrowserObserver = (() => {
       return;
     }
     if (action === 'open_modal') {
-      _openModal(payload);
-      scheduleReport('command-open-modal');
-      return;
+      const ok = _openModal(payload);
+      scheduleReport('command-open-modal', MODAL_COMMAND_SETTLE_MS);
+      return ok;
     }
     if (action === 'open_doc') {
       await _openDoc(payload);
@@ -376,7 +392,18 @@ const BlueprintsActiveBrowserObserver = (() => {
     if (!_commandTargetsThisTab(payload)) return;
     if (!_rememberCommand(payload)) return;
     _executeCommand(payload).catch(error => {
+      _recordCommandResult(payload, false, error?.message || error);
+      scheduleReport('command-error');
       console.warn('[active-browser] command failed', error);
+    }).then(result => {
+      if (result !== undefined) {
+        _recordCommandResult(payload, result !== false, result === false ? 'Command returned false.' : '');
+        const action = _normalizeAction(payload?.action);
+        const delay = action === 'open_modal' || action === 'close_modal'
+          ? MODAL_COMMAND_SETTLE_MS
+          : REPORT_DEBOUNCE_MS;
+        scheduleReport('command-result', delay);
+      }
     });
   }
 
@@ -420,20 +447,46 @@ const BlueprintsActiveBrowserObserver = (() => {
 
   function _openModals() {
     return Array.from(document.querySelectorAll('dialog[id]'))
-      .filter(dialog => !!dialog.open)
+      .filter(dialog => _dialogLooksOpen(dialog))
       .slice(0, 24)
       .map(dialog => {
         const title = dialog.querySelector('.hub-dialog-title-text, .hub-modal-title');
+        let modalState = false;
+        try {
+          modalState = typeof dialog.matches === 'function' && dialog.matches(':modal');
+        } catch (_) {}
         return {
           id: dialog.id,
           label: title ? title.textContent.trim() : '',
           open: true,
+          native_open: !!dialog.open,
+          modal: !!modalState,
+          visible: _elementLooksVisible(dialog),
         };
       });
   }
 
   function _isDialog(node) {
     return typeof HTMLDialogElement !== 'undefined' && node instanceof HTMLDialogElement;
+  }
+
+  function _elementLooksVisible(node) {
+    if (!node || node.hidden) return false;
+    const style = window.getComputedStyle ? window.getComputedStyle(node) : null;
+    if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
+    const rect = typeof node.getBoundingClientRect === 'function' ? node.getBoundingClientRect() : null;
+    return !!(rect && rect.width > 0 && rect.height > 0);
+  }
+
+  function _dialogLooksOpen(dialog) {
+    if (!_isDialog(dialog)) return false;
+    if (dialog.open) return true;
+    try {
+      if (typeof dialog.matches === 'function' && dialog.matches(':modal')) return true;
+    } catch (_) {}
+    if (dialog.getAttribute('aria-hidden') === 'false' && _elementLooksVisible(dialog)) return true;
+    if (dialog.classList.contains('is-open') && _elementLooksVisible(dialog)) return true;
+    return false;
   }
 
   function _frontendVersion() {
@@ -521,10 +574,13 @@ const BlueprintsActiveBrowserObserver = (() => {
   }
 
   function _automationState() {
-    if (typeof window.BlueprintsHubMenuBridge?.getAutomationState === 'function') {
-      return window.BlueprintsHubMenuBridge.getAutomationState() || {};
+    const state = typeof window.BlueprintsHubMenuBridge?.getAutomationState === 'function'
+      ? (window.BlueprintsHubMenuBridge.getAutomationState() || {})
+      : {};
+    if (_lastCommandResult) {
+      return { ...state, last_command: _lastCommandResult };
     }
-    return {};
+    return state;
   }
 
   function _docsState() {
@@ -603,12 +659,12 @@ const BlueprintsActiveBrowserObserver = (() => {
     }
   }
 
-  function scheduleReport(reason = 'change') {
+  function scheduleReport(reason = 'change', delayMs = REPORT_DEBOUNCE_MS) {
     if (_reportTimer) window.clearTimeout(_reportTimer);
     _reportTimer = window.setTimeout(() => {
       _reportTimer = null;
       _postReport(reason);
-    }, REPORT_DEBOUNCE_MS);
+    }, Math.max(0, Number(delayMs || 0)));
   }
 
   function _schedulePageReadyReport() {

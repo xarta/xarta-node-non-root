@@ -395,9 +395,20 @@
   height: 32px;
   border: 1px solid rgba(var(--hub-accent-rgb, 0, 212, 255), 0.22);
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.22);
+  background-color: rgba(0, 0, 0, 0.22);
   color: var(--text, #e2e6f3);
   font-size: 12px;
+}
+
+.voice-mode-form-grid select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235b9cf6' opacity='.8'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 10px 6px;
 }
 
 .voice-mode-form-grid input[type="range"] {

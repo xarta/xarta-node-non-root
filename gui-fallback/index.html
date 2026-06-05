@@ -4602,6 +4602,10 @@
           <div class="voice-mode-form-grid">
             <label>Wake word<input type="text" data-wake-instance="local" data-wake-key="wake_word" /></label>
             <label>Matrix room<select data-wake-instance="local" data-wake-key="matrix_room_id"></select></label>
+            <label>Delivery<select data-wake-instance="local" data-wake-key="delivery_mode">
+              <option value="matrix">Matrix room</option>
+              <option value="direct_local">Direct hermes-stt</option>
+            </select></label>
             <label>Auto execute<input type="range" min="0" max="3000" step="300" data-wake-instance="local" data-wake-key="auto_execute_silence_ms" /><output data-wake-instance="local" data-wake-output="auto_execute_silence_ms">Off</output></label>
             <label>Execute cancel<input type="range" min="0" max="3000" step="300" data-wake-instance="local" data-wake-key="execute_cancel_ms" /><output data-wake-instance="local" data-wake-output="execute_cancel_ms">Off</output></label>
             <label>Partial settle<input type="range" min="0" max="3000" step="300" data-wake-instance="local" data-wake-key="partial_settle_ms" /><output data-wake-instance="local" data-wake-output="partial_settle_ms">Off</output></label>
@@ -4621,6 +4625,10 @@
           <div class="voice-mode-form-grid">
             <label>Wake word<input type="text" data-wake-instance="vps" data-wake-key="wake_word" /></label>
             <label>Matrix room<select data-wake-instance="vps" data-wake-key="matrix_room_id"></select></label>
+            <label>Delivery<select data-wake-instance="vps" data-wake-key="delivery_mode" disabled>
+              <option value="matrix">Matrix room</option>
+              <option value="direct_local" disabled>Direct not available</option>
+            </select></label>
             <label>Auto execute<input type="range" min="0" max="3000" step="300" data-wake-instance="vps" data-wake-key="auto_execute_silence_ms" /><output data-wake-instance="vps" data-wake-output="auto_execute_silence_ms">Off</output></label>
             <label>Execute cancel<input type="range" min="0" max="3000" step="300" data-wake-instance="vps" data-wake-key="execute_cancel_ms" /><output data-wake-instance="vps" data-wake-output="execute_cancel_ms">Off</output></label>
             <label>Partial settle<input type="range" min="0" max="3000" step="300" data-wake-instance="vps" data-wake-key="partial_settle_ms" /><output data-wake-instance="vps" data-wake-output="partial_settle_ms">Off</output></label>
@@ -4935,6 +4943,10 @@
           <div class="wake-dev-form">
             <label>Wake word<input type="text" data-wake-dev-instance="local" data-wake-dev-key="wake_word" /></label>
             <label>Matrix room<select data-wake-dev-instance="local" data-wake-dev-key="matrix_room_id"></select></label>
+            <label>Delivery<select data-wake-dev-instance="local" data-wake-dev-key="delivery_mode">
+              <option value="matrix">Matrix room</option>
+              <option value="direct_local">Direct hermes-stt</option>
+            </select></label>
             <label>Auto execute<input type="range" min="0" max="3000" step="300" data-wake-dev-instance="local" data-wake-dev-key="auto_execute_silence_ms" /><output data-wake-dev-instance="local" data-wake-dev-output="auto_execute_silence_ms">Off</output></label>
             <label>Execute cancel<input type="range" min="0" max="3000" step="300" data-wake-dev-instance="local" data-wake-dev-key="execute_cancel_ms" /><output data-wake-dev-instance="local" data-wake-dev-output="execute_cancel_ms">Off</output></label>
             <label>Partial settle<input type="range" min="0" max="3000" step="300" data-wake-dev-instance="local" data-wake-dev-key="partial_settle_ms" /><output data-wake-dev-instance="local" data-wake-dev-output="partial_settle_ms">Off</output></label>
@@ -4949,6 +4961,7 @@
               <div class="wake-dev-meta" data-wake-dev-instance="local" data-wake-dev-metric="candidate_state">Idle</div>
             </div>
             <div class="wake-dev-candidate__body">
+              <div class="wake-dev-route-state" data-wake-dev-instance="local" data-wake-dev-metric="route_state">Matrix route active.</div>
               <div class="wake-dev-section-label" data-wake-dev-instance="local" data-wake-dev-metric="candidate_source">No candidate</div>
               <div class="wake-dev-candidate__value" data-wake-dev-instance="local" data-wake-dev-metric="candidate_text"></div>
               <div class="wake-dev-candidate__readback">
@@ -4965,6 +4978,10 @@
           <div class="wake-dev-form">
             <label>Wake word<input type="text" data-wake-dev-instance="vps" data-wake-dev-key="wake_word" /></label>
             <label>Matrix room<select data-wake-dev-instance="vps" data-wake-dev-key="matrix_room_id"></select></label>
+            <label>Delivery<select data-wake-dev-instance="vps" data-wake-dev-key="delivery_mode" disabled>
+              <option value="matrix">Matrix room</option>
+              <option value="direct_local" disabled>Direct not available</option>
+            </select></label>
             <label>Auto execute<input type="range" min="0" max="3000" step="300" data-wake-dev-instance="vps" data-wake-dev-key="auto_execute_silence_ms" /><output data-wake-dev-instance="vps" data-wake-dev-output="auto_execute_silence_ms">Off</output></label>
             <label>Execute cancel<input type="range" min="0" max="3000" step="300" data-wake-dev-instance="vps" data-wake-dev-key="execute_cancel_ms" /><output data-wake-dev-instance="vps" data-wake-dev-output="execute_cancel_ms">Off</output></label>
             <label>Partial settle<input type="range" min="0" max="3000" step="300" data-wake-dev-instance="vps" data-wake-dev-key="partial_settle_ms" /><output data-wake-dev-instance="vps" data-wake-dev-output="partial_settle_ms">Off</output></label>
@@ -4979,6 +4996,7 @@
               <div class="wake-dev-meta" data-wake-dev-instance="vps" data-wake-dev-metric="candidate_state">Idle</div>
             </div>
             <div class="wake-dev-candidate__body">
+              <div class="wake-dev-route-state" data-wake-dev-instance="vps" data-wake-dev-metric="route_state">Matrix route active.</div>
               <div class="wake-dev-section-label" data-wake-dev-instance="vps" data-wake-dev-metric="candidate_source">No candidate</div>
               <div class="wake-dev-candidate__value" data-wake-dev-instance="vps" data-wake-dev-metric="candidate_text"></div>
               <div class="wake-dev-candidate__readback">
