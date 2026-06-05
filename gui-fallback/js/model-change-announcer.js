@@ -82,6 +82,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
   let _cooldownTimer = null;
   const _stash       = [];  // model.changed events pending debounce merge
   const _queue       = [];  // [{ text, toastOpts }] ready-to-speak items
+  const _priorityQueue = [];  // interrupting Hermes speech; bypasses normal announcements
 
   // Dedup: prevent speaking the same event_id twice (replay overlap guard).
   const _seenIds     = new Set();
@@ -229,6 +230,18 @@ const BlueprintsModelChangeAnnouncer = (() => {
   /** Central drain function.  Called after every state completion (cooldown done,
    *  or from IDLE when a new item arrives). */
   function _drainQueue() {
+    if (_priorityQueue.length > 0) {
+      const item = _priorityQueue.shift();
+      if (!_transition(ASTATE.ANNOUNCING, 'priority drain')) {
+        _priorityQueue.unshift(item);
+        return;
+      }
+
+      void _showToastForEvent(item.toastOpts, item.event, item.toastCategory);
+      _speak(item.text, item).finally(() => _afterAnnouncing(item));
+      return;
+    }
+
     // Stash has priority: if any model.changed events accumulated since the last
     // announcement, flush them into a merged queue item.
     if (_stash.length > 0) {
@@ -259,7 +272,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
       _cooldownTimer = setTimeout(() => {
         _cooldownTimer = null;
         _drainQueue();
-      }, _COOLDOWN_MS);
+      }, _priorityQueue.length > 0 ? 0 : _COOLDOWN_MS);
     } else {
       // Defensive: couldn't reach COOLING_DOWN — attempt drain from wherever we are.
       _drainQueue();
@@ -339,6 +352,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
       at: Date.now(),
       announcer_state: _astate,
       queue_length: _queue.length,
+      priority_queue_length: _priorityQueue.length,
       stash_length: _stash.length,
       muted: _isMuted(),
       hermes_utterance: !!item.hermesUtterance,
@@ -758,6 +772,46 @@ const BlueprintsModelChangeAnnouncer = (() => {
     }
   }
 
+  function _isHermesUtterance(item) {
+    return !!item?.hermesUtterance;
+  }
+
+  function _isInterruptingHermesUtterance(item) {
+    return !!(_isHermesUtterance(item) && item?.event?.payload?.interrupt === true);
+  }
+
+  function _prioritizeHermesUtterance(item) {
+    if (!_isHermesUtterance(item)) return false;
+
+    if (_debounceTimer) {
+      clearTimeout(_debounceTimer);
+      _debounceTimer = null;
+    }
+    if (_cooldownTimer) {
+      clearTimeout(_cooldownTimer);
+      _cooldownTimer = null;
+    }
+    _priorityQueue.push(item);
+    const interrupting = _isInterruptingHermesUtterance(item);
+    _recordSpeechState('priority_queued', item, {
+      reason: interrupting ? 'hermes_interrupt' : 'hermes_priority',
+    });
+
+    if (_astate === ASTATE.IDLE || _astate === ASTATE.COOLING_DOWN || _astate === ASTATE.COLLECTING) {
+      _astate = ASTATE.IDLE;
+      _drainQueue();
+      return true;
+    }
+
+    if (interrupting
+        && _astate === ASTATE.ANNOUNCING
+        && typeof BlueprintsTtsClient !== 'undefined'
+        && typeof BlueprintsTtsClient.stop === 'function') {
+      void BlueprintsTtsClient.stop();
+    }
+    return true;
+  }
+
   /** Push an item directly to the announcement queue (no debounce) and drain
    *  if the machine is currently idle. */
   function _pushAndDrain(text, toastOpts, event = null, extra = {}) {
@@ -766,6 +820,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
       extra.toastCategory || toastOpts?.category || _toastCategoryForEvent(evt)
     );
     const item = { text, toastOpts, event: evt, ...(extra || {}), toastCategory };
+    if (_prioritizeHermesUtterance(item)) return;
     _queue.push(item);
     _recordSpeechState('queued', item);
     if (_astate === ASTATE.IDLE) _drainQueue();
@@ -869,6 +924,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
       return {
         state: _astate,
         queue_length: _queue.length,
+        priority_queue_length: _priorityQueue.length,
         stash_length: _stash.length,
         muted: _isMuted(),
         last_speech: _lastSpeechState,
