@@ -81,6 +81,7 @@ const WakeDevModal = (() => {
     devStatusSignature: '',
     devStatusSending: false,
     settings: null,
+    settingsHydrated: false,
     wakeMemory: {
       local: createWakeMemoryState('local'),
       vps: createWakeMemoryState('vps'),
@@ -239,6 +240,12 @@ const WakeDevModal = (() => {
     };
   }
 
+  function runtimeSettings() {
+    const vmSettings = voiceMode()?.getWakeSettings?.();
+    if (!state.settingsHydrated && vmSettings) return cleanSettings(vmSettings);
+    return cleanSettings(state.settings || vmSettings || DEFAULT_SETTINGS);
+  }
+
   function status(message) {
     if (els.status) els.status.textContent = message || '';
   }
@@ -316,9 +323,10 @@ const WakeDevModal = (() => {
     if (routeState) routeState.textContent = routeStateText(instanceId, instance);
   }
 
-  function renderSettings(settings) {
+  function renderSettings(settings, options = {}) {
     const clean = cleanSettings(settings);
     state.settings = clean;
+    if (options.authoritative) state.settingsHydrated = true;
     INSTANCE_IDS.forEach(instanceId => {
       const memory = memoryFor(instanceId);
       if (cleanStepMs(clean.instances[instanceId]?.partial_settle_ms) <= 0 && memory.partialTimer) {
@@ -370,7 +378,7 @@ const WakeDevModal = (() => {
 
   function renderCandidate(instanceId, runtime) {
     const instance = runtime?.instances?.[instanceId] || {};
-    const settingsInstance = cleanSettings(state.settings || voiceMode()?.getWakeSettings?.() || DEFAULT_SETTINGS).instances[instanceId] || {};
+    const settingsInstance = runtimeSettings().instances[instanceId] || {};
     const candidate = instance.candidate || runtime?.candidates?.[instanceId] || {};
     const memorySnapshot = wakeMemorySnapshotFor(instanceId);
     const block = els.candidateBlocks?.[instanceId];
@@ -635,7 +643,7 @@ const WakeDevModal = (() => {
 
   function scheduleViableCandidateTimers(instanceId, viable) {
     const memory = memoryFor(instanceId);
-    const instance = cleanSettings(state.settings || voiceMode()?.getWakeSettings?.() || DEFAULT_SETTINGS).instances[instanceId];
+    const instance = runtimeSettings().instances[instanceId];
     const autoMs = cleanStepMs(instance?.auto_execute_silence_ms);
     const cancelMs = cleanStepMs(instance?.execute_cancel_ms);
     const now = Date.now();
@@ -759,7 +767,7 @@ const WakeDevModal = (() => {
       return null;
     }
     clearWakeMemoryTimers(memory);
-    const settings = cleanSettings(state.settings || voiceMode()?.getWakeSettings?.() || DEFAULT_SETTINGS);
+    const settings = runtimeSettings();
     const instance = settings.instances[instanceId] || {};
     const roomId = cleanText(instance.matrix_room_id);
     const server = instance.matrix_server || (instanceId === 'vps' ? 'vps' : 'tb1');
@@ -929,7 +937,7 @@ const WakeDevModal = (() => {
 
   function rememberLatestPartialCandidate(instanceId, candidate, command) {
     const memory = memoryFor(instanceId);
-    const settings = cleanSettings(state.settings || voiceMode()?.getWakeSettings?.() || DEFAULT_SETTINGS);
+    const settings = runtimeSettings();
     const instance = settings.instances[instanceId] || {};
     const partialMs = cleanStepMs(instance.partial_settle_ms);
     const now = Date.now();
@@ -987,7 +995,7 @@ const WakeDevModal = (() => {
     const partial = memory.latestPartial;
     if (!partial || partial.revision !== expectedRevision) return null;
     clearPartialSettleTimer(memory);
-    const settings = cleanSettings(state.settings || voiceMode()?.getWakeSettings?.() || DEFAULT_SETTINGS);
+    const settings = runtimeSettings();
     const instance = settings.instances[instanceId] || {};
     const promotedAt = Date.now();
     memory.lastSettledPartial = {
@@ -1024,7 +1032,7 @@ const WakeDevModal = (() => {
     ]);
     if (signature === memory.incomingSignature) return;
     memory.incomingSignature = signature;
-    const settings = cleanSettings(state.settings || voiceMode()?.getWakeSettings?.() || DEFAULT_SETTINGS);
+    const settings = runtimeSettings();
     const instance = settings.instances[instanceId] || {};
     const command = parseWakeCommandSuffix(instance, text);
     if (source === 'payload1') {
@@ -1061,7 +1069,7 @@ const WakeDevModal = (() => {
 
   function wakeMemorySnapshotFor(instanceId) {
     const memory = memoryFor(instanceId);
-    const settings = cleanSettings(state.settings || voiceMode()?.getWakeSettings?.() || DEFAULT_SETTINGS);
+    const settings = runtimeSettings();
     const instance = settings.instances[instanceId] || {};
     const now = Date.now();
     const viable = memory.viable ? { ...memory.viable } : null;
@@ -1206,11 +1214,11 @@ const WakeDevModal = (() => {
       const settings = typeof vm?.loadWakeSettings === 'function'
         ? await vm.loadWakeSettings({ force: true })
         : null;
-      renderSettings(settings || vm?.getWakeSettings?.() || DEFAULT_SETTINGS);
+      renderSettings(settings || vm?.getWakeSettings?.() || DEFAULT_SETTINGS, { authoritative: true });
       loadAllRooms();
       status('');
     } catch (error) {
-      renderSettings(vm?.getWakeSettings?.() || DEFAULT_SETTINGS);
+      renderSettings(vm?.getWakeSettings?.() || DEFAULT_SETTINGS, { authoritative: true });
       loadAllRooms();
       status(`Wake settings unavailable: ${error.message || error}`);
     }
@@ -1261,13 +1269,13 @@ const WakeDevModal = (() => {
   }
 
   function scheduleSave() {
-    renderSettings(collectSettings());
+    renderSettings(collectSettings(), { authoritative: true });
     if (state.saveTimer) window.clearTimeout(state.saveTimer);
     state.saveTimer = window.setTimeout(() => {
       state.saveTimer = null;
       saveSettings()
         .then(settings => {
-          renderSettings(settings || voiceMode()?.getWakeSettings?.() || state.settings);
+          renderSettings(settings || voiceMode()?.getWakeSettings?.() || state.settings, { authoritative: true });
           status('Wake settings saved.');
         })
         .catch(error => status(`Save failed: ${error.message || error}`));
@@ -1319,7 +1327,8 @@ const WakeDevModal = (() => {
         tab_id: vm?.getTabId?.() || '',
         local: vm?.getLocalState?.() || {},
       },
-      settings: clone(state.settings || DEFAULT_SETTINGS),
+      settings: clone(runtimeSettings()),
+      settings_hydrated: state.settingsHydrated,
       runtime,
       candidates: runtime.candidates || {},
       viable_candidates: downstream.viable_candidates || {},
@@ -1539,9 +1548,8 @@ const WakeDevModal = (() => {
       poll({ force: true });
     });
     window.addEventListener('blueprints:voice-mode:wake-settings-changed', event => {
-      if (!state.open) return;
-      renderSettings(event.detail?.wake_settings || voiceMode()?.getWakeSettings?.() || state.settings);
-      loadAllRooms();
+      renderSettings(event.detail?.wake_settings || voiceMode()?.getWakeSettings?.() || state.settings, { authoritative: true });
+      if (state.open) loadAllRooms();
       renderWakeRuntime();
       poll({ force: true });
     });
@@ -1553,7 +1561,7 @@ const WakeDevModal = (() => {
     });
     document.addEventListener('blueprints:event', onWakeDevCommandEvent);
     els.modal.addEventListener('close', stop);
-    renderSettings(DEFAULT_SETTINGS);
+    renderSettings(voiceMode()?.getWakeSettings?.() || DEFAULT_SETTINGS);
     renderBrowserState();
     renderWakeRuntime();
     poll({ force: true });
@@ -1570,7 +1578,7 @@ const WakeDevModal = (() => {
     start,
     stop,
     automationSnapshot,
-    getSettings: () => clone(state.settings || DEFAULT_SETTINGS),
+    getSettings: () => clone(runtimeSettings()),
   };
 })();
 
