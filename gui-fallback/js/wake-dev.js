@@ -412,6 +412,12 @@ const WakeDevModal = (() => {
       if (send.rollback_reason) pieces.push(`Rollback ${send.rollback_reason}`);
       if (send.event_id) pieces.push(`Event ${send.event_id}`);
       if (send.diagnostic_scheduled) pieces.push('Diagnostic scheduled');
+      if (send.tts_status === 'queued') pieces.push('TTS queued');
+      if (send.tts_status === 'error') pieces.push(`TTS error${send.tts_error ? ` ${send.tts_error}` : ''}`);
+      if (send.assistant_text) {
+        const reply = String(send.assistant_text).replace(/\s+/g, ' ').trim();
+        pieces.push(`Reply: ${reply.length > 120 ? `${reply.slice(0, 117)}...` : reply}`);
+      }
       if (send.error) pieces.push(send.error);
       if (lastCommand.pending) pieces.push('Pending command behavior');
       sendState.textContent = pieces.join(' | ');
@@ -479,6 +485,10 @@ const WakeDevModal = (() => {
         rollback_reason: '',
         fallback_reason: '',
         diagnostic_scheduled: false,
+        tts_status: '',
+        tts_event_id: '',
+        tts_error: '',
+        assistant_text: '',
       },
       lastStatus: 'Idle.',
     };
@@ -781,6 +791,10 @@ const WakeDevModal = (() => {
       rollback_reason: '',
       fallback_reason: '',
       diagnostic_scheduled: false,
+      tts_status: '',
+      tts_event_id: '',
+      tts_error: '',
+      assistant_text: '',
       command_source: commandSource,
       candidate_revision: viable.revision,
       candidate_text: viable.text,
@@ -810,6 +824,8 @@ const WakeDevModal = (() => {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const payload = await response.json();
       const { delivery, readback } = deliveryReadback(payload);
+      const direct = delivery.direct && typeof delivery.direct === 'object' ? delivery.direct : {};
+      const tts = delivery.tts && typeof delivery.tts === 'object' ? delivery.tts : {};
       if (memory.viable?.revision === viable.revision) memory.viable = null;
       setSendState(instanceId, {
         state: 'sent',
@@ -825,6 +841,10 @@ const WakeDevModal = (() => {
         rollback_reason: readback.rollback_reason || '',
         fallback_reason: delivery.fallback_reason || '',
         diagnostic_scheduled: !!delivery.diagnostic_scheduled,
+        tts_status: tts.status || (tts.ok ? 'queued' : (tts.error ? 'error' : '')),
+        tts_event_id: tts.event_id || '',
+        tts_error: tts.error || '',
+        assistant_text: direct.assistant_text || '',
         command_source: commandSource,
         candidate_revision: viable.revision,
         candidate_text: viable.text,
