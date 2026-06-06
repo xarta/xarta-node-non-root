@@ -749,11 +749,17 @@ const WakeDevModal = (() => {
   function sentStatusFromDelivery(payload, requestedMode) {
     const { delivery, readback } = deliveryReadback(payload);
     const route = cleanText(delivery.route || readback.delivery_mode || requestedMode, requestedMode);
+    if (delivery.ok === false && route === 'direct_local') {
+      const reason = cleanText(delivery.fallback_reason || delivery.status || delivery.direct?.status);
+      return reason
+        ? `Wake To Talk direct delivery failed: ${reason}.`
+        : 'Wake To Talk direct delivery failed.';
+    }
     if (route === 'direct_local') return 'Wake To Talk candidate delivered by direct hermes-stt.';
-    if (route === 'matrix_fallback') return 'Wake To Talk candidate fell back to Matrix.';
+    if (route === 'matrix_fallback') return 'Wake To Talk candidate used Matrix fallback.';
     if (readback.rollback_reason) return 'Wake To Talk candidate sent through Matrix after direct rollback.';
     return requestedMode === 'direct_local'
-      ? 'Wake To Talk candidate sent with Matrix fallback ready.'
+      ? 'Wake To Talk candidate sent with Matrix available as a manual option.'
       : 'Wake To Talk candidate sent through Matrix.';
   }
 
@@ -834,11 +840,12 @@ const WakeDevModal = (() => {
       const { delivery, readback } = deliveryReadback(payload);
       const direct = delivery.direct && typeof delivery.direct === 'object' ? delivery.direct : {};
       const tts = delivery.tts && typeof delivery.tts === 'object' ? delivery.tts : {};
-      if (memory.viable?.revision === viable.revision) memory.viable = null;
+      const deliveryOk = delivery.ok !== false;
+      if (deliveryOk && memory.viable?.revision === viable.revision) memory.viable = null;
       setSendState(instanceId, {
-        state: 'sent',
+        state: deliveryOk ? 'sent' : 'error',
         status: sentStatusFromDelivery(payload, deliveryMode),
-        error: '',
+        error: deliveryOk ? '' : (delivery.fallback_reason || delivery.status || direct.status || 'direct_delivery_failed'),
         server,
         room_id: roomId,
         event_id: payload.event_id || '',

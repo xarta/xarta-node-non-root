@@ -76,6 +76,7 @@ function baseSettings(overrides = {}) {
 async function createHarness(settingsOverrides = {}) {
   const source = await readFile(WAKE_DEV_JS, 'utf8');
   const settings = baseSettings(settingsOverrides);
+  const wakeResponseFactory = settingsOverrides.wakeResponseFactory;
   const fetchCalls = [];
   let updateCounter = 0;
   const runtime = {
@@ -127,6 +128,9 @@ async function createHarness(settingsOverrides = {}) {
         if (String(url).includes('/wake-stt')) {
           const requested = body?.delivery_mode || 'matrix';
           const direct = requested === 'direct_local';
+          if (typeof wakeResponseFactory === 'function') {
+            return wakeResponseFactory({ body, requested, direct, fetchCalls });
+          }
           return {
             event_id: direct ? '' : `$wake-${fetchCalls.length}`,
             body: body?.text || '',
@@ -314,10 +318,60 @@ async function testDirectLocalDeliveryPayloadAndReadback() {
   assert.equal(local.last_status, 'Wake To Talk candidate delivered by direct hermes-stt.');
 }
 
+async function testDirectLocalFailureReadbackKeepsCandidate() {
+  const harness = await createHarness({
+    local: {
+      matrix_room_id: '!wake:test',
+      delivery_mode: 'direct_local',
+      direct_available: true,
+      direct_enabled: true,
+      direct_route_enabled: true,
+      direct_status: 'enabled',
+    },
+    wakeResponseFactory: ({ body }) => ({
+      event_id: '',
+      body: '',
+      delivery: {
+        ok: false,
+        status: 'request_error',
+        route: 'direct_local',
+        fallback_reason: 'request_error',
+        direct: {
+          ok: false,
+          status: 'request_error',
+          fallback_required: false,
+        },
+        readback: {
+          requested_delivery_mode: body?.delivery_mode || 'direct_local',
+          requested_direct_enabled: true,
+          delivery_mode: 'direct_local',
+          direct_available: true,
+          direct_enabled: true,
+          direct_route_enabled: true,
+          direct_status: 'enabled',
+          rollback_applied: false,
+          rollback_reason: '',
+        },
+      },
+    }),
+  });
+  harness.setCandidate('local', 'payload2', 'What time is it Computer execute');
+  await sleep(80);
+
+  const snapshot = harness.snapshot();
+  const local = snapshot.instances.local;
+  assert.equal(local.last_send_status, 'error');
+  assert.equal(local.last_send.error, 'request_error');
+  assert.equal(local.last_send.delivery_mode, 'direct_local');
+  assert.equal(local.viable_candidate_text, 'What time is it');
+  assert.equal(local.last_status, 'Wake To Talk direct delivery failed: request_error.');
+}
+
 await testPartialOffDoesNotStage();
 await testPartialRestartPromotesNewestOnly();
 await testFinalCancelsPendingPartial();
 await testSettledPartialCommandThenFinalDoesNotSendTwice();
 await testDirectLocalDeliveryPayloadAndReadback();
+await testDirectLocalFailureReadbackKeepsCandidate();
 
 console.log('wake-dev partial settle tests passed');
