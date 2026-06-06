@@ -83,6 +83,9 @@ const BlueprintsModelChangeAnnouncer = (() => {
   const _stash       = [];  // model.changed events pending debounce merge
   const _queue       = [];  // [{ text, toastOpts }] ready-to-speak items
   const _priorityQueue = [];  // interrupting Hermes speech; bypasses normal announcements
+  let _currentItem = null;
+  let _normalQueuePaused = false;
+  let _normalQueuePausedAt = 0;
 
   // Dedup: prevent speaking the same event_id twice (replay overlap guard).
   const _seenIds     = new Set();
@@ -232,15 +235,24 @@ const BlueprintsModelChangeAnnouncer = (() => {
   function _drainQueue() {
     if (_priorityQueue.length > 0) {
       const item = _priorityQueue.shift();
+      const skipReason = _speechSkipReason(item);
+      if (skipReason) {
+        _emitSpeechSkipped(skipReason, item, { queue: 'priority' });
+        _drainQueue();
+        return;
+      }
       if (!_transition(ASTATE.ANNOUNCING, 'priority drain')) {
         _priorityQueue.unshift(item);
         return;
       }
 
+      _currentItem = item;
       void _showToastForEvent(item.toastOpts, item.event, item.toastCategory);
       _speak(item.text, item).finally(() => _afterAnnouncing(item));
       return;
     }
+
+    _resumeNormalQueueAfterPriority();
 
     // Stash has priority: if any model.changed events accumulated since the last
     // announcement, flush them into a merged queue item.
@@ -250,16 +262,28 @@ const BlueprintsModelChangeAnnouncer = (() => {
     }
 
     if (_queue.length === 0) {
-      _transition(ASTATE.IDLE, 'queue empty');
+      if (_astate !== ASTATE.IDLE) _transition(ASTATE.IDLE, 'queue empty');
       return;
     }
 
     const item = _queue.shift();
+    const skipReason = _speechSkipReason(item);
+    if (skipReason) {
+      _emitSpeechSkipped(skipReason, item, { queue: 'normal' });
+      _drainQueue();
+      return;
+    }
     if (!_transition(ASTATE.ANNOUNCING, 'drain')) {
       _queue.unshift(item);  // guard: transition blocked (unexpected state)
       return;
     }
 
+    if (item.__queuedForPriorityResume) {
+      item.__queuedForPriorityResume = false;
+      item.__priorityInterrupted = false;
+      _recordSpeechState('resuming', item, { reason: 'hermes_priority_drained' });
+    }
+    _currentItem = item;
     void _showToastForEvent(item.toastOpts, item.event, item.toastCategory);
     _speak(item.text, item).finally(() => _afterAnnouncing(item));
   }
@@ -268,11 +292,12 @@ const BlueprintsModelChangeAnnouncer = (() => {
    *  then schedules the next drain. */
   function _afterAnnouncing(item) {
     if (item && item.isModelChange) _recordAnnounced();
+    if (_currentItem === item) _currentItem = null;
     if (_transition(ASTATE.COOLING_DOWN, 'TTS done')) {
       _cooldownTimer = setTimeout(() => {
         _cooldownTimer = null;
         _drainQueue();
-      }, _priorityQueue.length > 0 ? 0 : _COOLDOWN_MS);
+      }, (_priorityQueue.length > 0 || (item?.hermesUtterance && _normalQueuePaused)) ? 0 : _COOLDOWN_MS);
     } else {
       // Defensive: couldn't reach COOLING_DOWN — attempt drain from wherever we are.
       _drainQueue();
@@ -386,6 +411,89 @@ const BlueprintsModelChangeAnnouncer = (() => {
     } catch (_) {}
   }
 
+  function _emitSpeechSkipped(reason, item = {}, extra = {}) {
+    _recordSpeechState('skipped', item, { reason, ...(extra || {}) });
+    try {
+      document.dispatchEvent(new CustomEvent('blueprints:notification-speech-skipped', {
+        detail: {
+          reason,
+          event: item.event || {},
+          title: item.toastOpts?.title || '',
+          ...(extra || {}),
+        },
+        bubbles: false,
+      }));
+    } catch (_) {}
+  }
+
+  function _itemPriority(item = {}) {
+    const payload = item.event?.payload || {};
+    const raw = payload.priority ?? payload.metadata?.tts_priority;
+    const parsed = Number(raw);
+    if (raw !== undefined && raw !== null && raw !== '' && Number.isFinite(parsed)) return parsed;
+    const source = String(payload.source || item.event?.source || '').toLowerCase();
+    const agentId = String(payload.agent_id || '').toLowerCase();
+    if (source === 'hermes-stt' || agentId === 'hermes-stt') return 100;
+    if (source.startsWith('hermes') || agentId.startsWith('hermes')) return 90;
+    return 0;
+  }
+
+  function _itemQueuePolicy(item = {}) {
+    const payload = item.event?.payload || {};
+    return String(payload.queue_policy || payload.metadata?.tts_queue_policy || '').toLowerCase();
+  }
+
+  function _isHermesPriorityUtterance(item) {
+    return _isHermesUtterance(item)
+      && (_itemPriority(item) >= 90 || _itemQueuePolicy(item) === 'hermes_priority_stream');
+  }
+
+  function _speechSkipReason(item = {}) {
+    const evt = item.event || {};
+    if (!String(item.text || '').trim()) return 'empty_speech_text';
+    if (!_isFreshNotifierSpeech(evt)) return 'stale_notifier_replay';
+    if (!_isFreshHermesSpeech(evt)) return 'stale_hermes_utterance_replay';
+    return '';
+  }
+
+  function _pauseNormalQueueForPriority(item = {}, reason = 'hermes_priority') {
+    if (_normalQueuePaused) return;
+    _normalQueuePaused = true;
+    _normalQueuePausedAt = Date.now();
+    _recordSpeechState('paused', item, {
+      reason,
+      paused_queue_length: _queue.length,
+      paused_stash_length: _stash.length,
+      active_item: _eventSummary(_currentItem?.event || {}),
+    });
+  }
+
+  function _resumeNormalQueueAfterPriority(reason = 'hermes_priority_drained') {
+    if (!_normalQueuePaused) return;
+    const pausedForMs = _normalQueuePausedAt ? Date.now() - _normalQueuePausedAt : 0;
+    _normalQueuePaused = false;
+    _normalQueuePausedAt = 0;
+    _recordSpeechState('resumed', {}, {
+      reason,
+      paused_for_ms: pausedForMs,
+      resumed_queue_length: _queue.length,
+      resumed_stash_length: _stash.length,
+    });
+  }
+
+  function _queueInterruptedItemForResume(item, interruptingItem) {
+    if (!item || item.hermesUtterance || item.__queuedForPriorityResume) return false;
+    item.__priorityInterrupted = true;
+    item.__queuedForPriorityResume = true;
+    _queue.unshift(item);
+    _recordSpeechState('interrupted', item, {
+      reason: 'hermes_priority_interrupt',
+      resume_queued: true,
+      interrupted_by: _eventSummary(interruptingItem?.event || {}),
+    });
+    return true;
+  }
+
   async function _speak(text, item = {}) {
     const evt = item.event || {};
     _recordSpeechState('received', item);
@@ -396,11 +504,11 @@ const BlueprintsModelChangeAnnouncer = (() => {
       return;
     }
     if (!_isFreshNotifierSpeech(evt)) {
-      _emitSpeechSuppressed('stale_notifier_replay', item);
+      _emitSpeechSkipped('stale_notifier_replay', item);
       return;
     }
     if (!_isFreshHermesSpeech(evt)) {
-      _emitSpeechSuppressed('stale_hermes_utterance_replay', item);
+      _emitSpeechSkipped('stale_hermes_utterance_replay', item);
       return;
     }
     if (item.hermesUtterance
@@ -478,6 +586,10 @@ const BlueprintsModelChangeAnnouncer = (() => {
           debugTiming: true,
           timingLabel: 'hermes.conversation',
         });
+        if (item.__priorityInterrupted) {
+          _recordSpeechState('interrupted', item, { reason: 'hermes_priority_interrupt' });
+          return;
+        }
         _recordSpeechState('completed', item, {
           engine: result?.engine || '',
           playback_sequence: Number(result?.playback_sequence || 0),
@@ -494,11 +606,22 @@ const BlueprintsModelChangeAnnouncer = (() => {
         eventKind: 'notification',
         volume: item.volume,
       });
+      if (item.__priorityInterrupted) {
+        _recordSpeechState('interrupted', item, { reason: 'hermes_priority_interrupt' });
+        return;
+      }
       _recordSpeechState('completed', item, {
         engine: result?.engine || '',
         playback_sequence: Number(result?.playback_sequence || 0),
       });
     } catch (e) {
+      if (item.__priorityInterrupted) {
+        _recordSpeechState('interrupted', item, {
+          reason: 'hermes_priority_interrupt',
+          error: _errorMessage(e),
+        });
+        return;
+      }
       console.warn('[model-change-announcer] TTS error (non-fatal):', e);
       _recordSpeechState('error', item, { error: _errorMessage(e) });
       _emitSpeechSuppressed('tts_error', item, { error: _errorMessage(e) });
@@ -781,7 +904,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
   }
 
   function _prioritizeHermesUtterance(item) {
-    if (!_isHermesUtterance(item)) return false;
+    if (!_isHermesPriorityUtterance(item)) return false;
 
     if (_debounceTimer) {
       clearTimeout(_debounceTimer);
@@ -793,8 +916,11 @@ const BlueprintsModelChangeAnnouncer = (() => {
     }
     _priorityQueue.push(item);
     const interrupting = _isInterruptingHermesUtterance(item);
+    _pauseNormalQueueForPriority(item, interrupting ? 'hermes_interrupt' : 'hermes_priority');
     _recordSpeechState('priority_queued', item, {
       reason: interrupting ? 'hermes_interrupt' : 'hermes_priority',
+      priority: _itemPriority(item),
+      queue_policy: _itemQueuePolicy(item),
     });
 
     if (_astate === ASTATE.IDLE || _astate === ASTATE.COOLING_DOWN || _astate === ASTATE.COLLECTING) {
@@ -803,10 +929,12 @@ const BlueprintsModelChangeAnnouncer = (() => {
       return true;
     }
 
-    if (interrupting
+    const lowerPriorityActive = _currentItem && !_isHermesPriorityUtterance(_currentItem);
+    if ((interrupting || lowerPriorityActive)
         && _astate === ASTATE.ANNOUNCING
         && typeof BlueprintsTtsClient !== 'undefined'
         && typeof BlueprintsTtsClient.stop === 'function') {
+      _queueInterruptedItemForResume(_currentItem, item);
       void BlueprintsTtsClient.stop();
     }
     return true;
@@ -926,6 +1054,9 @@ const BlueprintsModelChangeAnnouncer = (() => {
         queue_length: _queue.length,
         priority_queue_length: _priorityQueue.length,
         stash_length: _stash.length,
+        normal_queue_paused: _normalQueuePaused,
+        normal_queue_paused_for_ms: _normalQueuePausedAt ? Date.now() - _normalQueuePausedAt : 0,
+        current_item: _currentItem ? _eventSummary(_currentItem.event || {}) : null,
         muted: _isMuted(),
         last_speech: _lastSpeechState,
       };
