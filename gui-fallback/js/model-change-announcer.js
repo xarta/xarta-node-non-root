@@ -86,6 +86,9 @@ const BlueprintsModelChangeAnnouncer = (() => {
   let _currentItem = null;
   let _normalQueuePaused = false;
   let _normalQueuePausedAt = 0;
+  let _ttsOffModal = null;
+  let _ttsOffModalTimer = null;
+  let _ttsOffModalRemoveTimer = null;
 
   // Dedup: prevent speaking the same event_id twice (replay overlap guard).
   const _seenIds     = new Set();
@@ -426,6 +429,66 @@ const BlueprintsModelChangeAnnouncer = (() => {
     } catch (_) {}
   }
 
+  function _clampTtsOffText(value) {
+    const text = String(value || '').replace(/\s+/g, ' ').trim();
+    if (text.length <= 520) return text;
+    return `${text.slice(0, 517).trim()}...`;
+  }
+
+  function _ensureTtsOffModal() {
+    if (_ttsOffModal?.isConnected) return _ttsOffModal;
+    const modal = document.createElement('div');
+    modal.id = 'bp-tts-off-modal';
+    modal.className = 'bp-tts-off-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-live', 'polite');
+    modal.setAttribute('aria-label', 'TTS is off on this browser');
+
+    const panel = document.createElement('div');
+    panel.className = 'bp-tts-off-modal__panel';
+
+    const title = document.createElement('strong');
+    title.className = 'bp-tts-off-modal__title';
+    title.textContent = 'TTS is off on this browser';
+
+    const message = document.createElement('p');
+    message.className = 'bp-tts-off-modal__message';
+
+    panel.appendChild(title);
+    panel.appendChild(message);
+    modal.appendChild(panel);
+    document.body.appendChild(modal);
+    _ttsOffModal = modal;
+    return modal;
+  }
+
+  function _hideTtsOffModal() {
+    const modal = _ttsOffModal;
+    if (!modal?.isConnected) return;
+    modal.classList.remove('bp-tts-off-modal--visible');
+    modal.classList.add('bp-tts-off-modal--leaving');
+    _ttsOffModalRemoveTimer = window.setTimeout(() => {
+      modal.remove();
+      if (_ttsOffModal === modal) _ttsOffModal = null;
+    }, 420);
+  }
+
+  function _showTtsOffModal(item = {}) {
+    try {
+      const evt = item.event || {};
+      const payload = evt.payload || {};
+      const text = _clampTtsOffText(item.text || payload.text || evt.message || 'Hermes sent a spoken response.');
+      if (_ttsOffModalTimer) window.clearTimeout(_ttsOffModalTimer);
+      if (_ttsOffModalRemoveTimer) window.clearTimeout(_ttsOffModalRemoveTimer);
+      const modal = _ensureTtsOffModal();
+      const message = modal.querySelector('.bp-tts-off-modal__message');
+      if (message) message.textContent = text;
+      modal.classList.remove('bp-tts-off-modal--leaving');
+      requestAnimationFrame(() => modal.classList.add('bp-tts-off-modal--visible'));
+      _ttsOffModalTimer = window.setTimeout(_hideTtsOffModal, 5000);
+    } catch (_) {}
+  }
+
   function _itemPriority(item = {}) {
     const payload = item.event?.payload || {};
     const raw = payload.priority ?? payload.metadata?.tts_priority;
@@ -515,6 +578,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
         && typeof BlueprintsVoiceMode !== 'undefined'
         && typeof BlueprintsVoiceMode.canSpeakHermesUtterance === 'function'
         && !await BlueprintsVoiceMode.canSpeakHermesUtterance()) {
+      void _showTtsOffModal(item);
       _emitSpeechSuppressed('voice_mode_not_active_tts_browser', item);
       return;
     }
