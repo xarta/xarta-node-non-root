@@ -398,6 +398,43 @@ const MatrixChat = (() => {
     parent.appendChild(p);
   }
 
+  function isHealthMetricTable(headerCells, rows) {
+    const firstHeader = String(headerCells?.[0] || '').trim().toLowerCase();
+    if (firstHeader !== 'metric' || headerCells.length < 3) return false;
+    const labels = new Set(
+      rows.map(row => String(row?.[0] || '').trim().toLowerCase()).filter(Boolean)
+    );
+    const coreMetricCount = ['cpu', 'ram', 'zfs'].filter(label => labels.has(label)).length;
+    return labels.has('host status') && coreMetricCount >= 2;
+  }
+
+  function statusToneForCell(value) {
+    const text = String(value || '').trim().toLowerCase();
+    if (!text) return '';
+    if (/^(fail|failed|critical|timeout|down)\b/.test(text)) return 'fail';
+    if (/^(warn|warning|degraded|busy)\b/.test(text)) return 'warn';
+    if (/^(ok|healthy|online|up)\b/.test(text)) return 'ok';
+    if (/^(unknown|not checked|not_configured|n\/a)\b/.test(text)) return 'muted';
+    return '';
+  }
+
+  function appendTableCellContent(parent, cell, options = {}) {
+    const text = String(cell || '');
+    if (options.stackMetrics) {
+      const parts = text.split(/\s*;\s*/).filter(part => part.trim());
+      if (parts.length > 1) {
+        parts.forEach(part => {
+          const line = document.createElement('span');
+          line.className = 'matrix-chat-cell-line';
+          appendInlineMarkdown(line, part);
+          parent.appendChild(line);
+        });
+        return;
+      }
+    }
+    appendInlineMarkdown(parent, text);
+  }
+
   function renderMarkdownBody(markdown) {
     const fragment = document.createDocumentFragment();
     const text = String(markdown || '');
@@ -443,9 +480,26 @@ const MatrixChat = (() => {
       if (isTableStart(line, lines[i + 1])) {
         const headerCells = tableCells(line);
         i += 2;
+        const tableRows = [];
+        while (i < lines.length && isTableRow(lines[i])) {
+          tableRows.push(tableCells(lines[i]));
+          i += 1;
+        }
+        const healthMetricTable = isHealthMetricTable(headerCells, tableRows);
         const wrap = document.createElement('div');
         wrap.className = 'matrix-chat-table-wrap';
+        if (healthMetricTable) wrap.classList.add('is-health-metrics');
         const table = document.createElement('table');
+        if (healthMetricTable) {
+          table.className = 'matrix-chat-health-metrics-table';
+          const colgroup = document.createElement('colgroup');
+          headerCells.forEach((_, cellIndex) => {
+            const col = document.createElement('col');
+            col.className = cellIndex === 0 ? 'matrix-chat-metric-col' : 'matrix-chat-health-host-col';
+            colgroup.appendChild(col);
+          });
+          table.appendChild(colgroup);
+        }
         const thead = document.createElement('thead');
         const headRow = document.createElement('tr');
         headerCells.forEach(cell => {
@@ -456,17 +510,24 @@ const MatrixChat = (() => {
         thead.appendChild(headRow);
         table.appendChild(thead);
         const tbody = document.createElement('tbody');
-        while (i < lines.length && isTableRow(lines[i])) {
+        tableRows.forEach(rowCells => {
           const tr = document.createElement('tr');
-          const rowCells = tableCells(lines[i]);
           headerCells.forEach((_, cellIndex) => {
+            const cell = rowCells[cellIndex] || '';
             const td = document.createElement('td');
-            appendInlineMarkdown(td, rowCells[cellIndex] || '');
+            const tone = statusToneForCell(cell);
+            if (tone) td.dataset.tone = tone;
+            if (healthMetricTable) {
+              if (cellIndex === 0) td.classList.add('matrix-chat-table-row-heading');
+              else td.classList.add('matrix-chat-health-cell');
+            }
+            appendTableCellContent(td, cell, {
+              stackMetrics: healthMetricTable && cellIndex > 0,
+            });
             tr.appendChild(td);
           });
           tbody.appendChild(tr);
-          i += 1;
-        }
+        });
         table.appendChild(tbody);
         wrap.appendChild(table);
         fragment.appendChild(wrap);
