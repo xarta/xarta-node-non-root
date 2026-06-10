@@ -257,7 +257,7 @@ select.hub-ctrl option {
     max-height: 60vh;
     overflow-y: auto;
     scrollbar-width: thin;
-    scrollbar-color: rgba(var(--hub-accent-rgb), 0.3) transparent;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
 .hub-select-menu--dialog {

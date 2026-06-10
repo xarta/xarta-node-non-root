@@ -24,8 +24,28 @@
   --hub-bg-focus:   #202535;
   --hub-text:       #e2e6f3;
   --hub-radius:     8px;
+
+  --scrollbar-thumb: var(--accent-dim);
+  --scrollbar-thumb-hover: #376199;
+  --scrollbar-track: transparent;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
+* {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+*::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+*::-webkit-scrollbar-corner {
+  background: var(--scrollbar-track);
+}
 html {
   max-width: 100%;
   overflow-x: hidden;

@@ -177,7 +177,7 @@ dialog.hub-modal[open]::backdrop {
     padding: 16px;
     /* No overflow here — the dialog element is the scroll container */
     scrollbar-width: thin;
-    scrollbar-color: rgba(var(--hub-accent-rgb, 0, 212, 255), 0.3) transparent;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
 /* Introductory paragraph / description text */
