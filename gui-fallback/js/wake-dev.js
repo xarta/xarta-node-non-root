@@ -164,29 +164,41 @@ const WakeDevModal = (() => {
     return !['0', 'false', 'off', 'no'].includes(String(value).trim().toLowerCase());
   }
 
-  function cleanDeliveryMode(value) {
+  function directModeForInstance(instanceId) {
+    return instanceId === 'vps' ? 'direct_vps' : 'direct_local';
+  }
+
+  function isDirectMode(value) {
+    return value === 'direct_local' || value === 'direct_vps';
+  }
+
+  function cleanDeliveryMode(value, instanceId = 'local') {
     const mode = String(value || '').trim().toLowerCase().replace(/[-\s]+/g, '_');
-    if (['direct', 'direct_hermes', 'hermes_direct', 'hermes_stt'].includes(mode)) return 'direct_local';
-    return mode === 'direct_local' ? 'direct_local' : 'matrix';
+    if (['direct', 'direct_hermes', 'hermes_direct', 'hermes_stt'].includes(mode)) {
+      return directModeForInstance(instanceId);
+    }
+    if (isDirectMode(mode)) return mode;
+    return 'matrix';
   }
 
   function canSelectDirect(instanceId, instance) {
-    return instanceId === 'local' && !!instance?.direct_available && !!instance?.direct_route_enabled;
+    return !!instance?.direct_available && !!instance?.direct_route_enabled;
   }
 
   function effectiveDeliveryMode(instanceId, instance) {
-    return canSelectDirect(instanceId, instance) && cleanDeliveryMode(instance?.delivery_mode) === 'direct_local'
-      ? 'direct_local'
+    return canSelectDirect(instanceId, instance) && isDirectMode(cleanDeliveryMode(instance?.delivery_mode, instanceId))
+      ? directModeForInstance(instanceId)
       : 'matrix';
   }
 
   function routeStateText(instanceId, instance) {
     const mode = effectiveDeliveryMode(instanceId, instance);
+    if (mode === 'direct_vps') return 'Direct VPS STT active; Matrix fallback ready.';
     if (mode === 'direct_local') return 'Direct local hermes-stt active; Matrix fallback ready.';
-    if (instanceId !== 'local' || !instance?.direct_available) return 'Matrix route active; direct route unavailable.';
+    if (!instance?.direct_available) return 'Matrix route active; direct route unavailable.';
     if (!instance?.direct_route_enabled) return 'Matrix route active; direct route flag off.';
     if (instance?.direct_rollback_reason) return `Matrix route active; ${instance.direct_rollback_reason}.`;
-    return 'Matrix route active; direct local available.';
+    return 'Matrix route active; direct route available.';
   }
 
   function cleanInstance(instanceId, value) {
@@ -195,11 +207,11 @@ const WakeDevModal = (() => {
     const rawCommands = raw.commands && typeof raw.commands === 'object' ? raw.commands : {};
     const matrixServer = instanceId === 'vps' ? 'vps' : 'tb1';
     const wakeWord = cleanText(raw.wake_word, defaults.wake_word);
-    const directAvailable = instanceId === 'local' && cleanBool(raw.direct_available, defaults.direct_available);
+    const directAvailable = cleanBool(raw.direct_available, defaults.direct_available);
     const directRouteEnabled = cleanBool(raw.direct_route_enabled, defaults.direct_route_enabled);
-    const requestedDeliveryMode = cleanDeliveryMode(raw.delivery_mode || defaults.delivery_mode);
-    const deliveryMode = directAvailable && directRouteEnabled && requestedDeliveryMode === 'direct_local'
-      ? 'direct_local'
+    const requestedDeliveryMode = cleanDeliveryMode(raw.delivery_mode || defaults.delivery_mode, instanceId);
+    const deliveryMode = directAvailable && directRouteEnabled && isDirectMode(requestedDeliveryMode)
+      ? directModeForInstance(instanceId)
       : 'matrix';
     return {
       enabled: true,
@@ -211,10 +223,10 @@ const WakeDevModal = (() => {
       hermes_prefix: cleanHermesPrefix(raw.hermes_prefix, defaults.hermes_prefix),
       delivery_mode: deliveryMode,
       direct_available: directAvailable,
-      direct_enabled: deliveryMode === 'direct_local' && cleanBool(raw.direct_enabled, deliveryMode === 'direct_local'),
+      direct_enabled: isDirectMode(deliveryMode) && cleanBool(raw.direct_enabled, isDirectMode(deliveryMode)),
       direct_route_enabled: directRouteEnabled,
       direct_status: cleanText(raw.direct_status, directAvailable ? 'disabled' : 'not_available'),
-      direct_requested: cleanBool(raw.direct_requested, requestedDeliveryMode === 'direct_local'),
+      direct_requested: isDirectMode(requestedDeliveryMode) || cleanBool(raw.direct_requested),
       direct_rollback_applied: cleanBool(raw.direct_rollback_applied, false),
       direct_rollback_reason: cleanText(raw.direct_rollback_reason, ''),
       auto_execute_silence_ms: cleanStepMs(raw.auto_execute_silence_ms),
@@ -298,16 +310,18 @@ const WakeDevModal = (() => {
     setControlValue(instanceId, 'matrix_room_id', instance.matrix_room_id);
     const deliveryControl = control(instanceId, 'delivery_mode');
     if (deliveryControl) {
-      const directOption = Array.from(deliveryControl.options || []).find(option => option.value === 'direct_local');
+      const directMode = directModeForInstance(instanceId);
+      const directOption = Array.from(deliveryControl.options || []).find(option => isDirectMode(option.value));
       const directSelectable = canSelectDirect(instanceId, instance);
       if (directOption) {
+        directOption.value = directMode;
         directOption.disabled = !directSelectable;
         directOption.textContent = instanceId === 'local'
           ? (directSelectable ? 'Direct hermes-stt' : 'Direct hermes-stt unavailable')
-          : 'Direct not available';
+          : (directSelectable ? 'Direct VPS STT' : 'Direct VPS STT unavailable');
       }
       deliveryControl.value = effectiveDeliveryMode(instanceId, instance);
-      deliveryControl.disabled = instanceId !== 'local' || !directSelectable;
+      deliveryControl.disabled = !directSelectable;
     }
     setControlValue(instanceId, 'auto_execute_silence_ms', instance.auto_execute_silence_ms);
     setControlValue(instanceId, 'execute_cancel_ms', instance.execute_cancel_ms);
@@ -415,7 +429,7 @@ const WakeDevModal = (() => {
       const lastCommand = memorySnapshot.last_command || {};
       const pieces = [];
       if (memorySnapshot.last_status) pieces.push(memorySnapshot.last_status);
-      if (send.delivery_mode) pieces.push(send.delivery_mode === 'direct_local' ? 'Direct' : 'Matrix');
+      if (send.delivery_mode) pieces.push(isDirectMode(send.delivery_mode) ? 'Direct' : 'Matrix');
       if (send.fallback_reason) pieces.push(`Fallback ${send.fallback_reason}`);
       if (send.rollback_reason) pieces.push(`Rollback ${send.rollback_reason}`);
       if (send.event_id) pieces.push(`Event ${send.event_id}`);
@@ -749,16 +763,17 @@ const WakeDevModal = (() => {
   function sentStatusFromDelivery(payload, requestedMode) {
     const { delivery, readback } = deliveryReadback(payload);
     const route = cleanText(delivery.route || readback.delivery_mode || requestedMode, requestedMode);
-    if (delivery.ok === false && route === 'direct_local') {
+    if (delivery.ok === false && isDirectMode(route)) {
       const reason = cleanText(delivery.fallback_reason || delivery.status || delivery.direct?.status);
       return reason
         ? `Wake To Talk direct delivery failed: ${reason}.`
         : 'Wake To Talk direct delivery failed.';
     }
+    if (route === 'direct_vps') return 'Wake To Talk candidate delivered by direct VPS STT.';
     if (route === 'direct_local') return 'Wake To Talk candidate delivered by direct hermes-stt.';
     if (route === 'matrix_fallback') return 'Wake To Talk candidate used Matrix fallback.';
     if (readback.rollback_reason) return 'Wake To Talk candidate sent through Matrix after direct rollback.';
-    return requestedMode === 'direct_local'
+    return isDirectMode(requestedMode)
       ? 'Wake To Talk candidate sent with Matrix available as a manual option.'
       : 'Wake To Talk candidate sent through Matrix.';
   }
@@ -830,8 +845,8 @@ const WakeDevModal = (() => {
           candidate_revision: viable.revision,
           hermes_prefix: instance.hermes_prefix || '',
           delivery_mode: deliveryMode,
-          direct_enabled: deliveryMode === 'direct_local',
-          direct_diagnostic_enabled: deliveryMode === 'direct_local',
+          direct_enabled: isDirectMode(deliveryMode),
+          direct_diagnostic_enabled: isDirectMode(deliveryMode),
           direct_await_diagnostic: false,
         }),
       });
@@ -1243,7 +1258,7 @@ const WakeDevModal = (() => {
         ...instance,
         delivery_mode: controlValue(instanceId, 'delivery_mode', instance.delivery_mode),
       });
-      instance.direct_enabled = instance.delivery_mode === 'direct_local';
+      instance.direct_enabled = isDirectMode(instance.delivery_mode);
       instance.direct_requested = instance.direct_enabled;
       instance.auto_execute_silence_ms = cleanStepMs(controlValue(instanceId, 'auto_execute_silence_ms', instance.auto_execute_silence_ms));
       instance.execute_cancel_ms = cleanStepMs(controlValue(instanceId, 'execute_cancel_ms', instance.execute_cancel_ms));

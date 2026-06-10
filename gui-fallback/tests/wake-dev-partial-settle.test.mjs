@@ -127,7 +127,7 @@ async function createHarness(settingsOverrides = {}) {
       json: async () => {
         if (String(url).includes('/wake-stt')) {
           const requested = body?.delivery_mode || 'matrix';
-          const direct = requested === 'direct_local';
+          const direct = requested === 'direct_local' || requested === 'direct_vps';
           if (typeof wakeResponseFactory === 'function') {
             return wakeResponseFactory({ body, requested, direct, fetchCalls });
           }
@@ -137,13 +137,13 @@ async function createHarness(settingsOverrides = {}) {
             delivery: {
               ok: true,
               status: direct ? 'delivered' : 'matrix_delivered',
-              route: direct ? 'direct_local' : 'matrix',
+              route: direct ? requested : 'matrix',
               fallback_reason: '',
               diagnostic_scheduled: direct,
               readback: {
                 requested_delivery_mode: requested,
                 requested_direct_enabled: direct,
-                delivery_mode: direct ? 'direct_local' : 'matrix',
+                delivery_mode: direct ? requested : 'matrix',
                 direct_available: true,
                 direct_enabled: direct,
                 direct_route_enabled: true,
@@ -318,6 +318,36 @@ async function testDirectLocalDeliveryPayloadAndReadback() {
   assert.equal(local.last_status, 'Wake To Talk candidate delivered by direct hermes-stt.');
 }
 
+async function testDirectVpsDeliveryPayloadAndReadback() {
+  const harness = await createHarness({
+    vps: {
+      matrix_room_id: '!vps:test',
+      delivery_mode: 'direct_vps',
+      direct_available: true,
+      direct_enabled: true,
+      direct_route_enabled: true,
+      direct_status: 'enabled',
+    },
+  });
+  harness.setCandidate('vps', 'payload2', 'What is the time Mini-Me execute');
+  await sleep(80);
+  const sends = harness.matrixSends();
+  assert.equal(sends.length, 1);
+  assert.ok(String(sends[0].url).includes('server=vps'));
+  assert.equal(sends[0].body.instance, 'vps');
+  assert.equal(sends[0].body.delivery_mode, 'direct_vps');
+  assert.equal(sends[0].body.direct_enabled, true);
+  assert.equal(sends[0].body.direct_diagnostic_enabled, true);
+  assert.equal(sends[0].body.direct_await_diagnostic, false);
+
+  const snapshot = harness.snapshot();
+  const vps = snapshot.instances.vps;
+  assert.equal(vps.last_send_status, 'sent');
+  assert.equal(vps.last_send.delivery_mode, 'direct_vps');
+  assert.equal(vps.last_send.diagnostic_scheduled, true);
+  assert.equal(vps.last_status, 'Wake To Talk candidate delivered by direct VPS STT.');
+}
+
 async function testDirectLocalFailureReadbackKeepsCandidate() {
   const harness = await createHarness({
     local: {
@@ -372,6 +402,7 @@ await testPartialRestartPromotesNewestOnly();
 await testFinalCancelsPendingPartial();
 await testSettledPartialCommandThenFinalDoesNotSendTwice();
 await testDirectLocalDeliveryPayloadAndReadback();
+await testDirectVpsDeliveryPayloadAndReadback();
 await testDirectLocalFailureReadbackKeepsCandidate();
 
 console.log('wake-dev partial settle tests passed');

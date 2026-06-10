@@ -109,8 +109,8 @@ async function testDirectDeliverySurvivesVoiceModeSave() {
         matrix_server: 'vps',
         matrix_room_id: '!shared:test',
         wake_word: 'David',
-        delivery_mode: 'direct_local',
-        direct_available: false,
+        delivery_mode: 'direct_vps',
+        direct_available: true,
         direct_enabled: true,
         direct_route_enabled: true,
         direct_requested: true,
@@ -127,8 +127,10 @@ async function testDirectDeliverySurvivesVoiceModeSave() {
   assert.equal(local.direct_enabled, true);
   assert.equal(local.direct_requested, true);
   assert.equal(local.direct_route_enabled, true);
-  assert.equal(vps.delivery_mode, 'matrix');
-  assert.equal(vps.direct_enabled, false);
+  assert.equal(vps.delivery_mode, 'direct_vps');
+  assert.equal(vps.direct_enabled, true);
+  assert.equal(vps.direct_requested, true);
+  assert.equal(vps.direct_route_enabled, true);
 }
 
 async function testDirectDeliveryRollsBackWhenGateUnavailable() {
