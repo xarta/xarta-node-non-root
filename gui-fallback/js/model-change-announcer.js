@@ -295,6 +295,11 @@ const BlueprintsModelChangeAnnouncer = (() => {
    *  then schedules the next drain. */
   function _afterAnnouncing(item) {
     if (item && item.isModelChange) _recordAnnounced();
+    if (item && item.__stopRequested) {
+      if (_currentItem === item) _currentItem = null;
+      _astate = ASTATE.IDLE;
+      return;
+    }
     if (_currentItem === item) _currentItem = null;
     if (_transition(ASTATE.COOLING_DOWN, 'TTS done')) {
       _cooldownTimer = setTimeout(() => {
@@ -555,6 +560,51 @@ const BlueprintsModelChangeAnnouncer = (() => {
       interrupted_by: _eventSummary(interruptingItem?.event || {}),
     });
     return true;
+  }
+
+  async function _handleTtsStopRequested(evt = {}) {
+    if (_debounceTimer) {
+      clearTimeout(_debounceTimer);
+      _debounceTimer = null;
+    }
+    if (_cooldownTimer) {
+      clearTimeout(_cooldownTimer);
+      _cooldownTimer = null;
+    }
+    const active = _currentItem;
+    if (active) {
+      active.__priorityInterrupted = true;
+      active.__stopRequested = true;
+    }
+    _queue.length = 0;
+    _priorityQueue.length = 0;
+    _stash.length = 0;
+    _normalQueuePaused = false;
+    _normalQueuePausedAt = 0;
+    _currentItem = null;
+    _astate = ASTATE.IDLE;
+    if (typeof BlueprintsTtsClient !== 'undefined'
+        && typeof BlueprintsTtsClient.stop === 'function') {
+      try {
+        await BlueprintsTtsClient.stop();
+      } catch (error) {
+        _recordSpeechState('error', active || {}, {
+          reason: 'tts_stop_requested',
+          error: _errorMessage(error),
+          event: _eventSummary(evt),
+        });
+      }
+    }
+    _recordSpeechState('interrupted', active || {}, {
+      reason: 'tts_stop_requested',
+      event: _eventSummary(evt),
+      clear_queues: evt?.payload?.clear_queues !== false,
+    });
+    void _showToastForEvent({
+      title: evt.title || 'Speech stopped',
+      message: evt.message || 'TTS output was stopped.',
+      severity: evt.severity || 'info',
+    }, evt, 'hermes_speech');
   }
 
   async function _speak(text, item = {}) {
@@ -903,6 +953,10 @@ const BlueprintsModelChangeAnnouncer = (() => {
         );
         break;
       }
+
+      case 'tts.stop.requested':
+        void _handleTtsStopRequested(evt);
+        break;
 
       case 'voice.mode.changed':
         void _showToastForEvent({
