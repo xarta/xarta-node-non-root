@@ -41,6 +41,36 @@ const BlueprintsAlarmClock = (() => {
     };
   }
 
+  function _voiceMode() {
+    return window.BlueprintsVoiceMode || null;
+  }
+
+  function _browserId() {
+    return String(_voiceMode()?.getBrowserId?.() || '').trim();
+  }
+
+  function _browserLabel() {
+    const label = _voiceMode()?.getBrowserLabel?.();
+    if (label) return String(label);
+    const platform = navigator.platform || 'browser';
+    const standalone = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+    return `${standalone ? 'PWA' : 'Browser'} on ${platform}`;
+  }
+
+  function _tabId() {
+    return String(_voiceMode()?.getTabId?.() || '').trim();
+  }
+
+  function _commandTargetsThisTab(payload) {
+    const targetBrowserId = _cleanText(payload?.target_browser_id || payload?.active_browser_id, '', 120);
+    const browserId = _browserId();
+    if (targetBrowserId && browserId && targetBrowserId !== browserId) return false;
+    const targetTabId = _cleanText(payload?.target_tab_id, '', 120);
+    const tabId = _tabId();
+    if (targetTabId && tabId && targetTabId !== tabId) return false;
+    return true;
+  }
+
   function _escape(value) {
     return String(value ?? '')
       .replace(/&/g, '&amp;')
@@ -991,6 +1021,7 @@ const BlueprintsAlarmClock = (() => {
   }
 
   function applyCommand(payload = {}) {
+    if (!_commandTargetsThisTab(payload)) return false;
     const action = _cleanText(payload.action, '', 80).replace(/[-\s]+/g, '_');
     if (action === 'dismiss') {
       dismiss('sse');
@@ -1020,7 +1051,48 @@ const BlueprintsAlarmClock = (() => {
       updateSleep(payload.sleep);
       return true;
     }
+    if (action === 'request_local_state') {
+      void postLocalState(payload);
+      return true;
+    }
     return false;
+  }
+
+  async function postLocalState(payload = {}) {
+    if (!_local) _loadLocal();
+    const commandId = _cleanText(payload.command_id, '', 120);
+    if (!commandId) return false;
+    const body = {
+      schema: 'xarta.alarm.browser_state.v1',
+      command_id: commandId,
+      browser_id: _browserId(),
+      browser_label: _browserLabel(),
+      tab_id: _tabId(),
+      settings: getLocalSettings(),
+      active_ring: _activeRing ? {
+        scope: _activeRing.scope || '',
+        cycle_id: _activeRing.cycle_id || '',
+        source: _activeRing.source || '',
+        slot: _activeRing.slot || {},
+        ringing: true,
+      } : { ringing: false },
+      status: 'ok',
+      ok: true,
+      client_now_ms: Date.now(),
+    };
+    try {
+      const response = await apiFetch('/api/v1/alarms/browser-state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        deferDuringColumnResize: false,
+        trackActivity: false,
+      });
+      return response.ok;
+    } catch (error) {
+      console.debug('[alarm-clock] local state readback failed', error);
+      return false;
+    }
   }
 
   function setLocalSettings(settings) {
@@ -1168,6 +1240,7 @@ const BlueprintsAlarmClock = (() => {
     dismiss,
     snooze,
     applyCommand,
+    postLocalState,
     getLocalSettings,
     setLocalSettings,
     updateLocalSlot,
