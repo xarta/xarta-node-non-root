@@ -1,0 +1,529 @@
+/* Alarm clock settings and ring modals. */
+
+#alarm-settings-modal {
+  width: min(1080px, calc(100vw - 20px));
+  max-width: calc(100vw - 20px);
+}
+
+#alarm-settings-modal .hub-modal-body {
+  padding: 0;
+}
+
+.alarm-shell {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  min-height: min(660px, calc(100dvh - 160px));
+}
+
+.alarm-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid rgba(var(--hub-dialog-rgb, 0, 212, 255), 0.24);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  flex-wrap: wrap;
+}
+
+.alarm-tab {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim, #9aa3b2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.alarm-tab.is-active {
+  color: var(--hub-dialog-color, #00d4ff);
+  border-color: rgba(var(--hub-dialog-rgb, 0, 212, 255), 0.38);
+  background: rgba(var(--hub-dialog-rgb, 0, 212, 255), 0.13);
+}
+
+.alarm-sidebar {
+  min-width: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.16);
+  padding: 14px;
+}
+
+.alarm-slot-list {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.alarm-slot-button {
+  display: grid;
+  grid-template-columns: minmax(84px, 0.9fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text, #e5e7eb);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.alarm-slot-button.is-active {
+  border-color: rgba(var(--hub-dialog-rgb, 0, 212, 255), 0.52);
+  background: rgba(var(--hub-dialog-rgb, 0, 212, 255), 0.12);
+}
+
+.alarm-slot-button[aria-disabled="true"] {
+  opacity: 0.62;
+}
+
+.alarm-slot-meta {
+  min-width: 0;
+}
+
+.alarm-slot-title,
+.alarm-slot-days,
+.alarm-field-note,
+.alarm-status {
+  overflow-wrap: anywhere;
+}
+
+.alarm-slot-title {
+  display: block;
+  color: var(--text, #e5e7eb);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.alarm-slot-days,
+.alarm-field-note {
+  display: block;
+  color: var(--text-dim, #9aa3b2);
+  font-size: 11px;
+  line-height: 1.45;
+  margin-top: 3px;
+}
+
+.alarm-editor {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  min-width: 0;
+}
+
+.alarm-editor-head {
+  display: grid;
+  grid-template-columns: minmax(132px, 190px) minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+}
+
+.alarm-editor-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  min-width: 0;
+}
+
+.alarm-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.alarm-primary-fields {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(108px, 1fr) minmax(0, 4fr);
+  gap: 12px;
+  min-width: 0;
+}
+
+.alarm-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.alarm-field > span,
+.alarm-days-title {
+  color: var(--text-dim, #9aa3b2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.alarm-field input[type="text"],
+.alarm-field input[type="time"],
+.alarm-field input[type="number"],
+.alarm-field textarea {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.24);
+  color: var(--text, #e5e7eb);
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 9px;
+}
+
+.alarm-field select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background-color: rgba(0, 0, 0, 0.24);
+  color: var(--text, #e5e7eb);
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 9px;
+}
+
+.alarm-field textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
+.alarm-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  color: var(--text, #e5e7eb);
+  font-size: 13px;
+}
+
+.alarm-editor-summary .alarm-check-row {
+  min-height: 30px;
+  white-space: nowrap;
+}
+
+.alarm-days {
+  display: grid;
+  gap: 8px;
+}
+
+.alarm-day-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.alarm-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-dim, #9aa3b2);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.alarm-day .hub-checkbox__box {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+}
+
+.alarm-day .hub-checkbox__label {
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.alarm-day:has(.hub-checkbox__input:checked) {
+  border-color: rgba(var(--hub-dialog-rgb, 0, 212, 255), 0.52);
+  background: rgba(var(--hub-dialog-rgb, 0, 212, 255), 0.15);
+  color: var(--hub-dialog-color, #00d4ff);
+}
+
+.alarm-audio-controls,
+.alarm-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.alarm-audio-controls .hub-modal-btn,
+.alarm-inline-actions .hub-modal-btn {
+  min-height: 34px;
+}
+
+.alarm-file-input {
+  max-width: 260px;
+  color: var(--text-dim, #9aa3b2);
+  font-size: 12px;
+}
+
+.alarm-flip {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  min-width: 0;
+}
+
+.alarm-flip-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 76px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02) 48%, rgba(0, 0, 0, 0.28) 49%, rgba(255, 255, 255, 0.035)),
+    #101114;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 24px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+
+.alarm-flip-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  background: rgba(0, 0, 0, 0.78);
+}
+
+.alarm-flip-card span {
+  color: rgba(235, 236, 238, 0.86);
+  font-family: "Arial Black", Impact, system-ui, sans-serif;
+  font-size: clamp(38px, 7vw, 74px);
+  font-weight: 900;
+  line-height: 0.95;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.alarm-slot-button .alarm-flip-card {
+  min-height: 54px;
+}
+
+.alarm-slot-button .alarm-flip-card span {
+  font-size: 30px;
+}
+
+.alarm-sleep-panel {
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.alarm-status {
+  min-height: 18px;
+  color: var(--text-dim, #9aa3b2);
+  font-size: 12px;
+  flex: 1;
+}
+
+#alarm-ring-modal {
+  width: min(760px, calc(100vw - 20px));
+  max-width: calc(100vw - 20px);
+}
+
+#alarm-ring-modal .hub-modal-body {
+  padding: 18px;
+}
+
+@media (max-width: 520px) and (orientation: portrait) {
+  #alarm-ring-modal {
+    margin: auto;
+  }
+}
+
+.alarm-ring-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.alarm-ring-time {
+  width: min(520px, 100%);
+  margin: 0 auto;
+}
+
+.alarm-ring-detail {
+  color: var(--text, #e5e7eb);
+  font-size: clamp(20px, 4vw, 30px);
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.alarm-ring-subdetail {
+  color: var(--text-dim, #9aa3b2);
+  font-size: 14px;
+  text-align: center;
+}
+
+.alarm-ring-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.alarm-ring-action {
+  min-height: clamp(92px, 18dvh, 150px);
+  border-radius: 8px;
+  border: 2px solid rgba(var(--hub-dialog-rgb, 245, 158, 11), 0.44);
+  background: rgba(var(--hub-dialog-rgb, 245, 158, 11), 0.14);
+  color: var(--text, #f9fafb);
+  font-family: "Arial Black", Impact, system-ui, sans-serif;
+  font-size: clamp(30px, 8vw, 64px);
+  font-weight: 900;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.alarm-ring-action.secondary {
+  border-color: rgba(148, 163, 184, 0.42);
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.alarm-ring-action[disabled] {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .alarm-shell {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .alarm-sidebar {
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .alarm-slot-list {
+    grid-template-columns: repeat(5, 132px);
+    overflow-x: auto;
+    padding-bottom: 3px;
+    width: 100%;
+  }
+
+  .alarm-slot-button {
+    grid-template-columns: 1fr;
+  }
+
+  .alarm-editor-head,
+  .alarm-field-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 380px) {
+  .alarm-primary-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  #alarm-settings-modal {
+    max-height: calc(100dvh - 12px);
+    margin-top: 6px;
+    margin-bottom: 6px;
+  }
+
+  .alarm-shell {
+    grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);
+    min-height: 0;
+  }
+
+  .alarm-sidebar,
+  .alarm-editor {
+    padding: 10px;
+  }
+
+  .alarm-editor-head {
+    grid-template-columns: minmax(112px, 150px) minmax(0, 1fr);
+  }
+
+  .alarm-flip-card {
+    min-height: 58px;
+  }
+
+  .alarm-flip-card span {
+    font-size: 42px;
+  }
+
+  .alarm-ring-actions {
+    gap: 10px;
+  }
+
+  .alarm-ring-action {
+    min-height: 76px;
+    font-size: 34px;
+  }
+}
+
+@media (max-width: 520px) {
+  #alarm-settings-modal .hub-modal-header {
+    flex-wrap: wrap;
+  }
+
+  #alarm-settings-modal .hub-modal-title {
+    min-width: 0;
+  }
+
+  #alarm-settings-modal .hub-dialog-title-text {
+    white-space: nowrap;
+  }
+
+  #alarm-settings-modal .hub-dialog-close {
+    margin-left: auto;
+  }
+
+  #alarm-settings-modal .hub-modal-footer {
+    justify-content: stretch;
+  }
+
+  #alarm-settings-modal .alarm-status {
+    flex: 1 0 100%;
+    min-width: 100%;
+  }
+
+  #alarm-settings-modal .hub-modal-footer .hub-modal-btn {
+    flex: 1 1 calc(50% - 8px);
+    min-width: 0;
+    padding-left: 8px;
+    padding-right: 8px;
+    font-size: 11px;
+  }
+
+  #alarm-reset-connectivity-dismissal {
+    flex-basis: 100%;
+  }
+
+  .alarm-tabs {
+    order: 3;
+    width: 100%;
+  }
+
+  .alarm-tab {
+    flex: 1;
+  }
+
+  .alarm-ring-actions {
+    grid-template-columns: 1fr;
+  }
+}

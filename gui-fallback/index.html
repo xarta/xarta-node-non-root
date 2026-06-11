@@ -50,6 +50,7 @@
   <link rel="stylesheet" href="css/agent-pages.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/matrix-chat.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/matrix-chat-admin.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/alarm-clock.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="embed/clock-overlay.css?v={{$assetVersion}}" />
   <script>
     window.BLUEPRINTS_FRONTEND_VERSION = {
@@ -5133,6 +5134,7 @@
 <script src="js/hub-modal.js?v={{$assetVersion}}"></script>
 <script src="js/hub-dialogs.js?v={{$assetVersion}}"></script>
 <script src="js/shared-asset-picker.js?v={{$assetVersion}}"></script>
+<script src="js/alarm-clock.js?v={{$assetVersion}}"></script>
 <script src="js/menu-action-order.js?v={{$assetVersion}}"></script>
 <script src="js/hub-menu.js?v={{$assetVersion}}"></script>
 <script src="js/hieroglyphs.js?v={{$assetVersion}}"></script>
@@ -5266,8 +5268,60 @@
   </div>
   <div class="hub-modal-footer">
     <button class="hub-modal-btn secondary" type="button" id="diag-api-key-btn" title="Configure API key">&#128273; API Key</button>
+    <button class="hub-modal-btn secondary" type="button" id="diag-dismiss-12h-btn">Dismiss 12h</button>
     <button class="hub-modal-btn secondary" type="button" id="diag-retry-btn">&#8635; Retry</button>
     <button class="hub-modal-btn warning hub-modal-close" type="button" data-fc-key="modal.close">Close</button>
+  </div>
+</dialog>
+
+<!-- Alarm clock settings modal -->
+<dialog class="hub-modal hub-dialog" data-tone="info" id="alarm-settings-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">ALARM</span>
+      <span class="hub-dialog-title-text">Alarm Clock</span>
+    </h2>
+    <div class="alarm-tabs" id="alarm-tabs" role="tablist" aria-label="Alarm scope">
+      <button class="alarm-tab is-active" type="button" role="tab" data-scope="local" aria-selected="true">Local</button>
+      <button class="alarm-tab" type="button" role="tab" data-scope="server" aria-selected="false">Server</button>
+    </div>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body">
+    <div class="alarm-shell">
+      <aside class="alarm-sidebar">
+        <div class="alarm-slot-list" id="alarm-slot-list"></div>
+      </aside>
+      <section class="alarm-editor" id="alarm-slot-editor"></section>
+    </div>
+  </div>
+  <div class="hub-modal-footer">
+    <span class="alarm-status" id="alarm-settings-status" aria-live="polite"></span>
+    <button class="hub-modal-btn secondary" type="button" id="alarm-refresh-server">Refresh Server</button>
+    <button class="hub-modal-btn secondary" type="button" id="alarm-reset-connectivity-dismissal">Reset Connection Notice</button>
+    <button class="hub-modal-btn" type="button" id="alarm-save-server" hidden>Server Saved</button>
+    <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Close</button>
+  </div>
+</dialog>
+
+<!-- Alarm sounding modal -->
+<dialog class="hub-modal hub-dialog" data-tone="warning" id="alarm-ring-modal">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">ALARM</span>
+      <span class="hub-dialog-title-text">Ringing</span>
+    </h2>
+  </div>
+  <div class="hub-modal-body">
+    <div class="alarm-ring-panel">
+      <div class="alarm-ring-time" id="alarm-ring-time"></div>
+      <div class="alarm-ring-detail" id="alarm-ring-description">Alarm</div>
+      <div class="alarm-ring-subdetail" id="alarm-ring-subdetail"></div>
+      <div class="alarm-ring-actions">
+        <button class="alarm-ring-action secondary" type="button" id="alarm-ring-snooze">SNOOZE</button>
+        <button class="alarm-ring-action" type="button" id="alarm-ring-dismiss">DISMISS</button>
+      </div>
+    </div>
   </div>
 </dialog>
 

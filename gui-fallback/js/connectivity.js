@@ -3,7 +3,9 @@ const _LS_DIAG_NODE    = 'bp_diag_node_name';
 const _LS_DIAG_HOST    = 'bp_diag_host_parent';
 const _LS_DIAG_HOST_TS = 'bp_diag_host_parent_ts';
 const _LS_DIAG_NODES   = 'bp_diag_nodes';
+const _LS_DIAG_DISMISS_UNTIL = 'bp_diag_dismiss_until';
 const _HOST_TTL_MS     = 3_600_000; // 1 hour
+const _DIAG_DISMISS_MS = 12 * 60 * 60 * 1000;
 
 let _diagRunning = false;
 
@@ -172,6 +174,40 @@ function _openDiagModal(modal) {
   if (!modal.open) modal.showModal();
 }
 
+function _closeDiagModal(modal) {
+  if (!modal) return;
+  if (typeof HubModal !== 'undefined') {
+    HubModal.close(modal);
+    return;
+  }
+  if (modal.open) modal.close();
+}
+
+function isConnectivityDiagnosticDismissed() {
+  try {
+    const until = Number(localStorage.getItem(_LS_DIAG_DISMISS_UNTIL) || 0);
+    return Number.isFinite(until) && until > Date.now();
+  } catch (_) {
+    return false;
+  }
+}
+
+function dismissConnectivityDiagnosticFor(ms = _DIAG_DISMISS_MS) {
+  const until = Date.now() + Math.max(0, Number(ms) || _DIAG_DISMISS_MS);
+  try {
+    localStorage.setItem(_LS_DIAG_DISMISS_UNTIL, String(until));
+  } catch (_) {}
+  _closeDiagModal(document.getElementById('diag-modal'));
+  return until;
+}
+
+function resetConnectivityDiagnosticDismissal() {
+  try {
+    localStorage.removeItem(_LS_DIAG_DISMISS_UNTIL);
+  } catch (_) {}
+  return true;
+}
+
 function _setDiagStatus(message, tone = 'muted') {
   const el = document.getElementById('diag-modal-status');
   if (!el) return;
@@ -201,11 +237,13 @@ function _wireDiagModal() {
   if (!modal || modal.dataset.wired === '1') return;
   const apiBtn = document.getElementById('diag-api-key-btn');
   const retryBtn = document.getElementById('diag-retry-btn');
+  const dismissBtn = document.getElementById('diag-dismiss-12h-btn');
   if (apiBtn) apiBtn.addEventListener('click', () => openApiKeyModal());
+  if (dismissBtn) dismissBtn.addEventListener('click', () => dismissConnectivityDiagnosticFor());
   if (retryBtn) {
     retryBtn.addEventListener('click', () => {
       _diagRunning = false;
-      showConnectivityDiagnostic();
+      showConnectivityDiagnostic({ force: true });
     });
   }
   modal.dataset.wired = '1';
@@ -227,7 +265,8 @@ function _diagSection(title) {
       border-bottom:1px solid var(--border)">${title}</div>`;
 }
 
-async function showConnectivityDiagnostic() {
+async function showConnectivityDiagnostic(options = {}) {
+  if (!options.force && isConnectivityDiagnosticDismissed()) return;
   if (_diagRunning) return;
   _diagRunning = true;
   _wireDiagModal();
@@ -436,10 +475,17 @@ async function showConnectivityDiagnostic() {
       body.innerHTML = `<div style="color:var(--err);font-size:13px;padding:8px 0">Could not refresh diagnostics: ${esc(e.message || 'Unknown error')}</div>`;
     }
     _setDiagStatus('Refresh failed. Showing previous results.', 'warn');
-  } finally {
+} finally {
     _setDiagBusy(false);
     _diagRunning = false;
   }
 }
+
+window.BlueprintsConnectivity = Object.freeze({
+  dismissDiagnosticFor: dismissConnectivityDiagnosticFor,
+  isDiagnosticDismissed: isConnectivityDiagnosticDismissed,
+  resetDiagnosticDismissal: resetConnectivityDiagnosticDismissal,
+  showDiagnostic: showConnectivityDiagnostic,
+});
 
 /* ── State ────────────────────────────────────────────────────────────── */

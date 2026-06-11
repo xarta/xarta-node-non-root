@@ -211,6 +211,11 @@ const BlueprintsModelChangeAnnouncer = (() => {
     return (Date.now() / 1000) - createdAt <= _HERMES_SPEECH_FRESHNESS_SECONDS;
   }
 
+  function _isAlarmClockEvent(evt) {
+    const type = String(evt?.event_type || '');
+    return type === 'alarm.ring' || type === 'alarm.control';
+  }
+
   function _genericSpeechForEvent(evt) {
     if (evt?.payload?.speech) return String(evt.payload.speech);
     const severity = _eventSeverity(evt);
@@ -841,6 +846,8 @@ const BlueprintsModelChangeAnnouncer = (() => {
 
   function _handle(evt) {
     if (!evt || !evt.event_type) return;
+    // Alarm clock owns its own modal, sound, and TTS path; notifier DND must not gate it.
+    if (_isAlarmClockEvent(evt)) return;
 
     // Global dedup: don't speak an event we have already dispatched this session
     // (protects against replay overlap on reconnect).

@@ -220,6 +220,7 @@ const BlueprintsActiveBrowserObserver = (() => {
       'stt-noise-tests-modal': () => typeof window.SttNoiseTests?.open === 'function' ? window.SttNoiseTests.open() : false,
       'vad-dev-modal': () => typeof window.VadDevModal?.open === 'function' ? window.VadDevModal.open() : false,
       'wake-dev-modal': () => typeof window.WakeDevModal?.open === 'function' ? window.WakeDevModal.open() : false,
+      'alarm-settings-modal': () => typeof window.BlueprintsAlarmClock?.openSettings === 'function' ? window.BlueprintsAlarmClock.openSettings({ source: 'active-browser' }) : false,
       'matrix-chat-notifier-dnd-modal': () => typeof window.MatrixChat?.openNotifierDnd === 'function' ? window.MatrixChat.openNotifierDnd() : false,
       'matrix-chat-notifier-tests-modal': () => typeof window.MatrixChat?.openNotifierTests === 'function' ? window.MatrixChat.openNotifierTests() : false,
     };

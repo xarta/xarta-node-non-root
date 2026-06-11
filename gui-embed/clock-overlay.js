@@ -37,6 +37,11 @@
   var _previousRootTouchAction = '';
   var _previousBodyOverflow = '';
   var _previousBodyTouchAction = '';
+  var LONG_PRESS_MS = 700;
+  var MOVE_CANCEL_PX = 12;
+  var _longPressTimer = null;
+  var _longPressStart = null;
+  var _suppressNextClose = false;
 
   function _ensureRefs() {
     if (!_overlay) _overlay = document.getElementById('clock-overlay');
@@ -101,14 +106,65 @@
       if (e.cancelable) e.preventDefault();
     }
 
-    _dismiss.addEventListener('click', _close);
-    _dismiss.addEventListener('pointermove', preventOverlayPan);
+    function clearLongPress() {
+      if (_longPressTimer) {
+        clearTimeout(_longPressTimer);
+        _longPressTimer = null;
+      }
+      _longPressStart = null;
+    }
+
+    function openAlarmSettings() {
+      clearLongPress();
+      _suppressNextClose = true;
+      if (
+        window.BlueprintsAlarmClock
+        && typeof window.BlueprintsAlarmClock.openSettings === 'function'
+      ) {
+        window.BlueprintsAlarmClock.openSettings({ source: 'clock-overlay-long-press' });
+      }
+    }
+
+    function startLongPress(e) {
+      if (Date.now() - _openedAt < OPEN_GRACE_MS) return;
+      clearLongPress();
+      _suppressNextClose = false;
+      _longPressStart = {
+        x: typeof e.clientX === 'number' ? e.clientX : 0,
+        y: typeof e.clientY === 'number' ? e.clientY : 0,
+      };
+      _longPressTimer = setTimeout(openAlarmSettings, LONG_PRESS_MS);
+    }
+
+    function maybeCancelLongPress(e) {
+      preventOverlayPan(e);
+      if (!_longPressStart) return;
+      var dx = Math.abs((typeof e.clientX === 'number' ? e.clientX : 0) - _longPressStart.x);
+      var dy = Math.abs((typeof e.clientY === 'number' ? e.clientY : 0) - _longPressStart.y);
+      if (dx > MOVE_CANCEL_PX || dy > MOVE_CANCEL_PX) clearLongPress();
+    }
+
+    function closeUnlessSuppressed() {
+      clearLongPress();
+      if (_suppressNextClose) {
+        _suppressNextClose = false;
+        return;
+      }
+      _close();
+    }
+
+    _dismiss.addEventListener('pointerdown', startLongPress);
+    _dismiss.addEventListener('pointerup', clearLongPress);
+    _dismiss.addEventListener('pointercancel', clearLongPress);
+    _dismiss.addEventListener('pointerleave', clearLongPress);
+    _dismiss.addEventListener('click', closeUnlessSuppressed);
+    _dismiss.addEventListener('pointermove', maybeCancelLongPress);
     _dismiss.addEventListener('touchmove', preventOverlayPan, { passive: false });
 
     // touchend with preventDefault to avoid the 300ms tap-delay on mobile.
     _dismiss.addEventListener('touchend', function (e) {
       e.preventDefault();
-      _close();
+      closeUnlessSuppressed();
     }, { passive: false });
 
     // Keyboard dismiss for accessibility.

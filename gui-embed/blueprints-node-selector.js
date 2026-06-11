@@ -1547,6 +1547,14 @@
         window.BlueprintsVoiceMode.open({ source: 'selector-settings-long-press' });
         return { ok: true, handled: true, action: key, event_kind: eventKind };
       }
+      if (
+        key === 'synthesis'
+        && window.BlueprintsAlarmClock
+        && typeof window.BlueprintsAlarmClock.openSettings === 'function'
+      ) {
+        window.BlueprintsAlarmClock.openSettings({ source: 'selector-synthesis-long-press' });
+        return { ok: true, handled: true, action: key, event_kind: eventKind };
+      }
       if (typeof window.BlueprintsTtsClient !== 'undefined') {
         window.BlueprintsTtsClient.speak({
           text: `${def?.label || key} long press.`,
@@ -3006,6 +3014,17 @@
           ) {
             window.BlueprintsVoiceMode.open({
               source: 'selector-settings-long-press',
+              button: btn,
+            });
+            return;
+          }
+          if (
+            btn.dataset.action === 'synthesis'
+            && window.BlueprintsAlarmClock
+            && typeof window.BlueprintsAlarmClock.openSettings === 'function'
+          ) {
+            window.BlueprintsAlarmClock.openSettings({
+              source: 'selector-synthesis-long-press',
               button: btn,
             });
             return;
