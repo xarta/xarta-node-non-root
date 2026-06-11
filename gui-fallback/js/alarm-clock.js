@@ -801,19 +801,55 @@ const BlueprintsAlarmClock = (() => {
     }
   }
 
-  async function _toggleSleep() {
-    if (_sleepPlayback) {
-      _stopPlayback(_sleepPlayback);
-      _sleepPlayback = null;
-      _renderEditor();
-      return;
-    }
+  function _stopSleepPlayback(source = '') {
+    if (!_sleepPlayback) return false;
+    _stopPlayback(_sleepPlayback);
+    _sleepPlayback = null;
+    if (source) _setStatus('Sleep sound stopped.');
+    _renderEditor();
+    return true;
+  }
+
+  async function _startSleepPlayback(source = '') {
     if (!_local) _loadLocal();
-    try {
-      _sleepPlayback = await _playAudio({ ..._local.sleep, fade_seconds: 0 }, { loop: true, fade: false });
+    _local.sleep = _cleanSleep(_local.sleep);
+    if (_sleepPlayback) {
+      if (_sleepPlayback.audio) _sleepPlayback.audio.volume = _local.sleep.volume;
       _renderEditor();
+      return true;
+    }
+    try {
+      const playback = await _playAudio({ ..._local.sleep, fade_seconds: 0 }, { loop: true, fade: false });
+      if (!playback) {
+        _setStatus('Sleep sound is not selected or loaded.', 'warn');
+        return false;
+      }
+      _sleepPlayback = playback;
+      if (source) _setStatus('Sleep sound started.');
+      _renderEditor();
+      return true;
     } catch (error) {
       _setStatus(`Sleep sound failed: ${_cleanText(error?.message || error, '', 120)}`, 'warn');
+      return false;
+    }
+  }
+
+  async function _toggleSleep() {
+    if (!_local) _loadLocal();
+    _local.sleep = _cleanSleep(_local.sleep);
+    if (_sleepPlayback) {
+      _local.sleep.enabled = false;
+      _saveLocal();
+      _stopSleepPlayback('button');
+      return;
+    }
+    _local.sleep.enabled = true;
+    _saveLocal();
+    const started = await _startSleepPlayback('button');
+    if (!started) {
+      _local.sleep.enabled = false;
+      _saveLocal();
+      _renderEditor();
     }
   }
 
@@ -1119,12 +1155,29 @@ const BlueprintsAlarmClock = (() => {
 
   function updateSleep(sleepPatch) {
     if (!_local) _loadLocal();
-    _local.sleep = _cleanSleep({ ..._local.sleep, ...(sleepPatch || {}) });
+    const raw = sleepPatch && typeof sleepPatch === 'object' ? sleepPatch : {};
+    const enabledSpecified = Object.prototype.hasOwnProperty.call(raw, 'enabled');
+    _local.sleep = _cleanSleep({ ..._local.sleep, ...raw });
     _saveLocal();
     if (_local.sleep.sound_asset_path && _local.sleep.local_asset_key) {
       _storeAssetPathOffline(_local.sleep.local_asset_key, _local.sleep.sound_asset_path).catch(() => {});
     }
     _render();
+    if (enabledSpecified) {
+      if (_local.sleep.enabled) {
+        void _startSleepPlayback('sse').then((started) => {
+          if (!started) {
+            _local.sleep.enabled = false;
+            _saveLocal();
+            _renderEditor();
+          }
+        });
+      } else {
+        _stopSleepPlayback('sse');
+      }
+    } else if (_sleepPlayback?.audio) {
+      _sleepPlayback.audio.volume = _local.sleep.volume;
+    }
     return _local.sleep;
   }
 
