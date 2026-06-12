@@ -595,6 +595,47 @@ const MatrixChat = (() => {
     return room?.display_name || room?.name || room?.canonical_alias || room?.room_id || 'Room';
   }
 
+  function normaliseRoomLookup(value) {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/&/g, ' and ')
+      .replace(/[^a-z0-9:!@._-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function roomLookupTexts(room) {
+    if (!room) return [];
+    return [
+      room.room_id,
+      room.display_name,
+      room.name,
+      room.canonical_alias,
+      roomTitle(room),
+    ].filter(Boolean);
+  }
+
+  function findRoomByAutomationTarget(options = {}) {
+    const roomId = String(options.room_id || options.roomId || '').trim();
+    if (roomId) {
+      const exactRoom = state.joined.find(room => room.room_id === roomId);
+      if (exactRoom) return exactRoom;
+    }
+    const hint = String(options.room_hint || options.roomHint || '').trim();
+    const target = normaliseRoomLookup(roomId || hint);
+    if (!target) return null;
+    const exact = state.joined.find(room => {
+      return roomLookupTexts(room).some(text => normaliseRoomLookup(text) === target);
+    });
+    if (exact) return exact;
+    return state.joined.find(room => {
+      return roomLookupTexts(room).some(text => {
+        const candidate = normaliseRoomLookup(text);
+        return candidate && (candidate.includes(target) || target.includes(candidate));
+      });
+    }) || null;
+  }
+
   function isRoomIdLike(value) {
     return typeof value === 'string' && value.startsWith('!') && value.includes(':');
   }
@@ -3219,6 +3260,55 @@ const MatrixChat = (() => {
     await refreshAll();
   }
 
+  async function waitForMatrixChatIdle() {
+    for (let attempt = 0; attempt < 15; attempt += 1) {
+      if (!state.loading) return;
+      await new Promise(resolve => window.setTimeout(resolve, 80));
+    }
+  }
+
+  async function openRoom(options = {}) {
+    bind();
+    const requestedServer = String(
+      options.server_id || options.serverId || options.matrix_server || options.matrixServer || state.serverId || MATRIX_CHAT_DEFAULT_SERVER
+    ).trim().toLowerCase();
+    const targetServer = ['tb1', 'vps'].includes(requestedServer)
+      ? requestedServer
+      : (state.serverId || MATRIX_CHAT_DEFAULT_SERVER);
+    if (targetServer !== state.serverId) {
+      await switchServer(targetServer);
+    } else {
+      await waitForMatrixChatIdle();
+      if (!state.status || !state.joined.length) await refreshAll();
+    }
+    await waitForMatrixChatIdle();
+    let room = findRoomByAutomationTarget(options);
+    if (!room) {
+      await loadRooms();
+      room = findRoomByAutomationTarget(options);
+    }
+    if (!room) {
+      const hint = String(options.room_hint || options.roomHint || options.room_id || options.roomId || '').trim();
+      setStatus(`Matrix room not found${hint ? `: ${hint}` : ''}.`, 'warn');
+      renderRooms();
+      renderMessages();
+      return {
+        ok: false,
+        server_id: state.serverId,
+        room_hint: hint,
+        detail: 'room_not_found',
+      };
+    }
+    await selectRoom(room.room_id);
+    renderStatus();
+    return {
+      ok: true,
+      server_id: state.serverId,
+      room_id: room.room_id,
+      room_title: roomTitle(room),
+    };
+  }
+
   function bind() {
     if (state.bound) return;
     state.bound = true;
@@ -3351,6 +3441,7 @@ const MatrixChat = (() => {
     sendAudioFile,
     syncVoiceModeAudioState,
     insertHermesMention,
+    openRoom,
     openNotifierDnd: openNotifierDndModal,
     openNotifierTests: openNotifierTestsModal,
   };
@@ -3362,3 +3453,4 @@ function _matrixChatLoadTab() {
 
 window._matrixChatLoadTab = _matrixChatLoadTab;
 window.MatrixChat = MatrixChat;
+window.BlueprintsMatrixChat = MatrixChat;

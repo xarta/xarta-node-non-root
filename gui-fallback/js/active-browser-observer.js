@@ -55,6 +55,7 @@ const BlueprintsActiveBrowserObserver = (() => {
     if (action === 'close_vad' || action === 'vad_close') return 'close_vad_dev';
     if (action === 'modal_close') return 'close_modal';
     if (action === 'page' || action === 'open_tab' || action === 'tab') return 'open_page';
+    if (action === 'matrix_chat_room' || action === 'chat_room' || action === 'open_chat_room') return 'open_matrix_chat_room';
     if (action === 'modal') return 'open_modal';
     if (action === 'doc' || action === 'document') return 'open_doc';
     if (action === 'fn' || action === 'function' || action === 'menu_fn') return 'menu_function';
@@ -246,6 +247,9 @@ const BlueprintsActiveBrowserObserver = (() => {
       modal_id: _cleanText(payload?.modal_id),
       group: _normalizeGroup(payload?.group || payload?.menu_group),
       page_id: _cleanText(payload?.page_id || payload?.tab),
+      server_id: _cleanText(payload?.server_id || payload?.matrix_server),
+      room_id: _cleanText(payload?.room_id),
+      room_hint: _cleanText(payload?.room_hint),
       fn: _cleanText(payload?.fn),
       ok: !!ok,
       error: error ? _cleanText(error).slice(0, 180) : '',
@@ -278,6 +282,22 @@ const BlueprintsActiveBrowserObserver = (() => {
       return true;
     }
     return false;
+  }
+
+  async function _openMatrixChatRoom(payload) {
+    const opened = _openPage({ group: 'settings', page_id: 'matrix-chat' });
+    if (opened === false) throw new Error('Matrix Chat page is unavailable.');
+    const matrixChat = window.MatrixChat || window.BlueprintsMatrixChat || null;
+    if (!matrixChat || typeof matrixChat.openRoom !== 'function') {
+      throw new Error('Matrix Chat automation is unavailable.');
+    }
+    const result = await matrixChat.openRoom({
+      server_id: _cleanText(payload?.server_id || payload?.matrix_server),
+      room_id: _cleanText(payload?.room_id),
+      room_hint: _cleanText(payload?.room_hint),
+    });
+    if (result?.ok === false) throw new Error(result.detail || 'Matrix Chat room was not found.');
+    return true;
   }
 
   function _setBodyShade(payload) {
@@ -355,6 +375,11 @@ const BlueprintsActiveBrowserObserver = (() => {
       _openPage(payload);
       scheduleReport('command-open-page');
       return;
+    }
+    if (action === 'open_matrix_chat_room') {
+      await _openMatrixChatRoom(payload);
+      scheduleReport('command-open-matrix-chat-room');
+      return true;
     }
     if (action === 'open_modal') {
       const ok = _openModal(payload);
