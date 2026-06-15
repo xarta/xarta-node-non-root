@@ -16,6 +16,8 @@ const MATRIX_CHAT_ROOM_TAB_DOUBLE_CLICK_MS = 240;
 const MATRIX_CHAT_SYNC_TIMEOUT_MS = 25000;
 const MATRIX_CHAT_SYNC_RETRY_MS = 1500;
 const MATRIX_CHAT_SYNC_FALLBACK_MS = 30000;
+const MATRIX_CHAT_MAX_ATTACHMENT_BYTES = 64 * 1024 * 1024;
+const MATRIX_CHAT_MAX_PENDING_ATTACHMENTS = 8;
 const MATRIX_CHAT_LEVEL_RANK = Object.freeze({ debug: 0, information: 1, warning: 2, error: 3 });
 const MATRIX_CHAT_STT_SAFETY_INSTRUCTION = [
   'STT-originated request: do not perform destructive actions such as deleting, removing, wiping,',
@@ -75,6 +77,9 @@ const MatrixChat = (() => {
     notifierDndSaving: false,
     notifierToastSaving: false,
     notifierTestEvents: new Map(),
+    attachmentSending: false,
+    attachmentItems: [],
+    attachmentDragDepth: 0,
     audioSending: false,
     audioStarting: false,
     audioRecording: false,
@@ -232,6 +237,25 @@ const MatrixChat = (() => {
     if (clean === 'audio/ogg') return 'ogg';
     if (clean === 'audio/flac') return 'flac';
     return 'webm';
+  }
+
+  function formatFileSize(size) {
+    const bytes = Number(size);
+    if (!Number.isFinite(bytes) || bytes < 0) return '';
+    if (bytes < 1024) return `${Math.round(bytes)} B`;
+    const units = ['KB', 'MB', 'GB'];
+    let value = bytes / 1024;
+    let index = 0;
+    while (value >= 1024 && index < units.length - 1) {
+      value /= 1024;
+      index += 1;
+    }
+    return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${units[index]}`;
+  }
+
+  function attachmentId() {
+    if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+    return `att-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
   function hermesPrefix() {
@@ -944,6 +968,19 @@ const MatrixChat = (() => {
     } catch (_) {}
   }
 
+  function renderMessageMedia(message) {
+    const media = message?.media;
+    if (!media || !media.msgtype) return null;
+    const chip = document.createElement('div');
+    chip.className = 'matrix-chat-message-media';
+    const kind = String(media.msgtype || '').replace(/^m\./, '') || 'file';
+    const filename = String(media.filename || message.body || kind);
+    const size = formatFileSize(media.size);
+    const encrypted = media.encrypted_file ? 'encrypted' : 'mxc';
+    chip.textContent = [kind, filename, size, encrypted].filter(Boolean).join(' · ');
+    return chip;
+  }
+
   function redactedEventIds(roomId) {
     if (!roomId) return new Set();
     let ids = state.redactedEventIdsByRoom.get(roomId);
@@ -1083,6 +1120,8 @@ const MatrixChat = (() => {
       const body = document.createElement('div');
       body.className = 'matrix-chat-message-body';
       body.appendChild(renderMarkdownBody(message.body || ''));
+      const mediaChip = renderMessageMedia(message);
+      if (mediaChip) body.appendChild(mediaChip);
       item.append(meta, body);
       timeline.appendChild(item);
     });
@@ -2093,6 +2132,7 @@ const MatrixChat = (() => {
       state.hermesCommands = [];
       state.hermesCommandsLoaded = false;
       state.hermesCommandsRoomId = '';
+      clearAttachmentItems();
       hideComposerSuggestions();
     }
     hideInviteSuggestions();
@@ -2528,17 +2568,192 @@ const MatrixChat = (() => {
     composer.focus();
   }
 
+  function syncAttachmentControls() {
+    const attach = el('matrix-chat-attach');
+    const input = el('matrix-chat-attachment-input');
+    if (attach) {
+      attach.disabled = Boolean(state.attachmentSending);
+      attach.setAttribute('aria-disabled', attach.disabled ? 'true' : 'false');
+    }
+    if (input) input.disabled = Boolean(state.attachmentSending);
+  }
+
+  function renderAttachmentTray() {
+    const tray = el('matrix-chat-attachment-tray');
+    if (!tray) return;
+    clearNode(tray);
+    if (!state.attachmentItems.length) {
+      tray.hidden = true;
+      syncAttachmentControls();
+      return;
+    }
+    tray.hidden = false;
+    state.attachmentItems.forEach(item => {
+      const file = item.file;
+      const chip = document.createElement('div');
+      chip.className = 'matrix-chat-attachment-chip';
+
+      const name = document.createElement('span');
+      name.className = 'matrix-chat-attachment-name';
+      name.textContent = file.name || 'attachment';
+      name.title = file.name || 'attachment';
+
+      const size = document.createElement('span');
+      size.className = 'matrix-chat-attachment-size';
+      size.textContent = formatFileSize(file.size);
+
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'matrix-chat-attachment-remove';
+      remove.textContent = 'x';
+      remove.title = 'Remove attachment';
+      remove.setAttribute('aria-label', `Remove ${file.name || 'attachment'}`);
+      remove.disabled = Boolean(state.attachmentSending);
+      remove.addEventListener('click', () => {
+        state.attachmentItems = state.attachmentItems.filter(candidate => candidate.id !== item.id);
+        renderAttachmentTray();
+      });
+
+      chip.append(name, size, remove);
+      tray.appendChild(chip);
+    });
+    syncAttachmentControls();
+  }
+
+  function addAttachmentFiles(fileList) {
+    const files = Array.from(fileList || []).filter(Boolean);
+    if (!files.length) return;
+    if (!state.activeRoomId) {
+      setStatus('Select a Matrix room before attaching files.', 'warn');
+      return;
+    }
+    let added = 0;
+    let rejected = 0;
+    files.forEach(file => {
+      if (!file || !file.size || file.size <= 0) {
+        rejected += 1;
+        return;
+      }
+      if (file.size > MATRIX_CHAT_MAX_ATTACHMENT_BYTES) {
+        rejected += 1;
+        return;
+      }
+      if (state.attachmentItems.length >= MATRIX_CHAT_MAX_PENDING_ATTACHMENTS) {
+        rejected += 1;
+        return;
+      }
+      state.attachmentItems.push({ id: attachmentId(), file });
+      added += 1;
+    });
+    renderAttachmentTray();
+    if (added) {
+      setStatus(
+        `Attached ${added} file${added === 1 ? '' : 's'}${rejected ? `; ${rejected} skipped` : ''}.`,
+        rejected ? 'warn' : 'ok'
+      );
+    } else if (rejected) {
+      setStatus('No files attached; selected files were empty, too large, or over the pending limit.', 'warn');
+    }
+  }
+
+  function clearAttachmentItems() {
+    state.attachmentItems = [];
+    state.attachmentDragDepth = 0;
+    el('matrix-chat-main')?.classList.remove('is-attachment-dragging');
+    renderAttachmentTray();
+  }
+
+  function openAttachmentPicker() {
+    if (state.attachmentSending) return;
+    if (!state.activeRoomId) {
+      setStatus('Select a Matrix room before attaching files.', 'warn');
+      return;
+    }
+    el('matrix-chat-attachment-input')?.click();
+  }
+
+  function dragEventHasFiles(event) {
+    const types = Array.from(event?.dataTransfer?.types || []);
+    return types.includes('Files');
+  }
+
+  function bindAttachmentDropZone() {
+    const main = el('matrix-chat-main');
+    if (!main || main.dataset.matrixChatAttachmentDropBound === '1') return;
+    main.dataset.matrixChatAttachmentDropBound = '1';
+    main.addEventListener('dragenter', event => {
+      if (!dragEventHasFiles(event)) return;
+      event.preventDefault();
+      state.attachmentDragDepth += 1;
+      main.classList.add('is-attachment-dragging');
+    });
+    main.addEventListener('dragover', event => {
+      if (!dragEventHasFiles(event)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+    });
+    main.addEventListener('dragleave', event => {
+      if (!dragEventHasFiles(event)) return;
+      state.attachmentDragDepth = Math.max(0, state.attachmentDragDepth - 1);
+      if (!state.attachmentDragDepth) main.classList.remove('is-attachment-dragging');
+    });
+    main.addEventListener('drop', event => {
+      if (!dragEventHasFiles(event)) return;
+      event.preventDefault();
+      state.attachmentDragDepth = 0;
+      main.classList.remove('is-attachment-dragging');
+      addAttachmentFiles(event.dataTransfer?.files || []);
+    });
+  }
+
+  async function sendPendingAttachments() {
+    if (!state.attachmentItems.length || state.attachmentSending) return [];
+    if (!state.activeRoomId) {
+      throw new Error('No Matrix room selected');
+    }
+    const sent = [];
+    state.attachmentSending = true;
+    renderAttachmentTray();
+    try {
+      const pending = state.attachmentItems.slice();
+      for (const item of pending) {
+        const file = item.file;
+        setStatus(`Uploading ${file.name || 'attachment'}...`, 'warn');
+        const form = new FormData();
+        form.append('file', file, file.name || 'attachment');
+        const result = await apiJson(matrixApi(`/rooms/${encodeURIComponent(state.activeRoomId)}/attachments`), {
+          method: 'POST',
+          body: form,
+        });
+        sent.push(result);
+        state.attachmentItems = state.attachmentItems.filter(candidate => candidate.id !== item.id);
+        renderAttachmentTray();
+      }
+      return sent;
+    } finally {
+      state.attachmentSending = false;
+      renderAttachmentTray();
+    }
+  }
+
   async function sendMessage() {
     const composer = el('matrix-chat-composer');
     const body = outgoingComposerBody(composer?.value || '');
-    if (!body || !state.activeRoomId) return;
+    const hasAttachments = Boolean(state.attachmentItems.length);
+    if ((!body && !hasAttachments) || !state.activeRoomId) return;
     try {
-      await apiJson(matrixApi(`/rooms/${encodeURIComponent(state.activeRoomId)}/messages`), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ body }),
-      });
-      if (composer) composer.value = '';
+      if (body) {
+        await apiJson(matrixApi(`/rooms/${encodeURIComponent(state.activeRoomId)}/messages`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ body }),
+        });
+        if (composer) composer.value = '';
+      }
+      if (hasAttachments) {
+        const sent = await sendPendingAttachments();
+        if (sent.length) setStatus(`Sent ${sent.length} attachment${sent.length === 1 ? '' : 's'}.`, 'ok');
+      }
       hideComposerSuggestions();
       await loadMessages(state.activeRoomId);
       await loadRooms();
@@ -3232,6 +3447,9 @@ const MatrixChat = (() => {
     state.roomAdminDeleting = false;
     state.roomAdminTesting = false;
     state.messageDeleteButtonsVisible = false;
+    state.attachmentSending = false;
+    state.attachmentItems = [];
+    state.attachmentDragDepth = 0;
     state.audioSending = false;
     cleanupAudioRecording();
     window.clearTimeout(state.roomTabClickTimer);
@@ -3250,6 +3468,7 @@ const MatrixChat = (() => {
     } catch (_) {}
     renderRooms();
     renderMessages();
+    renderAttachmentTray();
     renderStatus();
   }
 
@@ -3356,6 +3575,12 @@ const MatrixChat = (() => {
     el('matrix-chat-invite-user')?.addEventListener('focus', scheduleInviteCandidates);
     el('matrix-chat-invite-user')?.addEventListener('keydown', handleInviteKeydown);
     el('matrix-chat-mention-hermes')?.addEventListener('click', insertHermesMention);
+    el('matrix-chat-attach')?.addEventListener('click', openAttachmentPicker);
+    el('matrix-chat-attachment-input')?.addEventListener('change', event => {
+      addAttachmentFiles(event.target?.files || []);
+      if (event.target) event.target.value = '';
+    });
+    bindAttachmentDropZone();
     bindAudioRecordButton();
     el('matrix-chat-send')?.addEventListener('click', sendMessage);
     el('matrix-chat-room-admin-save')?.addEventListener('click', saveRoomAdminSettings);
@@ -3426,6 +3651,7 @@ const MatrixChat = (() => {
       window.visualViewport.addEventListener('scroll', scheduleComposerKeyboardFit, { passive: true });
     }
     syncRailForViewport();
+    renderAttachmentTray();
   }
 
   async function loadTab() {

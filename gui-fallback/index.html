@@ -1042,9 +1042,12 @@
                  aria-label="Resize message composer" aria-orientation="horizontal" tabindex="0"></div>
             <div class="matrix-chat-composer-tools" aria-label="Matrix chat tools">
               <button id="matrix-chat-mention-hermes" class="matrix-chat-icon-btn" type="button" title="Mention Hermes" aria-label="Mention Hermes">@H</button>
+              <button id="matrix-chat-attach" class="matrix-chat-icon-btn matrix-chat-attach-btn" type="button" title="Attach media or file" aria-label="Attach media or file"></button>
+              <input id="matrix-chat-attachment-input" type="file" multiple hidden>
               <button id="matrix-chat-audio" class="matrix-chat-icon-btn matrix-chat-audio-btn" type="button" title="Hold to record audio" aria-label="Hold to record audio"></button>
               <button id="matrix-chat-mobile-rail-toggle" class="matrix-chat-mobile-rail-toggle" type="button" aria-expanded="false" aria-controls="matrix-chat-rail">Rooms</button>
             </div>
+            <div id="matrix-chat-attachment-tray" class="matrix-chat-attachment-tray" aria-live="polite" hidden></div>
             <div id="matrix-chat-composer-suggestions" class="matrix-chat-composer-suggestions" role="listbox" hidden></div>
             <textarea id="matrix-chat-composer" placeholder="Message Matrix room" autocomplete="off"></textarea>
             <button id="matrix-chat-send" class="matrix-chat-icon-btn" type="button" title="Send message" aria-label="Send message">Send</button>

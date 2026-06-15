@@ -1137,6 +1137,25 @@
   align-self: flex-start;
 }
 
+.matrix-chat-attach-btn {
+  overflow: hidden;
+  color: transparent;
+  background-image: url("../assets/icons/ui/plus-blue.svg");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 19px 19px;
+}
+
+.matrix-chat-attach-btn:hover,
+.matrix-chat-attach-btn:focus-visible {
+  background-image: url("../assets/icons/ui/plus-gold.svg");
+}
+
+.matrix-chat-attach-btn:disabled {
+  cursor: progress;
+  opacity: 0.58;
+}
+
 .matrix-chat-audio-btn {
   --matrix-chat-audio-level: 0;
   --matrix-chat-audio-glow: 8px;
@@ -1181,6 +1200,87 @@
 .matrix-chat-audio-btn:disabled {
   cursor: progress;
   opacity: 0.58;
+}
+
+.matrix-chat-attachment-tray {
+  position: absolute;
+  z-index: 16;
+  left: 8px;
+  right: 8px;
+  bottom: calc(100% + 6px);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.matrix-chat-attachment-tray[hidden] {
+  display: none;
+}
+
+.matrix-chat-attachment-chip,
+.matrix-chat-message-media {
+  display: inline-flex;
+  align-items: center;
+  max-width: min(420px, 100%);
+  min-height: 28px;
+  border: 1px solid rgba(var(--hub-accent-rgb, 0, 212, 255), 0.24);
+  border-radius: 6px;
+  background-color: rgba(12, 16, 28, 0.94);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.matrix-chat-attachment-chip {
+  gap: 7px;
+  padding: 4px 4px 4px 9px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.24);
+}
+
+.matrix-chat-attachment-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.matrix-chat-attachment-size {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.matrix-chat-attachment-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(var(--hub-accent-rgb, 0, 212, 255), 0.16);
+  border-radius: 6px;
+  background-color: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  line-height: 1;
+}
+
+.matrix-chat-attachment-remove:hover,
+.matrix-chat-attachment-remove:focus-visible {
+  border-color: rgba(var(--glyph-gold-rgb, 200, 168, 75), 0.52);
+  color: var(--text);
+}
+
+.matrix-chat-message-media {
+  gap: 6px;
+  margin-top: 7px;
+  padding: 5px 9px;
+  color: var(--text-dim);
+}
+
+.matrix-chat-main.is-attachment-dragging .matrix-chat-timeline {
+  outline: 2px solid rgba(var(--glyph-gold-rgb, 200, 168, 75), 0.62);
+  outline-offset: -6px;
 }
 
 .matrix-chat-notifier-modal .hub-modal-body {
@@ -1866,7 +1966,7 @@ dialog.matrix-chat-notifier-info-modal {
 
   .matrix-chat-composer {
     display: grid;
-    grid-template-columns: 42px minmax(0, 1fr) minmax(56px, auto);
+    grid-template-columns: 42px 42px minmax(0, 1fr) minmax(56px, auto);
     grid-template-rows: repeat(2, minmax(42px, 1fr));
     align-items: stretch;
   }
@@ -1876,6 +1976,7 @@ dialog.matrix-chat-notifier-info-modal {
   }
 
   #matrix-chat-mention-hermes,
+  #matrix-chat-attach,
   #matrix-chat-audio {
     grid-column: 1;
     width: 42px;
@@ -1887,16 +1988,21 @@ dialog.matrix-chat-notifier-info-modal {
   }
 
   #matrix-chat-audio {
-    grid-row: 2;
-  }
-
-  .matrix-chat-composer textarea {
     grid-column: 2;
     grid-row: 1 / span 2;
   }
 
-  #matrix-chat-send {
+  #matrix-chat-attach {
+    grid-row: 2;
+  }
+
+  .matrix-chat-composer textarea {
     grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+
+  #matrix-chat-send {
+    grid-column: 4;
     grid-row: 1 / span 2;
     align-self: stretch;
     height: auto;
@@ -2042,6 +2148,7 @@ dialog.matrix-chat-notifier-info-modal {
   }
 
   #matrix-chat-mention-hermes,
+  #matrix-chat-attach,
   #matrix-chat-audio {
     justify-self: start;
     width: 42px;
@@ -2102,6 +2209,12 @@ dialog.matrix-chat-notifier-info-modal {
   }
 
   #matrix-chat-mention-hermes {
+    flex: 0 0 42px;
+    width: 42px;
+    min-width: 42px;
+  }
+
+  #matrix-chat-attach {
     flex: 0 0 42px;
     width: 42px;
     min-width: 42px;
