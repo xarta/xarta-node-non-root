@@ -124,9 +124,18 @@ const BlueprintsModelChangeAnnouncer = (() => {
     return String(name || '').replace(/^[a-z_-]+\//i, '').split(':')[0];
   }
 
+  function _isAliasReconcileEvent(evt) {
+    const kind = String(evt?.payload?.change_kind || evt?.payload?.notification_kind || '').toLowerCase();
+    return kind === 'alias_reconciled' || kind === 'aliases_reconciled';
+  }
+
   /** Merge a list of model.changed events into one speech string.
    *  The latest value per role wins when the same role appears in multiple events. */
   function _speechForModelEvents(events) {
+    if (events.length > 0 && events.every(_isAliasReconcileEvent)) {
+      return 'Information. Local LiteLLM aliases reconciled.';
+    }
+
     const roleOrder = ['primary', 'embeddings', 'reranker', 'vision', 'tts'];
     const roleLabel = {
       primary:    'primary local model',
@@ -339,11 +348,14 @@ const BlueprintsModelChangeAnnouncer = (() => {
 
     const lastEvt  = events[events.length - 1];
     const modeId   = (lastEvt && lastEvt.payload && lastEvt.payload.mode_id) || '';
+    const reconciledOnly = events.every(_isAliasReconcileEvent);
 
     _queue.unshift({
       text: _speechForModelEvents(events),
       toastOpts: {
-        title:    'Local Model Changed' + (modeId ? ` — ${modeId}` : ''),
+        title: (
+          reconciledOnly ? 'Local LiteLLM Aliases Reconciled' : 'Local Model Changed'
+        ) + (modeId ? ` — ${modeId}` : ''),
         message:  (lastEvt && lastEvt.message) || `${events.length} model change(s)`,
         severity: 'info',
       },
@@ -1128,8 +1140,11 @@ const BlueprintsModelChangeAnnouncer = (() => {
 
     const count  = missed.length;
     const speech = _speechForModelEvents(missed.map(e => ({ payload: e.payload || {} })));
+    const reconciledOnly = missed.every(e => _isAliasReconcileEvent({ payload: e.payload || {} }));
     _pushAndDrain(speech, {
-      title:    count === 1 ? 'Model Changed (while offline)' : `${count} Model Changes (while offline)`,
+      title:    reconciledOnly
+        ? (count === 1 ? 'Aliases Reconciled (while offline)' : `${count} Alias Reconciles (while offline)`)
+        : (count === 1 ? 'Model Changed (while offline)' : `${count} Model Changes (while offline)`),
       message:  missed[missed.length - 1].message || 'Local model aliases updated.',
       severity: 'info',
     }, missed[missed.length - 1] || {});
