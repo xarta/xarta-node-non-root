@@ -365,75 +365,76 @@
     <div id="s25-lift-settings" class="s25-lift-block" data-for-tab="settings">
       <p style="font-size:12px;color:var(--text-dim);margin-bottom:14px;">Key-value configuration store. Changes sync automatically to all fleet nodes.</p>
     </div>
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <label style="font-size:13px;font-weight:600;white-space:nowrap;">Management CIDR</label>
-        <input type="text" id="settings-cidr" placeholder="e.g. 192.168.1.0/24" style="max-width:220px;" />
-        <button onclick="saveCidr()">Save</button>
-        <span id="settings-status" style="font-size:12px;color:var(--text-dim)" hidden></span>
-      </div>
-      <p style="font-size:11px;color:var(--text-dim);margin-top:6px;">Used for PVE host scanning (port 8006 sweep).</p>
+    <div class="settings-top-grid">
+      <section class="settings-config-card settings-cidr-card" aria-labelledby="settings-cidr-label">
+        <div class="settings-cidr-row">
+          <label id="settings-cidr-label" class="settings-config-label" for="settings-cidr">Management CIDR</label>
+          <input class="settings-cidr-input" type="text" id="settings-cidr" placeholder="e.g. 192.168.1.0/24" />
+          <button type="button" onclick="saveCidr()">Save</button>
+          <span id="settings-status" class="settings-inline-status" hidden></span>
+        </div>
+        <p class="settings-config-hint">Used for PVE host scanning (port 8006 sweep).</p>
+      </section>
+      <section class="settings-config-card settings-sound-card" aria-labelledby="sound-effects-label">
+        <label class="hub-checkbox settings-sound-toggle" for="sound-enabled-toggle">
+          <input class="hub-checkbox__input" type="checkbox" id="sound-enabled-toggle"
+            onchange="saveSoundEnabled(this.checked)">
+          <span class="hub-checkbox__box" aria-hidden="true"></span>
+          <span id="sound-effects-label" class="hub-checkbox__label">🔊 Sound Effects</span>
+        </label>
+        <div class="settings-sound-volume">
+          <input type="range" id="sound-volume-slider" min="0" max="100" step="1" value="80"
+            oninput="setSoundVolume(this.value)">
+          <span id="sound-volume-label" class="settings-range-value"></span>
+        </div>
+        <span id="sound-enabled-status" class="settings-inline-status"></span>
+      </section>
     </div>
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <label class="hub-checkbox" style="font-size:13px;font-weight:600;white-space:nowrap;" for="sound-enabled-toggle">
-        <input class="hub-checkbox__input" type="checkbox" id="sound-enabled-toggle"
-          onchange="saveSoundEnabled(this.checked)">
-        <span class="hub-checkbox__box" aria-hidden="true"></span>
-        <span class="hub-checkbox__label">🔊 Sound Effects</span>
-      </label>
-      <input type="range" id="sound-volume-slider" min="0" max="100" step="1" value="80"
-        style="width:110px;cursor:pointer;accent-color:var(--accent);"
-        oninput="setSoundVolume(this.value)">
-      <span id="sound-volume-label" style="font-size:12px;color:var(--text-dim);min-width:34px;white-space:nowrap;"></span>
-      <span id="sound-enabled-status" style="font-size:12px;color:var(--text-dim)"></span>
-    </div>
-    <div class="tts-wrapper-panel" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-        <strong style="font-size:13px;letter-spacing:0.04em;text-transform:uppercase;">Computer Voice Wrapper</strong>
-        <span id="tts-settings-status" style="font-size:12px;color:var(--text-dim);"></span>
+    <div class="tts-wrapper-panel settings-config-card">
+      <div class="tts-wrapper-head">
+        <strong>Computer Voice Wrapper</strong>
+        <span id="tts-settings-status" class="settings-inline-status"></span>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
-        <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--text-dim);">
+      <div class="tts-wrapper-grid">
+        <label class="tts-wrapper-field">
           <span>Default Voice</span>
-          <input id="tts-default-voice" type="text" placeholder="e.g. majel_1" style="flex:0 0 auto;height:auto;min-height:0;" />
+          <input id="tts-default-voice" type="text" placeholder="e.g. majel_1" />
         </label>
-        <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--text-dim);">
+        <label class="tts-wrapper-field">
           <span>Default Message</span>
-          <input id="tts-default-message" type="text" placeholder="Computer, standing by." style="flex:0 0 auto;height:auto;min-height:0;" />
+          <input id="tts-default-message" type="text" placeholder="Computer, standing by." />
         </label>
-        <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--text-dim);">
+        <label class="tts-wrapper-field">
           <span>Positive Fallback Sound Path</span>
-          <input id="tts-fallback-positive-path" type="text" placeholder="sounds/chime-ops-positive.wav" style="flex:0 0 auto;height:auto;min-height:0;" />
+          <input id="tts-fallback-positive-path" type="text" placeholder="sounds/chime-ops-positive.wav" />
         </label>
-        <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--text-dim);">
+        <label class="tts-wrapper-field">
           <span>Negative Fallback Sound Path</span>
-          <input id="tts-fallback-negative-path" type="text" placeholder="sounds/chime-ops-negative.wav" style="flex:0 0 auto;height:auto;min-height:0;" />
+          <input id="tts-fallback-negative-path" type="text" placeholder="sounds/chime-ops-negative.wav" />
         </label>
-        <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--text-dim);">
+        <label class="tts-wrapper-field tts-wrapper-field--neutral">
           <span>Neutral Fallback Sound Path</span>
-          <input id="tts-fallback-neutral-path" type="text" placeholder="sounds/entb_computerbeep.mp3" style="flex:0 0 auto;height:auto;min-height:0;" />
+          <input id="tts-fallback-neutral-path" type="text" placeholder="sounds/entb_computerbeep.mp3" />
         </label>
+        <label class="tts-wrapper-range" for="tts-volume-slider">
+          <span>TTS Volume</span>
+          <span id="tts-volume-label" class="settings-range-value"></span>
+          <input type="range" id="tts-volume-slider" min="0" max="300" step="1" value="85"
+            oninput="setTtsVolume(this.value)">
+        </label>
+        <label class="tts-wrapper-range" for="tts-fallback-volume-slider">
+          <span>Fallback SFX Volume</span>
+          <span id="tts-fallback-volume-label" class="settings-range-value"></span>
+          <input type="range" id="tts-fallback-volume-slider" min="0" max="100" step="1" value="70"
+            oninput="setTtsFallbackVolume(this.value)">
+        </label>
+        <div class="tts-wrapper-actions">
+          <button class="tts-wrapper-save" type="button" onclick="saveTtsSettings()">Save Voice Settings</button>
+          <button type="button" class="secondary" onclick="testTtsWrapperSpeak()">Test Wrapper</button>
+          <button type="button" class="secondary" onclick="stopTtsWrapperSpeak()">Stop</button>
+        </div>
       </div>
-      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px;">
-        <span style="font-size:12px;color:var(--text-dim);min-width:120px;">TTS Volume</span>
-        <input type="range" id="tts-volume-slider" min="0" max="300" step="1" value="85"
-          style="width:140px;cursor:pointer;accent-color:var(--accent);"
-          oninput="setTtsVolume(this.value)">
-        <span id="tts-volume-label" style="font-size:12px;color:var(--text-dim);min-width:86px;"></span>
-      </div>
-      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:8px;">
-        <span style="font-size:12px;color:var(--text-dim);min-width:120px;">Fallback SFX Volume</span>
-        <input type="range" id="tts-fallback-volume-slider" min="0" max="100" step="1" value="70"
-          style="width:140px;cursor:pointer;accent-color:var(--accent);"
-          oninput="setTtsFallbackVolume(this.value)">
-        <span id="tts-fallback-volume-label" style="font-size:12px;color:var(--text-dim);min-width:34px;"></span>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;">
-        <button type="button" onclick="saveTtsSettings()">Save Voice Settings</button>
-        <button type="button" class="secondary" onclick="testTtsWrapperSpeak()">Test Wrapper</button>
-        <button type="button" class="secondary" onclick="stopTtsWrapperSpeak()">Stop</button>
-      </div>
-      <p style="font-size:11px;color:var(--text-dim);margin-top:8px;">These controls are database-driven via Blueprints settings. Event handlers can still provide explicit override text when needed.</p>
+      <p class="settings-config-hint tts-wrapper-hint">These controls are database-driven via Blueprints settings. Event handlers can still provide explicit override text when needed.</p>
     </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">

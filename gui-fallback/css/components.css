@@ -180,30 +180,265 @@ button.secondary:hover { color: var(--text); border-color: var(--text-dim); }
   background: rgba(60,210,100,.08); border: 1px solid var(--ok);
   border-radius: var(--radius); font-size: 13px; }
 
-/* ── TTS wrapper controls in App Config ── */
-.tts-wrapper-panel label {
-  font-size: 11px !important;
+/* -- App Config dense control panels -- */
+.settings-top-grid {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.settings-config-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  min-width: 0;
+  padding: 12px 16px;
+}
+
+.settings-top-grid > .settings-config-card {
+  margin-bottom: 0;
+}
+
+.settings-cidr-row {
+  display: grid;
+  grid-template-columns: auto minmax(150px, 220px) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.settings-config-label,
+.settings-sound-toggle .hub-checkbox__label {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#settings-cidr.settings-cidr-input {
+  flex: 0 1 auto;
+  max-width: 220px;
+  min-width: 0;
+  width: 100%;
+}
+
+.settings-inline-status,
+.settings-range-value {
+  color: var(--text-dim);
+  font-size: 12px;
+  min-width: 0;
+}
+
+.settings-config-hint {
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.35;
+  margin-top: 6px;
+}
+
+.settings-sound-card {
+  display: grid;
+  grid-template-columns: auto minmax(140px, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.settings-sound-toggle {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.settings-sound-volume {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.settings-sound-volume input[type=range],
+.tts-wrapper-panel input[type=range] {
+  accent-color: var(--accent);
+  cursor: pointer;
+  min-width: 0;
+  width: 100%;
+}
+
+.tts-wrapper-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  min-width: 0;
+}
+
+.tts-wrapper-head strong {
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tts-wrapper-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: end;
+  gap: 10px;
+}
+
+.tts-wrapper-field,
+.tts-wrapper-range {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: 11px;
   line-height: 1.35;
   letter-spacing: .02em;
 }
 
-.tts-wrapper-panel input[type=text] {
-  max-width: none;
-  min-width: 0;
-  width: 100%;
+.tts-wrapper-field input[type=text] {
   flex: 0 0 auto;
   height: auto;
+  max-width: none;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
   padding: 5px 9px;
   font-size: 12px;
 }
 
-.tts-wrapper-panel input[type=range] {
-  accent-color: var(--accent);
+.tts-wrapper-range {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-content: end;
+  gap: 6px 10px;
 }
 
-.tts-wrapper-panel button {
-  padding: 5px 11px;
+.tts-wrapper-range input[type=range] {
+  grid-column: 1 / -1;
+}
+
+.tts-wrapper-range .settings-range-value {
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.tts-wrapper-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-self: end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tts-wrapper-actions button {
+  min-width: 0;
+  width: 100%;
+  padding: 5px 10px;
   font-size: 12px;
+}
+
+.tts-wrapper-actions .tts-wrapper-save {
+  grid-column: 1 / -1;
+}
+
+.tts-wrapper-hint {
+  margin-top: 8px;
+}
+
+@media (min-width: 760px) {
+  .settings-top-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .settings-sound-card {
+    min-height: 100%;
+  }
+
+  .tts-wrapper-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+  .settings-top-grid {
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .settings-config-card {
+    margin-bottom: 10px;
+    padding: 12px;
+  }
+
+  .settings-cidr-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .settings-cidr-row .settings-inline-status {
+    grid-column: 1 / -1;
+  }
+
+  .settings-sound-card {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 8px 10px;
+  }
+
+  .settings-sound-card > .settings-inline-status {
+    grid-column: 1 / -1;
+  }
+
+  .settings-sound-volume {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .tts-wrapper-head {
+    align-items: flex-start;
+    margin-bottom: 8px;
+  }
+
+  .tts-wrapper-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .tts-wrapper-field--neutral {
+    grid-column: 1 / -1;
+  }
+
+  .tts-wrapper-actions {
+    align-self: stretch;
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(132px, 1.25fr) minmax(92px, 0.85fr) minmax(58px, 0.55fr);
+  }
+
+  .tts-wrapper-actions .tts-wrapper-save {
+    grid-column: auto;
+  }
+
+  .tts-wrapper-actions button {
+    padding-inline: 8px;
+  }
+}
+
+@media (max-width: 380px) and (orientation: portrait) {
+  .settings-cidr-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .settings-cidr-row .settings-config-label {
+    grid-column: 1 / -1;
+  }
+
+  .tts-wrapper-actions {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .tts-wrapper-actions .tts-wrapper-save {
+    grid-column: 1 / -1;
+  }
 }
 
 /* ── App Config dense-cell hinting ── */
