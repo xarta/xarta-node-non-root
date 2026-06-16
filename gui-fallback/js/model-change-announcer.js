@@ -74,6 +74,10 @@ const BlueprintsModelChangeAnnouncer = (() => {
   const _REPLAY_DELAY_MS = 4500;  // ms after SSE connect before running replay
   const _NOTIFIER_SPEECH_FRESHNESS_SECONDS = 180;
   const _HERMES_SPEECH_FRESHNESS_SECONDS = 180;
+  const _MODEL_CHANGE_REPLAY_FRESHNESS_SECONDS = _REPLAY_LOOKBACK;
+  const _FULL_MODEL_SIGNATURE_KEY = 'model.change.last_full_signature';
+  const _FULL_MODEL_SIGNATURE_AT_KEY = 'model.change.last_full_signature_at';
+  const _FULL_MODEL_SIGNATURE_ROLES = ['primary', 'embeddings', 'reranker', 'vision', 'tts'];
 
   // ── Module state ──────────────────────────────────────────────────────────
 
@@ -127,6 +131,40 @@ const BlueprintsModelChangeAnnouncer = (() => {
   function _isAliasReconcileEvent(evt) {
     const kind = String(evt?.payload?.change_kind || evt?.payload?.notification_kind || '').toLowerCase();
     return kind === 'alias_reconciled' || kind === 'aliases_reconciled';
+  }
+
+  function _fullModelSignature(events) {
+    const items = Array.isArray(events) ? events : [];
+    if (items.length === 0 || items.every(_isAliasReconcileEvent)) return '';
+    const selectedByRole = {};
+    for (const evt of items) {
+      const payloadSignature = String(evt?.payload?.model_change_signature || '').trim();
+      if (payloadSignature) return payloadSignature;
+      const selected = evt?.payload?.selected || {};
+      for (const role of _FULL_MODEL_SIGNATURE_ROLES) {
+        const item = selected[role];
+        if (!item || typeof item !== 'object') continue;
+        const model = String(item.model_id || item.model_name || '').trim();
+        if (!model) continue;
+        const endpoint = `${item.container_ip || ''}:${item.port || ''}`;
+        selectedByRole[role] = `${model}@${endpoint}`;
+      }
+    }
+    const parts = _FULL_MODEL_SIGNATURE_ROLES
+      .filter(role => selectedByRole[role])
+      .map(role => `${role}:${selectedByRole[role]}`);
+    return parts.join('|');
+  }
+
+  function _isRepeatedFullModelSignature(signature) {
+    if (!signature) return false;
+    return localStorage.getItem(_FULL_MODEL_SIGNATURE_KEY) === signature;
+  }
+
+  function _recordFullModelSignature(signature) {
+    if (!signature) return;
+    localStorage.setItem(_FULL_MODEL_SIGNATURE_KEY, signature);
+    localStorage.setItem(_FULL_MODEL_SIGNATURE_AT_KEY, String(Date.now() / 1000));
   }
 
   /** Merge a list of model.changed events into one speech string.
@@ -218,6 +256,17 @@ const BlueprintsModelChangeAnnouncer = (() => {
     const createdAt = Number(evt?.payload?.created_at || evt?.created_at || 0);
     if (!Number.isFinite(createdAt) || createdAt <= 0) return false;
     return (Date.now() / 1000) - createdAt <= _HERMES_SPEECH_FRESHNESS_SECONDS;
+  }
+
+  function _isSpeechSuppressedEvent(evt) {
+    const payload = evt?.payload || {};
+    return payload.suppress_speech === true || payload.xarta_suppress_speech === true;
+  }
+
+  function _isStaleModelChangeReplay(evt) {
+    const createdAt = Number(evt?.created_at || 0);
+    if (!Number.isFinite(createdAt) || createdAt <= 0) return false;
+    return (Date.now() / 1000) - createdAt > _MODEL_CHANGE_REPLAY_FRESHNESS_SECONDS;
   }
 
   function _isAlarmClockEvent(evt) {
@@ -349,8 +398,10 @@ const BlueprintsModelChangeAnnouncer = (() => {
     const lastEvt  = events[events.length - 1];
     const modeId   = (lastEvt && lastEvt.payload && lastEvt.payload.mode_id) || '';
     const reconciledOnly = events.every(_isAliasReconcileEvent);
+    const fullSignature = _fullModelSignature(events);
+    const repeatFullSignature = _isRepeatedFullModelSignature(fullSignature);
 
-    _queue.unshift({
+    const item = {
       text: _speechForModelEvents(events),
       toastOpts: {
         title: (
@@ -362,7 +413,13 @@ const BlueprintsModelChangeAnnouncer = (() => {
       event: lastEvt || {},
       toastCategory: 'model_alias',
       isModelChange: true,  // flag: record timestamp after speaking
-    });
+      fullModelSignature: fullSignature,
+    };
+    if (repeatFullSignature) {
+      item.suppressSpeechReason = 'duplicate_model_change_signature';
+    }
+    _queue.unshift(item);
+    if (fullSignature && !repeatFullSignature) _recordFullModelSignature(fullSignature);
 
     // Drain will now handle the transition and speaking.
     _drainQueue();
@@ -641,6 +698,14 @@ const BlueprintsModelChangeAnnouncer = (() => {
       _emitSpeechSkipped('stale_hermes_utterance_replay', item);
       return;
     }
+    if (item.suppressSpeechReason) {
+      _emitSpeechSuppressed(item.suppressSpeechReason, item);
+      return;
+    }
+    if (_isSpeechSuppressedEvent(evt)) {
+      _emitSpeechSuppressed('payload_suppress_speech', item);
+      return;
+    }
     if (item.hermesUtterance
         && typeof BlueprintsVoiceMode !== 'undefined'
         && typeof BlueprintsVoiceMode.canSpeakHermesUtterance === 'function'
@@ -875,6 +940,20 @@ const BlueprintsModelChangeAnnouncer = (() => {
     switch (evt.event_type) {
 
       case 'model.changed': {
+        if (!_isAliasReconcileEvent(evt) && _isStaleModelChangeReplay(evt)) {
+          _emitSpeechSkipped('stale_model_change_replay', {
+            text: _speechForModelEvents([evt]),
+            toastOpts: {
+              title: evt.title || 'Local Model Changed',
+              message: evt.message || '',
+              severity: evt.severity || 'info',
+            },
+            event: evt,
+            toastCategory: 'model_alias',
+            isModelChange: true,
+          });
+          break;
+        }
         _stash.push(evt);
         if (_astate === ASTATE.IDLE) {
           _transition(ASTATE.COLLECTING, 'first model.changed');
@@ -1128,6 +1207,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
         e.event_type === 'model.changed' &&
         typeof e.created_at === 'number' &&
         e.created_at > cutoff &&
+        !_isSpeechSuppressedEvent(e) &&
         !(e.event_id && _seenIds.has(e.event_id))
       )
       .sort((a, b) => a.created_at - b.created_at);
@@ -1141,13 +1221,19 @@ const BlueprintsModelChangeAnnouncer = (() => {
     const count  = missed.length;
     const speech = _speechForModelEvents(missed.map(e => ({ payload: e.payload || {} })));
     const reconciledOnly = missed.every(e => _isAliasReconcileEvent({ payload: e.payload || {} }));
+    const fullSignature = _fullModelSignature(missed);
+    const repeatFullSignature = _isRepeatedFullModelSignature(fullSignature);
+    const extra = repeatFullSignature
+      ? { suppressSpeechReason: 'duplicate_model_change_signature', fullModelSignature: fullSignature }
+      : { fullModelSignature: fullSignature };
     _pushAndDrain(speech, {
       title:    reconciledOnly
         ? (count === 1 ? 'Aliases Reconciled (while offline)' : `${count} Alias Reconciles (while offline)`)
         : (count === 1 ? 'Model Changed (while offline)' : `${count} Model Changes (while offline)`),
       message:  missed[missed.length - 1].message || 'Local model aliases updated.',
       severity: 'info',
-    }, missed[missed.length - 1] || {});
+    }, missed[missed.length - 1] || {}, extra);
+    if (fullSignature && !repeatFullSignature) _recordFullModelSignature(fullSignature);
     _recordAnnounced();
   }
 
