@@ -17,6 +17,7 @@ let _vpsDockgePollInterval = null;
 let _lxc841DockgeStacks = [];
 let _lxc841DockgePollInterval = null;
 let _caddyConfigs = [];
+let _disksLoaded = false;
 let _pveHosts = [];
 let _vlans = [];
 let _arpManual = [];

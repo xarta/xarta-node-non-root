@@ -528,6 +528,7 @@ function switchTab(tab) {
     if (typeof _matrixChatAdminLoadTab === 'function') _matrixChatAdminLoadTab();
   }
   if (tab === 'caddy-configs'  && !_caddyConfigs.length)  loadCaddyConfigs();
+  if (tab === 'disks'          && typeof loadDisks === 'function') loadDisks(true);
   if (tab === 'pve-hosts'      && !_pveHosts.length)      loadPveHosts();
   if (tab === 'vlans'          && !_vlans.length)         loadVlans();
   if (tab === 'arp-manual'     && !_arpManual.length)     loadArpManual();

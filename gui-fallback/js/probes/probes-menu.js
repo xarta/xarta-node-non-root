@@ -30,6 +30,7 @@ const ProbesMenuConfig = createHubMenu({
         { id: 'ssh-targets',          label: 'SSH Targets',      icon: HIEROGLYPHS.doorBolt,   pageLabel: 'SSH Targets',       parent: 'proxmox-config',  order: 1 },
         { id: 'dockge-stacks',        label: 'Dockge Stacks',    icon: HIEROGLYPHS.pyramid,    pageLabel: 'Dockge Stacks',     parent: 'proxmox-config',  order: 2 },
         { id: 'caddy-configs',        label: 'Caddy Configs',    icon: HIEROGLYPHS.solarBoat,  pageLabel: 'Caddy Configs',     parent: 'proxmox-config',  order: 3 },
+        { id: 'disks',                label: 'Disks',            icon: 'icons/ui/drive-blue.svg', pageLabel: 'Disks',          parent: 'proxmox-config',  order: 4 },
         { id: 'bookmarks',            label: 'Bookmarks',        icon: HIEROGLYPHS.papyrus,    pageLabel: 'Bookmarks',         parent: null,              order: 2 },
         { id: 'bookmarks-main',       label: 'Main',             icon: HIEROGLYPHS.papyrus,    pageLabel: 'Bookmarks',         parent: 'bookmarks',       order: 0 },
         { id: 'bookmarks-history',    label: 'History',          icon: HIEROGLYPHS.starDuat,   pageLabel: 'Visit History',     parent: 'bookmarks',       order: 1 },
@@ -111,6 +112,9 @@ const ProbesMenuConfig = createHubMenu({
         { id: 'caddy-fn-scroll',    label: 'Horiz Scroll: Is Off',   icon: 'icons/ui/table-columns-blue.svg', fn: 'caddy.scroll', activeOn: ['caddy-configs'], parent: 'probes-settings', order: 3 },
         { id: 'caddy-fn-autofit',   label: 'Auto Fit Widths',     icon: 'icons/ui/table-columns-blue.svg', fn: 'caddy.autoFit', activeOn: ['caddy-configs'], parent: 'probes-settings', order: 4 },
         { id: 'caddy-fn-context',   label: 'Layout Context',      icon: HIEROGLYPHS.eyeOfHorus, fn: 'caddy.context',  activeOn: ['caddy-configs'], parent: 'probes-settings', order: 5 },
+
+        // ── Disks page function items ───────────────────────────────────────
+        { id: 'disks-fn-refresh',   label: 'Refresh',             icon: HIEROGLYPHS.nefer,      fn: 'disks.refresh', activeOn: ['disks'], parent: 'probes-settings', order: 0 },
 
         // ── Visit History page function items ──────────────────────────────
         { id: 'vis-fn-refresh',     label: 'Refresh',             icon: HIEROGLYPHS.nefer,      fn: 'vis.refresh',     activeOn: ['bookmarks-history'], parent: 'probes-settings', order: 0 },
@@ -251,6 +255,9 @@ ProbesMenuConfig.registerFunctions({
     'caddy.scroll':   () => toggleCaddyHorizontalScroll(),
     'caddy.autoFit':  () => _probesAutoFitLayout(() => _ensureCaddyLayoutController()),
     'caddy.context':  () => openCaddyLayoutContextModal(),
+
+    // Disks
+    'disks.refresh':  () => loadDisks(true),
 
     // Visit History
     'vis.refresh':    () => loadVisits(),

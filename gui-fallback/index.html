@@ -22,6 +22,7 @@
   <link rel="stylesheet" href="css/components.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/hub-menu.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/probes-menu.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/disks.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/settings-menu.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/synthesis-menu.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/splash-screens.css?v={{$assetVersion}}" />
@@ -864,6 +865,32 @@
       </table>
     </div>
     <p id="caddy-error" class="error-msg" hidden></p>
+  </section>
+
+  <!-- Disks -->
+  <section id="tab-disks" class="tab-panel tab-panel--fill">
+    <p id="disks-status" class="disks-status" hidden></p>
+    <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
+    <div id="disks-shell" class="disks-shell table-wrap--fill" aria-live="polite"></div>
+
+    <dialog class="hub-modal hub-dialog disks-smart-modal" data-tone="info" id="disks-smart-modal" style="width:min(920px,96vw);max-width:96vw">
+      <div class="hub-modal-header">
+        <h2 class="hub-modal-title" style="min-width:0;flex:1">
+          <span class="hub-dialog-badge">SMART</span>
+          <span class="hub-dialog-title-text" id="disks-smart-title">Drive health</span>
+        </h2>
+        <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+      </div>
+      <div class="hub-modal-body">
+        <p id="disks-smart-subtitle" class="disks-smart-subtitle"></p>
+        <div id="disks-smart-summary" class="disks-smart-summary"></div>
+        <pre id="disks-smart-json" class="disks-smart-json"></pre>
+        <p id="disks-smart-error" class="hub-modal-error" hidden></p>
+      </div>
+      <div class="hub-modal-footer">
+        <button class="hub-modal-btn secondary hub-modal-close" type="button">Close</button>
+      </div>
+    </dialog>
   </section>
 
   <!-- PVE Hosts -->
@@ -5175,6 +5202,7 @@
 <script src="js/probes/ssh-targets.js?v={{$assetVersion}}"></script>
 <script src="js/probes/dockge.js?v={{$assetVersion}}"></script>
 <script src="js/probes/caddy.js?v={{$assetVersion}}"></script>
+<script src="js/probes/disks.js?v={{$assetVersion}}"></script>
 <script src="js/table-pager.js?v={{$assetVersion}}"></script>
 <script src="js/table-ui.js?v={{$assetVersion}}"></script>
 <script src="js/probes/bookmarks.js?v={{$assetVersion}}"></script>
