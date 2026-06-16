@@ -567,7 +567,7 @@ function switchTab(tab) {
   }
   if (tab && tab.indexOf('splash-dont-panic') === 0) { if (typeof BlueprintsSplashScreens !== 'undefined') BlueprintsSplashScreens.initDontPanic(tab); }
   if (tab === 'settings'       && !_settings.length)      loadSettings();
-  if (tab === 'settings')                                  { initSoundToggle(); initVolumeSlider(); initTtsSettingsPanel(); }
+  if (tab === 'settings')                                  { initSoundToggle(); initVolumeSlider(); initTtsSettingsPanel(); initGpuActivitySfxPanel(); }
   if (tab === 'keys')                                      loadKeys();
   if (tab === 'certs')                                     loadCerts();
   if (tab === 'docs' && !_docsAll.length)                  loadDocs();
@@ -643,7 +643,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (_urlGroup === 'probes' && typeof ProbesMenuConfig !== 'undefined') ProbesMenuConfig.updateActiveTab(_urlTab);
     if (_urlGroup === 'settings' && typeof SettingsMenuConfig !== 'undefined') SettingsMenuConfig.updateActiveTab(_urlTab);
   }
-  loadFrontendSettings();
+  loadFrontendSettings().then(() => {
+    if (typeof SoundManager !== 'undefined') {
+      SoundManager.setEnabled(getFrontendSetting('sound_enabled', 'false') === 'true');
+    }
+    if (typeof GpuActivitySound !== 'undefined') GpuActivitySound.init();
+  });
   loadHealth();
   loadManualLinks();
   if (!_urlTab && !_urlGroup && !_restoreSshAfterReload) {
