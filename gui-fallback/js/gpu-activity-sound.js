@@ -6,6 +6,9 @@ const GpuActivitySound = (() => {
   const POLL_MS = 750;
   const FADE_SECONDS = 2.0;
   const ENERGY_SECONDS = 9.0;
+  const PLAYBACK_LEASE_KEY = 'blueprints.gpuActivitySound.playbackLeader';
+  const PLAYBACK_LEASE_MS = 3500;
+  const PAGE_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   const DEFAULTS = {
     '0': {
       label: 'GPU0',
@@ -159,11 +162,48 @@ const GpuActivitySound = (() => {
         loadingToken: 0,
         currentGain: 0,
         targetGain: 0,
+        fadeStartedAt: 0,
+        fadeStartGain: 0,
         energy: 0,
         lastSampleAt: 0,
       };
     }
     return _channels[id];
+  }
+
+  function _documentVisible() {
+    return typeof document === 'undefined' || document.visibilityState !== 'hidden';
+  }
+
+  function _readPlaybackLease() {
+    try {
+      return JSON.parse(localStorage.getItem(PLAYBACK_LEASE_KEY) || '{}') || {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function _leaseIsAvailable(now = Date.now()) {
+    const lease = _readPlaybackLease();
+    if (!lease.id || lease.id === PAGE_ID) return true;
+    return now - Number(lease.ts || 0) > PLAYBACK_LEASE_MS;
+  }
+
+  function _claimPlaybackLease() {
+    if (!_documentVisible()) return false;
+    const now = Date.now();
+    if (!_leaseIsAvailable(now)) return false;
+    try {
+      localStorage.setItem(PLAYBACK_LEASE_KEY, JSON.stringify({ id: PAGE_ID, ts: now }));
+    } catch (_) {}
+    return true;
+  }
+
+  function _releasePlaybackLease() {
+    try {
+      const lease = _readPlaybackLease();
+      if (!lease.id || lease.id === PAGE_ID) localStorage.removeItem(PLAYBACK_LEASE_KEY);
+    } catch (_) {}
   }
 
   async function _loadBuffer(url) {
@@ -190,6 +230,7 @@ const GpuActivitySound = (() => {
   }
 
   function _stopChannel(channel) {
+    channel.loadingToken += 1;
     if (channel.source) {
       try { channel.source.onended = null; } catch (_) {}
       try { channel.source.stop(0); } catch (_) {}
@@ -203,16 +244,39 @@ const GpuActivitySound = (() => {
     channel.url = '';
     channel.currentGain = 0;
     channel.targetGain = 0;
+    channel.fadeStartedAt = 0;
+    channel.fadeStartGain = 0;
+  }
+
+  function _cancelPendingLoop(channel) {
+    channel.loadingToken += 1;
+  }
+
+  function _hardStopAll() {
+    GPU_IDS.forEach(id => _stopChannel(_channel(id)));
+    if (_raf) cancelAnimationFrame(_raf);
+    _raf = 0;
+    _releasePlaybackLease();
   }
 
   async function _ensureLoop(channel, url) {
     const ctx = _getCtx();
     if (!ctx || !url) return;
     if (channel.source && channel.url === url) return;
+    const desiredGain = channel.targetGain;
     _stopChannel(channel);
+    channel.targetGain = desiredGain;
     const token = ++channel.loadingToken;
     const buffer = await _loadBuffer(url);
-    if (!buffer || token !== channel.loadingToken) return;
+    if (
+      !buffer ||
+      token !== channel.loadingToken ||
+      channel.targetGain <= 0 ||
+      !_documentVisible() ||
+      !_leaseIsAvailable()
+    ) {
+      return;
+    }
     try {
       const source = ctx.createBufferSource();
       const gain = ctx.createGain();
@@ -226,6 +290,8 @@ const GpuActivitySound = (() => {
       channel.gain = gain;
       channel.url = url;
       channel.currentGain = 0;
+      channel.fadeStartedAt = performance.now();
+      channel.fadeStartGain = 0;
       source.onended = () => {
         if (channel.source !== source) return;
         channel.source = null;
@@ -307,21 +373,36 @@ const GpuActivitySound = (() => {
     const cfg = _config.gpus[id];
     const telemetry = _telemetry[id];
     if (!_config.masterEnabled || !cfg?.enabled || !cfg.soundPath || !telemetry) return 0;
-    if (telemetry.powerW < _thresholdFor(id)) return 0;
+    if (!_documentVisible() || telemetry.powerW < _thresholdFor(id)) return 0;
+    if (!_claimPlaybackLease()) return 0;
     const channel = _channel(id);
     const energyShape = Math.log1p(3 * Math.max(0, Math.min(1, channel.energy))) / Math.log1p(3);
     const boost = cfg.boostEnabled ? 1 + ((cfg.boostPct / 100) * energyShape) : 1;
     return Math.max(0, Math.min(2, cfg.volume * boost));
   }
 
+  function _setTargetGain(channel, gain, nowMs) {
+    const cleanGain = Math.max(0, Number(gain) || 0);
+    if (Math.abs(cleanGain - channel.targetGain) <= 0.001) {
+      channel.targetGain = cleanGain;
+      return;
+    }
+    channel.fadeStartedAt = nowMs;
+    channel.fadeStartGain = channel.currentGain;
+    channel.targetGain = cleanGain;
+  }
+
   function _updateTargets() {
+    const now = performance.now();
     GPU_IDS.forEach(id => {
       const channel = _channel(id);
       const gain = _effectiveGain(id);
-      channel.targetGain = gain;
+      _setTargetGain(channel, gain, now);
       if (gain > 0) {
         _resumeCtx();
         void _ensureLoop(channel, _assetUrl(_config.gpus[id]?.soundPath));
+      } else {
+        _cancelPendingLoop(channel);
       }
     });
     _ensureAnimation();
@@ -332,17 +413,25 @@ const GpuActivitySound = (() => {
     _raf = requestAnimationFrame(_tick);
   }
 
-  let _lastTick = 0;
   function _tick(now) {
     _raf = 0;
-    const dt = _lastTick ? Math.max(0.001, Math.min(0.1, (now - _lastTick) / 1000)) : 0.016;
-    _lastTick = now;
     let keepRunning = false;
     GPU_IDS.forEach(id => {
       const channel = _channel(id);
-      const diff = channel.targetGain - channel.currentGain;
-      const step = Math.min(1, dt / FADE_SECONDS);
-      channel.currentGain += diff * step;
+      if (Math.abs(channel.currentGain - channel.targetGain) > 0.001) {
+        if (!channel.fadeStartedAt) {
+          channel.fadeStartedAt = now;
+          channel.fadeStartGain = channel.currentGain;
+        }
+        const elapsed = Math.max(0, (now - channel.fadeStartedAt) / 1000);
+        const ratio = Math.min(1, elapsed / FADE_SECONDS);
+        channel.currentGain = channel.fadeStartGain + ((channel.targetGain - channel.fadeStartGain) * ratio);
+        if (ratio >= 1) {
+          channel.currentGain = channel.targetGain;
+          channel.fadeStartedAt = 0;
+          channel.fadeStartGain = channel.currentGain;
+        }
+      }
       if (Math.abs(channel.currentGain) < 0.001 && channel.targetGain <= 0) {
         channel.currentGain = 0;
       }
@@ -354,6 +443,7 @@ const GpuActivitySound = (() => {
       }
       if (channel.source || channel.targetGain > 0 || channel.currentGain > 0) keepRunning = true;
     });
+    if (!keepRunning) _releasePlaybackLease();
     if (keepRunning) _raf = requestAnimationFrame(_tick);
   }
 
@@ -376,6 +466,7 @@ const GpuActivitySound = (() => {
   }
 
   function _shouldPoll() {
+    if (!_documentVisible()) return false;
     if (_panelWatching) return true;
     if (!_config.masterEnabled) return false;
     return GPU_IDS.some(id => {
@@ -401,6 +492,52 @@ const GpuActivitySound = (() => {
   function _dispatchTelemetry() {
     const detail = getSnapshot();
     window.dispatchEvent(new CustomEvent('blueprints:gpu-activity-sfx-telemetry', { detail }));
+  }
+
+  function _handleVisibilityChange() {
+    if (!_documentVisible()) {
+      window.clearTimeout(_pollTimer);
+      _pollTimer = 0;
+      _hardStopAll();
+      return;
+    }
+    _schedulePoll(0);
+    _updateTargets();
+  }
+
+  function _runtimeSnapshot() {
+    const now = Date.now();
+    const lease = _readPlaybackLease();
+    const leaseFresh = !!lease.id && now - Number(lease.ts || 0) <= PLAYBACK_LEASE_MS;
+    const gpus = {};
+    GPU_IDS.forEach(id => {
+      const channel = _channel(id);
+      const telemetry = _telemetry[id];
+      const thresholdW = _thresholdFor(id);
+      gpus[id] = {
+        thresholdW,
+        powerW: Number(telemetry?.powerW ?? NaN),
+        aboveThreshold: !!telemetry && Number(telemetry.powerW) >= thresholdW,
+        targetGain: channel.targetGain,
+        currentGain: channel.currentGain,
+        sourceActive: !!channel.source,
+        pendingLoad: channel.loadingToken,
+        fading: !!channel.fadeStartedAt,
+        energy: channel.energy,
+        url: channel.url,
+      };
+    });
+    return {
+      pageId: PAGE_ID,
+      documentVisible: _documentVisible(),
+      playbackLease: {
+        owner: lease.id || '',
+        fresh: leaseFresh,
+        ownedByThisPage: lease.id === PAGE_ID,
+        availableToThisPage: _leaseIsAvailable(now),
+      },
+      gpus,
+    };
   }
 
   function configure(nextConfig) {
@@ -436,6 +573,7 @@ const GpuActivitySound = (() => {
       ranges: JSON.parse(JSON.stringify(_ranges)),
       meta: { ..._lastMonitorMeta },
       defaults: JSON.parse(JSON.stringify(DEFAULTS)),
+      runtime: _runtimeSnapshot(),
     };
   }
 
@@ -447,9 +585,14 @@ const GpuActivitySound = (() => {
     _initialized = true;
     _setupResumeOnGesture();
     reloadFromFrontendSettings();
+    document.addEventListener('visibilitychange', _handleVisibilityChange);
     window.addEventListener('pagehide', () => {
-      GPU_IDS.forEach(id => _stopChannel(_channel(id)));
       window.clearTimeout(_pollTimer);
+      _hardStopAll();
+    });
+    window.addEventListener('beforeunload', () => {
+      window.clearTimeout(_pollTimer);
+      _hardStopAll();
     });
   }
 
