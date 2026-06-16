@@ -22,6 +22,77 @@ const _DISKS_CLUSTER_COLORS = [
   '173, 130, 255',
   '58, 188, 218',
 ];
+const _DISKS_FULL_WIDTH_FACTS = new Set([
+  'model',
+  'description',
+  'guest-roles',
+  'assigned-to',
+  'backed-by',
+  'assignment',
+]);
+const _DISKS_FACT_PRIORITIES = {
+  host: [
+    'source',
+    'installed-total',
+    'guest-assigned',
+    'known-capacity',
+    'known-free',
+  ],
+  'nested-host': [
+    'source',
+    'installed-total',
+    'guest-assigned',
+    'known-capacity',
+    'known-free',
+  ],
+  drive: [
+    'path',
+    'serial',
+    'model',
+    'vendor',
+    'transport',
+    'rotational',
+    'filesystem',
+    'mount',
+    'part-label',
+    'uuid',
+    'pools',
+  ],
+  partition: [
+    'path',
+    'filesystem',
+    'mount',
+    'part-label',
+    'uuid',
+    'serial',
+    'vendor',
+    'transport',
+    'rotational',
+    'model',
+    'pools',
+  ],
+  pool: [
+    'health',
+    'fragmentation',
+    'path',
+    'mount',
+    'uuid',
+    'source',
+  ],
+  default: [
+    'path',
+    'filesystem',
+    'serial',
+    'vendor',
+    'transport',
+    'rotational',
+    'mount',
+    'part-label',
+    'uuid',
+    'model',
+    'source',
+  ],
+};
 
 function _disksEl(id) {
   return document.getElementById(id);
@@ -50,7 +121,37 @@ function _disksFormatBytes(bytes) {
   return `${size.toFixed(decimals)}${units[unitIdx]}`;
 }
 
+function _disksByteValue(value) {
+  const bytes = Number(value);
+  return Number.isFinite(bytes) && bytes >= 0 ? bytes : null;
+}
+
+function _disksPartialUsage(node) {
+  if (!node || node.used_bytes != null) return null;
+  const total = _disksByteValue(node.total_bytes);
+  const knownUsed = _disksByteValue(node.known_used_bytes);
+  const unknownBytes = _disksByteValue(node.guest_assigned_unknown_bytes);
+  if (total == null || knownUsed == null || unknownBytes == null || unknownBytes <= 0 || unknownBytes >= total) {
+    return null;
+  }
+  const knownTotal = Math.max(0, total - unknownBytes);
+  if (!knownTotal) return null;
+  const knownFree = Math.max(0, knownTotal - knownUsed);
+  return {
+    total,
+    knownUsed,
+    knownTotal,
+    knownFree,
+    unknownBytes,
+    knownPct: Math.max(0, Math.min(100, (knownUsed / knownTotal) * 100)),
+  };
+}
+
 function _disksUsageText(node) {
+  const partial = _disksPartialUsage(node);
+  if (partial) {
+    return `${_disksFormatBytes(partial.knownUsed)} used · ${_disksFormatBytes(partial.knownFree)} free on ${_disksFormatBytes(partial.knownTotal)} known`;
+  }
   if (node && typeof node.usage_text === 'string' && node.usage_text.trim()) {
     return node.usage_text.trim();
   }
@@ -60,9 +161,19 @@ function _disksUsageText(node) {
 }
 
 function _disksUsagePct(node) {
+  const partial = _disksPartialUsage(node);
+  if (partial) return partial.knownPct;
   if (!node || node.usage_pct == null || node.usage_pct === '') return null;
   const pct = Number(node.usage_pct);
   return Number.isFinite(pct) ? Math.max(0, Math.min(100, pct)) : null;
+}
+
+function _disksUsagePctLabel(node, pct) {
+  const partial = _disksPartialUsage(node);
+  if (partial) {
+    return `${pct.toFixed(1)}% of known capacity used`;
+  }
+  return `${pct.toFixed(1)}% used`;
 }
 
 function _disksStatusTone(status) {
@@ -147,6 +258,27 @@ function _disksFactSlug(label) {
     .replace(/^-+|-+$/g, '') || 'fact';
 }
 
+function _disksOrderFacts(facts, options = {}) {
+  const items = Array.isArray(facts) ? facts.slice() : [];
+  if (!items.length) return [];
+  const kind = String(options.kind || '').trim().toLowerCase();
+  const priorities = _DISKS_FACT_PRIORITIES[kind] || _DISKS_FACT_PRIORITIES.default;
+  const priorityIndex = new Map(priorities.map((label, idx) => [label, idx]));
+  return items
+    .map((fact, idx) => ({
+      fact,
+      idx,
+      key: _disksFactSlug(fact?.label),
+    }))
+    .sort((left, right) => {
+      const leftPriority = priorityIndex.has(left.key) ? priorityIndex.get(left.key) : Number.MAX_SAFE_INTEGER;
+      const rightPriority = priorityIndex.has(right.key) ? priorityIndex.get(right.key) : Number.MAX_SAFE_INTEGER;
+      if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+      return left.idx - right.idx;
+    })
+    .map(entry => entry.fact);
+}
+
 function _disksFactValue(node, label) {
   const key = String(label ?? '').trim().toLowerCase();
   const fact = (Array.isArray(node?.facts) ? node.facts : []).find(item => {
@@ -155,11 +287,11 @@ function _disksFactValue(node, label) {
   return String(fact?.value ?? '').trim();
 }
 
-function _disksFactsHtml(facts, limit = 6) {
-  const items = Array.isArray(facts) ? facts.slice(0, limit) : [];
+function _disksFactsHtml(facts, limit = 6, options = {}) {
+  const items = _disksOrderFacts(facts, options).slice(0, limit);
   if (!items.length) return '';
   return `<div class="disks-facts">${items.map(fact => `
-    <div class="disks-facts__item disks-facts__item--${_disksEsc(_disksFactSlug(fact.label))}">
+    <div class="disks-facts__item disks-facts__item--${_disksEsc(_disksFactSlug(fact.label))}${_DISKS_FULL_WIDTH_FACTS.has(_disksFactSlug(fact.label)) ? ' disks-facts__item--full' : ''}">
       <span class="disks-facts__label">${_disksEsc(fact.label)}</span>
       <span class="disks-facts__value">${_disksEsc(fact.value)}</span>
     </div>
@@ -168,8 +300,17 @@ function _disksFactsHtml(facts, limit = 6) {
 
 function _disksHeroHtml(node) {
   const pct = _disksUsagePct(node);
+  const partial = _disksPartialUsage(node);
   const crumbs = _disksBreadcrumbs();
   const backTarget = crumbs.length > 1 ? crumbs[crumbs.length - 2].id : '';
+  const facts = Array.isArray(node?.facts) ? node.facts.slice() : [];
+  if (partial) {
+    facts.push(
+      { label: 'Installed total', value: _disksFormatBytes(partial.total) },
+      { label: 'Known capacity', value: _disksFormatBytes(partial.knownTotal) },
+      { label: 'Known free', value: _disksFormatBytes(partial.knownFree) },
+    );
+  }
   const sourceIssueHtml = _disksSourceIssues.length
     ? `<div class="disks-source-issues">${_disksSourceIssues.map(issue => `<span>${_disksEsc(issue)}</span>`).join('')}</div>`
     : '';
@@ -203,14 +344,14 @@ function _disksHeroHtml(node) {
         </div>
         <div class="disks-usage-line">
           <strong>${_disksEsc(_disksUsageText(node))}</strong>
-          ${pct == null ? '' : `<span>${pct.toFixed(1)}% used</span>`}
+          ${pct == null ? '' : `<span>${_disksEsc(_disksUsagePctLabel(node, pct))}</span>`}
         </div>
         ${pct == null ? '' : `
           <div class="disks-meter" aria-hidden="true">
             <span class="disks-meter__fill" style="width:${pct}%"></span>
           </div>
         `}
-        ${_disksFactsHtml(node.facts, 12)}
+        ${_disksFactsHtml(facts, 12, { kind: node?.kind, context: 'hero' })}
         ${sourceIssueHtml}
       </div>
     </section>
@@ -412,9 +553,13 @@ function _disksCardHtml(node, options = {}) {
   const cta = hasChildren ? 'Open' : 'View';
   const tone = _disksStatusTone(node.status);
   const showSubtitle = !!node.subtitle && node.kind !== 'drive';
+  const kindSlug = _disksFactSlug(node.kind || 'item');
+  const contextSlug = _disksFactSlug(options.contextKind || _disksCurrentNode()?.kind || 'context');
   const classes = [
     'disks-card',
     `disks-card--${_disksEsc(_disksStatusTone(node.status))}`,
+    `disks-card--kind-${_disksEsc(kindSlug)}`,
+    `disks-card--context-${_disksEsc(contextSlug)}`,
   ];
   if (node.smart) classes.push('disks-card--has-smart');
   if (options.poolName) classes.push('disks-card--pooled');
@@ -458,7 +603,7 @@ function _disksCardHtml(node, options = {}) {
           `}
         </div>
         ${node.note ? `<p class="disks-card__note">${_disksEsc(node.note)}</p>` : ''}
-        ${_disksFactsHtml(node.facts, 5)}
+        ${_disksFactsHtml(node.facts, 6, { kind: node?.kind, context: 'card' })}
         <div class="disks-card__footer">
           <span>${cta}</span>
           ${hasChildren ? `<span>${node.children.length} item${node.children.length === 1 ? '' : 's'}</span>` : '<span>Details</span>'}
@@ -491,7 +636,7 @@ function _disksGroupsHtml(node) {
           <span>${group.items.length} item${group.items.length === 1 ? '' : 's'}</span>
         </div>
         <div class="disks-card-grid">
-          ${group.items.map(_disksCardHtml).join('')}
+          ${group.items.map(item => _disksCardHtml(item, { contextKind: node?.kind || '' })).join('')}
         </div>
       </section>
     `;
