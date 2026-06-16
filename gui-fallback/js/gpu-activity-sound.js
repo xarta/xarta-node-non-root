@@ -132,7 +132,11 @@ const GpuActivitySound = (() => {
 
   function _cleanGpuConfig(id, raw) {
     const def = DEFAULTS[id];
-    const threshold = Number(raw?.thresholdW);
+    const rawThreshold = raw?.thresholdW;
+    const hasThreshold = rawThreshold !== null
+      && rawThreshold !== undefined
+      && String(rawThreshold).trim() !== '';
+    const threshold = hasThreshold ? Number(rawThreshold) : NaN;
     return {
       enabled: !!raw?.enabled,
       soundPath: String(raw?.soundPath || def.soundPath || '').trim(),

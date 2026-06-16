@@ -54,6 +54,7 @@ const _GPU_ACTIVITY_SFX_META = {
   'gpu_activity_sfx.gpu1.integral_boost_enabled': 'Enable GPU1 energy-integral volume boost',
   'gpu_activity_sfx.gpu1.integral_boost_pct': 'Maximum GPU1 energy-integral volume boost percent',
 };
+let _gpuActivityTelemetryRuntimeSyncing = false;
 
 let _settingsTableView = null;
 
@@ -376,6 +377,7 @@ async function loadSettings() {
     const r = await apiFetch('/api/v1/settings');
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     _settings = await r.json();
+    initSoundToggle();
     initTtsSettingsPanel();
     initGpuActivitySfxPanel();
     renderSettings();
@@ -908,12 +910,15 @@ function _gpuActivityDynamicThreshold(id, maxW) {
 
 function _applyGpuActivityRange(id, snapshot) {
   const slider = _gpuActivitySlider(id, 'threshold');
-  if (!slider) return;
+  if (!slider) return false;
+  const beforeDisabled = slider.disabled;
+  const beforeValue = slider.value;
+  const beforeMax = slider.max;
   const range = snapshot?.ranges?.[id];
   if (!range || !Number.isFinite(Number(range.maxW))) {
     slider.disabled = true;
     setGpuActivityThresholdLabel(id);
-    return;
+    return beforeDisabled !== slider.disabled;
   }
   const maxW = Math.max(1, Math.round(Number(range.maxW)));
   const current = Number(slider.value);
@@ -926,6 +931,7 @@ function _applyGpuActivityRange(id, snapshot) {
     slider.dataset.dynamicDefault = '0';
   }
   setGpuActivityThresholdLabel(id);
+  return beforeDisabled !== slider.disabled || beforeValue !== slider.value || beforeMax !== slider.max;
 }
 
 function setGpuActivityThresholdLabel(id) {
@@ -951,8 +957,9 @@ function setGpuActivityBoostLabel(id) {
 }
 
 function _updateGpuActivityTelemetry(snapshot) {
+  let rangeChanged = false;
   _GPU_ACTIVITY_SFX_IDS.forEach(id => {
-    _applyGpuActivityRange(id, snapshot);
+    rangeChanged = _applyGpuActivityRange(id, snapshot) || rangeChanged;
     const power = document.getElementById(`gpu-sfx-${id}-power`);
     const telemetry = snapshot?.telemetry?.[id];
     if (power) {
@@ -964,6 +971,14 @@ function _updateGpuActivityTelemetry(snapshot) {
   const status = document.getElementById('gpu-sfx-status');
   if (status && snapshot?.meta?.stale) status.textContent = 'Telemetry stale';
   else if (status && snapshot?.meta?.fetchedAt) status.textContent = 'Telemetry live';
+  if (rangeChanged && !_gpuActivityTelemetryRuntimeSyncing && typeof GpuActivitySound !== 'undefined') {
+    _gpuActivityTelemetryRuntimeSyncing = true;
+    try {
+      applyGpuActivitySfxRuntimeFromPanel();
+    } finally {
+      _gpuActivityTelemetryRuntimeSyncing = false;
+    }
+  }
 }
 
 function _gpuActivityConfigFromPanel() {
@@ -1142,11 +1157,31 @@ function stopGpuActivitySfx() {
 }
 
 /* ── Sound enabled toggle ─────────────────────────────────────────────── */
+function _soundEnabledSettingValue(fallback = 'false') {
+  const row = _settings.find(item => String(item.key) === 'fe.sound_enabled');
+  if (row && typeof row.value === 'string' && row.value.trim() !== '') return row.value.trim();
+  if (typeof getFrontendSetting === 'function') {
+    const cached = getFrontendSetting('sound_enabled', null);
+    if (cached !== null && cached !== undefined && String(cached).trim() !== '') return String(cached).trim();
+  }
+  return fallback;
+}
+
 function initSoundToggle() {
   const checkbox = document.getElementById('sound-enabled-toggle');
   if (!checkbox) return;
-  const current = getFrontendSetting('sound_enabled', 'false') === 'true';
-  checkbox.checked = current;
+  checkbox.checked = _boolSettingValue(_soundEnabledSettingValue('false'));
+  if (typeof getFrontendSetting === 'function'
+      && getFrontendSetting('sound_enabled', null) === null
+      && !_settings.some(item => String(item.key) === 'fe.sound_enabled')
+      && typeof loadFrontendSettings === 'function') {
+    loadFrontendSettings().then(() => {
+      checkbox.checked = _boolSettingValue(_soundEnabledSettingValue('false'));
+      if (typeof applyGpuActivitySfxRuntimeFromPanel === 'function') {
+        applyGpuActivitySfxRuntimeFromPanel();
+      }
+    }).catch(() => {});
+  }
 }
 
 async function saveSoundEnabled(enabled) {
