@@ -2580,8 +2580,10 @@ const MatrixChat = (() => {
 
   function renderAttachmentTray() {
     const tray = el('matrix-chat-attachment-tray');
+    const composer = el('matrix-chat-composer')?.closest?.('.matrix-chat-composer');
     if (!tray) return;
     clearNode(tray);
+    composer?.classList.toggle('has-attachments', Boolean(state.attachmentItems.length));
     if (!state.attachmentItems.length) {
       tray.hidden = true;
       syncAttachmentControls();
