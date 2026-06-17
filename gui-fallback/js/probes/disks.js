@@ -792,6 +792,94 @@ function _disksSetClusterEdges(card, sides) {
   });
 }
 
+function _disksResetCardHeights(scope) {
+  if (!scope) return;
+  scope.querySelectorAll('.disks-card__main').forEach(main => {
+    main.style.removeProperty('min-height');
+  });
+}
+
+function _disksCollectCardRows(cards) {
+  const entries = Array.from(cards || [])
+    .map(card => {
+      const main = card.querySelector('.disks-card__main');
+      if (!main) return null;
+      return { card, main };
+    })
+    .filter(Boolean);
+  if (!entries.length) return [];
+  const rows = [];
+  entries.forEach(entry => {
+    const rect = entry.card.getBoundingClientRect();
+    let row = rows.find(candidate => Math.abs(candidate.top - rect.top) < 8);
+    if (!row) {
+      row = { top: rect.top, entries: [] };
+      rows.push(row);
+    }
+    row.entries.push(entry);
+  });
+  rows.sort((left, right) => left.top - right.top);
+  return rows;
+}
+
+function _disksEqualizeCards(cards) {
+  const entries = Array.from(cards || [])
+    .map(card => {
+      const main = card.querySelector('.disks-card__main');
+      if (!main) return null;
+      return { card, main };
+    })
+    .filter(Boolean);
+  if (!entries.length) return;
+  const maxHeight = entries.reduce((height, entry) => {
+    return Math.max(height, entry.main.getBoundingClientRect().height);
+  }, 0);
+  entries.forEach(entry => {
+    entry.main.style.minHeight = `${Math.ceil(maxHeight)}px`;
+  });
+}
+
+function _disksEqualizeCardRowHeights(cards) {
+  _disksCollectCardRows(cards).forEach(row => {
+    _disksEqualizeCards(row.entries.map(entry => entry.card));
+  });
+}
+
+function _disksEqualizeDirectGridHeights(grid) {
+  if (!grid) return;
+  _disksEqualizeCardRowHeights(grid.querySelectorAll(':scope > .disks-card'));
+}
+
+function _disksBlockRows(block) {
+  if (!block) return [];
+  const clusterGrid = block.querySelector(':scope [data-disks-cluster-grid]');
+  if (clusterGrid) {
+    return _disksCollectCardRows(clusterGrid.querySelectorAll(':scope > .disks-card'))
+      .map(row => row.entries.map(entry => entry.card));
+  }
+  const directCards = Array.from(block.querySelectorAll(':scope > .disks-card'));
+  if (directCards.length) return [directCards];
+  const nestedCards = Array.from(block.querySelectorAll('.disks-card'));
+  return nestedCards.length ? [nestedCards] : [];
+}
+
+function _disksEqualizeShelfHeights(shelf) {
+  if (!shelf) return;
+  const blocks = Array.from(shelf.querySelectorAll(':scope > [data-disks-layout-role]'));
+  if (!blocks.length) {
+    _disksEqualizeCardRowHeights(shelf.querySelectorAll('.disks-card'));
+    return;
+  }
+  const rowsByIndex = [];
+  blocks.forEach(block => {
+    _disksBlockRows(block).forEach((rowCards, rowIndex) => {
+      if (!rowsByIndex[rowIndex]) rowsByIndex[rowIndex] = [];
+      rowsByIndex[rowIndex].push(...rowCards);
+    });
+  });
+  rowsByIndex.forEach(rowCards => _disksEqualizeCards(rowCards));
+}
+
 function _disksApplyClusterEdges(grid) {
   const cards = Array.from(grid.querySelectorAll(':scope > .disks-card'));
   if (!cards.length) return;
@@ -824,6 +912,7 @@ function _disksApplyClusterEdges(grid) {
 function _disksApplyPhysicalDriveLayout() {
   const shell = _disksEl('disks-shell');
   if (!shell) return;
+  _disksResetCardHeights(shell);
   let layoutChanged = false;
   shell.querySelectorAll('[data-disks-layout-shelf]').forEach(shelf => {
     const tracks = _disksShelfTrackCount(shelf);
@@ -868,6 +957,11 @@ function _disksApplyPhysicalDriveLayout() {
   shell.querySelectorAll('[data-disks-cluster-grid]').forEach(_disksApplyClusterEdges);
   shell.querySelectorAll('[data-disks-pool-single]').forEach(card => {
     _disksSetClusterEdges(card, ['top', 'right', 'bottom', 'left']);
+  });
+  shell.querySelectorAll('[data-disks-layout-shelf]').forEach(_disksEqualizeShelfHeights);
+  shell.querySelectorAll('.disks-card-grid').forEach(grid => {
+    if (grid.closest('[data-disks-layout-shelf]')) return;
+    _disksEqualizeDirectGridHeights(grid);
   });
 }
 
