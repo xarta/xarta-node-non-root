@@ -542,6 +542,13 @@
   text-transform: uppercase;
 }
 
+.disks-card__meta-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
 .disks-card__usage {
   display: grid;
   gap: 7px;
@@ -641,6 +648,11 @@
 .disks-card__jump--zfs {
   border-color: rgba(var(--glyph-gold-rgb), 0.42);
   color: var(--glyph-gold);
+}
+
+.disks-card__jump--static {
+  cursor: default;
+  pointer-events: none;
 }
 
 .disks-card__forget {

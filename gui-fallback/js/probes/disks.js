@@ -90,6 +90,19 @@ const _DISKS_FACT_PRIORITIES = {
     'transport',
     'source',
   ],
+  'guest-storage': [
+    'filesystem',
+    'mount',
+    'path',
+    'volume-label',
+    'uuid',
+    'guest-pool',
+    'guest-vdev',
+    'part-label',
+    'backed-by',
+    'model',
+    'guest-host',
+  ],
   pool: [
     'health',
     'fragmentation',
@@ -360,11 +373,26 @@ function _disksLogicalNodesForDrive(hostNode, driveNode) {
   const driveLabel = String(driveNode.label || '').trim();
   if (!driveLabel) return [];
   const candidatePaths = new Set();
+  const candidateGuestPaths = new Set();
+  const candidateMounts = new Set();
+  const candidateUuids = new Set();
   const drivePath = _disksFactValue(driveNode, 'Path');
   if (drivePath) candidatePaths.add(drivePath);
+  const driveGuestPath = _disksFactValue(driveNode, 'Guest path');
+  if (driveGuestPath) candidateGuestPaths.add(driveGuestPath);
+  const driveMount = _disksFactValue(driveNode, 'Mount');
+  if (driveMount) candidateMounts.add(driveMount);
+  const driveUuid = _disksFactValue(driveNode, 'UUID');
+  if (driveUuid) candidateUuids.add(driveUuid);
   (Array.isArray(driveNode.children) ? driveNode.children : []).forEach(child => {
     const childPath = _disksFactValue(child, 'Path');
     if (childPath) candidatePaths.add(childPath);
+    const childGuestPath = _disksFactValue(child, 'Guest path');
+    if (childGuestPath) candidateGuestPaths.add(childGuestPath);
+    const childMount = _disksFactValue(child, 'Mount');
+    if (childMount) candidateMounts.add(childMount);
+    const childUuid = _disksFactValue(child, 'UUID');
+    if (childUuid) candidateUuids.add(childUuid);
   });
   return (Array.isArray(hostNode.children) ? hostNode.children : []).filter(child => {
     if (!child || String(child.group || '').trim() !== 'Logical systems') return false;
@@ -372,8 +400,60 @@ function _disksLogicalNodesForDrive(hostNode, driveNode) {
     const backingDrive = _disksFactValue(child, 'Backing drive');
     if (backingDrive && backingDrive === driveLabel) return true;
     const path = _disksFactValue(child, 'Path');
-    return !!(path && candidatePaths.has(path));
+    if (path && candidatePaths.has(path)) return true;
+    const guestPath = _disksFactValue(child, 'Guest path');
+    if (guestPath && candidateGuestPaths.has(guestPath)) return true;
+    const mount = _disksFactValue(child, 'Mount');
+    if (mount && candidateMounts.has(mount)) return true;
+    const uuid = _disksFactValue(child, 'UUID');
+    return !!(uuid && candidateUuids.has(uuid));
   });
+}
+
+function _disksUniqueVolumeMatch(node) {
+  if (!node) return null;
+  const sourcePaths = new Set([
+    _disksFactValue(node, 'Path'),
+    _disksFactValue(node, 'Guest path'),
+  ].filter(Boolean));
+  const sourceMounts = new Set([
+    _disksFactValue(node, 'Mount'),
+  ].filter(Boolean));
+  const sourceUuids = new Set([
+    _disksFactValue(node, 'UUID'),
+  ].filter(Boolean));
+  const sourceVolumeLabels = new Set([
+    _disksFactValue(node, 'Volume label'),
+  ].filter(Boolean));
+
+  const candidates = Array.from(_disksNodeById.values()).filter(candidate => {
+    if (!candidate || candidate === node) return false;
+    if (String(candidate.kind || '').trim().toLowerCase() !== 'volume') return false;
+    let score = 0;
+    const candidateValues = [
+      _disksFactValue(candidate, 'Path'),
+      _disksFactValue(candidate, 'Guest path'),
+    ];
+    if (candidateValues.some(value => value && sourcePaths.has(value))) score += 80;
+    const candidateUuid = _disksFactValue(candidate, 'UUID');
+    if (candidateUuid && sourceUuids.has(candidateUuid)) score += 100;
+    const candidateMount = _disksFactValue(candidate, 'Mount');
+    if (candidateMount && sourceMounts.has(candidateMount)) score += 30;
+    const candidateVolumeLabel = _disksFactValue(candidate, 'Volume label');
+    if (candidateVolumeLabel && sourceVolumeLabels.has(candidateVolumeLabel)) score += 15;
+    candidate._disksMatchScore = score;
+    return score > 0;
+  }).sort((left, right) => {
+    const scoreDelta = (right._disksMatchScore || 0) - (left._disksMatchScore || 0);
+    if (scoreDelta !== 0) return scoreDelta;
+    return String(left.label || '').localeCompare(String(right.label || ''));
+  });
+
+  if (!candidates.length) return null;
+  if (candidates.length === 1) return candidates[0];
+  const topScore = candidates[0]._disksMatchScore || 0;
+  const secondScore = candidates[1]._disksMatchScore || 0;
+  return topScore > secondScore ? candidates[0] : null;
 }
 
 function _disksLogicalNodesForPartition(hostNode, partitionNode) {
@@ -446,10 +526,23 @@ function _disksShortcutMeta(node) {
   };
 }
 
+function _disksFilesystemPillLabel(node) {
+  const direct = _disksFilesystemShortcutLabel(_disksFactValue(node, 'Filesystem'));
+  if (direct) return direct;
+  const shortcut = _disksShortcutMeta(node);
+  return shortcut && shortcut.tone === 'fs' ? shortcut.label : '';
+}
+
 function _disksPrimaryOpenTarget(node) {
   if (!node) return null;
   if (String(node.kind || '').trim().toLowerCase() !== 'pool-link') return node;
   return _disksShortcutTarget(node) || node;
+}
+
+function _disksFilesystemTarget(node) {
+  const shortcut = _disksShortcutMeta(node);
+  if (shortcut?.target?.id) return shortcut.target;
+  return _disksUniqueVolumeMatch(node);
 }
 
 function _disksDriveSingleMemberPoolName(driveNode, hostNode) {
@@ -513,6 +606,7 @@ function _disksHeroHtml(node) {
   const crumbs = _disksBreadcrumbs();
   const backTarget = crumbs.length > 1 ? crumbs[crumbs.length - 2].id : '';
   const drivePurpose = _disksDrivePurposeLabel(node);
+  const filesystemPill = _disksFilesystemPillLabel(node);
   const facts = Array.isArray(node?.facts) ? node.facts.slice() : [];
   if (partial) {
     facts.push(
@@ -558,6 +652,7 @@ function _disksHeroHtml(node) {
       <div class="disks-hero__meter-wrap">
         <div class="disks-hero__meter-meta">
           <span class="disks-pill disks-pill--${_disksStatusTone(node.status)}">${_disksEsc(node.status || 'info')}</span>
+          ${filesystemPill ? `<span class="disks-pill">${_disksEsc(filesystemPill)}</span>` : ''}
           ${pct == null ? '' : `<span class="disks-hero__pct">${pct.toFixed(1)}%</span>`}
         </div>
         <div class="disks-usage-line">
@@ -974,6 +1069,26 @@ function _disksPhysicalDriveGroupHtml(group, currentNode) {
 function _disksCardHtml(node, options = {}) {
   const primaryTarget = _disksPrimaryOpenTarget(node) || node;
   const shortcut = _disksShortcutMeta(node);
+  const filesystemTarget = shortcut ? shortcut.target : _disksFilesystemTarget(node);
+  const filesystemPill = shortcut ? '' : _disksFilesystemPillLabel(node);
+  const floatingFilesystemPill = !shortcut && !filesystemTarget && String(node?.kind || '').trim().toLowerCase() === 'drive'
+    ? filesystemPill
+    : '';
+  const inlineFilesystemPill = floatingFilesystemPill || filesystemTarget ? '' : filesystemPill;
+  const floatingFilesystemButton = !shortcut && filesystemTarget
+    && String(node?.kind || '').trim().toLowerCase() === 'drive'
+    ? `
+        <button type="button" class="disks-card__jump disks-card__jump--fs" title="${_disksEsc(`Open ${filesystemPill} details for ${String(filesystemTarget.label || 'filesystem').trim() || 'filesystem'}`)}" aria-label="${_disksEsc(`Open ${filesystemPill} details for ${String(filesystemTarget.label || 'filesystem').trim() || 'filesystem'}`)}" data-disks-node="${_disksEsc(filesystemTarget.id)}">${_disksEsc(filesystemPill)}</button>
+      `
+    : '';
+  const inlineFilesystemButton = !shortcut && filesystemTarget
+    && String(node?.kind || '').trim().toLowerCase() !== 'drive'
+    ? `
+        <div class="disks-card__meta-pills">
+          <span class="disks-card__jump disks-card__jump--fs" title="${_disksEsc(`Open ${filesystemPill} details for ${String(filesystemTarget.label || 'filesystem').trim() || 'filesystem'}`)}" aria-label="${_disksEsc(`Open ${filesystemPill} details for ${String(filesystemTarget.label || 'filesystem').trim() || 'filesystem'}`)}" data-disks-node="${_disksEsc(filesystemTarget.id)}">${_disksEsc(filesystemPill)}</span>
+        </div>
+      `
+    : '';
   const pct = _disksUsagePct(node);
   const hasChildren = Array.isArray(primaryTarget.children) && primaryTarget.children.length > 0;
   const cta = hasChildren ? 'Open' : 'View';
@@ -1010,6 +1125,8 @@ function _disksCardHtml(node, options = {}) {
         <span class="disks-pill disks-pill--${_disksEsc(tone)}">${_disksEsc(node.status || 'info')}</span>
         ${canForget ? `<button type="button" class="disks-card__forget" title="Remove cached inventory memory" aria-label="Remove cached inventory memory" data-disks-forget-host="${_disksEsc(node.cache_host)}" data-disks-forget-node="${_disksEsc(node.id)}">×</button>` : ''}
         ${shortcut ? `<button type="button" class="disks-card__jump disks-card__jump--${_disksEsc(shortcut.tone)}" title="${_disksEsc(shortcut.title)}" aria-label="${_disksEsc(shortcut.title)}" data-disks-node="${_disksEsc(shortcut.target.id)}">${_disksEsc(shortcut.label)}</button>` : ''}
+        ${floatingFilesystemButton}
+        ${floatingFilesystemPill ? `<span class="disks-card__jump disks-card__jump--static" aria-label="${_disksEsc(`${floatingFilesystemPill} filesystem`)}">${_disksEsc(floatingFilesystemPill)}</span>` : ''}
         ${node.smart ? `<button type="button" class="disks-card__smart" data-disks-smart-host="${_disksEsc(node.smart.host)}" data-disks-smart-device="${_disksEsc(node.smart.device_path)}" data-disks-smart-label="${_disksEsc(_disksSmartLabel(node))}">S.M.A.R.T.</button>` : ''}
       </div>
       <button type="button" class="disks-card__main" data-disks-node="${_disksEsc(primaryTarget.id)}">
@@ -1022,6 +1139,8 @@ function _disksCardHtml(node, options = {}) {
             </div>
             ${showSubtitle ? `<div class="disks-card__subtitle">${_disksEsc(node.subtitle)}</div>` : ''}
             ${poolCaption}
+            ${inlineFilesystemButton}
+            ${inlineFilesystemPill ? `<div class="disks-card__meta-pills"><span class="disks-pill">${_disksEsc(inlineFilesystemPill)}</span></div>` : ''}
           </div>
         </div>
         <div class="disks-card__usage">
