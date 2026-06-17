@@ -11,6 +11,12 @@ let _disksLayoutFrame = 0;
 let _disksFilesystemTreeCache = new Map();
 let _disksFilesystemTreePaths = new Map();
 let _disksFilesystemTreeLoadingKeys = new Set();
+let _disksNoteDrafts = new Map();
+let _disksNoteOpen = new Set();
+let _disksNoteSaving = new Set();
+let _disksNoteErrors = new Map();
+let _disksNoteSaveTimers = new Map();
+let _disksOfflineBrowseState = null;
 
 const _DISKS_BLUE_ICON = '/fallback-ui/assets/icons/ui/drive-blue.svg';
 const _DISKS_GOLD_ICON = '/fallback-ui/assets/icons/ui/drive-gold.svg';
@@ -235,6 +241,32 @@ function _disksFilesystemTreeReset() {
   _disksFilesystemTreeLoadingKeys = new Set();
 }
 
+function _disksUserNote(node) {
+  return String(node?.user_note || '').trim();
+}
+
+function _disksNoteDraftForNode(node) {
+  const nodeId = String(node?.id || '').trim();
+  if (!nodeId) return '';
+  return _disksNoteDrafts.has(nodeId) ? String(_disksNoteDrafts.get(nodeId) || '') : _disksUserNote(node);
+}
+
+function _disksOfflineBrowserMeta(node) {
+  const raw = node && typeof node.offline_browser === 'object' ? node.offline_browser : null;
+  const host = String(raw?.host || '').trim();
+  const guestId = String(raw?.guest_id || '').trim();
+  const volumeRef = String(raw?.volume_ref || '').trim();
+  if (!host || !guestId || !volumeRef) return null;
+  return {
+    host,
+    guest_id: guestId,
+    guest_name: String(raw?.guest_name || '').trim(),
+    volume_ref: volumeRef,
+    volume_label: String(raw?.volume_label || '').trim(),
+    slot: String(raw?.slot || '').trim(),
+  };
+}
+
 function _disksNormalizeRelativePath(path) {
   const text = String(path || '').trim().replace(/\\/g, '/');
   if (!text || text === '.') return '.';
@@ -430,6 +462,32 @@ function _disksFilesystemTreeSectionHtml(node) {
         <p class="docs-tree-status">${_disksEsc(statusText)}</p>
         <p class="hub-modal-error disks-tree__error"${error ? '' : ' hidden'}>${_disksEsc(error ? `Error: ${error}` : '')}</p>
         <p class="disks-tree__relative bp-font-role-status-meta">${_disksEsc(relativePath === '.' ? 'root' : relativePath)}</p>
+      </div>
+    </section>
+  `;
+}
+
+function _disksOfflineBrowserSectionHtml(node) {
+  const meta = _disksOfflineBrowserMeta(node);
+  if (!meta) return '';
+  const guestLabel = meta.guest_name || `VM ${meta.guest_id}`;
+  const volumeLabel = meta.volume_label || meta.volume_ref;
+  return `
+    <section class="disks-group disks-offline-browser">
+      <div class="disks-group__header">
+        <h3>Offline VM disk</h3>
+        <span>Read-only browse with watchdog cleanup</span>
+      </div>
+      <div class="disks-offline-browser__panel">
+        <div class="disks-offline-browser__copy">
+          <strong>${_disksEsc(volumeLabel)}</strong>
+          <p>This is a Proxmox VM disk for ${_disksEsc(guestLabel)}. Blueprints can attach it read-only only while the guest is stopped, and will auto-clean up if the browser disappears.</p>
+        </div>
+        <button
+          type="button"
+          class="hub-modal-btn secondary disks-offline-browser__open"
+          data-disks-offline-open="${_disksEsc(String(node?.id || '').trim())}"
+        >Browse offline</button>
       </div>
     </section>
   `;
@@ -659,7 +717,7 @@ function _disksIsGuestDiskNode(node) {
   const meta = _disksGuestMeta(node);
   if (!meta) return false;
   const kind = String(node?.kind || '').trim().toLowerCase();
-  if (kind !== 'volume') return false;
+  if (!['volume', 'dataset'].includes(kind)) return false;
   return /^(vm|base|subvol)-\d+-/i.test(String(node?.label || '').trim());
 }
 
@@ -1440,6 +1498,12 @@ function _disksCardHtml(node, options = {}) {
   if (node.smart) classes.push('disks-card--has-smart');
   if (shortcut) classes.push('disks-card--has-shortcut');
   if (options.poolName) classes.push('disks-card--pooled');
+  const nodeId = String(node?.id || '').trim();
+  const userNote = _disksUserNote(node);
+  const noteOpen = !!nodeId && _disksNoteOpen.has(nodeId);
+  const noteDraft = noteOpen ? _disksNoteDraftForNode(node) : '';
+  const noteSaving = !!nodeId && _disksNoteSaving.has(nodeId);
+  const noteError = !!nodeId ? String(_disksNoteErrors.get(nodeId) || '').trim() : '';
   const attrs = [];
   if (options.poolName) {
     attrs.push(`data-disks-pool="${_disksEsc(options.poolName)}"`);
@@ -1463,7 +1527,7 @@ function _disksCardHtml(node, options = {}) {
         ${floatingFilesystemPill ? `<span class="disks-card__jump disks-card__jump--static" aria-label="${_disksEsc(`${floatingFilesystemPill} filesystem`)}">${_disksEsc(floatingFilesystemPill)}</span>` : ''}
         ${node.smart ? `<button type="button" class="disks-card__smart" data-disks-smart-host="${_disksEsc(node.smart.host)}" data-disks-smart-device="${_disksEsc(node.smart.device_path)}" data-disks-smart-label="${_disksEsc(_disksSmartLabel(node))}">S.M.A.R.T.</button>` : ''}
       </div>
-      <button type="button" class="disks-card__main" data-disks-node="${_disksEsc(primaryTarget.id)}">
+      <div class="disks-card__main" data-disks-node="${_disksEsc(primaryTarget.id)}" role="button" tabindex="0">
         <div class="disks-card__header">
           <img class="disks-card__icon" src="${_disksNodeIcon(node)}" alt="" />
           <div class="disks-card__text">
@@ -1488,13 +1552,45 @@ function _disksCardHtml(node, options = {}) {
             </div>
           `}
         </div>
+        ${userNote ? `
+          <div class="disks-card__user-note">
+            <span class="disks-card__user-note-label">Notes</span>
+            <p class="disks-card__user-note-copy">${_disksEsc(userNote)}</p>
+          </div>
+        ` : ''}
+        ${noteOpen ? `
+          <div class="disks-card__note-editor">
+            <label class="disks-card__note-editor-label" for="disks-note-${_disksEsc(nodeId)}">Notes</label>
+            <textarea
+              class="disks-card__note-editor-input"
+              id="disks-note-${_disksEsc(nodeId)}"
+              rows="3"
+              placeholder="Private note for this card"
+              data-disks-note-input="${_disksEsc(nodeId)}"
+            >${_disksEsc(noteDraft)}</textarea>
+            <p class="disks-card__note-editor-status${noteError ? ' is-error' : ''}">
+              ${_disksEsc(noteError || (noteSaving ? 'Saving…' : 'Autosaves on pause'))}
+            </p>
+          </div>
+        ` : ''}
         ${node.note ? `<p class="disks-card__note">${_disksEsc(node.note)}</p>` : ''}
         ${_disksFactsHtml(node.facts, 6, { kind: node?.kind, context: 'card' })}
         <div class="disks-card__footer">
-          <span>${cta}</span>
-          ${hasChildren ? `<span>${primaryTarget.children.length} item${primaryTarget.children.length === 1 ? '' : 's'}</span>` : '<span>Details</span>'}
+          <span class="disks-card__footer-copy">
+            <span>${cta}</span>
+            ${hasChildren ? `<span>${primaryTarget.children.length} item${primaryTarget.children.length === 1 ? '' : 's'}</span>` : '<span>Details</span>'}
+          </span>
+          <span
+            class="disks-card__footer-action"
+            data-disks-note-toggle="${_disksEsc(nodeId)}"
+            data-disks-note-open="${noteOpen ? 'true' : 'false'}"
+            title="${_disksEsc(noteOpen ? 'Hide notes editor' : 'Add or edit a note')}"
+          >
+            <span class="disks-card__footer-icon" aria-hidden="true"></span>
+            <span>Notes</span>
+          </span>
         </div>
-      </button>
+      </div>
     </article>
   `;
 }
@@ -1579,7 +1675,7 @@ function _disksGuestGroupedSectionHtml(group, currentNode) {
 function _disksGroupsHtml(node) {
   const groups = _disksGroupChildren(node);
   if (!groups.length) {
-    if (_disksFilesystemBrowserMeta(node)) return '';
+    if (_disksFilesystemBrowserMeta(node) || _disksOfflineBrowserMeta(node)) return '';
     return `
       <section class="disks-empty-state">
         <h3>This branch stops here</h3>
@@ -1641,6 +1737,7 @@ function renderDisksPage() {
     <div class="disks-page">
       ${_disksHeroHtml(node)}
       ${_disksFilesystemTreeSectionHtml(node)}
+      ${_disksOfflineBrowserSectionHtml(node)}
       <div class="disks-groups">
         ${_disksGroupsHtml(node)}
       </div>
@@ -2077,6 +2174,7 @@ function _disksCloseSmart() {
 
 function _disksGuestSummaryPriority(node) {
   const kind = String(node?.kind || '').trim().toLowerCase();
+  if (kind === 'dataset') return 4;
   if (kind === 'volume') return 3;
   if (kind === 'partition') return 2;
   if (kind === 'drive') return 1;
@@ -2101,7 +2199,7 @@ function _disksGuestSummaryCandidates(hostNode, host, guestKey) {
     const meta = _disksGuestMeta(current);
     if (meta && meta.host === host && meta.guest_key === guestKey) {
       const kind = String(current.kind || '').trim().toLowerCase();
-      if (kind === 'volume' || kind === 'drive' || kind === 'partition') {
+      if (kind === 'dataset' || kind === 'volume' || kind === 'drive' || kind === 'partition') {
         matches.push(current);
       }
     }
@@ -2342,13 +2440,390 @@ function _disksCloseGuestSummary() {
   }
 }
 
+function _disksSetNodeUserNote(nodeId, note) {
+  const node = _disksNodeById.get(String(nodeId || '').trim());
+  if (!node) return;
+  const cleanNote = String(note || '').trim();
+  if (cleanNote) node.user_note = cleanNote;
+  else delete node.user_note;
+}
+
+function _disksToggleNoteEditor(nodeId) {
+  const cleanNodeId = String(nodeId || '').trim();
+  if (!cleanNodeId || !_disksNodeById.has(cleanNodeId)) return;
+  if (_disksNoteOpen.has(cleanNodeId)) {
+    _disksNoteOpen.delete(cleanNodeId);
+  } else {
+    _disksNoteOpen.add(cleanNodeId);
+    _disksNoteDrafts.set(cleanNodeId, _disksUserNote(_disksNodeById.get(cleanNodeId)));
+  }
+  renderDisksPage();
+  if (_disksNoteOpen.has(cleanNodeId)) {
+    window.requestAnimationFrame(() => {
+      const input = document.getElementById(`disks-note-${cleanNodeId}`);
+      if (input) input.focus();
+    });
+  }
+}
+
+async function _disksSaveNoteNow(nodeId) {
+  const cleanNodeId = String(nodeId || '').trim();
+  if (!cleanNodeId) return;
+  const note = String(_disksNoteDrafts.get(cleanNodeId) || '').trim();
+  _disksNoteSaving.add(cleanNodeId);
+  _disksNoteErrors.delete(cleanNodeId);
+  renderDisksPage();
+  try {
+    const response = await apiFetch('/api/v1/disks/note', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_id: cleanNodeId, note }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.detail || `HTTP ${response.status}`);
+    }
+    _disksSetNodeUserNote(cleanNodeId, note);
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err || 'Note save failed');
+    _disksNoteErrors.set(cleanNodeId, message);
+  } finally {
+    _disksNoteSaving.delete(cleanNodeId);
+    renderDisksPage();
+  }
+}
+
+function _disksQueueNoteSave(nodeId, value) {
+  const cleanNodeId = String(nodeId || '').trim();
+  if (!cleanNodeId) return;
+  _disksNoteDrafts.set(cleanNodeId, String(value || ''));
+  _disksNoteErrors.delete(cleanNodeId);
+  const existing = _disksNoteSaveTimers.get(cleanNodeId);
+  if (existing) window.clearTimeout(existing);
+  const timer = window.setTimeout(() => {
+    _disksNoteSaveTimers.delete(cleanNodeId);
+    _disksSaveNoteNow(cleanNodeId).catch(() => {});
+  }, 450);
+  _disksNoteSaveTimers.set(cleanNodeId, timer);
+}
+
+function _disksOfflineBrowseReset() {
+  if (_disksOfflineBrowseState?.heartbeatTimer) {
+    window.clearInterval(_disksOfflineBrowseState.heartbeatTimer);
+  }
+  _disksOfflineBrowseState = null;
+}
+
+function _disksOfflineBrowseCacheKey(sourcePath, relativePath) {
+  return `${String(sourcePath || '').trim()}::${_disksNormalizeRelativePath(relativePath)}`;
+}
+
+function _disksOfflineBrowseCurrentSource() {
+  const state = _disksOfflineBrowseState;
+  if (!state) return null;
+  return (Array.isArray(state.sources) ? state.sources : []).find(source => {
+    return String(source?.path || '').trim() === String(state.sourcePath || '').trim();
+  }) || null;
+}
+
+function _disksOfflineBrowseCurrentPath() {
+  const state = _disksOfflineBrowseState;
+  if (!state) return '.';
+  return state.paths.get(String(state.sourcePath || '').trim()) || '.';
+}
+
+function _disksOfflineBrowseRender() {
+  const dialog = _disksEl('disks-offline-modal');
+  const title = _disksEl('disks-offline-title');
+  const subtitle = _disksEl('disks-offline-subtitle');
+  const body = _disksEl('disks-offline-body');
+  if (!dialog || !title || !subtitle || !body) return;
+  const state = _disksOfflineBrowseState;
+  if (!state) {
+    title.textContent = 'Offline browse';
+    subtitle.textContent = '';
+    body.innerHTML = '<div class="docs-tree-empty">Offline browse is closed.</div>';
+    return;
+  }
+  const source = _disksOfflineBrowseCurrentSource();
+  const currentPath = _disksOfflineBrowseCurrentPath();
+  const cacheKey = _disksOfflineBrowseCacheKey(source?.path || '', currentPath);
+  const cached = state.cache.get(cacheKey) || null;
+  const loading = state.loadingKeys.has(cacheKey);
+  const data = cached?.ok ? cached.data : null;
+  const error = cached && cached.ok === false ? cached.error : '';
+  const absolutePath = String(data?.current_absolute_path || '/').trim() || '/';
+  const relativePath = String(data?.current_path || currentPath || '.').trim() || '.';
+  const canGoUp = !!data?.parent_path && relativePath !== '.';
+  const rootDisabled = relativePath === '.';
+  const breadcrumbs = Array.isArray(data?.breadcrumbs) ? data.breadcrumbs : [];
+  const breadcrumbHtml = breadcrumbs.map(crumb => `
+    <button class="docs-tree-crumb bp-font-role-docs-markdown" type="button" data-disks-offline-action="browse" data-path="${_disksEsc(crumb?.path || '.')}">${_disksEsc(crumb?.label || 'root')}</button>
+  `).join('');
+  let listHtml = '<div class="docs-tree-loading">Loading folder...</div>';
+  if (error) {
+    listHtml = '<div class="docs-tree-empty">Could not load this folder.</div>';
+  } else if (data) {
+    const entries = Array.isArray(data.entries) ? data.entries : [];
+    listHtml = entries.length
+      ? entries.map(entry => _disksFilesystemTreeRowHtml(entry).replace(/data-disks-tree-action/g, 'data-disks-offline-action')).join('')
+      : '<div class="docs-tree-empty">This folder is empty.</div>';
+  } else if (!loading) {
+    listHtml = '<div class="docs-tree-empty">Preparing offline file tree…</div>';
+  }
+  const sourceButtons = (Array.isArray(state.sources) ? state.sources : []).map(item => {
+    const itemPath = String(item?.path || '').trim();
+    const selected = itemPath && itemPath === String(state.sourcePath || '').trim();
+    const label = String(item?.label || item?.path || 'filesystem').trim();
+    const filesystem = String(item?.filesystem || '').trim().toUpperCase();
+    return `
+      <button
+        type="button"
+        class="disks-offline-modal__source${selected ? ' is-active' : ''}"
+        data-disks-offline-source="${_disksEsc(itemPath)}"
+      >
+        <span>${_disksEsc(label)}</span>
+        <span>${_disksEsc(filesystem || 'FS')}</span>
+      </button>
+    `;
+  }).join('');
+  const statusText = error
+    ? ''
+    : loading && !data
+      ? 'Loading folder...'
+      : _disksFilesystemTreeStatusText(data);
+  title.textContent = state.title || 'Offline browse';
+  subtitle.textContent = state.subtitle || '';
+  body.innerHTML = `
+    <div class="disks-offline-modal__meta">
+      <span class="disks-pill">${_disksEsc(state.host || '')}</span>
+      <span class="disks-pill">${_disksEsc(String(source?.filesystem || 'filesystem').toUpperCase())}</span>
+      <code class="disks-tree__root">${_disksEsc(source?.path || '')}</code>
+    </div>
+    <div class="disks-offline-modal__sources">${sourceButtons}</div>
+    <div class="docs-tree-shell disks-tree__shell">
+      <div class="disks-tree__toolbar">
+        <button class="hub-modal-btn secondary" type="button" data-disks-offline-action="up"${canGoUp ? '' : ' disabled'}>Up</button>
+        <code class="docs-tree-path disks-tree__path">${_disksEsc(absolutePath)}</code>
+        <div class="disks-tree__toolbar-actions">
+          <button class="hub-modal-btn secondary" type="button" data-disks-offline-action="root"${rootDisabled ? ' disabled' : ''}>Root</button>
+          <button class="hub-modal-btn secondary" type="button" data-disks-offline-action="refresh">Refresh</button>
+        </div>
+      </div>
+      <div class="docs-tree-breadcrumbs"${breadcrumbs.length > 1 ? '' : ' hidden'}>${breadcrumbHtml}</div>
+      <div class="docs-tree-panel">
+        <div class="docs-tree-list">${listHtml}</div>
+      </div>
+      <p class="docs-tree-status">${_disksEsc(statusText)}</p>
+      <p class="hub-modal-error disks-tree__error"${error ? '' : ' hidden'}>${_disksEsc(error ? `Error: ${error}` : '')}</p>
+      <p class="disks-tree__relative bp-font-role-status-meta">${_disksEsc(relativePath === '.' ? 'root' : relativePath)}</p>
+    </div>
+  `;
+}
+
+function _disksOfflineBrowseLoad(force = false) {
+  const state = _disksOfflineBrowseState;
+  const source = _disksOfflineBrowseCurrentSource();
+  if (!state || !source) return;
+  const currentPath = _disksOfflineBrowseCurrentPath();
+  const cacheKey = _disksOfflineBrowseCacheKey(source.path, currentPath);
+  if (force) state.cache.delete(cacheKey);
+  if (state.cache.has(cacheKey) || state.loadingKeys.has(cacheKey)) {
+    _disksOfflineBrowseRender();
+    return;
+  }
+  state.loadingKeys.add(cacheKey);
+  _disksOfflineBrowseRender();
+  apiFetch('/api/v1/disks/filesystem/tree', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      host: state.host,
+      root_path: '/',
+      browse_mode: 'device_ro',
+      source_path: source.path,
+      path: currentPath === '.' ? null : currentPath,
+    }),
+  })
+    .then(async response => {
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || `HTTP ${response.status}`);
+      }
+      state.cache.set(cacheKey, { ok: true, data });
+      state.paths.set(String(source.path || '').trim(), _disksNormalizeRelativePath(data?.current_path || currentPath));
+    })
+    .catch(err => {
+      const message = err && err.message ? err.message : String(err || 'Offline browse failed');
+      state.cache.set(cacheKey, { ok: false, error: message });
+    })
+    .finally(() => {
+      state.loadingKeys.delete(cacheKey);
+      _disksOfflineBrowseRender();
+    });
+}
+
+function _disksOfflineBrowseStartHeartbeat() {
+  const state = _disksOfflineBrowseState;
+  if (!state || !state.sessionId) return;
+  if (state.heartbeatTimer) window.clearInterval(state.heartbeatTimer);
+  state.heartbeatTimer = window.setInterval(() => {
+    if (!_disksOfflineBrowseState?.sessionId) return;
+    apiFetch('/api/v1/disks/offline-browse/heartbeat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: _disksOfflineBrowseState.sessionId }),
+    }).catch(() => {});
+  }, 5000);
+}
+
+function _disksCloseOfflineBrowseModal() {
+  const dialog = _disksEl('disks-offline-modal');
+  const state = _disksOfflineBrowseState;
+  const sessionId = String(state?.sessionId || '').trim();
+  if (state?.heartbeatTimer) {
+    window.clearInterval(state.heartbeatTimer);
+  }
+  _disksOfflineBrowseReset();
+  if (sessionId) {
+    apiFetch('/api/v1/disks/offline-browse/close', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId }),
+    }).catch(() => {});
+  }
+  if (!dialog) return;
+  try {
+    if (window.HubModal && typeof window.HubModal.close === 'function') {
+      window.HubModal.close(dialog);
+    } else {
+      dialog.close();
+    }
+  } catch (_) {
+    dialog.removeAttribute('open');
+  }
+}
+
+async function _disksOpenOfflineBrowse(node) {
+  const meta = _disksOfflineBrowserMeta(node);
+  if (!meta) return;
+  const guestLabel = meta.guest_name || `VM ${meta.guest_id}`;
+  const volumeLabel = meta.volume_label || meta.volume_ref;
+  const confirmed = window.HubDialogs && typeof window.HubDialogs.confirm === 'function'
+    ? await window.HubDialogs.confirm({
+      title: 'Open offline disk browser',
+      message: `Attach ${volumeLabel} from ${guestLabel} read-only?`,
+      detail: 'The VM must stay stopped. Blueprints will attach this one disk read-only, browse it only inside this authenticated page, and auto-clean it up on close or after heartbeat timeout.',
+      tone: 'warning',
+      confirmText: 'Attach read-only',
+    })
+    : window.confirm(`Attach ${volumeLabel} from ${guestLabel} read-only?`);
+  if (!confirmed) return;
+  _disksStatusMessage('Preparing read-only offline disk browse…', 'info', true);
+  const response = await apiFetch('/api/v1/disks/offline-browse/open', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      host: meta.host,
+      guest_id: meta.guest_id,
+      guest_name: meta.guest_name,
+      volume_ref: meta.volume_ref,
+      volume_label: meta.volume_label,
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.detail || `HTTP ${response.status}`);
+  }
+  const sources = Array.isArray(payload.sources) ? payload.sources : [];
+  const defaultSource = sources.find(source => !!source?.default) || sources[0] || null;
+  _disksOfflineBrowseState = {
+    sessionId: String(payload.session_id || '').trim(),
+    host: String(payload.host || meta.host || '').trim(),
+    title: volumeLabel,
+    subtitle: `${guestLabel} · read-only attach`,
+    sources,
+    sourcePath: String(defaultSource?.path || '').trim(),
+    paths: new Map(),
+    cache: new Map(),
+    loadingKeys: new Set(),
+    heartbeatTimer: 0,
+  };
+  const dialog = _disksEl('disks-offline-modal');
+  if (dialog) {
+    try {
+      if (window.HubModal && typeof window.HubModal.open === 'function') {
+        window.HubModal.open(dialog);
+      } else if (typeof dialog.showModal === 'function' && !dialog.open) {
+        dialog.showModal();
+      } else {
+        dialog.setAttribute('open', 'open');
+      }
+    } catch (_) {
+      dialog.setAttribute('open', 'open');
+    }
+  }
+  _disksOfflineBrowseRender();
+  _disksOfflineBrowseStartHeartbeat();
+  _disksOfflineBrowseLoad();
+  _disksStatusMessage('Offline disk browse attached read-only.', 'ok');
+}
+
 function _disksScrollToTop() {
   const shell = _disksEl('disks-shell');
   if (!shell) return;
   shell.scrollTop = 0;
 }
 
+function _disksOnShellInput(event) {
+  const noteInput = event.target.closest('[data-disks-note-input]');
+  if (!noteInput) return;
+  _disksQueueNoteSave(noteInput.dataset.disksNoteInput || '', noteInput.value || '');
+}
+
+function _disksOnShellKeydown(event) {
+  const nodeTarget = event.target.closest('.disks-card__main[data-disks-node]');
+  if (!nodeTarget) return;
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  if (event.target.closest('[data-disks-note-input]') || event.target.closest('[data-disks-note-toggle]')) return;
+  event.preventDefault();
+  nodeTarget.click();
+}
+
+function _disksOnShellFocusOut(event) {
+  const noteInput = event.target.closest('[data-disks-note-input]');
+  if (!noteInput) return;
+  const nodeId = String(noteInput.dataset.disksNoteInput || '').trim();
+  if (!nodeId) return;
+  const timer = _disksNoteSaveTimers.get(nodeId);
+  if (timer) {
+    window.clearTimeout(timer);
+    _disksNoteSaveTimers.delete(nodeId);
+  }
+  _disksSaveNoteNow(nodeId).catch(() => {});
+}
+
 function _disksOnShellClick(event) {
+  const noteToggle = event.target.closest('[data-disks-note-toggle]');
+  if (noteToggle) {
+    event.preventDefault();
+    event.stopPropagation();
+    _disksToggleNoteEditor(noteToggle.dataset.disksNoteToggle || '');
+    return;
+  }
+  const offlineOpenBtn = event.target.closest('[data-disks-offline-open]');
+  if (offlineOpenBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const targetId = offlineOpenBtn.dataset.disksOfflineOpen || '';
+    const node = _disksNodeById.get(targetId);
+    if (!node) return;
+    _disksOpenOfflineBrowse(node).catch(err => {
+      const message = err && err.message ? err.message : String(err || 'Offline browse failed');
+      _disksStatusMessage(`Could not open offline disk browser: ${message}`, 'fail', true);
+    });
+    return;
+  }
   const treeActionBtn = event.target.closest('[data-disks-tree-action]');
   if (treeActionBtn) {
     event.preventDefault();
@@ -2411,6 +2886,10 @@ function _disksOnShellClick(event) {
     );
     return;
   }
+  if (event.target.closest('.disks-card__note-editor')) {
+    event.stopPropagation();
+    return;
+  }
   const nodeBtn = event.target.closest('[data-disks-node]');
   if (!nodeBtn) return;
   event.preventDefault();
@@ -2426,6 +2905,9 @@ function _disksInit() {
   _disksInitDone = true;
   window.addEventListener('resize', _disksScheduleLayoutPass, { passive: true });
   _disksEl('disks-shell')?.addEventListener('click', _disksOnShellClick);
+  _disksEl('disks-shell')?.addEventListener('input', _disksOnShellInput);
+  _disksEl('disks-shell')?.addEventListener('keydown', _disksOnShellKeydown);
+  _disksEl('disks-shell')?.addEventListener('focusout', _disksOnShellFocusOut);
   _disksEl('disks-smart-modal')?.addEventListener('click', (event) => {
     const closeBtn = event.target.closest('.hub-modal-close');
     if (closeBtn) {
@@ -2457,5 +2939,63 @@ function _disksInit() {
   _disksEl('disks-guest-modal')?.addEventListener('cancel', (event) => {
     event.preventDefault();
     _disksCloseGuestSummary();
+  });
+  _disksEl('disks-offline-modal')?.addEventListener('click', (event) => {
+    const closeBtn = event.target.closest('.hub-modal-close');
+    if (closeBtn) {
+      event.preventDefault();
+      _disksCloseOfflineBrowseModal();
+      return;
+    }
+    const sourceBtn = event.target.closest('[data-disks-offline-source]');
+    if (sourceBtn && _disksOfflineBrowseState) {
+      event.preventDefault();
+      _disksOfflineBrowseState.sourcePath = String(sourceBtn.dataset.disksOfflineSource || '').trim();
+      _disksOfflineBrowseRender();
+      _disksOfflineBrowseLoad();
+      return;
+    }
+    const actionBtn = event.target.closest('[data-disks-offline-action]');
+    if (actionBtn && _disksOfflineBrowseState) {
+      event.preventDefault();
+      const action = String(actionBtn.dataset.disksOfflineAction || '').trim();
+      if (action === 'browse') {
+        _disksOfflineBrowseState.paths.set(
+          String(_disksOfflineBrowseState.sourcePath || '').trim(),
+          _disksNormalizeRelativePath(actionBtn.dataset.path || '.'),
+        );
+        _disksOfflineBrowseRender();
+        _disksOfflineBrowseLoad();
+        return;
+      }
+      if (action === 'up') {
+        const source = _disksOfflineBrowseCurrentSource();
+        const currentPath = _disksOfflineBrowseCurrentPath();
+        const cached = _disksOfflineBrowseState.cache.get(
+          _disksOfflineBrowseCacheKey(source?.path || '', currentPath)
+        );
+        const parentPath = cached?.ok ? (cached.data?.parent_path || '.') : '.';
+        _disksOfflineBrowseState.paths.set(
+          String(_disksOfflineBrowseState.sourcePath || '').trim(),
+          _disksNormalizeRelativePath(parentPath),
+        );
+        _disksOfflineBrowseRender();
+        _disksOfflineBrowseLoad();
+        return;
+      }
+      if (action === 'root') {
+        _disksOfflineBrowseState.paths.set(String(_disksOfflineBrowseState.sourcePath || '').trim(), '.');
+        _disksOfflineBrowseRender();
+        _disksOfflineBrowseLoad();
+        return;
+      }
+      if (action === 'refresh') {
+        _disksOfflineBrowseLoad(true);
+      }
+    }
+  });
+  _disksEl('disks-offline-modal')?.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    _disksCloseOfflineBrowseModal();
   });
 }
