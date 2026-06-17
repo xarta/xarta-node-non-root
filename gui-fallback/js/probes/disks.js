@@ -250,9 +250,14 @@ function _disksFilesystemBrowserMeta(node) {
   const host = String(raw?.host || '').trim();
   const rootPath = String(raw?.root_path || '').trim();
   if (!host || !rootPath) return null;
+  const browseMode = String(raw?.browse_mode || '').trim().toLowerCase() === 'device_ro'
+    ? 'device_ro'
+    : 'mounted';
   return {
     host,
     root_path: rootPath,
+    root_display: String(raw?.root_display || '').trim(),
+    browse_mode: browseMode,
     filesystem: String(raw?.filesystem || '').trim(),
     source_path: String(raw?.source_path || '').trim(),
     dataset_name: String(raw?.dataset_name || '').trim(),
@@ -261,11 +266,17 @@ function _disksFilesystemBrowserMeta(node) {
 }
 
 function _disksFilesystemTreeNodeKey(node, meta) {
-  return `${String(node?.id || '').trim()}::${meta.host}::${meta.root_path}`;
+  const treeIdentity = meta.browse_mode === 'device_ro'
+    ? `${meta.host}::device_ro::${meta.source_path || meta.root_path}`
+    : `${meta.host}::mounted::${meta.root_path}`;
+  return `${String(node?.id || '').trim()}::${treeIdentity}`;
 }
 
 function _disksFilesystemTreeCacheKey(meta, path) {
-  return `${meta.host}::${meta.root_path}::${_disksNormalizeRelativePath(path)}`;
+  const treeIdentity = meta.browse_mode === 'device_ro'
+    ? `${meta.host}::device_ro::${meta.source_path || meta.root_path}`
+    : `${meta.host}::mounted::${meta.root_path}`;
+  return `${treeIdentity}::${_disksNormalizeRelativePath(path)}`;
 }
 
 function _disksFilesystemTreePathForNode(node, meta) {
@@ -364,6 +375,9 @@ function _disksFilesystemTreeSectionHtml(node) {
   const rootDisabled = relativePath === '.';
   const filesystemLabel = (_disksFilesystemPillLabel(node) || meta.filesystem || 'filesystem').toUpperCase();
   const breadcrumbs = Array.isArray(data?.breadcrumbs) ? data.breadcrumbs : [];
+  const rootMetaText = meta.browse_mode === 'device_ro'
+    ? (meta.source_path || meta.root_display || meta.root_path)
+    : (meta.root_display || meta.root_path);
   const breadcrumbHtml = breadcrumbs.map(crumb => `
     <button class="docs-tree-crumb bp-font-role-docs-markdown" type="button" data-disks-tree-action="browse" data-path="${_disksEsc(crumb?.path || '.')}">${_disksEsc(crumb?.label || 'root')}</button>
   `).join('');
@@ -395,7 +409,7 @@ function _disksFilesystemTreeSectionHtml(node) {
       <div class="disks-tree__meta">
         <span class="disks-pill">${_disksEsc(meta.host)}</span>
         <span class="disks-pill">${_disksEsc(filesystemLabel)}</span>
-        <code class="disks-tree__root">${_disksEsc(meta.root_path)}</code>
+        <code class="disks-tree__root">${_disksEsc(rootMetaText)}</code>
       </div>
       <div class="docs-tree-shell disks-tree__shell">
         <div class="disks-tree__toolbar">
@@ -447,6 +461,8 @@ function _disksEnsureFilesystemTree(node) {
     body: JSON.stringify({
       host: meta.host,
       root_path: meta.root_path,
+      browse_mode: meta.browse_mode,
+      source_path: meta.browse_mode === 'device_ro' ? meta.source_path : null,
       path: currentPath === '.' ? null : currentPath,
     }),
   })
