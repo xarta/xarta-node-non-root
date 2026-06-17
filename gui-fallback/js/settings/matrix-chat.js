@@ -3398,7 +3398,9 @@ const MatrixChat = (() => {
   }
 
   function isMobileLayout() {
-    return window.matchMedia?.('(max-width: 820px)').matches;
+    return Boolean(window.matchMedia?.(
+      '(max-width: 820px), (max-height: 520px) and (orientation: landscape) and (pointer: coarse)'
+    ).matches);
   }
 
   function setRailOpen(open) {

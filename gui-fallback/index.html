@@ -391,51 +391,187 @@
         <span id="sound-enabled-status" class="settings-inline-status"></span>
       </section>
     </div>
-    <div class="tts-wrapper-panel settings-config-card">
-      <div class="tts-wrapper-head">
-        <strong>Computer Voice Wrapper</strong>
-        <span id="tts-settings-status" class="settings-inline-status"></span>
+    <div class="settings-audio-panel settings-config-card">
+      <div class="settings-audio-tabs" role="tablist" aria-label="App Config audio sections">
+        <button id="settings-audio-tab-tts" class="settings-audio-tab is-active" type="button" role="tab"
+          aria-selected="true" aria-controls="settings-audio-pane-tts"
+          onclick="switchSettingsAudioTab('tts')">Computer Voice Wrapper</button>
+        <button id="settings-audio-tab-gpu" class="settings-audio-tab" type="button" role="tab"
+          aria-selected="false" aria-controls="settings-audio-pane-gpu"
+          onclick="switchSettingsAudioTab('gpu')">GPU Activity Sound Effect</button>
       </div>
-      <div class="tts-wrapper-grid">
-        <label class="tts-wrapper-field">
-          <span>Default Voice</span>
-          <input id="tts-default-voice" type="text" placeholder="e.g. majel_1" />
-        </label>
-        <label class="tts-wrapper-field">
-          <span>Default Message</span>
-          <input id="tts-default-message" type="text" placeholder="Computer, standing by." />
-        </label>
-        <label class="tts-wrapper-field">
-          <span>Positive Fallback Sound Path</span>
-          <input id="tts-fallback-positive-path" type="text" placeholder="sounds/chime-ops-positive.wav" />
-        </label>
-        <label class="tts-wrapper-field">
-          <span>Negative Fallback Sound Path</span>
-          <input id="tts-fallback-negative-path" type="text" placeholder="sounds/chime-ops-negative.wav" />
-        </label>
-        <label class="tts-wrapper-field tts-wrapper-field--neutral">
-          <span>Neutral Fallback Sound Path</span>
-          <input id="tts-fallback-neutral-path" type="text" placeholder="sounds/entb_computerbeep.mp3" />
-        </label>
-        <label class="tts-wrapper-range" for="tts-volume-slider">
-          <span>TTS Volume</span>
-          <span id="tts-volume-label" class="settings-range-value"></span>
-          <input type="range" id="tts-volume-slider" min="0" max="300" step="1" value="85"
-            oninput="setTtsVolume(this.value)">
-        </label>
-        <label class="tts-wrapper-range" for="tts-fallback-volume-slider">
-          <span>Fallback SFX Volume</span>
-          <span id="tts-fallback-volume-label" class="settings-range-value"></span>
-          <input type="range" id="tts-fallback-volume-slider" min="0" max="100" step="1" value="70"
-            oninput="setTtsFallbackVolume(this.value)">
-        </label>
-        <div class="tts-wrapper-actions">
-          <button class="tts-wrapper-save" type="button" onclick="saveTtsSettings()">Save Voice Settings</button>
-          <button type="button" class="secondary" onclick="testTtsWrapperSpeak()">Test Wrapper</button>
-          <button type="button" class="secondary" onclick="stopTtsWrapperSpeak()">Stop</button>
+
+      <section id="settings-audio-pane-tts" class="settings-audio-pane is-active tts-wrapper-panel" role="tabpanel" aria-labelledby="settings-audio-tab-tts">
+        <div class="tts-wrapper-head">
+          <strong>Computer Voice Wrapper</strong>
+          <span id="tts-settings-status" class="settings-inline-status"></span>
         </div>
-      </div>
-      <p class="settings-config-hint tts-wrapper-hint">These controls are database-driven via Blueprints settings. Event handlers can still provide explicit override text when needed.</p>
+        <div class="tts-wrapper-grid">
+          <label class="tts-wrapper-field">
+            <span>Default Voice</span>
+            <input id="tts-default-voice" type="text" placeholder="e.g. majel_1" />
+          </label>
+          <label class="tts-wrapper-field">
+            <span>Default Message</span>
+            <input id="tts-default-message" type="text" placeholder="Computer, standing by." />
+          </label>
+          <div class="tts-wrapper-field settings-path-field">
+            <label for="tts-fallback-positive-path">Positive Fallback Sound Path</label>
+            <div class="settings-sound-path-row">
+              <input id="tts-fallback-positive-path" type="text" placeholder="sounds/chime-ops-positive.wav" />
+              <button class="btn-small secondary" type="button" onclick="pickTtsFallbackSound('positive')">Pick</button>
+              <button class="btn-small secondary" type="button" onclick="previewTtsFallbackSound('positive', this)">Preview</button>
+            </div>
+          </div>
+          <div class="tts-wrapper-field settings-path-field">
+            <label for="tts-fallback-negative-path">Negative Fallback Sound Path</label>
+            <div class="settings-sound-path-row">
+              <input id="tts-fallback-negative-path" type="text" placeholder="sounds/chime-ops-negative.wav" />
+              <button class="btn-small secondary" type="button" onclick="pickTtsFallbackSound('negative')">Pick</button>
+              <button class="btn-small secondary" type="button" onclick="previewTtsFallbackSound('negative', this)">Preview</button>
+            </div>
+          </div>
+          <div class="tts-wrapper-field tts-wrapper-field--neutral settings-path-field">
+            <label for="tts-fallback-neutral-path">Neutral Fallback Sound Path</label>
+            <div class="settings-sound-path-row">
+              <input id="tts-fallback-neutral-path" type="text" placeholder="sounds/entb_computerbeep.mp3" />
+              <button class="btn-small secondary" type="button" onclick="pickTtsFallbackSound('neutral')">Pick</button>
+              <button class="btn-small secondary" type="button" onclick="previewTtsFallbackSound('neutral', this)">Preview</button>
+            </div>
+          </div>
+          <label class="tts-wrapper-range" for="tts-volume-slider">
+            <span>TTS Volume</span>
+            <span id="tts-volume-label" class="settings-range-value"></span>
+            <input type="range" id="tts-volume-slider" min="0" max="300" step="1" value="85"
+              oninput="setTtsVolume(this.value)">
+          </label>
+          <label class="tts-wrapper-range" for="tts-fallback-volume-slider">
+            <span>Fallback SFX Volume</span>
+            <span id="tts-fallback-volume-label" class="settings-range-value"></span>
+            <input type="range" id="tts-fallback-volume-slider" min="0" max="100" step="1" value="70"
+              oninput="setTtsFallbackVolume(this.value)">
+          </label>
+          <div class="tts-wrapper-actions">
+            <button class="tts-wrapper-save" type="button" onclick="saveTtsSettings()">Save Voice Settings</button>
+            <button type="button" class="secondary" onclick="testTtsWrapperSpeak()">Test Wrapper</button>
+            <button type="button" class="secondary" onclick="stopTtsWrapperSpeak()">Stop</button>
+          </div>
+        </div>
+        <p class="settings-config-hint tts-wrapper-hint">These controls are database-driven via Blueprints settings. Event handlers can still provide explicit override text when needed.</p>
+      </section>
+
+      <section id="settings-audio-pane-gpu" class="settings-audio-pane gpu-sfx-panel" role="tabpanel" aria-labelledby="settings-audio-tab-gpu" hidden>
+        <div class="gpu-sfx-head">
+          <strong>GPU Activity Sound Effect</strong>
+          <span id="gpu-sfx-status" class="settings-inline-status"></span>
+        </div>
+        <div class="gpu-sfx-grid" aria-label="GPU activity sound effect settings">
+          <section class="gpu-sfx-unit" data-gpu-sfx-id="0" aria-labelledby="gpu-sfx-0-title">
+            <div class="gpu-sfx-unit-head">
+              <label class="hub-checkbox gpu-sfx-enable" for="gpu-sfx-0-enabled">
+                <input class="hub-checkbox__input" type="checkbox" id="gpu-sfx-0-enabled"
+                  onchange="applyGpuActivitySfxRuntimeFromPanel()">
+                <span class="hub-checkbox__box" aria-hidden="true"></span>
+                <span class="hub-checkbox__label">
+                  <span id="gpu-sfx-0-title" class="gpu-sfx-title">GPU0</span>
+                  <span class="gpu-sfx-subtitle">LXC 804 vLLM</span>
+                </span>
+              </label>
+              <output id="gpu-sfx-0-power" class="gpu-sfx-power">-- W</output>
+            </div>
+            <div class="gpu-sfx-path settings-path-field">
+              <label for="gpu-sfx-0-sound-path">Sound Path</label>
+              <div class="settings-sound-path-row">
+                <input id="gpu-sfx-0-sound-path" type="text" placeholder="sounds/tos_power_room_1.mp3"
+                  oninput="applyGpuActivitySfxRuntimeFromPanel()" />
+                <button class="btn-small secondary" type="button" onclick="pickGpuActivitySound('0')">Pick</button>
+                <button class="btn-small secondary" type="button" onclick="previewGpuActivitySound('0', this)">Preview</button>
+              </div>
+            </div>
+            <label class="gpu-sfx-range" for="gpu-sfx-0-threshold-slider">
+              <span>Threshold</span>
+              <output id="gpu-sfx-0-threshold-label">-- W</output>
+              <input type="range" id="gpu-sfx-0-threshold-slider" min="0" max="1" step="1" value="0"
+                oninput="setGpuActivityThresholdLabel('0');applyGpuActivitySfxRuntimeFromPanel()">
+            </label>
+            <label class="gpu-sfx-range" for="gpu-sfx-0-volume-slider">
+              <span>Volume</span>
+              <output id="gpu-sfx-0-volume-label">--%</output>
+              <input type="range" id="gpu-sfx-0-volume-slider" min="0" max="100" step="1" value="28"
+                oninput="setGpuActivityVolumeLabel('0');applyGpuActivitySfxRuntimeFromPanel()">
+            </label>
+            <div class="gpu-sfx-boost">
+              <label class="hub-checkbox" for="gpu-sfx-0-boost-enabled">
+                <input class="hub-checkbox__input" type="checkbox" id="gpu-sfx-0-boost-enabled"
+                  onchange="applyGpuActivitySfxRuntimeFromPanel()">
+                <span class="hub-checkbox__box" aria-hidden="true"></span>
+                <span class="hub-checkbox__label">Energy boost</span>
+              </label>
+              <label class="gpu-sfx-range gpu-sfx-range--boost" for="gpu-sfx-0-boost-slider">
+                <span>Max Boost</span>
+                <output id="gpu-sfx-0-boost-label">--%</output>
+                <input type="range" id="gpu-sfx-0-boost-slider" min="0" max="100" step="1" value="25"
+                  oninput="setGpuActivityBoostLabel('0');applyGpuActivitySfxRuntimeFromPanel()">
+              </label>
+            </div>
+          </section>
+
+          <section class="gpu-sfx-unit" data-gpu-sfx-id="1" aria-labelledby="gpu-sfx-1-title">
+            <div class="gpu-sfx-unit-head">
+              <label class="hub-checkbox gpu-sfx-enable" for="gpu-sfx-1-enabled">
+                <input class="hub-checkbox__input" type="checkbox" id="gpu-sfx-1-enabled"
+                  onchange="applyGpuActivitySfxRuntimeFromPanel()">
+                <span class="hub-checkbox__box" aria-hidden="true"></span>
+                <span class="hub-checkbox__label">
+                  <span id="gpu-sfx-1-title" class="gpu-sfx-title">GPU1</span>
+                  <span class="gpu-sfx-subtitle">LXC 805 vLLM</span>
+                </span>
+              </label>
+              <output id="gpu-sfx-1-power" class="gpu-sfx-power">-- W</output>
+            </div>
+            <div class="gpu-sfx-path settings-path-field">
+              <label for="gpu-sfx-1-sound-path">Sound Path</label>
+              <div class="settings-sound-path-row">
+                <input id="gpu-sfx-1-sound-path" type="text" placeholder="sounds/stationaryship1.mp3"
+                  oninput="applyGpuActivitySfxRuntimeFromPanel()" />
+                <button class="btn-small secondary" type="button" onclick="pickGpuActivitySound('1')">Pick</button>
+                <button class="btn-small secondary" type="button" onclick="previewGpuActivitySound('1', this)">Preview</button>
+              </div>
+            </div>
+            <label class="gpu-sfx-range" for="gpu-sfx-1-threshold-slider">
+              <span>Threshold</span>
+              <output id="gpu-sfx-1-threshold-label">-- W</output>
+              <input type="range" id="gpu-sfx-1-threshold-slider" min="0" max="1" step="1" value="0"
+                oninput="setGpuActivityThresholdLabel('1');applyGpuActivitySfxRuntimeFromPanel()">
+            </label>
+            <label class="gpu-sfx-range" for="gpu-sfx-1-volume-slider">
+              <span>Volume</span>
+              <output id="gpu-sfx-1-volume-label">--%</output>
+              <input type="range" id="gpu-sfx-1-volume-slider" min="0" max="100" step="1" value="24"
+                oninput="setGpuActivityVolumeLabel('1');applyGpuActivitySfxRuntimeFromPanel()">
+            </label>
+            <div class="gpu-sfx-boost">
+              <label class="hub-checkbox" for="gpu-sfx-1-boost-enabled">
+                <input class="hub-checkbox__input" type="checkbox" id="gpu-sfx-1-boost-enabled"
+                  onchange="applyGpuActivitySfxRuntimeFromPanel()">
+                <span class="hub-checkbox__box" aria-hidden="true"></span>
+                <span class="hub-checkbox__label">Energy boost</span>
+              </label>
+              <label class="gpu-sfx-range gpu-sfx-range--boost" for="gpu-sfx-1-boost-slider">
+                <span>Max Boost</span>
+                <output id="gpu-sfx-1-boost-label">--%</output>
+                <input type="range" id="gpu-sfx-1-boost-slider" min="0" max="100" step="1" value="20"
+                  oninput="setGpuActivityBoostLabel('1');applyGpuActivitySfxRuntimeFromPanel()">
+              </label>
+            </div>
+          </section>
+        </div>
+        <div class="gpu-sfx-actions">
+          <button type="button" onclick="saveGpuActivitySfxSettings()">Save GPU Sound Settings</button>
+          <button type="button" class="secondary" onclick="refreshGpuActivityTelemetry()">Refresh Telemetry</button>
+          <button type="button" class="secondary" onclick="stopGpuActivitySfx()">Stop Loops</button>
+        </div>
+      </section>
     </div>
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
     <div class="table-wrap table-wrap--fill">
@@ -5168,6 +5304,7 @@
 <script src="js/hub-modal.js?v={{$assetVersion}}"></script>
 <script src="js/hub-dialogs.js?v={{$assetVersion}}"></script>
 <script src="js/shared-asset-picker.js?v={{$assetVersion}}"></script>
+<script src="js/gpu-activity-sound.js?v={{$assetVersion}}"></script>
 <script src="js/alarm-clock.js?v={{$assetVersion}}"></script>
 <script src="js/menu-action-order.js?v={{$assetVersion}}"></script>
 <script src="js/hub-menu.js?v={{$assetVersion}}"></script>

@@ -39,6 +39,23 @@ const _TTS_SETTING_META = {
   },
 };
 
+const _GPU_ACTIVITY_SFX_IDS = ['0', '1'];
+const _GPU_ACTIVITY_SFX_META = {
+  'gpu_activity_sfx.gpu0.enabled': 'Enable browser GPU0 power activity loop',
+  'gpu_activity_sfx.gpu0.sound_path': 'Sound asset path for GPU0 power activity loop',
+  'gpu_activity_sfx.gpu0.threshold_w': 'GPU0 power threshold in watts for activity loop',
+  'gpu_activity_sfx.gpu0.volume': 'Base browser playback volume for GPU0 activity loop',
+  'gpu_activity_sfx.gpu0.integral_boost_enabled': 'Enable GPU0 energy-integral volume boost',
+  'gpu_activity_sfx.gpu0.integral_boost_pct': 'Maximum GPU0 energy-integral volume boost percent',
+  'gpu_activity_sfx.gpu1.enabled': 'Enable browser GPU1 power activity loop',
+  'gpu_activity_sfx.gpu1.sound_path': 'Sound asset path for GPU1 power activity loop',
+  'gpu_activity_sfx.gpu1.threshold_w': 'GPU1 power threshold in watts for activity loop',
+  'gpu_activity_sfx.gpu1.volume': 'Base browser playback volume for GPU1 activity loop',
+  'gpu_activity_sfx.gpu1.integral_boost_enabled': 'Enable GPU1 energy-integral volume boost',
+  'gpu_activity_sfx.gpu1.integral_boost_pct': 'Maximum GPU1 energy-integral volume boost percent',
+};
+let _gpuActivityTelemetryRuntimeSyncing = false;
+
 let _settingsTableView = null;
 
 function _setUiRefreshStatus(message, tone = '') {
@@ -360,7 +377,9 @@ async function loadSettings() {
     const r = await apiFetch('/api/v1/settings');
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     _settings = await r.json();
+    initSoundToggle();
     initTtsSettingsPanel();
+    initGpuActivitySfxPanel();
     renderSettings();
   } catch (e) {
     err.textContent = `Failed to load settings: ${e.message}`;
@@ -585,6 +604,53 @@ function setTtsFallbackVolume(pct) {
   if (label) label.textContent = `${Math.round(as01 * 100)}%`;
 }
 
+function _settingsAssetUrl(assetPath) {
+  const path = String(assetPath || '').trim();
+  if (!path) return '';
+  if (/^https?:\/\//i.test(path) || path.startsWith('/')) return path;
+  return `/fallback-ui/assets/${path}`;
+}
+
+function _pickSettingsSound(inputId, title, onSelect) {
+  const input = document.getElementById(inputId);
+  if (!input || typeof AssetPicker === 'undefined') return;
+  AssetPicker.open({
+    title,
+    kind: 'sound',
+    browseUrl: '/api/v1/nav-items/assets?type=sounds',
+    emptyMessage: 'No sound assets uploaded yet.',
+    onSelect: async (assetPath) => {
+      input.value = assetPath;
+      if (typeof onSelect === 'function') onSelect(assetPath);
+    },
+  });
+}
+
+function _previewSettingsSound(inputId, button, volume) {
+  const input = document.getElementById(inputId);
+  const url = _settingsAssetUrl(input?.value || '');
+  if (!url || typeof SoundManager === 'undefined') return;
+  SoundManager.previewToggle(url, { button, volume });
+}
+
+function _ttsFallbackInputId(kind) {
+  const clean = String(kind || '').trim().toLowerCase();
+  if (clean === 'negative') return 'tts-fallback-negative-path';
+  if (clean === 'neutral') return 'tts-fallback-neutral-path';
+  return 'tts-fallback-positive-path';
+}
+
+function pickTtsFallbackSound(kind) {
+  const clean = String(kind || 'positive').trim().toLowerCase();
+  _pickSettingsSound(_ttsFallbackInputId(clean), `Choose ${clean} fallback sound`);
+}
+
+function previewTtsFallbackSound(kind, button) {
+  const slider = document.getElementById('tts-fallback-volume-slider');
+  const volume = Math.max(0, Math.min(100, parseInt(slider?.value || '70', 10))) / 100;
+  _previewSettingsSound(_ttsFallbackInputId(kind), button, volume);
+}
+
 let _ttsVoiceCatalogCache = null;
 
 function _normalizeVoiceKey(value) {
@@ -755,12 +821,367 @@ async function stopTtsWrapperSpeak() {
   }
 }
 
+function switchSettingsAudioTab(tab) {
+  const clean = tab === 'gpu' ? 'gpu' : 'tts';
+  const isGpu = clean === 'gpu';
+  const ttsTab = document.getElementById('settings-audio-tab-tts');
+  const gpuTab = document.getElementById('settings-audio-tab-gpu');
+  const ttsPane = document.getElementById('settings-audio-pane-tts');
+  const gpuPane = document.getElementById('settings-audio-pane-gpu');
+  ttsTab?.classList.toggle('is-active', !isGpu);
+  gpuTab?.classList.toggle('is-active', isGpu);
+  ttsTab?.setAttribute('aria-selected', isGpu ? 'false' : 'true');
+  gpuTab?.setAttribute('aria-selected', isGpu ? 'true' : 'false');
+  if (ttsPane) {
+    ttsPane.hidden = isGpu;
+    ttsPane.classList.toggle('is-active', !isGpu);
+  }
+  if (gpuPane) {
+    gpuPane.hidden = !isGpu;
+    gpuPane.classList.toggle('is-active', isGpu);
+  }
+  try { localStorage.setItem('settings.audio.active_tab', clean); } catch (_) {}
+  if (typeof GpuActivitySound !== 'undefined') {
+    GpuActivitySound.setPanelWatching(isGpu);
+    if (isGpu) void GpuActivitySound.fetchOnce();
+  }
+}
+
+function _boolSettingValue(value, fallback = false) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (!raw) return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(raw);
+}
+
+function _gpuActivitySuffix(id, field) {
+  return `gpu_activity_sfx.gpu${id}.${field}`;
+}
+
+function _gpuActivityFullKey(id, field) {
+  return `fe.${_gpuActivitySuffix(id, field)}`;
+}
+
+function _gpuActivitySettingValue(id, field, fallback = '') {
+  const fullKey = _gpuActivityFullKey(id, field);
+  const row = _settings.find(item => String(item.key) === fullKey);
+  if (row && typeof row.value === 'string' && row.value.trim() !== '') return row.value.trim();
+  if (typeof getFrontendSetting === 'function') {
+    const cached = getFrontendSetting(_gpuActivitySuffix(id, field), '');
+    if (cached !== null && cached !== undefined && String(cached).trim() !== '') return String(cached).trim();
+  }
+  return fallback;
+}
+
+function _gpuActivityDefaults(id) {
+  const snapshot = (typeof GpuActivitySound !== 'undefined' && GpuActivitySound.getSnapshot)
+    ? GpuActivitySound.getSnapshot()
+    : null;
+  return snapshot?.defaults?.[id] || {
+    soundPath: id === '0' ? 'sounds/tos_power_room_1.mp3' : 'sounds/stationaryship1.mp3',
+    volume: id === '0' ? 0.28 : 0.24,
+    boostPct: id === '0' ? 25 : 20,
+  };
+}
+
+function _gpuActivityNumber(value, fallback, min, max) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, parsed));
+}
+
+function _gpuActivitySlider(id, name) {
+  return document.getElementById(`gpu-sfx-${id}-${name}-slider`);
+}
+
+function _gpuActivityInput(id, name) {
+  return document.getElementById(`gpu-sfx-${id}-${name}`);
+}
+
+function _gpuActivitySavedThreshold(id) {
+  const parsed = Number(_gpuActivitySettingValue(id, 'threshold_w', ''));
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : null;
+}
+
+function _gpuActivityDynamicThreshold(id, maxW) {
+  const saved = _gpuActivitySavedThreshold(id);
+  if (saved !== null) return Math.min(maxW, saved);
+  return Math.round(maxW * 0.55);
+}
+
+function _applyGpuActivityRange(id, snapshot) {
+  const slider = _gpuActivitySlider(id, 'threshold');
+  if (!slider) return false;
+  const beforeDisabled = slider.disabled;
+  const beforeValue = slider.value;
+  const beforeMax = slider.max;
+  const range = snapshot?.ranges?.[id];
+  if (!range || !Number.isFinite(Number(range.maxW))) {
+    slider.disabled = true;
+    setGpuActivityThresholdLabel(id);
+    return beforeDisabled !== slider.disabled;
+  }
+  const maxW = Math.max(1, Math.round(Number(range.maxW)));
+  const current = Number(slider.value);
+  slider.disabled = false;
+  slider.min = '0';
+  slider.max = String(maxW);
+  slider.step = '1';
+  if (slider.dataset.dynamicDefault === '1' || !Number.isFinite(current) || current > maxW) {
+    slider.value = String(_gpuActivityDynamicThreshold(id, maxW));
+    slider.dataset.dynamicDefault = '0';
+  }
+  setGpuActivityThresholdLabel(id);
+  return beforeDisabled !== slider.disabled || beforeValue !== slider.value || beforeMax !== slider.max;
+}
+
+function setGpuActivityThresholdLabel(id) {
+  const slider = _gpuActivitySlider(id, 'threshold');
+  const label = document.getElementById(`gpu-sfx-${id}-threshold-label`);
+  if (!slider || !label) return;
+  const suffix = slider.disabled ? '' : ` / ${slider.max}W`;
+  label.textContent = slider.disabled ? '-- W' : `${Math.round(Number(slider.value) || 0)}W${suffix}`;
+}
+
+function setGpuActivityVolumeLabel(id) {
+  const slider = _gpuActivitySlider(id, 'volume');
+  const label = document.getElementById(`gpu-sfx-${id}-volume-label`);
+  if (!slider || !label) return;
+  label.textContent = `${Math.round(Number(slider.value) || 0)}%`;
+}
+
+function setGpuActivityBoostLabel(id) {
+  const slider = _gpuActivitySlider(id, 'boost');
+  const label = document.getElementById(`gpu-sfx-${id}-boost-label`);
+  if (!slider || !label) return;
+  label.textContent = `${Math.round(Number(slider.value) || 0)}%`;
+}
+
+function _updateGpuActivityTelemetry(snapshot) {
+  let rangeChanged = false;
+  _GPU_ACTIVITY_SFX_IDS.forEach(id => {
+    rangeChanged = _applyGpuActivityRange(id, snapshot) || rangeChanged;
+    const power = document.getElementById(`gpu-sfx-${id}-power`);
+    const telemetry = snapshot?.telemetry?.[id];
+    if (power) {
+      power.textContent = telemetry && Number.isFinite(Number(telemetry.powerW))
+        ? `${Number(telemetry.powerW).toFixed(1)} W`
+        : '-- W';
+    }
+  });
+  const status = document.getElementById('gpu-sfx-status');
+  if (status && snapshot?.meta?.stale) status.textContent = 'Telemetry stale';
+  else if (status && snapshot?.meta?.fetchedAt) status.textContent = 'Telemetry live';
+  if (rangeChanged && !_gpuActivityTelemetryRuntimeSyncing && typeof GpuActivitySound !== 'undefined') {
+    _gpuActivityTelemetryRuntimeSyncing = true;
+    try {
+      applyGpuActivitySfxRuntimeFromPanel();
+    } finally {
+      _gpuActivityTelemetryRuntimeSyncing = false;
+    }
+  }
+}
+
+function _gpuActivityConfigFromPanel() {
+  const gpus = {};
+  _GPU_ACTIVITY_SFX_IDS.forEach(id => {
+    const volumeSlider = _gpuActivitySlider(id, 'volume');
+    const thresholdSlider = _gpuActivitySlider(id, 'threshold');
+    const boostSlider = _gpuActivitySlider(id, 'boost');
+    gpus[id] = {
+      enabled: !!document.getElementById(`gpu-sfx-${id}-enabled`)?.checked,
+      soundPath: String(document.getElementById(`gpu-sfx-${id}-sound-path`)?.value || '').trim(),
+      thresholdW: thresholdSlider?.disabled ? null : Math.max(0, Number(thresholdSlider?.value || 0)),
+      volume: Math.max(0, Math.min(1, Number(volumeSlider?.value || 0) / 100)),
+      boostEnabled: !!document.getElementById(`gpu-sfx-${id}-boost-enabled`)?.checked,
+      boostPct: Math.max(0, Math.min(100, Number(boostSlider?.value || 0))),
+    };
+  });
+  const masterCheckbox = document.getElementById('sound-enabled-toggle');
+  const masterEnabled = masterCheckbox
+    ? !!masterCheckbox.checked
+    : _boolSettingValue(typeof getFrontendSetting === 'function' ? getFrontendSetting('sound_enabled', 'false') : 'false');
+  return { masterEnabled, gpus };
+}
+
+function applyGpuActivitySfxRuntimeFromPanel() {
+  _GPU_ACTIVITY_SFX_IDS.forEach(id => {
+    setGpuActivityThresholdLabel(id);
+    setGpuActivityVolumeLabel(id);
+    setGpuActivityBoostLabel(id);
+  });
+  if (typeof GpuActivitySound !== 'undefined') {
+    GpuActivitySound.configure(_gpuActivityConfigFromPanel());
+  }
+}
+
+function initGpuActivitySfxPanel() {
+  if (!document.getElementById('gpu-sfx-0-sound-path')) return;
+  _GPU_ACTIVITY_SFX_IDS.forEach(id => {
+    const defaults = _gpuActivityDefaults(id);
+    const enabled = document.getElementById(`gpu-sfx-${id}-enabled`);
+    const path = document.getElementById(`gpu-sfx-${id}-sound-path`);
+    const threshold = _gpuActivitySlider(id, 'threshold');
+    const volume = _gpuActivitySlider(id, 'volume');
+    const boostEnabled = document.getElementById(`gpu-sfx-${id}-boost-enabled`);
+    const boost = _gpuActivitySlider(id, 'boost');
+    if (enabled) enabled.checked = _boolSettingValue(_gpuActivitySettingValue(id, 'enabled', 'false'));
+    if (path) path.value = _gpuActivitySettingValue(id, 'sound_path', defaults.soundPath || '');
+    if (threshold) {
+      const savedThreshold = _gpuActivitySavedThreshold(id);
+      threshold.disabled = true;
+      threshold.dataset.dynamicDefault = savedThreshold === null ? '1' : '0';
+      threshold.value = savedThreshold === null ? '0' : String(Math.round(savedThreshold));
+    }
+    if (volume) {
+      const vol = _gpuActivityNumber(
+        _gpuActivitySettingValue(id, 'volume', String(defaults.volume ?? 0.25)),
+        defaults.volume ?? 0.25,
+        0,
+        1
+      );
+      volume.value = String(Math.round(vol * 100));
+    }
+    if (boostEnabled) {
+      boostEnabled.checked = _boolSettingValue(_gpuActivitySettingValue(id, 'integral_boost_enabled', 'false'));
+    }
+    if (boost) {
+      boost.value = String(Math.round(_gpuActivityNumber(
+        _gpuActivitySettingValue(id, 'integral_boost_pct', String(defaults.boostPct ?? 20)),
+        defaults.boostPct ?? 20,
+        0,
+        100
+      )));
+    }
+    setGpuActivityThresholdLabel(id);
+    setGpuActivityVolumeLabel(id);
+    setGpuActivityBoostLabel(id);
+  });
+
+  if (!window._gpuActivitySfxSettingsWired) {
+    window.addEventListener('blueprints:gpu-activity-sfx-telemetry', event => {
+      _updateGpuActivityTelemetry(event.detail || {});
+    });
+    window._gpuActivitySfxSettingsWired = true;
+  }
+
+  const storedTab = (() => {
+    try { return localStorage.getItem('settings.audio.active_tab'); } catch (_) { return ''; }
+  })();
+  switchSettingsAudioTab(storedTab === 'gpu' ? 'gpu' : 'tts');
+  applyGpuActivitySfxRuntimeFromPanel();
+  if (typeof GpuActivitySound !== 'undefined') {
+    _updateGpuActivityTelemetry(GpuActivitySound.getSnapshot());
+    void GpuActivitySound.fetchOnce();
+  }
+}
+
+function pickGpuActivitySound(id) {
+  _pickSettingsSound(`gpu-sfx-${id}-sound-path`, `Choose GPU${id} activity sound`, () => {
+    applyGpuActivitySfxRuntimeFromPanel();
+  });
+}
+
+function previewGpuActivitySound(id, button) {
+  const volume = Math.max(0, Math.min(100, Number(_gpuActivitySlider(id, 'volume')?.value || 0))) / 100;
+  _previewSettingsSound(`gpu-sfx-${id}-sound-path`, button, volume);
+}
+
+async function _saveFrontendSetting(key, value, description) {
+  const r = await apiFetch(`/api/v1/settings/frontend-settings/${encodeURIComponent(key)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value: String(value), description }),
+  });
+  if (!r.ok) {
+    const txt = await r.text();
+    throw new Error(txt || `HTTP ${r.status}`);
+  }
+}
+
+async function saveGpuActivitySfxSettings() {
+  const status = document.getElementById('gpu-sfx-status');
+  const config = _gpuActivityConfigFromPanel();
+  try {
+    if (status) status.textContent = 'Saving...';
+    const writes = [];
+    _GPU_ACTIVITY_SFX_IDS.forEach(id => {
+      const gpu = config.gpus[id];
+      if (gpu.enabled && !gpu.soundPath) throw new Error(`GPU${id} needs a sound path`);
+      const values = {
+        enabled: gpu.enabled ? 'true' : 'false',
+        sound_path: gpu.soundPath,
+        threshold_w: gpu.thresholdW === null ? '' : String(Math.round(gpu.thresholdW)),
+        volume: gpu.volume.toFixed(2),
+        integral_boost_enabled: gpu.boostEnabled ? 'true' : 'false',
+        integral_boost_pct: String(Math.round(gpu.boostPct)),
+      };
+      Object.entries(values).forEach(([field, value]) => {
+        const suffix = _gpuActivitySuffix(id, field);
+        writes.push(_saveFrontendSetting(suffix, value, _GPU_ACTIVITY_SFX_META[suffix] || null));
+      });
+    });
+    await Promise.all(writes);
+    await loadFrontendSettings();
+    if (typeof GpuActivitySound !== 'undefined') GpuActivitySound.reloadFromFrontendSettings();
+    await loadSettings();
+    if (status) status.textContent = 'Saved';
+    setTimeout(() => { if (status) status.textContent = ''; }, 2200);
+  } catch (e) {
+    if (status) status.textContent = `Save failed: ${e.message}`;
+  }
+}
+
+async function refreshGpuActivityTelemetry() {
+  const status = document.getElementById('gpu-sfx-status');
+  try {
+    if (status) status.textContent = 'Refreshing...';
+    if (typeof GpuActivitySound !== 'undefined') {
+      GpuActivitySound.setPanelWatching(true);
+      await GpuActivitySound.fetchOnce();
+      _updateGpuActivityTelemetry(GpuActivitySound.getSnapshot());
+    }
+  } catch (e) {
+    if (status) status.textContent = `Refresh failed: ${e.message}`;
+  }
+}
+
+function stopGpuActivitySfx() {
+  if (typeof GpuActivitySound === 'undefined') return;
+  const config = _gpuActivityConfigFromPanel();
+  GpuActivitySound.configure({ ...config, masterEnabled: false });
+  const status = document.getElementById('gpu-sfx-status');
+  if (status) {
+    status.textContent = 'Stopped for this page';
+    setTimeout(() => { if (status) status.textContent = ''; }, 1800);
+  }
+}
+
 /* ── Sound enabled toggle ─────────────────────────────────────────────── */
+function _soundEnabledSettingValue(fallback = 'false') {
+  const row = _settings.find(item => String(item.key) === 'fe.sound_enabled');
+  if (row && typeof row.value === 'string' && row.value.trim() !== '') return row.value.trim();
+  if (typeof getFrontendSetting === 'function') {
+    const cached = getFrontendSetting('sound_enabled', null);
+    if (cached !== null && cached !== undefined && String(cached).trim() !== '') return String(cached).trim();
+  }
+  return fallback;
+}
+
 function initSoundToggle() {
   const checkbox = document.getElementById('sound-enabled-toggle');
   if (!checkbox) return;
-  const current = getFrontendSetting('sound_enabled', 'false') === 'true';
-  checkbox.checked = current;
+  checkbox.checked = _boolSettingValue(_soundEnabledSettingValue('false'));
+  if (typeof getFrontendSetting === 'function'
+      && getFrontendSetting('sound_enabled', null) === null
+      && !_settings.some(item => String(item.key) === 'fe.sound_enabled')
+      && typeof loadFrontendSettings === 'function') {
+    loadFrontendSettings().then(() => {
+      checkbox.checked = _boolSettingValue(_soundEnabledSettingValue('false'));
+      if (typeof applyGpuActivitySfxRuntimeFromPanel === 'function') {
+        applyGpuActivitySfxRuntimeFromPanel();
+      }
+    }).catch(() => {});
+  }
 }
 
 async function saveSoundEnabled(enabled) {
@@ -776,6 +1197,7 @@ async function saveSoundEnabled(enabled) {
     await loadFrontendSettings();
     // Apply to the live SoundManager
     if (typeof SoundManager !== 'undefined') SoundManager.setEnabled(enabled);
+    applyGpuActivitySfxRuntimeFromPanel();
     if (statusEl) { statusEl.textContent = `✓ Sound ${enabled ? 'on' : 'off'}`; }
     setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 2500);
   } catch (e) {
