@@ -443,6 +443,27 @@ function _disksPoolColor(poolName) {
   return _DISKS_CLUSTER_COLORS[Math.abs(hash) % _DISKS_CLUSTER_COLORS.length];
 }
 
+function _disksSingleDriveConfig(entry, options = {}) {
+  return {
+    entry,
+    poolName: options.poolName || '',
+    poolColor: options.poolColor || '',
+    pooledSingle: !!options.pooledSingle,
+  };
+}
+
+function _disksSingleDriveConfigId(config) {
+  return String(config?.entry?.node?.id || '');
+}
+
+function _disksIsFeaturedSingleDrive(config) {
+  if (!config || !config.entry || !config.entry.node) return false;
+  if (config.pooledSingle) return true;
+  const status = String(config.entry.node.status || '').trim().toLowerCase();
+  if (status && status !== 'info' && status !== 'ok') return true;
+  return Boolean(String(config.entry.node.note || '').trim());
+}
+
 function _disksBuildPhysicalDriveLayout(items) {
   const entries = (Array.isArray(items) ? items : []).map(_disksDriveEntry);
   const poolCounts = new Map();
@@ -489,17 +510,59 @@ function _disksBuildPhysicalDriveLayout(items) {
   pooled.forEach(group => group.items.sort(_disksSortDriveEntries));
   unpooled.sort(_disksSortDriveEntries);
 
+  const pooledSingles = pooled
+    .filter(group => group.items.length === 1)
+    .map(group => _disksSingleDriveConfig(group.items[0], {
+      poolName: group.pool,
+      poolColor: group.color,
+      pooledSingle: true,
+    }))
+    .sort((left, right) => _disksSortDriveEntries(left.entry, right.entry));
+  const unpooledSingles = unpooled
+    .map(entry => _disksSingleDriveConfig(entry))
+    .sort((left, right) => _disksSortDriveEntries(left.entry, right.entry));
+
+  const featuredCandidates = [];
+  const featuredIds = new Set();
+  pooledSingles.forEach(config => {
+    const id = _disksSingleDriveConfigId(config);
+    if (!id || featuredIds.has(id)) return;
+    featuredIds.add(id);
+    featuredCandidates.push(config);
+  });
+  unpooledSingles.forEach(config => {
+    const id = _disksSingleDriveConfigId(config);
+    if (!id || featuredIds.has(id) || !_disksIsFeaturedSingleDrive(config)) return;
+    featuredIds.add(id);
+    featuredCandidates.push(config);
+  });
+  featuredCandidates.sort((left, right) => _disksSortDriveEntries(left.entry, right.entry));
+  const useFeaturedShelf = featuredCandidates.length >= 2;
+  const selectedFeaturedIds = useFeaturedShelf ? featuredIds : new Set();
+  const remainingSingles = [
+    ...pooledSingles.filter(config => !selectedFeaturedIds.has(_disksSingleDriveConfigId(config))),
+    ...unpooledSingles.filter(config => !selectedFeaturedIds.has(_disksSingleDriveConfigId(config))),
+  ];
+
   return {
     multiPools: pooled.filter(group => group.items.length > 1),
-    pooledSingles: pooled.filter(group => group.items.length === 1),
-    unpooled,
+    featuredSingles: useFeaturedShelf ? featuredCandidates : [],
+    remainingSingles,
   };
+}
+
+function _disksSingleDriveHtml(config) {
+  return _disksCardHtml(config.entry.node, {
+    poolName: config.poolName,
+    poolColor: config.poolColor,
+    pooledSingle: config.pooledSingle,
+  });
 }
 
 function _disksPoolClusterHtml(group) {
   const count = group.items.length;
   return `
-    <section class="disks-pool-cluster" style="--disks-cluster-rgb:${_disksEsc(group.color)};">
+    <section class="disks-pool-cluster" data-disks-layout-role="cluster" data-disks-member-count="${count}" style="--disks-cluster-rgb:${_disksEsc(group.color)};">
       <div class="disks-pool-cluster__header">
         <span class="disks-pool-cluster__name">${_disksEsc(group.pool)}</span>
         <span class="disks-pool-cluster__meta">${count} member${count === 1 ? '' : 's'} · ZFS pool</span>
@@ -514,6 +577,14 @@ function _disksPoolClusterHtml(group) {
   `;
 }
 
+function _disksFeaturedSingleBlockHtml(config) {
+  return `
+    <div class="disks-featured-block" data-disks-layout-role="featured" data-disks-member-count="1">
+      ${_disksSingleDriveHtml(config)}
+    </div>
+  `;
+}
+
 function _disksPhysicalDriveGroupHtml(group) {
   const layout = _disksBuildPhysicalDriveLayout(group.items);
   return `
@@ -524,22 +595,18 @@ function _disksPhysicalDriveGroupHtml(group) {
       </div>
       <div class="disks-physical-layout">
         ${layout.multiPools.length ? `
-          <div class="disks-cluster-shelf">
+          <div class="disks-cluster-shelf" data-disks-layout-shelf="clusters">
             ${layout.multiPools.map(_disksPoolClusterHtml).join('')}
           </div>
         ` : ''}
-        ${layout.pooledSingles.length ? `
-          <div class="disks-card-grid">
-            ${layout.pooledSingles.map(groupEntry => _disksCardHtml(groupEntry.items[0].node, {
-              poolName: groupEntry.pool,
-              poolColor: groupEntry.color,
-              pooledSingle: true,
-            })).join('')}
+        ${layout.featuredSingles.length ? `
+          <div class="disks-featured-shelf" data-disks-layout-shelf="featured">
+            ${layout.featuredSingles.map(_disksFeaturedSingleBlockHtml).join('')}
           </div>
         ` : ''}
-        ${layout.unpooled.length ? `
+        ${layout.remainingSingles.length ? `
           <div class="disks-card-grid">
-            ${layout.unpooled.map(entry => _disksCardHtml(entry.node)).join('')}
+            ${layout.remainingSingles.map(_disksSingleDriveHtml).join('')}
           </div>
         ` : ''}
       </div>
@@ -684,21 +751,37 @@ function _disksClusterGapPx(grid) {
   return Number.isFinite(value) ? value : 0;
 }
 
-function _disksBestClusterColumns(cardCount, maxColumns) {
-  const limit = Math.max(1, Math.min(cardCount, maxColumns));
-  let bestColumns = 1;
-  let bestScore = Number.POSITIVE_INFINITY;
-  for (let columns = 1; columns <= limit; columns += 1) {
-    const rows = Math.ceil(cardCount / columns);
-    const perimeter = (rows * 2) + (columns * 2);
-    const waste = (rows * columns) - cardCount;
-    const score = (perimeter * 100) + (waste * 20);
-    if (score < bestScore || (score === bestScore && columns > bestColumns)) {
-      bestScore = score;
-      bestColumns = columns;
-    }
+function _disksShelfTrackCount(shelf) {
+  const width = shelf.clientWidth || shelf.getBoundingClientRect().width;
+  const gap = _disksClusterGapPx(shelf);
+  const visualColumns = Math.max(
+    1,
+    Math.min(3, Math.floor((width + gap) / (_DISKS_CLUSTER_MIN_CARD_WIDTH + gap))),
+  );
+  return visualColumns * 2;
+}
+
+function _disksClusterSpanForTracks(cardCount, tracks) {
+  if (tracks <= 2) return 2;
+  if (tracks <= 4) {
+    return cardCount <= 2 ? 2 : 4;
   }
-  return bestColumns;
+  if (cardCount <= 2) return 2;
+  if (cardCount <= 4) return 4;
+  return 6;
+}
+
+function _disksClusterColumnsForTracks(cardCount, span, tracks) {
+  if (tracks <= 2) return 1;
+  if (span <= 2) return 1;
+  if (span <= 4) return Math.min(2, cardCount);
+  return Math.min(3, cardCount);
+}
+
+function _disksFeaturedSpanForTracks(blockCount, tracks) {
+  if (tracks <= 2) return 2;
+  if (blockCount === 2) return tracks / 2;
+  return 2;
 }
 
 function _disksSetClusterEdges(card, sides) {
@@ -742,16 +825,40 @@ function _disksApplyPhysicalDriveLayout() {
   const shell = _disksEl('disks-shell');
   if (!shell) return;
   let layoutChanged = false;
-  shell.querySelectorAll('[data-disks-cluster-grid]').forEach(grid => {
-    const cards = grid.querySelectorAll(':scope > .disks-card');
-    if (!cards.length) return;
-    const width = grid.clientWidth || grid.getBoundingClientRect().width;
-    const gap = _disksClusterGapPx(grid);
-    const maxColumns = Math.max(1, Math.floor((width + gap) / (_DISKS_CLUSTER_MIN_CARD_WIDTH + gap)));
-    const columns = _disksBestClusterColumns(cards.length, maxColumns);
-    if (grid.style.getPropertyValue('--disks-cluster-columns') !== String(columns)) {
-      grid.style.setProperty('--disks-cluster-columns', String(columns));
+  shell.querySelectorAll('[data-disks-layout-shelf]').forEach(shelf => {
+    const tracks = _disksShelfTrackCount(shelf);
+    if (shelf.style.getPropertyValue('--disks-layout-tracks') !== String(tracks)) {
+      shelf.style.setProperty('--disks-layout-tracks', String(tracks));
       layoutChanged = true;
+    }
+    const mode = String(shelf.dataset.disksLayoutShelf || '').trim().toLowerCase();
+    const blocks = Array.from(shelf.querySelectorAll(':scope > [data-disks-layout-role]'));
+    if (mode === 'clusters') {
+      blocks.forEach(block => {
+        const count = Math.max(1, Number.parseInt(block.dataset.disksMemberCount || '1', 10) || 1);
+        const span = _disksClusterSpanForTracks(count, tracks);
+        if (block.style.getPropertyValue('--disks-layout-span') !== String(span)) {
+          block.style.setProperty('--disks-layout-span', String(span));
+          layoutChanged = true;
+        }
+        const grid = block.querySelector('[data-disks-cluster-grid]');
+        if (!grid) return;
+        const columns = _disksClusterColumnsForTracks(count, span, tracks);
+        if (grid.style.getPropertyValue('--disks-cluster-columns') !== String(columns)) {
+          grid.style.setProperty('--disks-cluster-columns', String(columns));
+          layoutChanged = true;
+        }
+      });
+      return;
+    }
+    if (mode === 'featured') {
+      const span = _disksFeaturedSpanForTracks(blocks.length, tracks);
+      blocks.forEach(block => {
+        if (block.style.getPropertyValue('--disks-layout-span') !== String(span)) {
+          block.style.setProperty('--disks-layout-span', String(span));
+          layoutChanged = true;
+        }
+      });
     }
   });
   if (layoutChanged) {
