@@ -285,6 +285,122 @@
   gap: 16px;
 }
 
+.disks-tree {
+  display: grid;
+  gap: 10px;
+}
+
+.disks-tree__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.disks-tree__root {
+  min-width: 0;
+  max-width: 100%;
+  padding: 5px 10px;
+  border: 1px solid rgba(91, 156, 246, 0.2);
+  border-radius: 999px;
+  background: rgba(15, 17, 23, 0.34);
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.disks-tree__shell {
+  min-height: 320px;
+  padding: 14px;
+  border: 1px solid rgba(91, 156, 246, 0.18);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(91, 156, 246, 0.08), rgba(15, 17, 23, 0.08)),
+    rgba(15, 17, 23, 0.28);
+}
+
+.disks-tree__toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.disks-tree__toolbar .hub-modal-btn {
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.disks-tree__toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.disks-tree__path {
+  min-width: 0;
+}
+
+.disks-tree .docs-tree-panel {
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.disks-tree .docs-tree-list {
+  max-height: min(48vh, 520px);
+}
+
+.disks-tree .docs-tree-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.disks-tree__name-static {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  padding: 8px 0;
+  color: var(--text);
+  cursor: default;
+  text-decoration: none;
+}
+
+.disks-tree__name-static:hover,
+.disks-tree__name-static:focus,
+.disks-tree__name-static:focus-visible,
+.disks-tree__name-static:active {
+  color: var(--text);
+  text-decoration: none;
+  outline: none;
+}
+
+.disks-tree__download-btn {
+  --table-action-color: var(--text-dim);
+  --table-action-rgb: 123, 130, 160;
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
+button.disks-tree__download-btn:disabled {
+  pointer-events: none;
+}
+
+.disks-tree__error {
+  margin: 0;
+}
+
+.disks-tree__relative {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .disks-group {
   display: grid;
   gap: 10px;
@@ -818,6 +934,18 @@
 
   .disks-card-grid--inventory-bundle {
     grid-template-columns: 1fr;
+  }
+
+  .disks-tree__toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .disks-tree__path {
+    grid-column: 1 / -1;
+  }
+
+  .disks-tree__toolbar-actions {
+    justify-content: flex-start;
   }
 
 }

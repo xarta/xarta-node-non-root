@@ -8,6 +8,9 @@ let _disksLoadPromise = null;
 let _disksSourceIssues = [];
 let _disksInitDone = false;
 let _disksLayoutFrame = 0;
+let _disksFilesystemTreeCache = new Map();
+let _disksFilesystemTreePaths = new Map();
+let _disksFilesystemTreeLoadingKeys = new Set();
 
 const _DISKS_BLUE_ICON = '/fallback-ui/assets/icons/ui/drive-blue.svg';
 const _DISKS_GOLD_ICON = '/fallback-ui/assets/icons/ui/drive-gold.svg';
@@ -221,6 +224,251 @@ function _disksNodeIcon(node) {
   if (kind === 'host' || kind === 'nested-host') return _DISKS_HOST_ICON;
   if (kind === 'pool' || kind === 'dataset' || kind === 'volume') return _DISKS_GOLD_ICON;
   return _DISKS_BLUE_ICON;
+}
+
+function _disksFilesystemTreeReset() {
+  _disksFilesystemTreeCache = new Map();
+  _disksFilesystemTreePaths = new Map();
+  _disksFilesystemTreeLoadingKeys = new Set();
+}
+
+function _disksNormalizeRelativePath(path) {
+  const text = String(path || '').trim().replace(/\\/g, '/');
+  if (!text || text === '.') return '.';
+  if (text.startsWith('/')) return '.';
+  const parts = [];
+  text.split('/').forEach(part => {
+    if (!part || part === '.') return;
+    if (part === '..') return;
+    parts.push(part);
+  });
+  return parts.join('/') || '.';
+}
+
+function _disksFilesystemBrowserMeta(node) {
+  const raw = node && typeof node.filesystem_browser === 'object' ? node.filesystem_browser : null;
+  const host = String(raw?.host || '').trim();
+  const rootPath = String(raw?.root_path || '').trim();
+  if (!host || !rootPath) return null;
+  return {
+    host,
+    root_path: rootPath,
+    filesystem: String(raw?.filesystem || '').trim(),
+    source_path: String(raw?.source_path || '').trim(),
+    dataset_name: String(raw?.dataset_name || '').trim(),
+    download_available: !!raw?.download_available,
+  };
+}
+
+function _disksFilesystemTreeNodeKey(node, meta) {
+  return `${String(node?.id || '').trim()}::${meta.host}::${meta.root_path}`;
+}
+
+function _disksFilesystemTreeCacheKey(meta, path) {
+  return `${meta.host}::${meta.root_path}::${_disksNormalizeRelativePath(path)}`;
+}
+
+function _disksFilesystemTreePathForNode(node, meta) {
+  return _disksFilesystemTreePaths.get(_disksFilesystemTreeNodeKey(node, meta)) || '.';
+}
+
+function _disksFilesystemTreeCached(node, meta, path) {
+  return _disksFilesystemTreeCache.get(_disksFilesystemTreeCacheKey(meta, path)) || null;
+}
+
+function _disksFilesystemTreeLoading(node, meta, path) {
+  return _disksFilesystemTreeLoadingKeys.has(_disksFilesystemTreeCacheKey(meta, path));
+}
+
+function _disksFilesystemTreeFormatTimestamp(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return '';
+  try {
+    return date.toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+  } catch (_) {
+    return date.toLocaleString();
+  }
+}
+
+function _disksFilesystemTreeEntryMetaText(entry) {
+  const bits = [];
+  const symlinkTarget = String(entry?.symlink_target || '').trim();
+  if (symlinkTarget) bits.push(`link -> ${symlinkTarget}`);
+  if (String(entry?.type || '').trim() === 'file' && entry?.size_bytes != null) {
+    bits.push(_disksFormatBytes(entry.size_bytes));
+  }
+  const modified = _disksFilesystemTreeFormatTimestamp(entry?.modified_at);
+  if (modified) bits.push(modified);
+  const errorText = String(entry?.error || '').trim();
+  if (errorText) bits.push(errorText);
+  return bits.join(' · ');
+}
+
+function _disksFilesystemTreeStatusText(data) {
+  const total = Number(data?.entry_count || 0);
+  const shown = Number(data?.returned_count || 0);
+  if (!total) return 'This folder is empty.';
+  if (data?.truncated && shown && total > shown) {
+    return `Showing first ${shown} of ${total} items in this folder`;
+  }
+  return `${total} item${total === 1 ? '' : 's'} in this folder`;
+}
+
+function _disksFilesystemTreeRowHtml(entry) {
+  const type = String(entry?.type || '').trim() === 'folder' ? 'folder' : 'file';
+  const browseable = type === 'folder' && !!entry?.browseable;
+  const path = _disksNormalizeRelativePath(entry?.path || '.');
+  const detailText = _disksFilesystemTreeEntryMetaText(entry);
+  const nameHtml = browseable
+    ? `<button class="docs-tree-name bp-font-role-docs-markdown" type="button" data-disks-tree-action="browse" data-path="${_disksEsc(path)}" title="${_disksEsc(`Open ${entry?.name || 'folder'}`)}">${_disksEsc(entry?.name || path)}</button>`
+    : `<span class="docs-tree-name disks-tree__name-static bp-font-role-docs-markdown">${_disksEsc(entry?.name || path)}</span>`;
+  const labelHtml = detailText
+    ? `
+        <span class="docs-tree-label">
+          ${nameHtml}
+          <span class="docs-tree-subpath">${_disksEsc(detailText)}</span>
+        </span>
+      `
+    : nameHtml;
+  const typeBadge = `<span class="docs-tree-badge">${type === 'folder' ? 'Dir' : 'File'}</span>`;
+  const linkBadge = entry?.symlink ? '<span class="docs-tree-badge">Link</span>' : '';
+  return `
+    <div class="docs-tree-row" data-path="${_disksEsc(path)}" data-type="${_disksEsc(type)}">
+      <span class="docs-tree-icon docs-tree-icon--${_disksEsc(type)}" aria-hidden="true"></span>
+      ${labelHtml}
+      <span class="docs-tree-actions">
+        ${linkBadge}
+        ${typeBadge}
+        <button class="secondary table-icon-btn table-icon-btn--pull disks-tree__download-btn" type="button" disabled title="Download is coming later" aria-label="Download is coming later"></button>
+      </span>
+    </div>
+  `;
+}
+
+function _disksFilesystemTreeSectionHtml(node) {
+  const meta = _disksFilesystemBrowserMeta(node);
+  if (!meta) return '';
+  const currentPath = _disksFilesystemTreePathForNode(node, meta);
+  const cached = _disksFilesystemTreeCached(node, meta, currentPath);
+  const loading = _disksFilesystemTreeLoading(node, meta, currentPath);
+  const data = cached?.ok ? cached.data : null;
+  const error = cached && cached.ok === false ? cached.error : '';
+  const absolutePath = String(data?.current_absolute_path || meta.root_path).trim() || meta.root_path;
+  const relativePath = String(data?.current_path || currentPath || '.').trim() || '.';
+  const canGoUp = !!data?.parent_path && relativePath !== '.';
+  const rootDisabled = relativePath === '.';
+  const filesystemLabel = (_disksFilesystemPillLabel(node) || meta.filesystem || 'filesystem').toUpperCase();
+  const breadcrumbs = Array.isArray(data?.breadcrumbs) ? data.breadcrumbs : [];
+  const breadcrumbHtml = breadcrumbs.map(crumb => `
+    <button class="docs-tree-crumb bp-font-role-docs-markdown" type="button" data-disks-tree-action="browse" data-path="${_disksEsc(crumb?.path || '.')}">${_disksEsc(crumb?.label || 'root')}</button>
+  `).join('');
+
+  let listHtml = '<div class="docs-tree-loading">Loading folder...</div>';
+  if (error) {
+    listHtml = '<div class="docs-tree-empty">Could not load this folder.</div>';
+  } else if (data) {
+    const entries = Array.isArray(data.entries) ? data.entries : [];
+    listHtml = entries.length
+      ? entries.map(entry => _disksFilesystemTreeRowHtml(entry)).join('')
+      : '<div class="docs-tree-empty">This folder is empty.</div>';
+  } else if (!loading) {
+    listHtml = '<div class="docs-tree-empty">Preparing filesystem tree…</div>';
+  }
+
+  const statusText = error
+    ? ''
+    : loading && !data
+      ? 'Loading folder...'
+      : _disksFilesystemTreeStatusText(data);
+
+  return `
+    <section class="disks-group disks-tree">
+      <div class="disks-group__header">
+        <h3>Filesystem tree</h3>
+        <span>Protected in-page browse · download later</span>
+      </div>
+      <div class="disks-tree__meta">
+        <span class="disks-pill">${_disksEsc(meta.host)}</span>
+        <span class="disks-pill">${_disksEsc(filesystemLabel)}</span>
+        <code class="disks-tree__root">${_disksEsc(meta.root_path)}</code>
+      </div>
+      <div class="docs-tree-shell disks-tree__shell">
+        <div class="disks-tree__toolbar">
+          <button class="hub-modal-btn secondary" type="button" data-disks-tree-action="up"${canGoUp ? '' : ' disabled'}>Up</button>
+          <code class="docs-tree-path disks-tree__path">${_disksEsc(absolutePath)}</code>
+          <div class="disks-tree__toolbar-actions">
+            <button class="hub-modal-btn secondary" type="button" data-disks-tree-action="root"${rootDisabled ? ' disabled' : ''}>Root</button>
+            <button class="hub-modal-btn secondary" type="button" data-disks-tree-action="refresh">Refresh</button>
+          </div>
+        </div>
+        <div class="docs-tree-breadcrumbs"${breadcrumbs.length > 1 ? '' : ' hidden'}>${breadcrumbHtml}</div>
+        <div class="docs-tree-panel">
+          <div class="docs-tree-list">${listHtml}</div>
+        </div>
+        <p class="docs-tree-status">${_disksEsc(statusText)}</p>
+        <p class="hub-modal-error disks-tree__error"${error ? '' : ' hidden'}>${_disksEsc(error ? `Error: ${error}` : '')}</p>
+        <p class="disks-tree__relative bp-font-role-status-meta">${_disksEsc(relativePath === '.' ? 'root' : relativePath)}</p>
+      </div>
+    </section>
+  `;
+}
+
+function _disksFilesystemTreeNavigate(node, meta, path) {
+  _disksFilesystemTreePaths.set(
+    _disksFilesystemTreeNodeKey(node, meta),
+    _disksNormalizeRelativePath(path),
+  );
+  renderDisksPage();
+}
+
+function _disksFilesystemTreeRefresh(node, meta) {
+  const currentPath = _disksFilesystemTreePathForNode(node, meta);
+  _disksFilesystemTreeCache.delete(_disksFilesystemTreeCacheKey(meta, currentPath));
+  renderDisksPage();
+}
+
+function _disksEnsureFilesystemTree(node) {
+  const meta = _disksFilesystemBrowserMeta(node);
+  if (!meta) return;
+  const currentPath = _disksFilesystemTreePathForNode(node, meta);
+  const cacheKey = _disksFilesystemTreeCacheKey(meta, currentPath);
+  if (_disksFilesystemTreeCache.has(cacheKey) || _disksFilesystemTreeLoadingKeys.has(cacheKey)) {
+    return;
+  }
+  _disksFilesystemTreeLoadingKeys.add(cacheKey);
+  apiFetch('/api/v1/disks/filesystem/tree', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      host: meta.host,
+      root_path: meta.root_path,
+      path: currentPath === '.' ? null : currentPath,
+    }),
+  })
+    .then(async response => {
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || `HTTP ${response.status}`);
+      }
+      _disksFilesystemTreeCache.set(cacheKey, { ok: true, data });
+      _disksFilesystemTreePaths.set(
+        _disksFilesystemTreeNodeKey(node, meta),
+        _disksNormalizeRelativePath(data?.current_path || currentPath),
+      );
+    })
+    .catch(err => {
+      const message = err && err.message ? err.message : String(err || 'Filesystem tree failed');
+      _disksFilesystemTreeCache.set(cacheKey, { ok: false, error: message });
+    })
+    .finally(() => {
+      _disksFilesystemTreeLoadingKeys.delete(cacheKey);
+      if (_disksCurrentNodeId === String(node?.id || '')) renderDisksPage();
+    });
 }
 
 function _disksIndexTree(node, parentId = '') {
@@ -1168,6 +1416,7 @@ function _disksCardHtml(node, options = {}) {
 function _disksGroupsHtml(node) {
   const groups = _disksGroupChildren(node);
   if (!groups.length) {
+    if (_disksFilesystemBrowserMeta(node)) return '';
     return `
       <section class="disks-empty-state">
         <h3>This branch stops here</h3>
@@ -1222,6 +1471,7 @@ function renderDisksPage() {
   shell.innerHTML = `
     <div class="disks-page">
       ${_disksHeroHtml(node)}
+      ${_disksFilesystemTreeSectionHtml(node)}
       <div class="disks-groups">
         ${_disksGroupsHtml(node)}
       </div>
@@ -1239,6 +1489,7 @@ function renderDisksPage() {
       );
     });
   });
+  _disksEnsureFilesystemTree(node);
   _disksScheduleLayoutPass();
 }
 
@@ -1519,6 +1770,7 @@ async function loadDisks(force = false) {
       }
       _disksTopology = payload;
       _disksSourceIssues = _disksCollectSourceIssues(payload);
+      _disksFilesystemTreeReset();
       _disksIndexTopology(payload.root);
       _disksLoaded = true;
       renderDisksPage();
@@ -1661,6 +1913,34 @@ function _disksScrollToTop() {
 }
 
 function _disksOnShellClick(event) {
+  const treeActionBtn = event.target.closest('[data-disks-tree-action]');
+  if (treeActionBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const node = _disksCurrentNode();
+    const meta = _disksFilesystemBrowserMeta(node);
+    if (!node || !meta) return;
+    const action = String(treeActionBtn.dataset.disksTreeAction || '').trim();
+    if (action === 'browse') {
+      _disksFilesystemTreeNavigate(node, meta, treeActionBtn.dataset.path || '.');
+      return;
+    }
+    if (action === 'up') {
+      const currentPath = _disksFilesystemTreePathForNode(node, meta);
+      const cached = _disksFilesystemTreeCached(node, meta, currentPath);
+      const parentPath = cached?.ok ? (cached.data?.parent_path || '.') : '.';
+      _disksFilesystemTreeNavigate(node, meta, parentPath);
+      return;
+    }
+    if (action === 'root') {
+      _disksFilesystemTreeNavigate(node, meta, '.');
+      return;
+    }
+    if (action === 'refresh') {
+      _disksFilesystemTreeRefresh(node, meta);
+      return;
+    }
+  }
   const forgetBtn = event.target.closest('[data-disks-forget-host]');
   if (forgetBtn) {
     event.preventDefault();
