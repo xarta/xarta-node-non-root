@@ -31,6 +31,13 @@ const _DISKS_FULL_WIDTH_FACTS = new Set([
   'assignment',
 ]);
 const _DISKS_FACT_PRIORITIES = {
+  fleet: [
+    'source',
+    'installed-total',
+    'guest-assigned',
+    'known-capacity',
+    'known-free',
+  ],
   host: [
     'source',
     'installed-total',
@@ -70,6 +77,18 @@ const _DISKS_FACT_PRIORITIES = {
     'rotational',
     'model',
     'pools',
+  ],
+  volume: [
+    'filesystem',
+    'mount',
+    'path',
+    'volume-label',
+    'uuid',
+    'part-label',
+    'backing-drive',
+    'drive-model',
+    'transport',
+    'source',
   ],
   pool: [
     'health',
@@ -180,6 +199,7 @@ function _disksStatusTone(status) {
   if (status === 'ok') return 'ok';
   if (status === 'warn') return 'warn';
   if (status === 'fail') return 'fail';
+  if (status === 'stale') return 'stale';
   return 'info';
 }
 
@@ -287,6 +307,195 @@ function _disksFactValue(node, label) {
   return String(fact?.value ?? '').trim();
 }
 
+function _disksFactList(node, label) {
+  return _disksFactValue(node, label)
+    .split(/[,\n]+/)
+    .map(value => value.trim())
+    .filter(Boolean);
+}
+
+function _disksSmartLabel(node) {
+  const name = String(node?.label ?? '').trim();
+  const model = _disksFactValue(node, 'model');
+  if (name && model) return `${name} ${model}`;
+  return name || model || 'Drive health';
+}
+
+function _disksHostNodeFor(node) {
+  let cursorId = String(node?.id || '').trim();
+  while (cursorId) {
+    const current = _disksNodeById.get(cursorId);
+    const kind = String(current?.kind || '').trim().toLowerCase();
+    if (kind === 'host' || kind === 'nested-host') return current;
+    cursorId = _disksParentById.get(cursorId) || '';
+  }
+  return null;
+}
+
+function _disksHostLogicalSystemNodes(hostNode) {
+  return (Array.isArray(hostNode?.children) ? hostNode.children : []).filter(child => {
+    return child && String(child.group || '').trim() === 'Logical systems';
+  });
+}
+
+function _disksPoolNodeFor(hostNode, poolName) {
+  const cleanPool = String(poolName || '').trim();
+  if (!hostNode || !cleanPool) return null;
+  return _disksHostLogicalSystemNodes(hostNode).find(child => {
+    return String(child?.kind || '').trim().toLowerCase() === 'pool'
+      && String(child?.label || '').trim() === cleanPool;
+  }) || null;
+}
+
+function _disksNodePoolNames(node) {
+  const pools = new Set(_disksDrivePools(node));
+  _disksFactList(node, 'Pools').forEach(pool => pools.add(pool));
+  const singlePool = _disksFactValue(node, 'Pool');
+  if (singlePool) pools.add(singlePool);
+  return Array.from(pools).filter(Boolean);
+}
+
+function _disksLogicalNodesForDrive(hostNode, driveNode) {
+  if (!hostNode || !driveNode) return [];
+  const driveLabel = String(driveNode.label || '').trim();
+  if (!driveLabel) return [];
+  const candidatePaths = new Set();
+  const drivePath = _disksFactValue(driveNode, 'Path');
+  if (drivePath) candidatePaths.add(drivePath);
+  (Array.isArray(driveNode.children) ? driveNode.children : []).forEach(child => {
+    const childPath = _disksFactValue(child, 'Path');
+    if (childPath) candidatePaths.add(childPath);
+  });
+  return (Array.isArray(hostNode.children) ? hostNode.children : []).filter(child => {
+    if (!child || String(child.group || '').trim() !== 'Logical systems') return false;
+    if (String(child.kind || '').trim().toLowerCase() !== 'volume') return false;
+    const backingDrive = _disksFactValue(child, 'Backing drive');
+    if (backingDrive && backingDrive === driveLabel) return true;
+    const path = _disksFactValue(child, 'Path');
+    return !!(path && candidatePaths.has(path));
+  });
+}
+
+function _disksLogicalNodesForPartition(hostNode, partitionNode) {
+  if (!hostNode || !partitionNode) return [];
+  const partPath = _disksFactValue(partitionNode, 'Path');
+  if (!partPath) return [];
+  return _disksHostLogicalSystemNodes(hostNode).filter(child => {
+    if (!child) return false;
+    const kind = String(child.kind || '').trim().toLowerCase();
+    if (kind === 'pool') return false;
+    return _disksFactValue(child, 'Path') === partPath;
+  });
+}
+
+function _disksShortcutTarget(node) {
+  if (!node) return null;
+  const kind = String(node.kind || '').trim().toLowerCase();
+  const hostNode = _disksHostNodeFor(node);
+  if (!hostNode) return null;
+
+  if (kind === 'pool-link') {
+    return _disksPoolNodeFor(hostNode, _disksFactValue(node, 'Pool') || node.label);
+  }
+
+  const pools = _disksNodePoolNames(node);
+  if (pools.length === 1) {
+    const poolNode = _disksPoolNodeFor(hostNode, pools[0]);
+    if (poolNode) return poolNode;
+  }
+
+  if (kind === 'drive') {
+    const logicalNodes = _disksLogicalNodesForDrive(hostNode, node);
+    return logicalNodes.length === 1 ? logicalNodes[0] : null;
+  }
+
+  if (kind === 'partition') {
+    const logicalNodes = _disksLogicalNodesForPartition(hostNode, node);
+    return logicalNodes.length === 1 ? logicalNodes[0] : null;
+  }
+
+  return null;
+}
+
+function _disksFilesystemShortcutLabel(value) {
+  const clean = String(value || '').trim();
+  if (!clean) return '';
+  const lower = clean.toLowerCase();
+  if (lower === 'zfs' || lower === 'zfs_member') return 'ZFS';
+  if (lower === 'exfat') return 'exFAT';
+  return clean.toUpperCase();
+}
+
+function _disksShortcutMeta(node) {
+  const target = _disksShortcutTarget(node);
+  if (!target || !target.id) return null;
+  const targetKind = String(target.kind || '').trim().toLowerCase();
+  const label = targetKind === 'pool'
+    ? 'ZFS'
+    : _disksFilesystemShortcutLabel(
+      _disksFactValue(target, 'Filesystem') || _disksFactValue(node, 'Filesystem')
+    );
+  if (!label) return null;
+  return {
+    target,
+    label,
+    tone: label === 'ZFS' ? 'zfs' : 'fs',
+    title: targetKind === 'pool'
+      ? `Open ZFS pool ${String(target.label || '').trim() || 'details'}`
+      : `Open ${label} details for ${String(target.label || '').trim() || 'allocation'}`,
+  };
+}
+
+function _disksPrimaryOpenTarget(node) {
+  if (!node) return null;
+  if (String(node.kind || '').trim().toLowerCase() !== 'pool-link') return node;
+  return _disksShortcutTarget(node) || node;
+}
+
+function _disksDriveSingleMemberPoolName(driveNode, hostNode) {
+  if (!driveNode || !hostNode) return '';
+  const pools = _disksDrivePools(driveNode);
+  if (pools.length !== 1) return '';
+  const poolName = String(pools[0] || '').trim();
+  if (!poolName) return '';
+  const poolNode = (Array.isArray(hostNode.children) ? hostNode.children : []).find(child => {
+    return child
+      && String(child.group || '').trim() === 'Logical systems'
+      && String(child.kind || '').trim().toLowerCase() === 'pool'
+      && String(child.label || '').trim() === poolName;
+  });
+  if (!poolNode) return '';
+  const memberCount = (Array.isArray(poolNode.children) ? poolNode.children : []).filter(child => {
+    return String(child?.kind || '').trim().toLowerCase() === 'pool-member';
+  }).length;
+  return memberCount === 1 ? poolName : '';
+}
+
+function _disksDriveStandalonePurposeLabel(driveNode, hostNode) {
+  const logicalNodes = _disksLogicalNodesForDrive(hostNode, driveNode);
+  if (!logicalNodes.length) return '';
+  const ranked = logicalNodes.slice().sort((left, right) => {
+    const totalDelta = (_disksByteValue(right?.total_bytes) || 0) - (_disksByteValue(left?.total_bytes) || 0);
+    if (totalDelta !== 0) return totalDelta;
+    const usedDelta = (_disksByteValue(right?.used_bytes) || 0) - (_disksByteValue(left?.used_bytes) || 0);
+    if (usedDelta !== 0) return usedDelta;
+    return String(left?.label || '').localeCompare(String(right?.label || ''));
+  });
+  return String(ranked[0]?.label || '').trim();
+}
+
+function _disksDrivePurposeLabel(node) {
+  if (!node || String(node.kind || '').trim().toLowerCase() !== 'drive') return '';
+  const hostNode = _disksHostNodeFor(node);
+  if (!hostNode) return '';
+  const poolName = _disksDriveSingleMemberPoolName(node, hostNode);
+  if (poolName) return poolName;
+  const logicalLabel = _disksDriveStandalonePurposeLabel(node, hostNode);
+  if (!logicalLabel) return '';
+  const driveLabel = String(node.label || '').trim().toLowerCase();
+  return logicalLabel.trim().toLowerCase() === driveLabel ? '' : logicalLabel;
+}
+
 function _disksFactsHtml(facts, limit = 6, options = {}) {
   const items = _disksOrderFacts(facts, options).slice(0, limit);
   if (!items.length) return '';
@@ -303,6 +512,7 @@ function _disksHeroHtml(node) {
   const partial = _disksPartialUsage(node);
   const crumbs = _disksBreadcrumbs();
   const backTarget = crumbs.length > 1 ? crumbs[crumbs.length - 2].id : '';
+  const drivePurpose = _disksDrivePurposeLabel(node);
   const facts = Array.isArray(node?.facts) ? node.facts.slice() : [];
   if (partial) {
     facts.push(
@@ -310,6 +520,11 @@ function _disksHeroHtml(node) {
       { label: 'Known capacity', value: _disksFormatBytes(partial.knownTotal) },
       { label: 'Known free', value: _disksFormatBytes(partial.knownFree) },
     );
+  }
+  const installedTotal = _disksByteValue(node?.installed_total_bytes);
+  const displayedTotal = _disksByteValue(node?.total_bytes);
+  if (!partial && installedTotal != null && displayedTotal != null && Math.abs(installedTotal - displayedTotal) > 1) {
+    facts.push({ label: 'Installed total', value: _disksFormatBytes(installedTotal) });
   }
   const sourceIssueHtml = _disksSourceIssues.length
     ? `<div class="disks-source-issues">${_disksSourceIssues.map(issue => `<span>${_disksEsc(issue)}</span>`).join('')}</div>`
@@ -332,7 +547,10 @@ function _disksHeroHtml(node) {
         </div>
         <div class="disks-hero__copy">
           <div class="disks-hero__eyebrow">${_disksEsc(node.kind || 'storage')}</div>
-          <h2 class="disks-hero__title">${_disksEsc(node.label || 'Disks')}</h2>
+          <h2 class="disks-hero__title">
+            ${_disksEsc(node.label || 'Disks')}
+            ${drivePurpose ? `<span class="disks-hero__title-suffix">(${_disksEsc(drivePurpose)})</span>` : ''}
+          </h2>
           ${node.subtitle ? `<p class="disks-hero__subtitle">${_disksEsc(node.subtitle)}</p>` : ''}
           ${node.note ? `<p class="disks-hero__note">${_disksEsc(node.note)}</p>` : ''}
         </div>
@@ -382,14 +600,23 @@ function _disksDrivePools(node) {
   return Array.from(pools);
 }
 
+function _disksTransportTokens(value) {
+  return String(value ?? '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map(token => token.trim())
+    .filter(Boolean);
+}
+
 function _disksDriveTypeMeta(node) {
   const transport = _disksFactValue(node, 'Transport').toLowerCase();
+  const transportTokens = new Set(_disksTransportTokens(transport));
   const rotational = _disksFactValue(node, 'Rotational').toLowerCase();
   const model = `${_disksFactValue(node, 'Model')} ${node?.subtitle || ''}`.toLowerCase();
-  if (transport === 'nvme') {
+  if (transportTokens.has('nvme')) {
     return { key: 'nvme', order: 0 };
   }
-  if (transport === 'usb' && /(datatraveler|flash|thumb|stick|reader)/i.test(model)) {
+  if (transportTokens.has('usb') && /(datatraveler|flash|thumb|stick|reader)/i.test(model)) {
     return { key: 'removable', order: 3 };
   }
   if (rotational === 'no' || /\bssd\b/i.test(model)) {
@@ -402,7 +629,7 @@ function _disksDriveTypeMeta(node) {
 }
 
 function _disksTransportSortValue(transport) {
-  const value = String(transport ?? '').trim().toLowerCase();
+  const tokens = new Set(_disksTransportTokens(transport));
   const order = {
     nvme: 0,
     sata: 1,
@@ -411,7 +638,10 @@ function _disksTransportSortValue(transport) {
     usb: 4,
     thunderbolt: 5,
   };
-  return Object.prototype.hasOwnProperty.call(order, value) ? order[value] : 99;
+  for (const key of Object.keys(order)) {
+    if (tokens.has(key)) return order[key];
+  }
+  return 99;
 }
 
 function _disksDriveEntry(node) {
@@ -421,6 +651,25 @@ function _disksDriveEntry(node) {
     transport: _disksFactValue(node, 'Transport').toLowerCase(),
     type: _disksDriveTypeMeta(node),
   };
+}
+
+function _disksAnnotatedDriveEntries(items) {
+  const entries = (Array.isArray(items) ? items : []).map(_disksDriveEntry);
+  const poolCounts = new Map();
+  entries.forEach(entry => {
+    entry.pools.forEach(pool => {
+      poolCounts.set(pool, (poolCounts.get(pool) || 0) + 1);
+    });
+  });
+  entries.forEach(entry => {
+    const pools = entry.pools.slice().sort((left, right) => {
+      const countDelta = (poolCounts.get(right) || 0) - (poolCounts.get(left) || 0);
+      if (countDelta !== 0) return countDelta;
+      return left.localeCompare(right);
+    });
+    entry.primaryPool = pools[0] || '';
+  });
+  return entries;
 }
 
 function _disksSortDriveEntries(left, right) {
@@ -465,21 +714,7 @@ function _disksIsFeaturedSingleDrive(config) {
 }
 
 function _disksBuildPhysicalDriveLayout(items) {
-  const entries = (Array.isArray(items) ? items : []).map(_disksDriveEntry);
-  const poolCounts = new Map();
-  entries.forEach(entry => {
-    entry.pools.forEach(pool => {
-      poolCounts.set(pool, (poolCounts.get(pool) || 0) + 1);
-    });
-  });
-  entries.forEach(entry => {
-    const pools = entry.pools.slice().sort((left, right) => {
-      const countDelta = (poolCounts.get(right) || 0) - (poolCounts.get(left) || 0);
-      if (countDelta !== 0) return countDelta;
-      return left.localeCompare(right);
-    });
-    entry.primaryPool = pools[0] || '';
-  });
+  const entries = _disksAnnotatedDriveEntries(items);
 
   const pooledByName = new Map();
   const unpooled = [];
@@ -551,6 +786,26 @@ function _disksBuildPhysicalDriveLayout(items) {
   };
 }
 
+function _disksPhysicalLayoutHtml(layout) {
+  return `
+    ${layout.multiPools.length ? `
+      <div class="disks-cluster-shelf" data-disks-layout-shelf="clusters">
+        ${layout.multiPools.map(_disksPoolClusterHtml).join('')}
+      </div>
+    ` : ''}
+    ${layout.featuredSingles.length ? `
+      <div class="disks-featured-shelf" data-disks-layout-shelf="featured">
+        ${layout.featuredSingles.map(_disksFeaturedSingleBlockHtml).join('')}
+      </div>
+    ` : ''}
+    ${layout.remainingSingles.length ? `
+      <div class="disks-card-grid">
+        ${layout.remainingSingles.map(_disksSingleDriveHtml).join('')}
+      </div>
+    ` : ''}
+  `;
+}
+
 function _disksSingleDriveHtml(config) {
   return _disksCardHtml(config.entry.node, {
     poolName: config.poolName,
@@ -559,13 +814,19 @@ function _disksSingleDriveHtml(config) {
   });
 }
 
-function _disksPoolClusterHtml(group) {
+function _disksPoolClusterHtml(group, options = {}) {
   const count = group.items.length;
+  const name = String(options.displayName || group.pool || '').trim();
+  const detail = String(options.detail || '').trim();
+  const meta = String(options.meta || `${count} member${count === 1 ? '' : 's'} · ZFS pool`).trim();
   return `
     <section class="disks-pool-cluster" data-disks-layout-role="cluster" data-disks-member-count="${count}" style="--disks-cluster-rgb:${_disksEsc(group.color)};">
       <div class="disks-pool-cluster__header">
-        <span class="disks-pool-cluster__name">${_disksEsc(group.pool)}</span>
-        <span class="disks-pool-cluster__meta">${count} member${count === 1 ? '' : 's'} · ZFS pool</span>
+        <span class="disks-pool-cluster__name-wrap">
+          <span class="disks-pool-cluster__name">${_disksEsc(name)}</span>
+          ${detail ? `<span class="disks-pool-cluster__detail">${_disksEsc(detail)}</span>` : ''}
+        </span>
+        <span class="disks-pool-cluster__meta">${_disksEsc(meta)}</span>
       </div>
       <div class="disks-card-grid disks-card-grid--cluster" data-disks-cluster-grid data-disks-pool="${_disksEsc(group.pool)}">
         ${group.items.map(entry => _disksCardHtml(entry.node, {
@@ -585,7 +846,117 @@ function _disksFeaturedSingleBlockHtml(config) {
   `;
 }
 
-function _disksPhysicalDriveGroupHtml(group) {
+function _disksInventoryNamedGroupHtml(name, entries, options = {}) {
+  const meta = String(options.meta || `${entries.length} item${entries.length === 1 ? '' : 's'}`).trim();
+  const columnCount = Math.max(1, Math.min(2, Number.parseInt(options.columns || '2', 10) || 2));
+  return `
+    <section class="disks-inventory-bundle">
+      <div class="disks-pool-cluster__header">
+        <span class="disks-inventory-bundle__name">${_disksEsc(name)}</span>
+        <span class="disks-pool-cluster__meta">${_disksEsc(meta)}</span>
+      </div>
+      <div class="disks-card-grid disks-card-grid--inventory-bundle" style="--disks-inventory-columns:${columnCount};">
+        ${entries.map(entry => _disksCardHtml(entry.node, { contextKind: 'host' })).join('')}
+      </div>
+    </section>
+  `;
+}
+
+function _disksTakeInventoryEntries(entries, labels, usedIds) {
+  const matches = [];
+  labels.forEach(label => {
+    const match = entries.find(entry => {
+      const entryId = String(entry?.node?.id ?? '');
+      return entryId && !usedIds.has(entryId) && String(entry?.node?.label ?? '').trim() === label;
+    });
+    if (!match) return;
+    usedIds.add(String(match.node.id || ''));
+    matches.push(match);
+  });
+  return matches;
+}
+
+function _disksConfiguredPhysicalDriveLayoutHtml(group, currentNode) {
+  const layout = currentNode?.layout_hints?.physical_drive_layout;
+  if (!layout || typeof layout !== 'object') return '';
+  const entries = _disksAnnotatedDriveEntries(group.items);
+  if (!entries.length) return '';
+
+  const usedIds = new Set();
+  const clusterSections = [];
+  const sections = [];
+  const takePool = poolName => {
+    return entries.filter(entry => {
+      const entryId = String(entry?.node?.id ?? '');
+      if (!entryId || usedIds.has(entryId)) return false;
+      if (String(entry.primaryPool || '') !== poolName) return false;
+      usedIds.add(entryId);
+      return true;
+    });
+  };
+
+  (Array.isArray(layout.pool_clusters) ? layout.pool_clusters : []).forEach(cluster => {
+    const poolName = String(cluster?.pool || '').trim();
+    if (!poolName) return;
+    const matched = takePool(poolName);
+    if (!matched.length) return;
+    clusterSections.push(_disksPoolClusterHtml({
+      pool: poolName,
+      color: _disksPoolColor(poolName),
+      items: matched,
+    }, {
+      displayName: String(cluster?.display_name || poolName).trim() || poolName,
+      detail: String(cluster?.detail || '').trim(),
+      meta: String(cluster?.meta || '').trim(),
+    }));
+  });
+
+  (Array.isArray(layout.bundles) ? layout.bundles : []).forEach(bundle => {
+    const name = String(bundle?.name || '').trim();
+    const labels = Array.isArray(bundle?.labels)
+      ? bundle.labels.map(label => String(label || '').trim()).filter(Boolean)
+      : [];
+    if (!name || !labels.length) return;
+    const matched = _disksTakeInventoryEntries(entries, labels, usedIds);
+    if (!matched.length) return;
+    sections.push(_disksInventoryNamedGroupHtml(name, matched, {
+      columns: bundle?.columns,
+      meta: bundle?.meta,
+    }));
+  });
+
+  const remainingNodes = entries
+    .filter(entry => !usedIds.has(String(entry?.node?.id ?? '')))
+    .map(entry => entry.node);
+  if (remainingNodes.length) {
+    sections.push(_disksPhysicalLayoutHtml(_disksBuildPhysicalDriveLayout(remainingNodes)));
+  }
+
+  return `
+    ${clusterSections.length ? `
+      <div class="disks-cluster-shelf" data-disks-layout-shelf="clusters">
+        ${clusterSections.join('')}
+      </div>
+    ` : ''}
+    ${sections.join('')}
+  `;
+}
+
+function _disksPhysicalDriveGroupHtml(group, currentNode) {
+  const inventorySpecificHtml = _disksConfiguredPhysicalDriveLayoutHtml(group, currentNode);
+  if (inventorySpecificHtml) {
+    return `
+      <section class="disks-group disks-group--physical">
+        <div class="disks-group__header">
+          <h3>${_disksEsc(group.name)}</h3>
+          <span>${group.items.length} item${group.items.length === 1 ? '' : 's'}</span>
+        </div>
+        <div class="disks-physical-layout">
+          ${inventorySpecificHtml}
+        </div>
+      </section>
+    `;
+  }
   const layout = _disksBuildPhysicalDriveLayout(group.items);
   return `
     <section class="disks-group disks-group--physical">
@@ -594,32 +965,22 @@ function _disksPhysicalDriveGroupHtml(group) {
         <span>${group.items.length} item${group.items.length === 1 ? '' : 's'}</span>
       </div>
       <div class="disks-physical-layout">
-        ${layout.multiPools.length ? `
-          <div class="disks-cluster-shelf" data-disks-layout-shelf="clusters">
-            ${layout.multiPools.map(_disksPoolClusterHtml).join('')}
-          </div>
-        ` : ''}
-        ${layout.featuredSingles.length ? `
-          <div class="disks-featured-shelf" data-disks-layout-shelf="featured">
-            ${layout.featuredSingles.map(_disksFeaturedSingleBlockHtml).join('')}
-          </div>
-        ` : ''}
-        ${layout.remainingSingles.length ? `
-          <div class="disks-card-grid">
-            ${layout.remainingSingles.map(_disksSingleDriveHtml).join('')}
-          </div>
-        ` : ''}
+        ${_disksPhysicalLayoutHtml(layout)}
       </div>
     </section>
   `;
 }
 
 function _disksCardHtml(node, options = {}) {
+  const primaryTarget = _disksPrimaryOpenTarget(node) || node;
+  const shortcut = _disksShortcutMeta(node);
   const pct = _disksUsagePct(node);
-  const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+  const hasChildren = Array.isArray(primaryTarget.children) && primaryTarget.children.length > 0;
   const cta = hasChildren ? 'Open' : 'View';
   const tone = _disksStatusTone(node.status);
+  const canForget = !!node?.cached_missing && !!node?.cache_host;
   const showSubtitle = !!node.subtitle && node.kind !== 'drive';
+  const drivePurpose = _disksDrivePurposeLabel(node);
   const kindSlug = _disksFactSlug(node.kind || 'item');
   const contextSlug = _disksFactSlug(options.contextKind || _disksCurrentNode()?.kind || 'context');
   const classes = [
@@ -629,6 +990,7 @@ function _disksCardHtml(node, options = {}) {
     `disks-card--context-${_disksEsc(contextSlug)}`,
   ];
   if (node.smart) classes.push('disks-card--has-smart');
+  if (shortcut) classes.push('disks-card--has-shortcut');
   if (options.poolName) classes.push('disks-card--pooled');
   const attrs = [];
   if (options.poolName) {
@@ -639,20 +1001,24 @@ function _disksCardHtml(node, options = {}) {
   }
   const styleAttr = options.poolColor ? ` style="--disks-cluster-rgb:${_disksEsc(options.poolColor)};"` : '';
   const poolCaption = options.pooledSingle && options.poolName
+    && String(options.poolName || '').trim().toLowerCase() !== String(drivePurpose || '').trim().toLowerCase()
     ? `<div class="disks-card__pool-caption">ZFS · ${_disksEsc(options.poolName)}</div>`
     : '';
   return `
     <article class="${classes.join(' ')}" ${attrs.join(' ')}${styleAttr}>
       <div class="disks-card__actions">
         <span class="disks-pill disks-pill--${_disksEsc(tone)}">${_disksEsc(node.status || 'info')}</span>
-        ${node.smart ? `<button type="button" class="disks-card__smart" data-disks-smart-host="${_disksEsc(node.smart.host)}" data-disks-smart-device="${_disksEsc(node.smart.device_path)}">S.M.A.R.T.</button>` : ''}
+        ${canForget ? `<button type="button" class="disks-card__forget" title="Remove cached inventory memory" aria-label="Remove cached inventory memory" data-disks-forget-host="${_disksEsc(node.cache_host)}" data-disks-forget-node="${_disksEsc(node.id)}">×</button>` : ''}
+        ${shortcut ? `<button type="button" class="disks-card__jump disks-card__jump--${_disksEsc(shortcut.tone)}" title="${_disksEsc(shortcut.title)}" aria-label="${_disksEsc(shortcut.title)}" data-disks-node="${_disksEsc(shortcut.target.id)}">${_disksEsc(shortcut.label)}</button>` : ''}
+        ${node.smart ? `<button type="button" class="disks-card__smart" data-disks-smart-host="${_disksEsc(node.smart.host)}" data-disks-smart-device="${_disksEsc(node.smart.device_path)}" data-disks-smart-label="${_disksEsc(_disksSmartLabel(node))}">S.M.A.R.T.</button>` : ''}
       </div>
-      <button type="button" class="disks-card__main" data-disks-node="${_disksEsc(node.id)}">
+      <button type="button" class="disks-card__main" data-disks-node="${_disksEsc(primaryTarget.id)}">
         <div class="disks-card__header">
           <img class="disks-card__icon" src="${_disksNodeIcon(node)}" alt="" />
           <div class="disks-card__text">
             <div class="disks-card__title-row">
               <strong class="disks-card__title">${_disksEsc(node.label)}</strong>
+              ${drivePurpose ? `<span class="disks-card__title-suffix">(${_disksEsc(drivePurpose)})</span>` : ''}
             </div>
             ${showSubtitle ? `<div class="disks-card__subtitle">${_disksEsc(node.subtitle)}</div>` : ''}
             ${poolCaption}
@@ -673,7 +1039,7 @@ function _disksCardHtml(node, options = {}) {
         ${_disksFactsHtml(node.facts, 6, { kind: node?.kind, context: 'card' })}
         <div class="disks-card__footer">
           <span>${cta}</span>
-          ${hasChildren ? `<span>${node.children.length} item${node.children.length === 1 ? '' : 's'}</span>` : '<span>Details</span>'}
+          ${hasChildren ? `<span>${primaryTarget.children.length} item${primaryTarget.children.length === 1 ? '' : 's'}</span>` : '<span>Details</span>'}
         </div>
       </button>
     </article>
@@ -694,7 +1060,7 @@ function _disksGroupsHtml(node) {
     const isPhysicalDriveGroup = String(group.name).trim().toLowerCase() === 'physical drives'
       && group.items.every(item => item?.kind === 'drive');
     if (isPhysicalDriveGroup) {
-      return _disksPhysicalDriveGroupHtml(group);
+      return _disksPhysicalDriveGroupHtml(group, node);
     }
     return `
       <section class="disks-group">
@@ -742,6 +1108,18 @@ function renderDisksPage() {
       </div>
     </div>
   `;
+  shell.querySelectorAll('.disks-card__smart').forEach(button => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const smartBtn = event.currentTarget;
+      _disksOpenSmart(
+        smartBtn.dataset.disksSmartHost || '',
+        smartBtn.dataset.disksSmartDevice || '',
+        smartBtn.dataset.disksSmartLabel || ''
+      );
+    });
+  });
   _disksScheduleLayoutPass();
 }
 
@@ -958,6 +1336,13 @@ function _disksApplyPhysicalDriveLayout() {
   shell.querySelectorAll('[data-disks-pool-single]').forEach(card => {
     _disksSetClusterEdges(card, ['top', 'right', 'bottom', 'left']);
   });
+  shell.querySelectorAll('.disks-card').forEach(card => {
+    const header = card.querySelector('.disks-card__header');
+    const actions = card.querySelector('.disks-card__actions');
+    if (!header || !actions) return;
+    const reserve = Math.max(64, Math.ceil(actions.getBoundingClientRect().width + 12));
+    header.style.setProperty('--disks-card-actions-reserve', `${reserve}px`);
+  });
   shell.querySelectorAll('[data-disks-layout-shelf]').forEach(_disksEqualizeShelfHeights);
   shell.querySelectorAll('.disks-card-grid').forEach(grid => {
     if (grid.closest('[data-disks-layout-shelf]')) return;
@@ -1042,41 +1427,66 @@ async function loadDisks(force = false) {
   return _disksLoadPromise;
 }
 
-function _disksSmartSummaryFacts(body) {
+async function _disksForgetCachedNode(host, nodeId) {
+  const cleanHost = String(host || '').trim();
+  const cleanNodeId = String(nodeId || '').trim();
+  if (!cleanHost || !cleanNodeId) return;
+  _disksStatusMessage('Removing cached inventory item…', 'info', true);
+  const response = await apiFetch(`/api/v1/disks/memory/forget?host=${encodeURIComponent(cleanHost)}&node_id=${encodeURIComponent(cleanNodeId)}`, {
+    method: 'POST',
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(detail || `HTTP ${response.status}`);
+  }
+  await loadDisks(true);
+  _disksStatusMessage('Cached inventory item removed.', 'ok');
+}
+
+function _disksSmartSummaryFacts(host, devicePath, label, body) {
   const facts = [];
   const add = (label, value) => {
     const text = String(value ?? '').trim();
     if (!text || text === 'undefined') return;
     facts.push({ label, value: text });
   };
+
+  add('Host', host);
+  add('Device', devicePath || body?.device?.name || label);
   add('Model', body?.model_name || body?.device?.model_name || body?.device?.name);
   add('Serial', body?.serial_number || body?.device?.serial_number);
   if (body?.smart_status && Object.prototype.hasOwnProperty.call(body.smart_status, 'passed')) {
-    add('Passed', body.smart_status.passed ? 'yes' : 'no');
+    add('Health', body.smart_status.passed ? 'PASSED' : 'FAILED');
   }
   add('Temperature', body?.temperature?.current ? `${body.temperature.current}°C` : '');
-  add('Power-on hours', body?.power_on_time?.hours);
-  add('Percentage used', body?.nvme_smart_health_information_log?.percentage_used != null
+  add('Power-on', body?.power_on_time?.hours != null ? `${body.power_on_time.hours} h` : '');
+  add('NVMe used', body?.nvme_smart_health_information_log?.percentage_used != null
     ? `${body.nvme_smart_health_information_log.percentage_used}%`
     : '');
   add('Media errors', body?.nvme_smart_health_information_log?.media_errors);
   add('Critical warning', body?.nvme_smart_health_information_log?.critical_warning);
+  add('smartctl exit', body?._smartctl_exit_status);
+  add('smartctl detail', body?._smartctl_error);
   return facts;
 }
 
-async function _disksOpenSmart(host, devicePath) {
+async function _disksOpenSmart(host, devicePath, label = '') {
   const dialog = _disksEl('disks-smart-modal');
   const title = _disksEl('disks-smart-title');
   const subtitle = _disksEl('disks-smart-subtitle');
   const summary = _disksEl('disks-smart-summary');
   const jsonEl = _disksEl('disks-smart-json');
+  const rawWrap = _disksEl('disks-smart-raw');
   const errEl = _disksEl('disks-smart-error');
-  if (!dialog || !title || !subtitle || !summary || !jsonEl || !errEl) return;
+  if (!dialog || !title || !subtitle || !summary || !jsonEl || !rawWrap || !errEl) return;
 
-  title.textContent = 'Drive health';
-  subtitle.textContent = `${host} · ${devicePath}`;
-  summary.innerHTML = '<span class="spinner" aria-hidden="true"></span><span>Loading S.M.A.R.T…</span>';
+  title.textContent = label || devicePath || 'Drive health';
+  subtitle.textContent = host ? `${host} · ${devicePath}` : devicePath;
+  summary.innerHTML = '<div class="disks-smart-summary__item"><span>status</span><strong>Loading S.M.A.R.T...</strong></div>';
   jsonEl.textContent = '';
+  rawWrap.open = false;
+  rawWrap.hidden = true;
   errEl.hidden = true;
 
   try {
@@ -1099,15 +1509,17 @@ async function _disksOpenSmart(host, devicePath) {
     }
     const payload = await response.json();
     const body = payload && typeof payload.body === 'object' ? payload.body : {};
-    const facts = _disksSmartSummaryFacts(body);
+    const facts = _disksSmartSummaryFacts(host, devicePath, label, body);
     summary.innerHTML = facts.length
       ? facts.map(fact => `<div class="disks-smart-summary__item"><span>${_disksEsc(fact.label)}</span><strong>${_disksEsc(fact.value)}</strong></div>`).join('')
       : '<div class="disks-smart-summary__item"><span>Status</span><strong>No compact summary available</strong></div>';
     jsonEl.textContent = JSON.stringify(body, null, 2);
+    rawWrap.hidden = false;
   } catch (err) {
     const message = err && err.message ? err.message : String(err || 'S.M.A.R.T. failed');
     summary.innerHTML = '';
     jsonEl.textContent = '';
+    rawWrap.hidden = true;
     errEl.hidden = false;
     errEl.textContent = message;
   }
@@ -1130,10 +1542,28 @@ function _disksScrollToTop() {
 }
 
 function _disksOnShellClick(event) {
+  const forgetBtn = event.target.closest('[data-disks-forget-host]');
+  if (forgetBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    _disksForgetCachedNode(
+      forgetBtn.dataset.disksForgetHost || '',
+      forgetBtn.dataset.disksForgetNode || ''
+    ).catch(err => {
+      const message = err && err.message ? err.message : String(err || 'Failed to remove cached inventory item');
+      _disksStatusMessage(`Could not remove cached inventory item: ${message}`, 'fail', true);
+    });
+    return;
+  }
   const smartBtn = event.target.closest('[data-disks-smart-host]');
   if (smartBtn) {
     event.preventDefault();
-    _disksOpenSmart(smartBtn.dataset.disksSmartHost || '', smartBtn.dataset.disksSmartDevice || '');
+    event.stopPropagation();
+    _disksOpenSmart(
+      smartBtn.dataset.disksSmartHost || '',
+      smartBtn.dataset.disksSmartDevice || '',
+      smartBtn.dataset.disksSmartLabel || ''
+    );
     return;
   }
   const nodeBtn = event.target.closest('[data-disks-node]');
