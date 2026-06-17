@@ -406,6 +406,53 @@ button.disks-tree__download-btn:disabled {
   gap: 10px;
 }
 
+.disks-guest-buckets {
+  display: grid;
+  gap: 12px;
+}
+
+.disks-guest-bucket {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(91, 156, 246, 0.16);
+  border-radius: 14px;
+  background: rgba(15, 17, 23, 0.18);
+}
+
+.disks-guest-bucket__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.disks-guest-bucket__copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.disks-guest-bucket__name {
+  color: rgba(var(--glyph-gold-rgb), 0.96);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.disks-guest-bucket__meta {
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.disks-guest-bucket__summary {
+  min-height: 30px;
+  padding: 0 10px;
+}
+
 .disks-physical-layout {
   display: grid;
   gap: 12px;
@@ -766,6 +813,11 @@ button.disks-tree__download-btn:disabled {
   color: var(--glyph-gold);
 }
 
+.disks-card__jump--guest {
+  border-color: rgba(76, 175, 125, 0.42);
+  color: var(--ok);
+}
+
 .disks-card__jump--static {
   cursor: default;
   pointer-events: none;
@@ -901,6 +953,114 @@ button.disks-tree__download-btn:disabled {
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.disks-guest-summary {
+  display: grid;
+  gap: 14px;
+}
+
+.disks-guest-summary__intro {
+  display: grid;
+  gap: 10px;
+}
+
+.disks-guest-summary__chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.disks-guest-summary__note {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.disks-guest-summary__sections {
+  display: grid;
+  gap: 14px;
+}
+
+.disks-guest-summary__section {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid rgba(91, 156, 246, 0.16);
+  border-radius: 12px;
+  background: rgba(15, 17, 23, 0.22);
+}
+
+.disks-guest-summary__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.disks-guest-summary__section-title {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(91, 156, 246, 0.94);
+}
+
+.disks-guest-summary__section-meta {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.disks-guest-summary__entries {
+  display: grid;
+  gap: 8px;
+}
+
+.disks-guest-summary__entry {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid rgba(123, 130, 160, 0.16);
+  border-radius: 10px;
+  background: rgba(123, 130, 160, 0.06);
+}
+
+.disks-guest-summary__entry-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.disks-guest-summary__entry-open {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.disks-guest-summary__entry-open:hover,
+.disks-guest-summary__entry-open:focus-visible {
+  color: var(--accent);
+}
+
+.disks-guest-summary__entry-usage {
+  color: var(--glyph-gold);
+  font-size: 11px;
+}
+
+.disks-guest-summary__entry-subtitle,
+.disks-guest-summary__entry-detail {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 @container (min-width: 760px) {
