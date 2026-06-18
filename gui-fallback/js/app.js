@@ -63,6 +63,7 @@ function _installSpecialUiModeTracking() {
 function _getActiveGroupMenuConfig() {
   if (_selectorOriginMenuGroup === 'probes' && typeof ProbesMenuConfig !== 'undefined') return ProbesMenuConfig;
   if (_selectorOriginMenuGroup === 'settings' && typeof SettingsMenuConfig !== 'undefined') return SettingsMenuConfig;
+  if (_selectorOriginMenuGroup === 'dave' && typeof DaveMenuConfig !== 'undefined') return DaveMenuConfig;
   if (typeof SynthesisMenuConfig !== 'undefined') return SynthesisMenuConfig;
   return null;
 }
@@ -88,6 +89,7 @@ function _groupMenuEntries() {
     { group: 'synthesis', menu: typeof SynthesisMenuConfig !== 'undefined' ? SynthesisMenuConfig : null, wrapperId: 'synthesisMenuWrapper' },
     { group: 'probes', menu: typeof ProbesMenuConfig !== 'undefined' ? ProbesMenuConfig : null, wrapperId: 'probesMenuWrapper' },
     { group: 'settings', menu: typeof SettingsMenuConfig !== 'undefined' ? SettingsMenuConfig : null, wrapperId: 'settingsMenuWrapper' },
+    { group: 'dave', menu: typeof DaveMenuConfig !== 'undefined' ? DaveMenuConfig : null, wrapperId: 'daveMenuWrapper' },
   ];
 }
 
@@ -460,6 +462,12 @@ function switchGroup(group) {
     SettingsMenuConfig.updateActiveTab('pve-hosts');
     return;
   }
+  if (group === 'dave') {
+    DaveMenuConfig.showGroup();
+    switchTab('diary');
+    DaveMenuConfig.updateActiveTab('diary');
+    return;
+  }
   const firstBtn = document.querySelector(`.table-nav button[data-group="${group}"]`);
   if (firstBtn) {
     const m = firstBtn.getAttribute('onclick').match(/switchTab\('([^']+)'\)/);
@@ -635,7 +643,7 @@ document.addEventListener('DOMContentLoaded', () => {
     switchGroup('settings');
     switchTab('ssh-terminal');
     if (typeof SettingsMenuConfig !== 'undefined') SettingsMenuConfig.updateActiveTab('ssh-terminal');
-  } else if (_urlGroup && ['synthesis', 'probes', 'settings'].includes(_urlGroup)) {
+  } else if (_urlGroup && ['synthesis', 'probes', 'settings', 'dave'].includes(_urlGroup)) {
     switchGroup(_urlGroup);
   }
   if (_urlTab) {
@@ -643,6 +651,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (_urlGroup === 'synthesis' && typeof SynthesisMenuConfig !== 'undefined') SynthesisMenuConfig.updateActiveTab(_urlTab);
     if (_urlGroup === 'probes' && typeof ProbesMenuConfig !== 'undefined') ProbesMenuConfig.updateActiveTab(_urlTab);
     if (_urlGroup === 'settings' && typeof SettingsMenuConfig !== 'undefined') SettingsMenuConfig.updateActiveTab(_urlTab);
+    if (_urlGroup === 'dave' && typeof DaveMenuConfig !== 'undefined') DaveMenuConfig.updateActiveTab(_urlTab);
   }
   loadFrontendSettings().then(() => {
     if (typeof SoundManager !== 'undefined') {

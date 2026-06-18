@@ -65,6 +65,7 @@ const BlueprintsActiveBrowserObserver = (() => {
     if (action === 'synthesis') return 'open_synthesis';
     if (action === 'probes') return 'open_probes';
     if (action === 'settings') return 'open_settings';
+    if (action === 'dave') return 'open_dave';
     if (action === 'selector') return 'selector_action';
     if (action === 'body_shade' || action === 'shade' || action === 'shade_up') return 'set_body_shade';
     if (
@@ -218,7 +219,7 @@ const BlueprintsActiveBrowserObserver = (() => {
         button.click();
         return true;
       }
-      if (selectorAction === 'synthesis' || selectorAction === 'probes' || selectorAction === 'settings') {
+      if (selectorAction === 'synthesis' || selectorAction === 'probes' || selectorAction === 'settings' || selectorAction === 'dave') {
         return _switchGroup(selectorAction);
       }
     }
@@ -443,7 +444,7 @@ const BlueprintsActiveBrowserObserver = (() => {
       scheduleReport('command-menu-function');
       return;
     }
-    if (action === 'open_synthesis' || action === 'open_probes' || action === 'open_settings') {
+    if (action === 'open_synthesis' || action === 'open_probes' || action === 'open_settings' || action === 'open_dave') {
       _runSelectorAction(action.replace(/^open_/, ''), payload?.event_kind || 'click');
       scheduleReport(`command-${action}`);
       return;

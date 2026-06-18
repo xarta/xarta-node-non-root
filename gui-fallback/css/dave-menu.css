@@ -1,0 +1,33 @@
+/* ================================================================
+   Dave Menu — ID-specific rules
+   xarta-node Blueprints GUI
+
+   The shared .hub-* component styles live in probes-menu.css and are
+   reused here without duplication.
+
+   localStorage key: 'blueprintsDaveMenuConfig'
+   ================================================================ */
+
+#daveMenuEditorList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 200px;
+}
+
+#daveMenuSaveNotification {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(74, 222, 128, 0.9);
+    color: #000;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-weight: 600;
+    transform: translateY(100px);
+    opacity: 0;
+    transition: all 0.3s ease;
+    z-index: 1000;
+}
+
+#daveMenuSaveNotification.show { transform: translateY(0); opacity: 1; }

@@ -20,6 +20,7 @@ window.BLUEPRINTS_SEED_NODES = [
 // - 'synthesis'
 // - 'probes'
 // - 'settings'
+// - 'dave'
 // - 'api-key'
 // - 'api-key-test'  (force-opens the embedded API key modal in its auth-failed state)
 // - 'cache-mode'   (toggles node-local fallback UI dev cache mode via the API)
@@ -30,7 +31,7 @@ window.BLUEPRINTS_SEED_NODES = [
 // - 'embed-menu'
 window.BLUEPRINTS_SELECTOR_BUTTONS = {
   // Fallback-only key list (auto-chunked by pageSize) if DB config is unavailable.
-  enabledButtons: ['ui', 'database-tables', 'database-diagram', 'cache-mode', 'api-key', 'api-key-test', 'embed-menu', 'fallback-ui'],
+  enabledButtons: ['ui', 'database-tables', 'database-diagram', 'cache-mode', 'api-key', 'api-key-test', 'embed-menu', 'fallback-ui', 'dave'],
   enableDbMenuConfig: true,
   showPagingButton: true,
 

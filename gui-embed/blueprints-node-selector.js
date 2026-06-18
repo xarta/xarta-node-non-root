@@ -396,6 +396,7 @@
     'api-key-test',
     'embed-menu',
     'fallback-ui',
+    'dave',
   ];
 
   let SELECTOR_CFG = {
@@ -1342,6 +1343,7 @@
     'synthesis':        { icon: '📋', label: 'Synthesis',        buildPath: () => '/fallback-ui/',                         bridgeGroup: 'synthesis' },
     'probes':           { icon: '📡', label: 'Probes',           buildPath: () => '/fallback-ui/?group=probes',            bridgeGroup: 'probes' },
     'settings':         { icon: '⚙️',  label: 'Settings',         buildPath: () => '/fallback-ui/?group=settings',          bridgeGroup: 'settings' },
+    'dave':             { icon: '', label: 'Dave',               buildPath: () => '/fallback-ui/?group=dave',              bridgeGroup: 'dave' },
     'database-tables':  { icon: '🗂️', label: 'Database Tables',  buildPath: () => `${getDbBasePath()}/database-tables.html` },
     'database-diagram': { icon: '🕸️', label: 'Database Diagram', buildPath: () => `${getDbBasePath()}/database-diagram.html` },
     'embed-menu':       { icon: '🪲', label: 'Embed Menu',        buildPath: () => '/fallback-ui/?group=settings&tab=embed-menu' },
