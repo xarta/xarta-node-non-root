@@ -1286,6 +1286,10 @@ async function forceRefreshUiAssets() {
   _setUiRefreshButtonsDisabled(false);
 }
 
+window.BlueprintsHardRefresh = {
+  run: forceRefreshUiAssets,
+};
+
 document.addEventListener('DOMContentLoaded', () => {
   if (typeof ResponsiveLayout !== 'undefined') {
     ResponsiveLayout.registerTabControls('settings', 'pg-ctrl-settings');

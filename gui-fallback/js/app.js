@@ -267,6 +267,9 @@ function _activeBrowserAutomationState() {
       calendar: typeof window.BlueprintsCalendarPage?.snapshot === 'function'
         ? window.BlueprintsCalendarPage.snapshot()
         : {},
+      todo: typeof window.BlueprintsTodoPage?.snapshot === 'function'
+        ? window.BlueprintsTodoPage.snapshot()
+        : {},
       imports_dashboard: typeof window.BlueprintsImportsDashboard?.snapshot === 'function'
         ? window.BlueprintsImportsDashboard.snapshot()
         : {},
@@ -625,6 +628,7 @@ function switchTab(tab) {
   if (tab === 'bookmarks') { switchTab('bookmarks-main'); return; }
   if (tab === 'diary' && typeof BlueprintsDiaryPage !== 'undefined') BlueprintsDiaryPage.load();
   if (tab === 'calender' && typeof BlueprintsCalendarPage !== 'undefined') BlueprintsCalendarPage.load();
+  if (tab === 'todo' && typeof BlueprintsTodoPage !== 'undefined') BlueprintsTodoPage.load();
   if (tab === 'imports' && typeof BlueprintsImportsDashboard !== 'undefined') BlueprintsImportsDashboard.load();
   _syncActiveMenuForTab(tab);
   // Notify responsive layout so the correct page-controls group is shown/hidden

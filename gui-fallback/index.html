@@ -28,6 +28,7 @@
   <link rel="stylesheet" href="css/dave-menu.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/dave-diary.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/dave-calendar.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/dave-todo.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/dave-imports.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/kanban-menu.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/splash-screens.css?v={{$assetVersion}}" />
@@ -3376,8 +3377,124 @@
     </div><!-- /tab-scroll-shell -->
   </section>
 
-  <section id="tab-todo" class="tab-panel" aria-label="ToDo">
+  <section id="tab-todo" class="tab-panel tab-panel--managed-scroll" aria-label="ToDo" data-todo-page>
+    <div class="todo-page todo-page--intro">
+      <div class="todo-page__header">
+        <div>
+          <h2>ToDo</h2>
+          <div class="todo-page__meta" id="todo-meta">Loading tasks...</div>
+        </div>
+        <div class="todo-page__actions" aria-label="ToDo actions">
+          <button class="todo-icon-btn todo-icon-btn--new" type="button" data-todo-action="new-task" title="New task" aria-label="New task"></button>
+          <button class="todo-icon-btn todo-icon-btn--refresh" type="button" data-todo-action="refresh" title="Refresh ToDo" aria-label="Refresh ToDo"></button>
+        </div>
+      </div>
+
+      <div class="todo-mode-strip" id="todo-mode-strip" aria-label="ToDo modes">
+        <button type="button" data-todo-mode-button="today">Today</button>
+        <button type="button" data-todo-mode-button="personal">Personal</button>
+        <button type="button" data-todo-mode-button="work">Work</button>
+        <button type="button" data-todo-mode-button="blocked">Blocked</button>
+        <button type="button" data-todo-mode-button="review">Review</button>
+        <button type="button" data-todo-mode-button="done">Done</button>
+      </div>
+
+      <section class="todo-quick-task" aria-labelledby="todo-quick-task-heading">
+        <div class="todo-section-head">
+          <h3 id="todo-quick-task-heading">Quick Task</h3>
+          <span class="todo-entry-status" id="todo-entry-status">Ready</span>
+        </div>
+        <div class="todo-form-grid">
+          <label class="todo-field todo-field--wide" for="todo-task-title">
+            <span>Title</span>
+            <input id="todo-task-title" type="text" maxlength="180" autocomplete="off" />
+          </label>
+          <label class="todo-field" for="todo-task-date">
+            <span>Due</span>
+            <input id="todo-task-date" type="date" />
+          </label>
+          <label class="todo-field" for="todo-task-time">
+            <span>Time</span>
+            <input id="todo-task-time" type="time" />
+          </label>
+          <label class="todo-field" for="todo-task-mode">
+            <span>Mode</span>
+            <select id="todo-task-mode">
+              <option value="personal">Personal</option>
+              <option value="work">Work</option>
+              <option value="review">Review</option>
+            </select>
+          </label>
+          <label class="todo-field" for="todo-task-priority">
+            <span>Priority</span>
+            <select id="todo-task-priority">
+              <option value="">Normal</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </label>
+          <label class="todo-field todo-field--wide" for="todo-task-body">
+            <span>Notes</span>
+            <textarea id="todo-task-body" rows="2" maxlength="2000"></textarea>
+          </label>
+          <label class="todo-field todo-field--wide" for="todo-task-work">
+            <span>Work refs</span>
+            <input id="todo-task-work" type="text" autocomplete="off" />
+          </label>
+        </div>
+        <div class="todo-quick-task__footer">
+          <div class="todo-filter-strip" id="todo-filter-strip">Mode: today</div>
+          <button class="todo-command-btn" type="button" data-todo-action="submit-task">Save Task</button>
+        </div>
+      </section>
+    </div>
+
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
+
+    <div class="tab-scroll-shell">
+    <div class="todo-page todo-page--body">
+      <div class="todo-status-strip" id="todo-status-strip" role="status" aria-live="polite">
+        <span class="todo-status-dot todo-status-dot--unknown" aria-hidden="true"></span>
+        <span>Loading ToDo state</span>
+      </div>
+
+      <div class="todo-metrics" id="todo-metrics" aria-label="ToDo metrics"></div>
+
+      <div class="todo-layout">
+        <section class="todo-band todo-band--tasks" aria-labelledby="todo-list-heading">
+          <div class="todo-section-head">
+            <h3 id="todo-list-heading">Tasks</h3>
+            <span class="todo-pill" id="todo-list-count">0</span>
+          </div>
+          <div id="todo-task-list" class="todo-task-list"></div>
+        </section>
+
+        <section class="todo-band" aria-labelledby="todo-detail-heading">
+          <div class="todo-section-head">
+            <h3 id="todo-detail-heading">Selection</h3>
+          </div>
+          <div id="todo-selection-detail" class="todo-detail-list"></div>
+        </section>
+      </div>
+
+      <div class="todo-layout todo-layout--lower">
+        <section class="todo-band" aria-labelledby="todo-source-heading">
+          <div class="todo-section-head">
+            <h3 id="todo-source-heading">Sources</h3>
+          </div>
+          <div id="todo-source-list" class="todo-detail-list"></div>
+        </section>
+
+        <section class="todo-band" aria-labelledby="todo-provenance-heading">
+          <div class="todo-section-head">
+            <h3 id="todo-provenance-heading">Provenance</h3>
+          </div>
+          <div id="todo-provenance" class="todo-detail-list"></div>
+        </section>
+      </div>
+    </div>
+    </div><!-- /tab-scroll-shell -->
   </section>
 
   <section id="tab-imports" class="tab-panel tab-panel--managed-scroll" aria-label="Imports" data-imports-dashboard>
@@ -3491,6 +3608,18 @@
     <div class="hub-modal-footer">
       <span id="calendar-action-modal-status" class="hub-modal-status"></span>
       <button type="button" class="hub-modal-secondary" id="calendar-action-modal-footer-close">Close</button>
+    </div>
+  </dialog>
+
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="todo-action-modal" style="width:min(720px,94vw);max-width:94vw">
+    <div class="hub-modal-header">
+      <h3 class="hub-dialog-title" id="todo-action-modal-title">ToDo Action</h3>
+      <button type="button" class="hub-modal-close" id="todo-action-modal-close" aria-label="Close"></button>
+    </div>
+    <div class="hub-modal-body todo-action-modal-body" id="todo-action-modal-body"></div>
+    <div class="hub-modal-footer">
+      <span id="todo-action-modal-status" class="hub-modal-status"></span>
+      <button type="button" class="hub-modal-secondary" id="todo-action-modal-footer-close">Close</button>
     </div>
   </dialog>
 
@@ -5761,6 +5890,7 @@
 <script src="js/dave/dave-menu.js?v={{$assetVersion}}"></script>
 <script src="js/dave/diary-page.js?v={{$assetVersion}}"></script>
 <script src="js/dave/calendar-page.js?v={{$assetVersion}}"></script>
+<script src="js/dave/todo-page.js?v={{$assetVersion}}"></script>
 <script src="js/dave/imports-dashboard.js?v={{$assetVersion}}"></script>
 <script src="js/kanban/kanban-menu.js?v={{$assetVersion}}"></script>
 <script src="js/settings/nodes.js?v={{$assetVersion}}"></script>

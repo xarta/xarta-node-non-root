@@ -81,6 +81,41 @@ const BlueprintsActiveBrowserObserver = (() => {
     return action;
   }
 
+  function _objectFromCommandValue(value) {
+    if (!value) return null;
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+      } catch (_) {
+        return null;
+      }
+    }
+    return typeof value === 'object' && !Array.isArray(value) ? value : null;
+  }
+
+  function _looksLikeCommandPayload(value) {
+    const item = _objectFromCommandValue(value);
+    if (!item) return false;
+    if (item.schema === 'xarta.active_browser.command.v1') return true;
+    return !!(item.action || item.command_id || item.target_browser_id || item.active_browser_id);
+  }
+
+  function _extractCommandPayload(eventDetail) {
+    const detail = _objectFromCommandValue(eventDetail);
+    if (!detail) return null;
+    const candidates = [
+      detail.payload && _objectFromCommandValue(detail.payload)?.payload,
+      detail.payload,
+      detail,
+    ];
+    for (const candidate of candidates) {
+      const payload = _objectFromCommandValue(candidate);
+      if (_looksLikeCommandPayload(payload)) return payload;
+    }
+    return null;
+  }
+
   function _normalizeBodyShade(value) {
     const state = _cleanText(value || 'up').toLowerCase().replace(/[-\s]+/g, '_');
     if (state === 'down' || state === 'lower' || state === 'lowered' || state === 'closed' || state === 'off' || state === 'false' || state === '0') return 'down';
@@ -461,7 +496,8 @@ const BlueprintsActiveBrowserObserver = (() => {
   }
 
   function _handleCommandEvent(eventDetail) {
-    const payload = eventDetail?.payload || eventDetail || {};
+    const payload = _extractCommandPayload(eventDetail);
+    if (!payload) return;
     if (payload?.schema && payload.schema !== 'xarta.active_browser.command.v1') return;
     if (!_commandTargetsThisTab(payload)) return;
     if (!_rememberCommand(payload)) return;
@@ -695,10 +731,18 @@ const BlueprintsActiveBrowserObserver = (() => {
     const calendarSnapshot = typeof window.BlueprintsCalendarPage?.snapshot === 'function'
       ? window.BlueprintsCalendarPage.snapshot()
       : null;
+    const todoSnapshot = typeof window.BlueprintsTodoPage?.snapshot === 'function'
+      ? window.BlueprintsTodoPage.snapshot()
+      : null;
     if (calendarSnapshot && typeof calendarSnapshot === 'object') {
       surfaces.calendar = calendarSnapshot;
     } else if (!surfaces.calendar || typeof surfaces.calendar !== 'object') {
       surfaces.calendar = {};
+    }
+    if (todoSnapshot && typeof todoSnapshot === 'object') {
+      surfaces.todo = todoSnapshot;
+    } else if (!surfaces.todo || typeof surfaces.todo !== 'object') {
+      surfaces.todo = {};
     }
     const normalizedState = { ...state, surfaces };
     if (_lastCommandResult) {
@@ -888,7 +932,11 @@ const BlueprintsActiveBrowserObserver = (() => {
     if (_commandListenerInstalled) return;
     _commandListenerInstalled = true;
     document.addEventListener('blueprints:event', event => {
-      if (event.detail?.event_type === ACTIVE_BROWSER_COMMAND_EVENT) {
+      if (
+        event.detail?.event_type === ACTIVE_BROWSER_COMMAND_EVENT
+        || _looksLikeCommandPayload(event.detail)
+        || _looksLikeCommandPayload(event.detail?.payload)
+      ) {
         _handleCommandEvent(event.detail);
       }
     });
