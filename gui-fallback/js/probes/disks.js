@@ -1468,10 +1468,9 @@ function _disksCardHtml(node, options = {}) {
   const primaryTarget = _disksPrimaryOpenTarget(node) || node;
   const shortcut = _disksShortcutMeta(node);
   const guestMeta = _disksGuestMeta(node);
-  const kind = String(node?.kind || '').trim().toLowerCase();
-  const usesActionRowFilesystemPill = kind === 'drive' || kind === 'partition';
   const filesystemTarget = shortcut ? shortcut.target : _disksFilesystemTarget(node);
   const filesystemPill = shortcut ? '' : _disksFilesystemPillLabel(node);
+  const usesActionRowFilesystemPill = !!filesystemPill;
   const floatingFilesystemPill = !shortcut && !filesystemTarget && usesActionRowFilesystemPill
     ? filesystemPill
     : '';
