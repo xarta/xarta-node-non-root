@@ -18,6 +18,14 @@ let _disksNoteErrors = new Map();
 let _disksNoteSaveTimers = new Map();
 let _disksOfflineBrowseState = null;
 
+function _disksHubModalApi() {
+  return typeof HubModal !== 'undefined' ? HubModal : null;
+}
+
+function _disksHubDialogsApi() {
+  return typeof HubDialogs !== 'undefined' ? HubDialogs : null;
+}
+
 const _DISKS_BLUE_ICON = '/fallback-ui/assets/icons/ui/drive-blue.svg';
 const _DISKS_GOLD_ICON = '/fallback-ui/assets/icons/ui/drive-gold.svg';
 const _DISKS_HOST_ICON = '/fallback-ui/assets/icons/ui/proxmox-blue.svg';
@@ -2414,8 +2422,9 @@ function _disksOpenGuestSummary(host, guestKey) {
   }
 
   try {
-    if (window.HubModal && typeof window.HubModal.open === 'function') {
-      window.HubModal.open(dialog);
+    const hubModal = _disksHubModalApi();
+    if (hubModal && typeof hubModal.open === 'function') {
+      hubModal.open(dialog);
     } else if (typeof dialog.showModal === 'function') {
       if (!dialog.open) dialog.showModal();
     } else {
@@ -2430,8 +2439,9 @@ function _disksCloseGuestSummary() {
   const dialog = _disksEl('disks-guest-modal');
   if (!dialog) return;
   try {
-    if (window.HubModal && typeof window.HubModal.close === 'function') {
-      window.HubModal.close(dialog);
+    const hubModal = _disksHubModalApi();
+    if (hubModal && typeof hubModal.close === 'function') {
+      hubModal.close(dialog);
     } else {
       dialog.close();
     }
@@ -2694,8 +2704,9 @@ function _disksCloseOfflineBrowseModal() {
   }
   if (!dialog) return;
   try {
-    if (window.HubModal && typeof window.HubModal.close === 'function') {
-      window.HubModal.close(dialog);
+    const hubModal = _disksHubModalApi();
+    if (hubModal && typeof hubModal.close === 'function') {
+      hubModal.close(dialog);
     } else {
       dialog.close();
     }
@@ -2709,15 +2720,16 @@ async function _disksOpenOfflineBrowse(node) {
   if (!meta) return;
   const guestLabel = meta.guest_name || `VM ${meta.guest_id}`;
   const volumeLabel = meta.volume_label || meta.volume_ref;
-  const confirmed = window.HubDialogs && typeof window.HubDialogs.confirm === 'function'
-    ? await window.HubDialogs.confirm({
+  const hubDialogs = _disksHubDialogsApi();
+  const confirmed = hubDialogs && typeof hubDialogs.confirm === 'function'
+    ? await hubDialogs.confirm({
       title: 'Open offline disk browser',
       message: `Attach ${volumeLabel} from ${guestLabel} read-only?`,
       detail: 'The VM must stay stopped. Blueprints will attach this one disk read-only, browse it only inside this authenticated page, and auto-clean it up on close or after heartbeat timeout.',
       tone: 'warning',
       confirmText: 'Attach read-only',
     })
-    : window.confirm(`Attach ${volumeLabel} from ${guestLabel} read-only?`);
+    : false;
   if (!confirmed) return;
   _disksStatusMessage('Preparing read-only offline disk browse…', 'info', true);
   const response = await apiFetch('/api/v1/disks/offline-browse/open', {
@@ -2752,8 +2764,9 @@ async function _disksOpenOfflineBrowse(node) {
   const dialog = _disksEl('disks-offline-modal');
   if (dialog) {
     try {
-      if (window.HubModal && typeof window.HubModal.open === 'function') {
-        window.HubModal.open(dialog);
+      const hubModal = _disksHubModalApi();
+      if (hubModal && typeof hubModal.open === 'function') {
+        hubModal.open(dialog);
       } else if (typeof dialog.showModal === 'function' && !dialog.open) {
         dialog.showModal();
       } else {
