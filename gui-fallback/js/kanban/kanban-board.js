@@ -11,8 +11,17 @@ const KanbanBoardPage = (() => {
     board: null,
     detail: null,
     detailModalOpen: false,
+    scoped: {
+      open: false,
+      kind: '',
+      itemId: '',
+      scope: 'descendants',
+      view: 'grouped',
+      data: null,
+    },
     routeApplied: false,
     routeDetailItemId: '',
+    routeScoped: null,
     rollups: {},
     selection: null,
     currentParentId: '',
@@ -58,11 +67,23 @@ const KanbanBoardPage = (() => {
     const params = routeParams();
     const parentItemId = cleanRouteId(params.get('parent_item_id') || params.get('work_parent_id'));
     const detailItemId = cleanRouteId(params.get('detail_item_id') || params.get('work_item_id'));
+    const scopedKind = String(params.get('scoped_kind') || '').trim().toLowerCase();
+    const scopedItemId = cleanRouteId(params.get('scoped_item_id'));
+    const scopedScope = String(params.get('scoped_scope') || 'descendants').trim().toLowerCase();
+    const scopedView = String(params.get('scoped_view') || 'grouped').trim().toLowerCase();
     if (parentItemId) state.currentParentId = parentItemId;
     if (detailItemId) state.routeDetailItemId = detailItemId;
+    if (scopedItemId && ['issues', 'issue', 'todos', 'todo'].includes(scopedKind)) {
+      state.routeScoped = {
+        kind: scopedKind,
+        itemId: scopedItemId,
+        scope: scopedScope === 'local' ? 'local' : 'descendants',
+        view: scopedView === 'flat' ? 'flat' : 'grouped',
+      };
+    }
   }
 
-  function writeRouteState(parentItemId = state.currentParentId, detailItemId = '') {
+  function writeRouteState(parentItemId = state.currentParentId, detailItemId = '', scoped = null) {
     if (!window.history || !window.location) return;
     const url = new URL(window.location.href);
     url.searchParams.set('group', 'kanban');
@@ -73,6 +94,17 @@ const KanbanBoardPage = (() => {
     else url.searchParams.delete('parent_item_id');
     if (detail) url.searchParams.set('detail_item_id', detail);
     else url.searchParams.delete('detail_item_id');
+    if (scoped?.kind && scoped?.itemId) {
+      url.searchParams.set('scoped_kind', scoped.kind);
+      url.searchParams.set('scoped_item_id', scoped.itemId);
+      url.searchParams.set('scoped_scope', scoped.scope || 'descendants');
+      url.searchParams.set('scoped_view', scoped.view || 'grouped');
+    } else {
+      url.searchParams.delete('scoped_kind');
+      url.searchParams.delete('scoped_item_id');
+      url.searchParams.delete('scoped_scope');
+      url.searchParams.delete('scoped_view');
+    }
     window.history.replaceState(window.history.state, '', url);
   }
 
@@ -122,6 +154,39 @@ const KanbanBoardPage = (() => {
   function stateLabel(stateId) {
     const row = stateRows().find(itemState => itemState.state_id === stateId);
     return row ? row.label : (stateId || 'State');
+  }
+
+  function scopedKindConfig(kind) {
+    const clean = String(kind || '').toLowerCase();
+    if (clean === 'issue' || clean === 'issues') {
+      return {
+        kind: 'issues',
+        singular: 'Issue',
+        plural: 'Issues',
+        badge: 'ISS',
+        endpoint: 'issues',
+        sourcePrefix: 'work_issues',
+        idKey: 'issue_id',
+        priorityLabel: 'Severity',
+        createKind: 'issue',
+      };
+    }
+    return {
+      kind: 'todos',
+      singular: 'ToDo',
+      plural: 'ToDos',
+      badge: 'TODO',
+      endpoint: 'todos',
+      sourcePrefix: 'work_todos',
+      idKey: 'todo_id',
+      priorityLabel: 'Priority',
+      createKind: 'todo',
+    };
+  }
+
+  function leafStatusOptions(selected = 'open') {
+    const statuses = ['open', 'active', 'blocked', 'pending_review', 'done', 'closed', 'archived', 'promoted'];
+    return statuses.map(status => `<option value="${escHtml(status)}" ${status === selected ? 'selected' : ''}>${escHtml(status.replace(/_/g, ' '))}</option>`).join('');
   }
 
   function statusTone(status) {
@@ -338,6 +403,96 @@ const KanbanBoardPage = (() => {
     `;
   }
 
+  function scopedRecordId(record, config) {
+    return String(record?.[config.idKey] || '');
+  }
+
+  function findScopedRecord(kind, id) {
+    const config = scopedKindConfig(kind);
+    const rows = state.scoped?.data?.items || [];
+    return rows.find(row => scopedRecordId(row, config) === id) || null;
+  }
+
+  function scopedBreadcrumbText(data) {
+    const rows = Array.isArray(data?.breadcrumbs) ? data.breadcrumbs : [];
+    return ['Root board', ...rows.map(item => item.title || item.item_id)].join(' / ');
+  }
+
+  function scopedRowHtml(record, config) {
+    const id = scopedRecordId(record, config);
+    const scope = record.scope || {};
+    const priority = record.priority_id || record.severity_id || 'medium';
+    return `
+      <article class="kanban-scoped-row" data-kanban-scoped-row="${escHtml(config.kind)}" data-kanban-scoped-id="${escHtml(id)}" data-kanban-scoped-item-id="${escHtml(record.item_id || '')}">
+        <div class="kanban-scoped-row__main">
+          <div class="kanban-detail-title">${escHtml(record.title || id)}</div>
+          <div class="kanban-detail-meta">${escHtml(scope.title || record.item_id || '')} - ${escHtml(scope.relation || 'local')} - d${escHtml(scope.depth_offset ?? 0)}</div>
+          <div class="kanban-detail-meta">${escHtml(record.body_excerpt || record.source_ref || record.related_task_id || '')}</div>
+        </div>
+        <label class="kanban-field kanban-field--compact">
+          <span>Status</span>
+          <select data-kanban-scoped-field="status">${leafStatusOptions(record.status || 'open')}</select>
+        </label>
+        <label class="kanban-field kanban-field--compact">
+          <span>${escHtml(config.priorityLabel)}</span>
+          <select data-kanban-scoped-field="priority">${priorityOptions(priority)}</select>
+        </label>
+        <div class="kanban-scoped-row__actions">
+          <button class="kanban-command-btn" type="button" data-kanban-scoped-row-action="save">Save</button>
+          <button class="kanban-command-btn" type="button" data-kanban-scoped-row-action="promote">Promote</button>
+          <button class="kanban-command-btn" type="button" data-kanban-scoped-row-action="archive">Archive</button>
+        </div>
+      </article>
+    `;
+  }
+
+  function scopedRowsHtml(data, config) {
+    const rows = data?.items || [];
+    if (!rows.length) return `<div class="kanban-empty">No ${config.plural.toLowerCase()} in this scope.</div>`;
+    if ((data?.view || '') === 'grouped' || (data?.view || '') === 'tree') {
+      const groups = data.groups || [];
+      return groups.map(group => {
+        const groupRows = group[config.kind] || [];
+        return `
+          <section class="kanban-band kanban-scoped-group">
+            <div class="kanban-section-head">
+              <h3>${escHtml(group.item?.title || group.item?.item_id || 'Work item')}</h3>
+              <span class="kanban-pill">${escHtml(groupRows.length)}</span>
+            </div>
+            <div class="kanban-detail-meta">${escHtml(group.scope?.relation || 'local')} - depth offset ${escHtml(group.scope?.depth_offset ?? 0)}</div>
+            <div class="kanban-detail-list">
+              ${groupRows.length ? groupRows.map(row => scopedRowHtml(row, config)).join('') : `<div class="kanban-empty">No ${config.plural.toLowerCase()} on this item.</div>`}
+            </div>
+          </section>
+        `;
+      }).join('');
+    }
+    return rows.map(row => scopedRowHtml(row, config)).join('');
+  }
+
+  function scopedModalHtml(data, config) {
+    const scope = data?.scope || state.scoped.scope || 'descendants';
+    const view = data?.view || state.scoped.view || 'grouped';
+    const counts = data?.counts || {};
+    return `
+      <div class="kanban-scoped-modal">
+        <div class="kanban-detail-list">
+          ${detailRow(data?.item?.title || state.scoped.itemId, `${counts.total || 0} ${config.plural.toLowerCase()} - ${counts.scope_items || 0} scoped item${counts.scope_items === 1 ? '' : 's'}`, scopedBreadcrumbText(data))}
+        </div>
+        <div class="kanban-scoped-toolbar" aria-label="${escHtml(config.plural)} scope controls">
+          <button class="kanban-command-btn" type="button" data-active="${scope === 'local' ? 'true' : 'false'}" data-kanban-scoped-action="scope-local">Local</button>
+          <button class="kanban-command-btn" type="button" data-active="${scope === 'descendants' ? 'true' : 'false'}" data-kanban-scoped-action="scope-descendants">Descendants</button>
+          <button class="kanban-command-btn" type="button" data-active="${view === 'flat' ? 'true' : 'false'}" data-kanban-scoped-action="view-flat">Flat</button>
+          <button class="kanban-command-btn" type="button" data-active="${view !== 'flat' ? 'true' : 'false'}" data-kanban-scoped-action="view-grouped">Grouped</button>
+          <button class="kanban-command-btn" type="button" data-kanban-scoped-action="create">New ${escHtml(config.singular)}</button>
+        </div>
+        <div class="kanban-detail-list kanban-scoped-list">
+          ${scopedRowsHtml(data, config)}
+        </div>
+      </div>
+    `;
+  }
+
   function renderSelection() {
     const detail = el('kanban-selection-detail');
     const pill = el('kanban-selection-pill');
@@ -409,6 +564,14 @@ const KanbanBoardPage = (() => {
       renderAll();
       if (state.routeDetailItemId && !state.detailModalOpen && !options.skipRouteDetail) {
         await openItemDetail(state.routeDetailItemId);
+      }
+      if (state.routeScoped?.itemId && !state.scoped.open && !options.skipRouteScoped) {
+        const scoped = state.routeScoped;
+        state.routeScoped = null;
+        await openScoped(scoped.kind, scoped.itemId, {
+          scope: scoped.scope,
+          view: scoped.view,
+        });
       }
     } catch (error) {
       state.error = error.message || String(error);
@@ -880,18 +1043,136 @@ const KanbanBoardPage = (() => {
     return true;
   }
 
-  async function openScoped(kind, itemId = state.selection?.item?.item_id) {
-    if (!itemId) return false;
-    const detail = await requestJson(`/api/v1/personal/work/items/${encodeURIComponent(itemId)}`);
-    const rows = kind === 'issues' ? (detail.issues || []) : (detail.todos || []);
-    const label = kind === 'issues' ? 'Issues' : 'ToDos';
-    openDialog(label, `
-      <div class="kanban-detail-list">
-        ${rows.length ? rows.map(row => detailRow(row.title, row.status, row.body_excerpt || row.source_ref || row.related_task_id || '')).join('') : `<div class="kanban-empty">No ${label.toLowerCase()} in this scope.</div>`}
-      </div>`, {
-      badge: kind === 'issues' ? 'ISS' : 'TODO',
-      id: kind === 'issues' ? 'kanban-issues-modal' : 'kanban-todos-modal',
+  async function loadScoped(kind, itemId, scope = 'descendants', view = 'grouped') {
+    const config = scopedKindConfig(kind);
+    const params = new URLSearchParams({ scope, view });
+    return requestJson(`/api/v1/personal/work/items/${encodeURIComponent(itemId)}/${config.endpoint}?${params.toString()}`);
+  }
+
+  async function saveScopedRecord(config, record, row, statusOverride = '') {
+    const id = scopedRecordId(record, config);
+    const status = statusOverride || row.querySelector('[data-kanban-scoped-field="status"]')?.value || record.status || 'open';
+    const priority = row.querySelector('[data-kanban-scoped-field="priority"]')?.value || record.priority_id || record.severity_id || 'medium';
+    const payload = {
+      item_id: record.item_id,
+      title: record.title || id,
+      body: record.body_excerpt || '',
+      status,
+      priority_id: priority,
+      actor: 'blueprints-ui',
+      source_surface: 'kanban-scoped',
+      request_id: `ui-kanban-scoped-${config.kind}-${Date.now()}`,
+    };
+    if (config.kind === 'issues') {
+      payload.severity_id = priority;
+      payload.source_ref = record.source_ref || '';
+      payload.related_task_id = record.related_task_id || '';
+    } else {
+      payload.due_at = record.due_at || null;
+      payload.related_task_id = record.related_task_id || '';
+    }
+    const resp = await requestJson(`/api/v1/personal/work/${config.endpoint}/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
     });
+    state.lastWrite = {
+      ...state.lastWrite,
+      [config.kind === 'issues' ? 'issue' : 'todo']: resp[config.kind === 'issues' ? 'issue' : 'todo'],
+    };
+    return resp;
+  }
+
+  async function promoteScopedRecord(config, record) {
+    const id = scopedRecordId(record, config);
+    const resp = await requestJson('/api/v1/personal/work/promote', {
+      method: 'POST',
+      body: JSON.stringify({
+        source_ref: `${config.sourcePrefix}:${id}`,
+        title: record.title || id,
+        body: record.body_excerpt || '',
+        parent_item_id: record.item_id || state.scoped.itemId || state.currentParentId || null,
+        state_id: 'todo',
+        priority_id: record.priority_id || record.severity_id || 'medium',
+        actor: 'blueprints-ui',
+        source_surface: 'kanban-scoped',
+        request_id: `ui-kanban-scoped-promote-${Date.now()}`,
+      }),
+    });
+    state.lastWrite = {
+      ...state.lastWrite,
+      item: resp.item,
+      promoted_item_id: resp.item?.item_id || '',
+    };
+    return resp;
+  }
+
+  async function openScoped(kind, itemId = state.selection?.item?.item_id, options = {}) {
+    if (!itemId) return false;
+    const config = scopedKindConfig(kind);
+    const scope = options.scope || state.scoped.scope || 'descendants';
+    const view = options.view || state.scoped.view || 'grouped';
+    const data = await loadScoped(config.kind, itemId, scope, view);
+    state.scoped = {
+      open: true,
+      kind: config.kind,
+      itemId,
+      scope: data.scope || scope,
+      view: data.view || view,
+      data,
+    };
+    writeRouteState(state.currentParentId, '', {
+      kind: config.kind,
+      itemId,
+      scope: data.scope || scope,
+      view: data.view || view,
+    });
+    const dialog = openDialog(`${config.plural} Scope`, scopedModalHtml(data, config), {
+      badge: config.badge,
+      id: 'kanban-scoped-modal',
+      width: 'min(980px,96vw)',
+      onClose: () => {
+        state.scoped.open = false;
+        writeRouteState(state.currentParentId, '');
+        renderAll();
+      },
+    });
+    dialog.addEventListener('click', async event => {
+      const scopedAction = event.target.closest('[data-kanban-scoped-action]');
+      if (scopedAction) {
+        const action = scopedAction.dataset.kanbanScopedAction;
+        if (action === 'create') {
+          closeDialog(dialog);
+          await openLeafForm(config.createKind, itemId);
+          return;
+        }
+        const nextScope = action === 'scope-local'
+          ? 'local'
+          : (action === 'scope-descendants' ? 'descendants' : state.scoped.scope);
+        const nextView = action === 'view-flat'
+          ? 'flat'
+          : (action === 'view-grouped' ? 'grouped' : state.scoped.view);
+        closeDialog(dialog);
+        await openScoped(config.kind, itemId, { scope: nextScope, view: nextView });
+        return;
+      }
+      const rowAction = event.target.closest('[data-kanban-scoped-row-action]');
+      if (!rowAction) return;
+      const row = rowAction.closest('[data-kanban-scoped-row]');
+      const record = findScopedRecord(config.kind, row?.dataset?.kanbanScopedId || '');
+      if (!record || !row) return;
+      const action = rowAction.dataset.kanbanScopedRowAction;
+      if (action === 'save') {
+        await saveScopedRecord(config, record, row);
+      } else if (action === 'archive') {
+        await saveScopedRecord(config, record, row, 'archived');
+      } else if (action === 'promote') {
+        await promoteScopedRecord(config, record);
+      }
+      closeDialog(dialog);
+      await load({ force: true });
+      await openScoped(config.kind, itemId, { scope: state.scoped.scope, view: state.scoped.view });
+    });
+    renderAll();
     return true;
   }
 
@@ -1095,6 +1376,167 @@ const KanbanBoardPage = (() => {
     return true;
   }
 
+  async function runStep19ProofWrite() {
+    await load({ force: true });
+    const stamp = Date.now();
+    const parentResp = await requestJson('/api/v1/personal/work/items', {
+      method: 'POST',
+      body: JSON.stringify({
+        item_id: `work-step19-parent-${stamp}`,
+        parent_item_id: null,
+        title: `Step 19 Active Browser parent ${stamp}`,
+        body: 'Scoped issue and todo proof parent.',
+        state_id: 'todo',
+        priority_id: 'medium',
+        tags: ['proof', 'step-19'],
+        actor: 'active-browser',
+        source_surface: 'kanban-active-browser-proof',
+        request_id: `active-browser-step19-parent-${stamp}`,
+      }),
+    });
+    const parentId = parentResp.item?.item_id;
+    const childResp = await requestJson('/api/v1/personal/work/items', {
+      method: 'POST',
+      body: JSON.stringify({
+        item_id: `work-step19-child-${stamp}`,
+        parent_item_id: parentId,
+        title: `Step 19 Active Browser child ${stamp}`,
+        body: 'First nested item for scoped filters.',
+        state_id: 'doing',
+        priority_id: 'high',
+        tags: ['proof', 'step-19', 'child'],
+        actor: 'active-browser',
+        source_surface: 'kanban-active-browser-proof',
+        request_id: `active-browser-step19-child-${stamp}`,
+      }),
+    });
+    const childId = childResp.item?.item_id;
+    const grandchildResp = await requestJson('/api/v1/personal/work/items', {
+      method: 'POST',
+      body: JSON.stringify({
+        item_id: `work-step19-grandchild-${stamp}`,
+        parent_item_id: childId,
+        title: `Step 19 Active Browser grandchild ${stamp}`,
+        body: 'Second nested item for scoped filters.',
+        state_id: 'blocked',
+        priority_id: 'critical',
+        tags: ['proof', 'step-19', 'grandchild'],
+        actor: 'active-browser',
+        source_surface: 'kanban-active-browser-proof',
+        request_id: `active-browser-step19-grandchild-${stamp}`,
+      }),
+    });
+    const grandchildId = grandchildResp.item?.item_id;
+    const localIssueResp = await requestJson('/api/v1/personal/work/issues', {
+      method: 'POST',
+      body: JSON.stringify({
+        issue_id: `issue-step19-local-${stamp}`,
+        item_id: parentId,
+        title: `Step 19 local issue ${stamp}`,
+        body: 'Local scoped issue proof.',
+        severity_id: 'medium',
+        actor: 'active-browser',
+        source_surface: 'kanban-active-browser-proof',
+        request_id: `active-browser-step19-local-issue-${stamp}`,
+      }),
+    });
+    const childIssueResp = await requestJson('/api/v1/personal/work/issues', {
+      method: 'POST',
+      body: JSON.stringify({
+        issue_id: `issue-step19-child-${stamp}`,
+        item_id: childId,
+        title: `Step 19 child issue ${stamp}`,
+        body: 'Descendant scoped issue proof.',
+        severity_id: 'high',
+        actor: 'active-browser',
+        source_surface: 'kanban-active-browser-proof',
+        request_id: `active-browser-step19-child-issue-${stamp}`,
+      }),
+    });
+    const updatedIssueResp = await requestJson(`/api/v1/personal/work/issues/${encodeURIComponent(childIssueResp.issue?.issue_id || '')}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        item_id: childId,
+        title: childIssueResp.issue?.title || `Step 19 child issue ${stamp}`,
+        body: 'Descendant scoped issue proof updated before promotion.',
+        status: 'blocked',
+        severity_id: 'critical',
+        actor: 'active-browser',
+        source_surface: 'kanban-active-browser-proof',
+        request_id: `active-browser-step19-child-issue-update-${stamp}`,
+      }),
+    });
+    const todoResp = await requestJson('/api/v1/personal/work/todos', {
+      method: 'POST',
+      body: JSON.stringify({
+        todo_id: `todo-step19-grandchild-${stamp}`,
+        item_id: grandchildId,
+        title: `Step 19 grandchild todo ${stamp}`,
+        body: 'Two-level scoped todo proof.',
+        priority_id: 'high',
+        related_task_id: `task-step19-${stamp}`,
+        actor: 'active-browser',
+        source_surface: 'kanban-active-browser-proof',
+        request_id: `active-browser-step19-grandchild-todo-${stamp}`,
+      }),
+    });
+    const updatedTodoResp = await requestJson(`/api/v1/personal/work/todos/${encodeURIComponent(todoResp.todo?.todo_id || '')}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        item_id: grandchildId,
+        title: todoResp.todo?.title || `Step 19 grandchild todo ${stamp}`,
+        body: 'Two-level scoped todo proof updated before promotion.',
+        status: 'active',
+        priority_id: 'critical',
+        related_task_id: `task-step19-${stamp}`,
+        actor: 'active-browser',
+        source_surface: 'kanban-active-browser-proof',
+        request_id: `active-browser-step19-grandchild-todo-update-${stamp}`,
+      }),
+    });
+    const promotedIssueResp = await requestJson('/api/v1/personal/work/promote', {
+      method: 'POST',
+      body: JSON.stringify({
+        source_ref: `work_issues:${updatedIssueResp.issue?.issue_id || childIssueResp.issue?.issue_id}`,
+        title: `Promoted Step 19 issue ${stamp}`,
+        parent_item_id: childId,
+        priority_id: 'critical',
+        actor: 'active-browser',
+        source_surface: 'kanban-active-browser-proof',
+        request_id: `active-browser-step19-promote-issue-${stamp}`,
+      }),
+    });
+    const promotedTodoResp = await requestJson('/api/v1/personal/work/promote', {
+      method: 'POST',
+      body: JSON.stringify({
+        source_ref: `work_todos:${updatedTodoResp.todo?.todo_id || todoResp.todo?.todo_id}`,
+        title: `Promoted Step 19 todo ${stamp}`,
+        parent_item_id: grandchildId,
+        priority_id: 'high',
+        actor: 'active-browser',
+        source_surface: 'kanban-active-browser-proof',
+        request_id: `active-browser-step19-promote-todo-${stamp}`,
+      }),
+    });
+    state.lastWrite = {
+      item: promotedTodoResp.item || promotedIssueResp.item || parentResp.item,
+      issue: updatedIssueResp.issue || childIssueResp.issue || localIssueResp.issue,
+      todo: updatedTodoResp.todo || todoResp.todo,
+      source_item: parentResp.item,
+      child_item: childResp.item,
+      grandchild_item: grandchildResp.item,
+      promoted_issue_item: promotedIssueResp.item,
+      promoted_todo_item: promotedTodoResp.item,
+    };
+    state.currentParentId = '';
+    state.routeDetailItemId = '';
+    writeRouteState('', '');
+    await load({ force: true });
+    setSelection(parentId);
+    await openScoped('issues', parentId, { scope: 'descendants', view: 'grouped' });
+    return true;
+  }
+
   async function safeChecks() {
     openDialog('Kanban Safe Checks', `
       <div class="kanban-detail-list">
@@ -1212,7 +1654,18 @@ const KanbanBoardPage = (() => {
       child_count: detail.counts?.children ?? (detail.children || []).length ?? 0,
       link_count: detail.counts?.links ?? (detail.links || []).length ?? 0,
       blocker_count: detail.counts?.blockers ?? (detail.blockers || []).length ?? 0,
+      scoped_open: !!state.scoped.open,
+      scoped_kind: state.scoped.kind || '',
+      scoped_scope: state.scoped.scope || '',
+      scoped_view: state.scoped.view || '',
+      scoped_item_id: state.scoped.itemId || '',
+      scoped_count: state.scoped.data?.counts?.total || 0,
+      scoped_group_count: (state.scoped.data?.groups || []).length,
       last_write_item_id: state.lastWrite?.item?.item_id || '',
+      last_write_issue_id: state.lastWrite?.issue?.issue_id || '',
+      last_write_todo_id: state.lastWrite?.todo?.todo_id || '',
+      last_promoted_issue_item_id: state.lastWrite?.promoted_issue_item?.item_id || '',
+      last_promoted_todo_item_id: state.lastWrite?.promoted_todo_item?.item_id || '',
       last_write_link_id: state.lastWrite?.link?.link_id || '',
       last_write_blocker_id: state.lastWrite?.blocker?.blocker_id || '',
       card_fsm: { ...state.cardFsm },
@@ -1240,6 +1693,9 @@ const KanbanBoardPage = (() => {
     moveSelectedRight: () => moveSelected(1),
     archiveSelected,
     runStep18ProofWrite,
+    runStep19ProofWrite,
+    openScopedIssues: () => openScoped('issues'),
+    openScopedTodos: () => openScoped('todos'),
     safeChecks,
     snapshot,
   };
@@ -1262,6 +1718,9 @@ if (typeof KanbanMenuConfig !== 'undefined') {
     'kanban.moveRight': () => KanbanBoardPage.moveSelectedRight(),
     'kanban.archive': () => KanbanBoardPage.archiveSelected(),
     'kanban.step18ProofWrite': () => KanbanBoardPage.runStep18ProofWrite(),
+    'kanban.step19ProofWrite': () => KanbanBoardPage.runStep19ProofWrite(),
+    'kanban.scopedIssues': () => KanbanBoardPage.openScopedIssues(),
+    'kanban.scopedTodos': () => KanbanBoardPage.openScopedTodos(),
     'kanban.safeChecks': () => KanbanBoardPage.safeChecks(),
   });
 }
