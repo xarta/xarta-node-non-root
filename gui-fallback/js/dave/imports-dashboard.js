@@ -49,6 +49,12 @@ const ImportsDashboard = (() => {
     return `<div class="imports-summary-item"><strong>${escHtml(value)}</strong><span>${escHtml(label)}</span></div>`;
   }
 
+  function compactDigest(value) {
+    const text = String(value || '');
+    if (!text.startsWith('sha256:') || text.length <= 30) return text;
+    return `${text.slice(0, 18)}...${text.slice(-6)}`;
+  }
+
   function table(rows, columns, emptyText) {
     if (!Array.isArray(rows) || !rows.length) {
       return `<div class="imports-empty">${escHtml(emptyText)}</div>`;
@@ -99,7 +105,7 @@ const ImportsDashboard = (() => {
     if (summary) {
       summary.innerHTML = [
         summaryItem(interests.snapshot_at || 'unknown', 'snapshot'),
-        summaryItem(interests.source_digest || 'none', 'source digest'),
+        summaryItem(compactDigest(interests.source_digest) || 'none', 'source digest'),
         summaryItem(interests.rerun_status || 'tracked', 'rerun status'),
       ].join('');
     }
