@@ -1281,6 +1281,24 @@
         <button class="hub-modal-btn" id="matrix-chat-room-admin-save" type="button">Save</button>
       </div>
     </dialog>
+    <dialog class="hub-modal hub-dialog matrix-chat-attachment-modal" data-tone="info" id="matrix-chat-attachment-modal" style="width:min(920px,96vw);max-width:96vw">
+      <div class="hub-modal-header">
+        <h2 class="hub-modal-title" style="min-width:0;flex:1">
+          <span class="hub-dialog-badge">FILE</span>
+          <span class="hub-dialog-title-text" id="matrix-chat-attachment-modal-title">Attachment</span>
+        </h2>
+        <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+      </div>
+      <div class="hub-modal-body matrix-chat-attachment-modal-body">
+        <div class="matrix-chat-attachment-modal-meta" id="matrix-chat-attachment-modal-meta"></div>
+        <div class="matrix-chat-attachment-preview" id="matrix-chat-attachment-preview" aria-live="polite"></div>
+        <p id="matrix-chat-attachment-modal-status" class="hub-modal-error matrix-chat-room-admin-status"></p>
+      </div>
+      <div class="hub-modal-footer">
+        <button class="hub-modal-btn secondary hub-modal-close" type="button">Close</button>
+        <a class="hub-modal-btn matrix-chat-attachment-download" id="matrix-chat-attachment-download" href="#" download hidden>Download</a>
+      </div>
+    </dialog>
     <dialog class="hub-modal hub-dialog matrix-chat-notifier-modal" data-tone="info" id="matrix-chat-notifier-dnd-modal" style="width:min(840px,96vw);max-width:96vw">
       <div class="hub-modal-header">
         <h2 class="hub-modal-title" style="min-width:0;flex:1">
