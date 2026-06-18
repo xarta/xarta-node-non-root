@@ -96,6 +96,7 @@ function _groupMenuEntries() {
 }
 
 function _menuOwnsTab(menu, tab) {
+  tab = _normalizeLegacyPageId(tab);
   if (!menu || !tab) return false;
   if (String(tab).startsWith('manual-links-page:') && menu === (typeof SynthesisMenuConfig !== 'undefined' ? SynthesisMenuConfig : null)) return true;
   const items = [
@@ -110,8 +111,15 @@ function _menuOwnsTab(menu, tab) {
 }
 
 function _inferGroupForTab(tab) {
+  tab = _normalizeLegacyPageId(tab);
   const entry = _groupMenuEntries().find(candidate => _menuOwnsTab(candidate.menu, tab));
   return entry ? entry.group : null;
+}
+
+function _normalizeLegacyPageId(tab) {
+  const pageId = String(tab || '').trim();
+  if (pageId.toLowerCase() === 'calendar') return 'calender';
+  return pageId;
 }
 
 function _menuOwnsFunction(menu, fnKey, itemId) {
@@ -256,7 +264,7 @@ function _activeBrowserAutomationState() {
 }
 
 function _openAutomationPage(options = {}) {
-  const pageId = String(options.page_id || options.pageId || options.tab || options.menu_item_id || options.menuItemId || '').trim();
+  const pageId = _normalizeLegacyPageId(options.page_id || options.pageId || options.tab || options.menu_item_id || options.menuItemId || '');
   const requestedGroup = String(options.group || options.menu_group || options.menuGroup || '').trim().toLowerCase();
   const group = requestedGroup || _inferGroupForTab(pageId) || _selectorOriginMenuGroup || _activeGroup || 'synthesis';
   const menu = _getMenuConfigForGroup(group);
@@ -278,7 +286,7 @@ function _openAutomationPage(options = {}) {
 function _invokeAutomationMenuFunction(options = {}) {
   const fnKey = String(options.fn || '').trim();
   const itemId = String(options.menu_item_id || options.menuItemId || '').trim();
-  const pageId = String(options.page_id || options.pageId || options.tab || '').trim();
+  const pageId = _normalizeLegacyPageId(options.page_id || options.pageId || options.tab || '');
   const requestedGroup = String(options.group || options.menu_group || options.menuGroup || '').trim().toLowerCase();
   const group = requestedGroup
     || _inferGroupForFunction(fnKey, itemId)
@@ -484,6 +492,7 @@ function switchGroup(group) {
 }
 
 function switchTab(tab) {
+  tab = _normalizeLegacyPageId(tab);
   if (typeof _sshTerminalShouldBlockNavigation === 'function'
       && _sshTerminalShouldBlockNavigation(tab)) {
     return;
@@ -642,7 +651,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (typeof HubModal !== 'undefined') HubModal.init();
   if (typeof BlueprintsSplashScreens !== 'undefined') BlueprintsSplashScreens.init();
   const _urlGroup = new URLSearchParams(window.location.search).get('group');
-  const _urlTab = new URLSearchParams(window.location.search).get('tab');
+  const _urlTab = _normalizeLegacyPageId(new URLSearchParams(window.location.search).get('tab'));
   const _restoreSshAfterReload = !_urlGroup
     && !_urlTab
     && typeof _sshTerminalShouldRestoreAfterReload === 'function'

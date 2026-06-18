@@ -20,7 +20,7 @@ const DaveMenuConfig = createHubMenu({
     pinnedTabsId:    'daveHubTabsPinned',
     defaultMenu: [
         { id: 'diary',       label: 'Diary',    icon: 'icons/ui/diary-blue.svg',    pageLabel: 'Diary',         parent: null,    order: 0 },
-        { id: 'calender',    label: 'Calender', icon: 'icons/ui/calender-blue.svg', pageLabel: 'Calender',      parent: 'diary', order: 0 },
+        { id: 'calender',    label: 'Calendar', icon: 'icons/ui/calender-blue.svg', pageLabel: 'Calendar',      parent: 'diary', order: 0 },
         { id: 'todo',        label: 'ToDo',     icon: 'icons/ui/todo-blue.svg',     pageLabel: 'ToDo',          parent: 'diary', order: 1 },
         { id: 'imports',     label: 'Imports',  icon: 'icons/ui/imports-blue.svg',  pageLabel: 'Imports',       parent: null,    order: 1 },
         { id: 'dave-layout', label: '☰',        icon: 'icons/hieroglyphs/kheper-gold.svg', pageLabel: 'Navbar Layout', parent: null, order: 2 },
