@@ -20,6 +20,6 @@ const KanbanMenuConfig = createHubMenu({
     pinnedTabsId:    'kanbanHubTabsPinned',
     defaultMenu: [
         { id: 'kanban',        label: 'Kanban', icon: 'icons/ui/kanban-blue.svg', pageLabel: 'Kanban',        parent: null, order: 0 },
-        { id: 'kanban-layout', label: '☰',      icon: HIEROGLYPHS.kheper,         pageLabel: 'Navbar Layout', parent: null, order: 1 },
+        { id: 'kanban-layout', label: '☰',      icon: 'icons/hieroglyphs/kheper-gold.svg', pageLabel: 'Navbar Layout', parent: null, order: 1 },
     ],
 });

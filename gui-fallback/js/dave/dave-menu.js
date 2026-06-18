@@ -21,6 +21,6 @@ const DaveMenuConfig = createHubMenu({
     defaultMenu: [
         { id: 'diary',       label: 'Diary',   icon: 'icons/ui/diary-blue.svg',   pageLabel: 'Diary',         parent: null, order: 0 },
         { id: 'imports',     label: 'Imports', icon: 'icons/ui/imports-blue.svg', pageLabel: 'Imports',       parent: null, order: 1 },
-        { id: 'dave-layout', label: '☰',       icon: HIEROGLYPHS.kheper,          pageLabel: 'Navbar Layout', parent: null, order: 2 },
+        { id: 'dave-layout', label: '☰',       icon: 'icons/hieroglyphs/kheper-gold.svg', pageLabel: 'Navbar Layout', parent: null, order: 2 },
     ],
 });
