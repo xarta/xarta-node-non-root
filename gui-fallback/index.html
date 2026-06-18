@@ -26,6 +26,7 @@
   <link rel="stylesheet" href="css/settings-menu.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/synthesis-menu.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/dave-menu.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/dave-imports.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/kanban-menu.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/splash-screens.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/hub-controls.css?v={{$assetVersion}}" />
@@ -3190,6 +3191,71 @@
 
   <section id="tab-imports" class="tab-panel" aria-label="Imports">
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
+    <div class="imports-dashboard" data-imports-dashboard>
+      <div class="imports-dashboard__header">
+        <div>
+          <h2>Imports</h2>
+          <div class="imports-dashboard__meta" id="imports-dashboard-meta">Loading status...</div>
+        </div>
+        <div class="imports-dashboard__actions" aria-label="Imports actions">
+          <button class="imports-icon-btn imports-icon-btn--refresh" type="button" data-imports-action="refresh" title="Refresh imports" aria-label="Refresh imports"></button>
+          <button class="imports-icon-btn imports-icon-btn--docs" type="button" data-imports-action="open-interests-doc" title="Open interests dashboard" aria-label="Open interests dashboard"></button>
+        </div>
+      </div>
+
+      <div class="imports-status-strip" id="imports-status-strip" role="status" aria-live="polite">
+        <span class="imports-status-dot imports-status-dot--unknown" aria-hidden="true"></span>
+        <span>Loading Imports status</span>
+      </div>
+
+      <div class="imports-metrics" id="imports-metrics" aria-label="Import metrics"></div>
+
+      <div class="imports-layout">
+        <section class="imports-band imports-band--interests" aria-labelledby="imports-interests-heading">
+          <div class="imports-band__head">
+            <h3 id="imports-interests-heading">Hermes Interests Ingestion</h3>
+            <span class="imports-pill" id="imports-interests-pill">Loading</span>
+          </div>
+          <div class="imports-band__summary" id="imports-interests-summary"></div>
+          <div class="imports-table-shell" id="imports-interests-categories"></div>
+          <div class="imports-table-shell" id="imports-input-health"></div>
+          <div class="imports-subhead">Source-Unavailable</div>
+          <div class="imports-table-shell" id="imports-source-unavailable"></div>
+        </section>
+
+        <section class="imports-band imports-band--git" aria-labelledby="imports-git-heading">
+          <div class="imports-band__head">
+            <h3 id="imports-git-heading">Git Activity</h3>
+            <span class="imports-pill" id="imports-git-pill">Loading</span>
+          </div>
+          <div class="imports-band__summary" id="imports-git-summary"></div>
+          <div class="imports-repo-list" id="imports-git-repos"></div>
+        </section>
+      </div>
+
+      <div class="imports-layout imports-layout--lower">
+        <section class="imports-band" aria-labelledby="imports-recent-heading">
+          <div class="imports-band__head">
+            <h3 id="imports-recent-heading">Recent Work</h3>
+          </div>
+          <div id="imports-recent-work" class="imports-work-list"></div>
+        </section>
+
+        <section class="imports-band" aria-labelledby="imports-blockers-heading">
+          <div class="imports-band__head">
+            <h3 id="imports-blockers-heading">Blockers</h3>
+          </div>
+          <div id="imports-blockers" class="imports-blocker-list"></div>
+        </section>
+
+        <section class="imports-band" aria-labelledby="imports-proof-heading">
+          <div class="imports-band__head">
+            <h3 id="imports-proof-heading">Proof Links</h3>
+          </div>
+          <div id="imports-proof-links" class="imports-proof-list"></div>
+        </section>
+      </div>
+    </div>
   </section>
 
   <!-- Dave — Layout editor -->
@@ -5457,6 +5523,7 @@
 <script src="js/hieroglyphs.js?v={{$assetVersion}}"></script>
 <script src="js/synthesis/synthesis-menu.js?v={{$assetVersion}}"></script>
 <script src="js/dave/dave-menu.js?v={{$assetVersion}}"></script>
+<script src="js/dave/imports-dashboard.js?v={{$assetVersion}}"></script>
 <script src="js/kanban/kanban-menu.js?v={{$assetVersion}}"></script>
 <script src="js/settings/nodes.js?v={{$assetVersion}}"></script>
 <script src="js/settings/keys.js?v={{$assetVersion}}"></script>

@@ -260,6 +260,11 @@ function _activeBrowserAutomationState() {
     selector_actions: typeof window.BlueprintsNodeSelectorActions?.listActions === 'function'
       ? window.BlueprintsNodeSelectorActions.listActions()
       : [],
+    surfaces: {
+      imports_dashboard: typeof window.BlueprintsImportsDashboard?.snapshot === 'function'
+        ? window.BlueprintsImportsDashboard.snapshot()
+        : {},
+    },
   };
 }
 
@@ -612,6 +617,7 @@ function switchTab(tab) {
   if (tab === 'bookmarks-embeddings')                    _bmLoadEmbedCfg();
   if (tab === 'bookmarks'        && !_bookmarks.length)  loadBookmarks();
   if (tab === 'bookmarks') { switchTab('bookmarks-main'); return; }
+  if (tab === 'imports' && typeof BlueprintsImportsDashboard !== 'undefined') BlueprintsImportsDashboard.load();
   _syncActiveMenuForTab(tab);
   // Notify responsive layout so the correct page-controls group is shown/hidden
   if (typeof ResponsiveLayout !== 'undefined') ResponsiveLayout.updateControlsForTab(tab);
