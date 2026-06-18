@@ -140,6 +140,20 @@
     document.body.scrollLeft = 0;
   }
 
+  function rootScrollY() {
+    return window.scrollY
+      || document.documentElement.scrollTop
+      || document.body.scrollTop
+      || 0;
+  }
+
+  function clampRootVerticalScroll() {
+    if (rootScrollY() === 0) return;
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }
+
   function isS25StargateSnapMode() {
     var root = document.documentElement;
     if (!root || root.getAttribute('data-device-profile') !== 's25-ultra-oneui-webapk') return false;
@@ -680,17 +694,19 @@
   function shouldLockManagedScrollBody(panel) {
     if (!panel) return false;
     if (document.body.classList.contains('shade-is-up')) return false;
-    if (window.scrollY > 0) return false;
     var shell = panel.querySelector('.tab-scroll-shell');
     if (!shell) return false;
     var panelHandle = panel.querySelector('.body-shade-handle');
     if (!panelHandle) return true;
-    return panelHandle.getBoundingClientRect().top <= (getViewportHeight() - 20);
+    var naturalTop = panelHandle.getBoundingClientRect().top + rootScrollY();
+    return naturalTop <= (getViewportHeight() - 20);
   }
 
   function sizeManagedScrollShell() {
     var panel = shade ? shade.querySelector('.tab-panel--managed-scroll.active') : null;
-    document.body.classList.toggle('has-managed-scroll-tab', shouldLockManagedScrollBody(panel));
+    var shouldLockBody = shouldLockManagedScrollBody(panel);
+    if (shouldLockBody) clampRootVerticalScroll();
+    document.body.classList.toggle('has-managed-scroll-tab', shouldLockBody);
     if (!panel) return;
 
     var viewportH = getViewportHeight();

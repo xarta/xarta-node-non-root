@@ -9,6 +9,10 @@ const KanbanBoardPage = (() => {
     error: '',
     config: null,
     board: null,
+    detail: null,
+    detailModalOpen: false,
+    routeApplied: false,
+    routeDetailItemId: '',
     rollups: {},
     selection: null,
     currentParentId: '',
@@ -34,6 +38,42 @@ const KanbanBoardPage = (() => {
 
   function el(id) {
     return document.getElementById(id);
+  }
+
+  function routeParams() {
+    try {
+      return new URLSearchParams(window.location.search || '');
+    } catch (_) {
+      return new URLSearchParams('');
+    }
+  }
+
+  function cleanRouteId(value) {
+    return String(value || '').trim().replace(/[^a-zA-Z0-9_.:-]+/g, '-').slice(0, 180);
+  }
+
+  function applyInitialRouteState() {
+    if (state.routeApplied) return;
+    state.routeApplied = true;
+    const params = routeParams();
+    const parentItemId = cleanRouteId(params.get('parent_item_id') || params.get('work_parent_id'));
+    const detailItemId = cleanRouteId(params.get('detail_item_id') || params.get('work_item_id'));
+    if (parentItemId) state.currentParentId = parentItemId;
+    if (detailItemId) state.routeDetailItemId = detailItemId;
+  }
+
+  function writeRouteState(parentItemId = state.currentParentId, detailItemId = '') {
+    if (!window.history || !window.location) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set('group', 'kanban');
+    url.searchParams.set('tab', 'kanban');
+    const parent = cleanRouteId(parentItemId);
+    const detail = cleanRouteId(detailItemId);
+    if (parent) url.searchParams.set('parent_item_id', parent);
+    else url.searchParams.delete('parent_item_id');
+    if (detail) url.searchParams.set('detail_item_id', detail);
+    else url.searchParams.delete('detail_item_id');
+    window.history.replaceState(window.history.state, '', url);
   }
 
   async function requestJson(path, options = {}) {
@@ -97,7 +137,45 @@ const KanbanBoardPage = (() => {
       state: nextState,
       selectedItemId: nextState === 'selected' ? itemId : state.cardFsm.selectedItemId,
       pendingItemId: nextState === 'pendingMove' ? itemId : '',
+      itemId: itemId || state.cardFsm.itemId || '',
       lastEvent: eventName,
+    };
+  }
+
+  function currentBreadcrumbs() {
+    const rows = state.board?.breadcrumbs;
+    return Array.isArray(rows) ? rows : [];
+  }
+
+  function depthLimit() {
+    return Number(state.config?.depth_limit || state.board?.depth_limit || state.board?.rollup?.depth_limit || 12);
+  }
+
+  function remainingDepthForItem(item) {
+    if (!item) return depthLimit();
+    return Math.max(0, depthLimit() - Number(item.depth || 0));
+  }
+
+  async function detailForItem(itemId) {
+    if (!itemId) return null;
+    if (state.detail?.item?.item_id === itemId) return state.detail;
+    return requestJson(`/api/v1/personal/work/items/${encodeURIComponent(itemId)}`);
+  }
+
+  async function childCreateDepthInfo(parentItemId) {
+    if (!parentItemId) {
+      return { allowed: true, remaining: depthLimit(), label: 'Root board' };
+    }
+    const localItem = findItem(parentItemId)
+      || (state.board?.parent?.item_id === parentItemId ? state.board.parent : null)
+      || (state.detail?.item?.item_id === parentItemId ? state.detail.item : null);
+    const detail = localItem ? null : await detailForItem(parentItemId);
+    const item = localItem || detail?.item || null;
+    const remaining = detail?.remaining_depth ?? remainingDepthForItem(item);
+    return {
+      allowed: Number(remaining) > 0,
+      remaining: Number(remaining),
+      label: item?.title || parentItemId,
     };
   }
 
@@ -123,8 +201,16 @@ const KanbanBoardPage = (() => {
     }
     const crumb = el('kanban-breadcrumb');
     if (crumb) {
-      const parent = state.board?.parent;
-      crumb.textContent = parent ? `Root / ${parent.title || parent.item_id}` : 'Root board';
+      const breadcrumbs = currentBreadcrumbs();
+      const entries = [
+        { item_id: '', title: 'Root board' },
+        ...breadcrumbs.map(item => ({ item_id: item.item_id, title: item.title || item.item_id })),
+      ];
+      crumb.innerHTML = entries.map((entry, index) => {
+        const isCurrent = index === entries.length - 1;
+        const button = `<button class="kanban-breadcrumb__button" type="button" data-kanban-breadcrumb="${escHtml(entry.item_id)}" ${isCurrent ? 'disabled' : ''}>${escHtml(entry.title)}</button>`;
+        return `${index ? '<span class="kanban-breadcrumb__sep">/</span>' : ''}${button}`;
+      }).join('');
     }
   }
 
@@ -142,6 +228,7 @@ const KanbanBoardPage = (() => {
       metric(items.total || 0, 'scoped items'),
       metric(rollup.issues?.open || 0, 'open issues'),
       metric(rollup.todos?.open || 0, 'open todos'),
+      metric(state.board?.remaining_depth ?? depthLimit(), 'depth remaining'),
     ].join('');
   }
 
@@ -213,6 +300,7 @@ const KanbanBoardPage = (() => {
         <div class="kanban-card__actions" aria-label="Card actions">
           <button class="kanban-card-btn kanban-card-btn--left" type="button" data-kanban-card-action="move-left" data-kanban-item-id="${escHtml(item.item_id)}" title="Move left" aria-label="Move left"></button>
           <button class="kanban-card-btn kanban-card-btn--right" type="button" data-kanban-card-action="move-right" data-kanban-item-id="${escHtml(item.item_id)}" title="Move right" aria-label="Move right"></button>
+          <button class="kanban-card-btn kanban-card-btn--detail" type="button" data-kanban-card-action="open-detail" data-kanban-item-id="${escHtml(item.item_id)}" title="Item detail" aria-label="Item detail"></button>
           <button class="kanban-card-btn kanban-card-btn--child" type="button" data-kanban-card-action="open-child-board" data-kanban-item-id="${escHtml(item.item_id)}" title="Open child board" aria-label="Open child board"></button>
           <button class="kanban-card-btn kanban-card-btn--archive" type="button" data-kanban-card-action="archive" data-kanban-item-id="${escHtml(item.item_id)}" title="Archive item" aria-label="Archive item"></button>
         </div>
@@ -307,6 +395,7 @@ const KanbanBoardPage = (() => {
     state.error = '';
     renderStatus('loading');
     try {
+      applyInitialRouteState();
       if (!state.config || options.forceConfig) {
         state.config = await requestJson('/api/v1/personal/work/config');
       }
@@ -318,6 +407,9 @@ const KanbanBoardPage = (() => {
       state.loaded = true;
       await loadRollups(boardItems());
       renderAll();
+      if (state.routeDetailItemId && !state.detailModalOpen && !options.skipRouteDetail) {
+        await openItemDetail(state.routeDetailItemId);
+      }
     } catch (error) {
       state.error = error.message || String(error);
       renderStatus(state.error);
@@ -329,6 +421,10 @@ const KanbanBoardPage = (() => {
 
   function priorityOptions(selected = 'medium') {
     return priorityRows().map(priority => `<option value="${escHtml(priority.priority_id)}" ${priority.priority_id === selected ? 'selected' : ''}>${escHtml(priority.label)}</option>`).join('');
+  }
+
+  function stateOptions(selected = 'todo') {
+    return stateRows().map(row => `<option value="${escHtml(row.state_id)}" ${row.state_id === selected ? 'selected' : ''}>${escHtml(row.label || row.state_id)}</option>`).join('');
   }
 
   function openDialog(title, bodyHtml, options = {}) {
@@ -354,9 +450,18 @@ const KanbanBoardPage = (() => {
     </dialog>`;
     const dialog = host.firstElementChild;
     document.body.appendChild(dialog);
+    const onClose = typeof options.onClose === 'function' ? options.onClose : null;
+    let closeHandled = false;
+    const handleClose = () => {
+      if (closeHandled) return;
+      closeHandled = true;
+      if (onClose) onClose();
+      if (dialog.isConnected) dialog.remove();
+    };
+    dialog.addEventListener('close', handleClose, { once: true });
     if (typeof HubModal !== 'undefined') {
       HubModal.init(document.body);
-      HubModal.open(dialog, { onClose: () => dialog.remove() });
+      HubModal.open(dialog, { onClose: handleClose });
     } else if (typeof dialog.showModal === 'function') {
       dialog.showModal();
     }
@@ -370,9 +475,13 @@ const KanbanBoardPage = (() => {
     if (!dialog.open) dialog.remove();
   }
 
-  function itemFormHtml(titleValue = '', bodyValue = '', priorityId = 'medium') {
+  function itemFormHtml(titleValue = '', bodyValue = '', priorityId = 'medium', depthInfo = null) {
+    const depthLine = depthInfo
+      ? `<div class="kanban-depth-note" data-depth-remaining="${escHtml(depthInfo.remaining)}">Parent: ${escHtml(depthInfo.label)} - remaining child depth ${escHtml(depthInfo.remaining)}</div>`
+      : '';
     return `
       <div class="kanban-modal-form">
+        ${depthLine}
         <label class="kanban-field" for="kanban-modal-title">
           <span>Title</span>
           <input id="kanban-modal-title" type="text" maxlength="180" value="${escHtml(titleValue)}" />
@@ -393,7 +502,16 @@ const KanbanBoardPage = (() => {
   }
 
   async function openItemForm({ parentItemId = state.currentParentId, stateId = 'todo', title = '', childOfSelection = false } = {}) {
-    const dialog = openDialog(childOfSelection ? 'New Child Item' : 'New Work Item', itemFormHtml(title), {
+    const depthInfo = await childCreateDepthInfo(parentItemId);
+    if (!depthInfo.allowed) {
+      await HubDialogs.alert({
+        title: 'Depth Limit',
+        message: `${depthInfo.label} has no remaining child depth.`,
+        tone: 'warning',
+      });
+      return false;
+    }
+    const dialog = openDialog(childOfSelection ? 'New Child Item' : 'New Work Item', itemFormHtml(title, '', 'medium', depthInfo), {
       badge: 'ITEM',
       id: childOfSelection ? 'kanban-child-item-modal' : 'kanban-item-modal',
     });
@@ -488,25 +606,277 @@ const KanbanBoardPage = (() => {
     if (openDetail) await openItemDetail(itemId);
   }
 
+  function selectFirstItemIfNeeded() {
+    if (state.selection?.item?.item_id) return state.selection.item.item_id;
+    const first = boardItems()[0];
+    if (!first) return '';
+    state.selection = { item: first };
+    setFsm('selected', 'selectFirst', first.item_id);
+    renderAll();
+    return first.item_id;
+  }
+
+  function compactJson(value) {
+    if (!value || typeof value !== 'object') return '';
+    const text = JSON.stringify(value);
+    return text === '{}' ? '' : text;
+  }
+
+  function detailCollectionRows(rows, emptyText, rowMapper) {
+    const list = Array.isArray(rows) ? rows : [];
+    return list.length
+      ? list.map(rowMapper).join('')
+      : `<div class="kanban-empty">${escHtml(emptyText)}</div>`;
+  }
+
+  function detailBreadcrumbText(detail) {
+    const rows = Array.isArray(detail?.breadcrumbs) ? detail.breadcrumbs : [];
+    return ['Root board', ...rows.map(item => item.title || item.item_id)].join(' / ');
+  }
+
+  function itemDetailHtml(detail) {
+    const item = detail.item || {};
+    const parentLabel = item.parent_item_id || 'root';
+    return `
+      <div class="kanban-detail-modal-grid">
+        <div class="kanban-modal-form">
+          <label class="kanban-field" for="kanban-detail-title-input">
+            <span>Title</span>
+            <input id="kanban-detail-title-input" type="text" maxlength="180" value="${escHtml(item.title || '')}" />
+          </label>
+          <div class="kanban-detail-edit-grid">
+            <label class="kanban-field" for="kanban-detail-state-input">
+              <span>State</span>
+              <select id="kanban-detail-state-input">${stateOptions(item.state_id || 'todo')}</select>
+            </label>
+            <label class="kanban-field" for="kanban-detail-priority-input">
+              <span>Priority</span>
+              <select id="kanban-detail-priority-input">${priorityOptions(item.priority_id || 'medium')}</select>
+            </label>
+          </div>
+          <label class="kanban-field" for="kanban-detail-body-input">
+            <span>Description</span>
+            <textarea id="kanban-detail-body-input" maxlength="4000">${escHtml(item.body_excerpt || '')}</textarea>
+          </label>
+          <div class="kanban-modal-actions">
+            <button class="kanban-command-btn" type="button" data-kanban-detail-action="save">Save Changes</button>
+            <button class="kanban-command-btn" type="button" data-kanban-detail-action="child-board">Child Board</button>
+            <button class="kanban-command-btn" type="button" data-kanban-detail-action="add-child">Add Child</button>
+            <button class="kanban-command-btn" type="button" data-kanban-detail-action="add-link">Add Link</button>
+            <button class="kanban-command-btn" type="button" data-kanban-detail-action="add-blocker">Add Blocker</button>
+          </div>
+        </div>
+        <div class="kanban-detail-list">
+          ${detailRow('Parent', parentLabel, detailBreadcrumbText(detail))}
+          ${detailRow('Depth', `${item.depth || 0} of ${detail.depth_limit || depthLimit()}`, `${detail.remaining_depth ?? remainingDepthForItem(item)} remaining child levels`)}
+          ${detailRow('Rollup', `${detail.rollup?.items?.total || 0} scoped items`, `${detail.rollup?.issues?.open || 0} open issues - ${detail.rollup?.todos?.open || 0} open todos - ${detail.rollup?.blockers?.open || 0} blockers`)}
+        </div>
+        <section class="kanban-band">
+          <div class="kanban-section-head"><h3>Direct Children</h3><span class="kanban-pill">${escHtml(detail.counts?.children ?? (detail.children || []).length)}</span></div>
+          <div class="kanban-detail-list">
+            ${detailCollectionRows(detail.children, 'No direct child items.', child => detailRow(child.title || child.item_id, `${stateLabel(child.state_id)} - ${priorityLabel(child.priority_id)}`, child.body_excerpt || ''))}
+          </div>
+        </section>
+        <section class="kanban-band">
+          <div class="kanban-section-head"><h3>Links</h3><span class="kanban-pill">${escHtml(detail.counts?.links ?? (detail.links || []).length)}</span></div>
+          <div class="kanban-detail-list">
+            ${detailCollectionRows(detail.links, 'No item links.', link => detailRow(link.link_type || 'related', `${link.source_item_id || ''} -> ${link.target_item_id || ''}`, compactJson(link.metadata)))}
+          </div>
+        </section>
+        <section class="kanban-band">
+          <div class="kanban-section-head"><h3>Blockers</h3><span class="kanban-pill">${escHtml(detail.counts?.blockers ?? (detail.blockers || []).length)}</span></div>
+          <div class="kanban-detail-list">
+            ${detailCollectionRows(detail.blockers, 'No blockers recorded.', blocker => detailRow(blocker.title || blocker.blocker_id, `${blocker.status || 'open'} - ${blocker.blocked_by_ref || 'no source ref'}`, blocker.body_excerpt || ''))}
+          </div>
+        </section>
+        <section class="kanban-band">
+          <div class="kanban-section-head"><h3>Issues And ToDos</h3><span class="kanban-pill">${escHtml((detail.issues || []).length + (detail.todos || []).length)}</span></div>
+          <div class="kanban-detail-list">
+            ${detailCollectionRows(detail.issues, 'No issues in this scope.', issue => detailRow(issue.title, `issue - ${issue.status}`, issue.body_excerpt || issue.source_ref || ''))}
+            ${detailCollectionRows(detail.todos, 'No todos in this scope.', todo => detailRow(todo.title, `todo - ${todo.status}`, todo.body_excerpt || todo.related_task_id || ''))}
+          </div>
+        </section>
+        <section class="kanban-band">
+          <div class="kanban-section-head"><h3>History</h3><span class="kanban-pill">${escHtml((detail.discussions || []).length || (detail.audit || []).length)}</span></div>
+          <div class="kanban-detail-list">
+            ${(detail.discussions || []).length
+              ? detailCollectionRows(detail.discussions, 'No discussion history.', row => detailRow(row.author || row.discussion_id, row.status || 'open', row.body_excerpt || ''))
+              : detailCollectionRows(detail.audit, 'No audit history.', row => detailRow(row.action || row.audit_id, `${row.actor || ''} - ${row.created_at || ''}`, compactJson(row.metadata)))}
+          </div>
+        </section>
+      </div>`;
+  }
+
+  async function saveDetailFromDialog(dialog, itemId) {
+    const titleInput = dialog.querySelector('#kanban-detail-title-input');
+    const stateInput = dialog.querySelector('#kanban-detail-state-input');
+    const priorityInput = dialog.querySelector('#kanban-detail-priority-input');
+    const bodyInput = dialog.querySelector('#kanban-detail-body-input');
+    const cleanTitle = String(titleInput?.value || '').trim();
+    if (!cleanTitle) {
+      await HubDialogs.alert({ title: 'Kanban', message: 'Title is required.', tone: 'warning' });
+      return false;
+    }
+    const resp = await requestJson(`/api/v1/personal/work/items/${encodeURIComponent(itemId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        title: cleanTitle,
+        body: bodyInput?.value || '',
+        state_id: stateInput?.value || 'todo',
+        priority_id: priorityInput?.value || 'medium',
+        actor: 'blueprints-ui',
+        source_surface: 'kanban-detail',
+        request_id: `ui-kanban-detail-${Date.now()}`,
+      }),
+    });
+    state.lastWrite = resp;
+    closeDialog(dialog);
+    await load({ force: true });
+    setSelection(resp.item?.item_id || itemId);
+    await openItemDetail(resp.item?.item_id || itemId);
+    return true;
+  }
+
+  async function openLinkForm(itemId) {
+    const dialog = openDialog('Add Item Link', `
+      <div class="kanban-modal-form">
+        <label class="kanban-field" for="kanban-link-target"><span>Target Item ID</span><input id="kanban-link-target" type="text" maxlength="180" /></label>
+        <label class="kanban-field" for="kanban-link-type"><span>Link Type</span><select id="kanban-link-type">
+          <option value="related">Related</option>
+          <option value="depends_on">Depends On</option>
+          <option value="blocks">Blocks</option>
+          <option value="references">References</option>
+        </select></label>
+        <div class="kanban-modal-actions">
+          <button class="kanban-command-btn" type="button" data-kanban-modal-action="cancel">Cancel</button>
+          <button class="kanban-command-btn" type="button" data-kanban-modal-action="submit">Save Link</button>
+        </div>
+      </div>`, { badge: 'LINK', id: 'kanban-link-modal' });
+    const targetInput = dialog.querySelector('#kanban-link-target');
+    const typeInput = dialog.querySelector('#kanban-link-type');
+    if (targetInput) targetInput.focus();
+    dialog.addEventListener('click', async event => {
+      const action = event.target?.dataset?.kanbanModalAction;
+      if (!action) return;
+      if (action === 'cancel') {
+        closeDialog(dialog);
+        return;
+      }
+      const targetItemId = String(targetInput?.value || '').trim();
+      if (!targetItemId) {
+        await HubDialogs.alert({ title: 'Kanban', message: 'Target item id is required.', tone: 'warning' });
+        return;
+      }
+      state.lastWrite = await requestJson(`/api/v1/personal/work/items/${encodeURIComponent(itemId)}/links`, {
+        method: 'POST',
+        body: JSON.stringify({
+          target_item_id: targetItemId,
+          link_type: typeInput?.value || 'related',
+          metadata: { source: 'kanban-detail' },
+          actor: 'blueprints-ui',
+          source_surface: 'kanban-detail',
+          request_id: `ui-kanban-link-${Date.now()}`,
+        }),
+      });
+      closeDialog(dialog);
+      await load({ force: true });
+      await openItemDetail(itemId);
+    });
+  }
+
+  async function openBlockerForm(itemId) {
+    const dialog = openDialog('Add Blocker', `
+      <div class="kanban-modal-form">
+        <label class="kanban-field" for="kanban-blocker-title"><span>Title</span><input id="kanban-blocker-title" type="text" maxlength="180" /></label>
+        <label class="kanban-field" for="kanban-blocker-ref"><span>Blocked By Ref</span><input id="kanban-blocker-ref" type="text" maxlength="220" /></label>
+        <label class="kanban-field" for="kanban-blocker-body"><span>Details</span><textarea id="kanban-blocker-body" maxlength="4000"></textarea></label>
+        <div class="kanban-modal-actions">
+          <button class="kanban-command-btn" type="button" data-kanban-modal-action="cancel">Cancel</button>
+          <button class="kanban-command-btn" type="button" data-kanban-modal-action="submit">Save Blocker</button>
+        </div>
+      </div>`, { badge: 'BLK', id: 'kanban-blocker-modal' });
+    const titleInput = dialog.querySelector('#kanban-blocker-title');
+    const refInput = dialog.querySelector('#kanban-blocker-ref');
+    const bodyInput = dialog.querySelector('#kanban-blocker-body');
+    if (titleInput) titleInput.focus();
+    dialog.addEventListener('click', async event => {
+      const action = event.target?.dataset?.kanbanModalAction;
+      if (!action) return;
+      if (action === 'cancel') {
+        closeDialog(dialog);
+        return;
+      }
+      const cleanTitle = String(titleInput?.value || '').trim();
+      if (!cleanTitle) {
+        await HubDialogs.alert({ title: 'Kanban', message: 'Blocker title is required.', tone: 'warning' });
+        return;
+      }
+      state.lastWrite = await requestJson('/api/v1/personal/work/blockers', {
+        method: 'POST',
+        body: JSON.stringify({
+          item_id: itemId,
+          title: cleanTitle,
+          body: bodyInput?.value || '',
+          blocked_by_ref: refInput?.value || '',
+          actor: 'blueprints-ui',
+          source_surface: 'kanban-detail',
+          request_id: `ui-kanban-blocker-${Date.now()}`,
+        }),
+      });
+      closeDialog(dialog);
+      await load({ force: true });
+      await openItemDetail(itemId);
+    });
+  }
+
   async function openItemDetail(itemId = state.selection?.item?.item_id) {
+    itemId = itemId || selectFirstItemIfNeeded();
     if (!itemId) {
       await HubDialogs.alert({ title: 'Kanban', message: 'Select a card first.', tone: 'warning' });
       return false;
     }
     const detail = await requestJson(`/api/v1/personal/work/items/${encodeURIComponent(itemId)}`);
     const item = detail.item || {};
-    const issueHtml = (detail.issues || []).map(issue => detailRow(issue.title, issue.status, issue.body_excerpt)).join('');
-    const todoHtml = (detail.todos || []).map(todo => detailRow(todo.title, todo.status, todo.body_excerpt)).join('');
-    openDialog(item.title || item.item_id, `
-      <div class="kanban-detail-list">
-        ${detailRow('State', `${stateLabel(item.state_id)} - ${priorityLabel(item.priority_id)}`, item.body_excerpt || '')}
-        ${detailRow('Rollup', `${detail.rollup?.items?.total || 0} items`, `${detail.rollup?.issues?.open || 0} issues - ${detail.rollup?.todos?.open || 0} todos`)}
-        ${detailRow('Vector', item.vector?.index_key || '', item.search?.metadata?.vector?.index || '')}
-        <div class="kanban-section-head"><h3>Issues</h3><span class="kanban-pill">${(detail.issues || []).length}</span></div>
-        ${issueHtml || '<div class="kanban-empty">No issues in this scope.</div>'}
-        <div class="kanban-section-head"><h3>ToDos</h3><span class="kanban-pill">${(detail.todos || []).length}</span></div>
-        ${todoHtml || '<div class="kanban-empty">No todos in this scope.</div>'}
-      </div>`, { badge: 'ITEM', id: 'kanban-detail-modal', width: 'min(820px,96vw)' });
+    state.detail = detail;
+    state.detailModalOpen = true;
+    state.routeDetailItemId = item.item_id || itemId;
+    if (item.item_id) {
+      const boardItem = findItem(item.item_id);
+      state.selection = { item: boardItem || item };
+      setFsm('selected', 'openDetail', item.item_id);
+    }
+    writeRouteState(state.currentParentId, state.routeDetailItemId);
+    renderAll();
+    const dialog = openDialog(item.title || item.item_id, itemDetailHtml(detail), {
+      badge: 'ITEM',
+      id: 'kanban-detail-modal',
+      width: 'min(900px,96vw)',
+      onClose: () => {
+        state.detailModalOpen = false;
+        state.routeDetailItemId = '';
+        writeRouteState(state.currentParentId, '');
+        renderAll();
+      },
+    });
+    dialog.addEventListener('click', async event => {
+      const action = event.target?.dataset?.kanbanDetailAction;
+      if (!action) return;
+      if (action === 'save') {
+        await saveDetailFromDialog(dialog, item.item_id);
+      } else if (action === 'child-board') {
+        closeDialog(dialog);
+        await openChildBoard(item.item_id);
+      } else if (action === 'add-child') {
+        closeDialog(dialog);
+        await openItemForm({ parentItemId: item.item_id, childOfSelection: true });
+      } else if (action === 'add-link') {
+        closeDialog(dialog);
+        await openLinkForm(item.item_id);
+      } else if (action === 'add-blocker') {
+        closeDialog(dialog);
+        await openBlockerForm(item.item_id);
+      }
+    });
     return true;
   }
 
@@ -527,22 +897,42 @@ const KanbanBoardPage = (() => {
 
   async function openChildBoard(itemId = state.selection?.item?.item_id) {
     if (!itemId) return false;
-    const item = findItem(itemId) || state.selection?.item;
+    const item = findItem(itemId) || state.selection?.item || state.detail?.item;
     state.parentStack.push({ item_id: state.currentParentId, label: state.board?.parent?.title || 'Root' });
     state.currentParentId = itemId;
     state.selection = item ? { item } : null;
+    state.detail = null;
+    state.detailModalOpen = false;
+    state.routeDetailItemId = '';
+    writeRouteState(itemId, '');
     setFsm('idle', 'openChildBoard', itemId);
     await load({ force: true });
     return true;
   }
 
-  async function openRootBoard() {
-    state.currentParentId = '';
-    state.parentStack = [];
+  async function navigateToBoard(parentItemId = '') {
+    state.currentParentId = parentItemId || '';
     state.selection = null;
-    setFsm('idle', 'openRootBoard');
+    state.detail = null;
+    state.detailModalOpen = false;
+    state.routeDetailItemId = '';
+    writeRouteState(state.currentParentId, '');
+    setFsm('idle', parentItemId ? 'openBreadcrumbBoard' : 'openRootBoard', parentItemId || '');
     await load({ force: true });
     return true;
+  }
+
+  async function openUpBoard() {
+    if (!state.currentParentId) return openRootBoard();
+    const crumbs = currentBreadcrumbs();
+    if (crumbs.length <= 1) return openRootBoard();
+    const parent = crumbs[crumbs.length - 2];
+    return navigateToBoard(parent?.item_id || '');
+  }
+
+  async function openRootBoard() {
+    state.parentStack = [];
+    return navigateToBoard('');
   }
 
   function siblingState(item, direction) {
@@ -623,12 +1013,97 @@ const KanbanBoardPage = (() => {
     return true;
   }
 
+  async function runStep18ProofWrite() {
+    await load({ force: true });
+    const stamp = Date.now();
+    const parentResp = await requestJson('/api/v1/personal/work/items', {
+      method: 'POST',
+      body: JSON.stringify({
+        item_id: `work-step18-parent-${stamp}`,
+        parent_item_id: null,
+        title: `Step 18 Active Browser parent ${stamp}`,
+        body: 'Active Browser proof parent for child board and detail edit.',
+        state_id: 'todo',
+        priority_id: 'medium',
+        tags: ['proof', 'step-18'],
+        actor: 'active-browser',
+        source_surface: 'kanban-active-browser-proof',
+        request_id: `active-browser-step18-parent-${stamp}`,
+      }),
+    });
+    const parentId = parentResp.item?.item_id;
+    const childResp = await requestJson('/api/v1/personal/work/items', {
+      method: 'POST',
+      body: JSON.stringify({
+        item_id: `work-step18-child-${stamp}`,
+        parent_item_id: parentId,
+        title: `Step 18 Active Browser child ${stamp}`,
+        body: 'Direct child proof item created through Kanban automation.',
+        state_id: 'todo',
+        priority_id: 'high',
+        tags: ['proof', 'step-18', 'child'],
+        actor: 'active-browser',
+        source_surface: 'kanban-active-browser-proof',
+        request_id: `active-browser-step18-child-${stamp}`,
+      }),
+    });
+    const linkResp = await requestJson(`/api/v1/personal/work/items/${encodeURIComponent(parentId)}/links`, {
+      method: 'POST',
+      body: JSON.stringify({
+        target_item_id: childResp.item?.item_id,
+        link_type: 'related',
+        metadata: { proof_step: 18, source: 'active-browser' },
+        actor: 'active-browser',
+        source_surface: 'kanban-active-browser-proof',
+        request_id: `active-browser-step18-link-${stamp}`,
+      }),
+    });
+    const blockerResp = await requestJson('/api/v1/personal/work/blockers', {
+      method: 'POST',
+      body: JSON.stringify({
+        blocker_id: `blocker-step18-${stamp}`,
+        item_id: parentId,
+        title: `Step 18 Active Browser blocker ${stamp}`,
+        body: 'Blocker proof row for the item detail blocker panel.',
+        blocked_by_ref: `work_items:${childResp.item?.item_id || ''}`,
+        actor: 'active-browser',
+        source_surface: 'kanban-active-browser-proof',
+        request_id: `active-browser-step18-blocker-${stamp}`,
+      }),
+    });
+    const updatedResp = await requestJson(`/api/v1/personal/work/items/${encodeURIComponent(parentId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        title: `Step 18 Active Browser parent edited ${stamp}`,
+        body: 'Detail edit proof completed through Kanban automation.',
+        state_id: 'doing',
+        priority_id: 'high',
+        actor: 'active-browser',
+        source_surface: 'kanban-active-browser-proof',
+        request_id: `active-browser-step18-edit-${stamp}`,
+      }),
+    });
+    state.lastWrite = {
+      ...updatedResp,
+      link: linkResp.link,
+      blocker: blockerResp.blocker,
+      child_item: childResp.item,
+    };
+    await load({ force: true });
+    setSelection(updatedResp.item?.item_id || parentId);
+    await openItemDetail(updatedResp.item?.item_id || parentId);
+    return true;
+  }
+
   async function safeChecks() {
     openDialog('Kanban Safe Checks', `
       <div class="kanban-detail-list">
         ${detailRow('Board API', state.currentParentId ? 'child board' : 'root board', state.loaded ? 'ready' : 'not loaded')}
         ${detailRow('Columns', String(state.board?.columns?.length || 0), 'configured states')}
+        ${detailRow('Breadcrumbs', String(currentBreadcrumbs().length), currentBreadcrumbs().map(item => item.title || item.item_id).join(' / ') || 'root')}
+        ${detailRow('Depth Remaining', String(state.board?.remaining_depth ?? depthLimit()), state.currentParentId || 'root')}
         ${detailRow('Selection', state.selection?.item?.item_id || 'none', state.cardFsm.state)}
+        ${detailRow('Detail', state.detail?.item?.item_id || 'none', state.detailModalOpen ? 'open' : 'closed')}
         ${detailRow('Body Shade', document.querySelector('#tab-kanban .body-shade-handle') ? 'present' : 'missing', 'managed-scroll tab')}
       </div>`, { badge: 'SAFE', id: 'kanban-safe-checks-modal' });
     return true;
@@ -638,6 +1113,10 @@ const KanbanBoardPage = (() => {
     if (action === 'add-child') return openItemForm({ parentItemId: itemId, stateId: 'todo', childOfSelection: true });
     if (action === 'add-issue') return openLeafForm('issue', itemId);
     if (action === 'add-todo') return openLeafForm('todo', itemId);
+    if (action === 'open-detail') {
+      setSelection(itemId);
+      return openItemDetail(itemId);
+    }
     if (action === 'open-child-board') return openChildBoard(itemId);
     if (action === 'move-left') {
       setSelection(itemId);
@@ -664,9 +1143,15 @@ const KanbanBoardPage = (() => {
       if (button) {
         const action = button.dataset.kanbanAction;
         if (action === 'refresh') load({ force: true });
+        if (action === 'up-board') openUpBoard();
         if (action === 'root-board') openRootBoard();
         if (action === 'new-root-item') openItemForm({ parentItemId: state.currentParentId });
         if (action === 'add-item-state') handleCardAction('add-item-state', '', button.dataset.kanbanStateId || 'todo');
+        return;
+      }
+      const breadcrumb = event.target.closest('[data-kanban-breadcrumb]');
+      if (breadcrumb) {
+        navigateToBoard(breadcrumb.dataset.kanbanBreadcrumb || '');
         return;
       }
       const cardButton = event.target.closest('[data-kanban-card-action]');
@@ -707,16 +1192,29 @@ const KanbanBoardPage = (() => {
 
   function snapshot() {
     const items = boardItems();
+    const breadcrumbs = currentBreadcrumbs();
+    const detail = state.detail || {};
     return {
       loaded: state.loaded,
       loading: state.loading,
       status: state.error ? 'error' : (state.loaded ? 'ready' : ''),
       current_parent_id: state.currentParentId,
+      breadcrumb_depth: breadcrumbs.length,
+      breadcrumb_labels: ['Root board', ...breadcrumbs.map(item => item.title || item.item_id)],
       column_count: state.board?.columns?.length || 0,
       item_count: items.length,
       selected_item_id: state.selection?.item?.item_id || '',
       selected_state: state.selection?.item?.state_id || '',
+      detail_open: !!state.detailModalOpen,
+      detail_item_id: detail.item?.item_id || '',
+      detail_state: detail.item?.state_id || '',
+      depth_remaining: detail.remaining_depth ?? state.board?.remaining_depth ?? 0,
+      child_count: detail.counts?.children ?? (detail.children || []).length ?? 0,
+      link_count: detail.counts?.links ?? (detail.links || []).length ?? 0,
+      blocker_count: detail.counts?.blockers ?? (detail.blockers || []).length ?? 0,
       last_write_item_id: state.lastWrite?.item?.item_id || '',
+      last_write_link_id: state.lastWrite?.link?.link_id || '',
+      last_write_blocker_id: state.lastWrite?.blocker?.blocker_id || '',
       card_fsm: { ...state.cardFsm },
       rollup_total: state.board?.rollup?.items?.total || 0,
       issue_count: state.board?.rollup?.issues?.open || 0,
@@ -732,6 +1230,7 @@ const KanbanBoardPage = (() => {
     refresh: () => load({ force: true }),
     newRootItem: () => openItemForm({ parentItemId: state.currentParentId }),
     openRootBoard,
+    openUpBoard,
     openSelectedChildBoard: () => openChildBoard(),
     openSelectedDetail: () => openItemDetail(),
     addChildToSelected: () => openItemForm({ parentItemId: state.selection?.item?.item_id, childOfSelection: true }),
@@ -740,6 +1239,7 @@ const KanbanBoardPage = (() => {
     moveSelectedLeft: () => moveSelected(-1),
     moveSelectedRight: () => moveSelected(1),
     archiveSelected,
+    runStep18ProofWrite,
     safeChecks,
     snapshot,
   };
@@ -752,6 +1252,7 @@ if (typeof KanbanMenuConfig !== 'undefined') {
     'kanban.refresh': () => KanbanBoardPage.refresh(),
     'kanban.newRootItem': () => KanbanBoardPage.newRootItem(),
     'kanban.openRootBoard': () => KanbanBoardPage.openRootBoard(),
+    'kanban.openUpBoard': () => KanbanBoardPage.openUpBoard(),
     'kanban.openChildBoard': () => KanbanBoardPage.openSelectedChildBoard(),
     'kanban.openDetail': () => KanbanBoardPage.openSelectedDetail(),
     'kanban.addChild': () => KanbanBoardPage.addChildToSelected(),
@@ -760,6 +1261,7 @@ if (typeof KanbanMenuConfig !== 'undefined') {
     'kanban.moveLeft': () => KanbanBoardPage.moveSelectedLeft(),
     'kanban.moveRight': () => KanbanBoardPage.moveSelectedRight(),
     'kanban.archive': () => KanbanBoardPage.archiveSelected(),
+    'kanban.step18ProofWrite': () => KanbanBoardPage.runStep18ProofWrite(),
     'kanban.safeChecks': () => KanbanBoardPage.safeChecks(),
   });
 }
