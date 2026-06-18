@@ -2,10 +2,17 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  width: min(1480px, calc(100% - 32px));
-  margin: 0 auto;
-  padding: 18px 0 30px;
+  width: 100%;
+  margin: 0;
   color: var(--text);
+}
+
+.diary-page--intro {
+  padding: 0 0 8px;
+}
+
+.diary-page--body {
+  padding: 0 0 30px;
 }
 
 .diary-page__header,
@@ -34,8 +41,8 @@
 }
 
 .diary-page__header h2 {
-  font-size: 28px;
-  line-height: 1.05;
+  font-size: 18px;
+  line-height: 1.2;
   font-weight: 740;
 }
 
@@ -380,8 +387,7 @@
 
 @media (max-width: 900px) {
   .diary-page {
-    width: min(100% - 18px, 760px);
-    padding-top: 12px;
+    gap: 12px;
   }
 
   .diary-page__header {
@@ -401,7 +407,6 @@
 
 @media (max-width: 520px) {
   .diary-page {
-    width: calc(100% - 12px);
     gap: 10px;
   }
 

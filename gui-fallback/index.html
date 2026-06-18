@@ -3178,9 +3178,8 @@
   </section>
 
   <!-- Dave — personal layer placeholders -->
-  <section id="tab-diary" class="tab-panel" aria-label="Diary">
-    <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
-    <div class="diary-page" data-diary-page>
+  <section id="tab-diary" class="tab-panel" aria-label="Diary" data-diary-page>
+    <div class="diary-page diary-page--intro">
       <div class="diary-page__header">
         <div>
           <h2>Diary</h2>
@@ -3218,7 +3217,12 @@
         <span class="diary-status-dot diary-status-dot--unknown" aria-hidden="true"></span>
         <span>Loading Diary day</span>
       </div>
+    </div>
 
+    <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
+
+    <div class="tab-scroll-shell">
+    <div class="diary-page diary-page--body">
       <div class="diary-metrics" id="diary-metrics" aria-label="Diary day metrics"></div>
 
       <div class="diary-layout">
@@ -3255,6 +3259,7 @@
         </section>
       </div>
     </div>
+    </div><!-- /tab-scroll-shell -->
   </section>
 
   <section id="tab-calender" class="tab-panel" aria-label="Calendar">
@@ -3265,9 +3270,8 @@
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
   </section>
 
-  <section id="tab-imports" class="tab-panel" aria-label="Imports">
-    <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
-    <div class="imports-dashboard" data-imports-dashboard>
+  <section id="tab-imports" class="tab-panel" aria-label="Imports" data-imports-dashboard>
+    <div class="imports-dashboard imports-dashboard--intro">
       <div class="imports-dashboard__header">
         <div>
           <h2>Imports</h2>
@@ -3285,7 +3289,12 @@
       </div>
 
       <div class="imports-filter-strip" id="imports-filter-strip">Filter: all sources</div>
+    </div>
 
+    <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
+
+    <div class="tab-scroll-shell">
+    <div class="imports-dashboard imports-dashboard--body">
       <div class="imports-metrics" id="imports-metrics" aria-label="Import metrics"></div>
 
       <div class="imports-layout">
@@ -3334,6 +3343,7 @@
         </section>
       </div>
     </div>
+    </div><!-- /tab-scroll-shell -->
   </section>
 
   <dialog class="hub-modal hub-dialog" data-tone="info" id="imports-action-modal" style="width:min(720px,94vw);max-width:94vw">
