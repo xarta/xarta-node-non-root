@@ -3208,6 +3208,8 @@
         <span>Loading Imports status</span>
       </div>
 
+      <div class="imports-filter-strip" id="imports-filter-strip">Filter: all sources</div>
+
       <div class="imports-metrics" id="imports-metrics" aria-label="Import metrics"></div>
 
       <div class="imports-layout">
@@ -3257,6 +3259,20 @@
       </div>
     </div>
   </section>
+
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="imports-action-modal" style="width:min(720px,94vw);max-width:94vw">
+    <div class="hub-modal-header">
+      <h3 class="hub-dialog-title" id="imports-action-modal-title">Imports Action</h3>
+      <button class="hub-modal-close" type="button" id="imports-action-modal-close" aria-label="Close">×</button>
+    </div>
+    <div class="hub-modal-body">
+      <div id="imports-action-modal-body" class="imports-action-modal-body"></div>
+      <div id="imports-action-modal-status" class="hub-modal-error hub-dialog-status"></div>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary" type="button" id="imports-action-modal-footer-close">Close</button>
+    </div>
+  </dialog>
 
   <!-- Dave — Layout editor -->
   <section id="tab-dave-layout" class="tab-panel">

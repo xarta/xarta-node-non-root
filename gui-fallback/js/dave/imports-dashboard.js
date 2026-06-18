@@ -9,6 +9,8 @@ const ImportsDashboard = (() => {
     data: null,
     error: '',
     lastLoadedAt: '',
+    sourceFilter: 'all',
+    selection: null,
   };
 
   const escHtml = typeof esc === 'function'
@@ -55,16 +57,70 @@ const ImportsDashboard = (() => {
     return `${text.slice(0, 18)}...${text.slice(-6)}`;
   }
 
-  function table(rows, columns, emptyText) {
+  function selectionKey(type, index) {
+    return `${type}:${index}`;
+  }
+
+  function isSelected(type, index) {
+    return state.selection?.key === selectionKey(type, index);
+  }
+
+  function selectionAttrs(type, index) {
+    if (!type && type !== 0) return '';
+    const attrs = `data-imports-select-type="${escHtml(type)}" data-imports-select-index="${escHtml(index)}" tabindex="0"`;
+    return isSelected(type, index) ? `${attrs} data-imports-selected="true"` : attrs;
+  }
+
+  function table(rows, columns, emptyText, options = {}) {
     if (!Array.isArray(rows) || !rows.length) {
       return `<div class="imports-empty">${escHtml(emptyText)}</div>`;
     }
     const head = columns.map(col => `<th>${escHtml(col.label)}</th>`).join('');
-    const body = rows.map(row => {
+    const body = rows.map((row, index) => {
       const cells = columns.map(col => `<td>${escHtml(row[col.key] ?? '')}</td>`).join('');
-      return `<tr>${cells}</tr>`;
+      const attrs = options.selectType ? ` ${selectionAttrs(options.selectType, index)}` : '';
+      return `<tr${attrs}>${cells}</tr>`;
     }).join('');
     return `<table class="imports-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  }
+
+  function filterLabel(value) {
+    if (value === 'interests') return 'Hermes Interests Ingestion';
+    if (value === 'git') return 'Git Activity';
+    return 'all sources';
+  }
+
+  function applyFilter() {
+    const root = document.querySelector('[data-imports-dashboard]');
+    if (!root) return;
+    root.dataset.sourceFilter = state.sourceFilter;
+    const strip = el('imports-filter-strip');
+    if (strip) {
+      const selected = state.selection ? ` - selected ${state.selection.label}` : '';
+      strip.textContent = `Filter: ${filterLabel(state.sourceFilter)}${selected}`;
+    }
+    root.querySelectorAll('.imports-band--interests').forEach(node => {
+      node.hidden = state.sourceFilter === 'git';
+    });
+    root.querySelectorAll('.imports-band--git').forEach(node => {
+      node.hidden = state.sourceFilter === 'interests';
+    });
+  }
+
+  function applySelectionStyles() {
+    document.querySelectorAll('[data-imports-selected="true"]').forEach(node => {
+      node.removeAttribute('data-imports-selected');
+    });
+    if (!state.selection) {
+      applyFilter();
+      return;
+    }
+    document.querySelectorAll('[data-imports-select-type]').forEach(node => {
+      if (selectionKey(node.dataset.importsSelectType, node.dataset.importsSelectIndex) === state.selection.key) {
+        node.setAttribute('data-imports-selected', 'true');
+      }
+    });
+    applyFilter();
   }
 
   function renderStatus(data) {
@@ -120,7 +176,8 @@ const ImportsDashboard = (() => {
           { key: 'Completed', label: 'Completed' },
           { key: 'Pending', label: 'Pending' },
         ],
-        'No category rows reported.'
+        'No category rows reported.',
+        { selectType: 'category' }
       );
     }
     const health = el('imports-input-health');
@@ -132,7 +189,8 @@ const ImportsDashboard = (() => {
           { key: 'State', label: 'State' },
           { key: 'Note', label: 'Note' },
         ],
-        'No input-health rows reported.'
+        'No input-health rows reported.',
+        { selectType: 'input' }
       );
     }
     const unavailable = el('imports-source-unavailable');
@@ -145,17 +203,18 @@ const ImportsDashboard = (() => {
           { key: 'Work type', label: 'Work type' },
           { key: 'Artifact', label: 'Artifact' },
         ],
-        'No source-unavailable rows reported.'
+        'No source-unavailable rows reported.',
+        { selectType: 'source_unavailable' }
       );
     }
   }
 
-  function repoHtml(repo) {
+  function repoHtml(repo, index) {
     const tone = statusTone(repo.status);
     const clean = repo.dirty_count === 0 ? 'clean' : `${repo.dirty_count} changed`;
     const commits = repo.daily_commit_count === 1 ? '1 commit today' : `${repo.daily_commit_count || 0} commits today`;
     return `
-      <div class="imports-repo" data-imports-repo="${escHtml(repo.repo_id || '')}">
+      <div class="imports-repo" data-imports-repo="${escHtml(repo.repo_id || '')}" ${selectionAttrs('repo', index)}>
         <div class="imports-repo-head">
           <div class="imports-repo-title" title="${escHtml(repo.path || '')}">${escHtml(repo.label || repo.repo_id || 'repo')}</div>
           <div class="imports-repo-status imports-pill imports-pill--${tone}">${escHtml(String(repo.status || 'unknown').replace(/_/g, ' '))}</div>
@@ -189,17 +248,22 @@ const ImportsDashboard = (() => {
   function renderRecent(data) {
     const target = el('imports-recent-work');
     if (!target) return;
-    const gitRows = (data.recent_work?.git || []).map(item => ({
+    const gitRows = (data.recent_work?.git || []).map((item, index) => ({
+      type: 'recent_git',
+      index,
       title: item.subject || item.short_sha || 'commit',
       meta: `${item.repo_label || item.repo_id || 'repo'} - ${item.short_sha || ''} - ${item.author_date || ''}`,
     }));
-    const interestRows = (data.recent_work?.interests || []).map(item => ({
+    const interestRows = (data.recent_work?.interests || []).map((item, index) => ({
+      type: 'recent_interest',
+      index,
       title: `${item.Category || 'category'} ${item['Work type'] || 'work'}`,
       meta: `${item.When || ''} - ${item.Status || ''} - ${item.Artifact || ''}`,
+      path: item.Artifact_path || '',
     }));
     const rows = [...gitRows, ...interestRows].slice(0, 12);
     target.innerHTML = rows.length ? rows.map(row => `
-      <div class="imports-work-row">
+      <div class="imports-work-row" ${selectionAttrs(row.type, row.index)}>
         <div class="imports-work-main">
           <div class="imports-work-title">${escHtml(row.title)}</div>
           <div class="imports-work-meta">${escHtml(row.meta)}</div>
@@ -216,8 +280,8 @@ const ImportsDashboard = (() => {
       target.innerHTML = '<div class="imports-empty">No blockers reported.</div>';
       return;
     }
-    target.innerHTML = blockers.map(blocker => `
-      <div class="imports-blocker-row">
+    target.innerHTML = blockers.map((blocker, index) => `
+      <div class="imports-blocker-row" ${selectionAttrs('blocker', index)}>
         <div class="imports-blocker-main">
           <div class="imports-blocker-title">${escHtml(blocker.source || 'source')}</div>
           <div class="imports-blocker-meta">${escHtml(JSON.stringify(blocker.items || []))}</div>
@@ -230,8 +294,8 @@ const ImportsDashboard = (() => {
     const target = el('imports-proof-links');
     if (!target) return;
     const links = Array.isArray(data.proof_links) ? data.proof_links : [];
-    target.innerHTML = links.length ? links.map(link => `
-      <button class="imports-proof-row" type="button" data-imports-action="open-doc-path" data-doc-path="${escHtml(link.path || '')}">
+    target.innerHTML = links.length ? links.map((link, index) => `
+      <button class="imports-proof-row" type="button" data-imports-action="open-doc-path" data-doc-path="${escHtml(link.path || '')}" ${selectionAttrs('proof', index)}>
         <span class="imports-proof-main">
           <span class="imports-proof-title">${escHtml(link.label || link.path || 'Proof link')}</span>
           <span class="imports-proof-meta">${escHtml(link.path || '')}</span>
@@ -249,6 +313,8 @@ const ImportsDashboard = (() => {
     renderRecent(data);
     renderBlockers(data);
     renderProofLinks(data);
+    applyFilter();
+    applySelectionStyles();
     if (window.BodyShade && typeof window.BodyShade.scheduleSizeFillTable === 'function') {
       window.BodyShade.scheduleSizeFillTable();
     }
@@ -317,17 +383,219 @@ const ImportsDashboard = (() => {
     return openDocPath(docPath);
   }
 
+  function rowsForType(type) {
+    const data = state.data || {};
+    const interests = data.interests || {};
+    const git = data.git_activity || {};
+    if (type === 'category') return interests.category_summary || [];
+    if (type === 'input') return interests.input_health || [];
+    if (type === 'source_unavailable') return interests.source_unavailable || [];
+    if (type === 'repo') return git.watched_repos || [];
+    if (type === 'recent_git') return data.recent_work?.git || [];
+    if (type === 'recent_interest') return data.recent_work?.interests || [];
+    if (type === 'blocker') return data.blockers || [];
+    if (type === 'proof') return data.proof_links || [];
+    return [];
+  }
+
+  function rowLabel(type, row) {
+    if (type === 'repo') return row.label || row.repo_id || 'git repo';
+    if (type === 'category') return row.Category || 'interests category';
+    if (type === 'input') return row.Input || 'input health row';
+    if (type === 'source_unavailable') return `${row.Category || 'source'} ${row['Work type'] || ''}`.trim();
+    if (type === 'recent_git') return row.subject || row.short_sha || 'git commit';
+    if (type === 'recent_interest') return `${row.Category || 'interests'} ${row['Work type'] || ''}`.trim();
+    if (type === 'blocker') return row.source || 'blocker';
+    if (type === 'proof') return row.label || row.path || 'proof link';
+    return 'dashboard row';
+  }
+
+  function firstPath(row) {
+    if (!row || typeof row !== 'object') return '';
+    if (row.path) return row.path;
+    const key = Object.keys(row).find(name => name.endsWith('_path') && row[name]);
+    return key ? row[key] : '';
+  }
+
+  function setSelection(type, index) {
+    const rows = rowsForType(type);
+    const idx = Number(index);
+    const row = rows[idx];
+    if (!row) return;
+    state.selection = {
+      key: selectionKey(type, idx),
+      type,
+      index: idx,
+      label: rowLabel(type, row),
+      row,
+    };
+    applySelectionStyles();
+  }
+
+  function setSourceFilter(filter) {
+    state.sourceFilter = ['all', 'interests', 'git'].includes(filter) ? filter : 'all';
+    applyFilter();
+    return state.sourceFilter;
+  }
+
+  function closeActionModal() {
+    const modal = el('imports-action-modal');
+    if (!modal) return;
+    if (typeof HubModal !== 'undefined') HubModal.close(modal);
+    else if (typeof modal.close === 'function') modal.close();
+  }
+
+  function showActionModal(title, html, status = '') {
+    const modal = el('imports-action-modal');
+    const titleEl = el('imports-action-modal-title');
+    const body = el('imports-action-modal-body');
+    const statusEl = el('imports-action-modal-status');
+    if (!modal || !body) return false;
+    if (titleEl) titleEl.textContent = title;
+    body.innerHTML = html;
+    if (statusEl) statusEl.textContent = status;
+    if (typeof HubModal !== 'undefined') HubModal.open(modal);
+    else if (typeof modal.showModal === 'function' && !modal.open) modal.showModal();
+    return true;
+  }
+
+  function kvHtml(items) {
+    return `<dl class="imports-action-kv">${items.map(([key, value]) => `
+      <dt>${escHtml(key)}</dt><dd>${escHtml(value ?? '')}</dd>
+    `).join('')}</dl>`;
+  }
+
+  function artifactItems() {
+    const data = state.data || {};
+    const interests = data.interests || {};
+    const items = [];
+    function push(label, path, source) {
+      if (!path) return;
+      items.push({ label: label || path, path, source });
+    }
+    (interests.category_summary || []).forEach(row => push(row['Latest proof artifact'], row['Latest proof artifact_path'], row.Category || 'category'));
+    (interests.input_health || []).forEach(row => push(row.Evidence, row.Evidence_path, row.Input || 'input'));
+    (interests.source_unavailable || []).forEach(row => push(row.Artifact, row.Artifact_path, row.Category || 'source-unavailable'));
+    (data.recent_work?.interests || []).forEach(row => push(row.Artifact, row.Artifact_path, row.Category || 'recent interests'));
+    (data.proof_links || []).forEach(row => push(row.label, row.path, 'proof'));
+    return items;
+  }
+
+  function showArtifacts() {
+    const items = artifactItems().slice(0, 24);
+    const selectedPath = firstPath(state.selection?.row);
+    const selected = selectedPath ? `<p>Selected row artifact: ${escHtml(selectedPath)}</p>` : '';
+    const list = items.length ? `<ul class="imports-action-list">${items.map(item => `
+      <li><strong>${escHtml(item.label)}</strong><br><span>${escHtml(item.source)}</span><br><code>${escHtml(item.path)}</code></li>
+    `).join('')}</ul>` : '<p>No artifact links reported by the current dashboard state.</p>';
+    return showActionModal('Imports Artifacts', `${selected}${list}`);
+  }
+
+  async function openLatestProof() {
+    const links = state.data?.proof_links || [];
+    const link = links.find(item => /step 8/i.test(item.label || ''))
+      || links.find(item => /final acceptance|proof/i.test(item.label || ''))
+      || links[0];
+    if (!link?.path) {
+      showActionModal('Latest Proof', '<p>No proof link is available in the current dashboard state.</p>');
+      return false;
+    }
+    return openDocPath(link.path);
+  }
+
+  function showBlockers() {
+    const data = state.data || {};
+    const interests = data.interests || {};
+    const git = data.git_activity || {};
+    const dirty = (git.watched_repos || []).filter(repo => repo.dirty_count || repo.actions?.length || repo.error);
+    const rows = [
+      ['Overall status', data.status || 'unknown'],
+      ['Pending interests review', interests.pending_review ?? 0],
+      ['Actionable interests backlog', interests.actionable_backlog ?? 0],
+      ['Dashboard blockers', (data.blockers || []).length],
+      ['Git actionable repos', dirty.length],
+    ];
+    const blockerList = (data.blockers || []).length
+      ? `<ul class="imports-action-list">${data.blockers.map(blocker => `<li>${escHtml(blocker.source || 'source')}: ${escHtml(JSON.stringify(blocker.items || []))}</li>`).join('')}</ul>`
+      : '<p>No blockers or actionable rows are reported by the current dashboard state.</p>';
+    const blockers = el('imports-blockers');
+    if (blockers) blockers.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    return showActionModal('Imports Blockers', `${kvHtml(rows)}${blockerList}`);
+  }
+
+  function explainStatus() {
+    const data = state.data || {};
+    if (state.selection?.row) {
+      return showActionModal(
+        `Selected ${state.selection.label}`,
+        `${kvHtml([
+          ['Type', state.selection.type],
+          ['Status', state.selection.row.status || state.selection.row.State || data.status || 'unknown'],
+          ['Path', firstPath(state.selection.row) || 'none'],
+        ])}<pre style="white-space:pre-wrap;overflow-wrap:anywhere;margin:0">${escHtml(JSON.stringify(state.selection.row, null, 2))}</pre>`
+      );
+    }
+    return showActionModal(
+      'Imports Status',
+      kvHtml([
+        ['Overall', data.status || 'unknown'],
+        ['Source digest', data.source_digest || 'none'],
+        ['Interests', data.interests?.status || 'unknown'],
+        ['Git', data.git_activity?.status || 'unknown'],
+        ['Watched repos', data.git_activity?.watched_repos?.length || 0],
+        ['Blockers', data.blockers?.length || 0],
+      ])
+    );
+  }
+
+  async function runSafeChecks() {
+    const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
+    const first = await fetcher('/api/v1/personal/imports-dashboard').then(resp => resp.json());
+    const second = await fetcher('/api/v1/personal/imports-dashboard').then(resp => resp.json());
+    state.data = second;
+    state.loaded = true;
+    render(second);
+    const dirty = (second.git_activity?.watched_repos || []).reduce((sum, repo) => sum + Number(repo.dirty_count || 0), 0);
+    return showActionModal(
+      'Safe Status Checks',
+      kvHtml([
+        ['Read-only route', '/api/v1/personal/imports-dashboard'],
+        ['Status', second.status || 'unknown'],
+        ['Same digest', first.source_digest === second.source_digest ? 'yes' : 'no'],
+        ['Source digest', second.source_digest || 'none'],
+        ['Dirty rows', dirty],
+        ['Blockers', second.blockers?.length || 0],
+      ]),
+      'No ingestion mutation command was run.'
+    );
+  }
+
   function bind() {
     const root = document.querySelector('[data-imports-dashboard]');
     if (!root || root.dataset.importsBound === '1') return;
     root.dataset.importsBound = '1';
     root.addEventListener('click', event => {
+      const selectable = event.target.closest('[data-imports-select-type]');
+      if (selectable) {
+        setSelection(selectable.dataset.importsSelectType, selectable.dataset.importsSelectIndex);
+      }
       const btn = event.target.closest('[data-imports-action]');
       if (!btn) return;
       const action = btn.dataset.importsAction;
       if (action === 'refresh') load({ force: true });
       if (action === 'open-interests-doc') openInterestsDoc();
       if (action === 'open-doc-path') openDocPath(btn.dataset.docPath || '');
+    });
+    root.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const selectable = event.target.closest('[data-imports-select-type]');
+      if (!selectable) return;
+      event.preventDefault();
+      setSelection(selectable.dataset.importsSelectType, selectable.dataset.importsSelectIndex);
+    });
+    ['imports-action-modal-close', 'imports-action-modal-footer-close'].forEach(id => {
+      const btn = el(id);
+      if (btn) btn.addEventListener('click', closeActionModal);
     });
   }
 
@@ -341,6 +609,9 @@ const ImportsDashboard = (() => {
       git_status: state.data?.git_activity?.status || '',
       watched_repo_count: state.data?.git_activity?.watched_repos?.length || 0,
       blocker_count: state.data?.blockers?.length || 0,
+      source_filter: state.sourceFilter,
+      selection_type: state.selection?.type || '',
+      selection_label: state.selection?.label || '',
       error: state.error,
     };
   }
@@ -352,6 +623,14 @@ const ImportsDashboard = (() => {
     refresh: () => load({ force: true }),
     openInterestsDoc,
     openDocPath,
+    openLatestProof,
+    showArtifacts,
+    showBlockers,
+    filterAll: () => setSourceFilter('all'),
+    filterInterests: () => setSourceFilter('interests'),
+    filterGit: () => setSourceFilter('git'),
+    runSafeChecks,
+    explainStatus,
     snapshot,
   };
 })();
@@ -359,8 +638,16 @@ const ImportsDashboard = (() => {
 window.BlueprintsImportsDashboard = ImportsDashboard;
 
 if (typeof DaveMenuConfig !== 'undefined') {
-  DaveMenuConfig.registerFunctions({
+DaveMenuConfig.registerFunctions({
     'imports.refresh': () => ImportsDashboard.refresh(),
     'imports.openInterestsDoc': () => ImportsDashboard.openInterestsDoc(),
+    'imports.openLatestProof': () => ImportsDashboard.openLatestProof(),
+    'imports.openArtifacts': () => ImportsDashboard.showArtifacts(),
+    'imports.showBlockers': () => ImportsDashboard.showBlockers(),
+    'imports.filterAll': () => ImportsDashboard.filterAll(),
+    'imports.filterInterests': () => ImportsDashboard.filterInterests(),
+    'imports.filterGit': () => ImportsDashboard.filterGit(),
+    'imports.safeChecks': () => ImportsDashboard.runSafeChecks(),
+    'imports.explainStatus': () => ImportsDashboard.explainStatus(),
   });
 }
