@@ -296,9 +296,13 @@ html.header-compact .header-inner {
     html[data-special-ui-mode='s25-stargate-touch-nav'] #synthesisMenuWrapper,
     html[data-special-ui-mode='s25-stargate-touch-nav'] #probesMenuWrapper,
     html[data-special-ui-mode='s25-stargate-touch-nav'] #settingsMenuWrapper,
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #daveMenuWrapper,
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #kanbanMenuWrapper,
     html[data-special-ui-mode='s25-stargate-touch-nav'] #synthesisMenuSaveNotification,
     html[data-special-ui-mode='s25-stargate-touch-nav'] #probesMenuSaveNotification,
-    html[data-special-ui-mode='s25-stargate-touch-nav'] #settingsMenuSaveNotification {
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #settingsMenuSaveNotification,
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #daveMenuSaveNotification,
+    html[data-special-ui-mode='s25-stargate-touch-nav'] #kanbanMenuSaveNotification {
         display: none !important;
     }
 
@@ -665,9 +669,13 @@ html.header-compact .header-inner {
     #synthesisMenuWrapper,
     #probesMenuWrapper,
     #settingsMenuWrapper,
+    #daveMenuWrapper,
+    #kanbanMenuWrapper,
     #synthesisMenuSaveNotification,
     #probesMenuSaveNotification,
-    #settingsMenuSaveNotification {
+    #settingsMenuSaveNotification,
+    #daveMenuSaveNotification,
+    #kanbanMenuSaveNotification {
         display: none !important;
     }
 

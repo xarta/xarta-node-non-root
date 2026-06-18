@@ -70,6 +70,8 @@
       { id: 'synthesisMenuWrapper', cfg: function () { return (typeof SynthesisMenuConfig !== 'undefined') ? SynthesisMenuConfig : null; } },
       { id: 'probesMenuWrapper', cfg: function () { return (typeof ProbesMenuConfig !== 'undefined') ? ProbesMenuConfig : null; } },
       { id: 'settingsMenuWrapper', cfg: function () { return (typeof SettingsMenuConfig !== 'undefined') ? SettingsMenuConfig : null; } },
+      { id: 'daveMenuWrapper', cfg: function () { return (typeof DaveMenuConfig !== 'undefined') ? DaveMenuConfig : null; } },
+      { id: 'kanbanMenuWrapper', cfg: function () { return (typeof KanbanMenuConfig !== 'undefined') ? KanbanMenuConfig : null; } },
     ];
     for (var i = 0; i < wrappers.length; i += 1) {
       var ref = wrappers[i];
@@ -242,6 +244,17 @@
     return isMobileResyncViewport();
   }
 
+  function isNewTopLevelPlaceholderMobileResyncMode() {
+    if (!handle || !window.matchMedia) return false;
+    var panel = handle.closest ? handle.closest('.tab-panel') : null;
+    if (!panel || ![
+      'tab-diary',
+      'tab-imports',
+      'tab-kanban',
+    ].includes(panel.id)) return false;
+    return isMobileResyncViewport();
+  }
+
   function shouldResyncShadeUpOnViewportChange() {
     return isS25StargateSnapMode()
       || isHermesDashboardLandscapeSnapMode()
@@ -249,7 +262,8 @@
       || isMatrixChatLandscapeSnapMode()
       || isSettingsMobileResyncMode()
       || isSynthesisMobileResyncMode()
-      || isProbesMobileResyncMode();
+      || isProbesMobileResyncMode()
+      || isNewTopLevelPlaceholderMobileResyncMode();
   }
 
   function getShadeSnapTop() {

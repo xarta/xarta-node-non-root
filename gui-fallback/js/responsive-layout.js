@@ -150,7 +150,7 @@ const ResponsiveLayout = (() => {
     }
 
     function _activeMenuWrapper() {
-        return ['synthesisMenuWrapper', 'probesMenuWrapper', 'settingsMenuWrapper']
+        return ['synthesisMenuWrapper', 'probesMenuWrapper', 'settingsMenuWrapper', 'daveMenuWrapper', 'kanbanMenuWrapper']
             .map(id => document.getElementById(id))
             .find(_isVisible) || null;
     }
