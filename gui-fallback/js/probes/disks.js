@@ -2195,9 +2195,9 @@ function _disksGuestSummarySignature(node) {
     _disksFactValue(node, 'Mount'),
     _disksFactValue(node, 'Path'),
     _disksFactValue(node, 'Guest path'),
-    String(node?.label || '').trim(),
+    String(node?.subtitle || '').trim(),
   ].map(value => String(value || '').trim().toLowerCase()).filter(Boolean);
-  return bits.join('|') || String(node?.id || '').trim();
+  return bits.join('|') || String(node?.id || node?.label || '').trim().toLowerCase();
 }
 
 function _disksGuestSummaryCandidates(hostNode, host, guestKey) {
