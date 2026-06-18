@@ -34,7 +34,12 @@ body.has-fill-tab {
   overflow: hidden;
 }
 
+body.has-managed-scroll-tab {
+  overflow: hidden;
+}
+
 html:has(body.has-fill-tab),
+html:has(body.has-managed-scroll-tab),
 html:has(body.shade-is-up) {
   overflow: hidden;
 }

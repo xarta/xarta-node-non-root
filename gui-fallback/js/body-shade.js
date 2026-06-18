@@ -677,6 +677,35 @@
     return panelHandle.getBoundingClientRect().top <= (getViewportHeight() - 20);
   }
 
+  function shouldLockManagedScrollBody(panel) {
+    if (!panel) return false;
+    if (document.body.classList.contains('shade-is-up')) return false;
+    if (window.scrollY > 0) return false;
+    var shell = panel.querySelector('.tab-scroll-shell');
+    if (!shell) return false;
+    var panelHandle = panel.querySelector('.body-shade-handle');
+    if (!panelHandle) return true;
+    return panelHandle.getBoundingClientRect().top <= (getViewportHeight() - 20);
+  }
+
+  function sizeManagedScrollShell() {
+    var panel = shade ? shade.querySelector('.tab-panel--managed-scroll.active') : null;
+    document.body.classList.toggle('has-managed-scroll-tab', shouldLockManagedScrollBody(panel));
+    if (!panel) return;
+
+    var viewportH = getViewportHeight();
+    var bottomClearance = getShadeBottomClearance();
+    panel.querySelectorAll('.tab-scroll-shell').forEach(function (shell) {
+      var top = Math.max(0, shell.getBoundingClientRect().top);
+      var height = Math.max(50, Math.round(viewportH - top - bottomClearance));
+      shell.style.height = height + 'px';
+      shell.style.maxHeight = height + 'px';
+      shell.style.overflow = 'auto';
+      shell.style.overscrollBehavior = 'contain';
+      shell.style.scrollPaddingBottom = bottomClearance + 'px';
+    });
+  }
+
   function sizeDocsPane() {
     var panel = document.getElementById('tab-docs');
     var editor = document.getElementById('docs-editor');
@@ -712,6 +741,7 @@
     var isShadeUp = document.body.classList.contains('shade-is-up');
 
     panel.querySelectorAll('.tab-scroll-shell').forEach(function (shell) {
+      if (shell.closest('.tab-panel--managed-scroll')) return;
       if (!isShadeUp) {
         shell.style.maxHeight = '';
         shell.style.overflow = '';
@@ -726,7 +756,7 @@
       if (wrap.classList.contains('table-wrap--fill')) return;
 
       if (wrap.closest('.tab-scroll-shell')) {
-        if (isShadeUp) {
+        if (isShadeUp || wrap.closest('.tab-panel--managed-scroll')) {
           wrap.style.maxHeight = 'none';
           wrap.style.overflow = 'visible';
         } else {
@@ -749,6 +779,7 @@
   function sizeActivePane() {
     updateViewportVars();
     sizeFillTable();
+    sizeManagedScrollShell();
     sizeDocsPane();
     sizeShadeUpScrollablePane();
   }
