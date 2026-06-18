@@ -689,10 +689,22 @@ const BlueprintsActiveBrowserObserver = (() => {
     const state = typeof window.BlueprintsHubMenuBridge?.getAutomationState === 'function'
       ? (window.BlueprintsHubMenuBridge.getAutomationState() || {})
       : {};
-    if (_lastCommandResult) {
-      return { ...state, last_command: _lastCommandResult };
+    const surfaces = state.surfaces && typeof state.surfaces === 'object'
+      ? { ...state.surfaces }
+      : {};
+    const calendarSnapshot = typeof window.BlueprintsCalendarPage?.snapshot === 'function'
+      ? window.BlueprintsCalendarPage.snapshot()
+      : null;
+    if (calendarSnapshot && typeof calendarSnapshot === 'object') {
+      surfaces.calendar = calendarSnapshot;
+    } else if (!surfaces.calendar || typeof surfaces.calendar !== 'object') {
+      surfaces.calendar = {};
     }
-    return state;
+    const normalizedState = { ...state, surfaces };
+    if (_lastCommandResult) {
+      return { ...normalizedState, last_command: _lastCommandResult };
+    }
+    return normalizedState;
   }
 
   function _docsState() {

@@ -576,6 +576,7 @@ const DiaryPage = (() => {
   return {
     load,
     refresh: () => load({ force: true }),
+    setDate,
     previousDay: () => setDate(shiftDate(state.date, -1)),
     nextDay: () => setDate(shiftDate(state.date, 1)),
     today: () => setDate(localDateString(new Date())),

@@ -27,6 +27,7 @@
   <link rel="stylesheet" href="css/synthesis-menu.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/dave-menu.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/dave-diary.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/dave-calendar.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/dave-imports.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/kanban-menu.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/splash-screens.css?v={{$assetVersion}}" />
@@ -3262,8 +3263,117 @@
     </div><!-- /tab-scroll-shell -->
   </section>
 
-  <section id="tab-calender" class="tab-panel" aria-label="Calendar">
+  <section id="tab-calender" class="tab-panel tab-panel--managed-scroll" aria-label="Calendar" data-calendar-page>
+    <div class="calendar-page calendar-page--intro">
+      <div class="calendar-page__header">
+        <div>
+          <h2>Calendar</h2>
+          <div class="calendar-page__meta" id="calendar-meta">Loading agenda...</div>
+        </div>
+        <div class="calendar-page__actions" aria-label="Calendar actions">
+          <button class="calendar-icon-btn calendar-icon-btn--prev" type="button" data-calendar-action="previous" title="Previous range" aria-label="Previous range"></button>
+          <button class="calendar-icon-btn calendar-icon-btn--today" type="button" data-calendar-action="today" title="Today" aria-label="Today"></button>
+          <button class="calendar-icon-btn calendar-icon-btn--next" type="button" data-calendar-action="next" title="Next range" aria-label="Next range"></button>
+          <button class="calendar-icon-btn calendar-icon-btn--refresh" type="button" data-calendar-action="refresh" title="Refresh calendar" aria-label="Refresh calendar"></button>
+        </div>
+      </div>
+
+      <div class="calendar-control-strip">
+        <label class="calendar-date-control" for="calendar-date-input">
+          <span>Date</span>
+          <input id="calendar-date-input" type="date" />
+        </label>
+        <div class="calendar-segment" aria-label="Calendar mode">
+          <button type="button" data-calendar-action="mode-day" data-calendar-mode-button="day">Day</button>
+          <button type="button" data-calendar-action="mode-week" data-calendar-mode-button="week">Week</button>
+        </div>
+        <div class="calendar-filter-strip" id="calendar-filter-strip">Filter: all sources</div>
+      </div>
+
+      <section class="calendar-quick-event" aria-labelledby="calendar-quick-event-heading">
+        <div class="calendar-section-head">
+          <h3 id="calendar-quick-event-heading">New Calendar Event</h3>
+          <span class="calendar-pill" id="calendar-write-pill">Ready</span>
+        </div>
+        <div class="calendar-form-grid">
+          <label class="calendar-field calendar-field--wide" for="calendar-event-title">
+            <span>Title</span>
+            <input id="calendar-event-title" type="text" maxlength="180" autocomplete="off" />
+          </label>
+          <label class="calendar-field" for="calendar-event-date">
+            <span>Date</span>
+            <input id="calendar-event-date" type="date" />
+          </label>
+          <label class="calendar-field" for="calendar-event-start">
+            <span>Start</span>
+            <input id="calendar-event-start" type="time" />
+          </label>
+          <label class="calendar-field" for="calendar-event-end">
+            <span>End</span>
+            <input id="calendar-event-end" type="time" />
+          </label>
+          <label class="calendar-check hub-checkbox" for="calendar-event-all-day">
+            <input id="calendar-event-all-day" class="hub-checkbox__input" type="checkbox" />
+            <span class="hub-checkbox__box" aria-hidden="true"></span>
+            <span class="hub-checkbox__label">All day</span>
+          </label>
+          <label class="calendar-field calendar-field--wide" for="calendar-event-body">
+            <span>Notes</span>
+            <textarea id="calendar-event-body" rows="2" maxlength="2000"></textarea>
+          </label>
+        </div>
+        <div class="calendar-quick-event__footer">
+          <span id="calendar-entry-status" class="calendar-entry-status"></span>
+          <button class="calendar-command-btn" type="button" data-calendar-action="submit-event">Save Event</button>
+        </div>
+      </section>
+
+      <div class="calendar-status-strip" id="calendar-status-strip" role="status" aria-live="polite">
+        <span class="calendar-status-dot calendar-status-dot--unknown" aria-hidden="true"></span>
+        <span>Loading Calendar agenda</span>
+      </div>
+    </div>
+
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
+
+    <div class="tab-scroll-shell">
+    <div class="calendar-page calendar-page--body">
+      <div class="calendar-metrics" id="calendar-metrics" aria-label="Calendar metrics"></div>
+
+      <div class="calendar-layout">
+        <section class="calendar-band calendar-band--agenda" aria-labelledby="calendar-agenda-heading">
+          <div class="calendar-section-head">
+            <h3 id="calendar-agenda-heading">Agenda</h3>
+            <span class="calendar-pill" id="calendar-agenda-count">0</span>
+          </div>
+          <div id="calendar-agenda-list" class="calendar-agenda-list"></div>
+        </section>
+
+        <section class="calendar-band" aria-labelledby="calendar-all-day-heading">
+          <div class="calendar-section-head">
+            <h3 id="calendar-all-day-heading">All-Day And Milestones</h3>
+          </div>
+          <div id="calendar-all-day-list" class="calendar-agenda-list"></div>
+        </section>
+      </div>
+
+      <div class="calendar-layout calendar-layout--lower">
+        <section class="calendar-band" aria-labelledby="calendar-upcoming-heading">
+          <div class="calendar-section-head">
+            <h3 id="calendar-upcoming-heading">Upcoming</h3>
+          </div>
+          <div id="calendar-upcoming-list" class="calendar-agenda-list"></div>
+        </section>
+
+        <section class="calendar-band" aria-labelledby="calendar-provenance-heading">
+          <div class="calendar-section-head">
+            <h3 id="calendar-provenance-heading">Provenance</h3>
+          </div>
+          <div id="calendar-provenance" class="calendar-provenance-list"></div>
+        </section>
+      </div>
+    </div>
+    </div><!-- /tab-scroll-shell -->
   </section>
 
   <section id="tab-todo" class="tab-panel" aria-label="ToDo">
@@ -3369,6 +3479,18 @@
     <div class="hub-modal-footer">
       <span id="diary-action-modal-status" class="hub-modal-status"></span>
       <button type="button" class="hub-modal-secondary" id="diary-action-modal-footer-close">Close</button>
+    </div>
+  </dialog>
+
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="calendar-action-modal" style="width:min(720px,94vw);max-width:94vw">
+    <div class="hub-modal-header">
+      <h3 class="hub-dialog-title" id="calendar-action-modal-title">Calendar Action</h3>
+      <button type="button" class="hub-modal-close" id="calendar-action-modal-close" aria-label="Close"></button>
+    </div>
+    <div class="hub-modal-body calendar-action-modal-body" id="calendar-action-modal-body"></div>
+    <div class="hub-modal-footer">
+      <span id="calendar-action-modal-status" class="hub-modal-status"></span>
+      <button type="button" class="hub-modal-secondary" id="calendar-action-modal-footer-close">Close</button>
     </div>
   </dialog>
 
@@ -5638,6 +5760,7 @@
 <script src="js/synthesis/synthesis-menu.js?v={{$assetVersion}}"></script>
 <script src="js/dave/dave-menu.js?v={{$assetVersion}}"></script>
 <script src="js/dave/diary-page.js?v={{$assetVersion}}"></script>
+<script src="js/dave/calendar-page.js?v={{$assetVersion}}"></script>
 <script src="js/dave/imports-dashboard.js?v={{$assetVersion}}"></script>
 <script src="js/kanban/kanban-menu.js?v={{$assetVersion}}"></script>
 <script src="js/settings/nodes.js?v={{$assetVersion}}"></script>
