@@ -11,6 +11,8 @@ const BlueprintsActiveBrowserObserver = (() => {
   const PAGE_READY_QUIET_MS = 350;
   const LS_HANDLED_COMMANDS = 'blueprints.active_browser.handled_commands';
   const HANDLED_COMMAND_TTL_MS = 5 * 60 * 1000;
+  const DIAGNOSTIC_REPORT_TTL_MS = 5000;
+  const DIAGNOSTIC_SOURCES = new Set(['gpu_activity_sound']);
 
   let _reportTimer = null;
   let _heartbeatTimer = null;
@@ -22,6 +24,7 @@ const BlueprintsActiveBrowserObserver = (() => {
   let _handledCommands = {};
   let _pageReadyTimer = null;
   let _lastCommandResult = null;
+  let _pendingDiagnostics = null;
 
   function _voiceMode() {
     return window.BlueprintsVoiceMode || null;
@@ -64,6 +67,15 @@ const BlueprintsActiveBrowserObserver = (() => {
     if (action === 'settings') return 'open_settings';
     if (action === 'selector') return 'selector_action';
     if (action === 'body_shade' || action === 'shade' || action === 'shade_up') return 'set_body_shade';
+    if (
+      action === 'diagnostic'
+      || action === 'diagnostics'
+      || action === 'diagnostic_snapshot'
+      || action === 'diagnostics_snapshot'
+      || action === 'request_diagnostics'
+      || action === 'runtime_snapshot'
+      || action === 'debug_snapshot'
+    ) return 'diagnostic_snapshot';
     return action;
   }
 
@@ -85,6 +97,26 @@ const BlueprintsActiveBrowserObserver = (() => {
 
   function _normalizeSelectorAction(value) {
     return _cleanText(value).toLowerCase().replace(/[\s_]+/g, '-');
+  }
+
+  function _normalizeDiagnosticSource(value) {
+    const source = _cleanText(value).toLowerCase().replace(/[-\s]+/g, '_');
+    if (source === 'gpu' || source === 'gpu_activity' || source === 'gpu_sfx') return 'gpu_activity_sound';
+    return DIAGNOSTIC_SOURCES.has(source) ? source : '';
+  }
+
+  function _diagnosticSourcesFromPayload(payload) {
+    const raw = payload?.diagnostics
+      || payload?.diagnostic_sources
+      || payload?.include
+      || ['gpu_activity_sound'];
+    const values = Array.isArray(raw) ? raw : String(raw || '').split(/[,\s]+/);
+    const sources = [];
+    values.forEach(value => {
+      const source = _normalizeDiagnosticSource(value);
+      if (source && !sources.includes(source)) sources.push(source);
+    });
+    return sources.length ? sources : ['gpu_activity_sound'];
   }
 
   function _normalizeGroup(value) {
@@ -257,6 +289,16 @@ const BlueprintsActiveBrowserObserver = (() => {
     };
   }
 
+  function _requestDiagnosticSnapshot(payload) {
+    _pendingDiagnostics = {
+      command_id: _cleanText(payload?.command_id),
+      requested_at_ms: Date.now(),
+      expires_at_ms: Date.now() + DIAGNOSTIC_REPORT_TTL_MS,
+      sources: _diagnosticSourcesFromPayload(payload),
+    };
+    return true;
+  }
+
   function _openModal(payload) {
     if (payload?.fn || payload?.menu_item_id || payload?.menu_id) {
       return _runMenuFunction(payload);
@@ -409,6 +451,10 @@ const BlueprintsActiveBrowserObserver = (() => {
     if (action === 'selector_action') {
       _runSelectorAction(payload?.selector_action, payload?.event_kind || 'click');
       scheduleReport('command-selector-action');
+      return;
+    }
+    if (action === 'diagnostic_snapshot') {
+      return _requestDiagnosticSnapshot(payload);
     }
   }
 
@@ -599,6 +645,44 @@ const BlueprintsActiveBrowserObserver = (() => {
     };
   }
 
+  function _gpuActivitySoundDiagnostic() {
+    const gpuActivitySound = (typeof GpuActivitySound !== 'undefined')
+      ? GpuActivitySound
+      : (window.GpuActivitySound || null);
+    if (!gpuActivitySound || typeof gpuActivitySound.getSnapshot !== 'function') {
+      return { available: false };
+    }
+    try {
+      return {
+        available: true,
+        snapshot: gpuActivitySound.getSnapshot(),
+      };
+    } catch (error) {
+      return {
+        available: true,
+        error: _cleanText(error?.message || error).slice(0, 180),
+      };
+    }
+  }
+
+  function _consumeDiagnostics() {
+    const request = _pendingDiagnostics;
+    if (!request) return null;
+    _pendingDiagnostics = null;
+    if (Date.now() > Number(request.expires_at_ms || 0)) return null;
+    const diagnostics = {
+      schema: 'xarta.active_browser.diagnostics.v1',
+      command_id: request.command_id,
+      requested_at_ms: request.requested_at_ms,
+      captured_at_ms: Date.now(),
+      sources: request.sources.slice(),
+    };
+    if (request.sources.includes('gpu_activity_sound')) {
+      diagnostics.gpu_activity_sound = _gpuActivitySoundDiagnostic();
+    }
+    return diagnostics;
+  }
+
   function _automationState() {
     const state = typeof window.BlueprintsHubMenuBridge?.getAutomationState === 'function'
       ? (window.BlueprintsHubMenuBridge.getAutomationState() || {})
@@ -627,8 +711,8 @@ const BlueprintsActiveBrowserObserver = (() => {
     };
   }
 
-  function _payload() {
-    return {
+  function _payload(options = {}) {
+    const payload = {
       browser_id: _browserId(),
       browser_label: _browserLabel(),
       tab_id: _tabId(),
@@ -648,10 +732,15 @@ const BlueprintsActiveBrowserObserver = (() => {
       body_shade: _bodyShadeState(),
       client_now_ms: Date.now(),
     };
+    if (options.includeDiagnostics) {
+      const diagnostics = _consumeDiagnostics();
+      if (diagnostics) payload.diagnostics = diagnostics;
+    }
+    return payload;
   }
 
   async function _postReport(reason) {
-    const payload = _payload();
+    const payload = _payload({ includeDiagnostics: true });
     if (!payload.browser_id) return;
     const key = JSON.stringify({
       page: payload.page,
@@ -665,6 +754,7 @@ const BlueprintsActiveBrowserObserver = (() => {
       visibility_state: payload.visibility_state,
       has_focus: payload.has_focus,
       frontend: payload.frontend,
+      diagnostics: payload.diagnostics || null,
     });
     const now = Date.now();
     if (key === _lastReportKey && (now - _lastReportAt) < REPORT_HEARTBEAT_MS) return;
@@ -802,7 +892,7 @@ const BlueprintsActiveBrowserObserver = (() => {
   return Object.freeze({
     scheduleReport,
     reportNow: _postReport,
-    currentPayload: _payload,
+    currentPayload: () => _payload(),
   });
 })();
 
