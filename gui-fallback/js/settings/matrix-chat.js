@@ -18,6 +18,7 @@ const MATRIX_CHAT_SYNC_RETRY_MS = 1500;
 const MATRIX_CHAT_SYNC_FALLBACK_MS = 30000;
 const MATRIX_CHAT_MAX_ATTACHMENT_BYTES = 64 * 1024 * 1024;
 const MATRIX_CHAT_MAX_PENDING_ATTACHMENTS = 8;
+const MATRIX_CHAT_INLINE_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
 const MATRIX_CHAT_LEVEL_RANK = Object.freeze({ debug: 0, information: 1, warning: 2, error: 3 });
 const MATRIX_CHAT_STT_SAFETY_INSTRUCTION = [
   'STT-originated request: do not perform destructive actions such as deleting, removing, wiping,',
@@ -80,6 +81,9 @@ const MatrixChat = (() => {
     attachmentSending: false,
     attachmentItems: [],
     attachmentDragDepth: 0,
+    attachmentObjectUrls: new Map(),
+    attachmentModalObjectKey: '',
+    attachmentModalTargetKey: '',
     audioSending: false,
     audioStarting: false,
     audioRecording: false,
@@ -256,6 +260,112 @@ const MatrixChat = (() => {
   function attachmentId() {
     if (window.crypto?.randomUUID) return window.crypto.randomUUID();
     return `att-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function mediaKind(media) {
+    const msgtype = String(media?.msgtype || '').replace(/^m\./, '').toLowerCase();
+    if (msgtype) return msgtype;
+    const mimetype = String(media?.mimetype || '').toLowerCase();
+    if (mimetype.startsWith('image/')) return 'image';
+    if (mimetype.startsWith('audio/')) return 'audio';
+    if (mimetype.startsWith('video/')) return 'video';
+    if (mimetype === 'application/pdf') return 'pdf';
+    if (mimetype.startsWith('text/')) return 'text';
+    return 'file';
+  }
+
+  function mediaFilename(message) {
+    const media = message?.media || {};
+    return String(media.filename || message?.body || mediaKind(media) || 'attachment');
+  }
+
+  function attachmentTargetKey(message, purpose = 'file') {
+    return [
+      state.serverId || MATRIX_CHAT_DEFAULT_SERVER,
+      message?.room_id || '',
+      message?.event_id || '',
+      purpose,
+    ].join('|');
+  }
+
+  function attachmentDownloadPath(message, disposition = 'attachment') {
+    const roomId = encodeURIComponent(message?.room_id || '');
+    const eventId = encodeURIComponent(message?.event_id || '');
+    return matrixApi(
+      `/rooms/${roomId}/attachments/${eventId}/download?disposition=${encodeURIComponent(disposition)}`
+    );
+  }
+
+  function attachmentPreviewPath(message) {
+    const roomId = encodeURIComponent(message?.room_id || '');
+    const eventId = encodeURIComponent(message?.event_id || '');
+    return matrixApi(`/rooms/${roomId}/attachments/${eventId}/preview`);
+  }
+
+  function revokeAttachmentObjectUrl(key) {
+    const entry = state.attachmentObjectUrls.get(key);
+    if (entry?.url) URL.revokeObjectURL(entry.url);
+    state.attachmentObjectUrls.delete(key);
+  }
+
+  function revokeAllAttachmentObjectUrls() {
+    Array.from(state.attachmentObjectUrls.keys()).forEach(revokeAttachmentObjectUrl);
+    state.attachmentModalObjectKey = '';
+    state.attachmentModalTargetKey = '';
+  }
+
+  async function attachmentBlobEntry(message, purpose = 'file') {
+    const key = attachmentTargetKey(message, purpose);
+    const cached = state.attachmentObjectUrls.get(key);
+    if (cached?.url) return cached;
+    if (cached?.promise) return cached.promise;
+    const promise = (async () => {
+      const response = await apiFetch(attachmentDownloadPath(message, 'inline'), { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      const media = message?.media || {};
+      const entry = {
+        key,
+        blob,
+        url: URL.createObjectURL(blob),
+        filename: mediaFilename(message),
+        mimetype: blob.type || media.mimetype || 'application/octet-stream',
+        size: blob.size || media.size || 0,
+      };
+      const current = state.attachmentObjectUrls.get(key);
+      if (!current || current.promise !== promise) {
+        URL.revokeObjectURL(entry.url);
+        return entry;
+      }
+      state.attachmentObjectUrls.set(key, entry);
+      return entry;
+    })();
+    state.attachmentObjectUrls.set(key, { promise });
+    try {
+      return await promise;
+    } catch (error) {
+      state.attachmentObjectUrls.delete(key);
+      throw error;
+    }
+  }
+
+  function canInlineImage(message) {
+    const media = message?.media || {};
+    const mimetype = String(media.mimetype || '').split(';', 1)[0].toLowerCase();
+    if (mediaKind(media) !== 'image') return false;
+    if (!message?.room_id || !message?.event_id) return false;
+    if (Number(media.size) > MATRIX_CHAT_INLINE_IMAGE_MAX_BYTES) return false;
+    return ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'].includes(mimetype);
+  }
+
+  function attachmentMetaParts(message) {
+    const media = message?.media || {};
+    const kind = mediaKind(media);
+    const size = formatFileSize(media.size);
+    const encrypted = media.encrypted_file ? 'encrypted' : 'mxc';
+    const dims = media.width && media.height ? `${media.width}x${media.height}` : '';
+    const duration = media.duration ? `${Math.round(Number(media.duration) / 1000)}s` : '';
+    return [kind, size, dims, duration, encrypted].filter(Boolean);
   }
 
   function hermesPrefix() {
@@ -968,17 +1078,236 @@ const MatrixChat = (() => {
     } catch (_) {}
   }
 
+  function clearAttachmentModal() {
+    clearNode(el('matrix-chat-attachment-preview'));
+    const status = el('matrix-chat-attachment-modal-status');
+    if (status) status.textContent = '';
+    const download = el('matrix-chat-attachment-download');
+    if (download) {
+      download.hidden = true;
+      download.removeAttribute('href');
+      download.removeAttribute('download');
+    }
+    const modalKey = state.attachmentModalObjectKey || state.attachmentModalTargetKey;
+    if (modalKey) revokeAttachmentObjectUrl(modalKey);
+    state.attachmentModalObjectKey = '';
+    state.attachmentModalTargetKey = '';
+  }
+
+  function setAttachmentModalStatus(message, tone = '') {
+    const status = el('matrix-chat-attachment-modal-status');
+    if (!status) return;
+    status.textContent = message || '';
+    status.dataset.tone = tone || '';
+  }
+
+  function renderAttachmentModalMeta(message, preview = null) {
+    const meta = el('matrix-chat-attachment-modal-meta');
+    const title = el('matrix-chat-attachment-modal-title');
+    if (title) title.textContent = mediaFilename(message);
+    if (!meta) return;
+    clearNode(meta);
+    const parts = attachmentMetaParts(message);
+    if (preview?.preview_status && preview.preview_status !== 'renderer_available') {
+      parts.push(preview.preview_status);
+    }
+    parts.forEach(part => {
+      const item = document.createElement('span');
+      item.textContent = part;
+      meta.appendChild(item);
+    });
+  }
+
+  function renderAttachmentFallback(container, message, preview = null) {
+    const fallback = document.createElement('div');
+    fallback.className = 'matrix-chat-attachment-fallback';
+    const strong = document.createElement('strong');
+    strong.textContent = mediaFilename(message);
+    const span = document.createElement('span');
+    span.textContent = preview?.fallback === 'download_available'
+      ? 'Preview unavailable. Download is available for this attachment.'
+      : 'Preview unavailable for this attachment type.';
+    fallback.append(strong, span);
+    container.appendChild(fallback);
+  }
+
+  function renderAttachmentText(container, text, markdown = false) {
+    const wrap = document.createElement('div');
+    wrap.className = markdown ? 'matrix-chat-attachment-markdown' : 'matrix-chat-attachment-text';
+    if (markdown) {
+      wrap.appendChild(renderMarkdownBody(text || ''));
+    } else {
+      const pre = document.createElement('pre');
+      pre.textContent = text || '';
+      wrap.appendChild(pre);
+    }
+    container.appendChild(wrap);
+  }
+
+  function renderAttachmentMedia(container, message, preview, entry) {
+    const kind = preview?.preview_kind || mediaKind(message?.media || {});
+    if (kind === 'image') {
+      const img = document.createElement('img');
+      img.className = 'matrix-chat-attachment-preview-image';
+      img.alt = mediaFilename(message);
+      img.src = entry.url;
+      container.appendChild(img);
+      return;
+    }
+    if (kind === 'audio') {
+      const wrap = document.createElement('div');
+      wrap.className = 'matrix-chat-attachment-audio';
+      const icon = document.createElement('span');
+      icon.className = 'matrix-chat-attachment-audio-icon';
+      icon.setAttribute('aria-hidden', 'true');
+      const audio = document.createElement('audio');
+      audio.controls = true;
+      audio.preload = 'metadata';
+      audio.src = entry.url;
+      wrap.append(icon, audio);
+      container.appendChild(wrap);
+      return;
+    }
+    if (kind === 'video') {
+      const video = document.createElement('video');
+      video.className = 'matrix-chat-attachment-video';
+      video.controls = true;
+      video.preload = 'metadata';
+      video.src = entry.url;
+      container.appendChild(video);
+      return;
+    }
+    if (kind === 'pdf') {
+      const object = document.createElement('object');
+      object.className = 'matrix-chat-attachment-pdf';
+      object.data = entry.url;
+      object.type = 'application/pdf';
+      const fallback = document.createElement('span');
+      fallback.textContent = 'PDF preview unavailable in this browser.';
+      object.appendChild(fallback);
+      container.appendChild(object);
+      return;
+    }
+    if (kind === 'markdown') {
+      renderAttachmentText(container, preview?.text || '', true);
+      return;
+    }
+    if (kind === 'text') {
+      renderAttachmentText(container, preview?.text || '', false);
+      return;
+    }
+    renderAttachmentFallback(container, message, preview);
+  }
+
+  async function openAttachmentModal(message) {
+    if (!message?.room_id || !message?.event_id || !message?.media) return;
+    const modal = el('matrix-chat-attachment-modal');
+    const previewNode = el('matrix-chat-attachment-preview');
+    const download = el('matrix-chat-attachment-download');
+    if (!modal || !previewNode) return;
+    clearAttachmentModal();
+    const targetKey = attachmentTargetKey(message, 'modal');
+    state.attachmentModalTargetKey = targetKey;
+    renderAttachmentModalMeta(message);
+    setAttachmentModalStatus('Loading attachment...', 'warn');
+    const loading = document.createElement('div');
+    loading.className = 'matrix-chat-attachment-loading';
+    loading.textContent = 'Loading preview...';
+    previewNode.appendChild(loading);
+    if (typeof HubModal !== 'undefined') {
+      HubModal.open(modal, { onClose: clearAttachmentModal });
+    } else {
+      modal.showModal?.();
+    }
+    try {
+      const [entry, preview] = await Promise.all([
+        attachmentBlobEntry(message, 'modal'),
+        apiJson(attachmentPreviewPath(message)).catch(error => ({
+          ok: false,
+          preview_kind: mediaKind(message.media),
+          preview_status: error.message,
+          fallback: 'download_available',
+        })),
+      ]);
+      if (state.attachmentModalTargetKey !== targetKey) return;
+      state.attachmentModalObjectKey = entry.key;
+      if (download) {
+        download.href = entry.url;
+        download.download = entry.filename || mediaFilename(message);
+        download.hidden = false;
+      }
+      renderAttachmentModalMeta(message, preview);
+      clearNode(previewNode);
+      renderAttachmentMedia(previewNode, message, preview, entry);
+      setAttachmentModalStatus(preview?.text_truncated ? 'Preview truncated; download has the full file.' : '', 'warn');
+    } catch (error) {
+      if (state.attachmentModalTargetKey !== targetKey) return;
+      clearNode(previewNode);
+      renderAttachmentFallback(previewNode, message, { fallback: 'download_available' });
+      setAttachmentModalStatus(`Attachment preview failed: ${error.message}`, 'error');
+    }
+  }
+
+  function hydrateInlineImage(message, img, button) {
+    attachmentBlobEntry(message, 'inline').then(entry => {
+      img.src = entry.url;
+      button.classList.remove('is-loading');
+      button.classList.add('is-ready');
+    }).catch(error => {
+      button.classList.remove('is-loading');
+      button.classList.add('is-unavailable');
+      button.title = `Inline image unavailable: ${error.message}`;
+    });
+  }
+
   function renderMessageMedia(message) {
     const media = message?.media;
     if (!media || !media.msgtype) return null;
-    const chip = document.createElement('div');
+    const wrap = document.createElement('div');
+    wrap.className = 'matrix-chat-message-media-wrap';
+    if (message.event_id) wrap.dataset.eventId = message.event_id;
+    if (canInlineImage(message)) {
+      const imageButton = document.createElement('button');
+      imageButton.type = 'button';
+      imageButton.className = 'matrix-chat-inline-image-button is-loading';
+      if (message.event_id) imageButton.dataset.eventId = message.event_id;
+      imageButton.title = `Open ${mediaFilename(message)}`;
+      imageButton.setAttribute('aria-label', `Open ${mediaFilename(message)}`);
+      if (media.width && media.height) {
+        imageButton.style.aspectRatio = `${Math.max(1, Number(media.width))} / ${Math.max(1, Number(media.height))}`;
+      }
+      const img = document.createElement('img');
+      img.alt = mediaFilename(message);
+      img.loading = 'lazy';
+      imageButton.appendChild(img);
+      imageButton.addEventListener('click', () => {
+        void openAttachmentModal(message);
+      });
+      wrap.appendChild(imageButton);
+      hydrateInlineImage(message, img, imageButton);
+    }
+
+    const chip = document.createElement('button');
+    chip.type = 'button';
     chip.className = 'matrix-chat-message-media';
-    const kind = String(media.msgtype || '').replace(/^m\./, '') || 'file';
-    const filename = String(media.filename || message.body || kind);
-    const size = formatFileSize(media.size);
-    const encrypted = media.encrypted_file ? 'encrypted' : 'mxc';
-    chip.textContent = [kind, filename, size, encrypted].filter(Boolean).join(' · ');
-    return chip;
+    if (message.event_id) chip.dataset.eventId = message.event_id;
+    chip.title = `Open ${mediaFilename(message)}`;
+    chip.setAttribute('aria-label', `Open ${mediaFilename(message)}`);
+    const kind = document.createElement('span');
+    kind.className = 'matrix-chat-message-media-kind';
+    kind.textContent = mediaKind(media);
+    const name = document.createElement('span');
+    name.className = 'matrix-chat-message-media-name';
+    name.textContent = mediaFilename(message);
+    const detail = document.createElement('span');
+    detail.className = 'matrix-chat-message-media-detail';
+    detail.textContent = attachmentMetaParts(message).slice(1).join(' · ');
+    chip.append(kind, name, detail);
+    chip.addEventListener('click', () => {
+      void openAttachmentModal(message);
+    });
+    wrap.appendChild(chip);
+    return wrap;
   }
 
   function redactedEventIds(roomId) {
@@ -1085,6 +1414,7 @@ const MatrixChat = (() => {
     messages.forEach(message => {
       const item = document.createElement('article');
       item.className = 'matrix-chat-message';
+      if (message.event_id) item.dataset.eventId = message.event_id;
       if (message.sender === ownUser) item.classList.add('is-self');
       if (/hermes-(local|vps)/.test(message.sender || '')) item.classList.add('is-hermes');
       if (message.system_message) item.classList.add('is-system');
@@ -3454,6 +3784,7 @@ const MatrixChat = (() => {
     state.attachmentSending = false;
     state.attachmentItems = [];
     state.attachmentDragDepth = 0;
+    revokeAllAttachmentObjectUrls();
     state.audioSending = false;
     cleanupAudioRecording();
     window.clearTimeout(state.roomTabClickTimer);
@@ -3593,6 +3924,7 @@ const MatrixChat = (() => {
     el('matrix-chat-room-admin-delete-system-before')?.addEventListener('click', deleteSystemMessagesBefore);
     el('matrix-chat-room-admin-system-before')?.addEventListener('input', renderRoomAdminModal);
     el('matrix-chat-room-admin-seed-decryption-test')?.addEventListener('click', seedDecryptionTestMessages);
+    el('matrix-chat-attachment-modal')?.addEventListener('close', clearAttachmentModal);
     el('matrix-chat-notifier-info-open')?.addEventListener('click', openNotifierInfoModal);
     el('matrix-chat-notifier-info-close')?.addEventListener('click', closeNotifierInfoModal);
     el('matrix-chat-notifier-mode')?.addEventListener('change', () => {
