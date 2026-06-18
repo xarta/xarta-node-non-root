@@ -45,10 +45,16 @@
 
   function isVisible() {
     try {
-      return localStorage.getItem(LS_APP_MODE_DIAG_VISIBLE) !== '0';
+      return localStorage.getItem(LS_APP_MODE_DIAG_VISIBLE) === '1';
     } catch (_) {
-      return true;
+      return false;
     }
+  }
+
+  function storeVisible(visible) {
+    try {
+      localStorage.setItem(LS_APP_MODE_DIAG_VISIBLE, visible ? '1' : '0');
+    } catch (_) {}
   }
 
   function applyVisibility() {
@@ -57,14 +63,36 @@
     chip.hidden = !isVisible();
   }
 
+  function setVisible(visible, opts) {
+    storeVisible(!!visible);
+    applyVisibility();
+    refresh();
+    if (!opts || opts.silent !== true) {
+      window.dispatchEvent(new CustomEvent('bp:app-mode-diag-visibility', {
+        detail: { visible: !!visible }
+      }));
+    }
+    return !!visible;
+  }
+
+  function toggleVisible() {
+    return setVisible(!isVisible());
+  }
+
+  window.BlueprintsAppModeDiag = {
+    isVisible: isVisible,
+    setVisible: setVisible,
+    toggle: toggleVisible,
+    refresh: refresh
+  };
+
   window.addEventListener('resize', refresh, { passive: true });
   window.addEventListener('orientationchange', refresh, { passive: true });
   window.addEventListener('bp:app-mode-diag-visibility', function (e) {
-    try {
-      if (e && e.detail && typeof e.detail.visible === 'boolean') {
-        localStorage.setItem(LS_APP_MODE_DIAG_VISIBLE, e.detail.visible ? '1' : '0');
-      }
-    } catch (_) {}
+    if (e && e.detail && typeof e.detail.visible === 'boolean') {
+      setVisible(e.detail.visible, { silent: true });
+      return;
+    }
     applyVisibility();
     refresh();
   });

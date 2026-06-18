@@ -45,6 +45,7 @@
     { key: 'layout-context', rank: 80, patterns: [/\bcontext\b/] },
     { key: 'explain', rank: 85, patterns: [/\bexplain\b/] },
     { key: 'dead-links', rank: 86, patterns: [/dead\s*links?/] },
+    { key: 'diag-chip', rank: 90, patterns: [/cfg-fn-diag-chip/, /\bdiag\s*chip\b/] },
     { key: 'delete', rank: 95, patterns: [/\bdelete\b/] },
   ];
 

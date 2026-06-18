@@ -88,6 +88,7 @@ const SettingsMenuConfig = createHubMenu({
         { id: 'cfg-fn-scroll',   label: 'Horiz Scroll: Is Off', icon: 'icons/ui/table-columns-blue.svg', fn: 'cfg.scroll', activeOn: ['settings'], parent: 'settings-layout', order: 4 },
         { id: 'cfg-fn-autofit',  label: 'Auto Fit Widths',  icon: 'icons/ui/table-columns-blue.svg', fn: 'cfg.autoFit', activeOn: ['settings'], parent: 'settings-layout', order: 5 },
         { id: 'cfg-fn-context',  label: 'Layout Context',   icon: HIEROGLYPHS.eyeOfHorus, fn: 'cfg.context',  activeOn: ['settings'],     parent: 'settings-layout', order: 6 },
+        { id: 'cfg-fn-diag-chip', label: 'Diag Chip: Is Off', icon: 'icons/ui/monitor-gold.svg', fn: 'cfg.diagChip', activeOn: ['settings'], parent: 'settings-layout', order: 7 },
 
         // ── Local Dockge page function items ─────────────────────────────
         { id: 'ldg-fn-refresh',  label: 'Refresh',          icon: HIEROGLYPHS.nefer,      fn: 'ldg.refresh',  activeOn: ['local-dockge'], parent: 'settings-layout', order: 0 },
@@ -1099,6 +1100,27 @@ if (_fleetUpdateConfirmBtn && !_fleetUpdateConfirmBtn.dataset.bound) {
     _fleetUpdateConfirmBtn.dataset.bound = '1';
 }
 
+function _settingsDiagChipVisible() {
+    if (window.BlueprintsAppModeDiag && typeof window.BlueprintsAppModeDiag.isVisible === 'function') {
+        return !!window.BlueprintsAppModeDiag.isVisible();
+    }
+    try {
+        return localStorage.getItem('bp_app_mode_diag_visible') === '1';
+    } catch (_e) {
+        return false;
+    }
+}
+
+function _settingsToggleDiagChip() {
+    if (window.BlueprintsAppModeDiag && typeof window.BlueprintsAppModeDiag.toggle === 'function') {
+        window.BlueprintsAppModeDiag.toggle();
+        return;
+    }
+    window.dispatchEvent(new CustomEvent('bp:app-mode-diag-visibility', {
+        detail: { visible: !_settingsDiagChipVisible() },
+    }));
+}
+
 // ── Function registrations ───────────────────────────────────────────────────
 // settings-menu.js loads after all settings page scripts so all referenced
 // globals are in scope.
@@ -1141,6 +1163,7 @@ SettingsMenuConfig.registerFunctions({
     'cfg.scroll':   () => toggleSettingsHorizontalScroll(),
     'cfg.autoFit':  () => _settingsAutoFitLayout(() => _ensureSettingsLayoutController()),
     'cfg.context':  () => openSettingsLayoutContextModal(),
+    'cfg.diagChip': () => _settingsToggleDiagChip(),
 
     // Local Dockge
     'ldg.refresh':  () => loadLocalDockgeStacks(),
@@ -1278,6 +1301,7 @@ SettingsMenuConfig.registerLabelGetters({
     'pveh-fn-scroll':      () => _settingsHorizontalScrollLabel('Horiz Scroll', () => _ensurePveHostsLayoutController()),
     'nod-fn-scroll':       () => _settingsHorizontalScrollLabel('Horiz Scroll', () => _ensureNodesLayoutController()),
     'cfg-fn-scroll':       () => _settingsHorizontalScrollLabel('Horiz Scroll', () => _ensureSettingsLayoutController()),
+    'cfg-fn-diag-chip':    () => `Diag Chip: ${_settingsDiagChipVisible() ? 'Is On' : 'Is Off'}`,
     'arp-fn-scroll':       () => _settingsHorizontalScrollLabel('Horiz Scroll', () => _ensureArpManualLayoutController()),
     'ai-fn-provscroll':    () => _settingsHorizontalScrollLabel('Provider Scroll', () => _ensureAiProvidersLayoutController()),
     'ai-fn-assignscroll':  () => _settingsHorizontalScrollLabel('Assignment Scroll', () => _ensureAiAssignmentsLayoutController()),
@@ -1285,4 +1309,8 @@ SettingsMenuConfig.registerLabelGetters({
     'cert-fn-scroll':      () => _settingsHorizontalScrollLabel('Horiz Scroll', () => _ensureCertsLayoutController()),
     'ni-fn-scroll':        () => _settingsHorizontalScrollLabel('Horiz Scroll', () => _ensureNiLayoutController()),
     'fc-fn-scroll':        () => _settingsHorizontalScrollLabel('Horiz Scroll', () => _ensureFcLayoutController()),
+});
+
+window.addEventListener('bp:app-mode-diag-visibility', () => {
+    SettingsMenuConfig.updateActiveTab?.();
 });
