@@ -26,6 +26,7 @@
   <link rel="stylesheet" href="css/settings-menu.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/synthesis-menu.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/dave-menu.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/dave-diary.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/dave-imports.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/kanban-menu.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/splash-screens.css?v={{$assetVersion}}" />
@@ -3179,6 +3180,81 @@
   <!-- Dave — personal layer placeholders -->
   <section id="tab-diary" class="tab-panel" aria-label="Diary">
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
+    <div class="diary-page" data-diary-page>
+      <div class="diary-page__header">
+        <div>
+          <h2>Diary</h2>
+          <div class="diary-page__meta" id="diary-day-meta">Loading day...</div>
+        </div>
+        <div class="diary-page__actions" aria-label="Diary actions">
+          <button class="diary-icon-btn diary-icon-btn--prev" type="button" data-diary-action="previous-day" title="Previous day" aria-label="Previous day"></button>
+          <button class="diary-icon-btn diary-icon-btn--today" type="button" data-diary-action="today" title="Today" aria-label="Today"></button>
+          <button class="diary-icon-btn diary-icon-btn--next" type="button" data-diary-action="next-day" title="Next day" aria-label="Next day"></button>
+          <button class="diary-icon-btn diary-icon-btn--refresh" type="button" data-diary-action="refresh" title="Refresh day" aria-label="Refresh day"></button>
+        </div>
+      </div>
+
+      <div class="diary-date-strip">
+        <label class="diary-date-control" for="diary-date-input">
+          <span>Date</span>
+          <input id="diary-date-input" type="date" />
+        </label>
+        <div class="diary-filter-strip" id="diary-filter-strip">Filter: all sources</div>
+      </div>
+
+      <section class="diary-quick-entry" aria-labelledby="diary-quick-entry-heading">
+        <div class="diary-section-head">
+          <h3 id="diary-quick-entry-heading">Quick Entry</h3>
+          <span class="diary-pill" id="diary-write-pill">Ready</span>
+        </div>
+        <textarea id="diary-quick-entry-body" maxlength="4000" rows="4"></textarea>
+        <div class="diary-quick-entry__footer">
+          <span id="diary-entry-status" class="diary-entry-status"></span>
+          <button class="diary-command-btn" type="button" data-diary-action="submit-entry">Save Entry</button>
+        </div>
+      </section>
+
+      <div class="diary-status-strip" id="diary-status-strip" role="status" aria-live="polite">
+        <span class="diary-status-dot diary-status-dot--unknown" aria-hidden="true"></span>
+        <span>Loading Diary day</span>
+      </div>
+
+      <div class="diary-metrics" id="diary-metrics" aria-label="Diary day metrics"></div>
+
+      <div class="diary-layout">
+        <section class="diary-band diary-band--summary" aria-labelledby="diary-summary-heading">
+          <div class="diary-section-head">
+            <h3 id="diary-summary-heading">Day Summary</h3>
+            <button class="diary-text-btn" type="button" data-diary-action="generate-summary">Generate</button>
+          </div>
+          <div id="diary-day-summary" class="diary-summary-body"></div>
+        </section>
+
+        <section class="diary-band diary-band--moments" aria-labelledby="diary-moments-heading">
+          <div class="diary-section-head">
+            <h3 id="diary-moments-heading">Source Moments</h3>
+            <span class="diary-pill" id="diary-moments-count">0</span>
+          </div>
+          <div id="diary-source-moments" class="diary-moment-list"></div>
+        </section>
+      </div>
+
+      <div class="diary-layout diary-layout--lower">
+        <section class="diary-band" aria-labelledby="diary-actions-heading">
+          <div class="diary-section-head">
+            <h3 id="diary-actions-heading">Next Actions</h3>
+          </div>
+          <div id="diary-next-actions" class="diary-action-list"></div>
+        </section>
+
+        <section class="diary-band" aria-labelledby="diary-provenance-heading">
+          <div class="diary-section-head">
+            <h3 id="diary-provenance-heading">Provenance</h3>
+          </div>
+          <div id="diary-provenance" class="diary-provenance-list"></div>
+        </section>
+      </div>
+    </div>
   </section>
 
   <section id="tab-calender" class="tab-panel" aria-label="Calendar">
@@ -3271,6 +3347,18 @@
     </div>
     <div class="hub-modal-footer">
       <button class="hub-modal-btn secondary" type="button" id="imports-action-modal-footer-close">Close</button>
+    </div>
+  </dialog>
+
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="diary-action-modal" style="width:min(720px,94vw);max-width:94vw">
+    <div class="hub-modal-header">
+      <h3 class="hub-dialog-title" id="diary-action-modal-title">Diary Action</h3>
+      <button type="button" class="hub-modal-close" id="diary-action-modal-close" aria-label="Close"></button>
+    </div>
+    <div class="hub-modal-body diary-action-modal-body" id="diary-action-modal-body"></div>
+    <div class="hub-modal-footer">
+      <span id="diary-action-modal-status" class="hub-modal-status"></span>
+      <button type="button" class="hub-modal-secondary" id="diary-action-modal-footer-close">Close</button>
     </div>
   </dialog>
 
@@ -5539,6 +5627,7 @@
 <script src="js/hieroglyphs.js?v={{$assetVersion}}"></script>
 <script src="js/synthesis/synthesis-menu.js?v={{$assetVersion}}"></script>
 <script src="js/dave/dave-menu.js?v={{$assetVersion}}"></script>
+<script src="js/dave/diary-page.js?v={{$assetVersion}}"></script>
 <script src="js/dave/imports-dashboard.js?v={{$assetVersion}}"></script>
 <script src="js/kanban/kanban-menu.js?v={{$assetVersion}}"></script>
 <script src="js/settings/nodes.js?v={{$assetVersion}}"></script>

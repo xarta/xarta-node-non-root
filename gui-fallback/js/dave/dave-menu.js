@@ -5,6 +5,18 @@
 
 'use strict';
 
+const DaveActionIcons = {
+    refresh: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M13 3a9 9 0 1 0 8.95 10h-2.02A7 7 0 1 1 12 5a6.97 6.97 0 0 1 4.24 1.43L13 10h8V2l-3.33 3.33A8.97 8.97 0 0 0 13 3z%22/%3E%3C/svg%3E',
+    newEntry: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z%22/%3E%3C/svg%3E',
+    folder: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M4 5h6l2 2h8v12H4V5zm2 4v8h12V9H6z%22/%3E%3C/svg%3E',
+    document: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M6 2h8l5 5v15H6V2zm7 1.5V8h4.5L13 3.5zM8 12h8v2H8v-2zm0 4h8v2H8v-2z%22/%3E%3C/svg%3E',
+    filter: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M3 5h18v2H3V5zm4 6h10v2H7v-2zm3 6h4v2h-4v-2z%22/%3E%3C/svg%3E',
+    shield: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3zm-1 14-4-4 1.4-1.4 2.6 2.6 5.6-5.6L18 9l-7 7z%22/%3E%3C/svg%3E',
+    run: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M8 5v14l11-7L8 5z%22/%3E%3C/svg%3E',
+    link: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M3.9 12a5 5 0 0 1 5-5H12v2H8.9a3 3 0 0 0 0 6H12v2H8.9a5 5 0 0 1-5-5zm5.1 1v-2h6v2H9zm3-6h3.1a5 5 0 0 1 0 10H12v-2h3.1a3 3 0 0 0 0-6H12V7z%22/%3E%3C/svg%3E',
+    explain: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M11 18h2v-2h-2v2zm1-16a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm0-14a3 3 0 0 0-3 3h2a1 1 0 1 1 1 1c-1.1 0-2 .9-2 2v2h2v-2a3 3 0 0 0 0-6z%22/%3E%3C/svg%3E',
+};
+
 const DaveMenuConfig = createHubMenu({
     storageKey:      'blueprintsDaveMenuConfig',
     group:           'dave',
@@ -24,6 +36,19 @@ const DaveMenuConfig = createHubMenu({
         { id: 'todo',        label: 'ToDo',     icon: 'icons/ui/todo-blue.svg',     pageLabel: 'ToDo',          parent: 'diary', order: 1 },
         { id: 'imports',     label: 'Imports',  icon: 'icons/ui/imports-blue.svg',  pageLabel: 'Imports',       parent: null,    order: 1 },
         { id: 'dave-layout', label: '☰',        icon: 'icons/hieroglyphs/kheper-gold.svg', pageLabel: 'Navbar Layout', parent: null, order: 2 },
+        { id: 'diary-new-entry', label: 'New Entry', icon: DaveActionIcons.newEntry, pageLabel: 'New Diary Entry', parent: 'dave-layout', order: 0, fn: 'diary.newEntry', activeOn: ['diary'] },
+        { id: 'diary-refresh', label: 'Refresh', icon: DaveActionIcons.refresh, pageLabel: 'Refresh Diary', parent: 'dave-layout', order: 1, fn: 'diary.refresh', activeOn: ['diary'] },
+        { id: 'diary-run-summary', label: 'Run Summary', icon: DaveActionIcons.run, pageLabel: 'Generate Diary Summary', parent: 'dave-layout', order: 2, fn: 'diary.generateSummary', activeOn: ['diary'] },
+        { id: 'diary-browse-folder', label: 'Browse Folder', icon: DaveActionIcons.folder, pageLabel: 'Open Day Folder', parent: 'dave-layout', order: 3, fn: 'diary.openDayFolder', activeOn: ['diary'] },
+        { id: 'diary-browse-ledger', label: 'Browse Ledger', icon: DaveActionIcons.document, pageLabel: 'Open Source Ledger', parent: 'dave-layout', order: 4, fn: 'diary.openSourceLedger', activeOn: ['diary'] },
+        { id: 'diary-filter-all', label: 'Filter All', icon: DaveActionIcons.filter, pageLabel: 'Filter All Diary Sources', parent: 'dave-layout', order: 5, fn: 'diary.filterAll', activeOn: ['diary'] },
+        { id: 'diary-filter-manual', label: 'Filter Manual', icon: DaveActionIcons.filter, pageLabel: 'Filter Manual Diary Sources', parent: 'dave-layout', order: 6, fn: 'diary.filterManual', activeOn: ['diary'] },
+        { id: 'diary-filter-sources', label: 'Filter Sources', icon: DaveActionIcons.filter, pageLabel: 'Filter Diary Source Imports', parent: 'dave-layout', order: 7, fn: 'diary.filterSources', activeOn: ['diary'] },
+        { id: 'diary-filter-git', label: 'Filter Git', icon: DaveActionIcons.filter, pageLabel: 'Filter Diary Git Sources', parent: 'dave-layout', order: 8, fn: 'diary.filterGit', activeOn: ['diary'] },
+        { id: 'diary-show-pin-private', label: 'Show Pin Private', icon: DaveActionIcons.shield, pageLabel: 'Show Pin-Private Count', parent: 'dave-layout', order: 9, fn: 'diary.showPinPrivate', activeOn: ['diary'] },
+        { id: 'diary-connect-work', label: 'Connect Work', icon: DaveActionIcons.link, pageLabel: 'Link Diary Event To Work', parent: 'dave-layout', order: 10, fn: 'diary.linkWorkItem', activeOn: ['diary'] },
+        { id: 'diary-explain-event', label: 'Explain Event', icon: DaveActionIcons.explain, pageLabel: 'Explain Diary Event', parent: 'dave-layout', order: 11, fn: 'diary.explainSelection', activeOn: ['diary'] },
+        { id: 'diary-safe-checks', label: 'Safe Checks', icon: DaveActionIcons.shield, pageLabel: 'Diary Safe Checks', parent: 'dave-layout', order: 12, fn: 'diary.safeChecks', activeOn: ['diary'] },
         { id: 'imports-refresh', label: 'Refresh', icon: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M13 3a9 9 0 1 0 8.95 10h-2.02A7 7 0 1 1 12 5a6.97 6.97 0 0 1 4.24 1.43L13 10h8V2l-3.33 3.33A8.97 8.97 0 0 0 13 3z%22/%3E%3C/svg%3E', pageLabel: 'Refresh Imports', parent: 'dave-layout', order: 0, fn: 'imports.refresh', activeOn: ['imports'] },
         { id: 'imports-source-doc', label: 'Open Source', icon: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M6 2h8l5 5v15H6V2zm7 1.5V8h4.5L13 3.5zM8 12h8v2H8v-2zm0 4h8v2H8v-2z%22/%3E%3C/svg%3E', pageLabel: 'Open Imports Source', parent: 'dave-layout', order: 1, fn: 'imports.openInterestsDoc', activeOn: ['imports'] },
         { id: 'imports-latest-proof', label: 'Open Proof', icon: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M5 3h14v18H5V3zm3 4h8v2H8V7zm0 4h8v2H8v-2zm0 4h5v2H8v-2z%22/%3E%3C/svg%3E', pageLabel: 'Open Latest Proof', parent: 'dave-layout', order: 2, fn: 'imports.openLatestProof', activeOn: ['imports'] },
