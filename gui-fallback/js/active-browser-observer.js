@@ -402,7 +402,11 @@ const BlueprintsActiveBrowserObserver = (() => {
     let dialog = null;
     const cleanId = _cleanText(dialogId);
     if (cleanId) {
-      dialog = document.getElementById(cleanId);
+      const matches = Array.from(document.querySelectorAll('dialog[id]'))
+        .filter(node => node.id === cleanId);
+      dialog = matches.find(node => _dialogLooksOpen(node))
+        || matches[0]
+        || document.getElementById(cleanId);
     } else {
       const openDialogs = Array.from(document.querySelectorAll('dialog[id]'))
         .filter(node => _dialogLooksOpen(node));
@@ -734,6 +738,9 @@ const BlueprintsActiveBrowserObserver = (() => {
     const todoSnapshot = typeof window.BlueprintsTodoPage?.snapshot === 'function'
       ? window.BlueprintsTodoPage.snapshot()
       : null;
+    const kanbanSnapshot = typeof window.BlueprintsKanbanBoardPage?.snapshot === 'function'
+      ? window.BlueprintsKanbanBoardPage.snapshot()
+      : null;
     if (calendarSnapshot && typeof calendarSnapshot === 'object') {
       surfaces.calendar = calendarSnapshot;
     } else if (!surfaces.calendar || typeof surfaces.calendar !== 'object') {
@@ -743,6 +750,11 @@ const BlueprintsActiveBrowserObserver = (() => {
       surfaces.todo = todoSnapshot;
     } else if (!surfaces.todo || typeof surfaces.todo !== 'object') {
       surfaces.todo = {};
+    }
+    if (kanbanSnapshot && typeof kanbanSnapshot === 'object') {
+      surfaces.kanban = kanbanSnapshot;
+    } else if (!surfaces.kanban || typeof surfaces.kanban !== 'object') {
+      surfaces.kanban = {};
     }
     const normalizedState = { ...state, surfaces };
     if (_lastCommandResult) {

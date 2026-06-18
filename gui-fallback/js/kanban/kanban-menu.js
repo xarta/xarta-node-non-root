@@ -5,6 +5,19 @@
 
 'use strict';
 
+const KanbanActionIcons = {
+    refresh: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M13 3a9 9 0 1 0 8.95 10h-2.02A7 7 0 1 1 12 5a6.97 6.97 0 0 1 4.24 1.43L13 10h8V2l-3.33 3.33A8.97 8.97 0 0 0 13 3z%22/%3E%3C/svg%3E',
+    newItem: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z%22/%3E%3C/svg%3E',
+    board: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M4 4h7v7H4V4zm9 0h7v7h-7V4zM4 13h7v7H4v-7zm9 0h7v7h-7v-7z%22/%3E%3C/svg%3E',
+    detail: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M6 2h8l5 5v15H6V2zm7 1.5V8h4.5L13 3.5zM8 12h8v2H8v-2zm0 4h8v2H8v-2z%22/%3E%3C/svg%3E',
+    left: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22m15.5 5-7 7 7 7 1.4-1.4L11.3 12l5.6-5.6L15.5 5z%22/%3E%3C/svg%3E',
+    right: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22m8.5 19 7-7-7-7-1.4 1.4 5.6 5.6-5.6 5.6L8.5 19z%22/%3E%3C/svg%3E',
+    archive: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M4 4h16v5H4V4zm2 7h12v9H6v-9zm3 2v2h6v-2H9zM6 6v1h12V6H6z%22/%3E%3C/svg%3E',
+    shield: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3zm-1 14-4-4 1.4-1.4 2.6 2.6 5.6-5.6L18 9l-7 7z%22/%3E%3C/svg%3E',
+    issue: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z%22/%3E%3C/svg%3E',
+    todo: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22m9 16.2-3.5-3.5L4 14.2 9 19 20.5 7.5 19 6z%22/%3E%3C/svg%3E',
+};
+
 const KanbanMenuConfig = createHubMenu({
     storageKey:      'blueprintsKanbanMenuConfig',
     group:           'kanban',
@@ -21,5 +34,17 @@ const KanbanMenuConfig = createHubMenu({
     defaultMenu: [
         { id: 'kanban',        label: 'Kanban', icon: 'icons/ui/kanban-blue.svg', pageLabel: 'Kanban',        parent: null, order: 0 },
         { id: 'kanban-layout', label: '☰',      icon: 'icons/hieroglyphs/kheper-gold.svg', pageLabel: 'Navbar Layout', parent: null, order: 1 },
+        { id: 'kanban-new-item', label: 'New Item', icon: KanbanActionIcons.newItem, pageLabel: 'New Kanban Item', parent: 'kanban-layout', order: 0, fn: 'kanban.newRootItem', activeOn: ['kanban'] },
+        { id: 'kanban-refresh', label: 'Refresh', icon: KanbanActionIcons.refresh, pageLabel: 'Refresh Kanban', parent: 'kanban-layout', order: 1, fn: 'kanban.refresh', activeOn: ['kanban'] },
+        { id: 'kanban-root-board', label: 'Root Board', icon: KanbanActionIcons.board, pageLabel: 'Open Root Board', parent: 'kanban-layout', order: 2, fn: 'kanban.openRootBoard', activeOn: ['kanban'] },
+        { id: 'kanban-child-board', label: 'Child Board', icon: KanbanActionIcons.board, pageLabel: 'Open Selected Child Board', parent: 'kanban-layout', order: 3, fn: 'kanban.openChildBoard', activeOn: ['kanban'] },
+        { id: 'kanban-detail', label: 'Detail', icon: KanbanActionIcons.detail, pageLabel: 'Selected Item Detail', parent: 'kanban-layout', order: 4, fn: 'kanban.openDetail', activeOn: ['kanban'] },
+        { id: 'kanban-add-child', label: 'Add Child', icon: KanbanActionIcons.newItem, pageLabel: 'Add Child Item', parent: 'kanban-layout', order: 5, fn: 'kanban.addChild', activeOn: ['kanban'] },
+        { id: 'kanban-add-issue', label: 'Add Issue', icon: KanbanActionIcons.issue, pageLabel: 'Add Issue To Item', parent: 'kanban-layout', order: 6, fn: 'kanban.addIssue', activeOn: ['kanban'] },
+        { id: 'kanban-add-todo', label: 'Add ToDo', icon: KanbanActionIcons.todo, pageLabel: 'Add ToDo To Item', parent: 'kanban-layout', order: 7, fn: 'kanban.addTodo', activeOn: ['kanban'] },
+        { id: 'kanban-move-left', label: 'Move Left', icon: KanbanActionIcons.left, pageLabel: 'Move Selected Left', parent: 'kanban-layout', order: 8, fn: 'kanban.moveLeft', activeOn: ['kanban'] },
+        { id: 'kanban-move-right', label: 'Move Right', icon: KanbanActionIcons.right, pageLabel: 'Move Selected Right', parent: 'kanban-layout', order: 9, fn: 'kanban.moveRight', activeOn: ['kanban'] },
+        { id: 'kanban-archive', label: 'Archive', icon: KanbanActionIcons.archive, pageLabel: 'Archive Selected Item', parent: 'kanban-layout', order: 10, fn: 'kanban.archive', activeOn: ['kanban'] },
+        { id: 'kanban-safe-checks', label: 'Safe Checks', icon: KanbanActionIcons.shield, pageLabel: 'Kanban Safe Checks', parent: 'kanban-layout', order: 11, fn: 'kanban.safeChecks', activeOn: ['kanban'] },
     ],
 });

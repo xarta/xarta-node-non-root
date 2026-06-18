@@ -273,6 +273,9 @@ function _activeBrowserAutomationState() {
       imports_dashboard: typeof window.BlueprintsImportsDashboard?.snapshot === 'function'
         ? window.BlueprintsImportsDashboard.snapshot()
         : {},
+      kanban: typeof window.BlueprintsKanbanBoardPage?.snapshot === 'function'
+        ? window.BlueprintsKanbanBoardPage.snapshot()
+        : {},
     },
   };
 }
@@ -630,6 +633,7 @@ function switchTab(tab) {
   if (tab === 'calender' && typeof BlueprintsCalendarPage !== 'undefined') BlueprintsCalendarPage.load();
   if (tab === 'todo' && typeof BlueprintsTodoPage !== 'undefined') BlueprintsTodoPage.load();
   if (tab === 'imports' && typeof BlueprintsImportsDashboard !== 'undefined') BlueprintsImportsDashboard.load();
+  if (tab === 'kanban' && typeof BlueprintsKanbanBoardPage !== 'undefined') BlueprintsKanbanBoardPage.load();
   _syncActiveMenuForTab(tab);
   // Notify responsive layout so the correct page-controls group is shown/hidden
   if (typeof ResponsiveLayout !== 'undefined') ResponsiveLayout.updateControlsForTab(tab);

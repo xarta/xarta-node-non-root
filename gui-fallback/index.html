@@ -31,6 +31,7 @@
   <link rel="stylesheet" href="css/dave-todo.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/dave-imports.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/kanban-menu.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/kanban-board.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/splash-screens.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/hub-controls.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/hub-checkbox.css?v={{$assetVersion}}" />
@@ -3645,9 +3646,52 @@
     </div>
   </section>
 
-  <!-- Kanban — work-management placeholder -->
-  <section id="tab-kanban" class="tab-panel" aria-label="Kanban">
+  <!-- Kanban — work-management board -->
+  <section id="tab-kanban" class="tab-panel tab-panel--managed-scroll" aria-label="Kanban" data-kanban-board>
+    <div class="kanban-page kanban-page--intro">
+      <div class="kanban-page__header">
+        <div>
+          <h2>Kanban</h2>
+          <div class="kanban-page__meta" id="kanban-meta">Loading board...</div>
+        </div>
+        <div class="kanban-page__actions" aria-label="Kanban actions">
+          <button class="kanban-icon-btn kanban-icon-btn--root" type="button" data-kanban-action="root-board" title="Root board" aria-label="Root board"></button>
+          <button class="kanban-icon-btn kanban-icon-btn--new" type="button" data-kanban-action="new-root-item" title="New item" aria-label="New item"></button>
+          <button class="kanban-icon-btn kanban-icon-btn--refresh" type="button" data-kanban-action="refresh" title="Refresh board" aria-label="Refresh board"></button>
+        </div>
+      </div>
+
+      <div class="kanban-status-strip" id="kanban-status-strip" role="status" aria-live="polite">
+        <span class="kanban-status-dot kanban-status-dot--unknown" aria-hidden="true"></span>
+        <span>Loading Kanban state</span>
+      </div>
+
+      <div class="kanban-breadcrumb" id="kanban-breadcrumb">Root board</div>
+    </div>
+
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
+
+    <div class="tab-scroll-shell">
+    <div class="kanban-page kanban-page--body">
+      <div class="kanban-metrics" id="kanban-metrics" aria-label="Kanban metrics"></div>
+      <div class="kanban-board-shell" id="kanban-board-shell"></div>
+      <div class="kanban-selection-band">
+        <section class="kanban-band" aria-labelledby="kanban-selection-heading">
+          <div class="kanban-section-head">
+            <h3 id="kanban-selection-heading">Selection</h3>
+            <span class="kanban-pill" id="kanban-selection-pill">None</span>
+          </div>
+          <div id="kanban-selection-detail" class="kanban-detail-list"></div>
+        </section>
+        <section class="kanban-band" aria-labelledby="kanban-provenance-heading">
+          <div class="kanban-section-head">
+            <h3 id="kanban-provenance-heading">Provenance</h3>
+          </div>
+          <div id="kanban-provenance" class="kanban-detail-list"></div>
+        </section>
+      </div>
+    </div>
+    </div><!-- /tab-scroll-shell -->
   </section>
 
   <!-- Kanban — Layout editor -->
@@ -5893,6 +5937,7 @@
 <script src="js/dave/todo-page.js?v={{$assetVersion}}"></script>
 <script src="js/dave/imports-dashboard.js?v={{$assetVersion}}"></script>
 <script src="js/kanban/kanban-menu.js?v={{$assetVersion}}"></script>
+<script src="js/kanban/kanban-board.js?v={{$assetVersion}}"></script>
 <script src="js/settings/nodes.js?v={{$assetVersion}}"></script>
 <script src="js/settings/keys.js?v={{$assetVersion}}"></script>
 <script src="js/settings/certs.js?v={{$assetVersion}}"></script>
