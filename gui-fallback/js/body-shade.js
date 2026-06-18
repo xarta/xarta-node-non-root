@@ -249,6 +249,8 @@
     var panel = handle.closest ? handle.closest('.tab-panel') : null;
     if (!panel || ![
       'tab-diary',
+      'tab-calender',
+      'tab-todo',
       'tab-imports',
       'tab-kanban',
     ].includes(panel.id)) return false;
