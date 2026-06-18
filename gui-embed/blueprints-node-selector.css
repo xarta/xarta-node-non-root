@@ -190,6 +190,7 @@ blueprints-node-selector,
 .bp-ns-action-btn[data-action="probes"],
 .bp-ns-action-btn[data-action="settings"],
 .bp-ns-action-btn[data-action="dave"],
+.bp-ns-action-btn[data-action="kanban"],
 .bp-ns-action-btn[data-action="diag-chip"],
 .bp-ns-action-btn[data-action="hard-refresh"] {
   font-size: 0;
@@ -200,6 +201,7 @@ blueprints-node-selector,
 .bp-ns-action-btn[data-action="probes"]::before,
 .bp-ns-action-btn[data-action="settings"]::before,
 .bp-ns-action-btn[data-action="dave"]::before,
+.bp-ns-action-btn[data-action="kanban"]::before,
 .bp-ns-action-btn[data-action="diag-chip"]::before,
 .bp-ns-action-btn[data-action="hard-refresh"]::before {
   content: '';
@@ -229,6 +231,10 @@ blueprints-node-selector,
 
 .bp-ns-action-btn[data-action="dave"]::before {
   background-image: var(--bp-ns-icon-asset, url('/fallback-ui/assets/icons/hieroglyphs/cartouche-gold.svg'));
+}
+
+.bp-ns-action-btn[data-action="kanban"]::before {
+  background-image: var(--bp-ns-icon-asset, url('/fallback-ui/assets/icons/ui/kanban-gold.svg'));
 }
 
 .bp-ns-action-btn[data-action="settings"].wake-to-talk-target {

@@ -397,6 +397,7 @@
     'embed-menu',
     'fallback-ui',
     'dave',
+    'kanban',
   ];
 
   let SELECTOR_CFG = {
@@ -1344,6 +1345,7 @@
     'probes':           { icon: '📡', label: 'Probes',           buildPath: () => '/fallback-ui/?group=probes',            bridgeGroup: 'probes' },
     'settings':         { icon: '⚙️',  label: 'Settings',         buildPath: () => '/fallback-ui/?group=settings',          bridgeGroup: 'settings' },
     'dave':             { icon: '', label: 'Dave',               buildPath: () => '/fallback-ui/?group=dave',              bridgeGroup: 'dave' },
+    'kanban':           { icon: '', label: 'Kanban',             buildPath: () => '/fallback-ui/?group=kanban',            bridgeGroup: 'kanban' },
     'database-tables':  { icon: '🗂️', label: 'Database Tables',  buildPath: () => `${getDbBasePath()}/database-tables.html` },
     'database-diagram': { icon: '🕸️', label: 'Database Diagram', buildPath: () => `${getDbBasePath()}/database-diagram.html` },
     'embed-menu':       { icon: '🪲', label: 'Embed Menu',        buildPath: () => '/fallback-ui/?group=settings&tab=embed-menu' },

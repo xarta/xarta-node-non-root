@@ -64,6 +64,7 @@ function _getActiveGroupMenuConfig() {
   if (_selectorOriginMenuGroup === 'probes' && typeof ProbesMenuConfig !== 'undefined') return ProbesMenuConfig;
   if (_selectorOriginMenuGroup === 'settings' && typeof SettingsMenuConfig !== 'undefined') return SettingsMenuConfig;
   if (_selectorOriginMenuGroup === 'dave' && typeof DaveMenuConfig !== 'undefined') return DaveMenuConfig;
+  if (_selectorOriginMenuGroup === 'kanban' && typeof KanbanMenuConfig !== 'undefined') return KanbanMenuConfig;
   if (typeof SynthesisMenuConfig !== 'undefined') return SynthesisMenuConfig;
   return null;
 }
@@ -90,6 +91,7 @@ function _groupMenuEntries() {
     { group: 'probes', menu: typeof ProbesMenuConfig !== 'undefined' ? ProbesMenuConfig : null, wrapperId: 'probesMenuWrapper' },
     { group: 'settings', menu: typeof SettingsMenuConfig !== 'undefined' ? SettingsMenuConfig : null, wrapperId: 'settingsMenuWrapper' },
     { group: 'dave', menu: typeof DaveMenuConfig !== 'undefined' ? DaveMenuConfig : null, wrapperId: 'daveMenuWrapper' },
+    { group: 'kanban', menu: typeof KanbanMenuConfig !== 'undefined' ? KanbanMenuConfig : null, wrapperId: 'kanbanMenuWrapper' },
   ];
 }
 
@@ -468,6 +470,12 @@ function switchGroup(group) {
     DaveMenuConfig.updateActiveTab('diary');
     return;
   }
+  if (group === 'kanban') {
+    KanbanMenuConfig.showGroup();
+    switchTab('kanban');
+    KanbanMenuConfig.updateActiveTab('kanban');
+    return;
+  }
   const firstBtn = document.querySelector(`.table-nav button[data-group="${group}"]`);
   if (firstBtn) {
     const m = firstBtn.getAttribute('onclick').match(/switchTab\('([^']+)'\)/);
@@ -643,7 +651,7 @@ document.addEventListener('DOMContentLoaded', () => {
     switchGroup('settings');
     switchTab('ssh-terminal');
     if (typeof SettingsMenuConfig !== 'undefined') SettingsMenuConfig.updateActiveTab('ssh-terminal');
-  } else if (_urlGroup && ['synthesis', 'probes', 'settings', 'dave'].includes(_urlGroup)) {
+  } else if (_urlGroup && ['synthesis', 'probes', 'settings', 'dave', 'kanban'].includes(_urlGroup)) {
     switchGroup(_urlGroup);
   }
   if (_urlTab) {
@@ -652,6 +660,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (_urlGroup === 'probes' && typeof ProbesMenuConfig !== 'undefined') ProbesMenuConfig.updateActiveTab(_urlTab);
     if (_urlGroup === 'settings' && typeof SettingsMenuConfig !== 'undefined') SettingsMenuConfig.updateActiveTab(_urlTab);
     if (_urlGroup === 'dave' && typeof DaveMenuConfig !== 'undefined') DaveMenuConfig.updateActiveTab(_urlTab);
+    if (_urlGroup === 'kanban' && typeof KanbanMenuConfig !== 'undefined') KanbanMenuConfig.updateActiveTab(_urlTab);
   }
   loadFrontendSettings().then(() => {
     if (typeof SoundManager !== 'undefined') {

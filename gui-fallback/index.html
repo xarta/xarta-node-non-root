@@ -26,6 +26,7 @@
   <link rel="stylesheet" href="css/settings-menu.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/synthesis-menu.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/dave-menu.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/kanban-menu.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/splash-screens.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/hub-controls.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/hub-checkbox.css?v={{$assetVersion}}" />
@@ -174,6 +175,20 @@
         </div>
       </div>
       <div id="daveMenuSaveNotification">✓ Saved</div>
+
+      <!-- Kanban split-dropdown menu — shown when the work-management group is active -->
+      <div id="kanbanMenuWrapper" style="display:none">
+        <div class="hub-tabs-wrapper" style="margin-bottom:0">
+          <button class="hub-menu-toggle" id="kanbanMenuToggle">
+            <span class="hamburger-icon">☰</span>
+            <span class="current-tab-label" id="kanbanCurrentTabLabel">Kanban</span>
+            <span class="dropdown-arrow menu-editor-icon menu-editor-icon--chevron-down" aria-hidden="true"></span>
+          </button>
+          <div class="hub-tabs" id="kanbanHubTabs"></div>
+          <div class="hub-tabs-pinned" id="kanbanHubTabsPinned"></div>
+        </div>
+      </div>
+      <div id="kanbanMenuSaveNotification">✓ Saved</div>
 
       <!-- S25 special-mode page controls host.
       The active page-control group is moved here only while
@@ -3187,6 +3202,31 @@
     </div>
   </section>
 
+  <!-- Kanban — work-management placeholder -->
+  <section id="tab-kanban" class="tab-panel" aria-label="Kanban"></section>
+
+  <!-- Kanban — Layout editor -->
+  <section id="tab-kanban-layout" class="tab-panel">
+    <div id="s25-lift-kanban-layout" class="s25-lift-block" data-for-tab="kanban-layout">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:16px">Customise the Kanban navigation menu. Drag items to reorder on desktop, or use the arrow and nest buttons on touch devices. Layout is saved to this browser only.</p>
+    </div>
+    <div class="menu-editor-container">
+      <div class="menu-editor-header">
+        <h3>Kanban Navigation</h3>
+        <div style="display:flex;gap:8px">
+          <button class="btn-save-menu" id="kanbanMenuSaveButton">Save layout</button>
+          <button class="btn-reset-menu" id="kanbanMenuResetButton">Reset defaults</button>
+        </div>
+      </div>
+      <div class="menu-editor-instructions">
+        <p>Drag items to reorder on desktop. On touch devices, use the <span class="menu-editor-help-action"><span class="menu-editor-icon menu-editor-icon--move-up" aria-hidden="true"></span>up</span>, <span class="menu-editor-help-action"><span class="menu-editor-icon menu-editor-icon--move-down" aria-hidden="true"></span>down</span>, <span class="menu-editor-help-action"><span class="menu-editor-icon menu-editor-icon--nest" aria-hidden="true"></span>nest</span>, and promote buttons instead.</p>
+        <p><span class="menu-editor-help-action"><span class="menu-editor-icon menu-editor-icon--promote" aria-hidden="true"></span>Promote</span> moves a nested item back to the top level. <span class="menu-editor-help-action"><span class="menu-editor-icon menu-editor-icon--edit-label" aria-hidden="true"></span>Edit</span> renames labels. Changes are browser-local only.</p>
+      </div>
+      <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
+      <div id="kanbanMenuEditorList"></div>
+    </div>
+  </section>
+
   <!-- Probes — Layout editor -->
   <!-- TTS Pool Test Page -->
   <section id="tab-tts-pool" class="tab-panel">
@@ -5403,6 +5443,7 @@
 <script src="js/hieroglyphs.js?v={{$assetVersion}}"></script>
 <script src="js/synthesis/synthesis-menu.js?v={{$assetVersion}}"></script>
 <script src="js/dave/dave-menu.js?v={{$assetVersion}}"></script>
+<script src="js/kanban/kanban-menu.js?v={{$assetVersion}}"></script>
 <script src="js/settings/nodes.js?v={{$assetVersion}}"></script>
 <script src="js/settings/keys.js?v={{$assetVersion}}"></script>
 <script src="js/settings/certs.js?v={{$assetVersion}}"></script>
@@ -5633,6 +5674,7 @@
       'embed-menu',
       'fallback-ui',
       'dave',
+      'kanban',
     ],
     enableDbMenuConfig: true,
     pageSize: 3,

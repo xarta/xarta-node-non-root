@@ -73,7 +73,7 @@ appear on, which buttons show, and how paging works.
 ```html
 <script>
   window.BLUEPRINTS_SELECTOR_BUTTONS = {
-    enabledButtons: ['ui', 'database-tables', 'database-diagram', 'cache-mode', 'api-key', 'api-key-test', 'embed-menu', 'fallback-ui'],
+    enabledButtons: ['ui', 'database-tables', 'database-diagram', 'cache-mode', 'api-key', 'api-key-test', 'embed-menu', 'fallback-ui', 'dave', 'kanban'],
     enableDbMenuConfig: true,
     pageSize: 3,
     side: 'left',
@@ -89,6 +89,8 @@ Supported button keys:
 - `synthesis`
 - `probes`
 - `settings`
+- `dave`
+- `kanban`
 - `api-key`
 - `api-key-test`
 - `cache-mode`
