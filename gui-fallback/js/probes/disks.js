@@ -1468,20 +1468,22 @@ function _disksCardHtml(node, options = {}) {
   const primaryTarget = _disksPrimaryOpenTarget(node) || node;
   const shortcut = _disksShortcutMeta(node);
   const guestMeta = _disksGuestMeta(node);
+  const kind = String(node?.kind || '').trim().toLowerCase();
+  const usesActionRowFilesystemPill = kind === 'drive' || kind === 'partition';
   const filesystemTarget = shortcut ? shortcut.target : _disksFilesystemTarget(node);
   const filesystemPill = shortcut ? '' : _disksFilesystemPillLabel(node);
-  const floatingFilesystemPill = !shortcut && !filesystemTarget && String(node?.kind || '').trim().toLowerCase() === 'drive'
+  const floatingFilesystemPill = !shortcut && !filesystemTarget && usesActionRowFilesystemPill
     ? filesystemPill
     : '';
   const inlineFilesystemPill = floatingFilesystemPill || filesystemTarget ? '' : filesystemPill;
   const floatingFilesystemButton = !shortcut && filesystemTarget
-    && String(node?.kind || '').trim().toLowerCase() === 'drive'
+    && usesActionRowFilesystemPill
     ? `
         <button type="button" class="disks-card__jump disks-card__jump--fs" title="${_disksEsc(`Open ${filesystemPill} details for ${String(filesystemTarget.label || 'filesystem').trim() || 'filesystem'}`)}" aria-label="${_disksEsc(`Open ${filesystemPill} details for ${String(filesystemTarget.label || 'filesystem').trim() || 'filesystem'}`)}" data-disks-node="${_disksEsc(filesystemTarget.id)}">${_disksEsc(filesystemPill)}</button>
       `
     : '';
   const inlineFilesystemButton = !shortcut && filesystemTarget
-    && String(node?.kind || '').trim().toLowerCase() !== 'drive'
+    && !usesActionRowFilesystemPill
     ? `
         <div class="disks-card__meta-pills">
           <span class="disks-card__jump disks-card__jump--fs" title="${_disksEsc(`Open ${filesystemPill} details for ${String(filesystemTarget.label || 'filesystem').trim() || 'filesystem'}`)}" aria-label="${_disksEsc(`Open ${filesystemPill} details for ${String(filesystemTarget.label || 'filesystem').trim() || 'filesystem'}`)}" data-disks-node="${_disksEsc(filesystemTarget.id)}">${_disksEsc(filesystemPill)}</span>
@@ -1493,7 +1495,6 @@ function _disksCardHtml(node, options = {}) {
   const cta = hasChildren ? 'Open' : 'View';
   const tone = _disksStatusTone(node.status);
   const canForget = !!node?.cached_missing && !!node?.cache_host;
-  const showSubtitle = !!node.subtitle && node.kind !== 'drive';
   const drivePurpose = _disksDrivePurposeLabel(node);
   const kindSlug = _disksFactSlug(node.kind || 'item');
   const contextSlug = _disksFactSlug(options.contextKind || _disksCurrentNode()?.kind || 'context');
@@ -1543,7 +1544,6 @@ function _disksCardHtml(node, options = {}) {
               <strong class="disks-card__title">${_disksEsc(node.label)}</strong>
               ${drivePurpose ? `<span class="disks-card__title-suffix">(${_disksEsc(drivePurpose)})</span>` : ''}
             </div>
-            ${showSubtitle ? `<div class="disks-card__subtitle">${_disksEsc(node.subtitle)}</div>` : ''}
             ${poolCaption}
             ${inlineFilesystemButton}
             ${inlineFilesystemPill ? `<div class="disks-card__meta-pills"><span class="disks-pill">${_disksEsc(inlineFilesystemPill)}</span></div>` : ''}

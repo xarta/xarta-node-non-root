@@ -21,7 +21,10 @@
 .disks-shell {
   display: block;
   overflow: auto;
-  padding: 14px;
+  /* Keep the first disks column flush with the tab panel edge so it lines up
+     with the split-menu row and App Config cards. Use inner card padding for
+     breathing room instead of shifting the whole page right. */
+  padding: 14px 0;
 }
 
 .disks-page {
@@ -1265,7 +1268,7 @@ button.disks-tree__download-btn:disabled {
 
 @media (max-width: 600px) {
   .disks-shell {
-    padding: 12px;
+    padding: 12px 0;
   }
 
   .disks-page {
