@@ -415,7 +415,7 @@ button.secondary:hover { color: var(--text); border-color: var(--text-dim); }
 
 .gpu-sfx-panel {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .gpu-sfx-head {
@@ -434,17 +434,18 @@ button.secondary:hover { color: var(--text); border-color: var(--text-dim); }
 
 .gpu-sfx-grid {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
 .gpu-sfx-unit {
   display: grid;
-  grid-template-columns: minmax(136px, .8fr) minmax(230px, 1.4fr) minmax(132px, .8fr) minmax(118px, .7fr) minmax(156px, .9fr);
-  align-items: center;
-  gap: 8px 10px;
+  grid-template-columns: minmax(124px, .72fr) minmax(230px, 1.55fr) minmax(150px, .88fr) minmax(156px, .9fr);
+  grid-template-rows: auto auto;
+  align-items: stretch;
+  gap: 6px 10px;
   min-width: 0;
-  padding: 9px 10px;
+  padding: 7px 10px;
   border: 1px solid rgba(94, 154, 255, .22);
   border-radius: 7px;
   background: rgba(255, 255, 255, .026);
@@ -452,10 +453,16 @@ button.secondary:hover { color: var(--text); border-color: var(--text-dim); }
 
 .gpu-sfx-unit-head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 6px;
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-content: start;
+  align-self: stretch;
+  align-items: start;
+  gap: 5px;
   min-width: 0;
+  padding-block: 30px 0;
 }
 
 .gpu-sfx-enable .hub-checkbox__label {
@@ -481,15 +488,21 @@ button.secondary:hover { color: var(--text); border-color: var(--text-dim); }
 }
 
 .gpu-sfx-power {
+  justify-self: start;
+  padding-inline-start: 29px;
   color: var(--accent);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
+  line-height: 1;
   white-space: nowrap;
 }
 
 .gpu-sfx-path {
   display: grid;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
   gap: 5px;
   min-width: 0;
 }
@@ -499,6 +512,11 @@ button.secondary:hover { color: var(--text); border-color: var(--text-dim); }
   padding: 5px 8px;
   font-size: 12px;
   font-weight: 700;
+}
+
+.gpu-sfx-path .settings-sound-path-row {
+  width: 100%;
+  max-width: 300px;
 }
 
 .gpu-sfx-range {
@@ -524,10 +542,25 @@ button.secondary:hover { color: var(--text); border-color: var(--text-dim); }
   grid-column: 1 / -1;
 }
 
+.gpu-sfx-range--threshold {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.gpu-sfx-range--volume {
+  grid-column: 3;
+  grid-row: 2;
+}
+
 .gpu-sfx-boost {
   display: grid;
-  gap: 6px;
+  grid-column: 4;
+  grid-row: 1 / span 2;
+  align-content: space-between;
+  align-self: stretch;
+  gap: 4px;
   min-width: 0;
+  padding-block: 16px 2px;
 }
 
 .gpu-sfx-boost .hub-checkbox__label {
@@ -655,13 +688,26 @@ button.secondary:hover { color: var(--text); border-color: var(--text-dim); }
 
   .gpu-sfx-unit {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
     align-items: stretch;
     gap: 8px;
     padding: 8px;
   }
 
   .gpu-sfx-unit-head {
+    grid-column: auto;
+    grid-row: auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto;
+    align-content: start;
+    align-self: auto;
     align-items: start;
+    padding-block: 0;
+  }
+
+  .gpu-sfx-power {
+    justify-self: end;
+    padding-inline-start: 0;
   }
 
   .gpu-sfx-subtitle {
@@ -669,7 +715,14 @@ button.secondary:hover { color: var(--text); border-color: var(--text-dim); }
   }
 
   .gpu-sfx-path {
+    grid-column: auto;
+    grid-row: auto;
+    align-self: stretch;
     gap: 4px;
+  }
+
+  .gpu-sfx-path .settings-sound-path-row {
+    max-width: none;
   }
 
   .gpu-sfx-path input[type=text] {
@@ -682,8 +735,19 @@ button.secondary:hover { color: var(--text); border-color: var(--text-dim); }
     font-size: 10px;
   }
 
+  .gpu-sfx-range--threshold,
+  .gpu-sfx-range--volume {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
   .gpu-sfx-boost {
+    grid-column: auto;
+    grid-row: auto;
+    align-content: start;
+    align-self: stretch;
     gap: 5px;
+    padding-block: 0;
   }
 
   .gpu-sfx-actions {
