@@ -508,15 +508,20 @@
   outline: none;
 }
 
-.disks-tree__download-btn {
-  --table-action-color: var(--text-dim);
-  --table-action-rgb: 123, 130, 160;
-  cursor: not-allowed;
-  opacity: 0.56;
+.disks-tree__file-name {
+  color: var(--text);
 }
 
-button.disks-tree__download-btn:disabled {
-  pointer-events: none;
+.disks-tree__file-name:hover,
+.disks-tree__file-name:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-style: dashed;
+}
+
+.disks-tree__download-btn {
+  --table-action-color: var(--accent);
+  --table-action-rgb: 91, 156, 246;
 }
 
 .disks-tree__error {
@@ -604,6 +609,166 @@ button.disks-tree__download-btn:disabled {
   border-color: rgba(230, 168, 23, 0.42);
   background: rgba(230, 168, 23, 0.12);
   outline: none;
+}
+
+.disks-pin-modal .hub-modal-body {
+  display: grid;
+  gap: 14px;
+}
+
+.disks-pin-display {
+  min-height: 72px;
+  padding: 12px 16px;
+  border: 1px solid rgba(255, 63, 63, 0.45);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 50% 10%, rgba(255, 70, 70, 0.18), transparent 42%),
+    rgba(12, 0, 0, 0.72);
+  box-shadow:
+    inset 0 0 26px rgba(255, 0, 0, 0.18),
+    0 0 24px rgba(255, 0, 0, 0.12);
+  color: #ff3131;
+  font-family: "DSEG7 Classic", "Segment7", "Courier New", monospace;
+  font-size: 46px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  text-align: center;
+  text-shadow:
+    0 0 6px rgba(255, 49, 49, 0.9),
+    0 0 18px rgba(255, 49, 49, 0.55);
+  user-select: none;
+}
+
+.disks-pin-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.disks-pin-keypad button {
+  min-height: 58px;
+  border: 1px solid rgba(255, 63, 63, 0.28);
+  border-radius: 8px;
+  background: rgba(20, 4, 8, 0.78);
+  color: #ffd7d7;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.disks-pin-keypad button:hover,
+.disks-pin-keypad button:focus-visible {
+  border-color: rgba(255, 63, 63, 0.6);
+  background: rgba(255, 63, 63, 0.14);
+  outline: none;
+}
+
+.disks-pin-status,
+.disks-file-viewer__status {
+  min-height: 1.4em;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.disks-pin-status[data-tone="error"],
+.disks-file-viewer__status[data-tone="error"] {
+  color: var(--err);
+}
+
+.disks-pin-status[data-tone="warn"],
+.disks-file-viewer__status[data-tone="warn"] {
+  color: var(--warn);
+}
+
+.disks-pin-status[data-tone="ok"],
+.disks-file-viewer__status[data-tone="ok"] {
+  color: var(--ok);
+}
+
+.disks-file-viewer {
+  display: grid;
+  gap: 10px;
+}
+
+.disks-file-viewer__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.disks-file-viewer__meta span {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 4px 9px;
+  border: 1px solid rgba(91, 156, 246, 0.24);
+  border-radius: 999px;
+  background: rgba(91, 156, 246, 0.08);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.disks-file-viewer__content {
+  min-height: min(58vh, 560px);
+  border: 1px solid rgba(91, 156, 246, 0.18);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.24);
+  overflow: auto;
+}
+
+.disks-file-viewer__preview {
+  min-height: min(58vh, 560px);
+  padding: 14px;
+}
+
+.disks-file-viewer__pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.disks-file-viewer__editor {
+  display: block;
+  width: 100%;
+  min-height: min(58vh, 560px);
+  padding: 14px;
+  border: 0;
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.disks-file-viewer__editor[hidden],
+.disks-file-viewer__preview[hidden] {
+  display: none;
+}
+
+.disks-file-viewer__image,
+.disks-file-viewer__video {
+  display: block;
+  max-width: 100%;
+  max-height: min(58vh, 560px);
+  margin: 0 auto;
+  border-radius: 8px;
+}
+
+.disks-file-viewer audio {
+  width: 100%;
+}
+
+.disks-file-viewer__pdf {
+  width: 100%;
+  min-height: min(58vh, 560px);
+  border: 0;
 }
 
 .disks-group {
@@ -1470,6 +1635,27 @@ button.disks-tree__download-btn:disabled {
   .disks-offline-modal__source {
     min-width: 0;
     width: 100%;
+  }
+
+  .disks-pin-display {
+    min-height: 62px;
+    font-size: 38px;
+  }
+
+  .disks-pin-keypad {
+    gap: 8px;
+  }
+
+  .disks-pin-keypad button {
+    min-height: 52px;
+    font-size: 20px;
+  }
+
+  .disks-file-viewer__content,
+  .disks-file-viewer__preview,
+  .disks-file-viewer__editor,
+  .disks-file-viewer__pdf {
+    min-height: min(54vh, 480px);
   }
 
   .disks-card__footer {

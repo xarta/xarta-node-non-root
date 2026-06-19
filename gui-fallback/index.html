@@ -1094,6 +1094,62 @@
         <button class="hub-modal-btn secondary hub-modal-close" type="button">Close</button>
       </div>
     </dialog>
+
+    <dialog class="hub-modal hub-dialog disks-pin-modal" data-tone="danger" id="disks-pin-modal" style="width:min(430px,94vw)">
+      <div class="hub-modal-header">
+        <h2 class="hub-modal-title" style="min-width:0;flex:1">
+          <span class="hub-dialog-badge">PIN</span>
+          <span class="hub-dialog-title-text">Protected filesystem</span>
+        </h2>
+        <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+      </div>
+      <div class="hub-modal-body">
+        <div class="disks-pin-display" id="disks-pin-display" aria-label="PIN digits entered">------</div>
+        <div class="disks-pin-keypad" aria-label="PIN keypad">
+          <button type="button" data-disks-pin-key="1">1</button>
+          <button type="button" data-disks-pin-key="2">2</button>
+          <button type="button" data-disks-pin-key="3">3</button>
+          <button type="button" data-disks-pin-key="4">4</button>
+          <button type="button" data-disks-pin-key="5">5</button>
+          <button type="button" data-disks-pin-key="6">6</button>
+          <button type="button" data-disks-pin-key="7">7</button>
+          <button type="button" data-disks-pin-key="8">8</button>
+          <button type="button" data-disks-pin-key="9">9</button>
+          <button type="button" data-disks-pin-key="clear">CLR</button>
+          <button type="button" data-disks-pin-key="0">0</button>
+          <button type="button" data-disks-pin-key="back">DEL</button>
+        </div>
+        <p class="disks-pin-status" id="disks-pin-status" aria-live="polite"></p>
+      </div>
+      <div class="hub-modal-footer">
+        <button class="hub-modal-btn secondary hub-modal-close" type="button">Cancel</button>
+        <button class="hub-modal-btn" type="button" data-disks-pin-key="unlock">Unlock</button>
+      </div>
+    </dialog>
+
+    <dialog class="hub-modal hub-dialog disks-file-modal" data-tone="info" id="disks-file-modal" style="width:min(1040px,96vw);max-width:96vw">
+      <div class="hub-modal-header">
+        <h2 class="hub-modal-title" style="min-width:0;flex:1">
+          <span class="hub-dialog-badge">FILE</span>
+          <span class="hub-dialog-title-text" id="disks-file-title">File viewer</span>
+        </h2>
+        <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+      </div>
+      <div class="hub-modal-body disks-file-viewer">
+        <div class="disks-file-viewer__meta" id="disks-file-meta"></div>
+        <p class="disks-file-viewer__status" id="disks-file-status" aria-live="polite"></p>
+        <div class="disks-file-viewer__content" id="disks-file-content">
+          <div class="disks-file-viewer__preview" id="disks-file-preview"></div>
+          <textarea class="disks-file-viewer__editor bp-font-role-docs-markdown" id="disks-file-editor" spellcheck="false" hidden></textarea>
+        </div>
+      </div>
+      <div class="hub-modal-footer">
+        <button class="hub-modal-btn secondary" type="button" id="disks-file-download">Download</button>
+        <button class="hub-modal-btn secondary" type="button" id="disks-file-edit-toggle">Edit</button>
+        <button class="hub-modal-btn" type="button" id="disks-file-save" hidden>Save</button>
+        <button class="hub-modal-btn secondary hub-modal-close" type="button">Close</button>
+      </div>
+    </dialog>
   </section>
 
   <!-- PVE Hosts -->

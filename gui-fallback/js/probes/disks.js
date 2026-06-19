@@ -17,6 +17,11 @@ let _disksNoteSaving = new Set();
 let _disksNoteErrors = new Map();
 let _disksNoteSaveTimers = new Map();
 let _disksOfflineBrowseState = null;
+let _disksPinToken = '';
+let _disksPinTokenExpiresAt = 0;
+let _disksPinDialogState = null;
+let _disksLastFileTap = { key: '', at: 0 };
+let _disksFileViewerState = null;
 let _disksPretextModule = null;
 let _disksPretextLoadPromise = null;
 let _disksPretextLoadFailed = false;
@@ -377,6 +382,7 @@ function _disksOfflineBrowserMeta(node) {
     volume_ref: volumeRef,
     volume_label: String(raw?.volume_label || '').trim(),
     slot: String(raw?.slot || '').trim(),
+    sensitive_hint: String(raw?.sensitive_hint || '').trim(),
   };
 }
 
@@ -409,6 +415,7 @@ function _disksFilesystemBrowserMeta(node) {
     filesystem: String(raw?.filesystem || '').trim(),
     source_path: String(raw?.source_path || '').trim(),
     dataset_name: String(raw?.dataset_name || '').trim(),
+    sensitive_hint: String(raw?.sensitive_hint || '').trim(),
     download_available: !!raw?.download_available,
   };
 }
@@ -425,6 +432,32 @@ function _disksFilesystemTreeCacheKey(meta, path) {
     ? `${meta.host}::device_ro::${meta.source_path || meta.root_path}`
     : `${meta.host}::mounted::${meta.root_path}`;
   return `${treeIdentity}::${_disksNormalizeRelativePath(path)}`;
+}
+
+function _disksFilesystemAccessPayload(meta, path, pinToken = '') {
+  return {
+    host: String(meta?.host || '').trim(),
+    root_path: String(meta?.root_path || '/').trim() || '/',
+    browse_mode: String(meta?.browse_mode || '').trim().toLowerCase() === 'device_ro' ? 'device_ro' : 'mounted',
+    source_path: String(meta?.source_path || '').trim() || null,
+    path: _disksNormalizeRelativePath(path) === '.' ? null : _disksNormalizeRelativePath(path),
+    filesystem: String(meta?.filesystem || '').trim(),
+    dataset_name: String(meta?.dataset_name || '').trim(),
+    sensitive_hint: String(meta?.sensitive_hint || '').trim(),
+    pin_token: pinToken || null,
+  };
+}
+
+function _disksFilesystemAccessSensitive(meta, path = '.') {
+  const haystack = [
+    meta?.root_path,
+    meta?.root_display,
+    meta?.source_path,
+    meta?.dataset_name,
+    meta?.sensitive_hint,
+    path,
+  ].join(' ').toLowerCase();
+  return haystack.includes('private');
 }
 
 function _disksFilesystemTreePathForNode(node, meta) {
@@ -485,14 +518,18 @@ function _disksFilesystemTreePathHtml(path) {
   return text.split('/').map(part => _disksEsc(part)).join('/<wbr>');
 }
 
-function _disksFilesystemTreeRowHtml(entry) {
+function _disksFilesystemTreeRowHtml(entry, actionScope = 'tree') {
+  const actionAttr = actionScope === 'offline' ? 'data-disks-offline-action' : 'data-disks-tree-action';
   const type = String(entry?.type || '').trim() === 'folder' ? 'folder' : 'file';
   const browseable = type === 'folder' && !!entry?.browseable;
   const path = _disksNormalizeRelativePath(entry?.path || '.');
   const detailText = _disksFilesystemTreeEntryMetaText(entry);
+  const displayName = String(entry?.name || path).trim() || path;
+  const action = browseable ? 'browse' : 'file-tap';
+  const title = browseable ? `Open ${displayName}` : `Double-tap to view ${displayName}`;
   const nameHtml = browseable
-    ? `<button class="docs-tree-name bp-font-role-docs-markdown" type="button" data-disks-tree-action="browse" data-path="${_disksEsc(path)}" title="${_disksEsc(`Open ${entry?.name || 'folder'}`)}">${_disksEsc(entry?.name || path)}</button>`
-    : `<span class="docs-tree-name disks-tree__name-static bp-font-role-docs-markdown">${_disksEsc(entry?.name || path)}</span>`;
+    ? `<button class="docs-tree-name bp-font-role-docs-markdown" type="button" ${actionAttr}="${action}" data-path="${_disksEsc(path)}" title="${_disksEsc(title)}">${_disksEsc(displayName)}</button>`
+    : `<button class="docs-tree-name disks-tree__file-name bp-font-role-docs-markdown" type="button" ${actionAttr}="${action}" data-path="${_disksEsc(path)}" title="${_disksEsc(title)}">${_disksEsc(displayName)}</button>`;
   const labelHtml = detailText
     ? `
         <span class="docs-tree-label">
@@ -510,7 +547,7 @@ function _disksFilesystemTreeRowHtml(entry) {
       <span class="docs-tree-actions">
         ${linkBadge}
         ${typeBadge}
-        <button class="secondary table-icon-btn table-icon-btn--pull disks-tree__download-btn" type="button" disabled title="Download is coming later" aria-label="Download is coming later"></button>
+        <button class="secondary table-icon-btn table-icon-btn--pull disks-tree__download-btn" type="button" ${actionAttr}="download" data-path="${_disksEsc(path)}" data-entry-type="${_disksEsc(type)}" title="${_disksEsc(`Download ${displayName}`)}" aria-label="${_disksEsc(`Download ${displayName}`)}"></button>
       </span>
     </div>
   `;
@@ -644,12 +681,29 @@ function _disksEnsureFilesystemTree(node) {
       root_path: meta.root_path,
       browse_mode: meta.browse_mode,
       source_path: meta.browse_mode === 'device_ro' ? meta.source_path : null,
+      filesystem: meta.filesystem,
+      dataset_name: meta.dataset_name,
+      sensitive_hint: meta.sensitive_hint,
+      pin_token: _disksFilesystemAccessSensitive(meta, currentPath) ? _disksValidPinToken() : null,
       path: currentPath === '.' ? null : currentPath,
     }),
   })
     .then(async response => {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (response.status === 423) {
+          const lockedMessage = data.detail || 'PIN required for this filesystem tree.';
+          _disksFilesystemTreeCache.set(cacheKey, { ok: false, locked: true, error: lockedMessage });
+          _disksRequestPin('PIN required for this filesystem tree.').then(() => {
+            _disksFilesystemTreeCache.delete(cacheKey);
+            _disksFilesystemTreeLoadingKeys.delete(cacheKey);
+            _disksEnsureFilesystemTree(node);
+          }).catch(err => {
+            _disksFilesystemTreeCache.set(cacheKey, { ok: false, locked: true, error: err?.message || lockedMessage });
+            if (_disksCurrentNodeId === String(node?.id || '')) renderDisksPage();
+          });
+          return Promise.reject(new Error('__PIN_PROMPTED__'));
+        }
         throw new Error(data.detail || `HTTP ${response.status}`);
       }
       _disksFilesystemTreeCache.set(cacheKey, { ok: true, data });
@@ -659,6 +713,7 @@ function _disksEnsureFilesystemTree(node) {
       );
     })
     .catch(err => {
+      if (err && err.message === '__PIN_PROMPTED__') return;
       const message = err && err.message ? err.message : String(err || 'Filesystem tree failed');
       _disksFilesystemTreeCache.set(cacheKey, { ok: false, error: message });
     })
@@ -666,6 +721,446 @@ function _disksEnsureFilesystemTree(node) {
       _disksFilesystemTreeLoadingKeys.delete(cacheKey);
       if (_disksCurrentNodeId === String(node?.id || '')) renderDisksPage();
     });
+}
+
+function _disksValidPinToken() {
+  if (!_disksPinToken || !_disksPinTokenExpiresAt) return '';
+  if (Date.now() >= _disksPinTokenExpiresAt - 3000) {
+    _disksPinToken = '';
+    _disksPinTokenExpiresAt = 0;
+    return '';
+  }
+  return _disksPinToken;
+}
+
+function _disksSetPinDisplay() {
+  const display = _disksEl('disks-pin-display');
+  const status = _disksEl('disks-pin-status');
+  const digits = String(_disksPinDialogState?.pin || '').padEnd(6, ' ');
+  if (display) {
+    display.textContent = digits.split('').map(ch => (ch.trim() ? ch : '-')).join('');
+    display.dataset.length = String(_disksPinDialogState?.pin?.length || 0);
+  }
+  if (status && !_disksPinDialogState?.busy) {
+    status.textContent = _disksPinDialogState?.message || '';
+    status.dataset.tone = _disksPinDialogState?.tone || '';
+  }
+}
+
+function _disksClosePinDialog(error = null) {
+  const dialog = _disksEl('disks-pin-modal');
+  const state = _disksPinDialogState;
+  _disksPinDialogState = null;
+  try {
+    const hubModal = _disksHubModalApi();
+    if (dialog && hubModal && typeof hubModal.close === 'function') hubModal.close(dialog);
+    else dialog?.close?.();
+  } catch (_) {
+    dialog?.removeAttribute('open');
+  }
+  if (state) {
+    if (error) state.reject(error);
+    else state.reject(new Error('PIN entry cancelled'));
+  }
+}
+
+function _disksOpenPinDialog(message) {
+  const dialog = _disksEl('disks-pin-modal');
+  if (!dialog) return Promise.reject(new Error('PIN dialog is unavailable'));
+  if (_disksPinDialogState?.promise) return _disksPinDialogState.promise;
+  let resolveFn = null;
+  let rejectFn = null;
+  const promise = new Promise((resolve, reject) => {
+    resolveFn = resolve;
+    rejectFn = reject;
+  });
+  _disksPinDialogState = {
+    pin: '',
+    message: message || 'Enter the 6-digit filesystem PIN.',
+    tone: '',
+    busy: false,
+    resolve: resolveFn,
+    reject: rejectFn,
+    promise,
+  };
+  _disksSetPinDisplay();
+  try {
+    const hubModal = _disksHubModalApi();
+    if (hubModal && typeof hubModal.open === 'function') {
+      hubModal.open(dialog);
+    } else if (typeof dialog.showModal === 'function' && !dialog.open) {
+      dialog.showModal();
+    } else {
+      dialog.setAttribute('open', 'open');
+    }
+  } catch (_) {
+    dialog.setAttribute('open', 'open');
+  }
+  return promise;
+}
+
+async function _disksSubmitPin() {
+  const state = _disksPinDialogState;
+  if (!state || state.busy) return;
+  if (!/^\d{6}$/.test(state.pin || '')) {
+    state.message = 'Enter all 6 digits.';
+    state.tone = 'error';
+    _disksSetPinDisplay();
+    return;
+  }
+  state.busy = true;
+  const status = _disksEl('disks-pin-status');
+  if (status) {
+    status.textContent = 'Checking PIN...';
+    status.dataset.tone = 'warn';
+  }
+  try {
+    const response = await apiFetch('/api/v1/disks/filesystem/pin/unlock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: state.pin }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
+    _disksPinToken = String(payload.token || '').trim();
+    const expires = Date.parse(payload.expires_at || '');
+    _disksPinTokenExpiresAt = Number.isFinite(expires) ? expires : Date.now() + 10 * 60 * 1000;
+    const resolver = state.resolve;
+    _disksPinDialogState = null;
+    const dialog = _disksEl('disks-pin-modal');
+    try {
+      const hubModal = _disksHubModalApi();
+      if (dialog && hubModal && typeof hubModal.close === 'function') hubModal.close(dialog);
+      else dialog?.close?.();
+    } catch (_) {
+      dialog?.removeAttribute('open');
+    }
+    resolver(_disksPinToken);
+  } catch (err) {
+    state.busy = false;
+    state.pin = '';
+    state.message = err?.message || 'PIN was not accepted.';
+    state.tone = 'error';
+    _disksSetPinDisplay();
+  }
+}
+
+function _disksRequestPin(message = '') {
+  const current = _disksValidPinToken();
+  if (current) return Promise.resolve(current);
+  return _disksOpenPinDialog(message);
+}
+
+async function _disksFetchProtectedJson(url, baseBody, options = {}) {
+  let body = { ...baseBody };
+  const needsPin = !!options.sensitive;
+  if (needsPin) body.pin_token = await _disksRequestPin(options.pinMessage || '');
+  let response = await apiFetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  let payload = await response.json().catch(() => ({}));
+  if (response.status === 423) {
+    _disksPinToken = '';
+    _disksPinTokenExpiresAt = 0;
+    body = { ...baseBody, pin_token: await _disksRequestPin(options.pinMessage || '') };
+    response = await apiFetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    payload = await response.json().catch(() => ({}));
+  }
+  if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
+  return payload;
+}
+
+async function _disksFetchProtectedBlob(url, baseBody, options = {}) {
+  let body = { ...baseBody };
+  if (options.sensitive) body.pin_token = await _disksRequestPin(options.pinMessage || '');
+  let response = await apiFetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (response.status === 423) {
+    _disksPinToken = '';
+    _disksPinTokenExpiresAt = 0;
+    body = { ...baseBody, pin_token: await _disksRequestPin(options.pinMessage || '') };
+    response = await apiFetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.detail || `HTTP ${response.status}`);
+  }
+  return {
+    blob: await response.blob(),
+    filename: _disksContentDispositionFilename(response.headers.get('Content-Disposition') || ''),
+    transfer: response.headers.get('X-Blueprints-Disks-Transfer') || '',
+  };
+}
+
+function _disksContentDispositionFilename(value) {
+  const match = String(value || '').match(/filename="([^"]+)"/i);
+  return match ? match[1] : '';
+}
+
+function _disksSetFileStatus(message, tone = '') {
+  const status = _disksEl('disks-file-status');
+  if (!status) return;
+  status.textContent = message || '';
+  status.dataset.tone = tone || '';
+}
+
+function _disksClearFileViewer() {
+  if (_disksFileViewerState?.objectUrl) {
+    URL.revokeObjectURL(_disksFileViewerState.objectUrl);
+  }
+  _disksFileViewerState = null;
+  const editor = _disksEl('disks-file-editor');
+  if (editor) {
+    editor.value = '';
+    editor.hidden = true;
+  }
+  const preview = _disksEl('disks-file-preview');
+  if (preview) {
+    preview.innerHTML = '';
+    preview.hidden = false;
+  }
+  const save = _disksEl('disks-file-save');
+  if (save) save.hidden = true;
+  _disksSetFileStatus('');
+}
+
+function _disksCloseFileViewer() {
+  const dialog = _disksEl('disks-file-modal');
+  _disksClearFileViewer();
+  try {
+    const hubModal = _disksHubModalApi();
+    if (dialog && hubModal && typeof hubModal.close === 'function') hubModal.close(dialog);
+    else dialog?.close?.();
+  } catch (_) {
+    dialog?.removeAttribute('open');
+  }
+}
+
+function _disksRenderFilePreviewText(data) {
+  const preview = _disksEl('disks-file-preview');
+  if (!preview) return;
+  const text = String(data?.text || '');
+  const kind = String(data?.preview_kind || '').trim().toLowerCase();
+  if (kind === 'markdown' && typeof _mdToHtml === 'function') {
+    preview.innerHTML = _mdToHtml(text);
+    if (typeof _docsResolvePrevImgs === 'function') _docsResolvePrevImgs(preview);
+    return;
+  }
+  const pre = document.createElement('pre');
+  pre.className = 'disks-file-viewer__pre bp-font-role-docs-markdown';
+  pre.textContent = text;
+  preview.innerHTML = '';
+  preview.appendChild(pre);
+}
+
+async function _disksRenderFilePreviewMedia(meta, path, data) {
+  const preview = _disksEl('disks-file-preview');
+  if (!preview) return false;
+  const mime = String(data?.mime || '').trim().toLowerCase();
+  if (!mime.startsWith('image/') && !mime.startsWith('audio/') && !mime.startsWith('video/') && mime !== 'application/pdf') {
+    return false;
+  }
+  const baseBody = _disksFilesystemAccessPayload(meta, path, _disksValidPinToken());
+  const { blob } = await _disksFetchProtectedBlob('/api/v1/disks/filesystem/download', baseBody, {
+    sensitive: _disksFilesystemAccessSensitive(meta, path),
+    pinMessage: 'PIN required to preview this file.',
+  });
+  const url = URL.createObjectURL(blob);
+  if (_disksFileViewerState?.objectUrl) URL.revokeObjectURL(_disksFileViewerState.objectUrl);
+  _disksFileViewerState.objectUrl = url;
+  preview.innerHTML = '';
+  if (mime.startsWith('image/')) {
+    const img = document.createElement('img');
+    img.className = 'disks-file-viewer__image';
+    img.alt = String(data?.filename || 'file preview');
+    img.src = url;
+    preview.appendChild(img);
+    return true;
+  }
+  if (mime.startsWith('audio/')) {
+    const audio = document.createElement('audio');
+    audio.controls = true;
+    audio.preload = 'metadata';
+    audio.src = url;
+    preview.appendChild(audio);
+    return true;
+  }
+  if (mime.startsWith('video/')) {
+    const video = document.createElement('video');
+    video.className = 'disks-file-viewer__video';
+    video.controls = true;
+    video.preload = 'metadata';
+    video.src = url;
+    preview.appendChild(video);
+    return true;
+  }
+  const object = document.createElement('object');
+  object.className = 'disks-file-viewer__pdf';
+  object.type = 'application/pdf';
+  object.data = url;
+  object.textContent = 'PDF preview unavailable in this browser.';
+  preview.appendChild(object);
+  return true;
+}
+
+function _disksRenderFileMeta(data) {
+  const title = _disksEl('disks-file-title');
+  const meta = _disksEl('disks-file-meta');
+  if (title) title.textContent = String(data?.filename || data?.path || 'File viewer');
+  if (!meta) return;
+  const bits = [
+    String(data?.filesystem || '').toUpperCase(),
+    data?.size_bytes != null ? _disksFormatBytes(data.size_bytes) : '',
+    _disksFilesystemTreeFormatTimestamp(data?.modified_at),
+    data?.sensitive ? 'PIN protected' : '',
+  ].filter(Boolean);
+  meta.innerHTML = bits.map(bit => `<span>${_disksEsc(bit)}</span>`).join('');
+}
+
+async function _disksOpenFileViewer(meta, path) {
+  const dialog = _disksEl('disks-file-modal');
+  const preview = _disksEl('disks-file-preview');
+  const editor = _disksEl('disks-file-editor');
+  const save = _disksEl('disks-file-save');
+  const download = _disksEl('disks-file-download');
+  if (!dialog || !preview || !editor) return;
+  _disksClearFileViewer();
+  const baseBody = _disksFilesystemAccessPayload(meta, path, _disksValidPinToken());
+  _disksFileViewerState = {
+    meta,
+    path: _disksNormalizeRelativePath(path),
+    baseBody,
+    objectUrl: '',
+    dirty: false,
+    data: null,
+  };
+  preview.innerHTML = '<div class="docs-tree-loading">Loading file...</div>';
+  if (download) download.disabled = true;
+  if (save) save.hidden = true;
+  try {
+    const hubModal = _disksHubModalApi();
+    if (hubModal && typeof hubModal.open === 'function') {
+      hubModal.open(dialog, { onClose: _disksClearFileViewer });
+    } else if (typeof dialog.showModal === 'function' && !dialog.open) {
+      dialog.showModal();
+    } else {
+      dialog.setAttribute('open', 'open');
+    }
+  } catch (_) {
+    dialog.setAttribute('open', 'open');
+  }
+  try {
+    const data = await _disksFetchProtectedJson('/api/v1/disks/filesystem/preview', baseBody, {
+      sensitive: _disksFilesystemAccessSensitive(meta, path),
+      pinMessage: 'PIN required to preview this file.',
+    });
+    if (!_disksFileViewerState) return;
+    _disksFileViewerState.data = data;
+    _disksFileViewerState.baseBody = { ...baseBody, pin_token: _disksValidPinToken() || baseBody.pin_token };
+    _disksRenderFileMeta(data);
+    if (download) download.disabled = false;
+    preview.innerHTML = '';
+    const previewKind = String(data?.preview_kind || '').trim().toLowerCase();
+    if (previewKind === 'markdown' || previewKind === 'text') {
+      _disksRenderFilePreviewText(data);
+      editor.value = String(data?.text || '');
+      editor.hidden = true;
+      if (save) save.hidden = !data?.editable;
+    } else if (!(await _disksRenderFilePreviewMedia(meta, path, data))) {
+      preview.innerHTML = '<div class="matrix-chat-attachment-fallback"><strong>Preview unavailable</strong><span>Download is available for this file.</span></div>';
+    }
+    _disksSetFileStatus(data?.text_truncated ? 'Preview truncated; download has the full file.' : '', 'warn');
+  } catch (err) {
+    preview.innerHTML = '<div class="docs-tree-empty">Could not load this file.</div>';
+    _disksSetFileStatus(err?.message || 'File preview failed', 'error');
+  }
+}
+
+async function _disksDownloadFilesystemPath(meta, path) {
+  const baseBody = _disksFilesystemAccessPayload(meta, path, _disksValidPinToken());
+  const label = _disksNormalizeRelativePath(path);
+  _disksStatusMessage(`Preparing download for ${label === '.' ? 'root' : label}...`, 'info', true);
+  const { blob, filename, transfer } = await _disksFetchProtectedBlob('/api/v1/disks/filesystem/download', baseBody, {
+    sensitive: _disksFilesystemAccessSensitive(meta, path),
+    pinMessage: 'PIN required to download this item.',
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename || (label === '.' ? 'filesystem.tar.gz' : label.split('/').pop());
+  link.rel = 'noopener';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  _disksStatusMessage(`Download ready${transfer ? ` via ${transfer}` : ''}.`, 'ok');
+}
+
+async function _disksSaveFileViewer() {
+  const state = _disksFileViewerState;
+  const editor = _disksEl('disks-file-editor');
+  const save = _disksEl('disks-file-save');
+  if (!state || !editor || !state.data?.editable) return;
+  if (save) save.disabled = true;
+  _disksSetFileStatus('Saving file...', 'warn');
+  try {
+    const payload = {
+      ...state.baseBody,
+      pin_token: _disksValidPinToken() || state.baseBody.pin_token,
+      content: editor.value || '',
+    };
+    const data = await _disksFetchProtectedJson('/api/v1/disks/filesystem/save', payload, {
+      sensitive: _disksFilesystemAccessSensitive(state.meta, state.path),
+      pinMessage: 'PIN required to save this file.',
+    });
+    state.data = { ...state.data, ...data, text: editor.value || '' };
+    state.dirty = false;
+    _disksRenderFileMeta(state.data);
+    _disksRenderFilePreviewText(state.data);
+    _disksSetFileStatus('Saved.', 'ok');
+  } catch (err) {
+    _disksSetFileStatus(err?.message || 'Save failed', 'error');
+  } finally {
+    if (save) save.disabled = false;
+  }
+}
+
+function _disksToggleFileEditor() {
+  const state = _disksFileViewerState;
+  const preview = _disksEl('disks-file-preview');
+  const editor = _disksEl('disks-file-editor');
+  const toggle = _disksEl('disks-file-edit-toggle');
+  if (!state || !state.data?.editable || !preview || !editor) return;
+  const editing = editor.hidden;
+  editor.hidden = !editing;
+  preview.hidden = editing;
+  if (toggle) toggle.textContent = editing ? 'Preview' : 'Edit';
+}
+
+function _disksHandleFileTap(scope, meta, path) {
+  const cleanPath = _disksNormalizeRelativePath(path);
+  const key = `${scope}:${meta?.host || ''}:${meta?.root_path || ''}:${meta?.source_path || ''}:${cleanPath}`;
+  const now = Date.now();
+  if (_disksLastFileTap.key === key && now - _disksLastFileTap.at < 500) {
+    _disksLastFileTap = { key: '', at: 0 };
+    _disksOpenFileViewer(meta, cleanPath);
+    return;
+  }
+  _disksLastFileTap = { key, at: now };
+  _disksStatusMessage('Double-tap again to open the file viewer.', 'info');
 }
 
 function _disksIndexTree(node, parentId = '') {
@@ -3122,6 +3617,22 @@ function _disksOfflineBrowseCurrentPath() {
   return state.paths.get(String(state.sourcePath || '').trim()) || '.';
 }
 
+function _disksOfflineAccessMeta() {
+  const state = _disksOfflineBrowseState;
+  const source = _disksOfflineBrowseCurrentSource();
+  if (!state || !source) return null;
+  return {
+    host: String(state.host || '').trim(),
+    root_path: '/',
+    root_display: String(source.path || '/').trim(),
+    browse_mode: 'device_ro',
+    source_path: String(source.path || '').trim(),
+    filesystem: String(source.filesystem || '').trim(),
+    dataset_name: String(source.dataset_name || '').trim(),
+    sensitive_hint: String(source.sensitive_hint || state.sensitiveHint || '').trim(),
+  };
+}
+
 function _disksOfflineBrowseRender() {
   const dialog = _disksEl('disks-offline-modal');
   const title = _disksEl('disks-offline-title');
@@ -3156,7 +3667,7 @@ function _disksOfflineBrowseRender() {
   } else if (data) {
     const entries = Array.isArray(data.entries) ? data.entries : [];
     listHtml = entries.length
-      ? entries.map(entry => _disksFilesystemTreeRowHtml(entry).replace(/data-disks-tree-action/g, 'data-disks-offline-action')).join('')
+      ? entries.map(entry => _disksFilesystemTreeRowHtml(entry, 'offline')).join('')
       : '<div class="docs-tree-empty">This folder is empty.</div>';
   } else if (!loading) {
     listHtml = '<div class="docs-tree-empty">Preparing offline file tree…</div>';
@@ -3232,18 +3743,36 @@ function _disksOfflineBrowseLoad(force = false) {
       root_path: '/',
       browse_mode: 'device_ro',
       source_path: source.path,
+      filesystem: source.filesystem,
+      dataset_name: source.dataset_name,
+      sensitive_hint: source.sensitive_hint || state.sensitiveHint || '',
+      pin_token: _disksFilesystemAccessSensitive(_disksOfflineAccessMeta(), currentPath) ? _disksValidPinToken() : null,
       path: currentPath === '.' ? null : currentPath,
     }),
   })
     .then(async response => {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (response.status === 423) {
+          const lockedMessage = data.detail || 'PIN required for this filesystem tree.';
+          state.cache.set(cacheKey, { ok: false, locked: true, error: lockedMessage });
+          _disksRequestPin('PIN required for this filesystem tree.').then(() => {
+            state.cache.delete(cacheKey);
+            state.loadingKeys.delete(cacheKey);
+            _disksOfflineBrowseLoad(true);
+          }).catch(err => {
+            state.cache.set(cacheKey, { ok: false, locked: true, error: err?.message || lockedMessage });
+            _disksOfflineBrowseRender();
+          });
+          return Promise.reject(new Error('__PIN_PROMPTED__'));
+        }
         throw new Error(data.detail || `HTTP ${response.status}`);
       }
       state.cache.set(cacheKey, { ok: true, data });
       state.paths.set(String(source.path || '').trim(), _disksNormalizeRelativePath(data?.current_path || currentPath));
     })
     .catch(err => {
+      if (err && err.message === '__PIN_PROMPTED__') return;
       const message = err && err.message ? err.message : String(err || 'Offline browse failed');
       state.cache.set(cacheKey, { ok: false, error: message });
     })
@@ -3312,6 +3841,16 @@ async function _disksOpenOfflineBrowse(node) {
     : false;
   if (!confirmed) return;
   _disksStatusMessage('Preparing read-only offline disk browse…', 'info', true);
+  const sensitive = _disksFilesystemAccessSensitive({
+    root_path: meta.volume_ref,
+    root_display: meta.volume_label,
+    source_path: meta.volume_ref,
+    dataset_name: '',
+    sensitive_hint: meta.sensitive_hint,
+  });
+  const pinToken = sensitive
+    ? await _disksRequestPin('PIN required to attach this offline disk.')
+    : '';
   const response = await apiFetch('/api/v1/disks/offline-browse/open', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -3321,6 +3860,8 @@ async function _disksOpenOfflineBrowse(node) {
       guest_name: meta.guest_name,
       volume_ref: meta.volume_ref,
       volume_label: meta.volume_label,
+      sensitive_hint: meta.sensitive_hint,
+      pin_token: pinToken || null,
     }),
   });
   const payload = await response.json().catch(() => ({}));
@@ -3334,6 +3875,7 @@ async function _disksOpenOfflineBrowse(node) {
     host: String(payload.host || meta.host || '').trim(),
     title: volumeLabel,
     subtitle: `${guestLabel} · read-only attach`,
+    sensitiveHint: String(payload.sensitive_hint || meta.sensitive_hint || '').trim(),
     sources,
     sourcePath: String(defaultSource?.path || '').trim(),
     paths: new Map(),
@@ -3427,6 +3969,16 @@ function _disksOnShellClick(event) {
     const action = String(treeActionBtn.dataset.disksTreeAction || '').trim();
     if (action === 'browse') {
       _disksFilesystemTreeNavigate(node, meta, treeActionBtn.dataset.path || '.');
+      return;
+    }
+    if (action === 'file-tap') {
+      _disksHandleFileTap('tree', meta, treeActionBtn.dataset.path || '.');
+      return;
+    }
+    if (action === 'download') {
+      _disksDownloadFilesystemPath(meta, treeActionBtn.dataset.path || '.').catch(err => {
+        _disksStatusMessage(`Download failed: ${err?.message || err}`, 'fail', true);
+      });
       return;
     }
     if (action === 'up') {
@@ -3562,6 +4114,20 @@ function _disksInit() {
         _disksOfflineBrowseLoad();
         return;
       }
+      if (action === 'file-tap') {
+        const meta = _disksOfflineAccessMeta();
+        if (meta) _disksHandleFileTap('offline', meta, actionBtn.dataset.path || '.');
+        return;
+      }
+      if (action === 'download') {
+        const meta = _disksOfflineAccessMeta();
+        if (meta) {
+          _disksDownloadFilesystemPath(meta, actionBtn.dataset.path || '.').catch(err => {
+            _disksStatusMessage(`Download failed: ${err?.message || err}`, 'fail', true);
+          });
+        }
+        return;
+      }
       if (action === 'up') {
         const source = _disksOfflineBrowseCurrentSource();
         const currentPath = _disksOfflineBrowseCurrentPath();
@@ -3591,5 +4157,78 @@ function _disksInit() {
   _disksEl('disks-offline-modal')?.addEventListener('cancel', (event) => {
     event.preventDefault();
     _disksCloseOfflineBrowseModal();
+  });
+  _disksEl('disks-pin-modal')?.addEventListener('click', (event) => {
+    const closeBtn = event.target.closest('.hub-modal-close');
+    if (closeBtn) {
+      event.preventDefault();
+      _disksClosePinDialog();
+      return;
+    }
+    const keyBtn = event.target.closest('[data-disks-pin-key]');
+    if (!keyBtn || !_disksPinDialogState || _disksPinDialogState.busy) return;
+    event.preventDefault();
+    const key = String(keyBtn.dataset.disksPinKey || '').trim();
+    if (/^\d$/.test(key) && _disksPinDialogState.pin.length < 6) {
+      _disksPinDialogState.pin += key;
+      _disksPinDialogState.message = '';
+      _disksPinDialogState.tone = '';
+      _disksSetPinDisplay();
+      if (_disksPinDialogState.pin.length === 6) _disksSubmitPin();
+      return;
+    }
+    if (key === 'back') {
+      _disksPinDialogState.pin = _disksPinDialogState.pin.slice(0, -1);
+      _disksSetPinDisplay();
+      return;
+    }
+    if (key === 'clear') {
+      _disksPinDialogState.pin = '';
+      _disksSetPinDisplay();
+      return;
+    }
+    if (key === 'unlock') {
+      _disksSubmitPin();
+    }
+  });
+  _disksEl('disks-pin-modal')?.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    _disksClosePinDialog();
+  });
+  _disksEl('disks-file-modal')?.addEventListener('click', (event) => {
+    const closeBtn = event.target.closest('.hub-modal-close');
+    if (closeBtn) {
+      event.preventDefault();
+      _disksCloseFileViewer();
+      return;
+    }
+    const downloadBtn = event.target.closest('#disks-file-download');
+    if (downloadBtn && _disksFileViewerState) {
+      event.preventDefault();
+      _disksDownloadFilesystemPath(_disksFileViewerState.meta, _disksFileViewerState.path).catch(err => {
+        _disksSetFileStatus(`Download failed: ${err?.message || err}`, 'error');
+      });
+      return;
+    }
+    const saveBtn = event.target.closest('#disks-file-save');
+    if (saveBtn) {
+      event.preventDefault();
+      _disksSaveFileViewer();
+      return;
+    }
+    const editBtn = event.target.closest('#disks-file-edit-toggle');
+    if (editBtn) {
+      event.preventDefault();
+      _disksToggleFileEditor();
+    }
+  });
+  _disksEl('disks-file-modal')?.addEventListener('input', (event) => {
+    if (!event.target.closest('#disks-file-editor') || !_disksFileViewerState) return;
+    _disksFileViewerState.dirty = true;
+    _disksSetFileStatus('Unsaved changes.', 'warn');
+  });
+  _disksEl('disks-file-modal')?.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    _disksCloseFileViewer();
   });
 }
