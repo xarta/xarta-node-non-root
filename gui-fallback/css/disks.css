@@ -42,6 +42,10 @@
   flex-wrap: wrap;
 }
 
+.disks-lift-block {
+  display: none;
+}
+
 .disks-breadcrumbs {
   display: flex;
   align-items: center;
@@ -1268,15 +1272,15 @@ button.disks-tree__download-btn:disabled {
 
 @media (max-width: 600px) {
   .disks-shell {
-    padding: 12px 0;
+    padding: 8px 0 10px;
   }
 
   .disks-page {
-    gap: 14px;
+    gap: 12px;
   }
 
   .disks-hero {
-    padding: 14px;
+    padding: 12px;
   }
 
   .disks-card-grid {
@@ -1308,5 +1312,109 @@ button.disks-tree__download-btn:disabled {
     align-items: flex-start;
     flex-direction: column;
   }
+}
 
+@media (max-width: 600px) and (orientation: portrait) {
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-disks {
+    display: flex;
+    flex: 1 1 auto;
+    width: auto;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-disks .disks-page__chrome--lifted {
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-disks .disks-breadcrumbs {
+    width: 100%;
+    gap: 4px 6px;
+    align-items: flex-start;
+  }
+
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-disks .disks-breadcrumbs__item,
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-disks .disks-back-btn {
+    padding: 4px 9px;
+    font-size: 11px;
+  }
+
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-disks .disks-breadcrumbs__sep {
+    font-size: 11px;
+    line-height: 24px;
+  }
+
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #tab-disks.active .disks-page__chrome--in-shell {
+    display: none;
+  }
+
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #tab-disks.active > #disks-status {
+    margin: 0 0 2px;
+    padding: 0;
+    line-height: 1.25;
+  }
+
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #tab-disks.active > .body-shade-handle {
+    margin-top: -4px;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 600px) and (pointer: coarse),
+       (orientation: landscape) and (max-height: 600px) and (hover: none),
+       (orientation: landscape) and (max-height: 600px) and (max-width: 1000px) {
+  .disks-shell {
+    padding: 6px 0 8px;
+  }
+
+  .disks-page {
+    gap: 10px;
+  }
+
+  .disks-hero {
+    padding: 12px;
+  }
+
+  #page-controls-slot #s25-lift-disks {
+    display: flex;
+    flex: 1 1 220px;
+    min-width: 0;
+  }
+
+  #page-controls-slot #s25-lift-disks .disks-page__chrome--lifted {
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  #page-controls-slot #s25-lift-disks .disks-breadcrumbs {
+    width: 100%;
+    gap: 4px 6px;
+    align-items: flex-start;
+  }
+
+  #page-controls-slot #s25-lift-disks .disks-breadcrumbs__item,
+  #page-controls-slot #s25-lift-disks .disks-back-btn {
+    padding: 4px 9px;
+    font-size: 11px;
+  }
+
+  #page-controls-slot #s25-lift-disks .disks-breadcrumbs__sep {
+    font-size: 11px;
+    line-height: 24px;
+  }
+
+  #tab-disks.active .disks-page__chrome--in-shell {
+    display: none;
+  }
+
+  #tab-disks.active > #disks-status {
+    margin: 0 0 2px;
+    padding: 0;
+    line-height: 1.25;
+  }
+
+  #tab-disks.active > .body-shade-handle {
+    margin-top: -4px;
+  }
 }

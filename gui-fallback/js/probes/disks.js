@@ -229,10 +229,11 @@ function _disksUsagePctLabel(node, pct) {
 }
 
 function _disksStatusTone(status) {
-  if (status === 'ok') return 'ok';
-  if (status === 'warn') return 'warn';
-  if (status === 'fail') return 'fail';
-  if (status === 'stale') return 'stale';
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'ok') return 'ok';
+  if (normalized === 'warn') return 'warn';
+  if (normalized === 'fail') return 'fail';
+  if (normalized === 'stale') return 'stale';
   return 'info';
 }
 
@@ -578,6 +579,58 @@ function _disksBreadcrumbs() {
     cursor = _disksParentById.get(cursor) || '';
   }
   return crumbs;
+}
+
+function _disksChromeState() {
+  const crumbs = _disksBreadcrumbs();
+  return {
+    crumbs,
+    backTarget: crumbs.length > 1 ? crumbs[crumbs.length - 2].id : '',
+  };
+}
+
+function _disksBreadcrumbTrailHtml(items) {
+  return (Array.isArray(items) ? items : []).map(item => `
+    <button
+      type="button"
+      class="disks-breadcrumbs__item${item?.is_current ? ' is-current' : ''}"
+      data-disks-node="${_disksEsc(item?.id || '')}"
+    >${_disksEsc(item?.label || 'Item')}</button>
+  `).join('<span class="disks-breadcrumbs__sep">/</span>');
+}
+
+function _disksChromeHtml(options = {}) {
+  const chrome = _disksChromeState();
+  const crumbs = Array.isArray(chrome.crumbs) ? chrome.crumbs : [];
+  const backTarget = String(chrome.backTarget || '').trim();
+  const includeBackInTrail = !!options.includeBackInTrail && !!backTarget;
+  const trailItems = includeBackInTrail
+    ? [{ id: backTarget, label: 'Back', is_current: false }, ...crumbs.map((crumb, idx) => ({
+      id: crumb.id,
+      label: crumb.label,
+      is_current: idx === crumbs.length - 1,
+    }))]
+    : crumbs.map((crumb, idx) => ({
+      id: crumb.id,
+      label: crumb.label,
+      is_current: idx === crumbs.length - 1,
+    }));
+  const className = ['disks-page__chrome', String(options.className || '').trim()].filter(Boolean).join(' ');
+  return `
+    <div class="${_disksEsc(className)}">
+      <div class="disks-breadcrumbs">
+        ${_disksBreadcrumbTrailHtml(trailItems)}
+      </div>
+      ${!includeBackInTrail && backTarget ? `<button type="button" class="disks-back-btn" data-disks-node="${_disksEsc(backTarget)}">Back</button>` : ''}
+    </div>
+  `;
+}
+
+function _disksStatusPillHtml(node) {
+  const label = String(node?.status || '').trim();
+  const tone = _disksStatusTone(label);
+  if (!label || tone === 'info') return '';
+  return `<span class="disks-pill disks-pill--${_disksEsc(tone)}">${_disksEsc(label)}</span>`;
 }
 
 function _disksGroupChildren(node) {
@@ -1006,8 +1059,6 @@ function _disksFactsHtml(facts, limit = 6, options = {}) {
 function _disksHeroHtml(node) {
   const pct = _disksUsagePct(node);
   const partial = _disksPartialUsage(node);
-  const crumbs = _disksBreadcrumbs();
-  const backTarget = crumbs.length > 1 ? crumbs[crumbs.length - 2].id : '';
   const drivePurpose = _disksDrivePurposeLabel(node);
   const filesystemPill = _disksFilesystemPillLabel(node);
   const facts = Array.isArray(node?.facts) ? node.facts.slice() : [];
@@ -1027,16 +1078,7 @@ function _disksHeroHtml(node) {
     ? `<div class="disks-source-issues">${_disksSourceIssues.map(issue => `<span>${_disksEsc(issue)}</span>`).join('')}</div>`
     : '';
   return `
-    <div class="disks-page__chrome">
-      <div class="disks-breadcrumbs">
-        ${crumbs.map((crumb, idx) => `
-          <button type="button" class="disks-breadcrumbs__item${idx === crumbs.length - 1 ? ' is-current' : ''}" data-disks-node="${_disksEsc(crumb.id)}">
-            ${_disksEsc(crumb.label)}
-          </button>
-        `).join('<span class="disks-breadcrumbs__sep">/</span>')}
-      </div>
-      ${backTarget ? `<button type="button" class="disks-back-btn" data-disks-node="${_disksEsc(backTarget)}">Back</button>` : ''}
-    </div>
+    ${_disksChromeHtml({ className: 'disks-page__chrome--in-shell' })}
     <section class="disks-hero">
       <div class="disks-hero__head">
         <div class="disks-hero__icon-wrap">
@@ -1054,7 +1096,7 @@ function _disksHeroHtml(node) {
       </div>
       <div class="disks-hero__meter-wrap">
         <div class="disks-hero__meter-meta">
-          <span class="disks-pill disks-pill--${_disksStatusTone(node.status)}">${_disksEsc(node.status || 'info')}</span>
+          ${_disksStatusPillHtml(node)}
           ${filesystemPill ? `<span class="disks-pill">${_disksEsc(filesystemPill)}</span>` : ''}
           ${pct == null ? '' : `<span class="disks-hero__pct">${pct.toFixed(1)}%</span>`}
         </div>
@@ -1533,7 +1575,7 @@ function _disksCardHtml(node, options = {}) {
   return `
     <article class="${classes.join(' ')}" ${attrs.join(' ')}${styleAttr}>
       <div class="disks-card__actions">
-        <span class="disks-pill disks-pill--${_disksEsc(tone)}">${_disksEsc(node.status || 'info')}</span>
+        ${_disksStatusPillHtml(node)}
         ${canForget ? `<button type="button" class="disks-card__forget" title="Remove cached inventory memory" aria-label="Remove cached inventory memory" data-disks-forget-host="${_disksEsc(node.cache_host)}" data-disks-forget-node="${_disksEsc(node.id)}">×</button>` : ''}
         ${shortcut ? `<button type="button" class="disks-card__jump disks-card__jump--${_disksEsc(shortcut.tone)}" title="${_disksEsc(shortcut.title)}" aria-label="${_disksEsc(shortcut.title)}" data-disks-node="${_disksEsc(shortcut.target.id)}">${_disksEsc(shortcut.label)}</button>` : ''}
         ${guestMeta ? _disksGuestSummaryButtonHtml(guestMeta) : ''}
@@ -1733,9 +1775,11 @@ function _disksLoadingHtml() {
 
 function renderDisksPage() {
   const shell = _disksEl('disks-shell');
+  const liftChrome = _disksEl('s25-lift-disks');
   if (!shell) return;
   if (!_disksTopology || !_disksTopology.root) {
     shell.innerHTML = _disksLoadingHtml();
+    if (liftChrome) liftChrome.innerHTML = '';
     return;
   }
   if (!_disksNodeById.has(_disksCurrentNodeId)) {
@@ -1744,7 +1788,14 @@ function renderDisksPage() {
   const node = _disksCurrentNode();
   if (!node) {
     shell.innerHTML = _disksLoadingHtml();
+    if (liftChrome) liftChrome.innerHTML = '';
     return;
+  }
+  if (liftChrome) {
+    liftChrome.innerHTML = _disksChromeHtml({
+      includeBackInTrail: true,
+      className: 'disks-page__chrome--lifted',
+    });
   }
   shell.innerHTML = `
     <div class="disks-page">
@@ -2922,6 +2973,7 @@ function _disksInit() {
   if (_disksInitDone) return;
   _disksInitDone = true;
   window.addEventListener('resize', _disksScheduleLayoutPass, { passive: true });
+  _disksEl('s25-lift-disks')?.addEventListener('click', _disksOnShellClick);
   _disksEl('disks-shell')?.addEventListener('click', _disksOnShellClick);
   _disksEl('disks-shell')?.addEventListener('input', _disksOnShellInput);
   _disksEl('disks-shell')?.addEventListener('keydown', _disksOnShellKeydown);
