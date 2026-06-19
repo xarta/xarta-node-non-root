@@ -3205,18 +3205,6 @@
         <div class="diary-filter-strip" id="diary-filter-strip">Filter: all sources</div>
       </div>
 
-      <section class="diary-quick-entry" aria-labelledby="diary-quick-entry-heading">
-        <div class="diary-section-head">
-          <h3 id="diary-quick-entry-heading">Quick Entry</h3>
-          <span class="diary-pill" id="diary-write-pill">Ready</span>
-        </div>
-        <textarea id="diary-quick-entry-body" maxlength="4000" rows="4"></textarea>
-        <div class="diary-quick-entry__footer">
-          <span id="diary-entry-status" class="diary-entry-status"></span>
-          <button class="diary-command-btn" type="button" data-diary-action="submit-entry">Save Entry</button>
-        </div>
-      </section>
-
       <div class="diary-status-strip" id="diary-status-strip" role="status" aria-live="polite">
         <span class="diary-status-dot diary-status-dot--unknown" aria-hidden="true"></span>
         <span>Loading Diary day</span>
@@ -3228,6 +3216,17 @@
     <div class="tab-scroll-shell">
     <div class="diary-page diary-page--body">
       <div class="personal-search-strip" data-personal-search-surface="diary"></div>
+      <section class="diary-quick-entry" aria-labelledby="diary-quick-entry-heading">
+        <div class="diary-section-head">
+          <h3 id="diary-quick-entry-heading">Quick Entry</h3>
+          <span class="diary-pill" id="diary-write-pill">Ready</span>
+        </div>
+        <textarea id="diary-quick-entry-body" maxlength="4000" rows="4"></textarea>
+        <div class="diary-quick-entry__footer">
+          <span id="diary-entry-status" class="diary-entry-status"></span>
+          <button class="diary-command-btn" type="button" data-diary-action="submit-entry">Save Entry</button>
+        </div>
+      </section>
       <div class="diary-metrics" id="diary-metrics" aria-label="Diary day metrics"></div>
 
       <div class="diary-layout">
@@ -3294,6 +3293,17 @@
         <div class="calendar-filter-strip" id="calendar-filter-strip">Filter: all sources</div>
       </div>
 
+      <div class="calendar-status-strip" id="calendar-status-strip" role="status" aria-live="polite">
+        <span class="calendar-status-dot calendar-status-dot--unknown" aria-hidden="true"></span>
+        <span>Loading Calendar agenda</span>
+      </div>
+    </div>
+
+    <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
+
+    <div class="tab-scroll-shell">
+    <div class="calendar-page calendar-page--body">
+      <div class="personal-search-strip" data-personal-search-surface="calendar"></div>
       <section class="calendar-quick-event" aria-labelledby="calendar-quick-event-heading">
         <div class="calendar-section-head">
           <h3 id="calendar-quick-event-heading">New Calendar Event</h3>
@@ -3331,18 +3341,6 @@
           <button class="calendar-command-btn" type="button" data-calendar-action="submit-event">Save Event</button>
         </div>
       </section>
-
-      <div class="calendar-status-strip" id="calendar-status-strip" role="status" aria-live="polite">
-        <span class="calendar-status-dot calendar-status-dot--unknown" aria-hidden="true"></span>
-        <span>Loading Calendar agenda</span>
-      </div>
-    </div>
-
-    <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
-
-    <div class="tab-scroll-shell">
-    <div class="calendar-page calendar-page--body">
-      <div class="personal-search-strip" data-personal-search-surface="calendar"></div>
       <div class="calendar-metrics" id="calendar-metrics" aria-label="Calendar metrics"></div>
 
       <div class="calendar-layout">
@@ -3403,6 +3401,13 @@
         <button type="button" data-todo-mode-button="done">Done</button>
       </div>
 
+    </div>
+
+    <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
+
+    <div class="tab-scroll-shell">
+    <div class="todo-page todo-page--body">
+      <div class="personal-search-strip" data-personal-search-surface="todo"></div>
       <section class="todo-quick-task" aria-labelledby="todo-quick-task-heading">
         <div class="todo-section-head">
           <h3 id="todo-quick-task-heading">Quick Task</h3>
@@ -3452,13 +3457,6 @@
           <button class="todo-command-btn" type="button" data-todo-action="submit-task">Save Task</button>
         </div>
       </section>
-    </div>
-
-    <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
-
-    <div class="tab-scroll-shell">
-    <div class="todo-page todo-page--body">
-      <div class="personal-search-strip" data-personal-search-surface="todo"></div>
       <div class="todo-status-strip" id="todo-status-strip" role="status" aria-live="polite">
         <span class="todo-status-dot todo-status-dot--unknown" aria-hidden="true"></span>
         <span>Loading ToDo state</span>

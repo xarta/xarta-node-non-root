@@ -15,6 +15,16 @@ const activeBrowserObserver = fs.readFileSync(
   'utf8',
 );
 
+function tabSlice(tabId) {
+  const tabStart = indexHtml.indexOf(`<section id="${tabId}"`);
+  assert.notEqual(tabStart, -1, `${tabId} must exist in index.html.`);
+  const nextSection = indexHtml.indexOf('\n  <section id="', tabStart + 1);
+  const nextDialog = indexHtml.indexOf('\n  <dialog', tabStart + 1);
+  const candidates = [nextSection, nextDialog].filter((value) => value !== -1);
+  const tabEnd = candidates.length ? Math.min(...candidates) : indexHtml.length;
+  return indexHtml.slice(tabStart, tabEnd);
+}
+
 assert.match(
   bodyShadeJs,
   /function\s+setScrollStateClass\s*\([^)]*\)[\s\S]*document\.documentElement\.classList\.toggle/,
@@ -38,13 +48,36 @@ for (const [tabId, surface] of [
   ['tab-imports', 'imports'],
   ['tab-kanban', 'kanban'],
 ]) {
-  const tabStart = indexHtml.indexOf(`id="${tabId}"`);
-  assert.notEqual(tabStart, -1, `${tabId} must exist in index.html.`);
-  const shellStart = indexHtml.indexOf('<div class="tab-scroll-shell">', tabStart);
-  const searchStart = indexHtml.indexOf(`data-personal-search-surface="${surface}"`, tabStart);
+  const tabHtml = tabSlice(tabId);
+  const handleStart = tabHtml.indexOf('class="body-shade-handle"');
+  const shellStart = tabHtml.indexOf('<div class="tab-scroll-shell">');
+  const searchStart = tabHtml.indexOf(`data-personal-search-surface="${surface}"`);
+  assert.ok(
+    handleStart !== -1 && shellStart > handleStart,
+    `${surface} Body Shade handle must sit before the managed scroll shell.`,
+  );
   assert.ok(
     shellStart !== -1 && searchStart > shellStart,
     `${surface} search strip must stay inside the managed scroll shell.`,
+  );
+}
+for (const [tabId, surface, formNeedle] of [
+  ['tab-diary', 'diary', 'class="diary-quick-entry"'],
+  ['tab-calender', 'calendar', 'class="calendar-quick-event"'],
+  ['tab-todo', 'todo', 'class="todo-quick-task"'],
+]) {
+  const tabHtml = tabSlice(tabId);
+  const handleStart = tabHtml.indexOf('class="body-shade-handle"');
+  const shellStart = tabHtml.indexOf('<div class="tab-scroll-shell">');
+  const shellEnd = tabHtml.indexOf('</div><!-- /tab-scroll-shell -->', shellStart);
+  const formStart = tabHtml.indexOf(formNeedle);
+  assert.ok(
+    handleStart !== -1 && shellStart > handleStart,
+    `${surface} Body Shade handle must be visible before bulky content begins.`,
+  );
+  assert.ok(
+    formStart > shellStart && formStart < shellEnd,
+    `${surface} compose form must stay inside the managed scroll shell.`,
   );
 }
 assert.match(
