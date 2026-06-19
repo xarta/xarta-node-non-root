@@ -56,13 +56,33 @@ assert.match(
 );
 assert.match(
   activeBrowserObserver,
-  /DIAGNOSTIC_SOURCES = new Set\(\['gpu_activity_sound', 'personal_search'\]\)/,
-  'Active Browser diagnostics must expose the shared Personal search state.',
+  /DIAGNOSTIC_SOURCES = new Set\(\['gpu_activity_sound', 'personal_search', 'personal_graph'\]\)/,
+  'Active Browser diagnostics must expose the shared Personal search and graph state.',
 );
 assert.match(
   activeBrowserObserver,
   /surfaces\.personal_search = personalSearchSnapshot/,
   'Active Browser automation state must include the shared Personal search snapshot.',
+);
+assert.match(
+  activeBrowserObserver,
+  /surfaces\.personal_graph = personalGraphSnapshot/,
+  'Active Browser automation state must include the shared Personal graph snapshot.',
+);
+assert.match(
+  indexHtml,
+  /id="personal-graph-modal"/,
+  'Personal graph links must open in a HubModal dialog.',
+);
+assert.match(
+  indexHtml,
+  /class="hub-modal hub-dialog personal-graph-modal"/,
+  'Personal graph links must use the shared HubModal and HubDialogs house style.',
+);
+assert.match(
+  fs.readFileSync(path.resolve(here, '../js/dave/personal-search.js'), 'utf8'),
+  /BlueprintsPersonalGraphLinks/,
+  'Shared Personal search UI must expose graph-link automation state.',
 );
 assert.doesNotMatch(
   bodyShadeJs,

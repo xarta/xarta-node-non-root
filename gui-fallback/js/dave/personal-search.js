@@ -5,6 +5,15 @@
 const BlueprintsPersonalSearch = (() => {
   const state = {
     surfaces: {},
+    graph: {
+      open: false,
+      sourceRef: '',
+      title: '',
+      loading: false,
+      error: '',
+      links: [],
+      sync: null,
+    },
   };
 
   const surfaceDefaults = {
@@ -120,6 +129,131 @@ const BlueprintsPersonalSearch = (() => {
     return chips.map(label => `<span class="personal-search-chip">${escHtml(label)}</span>`).join('');
   }
 
+  function graphEls() {
+    return {
+      dialog: document.getElementById('personal-graph-modal'),
+      title: document.getElementById('personal-graph-title'),
+      source: document.getElementById('personal-graph-source'),
+      status: document.getElementById('personal-graph-status'),
+      list: document.getElementById('personal-graph-list'),
+    };
+  }
+
+  function graphLabel(value) {
+    return String(value || '').replace(/_/g, ' ');
+  }
+
+  function graphUrl(sourceRef) {
+    const url = new URL('/api/v1/personal/graph/links', window.location.origin);
+    url.searchParams.set('source_ref', sourceRef);
+    url.searchParams.set('sync', 'true');
+    url.searchParams.set('limit', '80');
+    return `${url.pathname}${url.search}`;
+  }
+
+  function graphStatusText() {
+    const graph = state.graph;
+    if (graph.loading) return 'Loading';
+    if (graph.error) return graph.error;
+    const count = graph.links.length;
+    return `${count} link${count === 1 ? '' : 's'}`;
+  }
+
+  function graphLinkHtml(link) {
+    const source = link.source_ref || '';
+    const target = link.target_ref || '';
+    const provenance = link.provenance || {};
+    const metaParts = [
+      graphLabel(link.link_type),
+      graphLabel(link.link_state),
+      graphLabel(link.risk_level),
+    ].filter(Boolean);
+    const detailParts = [
+      link.title,
+      provenance.source_hash ? `hash ${provenance.source_hash}` : '',
+      provenance.db_ref ? `db ${provenance.db_ref}` : '',
+      provenance.source_ref ? `source ${provenance.source_ref}` : '',
+    ].filter(Boolean);
+    return `
+      <article class="personal-graph-row">
+        <div class="personal-graph-row__refs">
+          <span>${escHtml(source)}</span>
+          <span aria-hidden="true">-&gt;</span>
+          <span>${escHtml(target)}</span>
+        </div>
+        <div class="personal-graph-row__meta">${escHtml(metaParts.join(' / '))}</div>
+        <div class="personal-graph-row__detail">${escHtml(detailParts.join(' - '))}</div>
+      </article>
+    `;
+  }
+
+  function renderGraphModal() {
+    const graph = state.graph;
+    const els = graphEls();
+    if (!els.dialog || !els.list) return;
+    if (els.title) els.title.textContent = graph.title || 'Graph Links';
+    if (els.source) els.source.textContent = graph.sourceRef || '';
+    if (els.status) {
+      els.status.textContent = graphStatusText();
+      els.status.dataset.tone = graph.error ? 'error' : '';
+    }
+    els.list.innerHTML = graph.links.length
+      ? graph.links.map(graphLinkHtml).join('')
+      : '<div class="personal-graph-empty">No graph links for this source.</div>';
+  }
+
+  function openGraphModal() {
+    const { dialog } = graphEls();
+    if (!dialog) return false;
+    state.graph.open = true;
+    renderGraphModal();
+    if (typeof HubModal !== 'undefined' && typeof HubModal.open === 'function') {
+      HubModal.open(dialog, {
+        onClose: () => {
+          state.graph.open = false;
+        },
+      });
+      return true;
+    }
+    if (typeof dialog.showModal === 'function') {
+      if (!dialog.open) dialog.showModal();
+      return true;
+    }
+    dialog.setAttribute('open', 'open');
+    return true;
+  }
+
+  async function openGraphLinks(surface, index) {
+    const result = surfaceState(surface).results[Number(index)];
+    if (!result) return;
+    const sourceRef = result.document_id || (result.source_refs || [])[0] || '';
+    if (!sourceRef) return;
+    state.graph = {
+      open: true,
+      sourceRef,
+      title: result.title || sourceRef,
+      loading: true,
+      error: '',
+      links: [],
+      sync: null,
+    };
+    openGraphModal();
+    try {
+      const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
+      const response = await fetcher(graphUrl(sourceRef));
+      if (!response.ok) throw new Error(response.statusText || 'graph links failed');
+      const payload = await response.json();
+      state.graph.links = Array.isArray(payload.links) ? payload.links : [];
+      state.graph.sync = payload.sync || null;
+    } catch (error) {
+      state.graph.error = error.message || String(error);
+      state.graph.links = [];
+    } finally {
+      state.graph.loading = false;
+      renderGraphModal();
+    }
+  }
+
   function resultHtml(result, index) {
     const source = result.source || {};
     const page = result.page_ref || {};
@@ -134,6 +268,7 @@ const BlueprintsPersonalSearch = (() => {
         <div class="personal-search-score">
           ${scoreChips(result)}
           <button class="personal-search-open" type="button" data-personal-search-open="${index}">Open</button>
+          <button class="personal-search-open" type="button" data-personal-graph-open="${index}">Links</button>
         </div>
       </article>
     `;
@@ -234,9 +369,15 @@ const BlueprintsPersonalSearch = (() => {
       data.timer = window.setTimeout(() => run(surface), 450);
     });
     root.addEventListener('click', event => {
-      const button = event.target.closest?.('[data-personal-search-open]');
-      if (!button) return;
-      openResult(surface, button.dataset.personalSearchOpen);
+      const openButton = event.target.closest?.('[data-personal-search-open]');
+      if (openButton) {
+        openResult(surface, openButton.dataset.personalSearchOpen);
+        return;
+      }
+      const graphButton = event.target.closest?.('[data-personal-graph-open]');
+      if (graphButton) {
+        openGraphLinks(surface, graphButton.dataset.personalGraphOpen);
+      }
     });
   }
 
@@ -258,7 +399,19 @@ const BlueprintsPersonalSearch = (() => {
         subsystems: value.subsystems,
       };
     }
-    return { surfaces };
+    return {
+      surfaces,
+      graph: {
+        open: state.graph.open,
+        source_ref: state.graph.sourceRef,
+        title: state.graph.title,
+        loading: state.graph.loading,
+        error: state.graph.error,
+        link_count: state.graph.links.length,
+        first_link: state.graph.links[0]?.target_ref || '',
+        sync: state.graph.sync,
+      },
+    };
   }
 
   if (document.readyState === 'loading') {
@@ -270,8 +423,12 @@ const BlueprintsPersonalSearch = (() => {
   return {
     init,
     run,
+    openGraphLinks,
     snapshot,
   };
 })();
 
 window.BlueprintsPersonalSearch = BlueprintsPersonalSearch;
+window.BlueprintsPersonalGraphLinks = {
+  snapshot: () => (window.BlueprintsPersonalSearch?.snapshot?.().graph || {}),
+};

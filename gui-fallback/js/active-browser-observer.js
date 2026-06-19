@@ -12,7 +12,7 @@ const BlueprintsActiveBrowserObserver = (() => {
   const LS_HANDLED_COMMANDS = 'blueprints.active_browser.handled_commands';
   const HANDLED_COMMAND_TTL_MS = 5 * 60 * 1000;
   const DIAGNOSTIC_REPORT_TTL_MS = 5000;
-  const DIAGNOSTIC_SOURCES = new Set(['gpu_activity_sound', 'personal_search']);
+  const DIAGNOSTIC_SOURCES = new Set(['gpu_activity_sound', 'personal_search', 'personal_graph']);
 
   let _reportTimer = null;
   let _heartbeatTimer = null;
@@ -140,6 +140,7 @@ const BlueprintsActiveBrowserObserver = (() => {
     const source = _cleanText(value).toLowerCase().replace(/[-\s]+/g, '_');
     if (source === 'gpu' || source === 'gpu_activity' || source === 'gpu_sfx') return 'gpu_activity_sound';
     if (source === 'search' || source === 'shared_search' || source === 'personal_shared_search') return 'personal_search';
+    if (source === 'graph' || source === 'provenance' || source === 'personal_provenance') return 'personal_graph';
     return DIAGNOSTIC_SOURCES.has(source) ? source : '';
   }
 
@@ -728,6 +729,26 @@ const BlueprintsActiveBrowserObserver = (() => {
     }
   }
 
+  function _personalGraphDiagnostic() {
+    const personalGraph = (typeof BlueprintsPersonalGraphLinks !== 'undefined')
+      ? BlueprintsPersonalGraphLinks
+      : (window.BlueprintsPersonalGraphLinks || null);
+    if (!personalGraph || typeof personalGraph.snapshot !== 'function') {
+      return { available: false };
+    }
+    try {
+      return {
+        available: true,
+        snapshot: personalGraph.snapshot(),
+      };
+    } catch (error) {
+      return {
+        available: true,
+        error: _cleanText(error?.message || error).slice(0, 180),
+      };
+    }
+  }
+
   function _consumeDiagnostics() {
     const request = _pendingDiagnostics;
     if (!request) return null;
@@ -745,6 +766,9 @@ const BlueprintsActiveBrowserObserver = (() => {
     }
     if (request.sources.includes('personal_search')) {
       diagnostics.personal_search = _personalSearchDiagnostic();
+    }
+    if (request.sources.includes('personal_graph')) {
+      diagnostics.personal_graph = _personalGraphDiagnostic();
     }
     return diagnostics;
   }
@@ -768,6 +792,9 @@ const BlueprintsActiveBrowserObserver = (() => {
     const personalSearchSnapshot = typeof window.BlueprintsPersonalSearch?.snapshot === 'function'
       ? window.BlueprintsPersonalSearch.snapshot()
       : null;
+    const personalGraphSnapshot = typeof window.BlueprintsPersonalGraphLinks?.snapshot === 'function'
+      ? window.BlueprintsPersonalGraphLinks.snapshot()
+      : null;
     if (calendarSnapshot && typeof calendarSnapshot === 'object') {
       surfaces.calendar = calendarSnapshot;
     } else if (!surfaces.calendar || typeof surfaces.calendar !== 'object') {
@@ -787,6 +814,11 @@ const BlueprintsActiveBrowserObserver = (() => {
       surfaces.personal_search = personalSearchSnapshot;
     } else if (!surfaces.personal_search || typeof surfaces.personal_search !== 'object') {
       surfaces.personal_search = {};
+    }
+    if (personalGraphSnapshot && typeof personalGraphSnapshot === 'object') {
+      surfaces.personal_graph = personalGraphSnapshot;
+    } else if (!surfaces.personal_graph || typeof surfaces.personal_graph !== 'object') {
+      surfaces.personal_graph = {};
     }
     const normalizedState = { ...state, surfaces };
     if (_lastCommandResult) {

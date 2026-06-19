@@ -279,6 +279,9 @@ function _activeBrowserAutomationState() {
       personal_search: typeof window.BlueprintsPersonalSearch?.snapshot === 'function'
         ? window.BlueprintsPersonalSearch.snapshot()
         : {},
+      personal_graph: typeof window.BlueprintsPersonalGraphLinks?.snapshot === 'function'
+        ? window.BlueprintsPersonalGraphLinks.snapshot()
+        : {},
     },
   };
 }
