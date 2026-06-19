@@ -326,6 +326,12 @@ function _disksUsagePctLabel(node, pct) {
   return `${pct.toFixed(1)}% used`;
 }
 
+function _disksInlineTitleUsageText(node) {
+  if (!node || _disksPartialUsage(node) || node.used_bytes != null || node.total_bytes == null) return '';
+  if (typeof node.usage_text === 'string' && node.usage_text.trim()) return '';
+  return _disksUsageText(node);
+}
+
 function _disksStatusTone(status) {
   const normalized = String(status || '').trim().toLowerCase();
   if (normalized === 'ok') return 'ok';
@@ -1701,6 +1707,7 @@ function _disksCardHtml(node, options = {}) {
       `
     : '';
   const pct = _disksUsagePct(node);
+  const inlineUsageText = _disksInlineTitleUsageText(node);
   const hasChildren = Array.isArray(primaryTarget.children) && primaryTarget.children.length > 0;
   const tone = _disksStatusTone(node.status);
   const canForget = !!node?.cached_missing && !!node?.cache_host;
@@ -1729,6 +1736,9 @@ function _disksCardHtml(node, options = {}) {
   if (options.pooledSingle) {
     attrs.push('data-disks-pool-single="true"');
   }
+  if (inlineUsageText) {
+    attrs.push('data-disks-inline-title-usage="true"');
+  }
   const styleAttr = options.poolColor ? ` style="--disks-cluster-rgb:${_disksEsc(options.poolColor)};"` : '';
   const poolCaption = options.pooledSingle && options.poolName
     && String(options.poolName || '').trim().toLowerCase() !== String(drivePurpose || '').trim().toLowerCase()
@@ -1752,6 +1762,7 @@ function _disksCardHtml(node, options = {}) {
             <div class="disks-card__title-row">
               <strong class="disks-card__title">${_disksEsc(node.label)}</strong>
               ${drivePurpose ? `<span class="disks-card__title-suffix">(${_disksEsc(drivePurpose)})</span>` : ''}
+              ${inlineUsageText ? `<span class="disks-card__title-usage">${_disksEsc(inlineUsageText)}</span>` : ''}
             </div>
             ${poolCaption}
             ${inlineFilesystemButton}

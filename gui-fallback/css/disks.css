@@ -853,6 +853,19 @@ button.disks-tree__download-btn:disabled {
   line-height: 1;
 }
 
+.disks-card__title-usage {
+  display: none;
+  align-items: center;
+  min-height: 22px;
+  margin-left: 4px;
+  min-width: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .disks-card__subtitle {
   margin-top: 4px;
   color: var(--text-dim);
@@ -1024,6 +1037,7 @@ button.disks-tree__download-btn:disabled {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  margin-left: auto;
   color: rgba(255, 224, 148, 0.96);
   cursor: pointer;
   user-select: none;
@@ -1430,6 +1444,14 @@ button.disks-tree__download-btn:disabled {
 }
 
 @media (max-width: 600px) and (orientation: portrait) {
+  .disks-card[data-disks-inline-title-usage="true"] .disks-card__title-usage {
+    display: inline-flex;
+  }
+
+  .disks-card[data-disks-inline-title-usage="true"] .disks-card__usage {
+    display: none;
+  }
+
   html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-disks {
     display: flex;
     flex: 1 1 auto;
