@@ -276,6 +276,9 @@ function _activeBrowserAutomationState() {
       kanban: typeof window.BlueprintsKanbanBoardPage?.snapshot === 'function'
         ? window.BlueprintsKanbanBoardPage.snapshot()
         : {},
+      personal_search: typeof window.BlueprintsPersonalSearch?.snapshot === 'function'
+        ? window.BlueprintsPersonalSearch.snapshot()
+        : {},
     },
   };
 }

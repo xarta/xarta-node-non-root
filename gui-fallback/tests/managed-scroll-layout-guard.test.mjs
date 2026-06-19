@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const bodyShadeJs = fs.readFileSync(path.resolve(here, '../js/body-shade.js'), 'utf8');
 const bodyShadeCss = fs.readFileSync(path.resolve(here, '../css/body-shade.css'), 'utf8');
+const indexHtml = fs.readFileSync(path.resolve(here, '../index.html'), 'utf8');
 const activeBrowserObserver = fs.readFileSync(
   path.resolve(here, '../js/active-browser-observer.js'),
   'utf8',
@@ -27,6 +28,42 @@ for (const tabId of ['tab-diary', 'tab-calender', 'tab-todo', 'tab-imports', 'ta
     `${tabId} must stay in the managed-scroll resync page set.`,
   );
 }
+for (const [tabId, surface] of [
+  ['tab-diary', 'diary'],
+  ['tab-calender', 'calendar'],
+  ['tab-todo', 'todo'],
+  ['tab-imports', 'imports'],
+  ['tab-kanban', 'kanban'],
+]) {
+  const tabStart = indexHtml.indexOf(`id="${tabId}"`);
+  assert.notEqual(tabStart, -1, `${tabId} must exist in index.html.`);
+  const shellStart = indexHtml.indexOf('<div class="tab-scroll-shell">', tabStart);
+  const searchStart = indexHtml.indexOf(`data-personal-search-surface="${surface}"`, tabStart);
+  assert.ok(
+    shellStart !== -1 && searchStart > shellStart,
+    `${surface} search strip must stay inside the managed scroll shell.`,
+  );
+}
+assert.match(
+  indexHtml,
+  /css\/personal-search\.css/,
+  'Shared Personal search CSS must be loaded.',
+);
+assert.match(
+  indexHtml,
+  /js\/dave\/personal-search\.js/,
+  'Shared Personal search JS must be loaded.',
+);
+assert.match(
+  activeBrowserObserver,
+  /DIAGNOSTIC_SOURCES = new Set\(\['gpu_activity_sound', 'personal_search'\]\)/,
+  'Active Browser diagnostics must expose the shared Personal search state.',
+);
+assert.match(
+  activeBrowserObserver,
+  /surfaces\.personal_search = personalSearchSnapshot/,
+  'Active Browser automation state must include the shared Personal search snapshot.',
+);
 assert.doesNotMatch(
   bodyShadeJs,
   /document\.body\.classList\.(?:add|remove|toggle)\('(?:shade-is-up|has-fill-tab|has-managed-scroll-tab)'/,

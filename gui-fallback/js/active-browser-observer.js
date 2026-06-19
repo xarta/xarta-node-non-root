@@ -12,7 +12,7 @@ const BlueprintsActiveBrowserObserver = (() => {
   const LS_HANDLED_COMMANDS = 'blueprints.active_browser.handled_commands';
   const HANDLED_COMMAND_TTL_MS = 5 * 60 * 1000;
   const DIAGNOSTIC_REPORT_TTL_MS = 5000;
-  const DIAGNOSTIC_SOURCES = new Set(['gpu_activity_sound']);
+  const DIAGNOSTIC_SOURCES = new Set(['gpu_activity_sound', 'personal_search']);
 
   let _reportTimer = null;
   let _heartbeatTimer = null;
@@ -139,6 +139,7 @@ const BlueprintsActiveBrowserObserver = (() => {
   function _normalizeDiagnosticSource(value) {
     const source = _cleanText(value).toLowerCase().replace(/[-\s]+/g, '_');
     if (source === 'gpu' || source === 'gpu_activity' || source === 'gpu_sfx') return 'gpu_activity_sound';
+    if (source === 'search' || source === 'shared_search' || source === 'personal_shared_search') return 'personal_search';
     return DIAGNOSTIC_SOURCES.has(source) ? source : '';
   }
 
@@ -707,6 +708,26 @@ const BlueprintsActiveBrowserObserver = (() => {
     }
   }
 
+  function _personalSearchDiagnostic() {
+    const personalSearch = (typeof BlueprintsPersonalSearch !== 'undefined')
+      ? BlueprintsPersonalSearch
+      : (window.BlueprintsPersonalSearch || null);
+    if (!personalSearch || typeof personalSearch.snapshot !== 'function') {
+      return { available: false };
+    }
+    try {
+      return {
+        available: true,
+        snapshot: personalSearch.snapshot(),
+      };
+    } catch (error) {
+      return {
+        available: true,
+        error: _cleanText(error?.message || error).slice(0, 180),
+      };
+    }
+  }
+
   function _consumeDiagnostics() {
     const request = _pendingDiagnostics;
     if (!request) return null;
@@ -721,6 +742,9 @@ const BlueprintsActiveBrowserObserver = (() => {
     };
     if (request.sources.includes('gpu_activity_sound')) {
       diagnostics.gpu_activity_sound = _gpuActivitySoundDiagnostic();
+    }
+    if (request.sources.includes('personal_search')) {
+      diagnostics.personal_search = _personalSearchDiagnostic();
     }
     return diagnostics;
   }
@@ -741,6 +765,9 @@ const BlueprintsActiveBrowserObserver = (() => {
     const kanbanSnapshot = typeof window.BlueprintsKanbanBoardPage?.snapshot === 'function'
       ? window.BlueprintsKanbanBoardPage.snapshot()
       : null;
+    const personalSearchSnapshot = typeof window.BlueprintsPersonalSearch?.snapshot === 'function'
+      ? window.BlueprintsPersonalSearch.snapshot()
+      : null;
     if (calendarSnapshot && typeof calendarSnapshot === 'object') {
       surfaces.calendar = calendarSnapshot;
     } else if (!surfaces.calendar || typeof surfaces.calendar !== 'object') {
@@ -755,6 +782,11 @@ const BlueprintsActiveBrowserObserver = (() => {
       surfaces.kanban = kanbanSnapshot;
     } else if (!surfaces.kanban || typeof surfaces.kanban !== 'object') {
       surfaces.kanban = {};
+    }
+    if (personalSearchSnapshot && typeof personalSearchSnapshot === 'object') {
+      surfaces.personal_search = personalSearchSnapshot;
+    } else if (!surfaces.personal_search || typeof surfaces.personal_search !== 'object') {
+      surfaces.personal_search = {};
     }
     const normalizedState = { ...state, surfaces };
     if (_lastCommandResult) {

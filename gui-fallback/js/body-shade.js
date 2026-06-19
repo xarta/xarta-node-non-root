@@ -700,11 +700,7 @@
     if (!panel) return false;
     if (document.body.classList.contains('shade-is-up')) return false;
     var shell = panel.querySelector('.tab-scroll-shell');
-    if (!shell) return false;
-    var panelHandle = panel.querySelector('.body-shade-handle');
-    if (!panelHandle) return true;
-    var naturalTop = panelHandle.getBoundingClientRect().top + rootScrollY();
-    return naturalTop <= (getViewportHeight() - 20);
+    return !!shell;
   }
 
   function sizeManagedScrollShell() {
@@ -716,9 +712,16 @@
 
     var viewportH = getViewportHeight();
     var bottomClearance = getShadeBottomClearance();
+    var panelTop = Math.max(0, panel.getBoundingClientRect().top);
+    var panelHeight = Math.max(120, Math.round(viewportH - panelTop - bottomClearance));
+    panel.style.maxHeight = panelHeight + 'px';
+    panel.style.overflowY = 'auto';
+    panel.style.overscrollBehavior = 'contain';
     panel.querySelectorAll('.tab-scroll-shell').forEach(function (shell) {
       var top = Math.max(0, shell.getBoundingClientRect().top);
-      var height = Math.max(50, Math.round(viewportH - top - bottomClearance));
+      var height = top >= (viewportH - 50)
+        ? Math.max(120, panelHeight - 20)
+        : Math.max(50, Math.round(viewportH - top - bottomClearance));
       shell.style.height = height + 'px';
       shell.style.maxHeight = height + 'px';
       shell.style.overflow = 'auto';
