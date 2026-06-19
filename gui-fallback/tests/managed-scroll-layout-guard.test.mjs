@@ -6,7 +6,10 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const bodyShadeJs = fs.readFileSync(path.resolve(here, '../js/body-shade.js'), 'utf8');
 const bodyShadeCss = fs.readFileSync(path.resolve(here, '../css/body-shade.css'), 'utf8');
+const hubMenuJs = fs.readFileSync(path.resolve(here, '../js/hub-menu.js'), 'utf8');
 const indexHtml = fs.readFileSync(path.resolve(here, '../index.html'), 'utf8');
+const daveMenuJs = fs.readFileSync(path.resolve(here, '../js/dave/dave-menu.js'), 'utf8');
+const kanbanMenuJs = fs.readFileSync(path.resolve(here, '../js/kanban/kanban-menu.js'), 'utf8');
 const activeBrowserObserver = fs.readFileSync(
   path.resolve(here, '../js/active-browser-observer.js'),
   'utf8',
@@ -84,6 +87,62 @@ assert.match(
   /BlueprintsPersonalGraphLinks/,
   'Shared Personal search UI must expose graph-link automation state.',
 );
+assert.match(
+  hubMenuJs,
+  /syncDefaultItemText/,
+  'Shared menu engine must support canonical shipped action labels over stale saved layouts.',
+);
+assert.doesNotMatch(
+  hubMenuJs,
+  /(^|[^\.\w])(alert|confirm|prompt)\s*\(/m,
+  'Shared menu engine must fail closed instead of using native alert/confirm/prompt fallbacks.',
+);
+assert.match(
+  daveMenuJs,
+  /syncDefaultItemText:\s*true/,
+  'Dave menu must sync shipped action labels over stale saved layout state.',
+);
+assert.match(
+  kanbanMenuJs,
+  /syncDefaultItemText:\s*true/,
+  'Kanban menu must sync shipped action labels over stale saved layout state.',
+);
+for (const label of [
+  'Generate Summary',
+  'Open Day Folder',
+  'Open Source',
+  'Link Work',
+  'Mode Day',
+  'Mode Week',
+  'Mode Today',
+  'Mode Work',
+  'Promote To Work',
+  'Open Artifacts',
+  'Show Blockers',
+]) {
+  assert.ok(daveMenuJs.includes(`label: '${label}'`), `Dave menu must keep shared label "${label}".`);
+}
+for (const oldLabel of ['Run Summary', 'Browse Folder', 'Browse Ledger', 'Connect Work']) {
+  assert.ok(!daveMenuJs.includes(`label: '${oldLabel}'`), `Dave menu must not drift back to "${oldLabel}".`);
+}
+for (const label of [
+  'Open Root',
+  'Open Parent',
+  'Open Child',
+  'Open Detail',
+  'New Child',
+  'New Issue',
+  'New ToDo',
+  'Show Issues',
+  'Show ToDos',
+  'Write Detail Proof',
+  'Write Scoped Proof',
+]) {
+  assert.ok(kanbanMenuJs.includes(`label: '${label}'`), `Kanban menu must keep shared label "${label}".`);
+}
+for (const oldLabel of ['Root Board', 'Up Board', 'Child Board', 'Detail', 'Add Child', 'Scoped Issues']) {
+  assert.ok(!kanbanMenuJs.includes(`label: '${oldLabel}'`), `Kanban menu must not drift back to "${oldLabel}".`);
+}
 assert.doesNotMatch(
   bodyShadeJs,
   /document\.body\.classList\.(?:add|remove|toggle)\('(?:shade-is-up|has-fill-tab|has-managed-scroll-tab)'/,

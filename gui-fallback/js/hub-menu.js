@@ -13,16 +13,18 @@
 
 const NavLayoutDialogs = (() => {
         function _fallbackAlert(message) {
-                alert(message);
+                console.warn('[HubMenu] HubDialogs unavailable:', message || '');
                 return Promise.resolve();
         }
 
         function _fallbackConfirm(message) {
-                return Promise.resolve(confirm(message));
+                console.warn('[HubMenu] HubDialogs confirm unavailable:', message || '');
+                return Promise.resolve(false);
         }
 
         function _fallbackPrompt(message, value) {
-                return Promise.resolve(prompt(message, value));
+                console.warn('[HubMenu] HubDialogs prompt unavailable:', message || '', value || '');
+                return Promise.resolve(null);
         }
 
         function alertDialog(opts) {
@@ -181,12 +183,7 @@ function createHubMenu(cfg) {
                         if (!existing) {
                             this.currentMenu.push({ ...def });
                         } else {
-                            // Back-fill fields that may be missing from older saved configs
-                            if (existing.pageLabel === undefined) existing.pageLabel = def.pageLabel;
-                            // fn and activeOn are always developer-controlled — always sync from defaultMenu
-                            if (def.fn !== undefined) existing.fn = def.fn; else delete existing.fn;
-                            if (def.activeOn !== undefined) existing.activeOn = def.activeOn; else delete existing.activeOn;
-                            if (def.defaultTargetFn !== undefined) existing.defaultTargetFn = def.defaultTargetFn; else delete existing.defaultTargetFn;
+                            this._syncDefaultItemFields(existing, def);
                         }
                     });
                 } catch (e) {
@@ -196,6 +193,22 @@ function createHubMenu(cfg) {
             } else {
                 this.currentMenu = JSON.parse(JSON.stringify(this.defaultMenu));
             }
+        },
+
+        _syncDefaultItemFields(item, def) {
+            if (!item || !def) return;
+            // Back-fill fields that may be missing from older saved configs.
+            if (item.pageLabel === undefined) item.pageLabel = def.pageLabel;
+            if (cfg.syncDefaultItemText) {
+                item.label = def.label;
+                item.pageLabel = def.pageLabel;
+                item.icon = def.icon;
+                item.parent = def.parent;
+            }
+            // Function routing is always developer-controlled and must track defaultMenu.
+            if (def.fn !== undefined) item.fn = def.fn; else delete item.fn;
+            if (def.activeOn !== undefined) item.activeOn = def.activeOn; else delete item.activeOn;
+            if (def.defaultTargetFn !== undefined) item.defaultTargetFn = def.defaultTargetFn; else delete item.defaultTargetFn;
         },
 
         _dbDrivenParentIds() {
@@ -310,12 +323,19 @@ function createHubMenu(cfg) {
                 if (typeof cfg.onDbItemsLoaded === 'function') {
                     cfg.onDbItemsLoaded(items, this);
                 }
-                // DB is the source of truth for label text; apply its fields to the in-memory menu.
+                const defaultById = new Map((this.defaultMenu || []).map(item => [item.id, item]));
+                // DB is the source of truth for label text unless this menu opts into
+                // canonical default action language for shipped system actions.
                 for (const m of this.currentMenu) {
                     const db = this._dbItems[m.id];
                     if (!db) continue;
-                    if (db.label)      m.label     = db.label;
-                    if (db.page_label) m.pageLabel = db.page_label;
+                    const def = defaultById.get(m.id);
+                    if (cfg.syncDefaultItemText && def) {
+                        this._syncDefaultItemFields(m, def);
+                    } else {
+                        if (db.label)      m.label     = db.label;
+                        if (db.page_label) m.pageLabel = db.page_label;
+                    }
                 }
                 // Re-render everything including the hamburger icon, which was rendered before
                 // _dbItems was populated. updateActiveTab() re-sets the hamburger icon + label
