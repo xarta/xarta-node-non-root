@@ -810,6 +810,7 @@ function _disksLogicalNodesForDrive(hostNode, driveNode) {
 
 function _disksUniqueVolumeMatch(node) {
   if (!node) return null;
+  const sourceHostId = String(_disksHostNodeFor(node)?.id || '').trim();
   const sourcePaths = new Set([
     _disksFactValue(node, 'Path'),
     _disksFactValue(node, 'Guest path'),
@@ -827,6 +828,10 @@ function _disksUniqueVolumeMatch(node) {
   const candidates = Array.from(_disksNodeById.values()).filter(candidate => {
     if (!candidate || candidate === node) return false;
     if (String(candidate.kind || '').trim().toLowerCase() !== 'volume') return false;
+    if (sourceHostId) {
+      const candidateHostId = String(_disksHostNodeFor(candidate)?.id || '').trim();
+      if (candidateHostId !== sourceHostId) return false;
+    }
     let score = 0;
     const candidateValues = [
       _disksFactValue(candidate, 'Path'),
@@ -1482,6 +1487,7 @@ function _disksCardHtml(node, options = {}) {
       `
     : '';
   const inlineFilesystemButton = !shortcut && filesystemTarget
+    && filesystemPill
     && !usesActionRowFilesystemPill
     ? `
         <div class="disks-card__meta-pills">
