@@ -765,7 +765,7 @@ function _disksStatusPillHtml(node) {
   const label = String(node?.status || '').trim();
   const tone = _disksStatusTone(label);
   if (!label || tone === 'info') return '';
-  return `<span class="disks-pill disks-pill--${_disksEsc(tone)}">${_disksEsc(label)}</span>`;
+  return `<span class="disks-pill disks-pill--${_disksEsc(tone)}" data-disks-pretext-text="${_disksEsc(label)}">${_disksEsc(label)}</span>`;
 }
 
 function _disksGroupChildren(node) {
@@ -1182,13 +1182,14 @@ function _disksDrivePurposeLabel(node) {
 
 function _disksFactsHtml(facts, limit = 6, options = {}) {
   const items = _disksOrderFacts(facts, options).slice(0, limit);
-  if (!items.length) return '';
+  const trailingHtml = String(options.trailingHtml || '');
+  if (!items.length && !trailingHtml) return '';
   return `<div class="disks-facts">${items.map(fact => `
     <div class="disks-facts__item disks-facts__item--${_disksEsc(_disksFactSlug(fact.label))}${_DISKS_FULL_WIDTH_FACTS.has(_disksFactSlug(fact.label)) ? ' disks-facts__item--full' : ''}" data-disks-fact-slug="${_disksEsc(_disksFactSlug(fact.label))}">
       <span class="disks-facts__label">${_disksEsc(fact.label)}</span>
       <span class="disks-facts__value">${_disksEsc(fact.value)}</span>
     </div>
-  `).join('')}</div>`;
+  `).join('')}${trailingHtml}</div>`;
 }
 
 function _disksCompactHeroItems(node, drivePurpose) {
@@ -1250,9 +1251,11 @@ function _disksHeroHtml(node) {
   const sourceIssueHtml = _disksSourceIssues.length
     ? `<div class="disks-source-issues">${_disksSourceIssues.map(issue => `<span>${_disksEsc(issue)}</span>`).join('')}</div>`
     : '';
+  const statusPillHtml = _disksStatusPillHtml(node);
+  const filesystemPillHtml = filesystemPill ? `<span class="disks-pill" data-disks-hero-filesystem-pill>${_disksEsc(filesystemPill)}</span>` : '';
   return `
     ${_disksChromeHtml({ className: 'disks-page__chrome--in-shell' })}
-    <section class="disks-hero">
+    <section class="disks-hero" data-disks-hero>
       <div class="disks-hero__head">
         <div class="disks-hero__icon-wrap">
           <img class="disks-hero__icon" src="${_disksNodeIcon(node)}" alt="" />
@@ -1271,9 +1274,9 @@ function _disksHeroHtml(node) {
         </div>
       </div>
       <div class="disks-hero__meter-wrap">
-        <div class="disks-hero__meter-meta">
-          ${_disksStatusPillHtml(node)}
-          ${filesystemPill ? `<span class="disks-pill">${_disksEsc(filesystemPill)}</span>` : ''}
+        <div class="disks-hero__meter-meta" data-disks-hero-meter-meta>
+          ${statusPillHtml ? `<span data-disks-hero-status-meta>${statusPillHtml}</span>` : ''}
+          ${filesystemPillHtml}
           ${pct == null ? '' : `<span class="disks-hero__pct">${pct.toFixed(1)}%</span>`}
         </div>
         <div class="disks-usage-line">
@@ -1285,7 +1288,13 @@ function _disksHeroHtml(node) {
             <span class="disks-meter__fill" style="width:${pct}%"></span>
           </div>
         `}
-        ${_disksFactsHtml(facts, 12, { kind: node?.kind, context: 'hero' })}
+        ${_disksFactsHtml(facts, 12, {
+          kind: node?.kind,
+          context: 'hero',
+          trailingHtml: statusPillHtml
+            ? `<div class="disks-facts__status-inline" data-disks-hero-status-inline>${statusPillHtml}</div>`
+            : '',
+        })}
         ${sourceIssueHtml}
       </div>
     </section>
@@ -2189,6 +2198,13 @@ function _disksApplyClusterEdges(grid) {
 
 function _disksResetCompactPretextLayout(shell) {
   if (!shell) return;
+  shell.querySelectorAll('[data-disks-hero]').forEach(hero => {
+    hero.classList.remove('is-compact-icon-small');
+    hero.querySelector('[data-disks-hero-meter-meta]')?.classList.remove('is-collapsed');
+    const metaStatus = hero.querySelector('[data-disks-hero-status-meta]');
+    if (metaStatus) metaStatus.hidden = false;
+    hero.querySelectorAll('[data-disks-hero-status-inline]').forEach(item => item.classList.remove('is-active'));
+  });
   shell.querySelectorAll('[data-disks-pretext-pack]').forEach(container => {
     container.classList.remove('is-pretext-ready');
     container.querySelectorAll('.disks-compact-pack__item').forEach(item => {
@@ -2224,11 +2240,33 @@ function _disksCompactFactBreathingPx(labelText, valueText) {
   return Math.min(14, 6 + Math.ceil(length / 10));
 }
 
-function _disksMeasureCompactPackWidth(pretext, item) {
+function _disksMeasureCompactPillWidth(pretext, item) {
   const style = window.getComputedStyle(item);
   const text = String(item.dataset.disksPretextText || item.textContent || '').trim();
   const textWidth = _disksMeasureTextWidth(pretext, text, style);
   return Math.ceil(textWidth + _disksHorizontalChromeWidth(style) + _disksCompactTextBreathingPx(text));
+}
+
+function _disksMeasureCompactPackWidth(pretext, item) {
+  return _disksMeasureCompactPillWidth(pretext, item);
+}
+
+function _disksMeasureCompactInlineStatusWidth(inlineStatus) {
+  if (!inlineStatus) return 0;
+  const host = document.createElement('div');
+  host.className = 'disks-facts disks-facts--compact';
+  host.style.position = 'absolute';
+  host.style.left = '-9999px';
+  host.style.top = '-9999px';
+  host.style.visibility = 'hidden';
+  host.style.pointerEvents = 'none';
+  const clone = inlineStatus.cloneNode(true);
+  clone.classList.add('is-active');
+  host.appendChild(clone);
+  document.body.appendChild(host);
+  const width = clone.getBoundingClientRect().width || 0;
+  host.remove();
+  return width;
 }
 
 function _disksMeasureCompactFactWidth(pretext, item) {
@@ -2263,6 +2301,24 @@ function _disksCompactContainerGapPx(container) {
   const style = window.getComputedStyle(container);
   const gap = Number.parseFloat(style.columnGap || style.gap || '0');
   return Number.isFinite(gap) ? gap : 0;
+}
+
+function _disksCompactRowGroups(items) {
+  const rows = [];
+  (Array.isArray(items) ? items : []).forEach(item => {
+    if (!item) return;
+    const rect = item.getBoundingClientRect();
+    if (!rect.width && !rect.height) return;
+    let row = rows.find(entry => Math.abs(entry.top - rect.top) < 4);
+    if (!row) {
+      row = { top: rect.top, items: [] };
+      rows.push(row);
+    }
+    row.items.push({ item, rect });
+  });
+  rows.sort((left, right) => left.top - right.top);
+  rows.forEach(row => row.items.sort((left, right) => left.rect.left - right.rect.left));
+  return rows;
 }
 
 function _disksCompactBitCount(mask) {
@@ -2372,6 +2428,38 @@ function _disksApplyCompactOrdering(container, records) {
   });
 }
 
+function _disksApplyCompactHeroIcon(container) {
+  const hero = container?.closest('[data-disks-hero]');
+  if (!hero) return;
+  const rows = _disksCompactRowGroups(Array.from(container.querySelectorAll('.disks-compact-pack__item')));
+  hero.classList.toggle('is-compact-icon-small', rows.length <= 1);
+}
+
+function _disksApplyCompactHeroStatus(container, pretext) {
+  const inlineStatus = container?.querySelector('[data-disks-hero-status-inline]');
+  const meterWrap = container?.closest('.disks-hero__meter-wrap');
+  const meta = meterWrap?.querySelector('[data-disks-hero-meter-meta]');
+  const metaStatus = meterWrap?.querySelector('[data-disks-hero-status-meta]');
+  if (!inlineStatus || !meterWrap || !meta || !metaStatus) return;
+  const factItems = Array.from(container.querySelectorAll('.disks-facts__item'));
+  const statusPill = inlineStatus.querySelector('.disks-pill');
+  if (!factItems.length || !statusPill) return;
+  const rows = _disksCompactRowGroups(factItems);
+  if (!rows.length) return;
+  const lastRow = rows[rows.length - 1];
+  const containerRect = container.getBoundingClientRect();
+  const containerWidth = _disksContainerWidth(container);
+  const usedWidth = Math.max(...lastRow.items.map(entry => entry.rect.right - containerRect.left));
+  const statusWidth = Math.min(_disksMeasureCompactInlineStatusWidth(inlineStatus) || _disksMeasureCompactPillWidth(pretext, statusPill), containerWidth);
+  const requiredWidth = statusWidth + (lastRow.items.length ? _disksCompactContainerGapPx(container) : 0);
+  const slack = containerWidth - usedWidth;
+  if (slack + 0.5 < requiredWidth) return;
+  inlineStatus.classList.add('is-active');
+  metaStatus.hidden = true;
+  const hasFilesystemPill = !!meta.querySelector('[data-disks-hero-filesystem-pill]');
+  meta.classList.toggle('is-collapsed', !hasFilesystemPill);
+}
+
 function _disksApplyCompactPack(container, pretext) {
   const containerWidth = _disksContainerWidth(container);
   if (!containerWidth) return;
@@ -2386,6 +2474,7 @@ function _disksApplyCompactPack(container, pretext) {
     records.push({ item, basis, wide, index });
   });
   _disksApplyCompactOrdering(container, records);
+  _disksApplyCompactHeroIcon(container);
 }
 
 function _disksApplyCompactFacts(container, pretext) {
@@ -2402,6 +2491,7 @@ function _disksApplyCompactFacts(container, pretext) {
     records.push({ item, basis, wide, index });
   });
   _disksApplyCompactOrdering(container, records);
+  _disksApplyCompactHeroStatus(container, pretext);
 }
 
 function _disksApplyCompactPretextLayout(shell) {

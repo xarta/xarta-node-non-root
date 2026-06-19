@@ -372,6 +372,27 @@
   overflow-wrap: anywhere;
 }
 
+.disks-hero__meter-meta.is-collapsed,
+.disks-facts__status-inline {
+  display: none;
+}
+
+.disks-facts.disks-facts--compact .disks-facts__status-inline.is-active {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  order: 9999;
+  min-width: 0;
+  margin-left: auto;
+  align-self: flex-end;
+}
+
+.disks-facts.disks-facts--compact .disks-facts__status-inline.is-active .disks-pill {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
 .disks-source-issues {
   display: flex;
   flex-wrap: wrap;
@@ -1398,6 +1419,21 @@ button.disks-tree__download-btn:disabled {
     padding: 12px;
   }
 
+  .disks-hero.is-compact-icon-small .disks-hero__head {
+    gap: 10px;
+  }
+
+  .disks-hero.is-compact-icon-small .disks-hero__icon-wrap {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+  }
+
+  .disks-hero.is-compact-icon-small .disks-hero__icon {
+    width: 18px;
+    height: 18px;
+  }
+
   .disks-hero__compact-pack {
     display: flex;
     margin-bottom: 8px;
@@ -1547,6 +1583,21 @@ button.disks-tree__download-btn:disabled {
 
   .disks-hero {
     padding: 12px;
+  }
+
+  .disks-hero.is-compact-icon-small .disks-hero__head {
+    gap: 10px;
+  }
+
+  .disks-hero.is-compact-icon-small .disks-hero__icon-wrap {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+  }
+
+  .disks-hero.is-compact-icon-small .disks-hero__icon {
+    width: 18px;
+    height: 18px;
   }
 
   .disks-hero__compact-pack {
