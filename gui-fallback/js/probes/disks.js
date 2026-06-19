@@ -2092,6 +2092,16 @@ function _disksEqualizeDirectGridHeights(grid) {
   _disksEqualizeCardRowHeights(grid.querySelectorAll(':scope > .disks-card'));
 }
 
+function _disksEqualizeBlockHeights(block) {
+  if (!block) return;
+  const clusterGrid = block.querySelector(':scope [data-disks-cluster-grid]');
+  if (clusterGrid) {
+    _disksEqualizeDirectGridHeights(clusterGrid);
+    return;
+  }
+  _disksEqualizeCardRowHeights(block.querySelectorAll(':scope > .disks-card'));
+}
+
 function _disksBlockRows(block) {
   if (!block) return [];
   const clusterGrid = block.querySelector(':scope [data-disks-cluster-grid]');
@@ -2110,6 +2120,14 @@ function _disksEqualizeShelfHeights(shelf) {
   const blocks = Array.from(shelf.querySelectorAll(':scope > [data-disks-layout-role]'));
   if (!blocks.length) {
     _disksEqualizeCardRowHeights(shelf.querySelectorAll('.disks-card'));
+    return;
+  }
+  const tracks = Number.parseInt(
+    shelf.style.getPropertyValue('--disks-layout-tracks') || String(_disksShelfTrackCount(shelf)),
+    10,
+  ) || 0;
+  if (tracks <= 2) {
+    blocks.forEach(_disksEqualizeBlockHeights);
     return;
   }
   const rowsByIndex = [];
