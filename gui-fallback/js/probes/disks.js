@@ -687,6 +687,20 @@ function _disksChromeState() {
   };
 }
 
+function _disksAtTopLevel() {
+  return _disksBreadcrumbs().length <= 1;
+}
+
+function _disksPortraitLiftModeActive() {
+  return typeof window.matchMedia === 'function'
+    && window.matchMedia('(max-width: 600px) and (orientation: portrait)').matches
+    && String(document?.documentElement?.dataset?.specialUiMode || '').trim() === 's25-stargate-touch-nav';
+}
+
+function _disksShouldLiftRootNote(node) {
+  return _disksAtTopLevel() && _disksPortraitLiftModeActive() && !!String(node?.note || '').trim();
+}
+
 function _disksBreadcrumbTrailHtml(items) {
   return (Array.isArray(items) ? items : []).map(item => `
     <button
@@ -702,18 +716,28 @@ function _disksChromeHtml(options = {}) {
   const crumbs = Array.isArray(chrome.crumbs) ? chrome.crumbs : [];
   const backTarget = String(chrome.backTarget || '').trim();
   const includeBackInTrail = !!options.includeBackInTrail && !!backTarget;
+  const suppressLoneRootCrumb = crumbs.length <= 1;
   const trailItems = includeBackInTrail
-    ? [{ id: backTarget, label: 'Back', is_current: false }, ...crumbs.map((crumb, idx) => ({
+    ? [{ id: backTarget, label: 'Back', is_current: false }, ...(suppressLoneRootCrumb ? [] : crumbs.map((crumb, idx) => ({
       id: crumb.id,
       label: crumb.label,
       is_current: idx === crumbs.length - 1,
-    }))]
-    : crumbs.map((crumb, idx) => ({
+    })))]
+    : (suppressLoneRootCrumb ? [] : crumbs.map((crumb, idx) => ({
       id: crumb.id,
       label: crumb.label,
       is_current: idx === crumbs.length - 1,
-    }));
+    })));
   const className = ['disks-page__chrome', String(options.className || '').trim()].filter(Boolean).join(' ');
+  const noteText = String(options.noteText || '').trim();
+  if (!trailItems.length && !backTarget && noteText) {
+    return `
+      <div class="${_disksEsc(`${className} disks-page__chrome--lift-note`)}">
+        <p class="disks-lift-copy">${_disksEsc(noteText)}</p>
+      </div>
+    `;
+  }
+  if (!trailItems.length && !backTarget) return '';
   return `
     <div class="${_disksEsc(className)}">
       <div class="disks-breadcrumbs">
@@ -1196,6 +1220,7 @@ function _disksHeroHtml(node) {
   const partial = _disksPartialUsage(node);
   const drivePurpose = _disksDrivePurposeLabel(node);
   const filesystemPill = _disksFilesystemPillLabel(node);
+  const liftRootNote = _disksShouldLiftRootNote(node);
   const facts = Array.isArray(node?.facts) ? node.facts.slice() : [];
   if (partial) {
     facts.push(
@@ -1229,7 +1254,7 @@ function _disksHeroHtml(node) {
             </h2>
             ${node.subtitle ? `<p class="disks-hero__subtitle">${_disksEsc(node.subtitle)}</p>` : ''}
           </div>
-          ${node.note ? `<p class="disks-hero__note">${_disksEsc(node.note)}</p>` : ''}
+          ${node.note && !liftRootNote ? `<p class="disks-hero__note">${_disksEsc(node.note)}</p>` : ''}
         </div>
       </div>
       <div class="disks-hero__meter-wrap">
@@ -1933,6 +1958,7 @@ function renderDisksPage() {
     liftChrome.innerHTML = _disksChromeHtml({
       includeBackInTrail: true,
       className: 'disks-page__chrome--lifted',
+      noteText: _disksShouldLiftRootNote(node) ? String(node?.note || '').trim() : '',
     });
   }
   shell.innerHTML = `

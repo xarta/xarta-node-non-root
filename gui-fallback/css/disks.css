@@ -46,6 +46,13 @@
   display: none;
 }
 
+.disks-lift-copy {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .disks-breadcrumbs {
   display: flex;
   align-items: center;
@@ -1437,6 +1444,10 @@ button.disks-tree__download-btn:disabled {
     align-items: flex-start;
   }
 
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-disks .disks-page__chrome--lift-note {
+    display: block;
+  }
+
   html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-disks .disks-breadcrumbs {
     width: 100%;
     gap: 4px 6px;
@@ -1506,6 +1517,10 @@ button.disks-tree__download-btn:disabled {
   #page-controls-slot #s25-lift-disks .disks-page__chrome--lifted {
     width: 100%;
     align-items: flex-start;
+  }
+
+  #page-controls-slot #s25-lift-disks .disks-page__chrome--lift-note {
+    display: block;
   }
 
   #page-controls-slot #s25-lift-disks .disks-breadcrumbs {
