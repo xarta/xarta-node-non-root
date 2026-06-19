@@ -1408,8 +1408,17 @@ button.disks-tree__download-btn:disabled {
   }
 
   .disks-card__footer {
-    align-items: flex-start;
-    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .disks-card__footer-copy {
+    flex-wrap: nowrap;
+  }
+
+  .disks-card__footer-action {
+    white-space: nowrap;
   }
 }
 
