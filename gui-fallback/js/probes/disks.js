@@ -17,6 +17,10 @@ let _disksNoteSaving = new Set();
 let _disksNoteErrors = new Map();
 let _disksNoteSaveTimers = new Map();
 let _disksOfflineBrowseState = null;
+let _disksPretextModule = null;
+let _disksPretextLoadPromise = null;
+let _disksPretextLoadFailed = false;
+let _disksPretextPreparedCache = new Map();
 
 function _disksHubModalApi() {
   return typeof HubModal !== 'undefined' ? HubModal : null;
@@ -145,6 +149,18 @@ const _DISKS_FACT_PRIORITIES = {
     'source',
   ],
 };
+const _DISKS_COMPACT_LAYOUT_MEDIA = [
+  '(max-width: 600px)',
+  '(orientation: landscape) and (max-height: 600px) and (pointer: coarse)',
+  '(orientation: landscape) and (max-height: 600px) and (hover: none)',
+  '(orientation: landscape) and (max-height: 600px) and (max-width: 1000px)',
+].join(', ');
+const _DISKS_PRETEXT_IMPORT_VERSION = '20260619-compact-1';
+const _DISKS_COMPACT_ALWAYS_WIDE_FACTS = new Set([
+  'description',
+  'guest-roles',
+  'guest-usage-source',
+]);
 
 function _disksEl(id) {
   return document.getElementById(id);
@@ -157,6 +173,88 @@ function _disksEsc(text) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function _disksCompactLayoutActive() {
+  return typeof window.matchMedia === 'function'
+    && window.matchMedia(_DISKS_COMPACT_LAYOUT_MEDIA).matches;
+}
+
+function _disksLoadPretextModule() {
+  if (_disksPretextModule) return Promise.resolve(_disksPretextModule);
+  if (_disksPretextLoadFailed) return Promise.resolve(null);
+  if (!_disksPretextLoadPromise) {
+    _disksPretextLoadPromise = import(`/fallback-ui/vendor/pretext/layout.js?v=${_DISKS_PRETEXT_IMPORT_VERSION}`)
+      .then(mod => {
+        if (!mod || typeof mod.prepare !== 'function' || typeof mod.measureNaturalWidth !== 'function') {
+          throw new Error('Pretext layout module did not expose prepare/measureNaturalWidth.');
+        }
+        _disksPretextModule = mod;
+        _disksPretextLoadFailed = false;
+        _disksScheduleLayoutPass();
+        return mod;
+      })
+      .catch(err => {
+        _disksPretextLoadFailed = true;
+        console.error('Failed to load disks pretext module', err);
+        return null;
+      });
+  }
+  return _disksPretextLoadPromise;
+}
+
+function _disksCanvasFontFromStyle(style) {
+  if (!style) return '400 12px sans-serif';
+  const parts = [];
+  const fontStyle = String(style.fontStyle || '').trim();
+  const fontWeight = String(style.fontWeight || '').trim();
+  const fontSize = String(style.fontSize || '').trim();
+  const fontFamily = String(style.fontFamily || '').trim();
+  if (fontStyle && fontStyle !== 'normal') parts.push(fontStyle);
+  if (fontWeight && fontWeight !== 'normal') parts.push(fontWeight);
+  parts.push(fontSize || '12px');
+  parts.push(fontFamily || 'sans-serif');
+  return parts.join(' ');
+}
+
+function _disksLetterSpacingPx(style) {
+  const raw = String(style?.letterSpacing || '').trim();
+  if (!raw || raw === 'normal') return 0;
+  const value = Number.parseFloat(raw);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function _disksMeasureTextWidth(pretext, text, style) {
+  const value = String(text || '');
+  if (!pretext || !value) return 0;
+  const font = _disksCanvasFontFromStyle(style);
+  const letterSpacing = _disksLetterSpacingPx(style);
+  const cacheKey = `${font}\u0000${letterSpacing}\u0000${value}`;
+  const cached = _disksPretextPreparedCache.get(cacheKey);
+  if (cached) {
+    return pretext.measureNaturalWidth(cached);
+  }
+  const prepared = pretext.prepare(
+    value,
+    font,
+    letterSpacing ? { letterSpacing } : undefined,
+  );
+  _disksPretextPreparedCache.set(cacheKey, prepared);
+  return pretext.measureNaturalWidth(prepared);
+}
+
+function _disksHorizontalChromeWidth(style) {
+  if (!style) return 0;
+  const props = [
+    'paddingLeft',
+    'paddingRight',
+    'borderLeftWidth',
+    'borderRightWidth',
+  ];
+  return props.reduce((sum, prop) => {
+    const value = Number.parseFloat(style[prop] || '0');
+    return sum + (Number.isFinite(value) ? value : 0);
+  }, 0);
 }
 
 function _disksFormatBytes(bytes) {
@@ -1049,11 +1147,48 @@ function _disksFactsHtml(facts, limit = 6, options = {}) {
   const items = _disksOrderFacts(facts, options).slice(0, limit);
   if (!items.length) return '';
   return `<div class="disks-facts">${items.map(fact => `
-    <div class="disks-facts__item disks-facts__item--${_disksEsc(_disksFactSlug(fact.label))}${_DISKS_FULL_WIDTH_FACTS.has(_disksFactSlug(fact.label)) ? ' disks-facts__item--full' : ''}">
+    <div class="disks-facts__item disks-facts__item--${_disksEsc(_disksFactSlug(fact.label))}${_DISKS_FULL_WIDTH_FACTS.has(_disksFactSlug(fact.label)) ? ' disks-facts__item--full' : ''}" data-disks-fact-slug="${_disksEsc(_disksFactSlug(fact.label))}">
       <span class="disks-facts__label">${_disksEsc(fact.label)}</span>
       <span class="disks-facts__value">${_disksEsc(fact.value)}</span>
     </div>
   `).join('')}</div>`;
+}
+
+function _disksCompactHeroItems(node, drivePurpose) {
+  const items = [];
+  const seen = new Set();
+  const push = (text, className = '') => {
+    const value = String(text || '').trim();
+    if (!value) return;
+    const key = value.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push({ text: value, className });
+  };
+  push(String(node?.kind || '').trim().toUpperCase(), 'disks-compact-pack__item--eyebrow');
+  push(node?.label, 'disks-compact-pack__item--primary');
+  push(drivePurpose, 'disks-compact-pack__item--accent');
+  String(node?.subtitle || '')
+    .split(/\s*·\s*/g)
+    .map(part => part.trim())
+    .filter(Boolean)
+    .forEach(part => push(part));
+  return items;
+}
+
+function _disksCompactPackHtml(items, className = '') {
+  const entries = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (!entries.length) return '';
+  const classes = ['disks-compact-pack', String(className || '').trim()].filter(Boolean).join(' ');
+  return `
+    <div class="${_disksEsc(classes)}" data-disks-pretext-pack="true">
+      ${entries.map(item => `
+        <span class="disks-pill disks-compact-pack__item ${_disksEsc(item.className || '')}" data-disks-pretext-text="${_disksEsc(item.text || '')}">
+          ${_disksEsc(item.text || '')}
+        </span>
+      `).join('')}
+    </div>
+  `;
 }
 
 function _disksHeroHtml(node) {
@@ -1085,12 +1220,15 @@ function _disksHeroHtml(node) {
           <img class="disks-hero__icon" src="${_disksNodeIcon(node)}" alt="" />
         </div>
         <div class="disks-hero__copy">
-          <div class="disks-hero__eyebrow">${_disksEsc(node.kind || 'storage')}</div>
-          <h2 class="disks-hero__title">
-            ${_disksEsc(node.label || 'Disks')}
-            ${drivePurpose ? `<span class="disks-hero__title-suffix">(${_disksEsc(drivePurpose)})</span>` : ''}
-          </h2>
-          ${node.subtitle ? `<p class="disks-hero__subtitle">${_disksEsc(node.subtitle)}</p>` : ''}
+          ${_disksCompactPackHtml(_disksCompactHeroItems(node, drivePurpose), 'disks-hero__compact-pack')}
+          <div class="disks-hero__stack">
+            <div class="disks-hero__eyebrow">${_disksEsc(node.kind || 'storage')}</div>
+            <h2 class="disks-hero__title">
+              ${_disksEsc(node.label || 'Disks')}
+              ${drivePurpose ? `<span class="disks-hero__title-suffix">(${_disksEsc(drivePurpose)})</span>` : ''}
+            </h2>
+            ${node.subtitle ? `<p class="disks-hero__subtitle">${_disksEsc(node.subtitle)}</p>` : ''}
+          </div>
           ${node.note ? `<p class="disks-hero__note">${_disksEsc(node.note)}</p>` : ''}
         </div>
       </div>
@@ -1539,7 +1677,6 @@ function _disksCardHtml(node, options = {}) {
     : '';
   const pct = _disksUsagePct(node);
   const hasChildren = Array.isArray(primaryTarget.children) && primaryTarget.children.length > 0;
-  const cta = hasChildren ? 'Open' : 'View';
   const tone = _disksStatusTone(node.status);
   const canForget = !!node?.cached_missing && !!node?.cache_host;
   const drivePurpose = _disksDrivePurposeLabel(node);
@@ -1631,10 +1768,11 @@ function _disksCardHtml(node, options = {}) {
         ${node.note ? `<p class="disks-card__note">${_disksEsc(node.note)}</p>` : ''}
         ${_disksFactsHtml(node.facts, 6, { kind: node?.kind, context: 'card' })}
         <div class="disks-card__footer">
-          <span class="disks-card__footer-copy">
-            <span>${cta}</span>
-            ${hasChildren ? `<span>${primaryTarget.children.length} item${primaryTarget.children.length === 1 ? '' : 's'}</span>` : '<span>Details</span>'}
-          </span>
+          ${hasChildren ? `
+            <span class="disks-card__footer-copy">
+              <span>${primaryTarget.children.length} item${primaryTarget.children.length === 1 ? '' : 's'}</span>
+            </span>
+          ` : ''}
           <span
             class="disks-card__footer-action"
             data-disks-note-toggle="${_disksEsc(nodeId)}"
@@ -1987,10 +2125,123 @@ function _disksApplyClusterEdges(grid) {
   });
 }
 
+function _disksResetCompactPretextLayout(shell) {
+  if (!shell) return;
+  shell.querySelectorAll('[data-disks-pretext-pack]').forEach(container => {
+    container.classList.remove('is-pretext-ready');
+    container.querySelectorAll('.disks-compact-pack__item').forEach(item => {
+      item.classList.remove('is-wide');
+      item.style.removeProperty('flex');
+      item.style.removeProperty('max-width');
+    });
+  });
+  shell.querySelectorAll('.disks-facts').forEach(container => {
+    container.classList.remove('disks-facts--compact', 'is-pretext-ready');
+    container.querySelectorAll('.disks-facts__item').forEach(item => {
+      item.classList.remove('is-wide');
+      item.style.removeProperty('flex');
+      item.style.removeProperty('max-width');
+    });
+  });
+}
+
+function _disksContainerWidth(el) {
+  if (!el) return 0;
+  return el.clientWidth || el.getBoundingClientRect().width || 0;
+}
+
+function _disksCompactTextBreathingPx(text, base = 5, max = 12) {
+  const length = String(text || '').trim().length;
+  return Math.min(max, base + Math.ceil(length / 12));
+}
+
+function _disksCompactFactBreathingPx(labelText, valueText) {
+  const length = String(labelText || '').trim().length + String(valueText || '').trim().length;
+  return Math.min(14, 6 + Math.ceil(length / 10));
+}
+
+function _disksMeasureCompactPackWidth(pretext, item) {
+  const style = window.getComputedStyle(item);
+  const text = String(item.dataset.disksPretextText || item.textContent || '').trim();
+  const textWidth = _disksMeasureTextWidth(pretext, text, style);
+  return Math.ceil(textWidth + _disksHorizontalChromeWidth(style) + _disksCompactTextBreathingPx(text));
+}
+
+function _disksMeasureCompactFactWidth(pretext, item) {
+  const itemStyle = window.getComputedStyle(item);
+  const labelEl = item.querySelector('.disks-facts__label');
+  const valueEl = item.querySelector('.disks-facts__value');
+  const labelText = String(labelEl?.textContent || '').trim();
+  const valueText = String(valueEl?.textContent || '').trim();
+  const labelWidth = labelText ? _disksMeasureTextWidth(pretext, labelText, window.getComputedStyle(labelEl)) : 0;
+  const valueWidth = valueText ? _disksMeasureTextWidth(pretext, valueText, window.getComputedStyle(valueEl)) : 0;
+  const gap = Number.parseFloat(itemStyle.columnGap || itemStyle.gap || '0');
+  const contentGap = labelWidth && valueWidth && Number.isFinite(gap) ? gap : 0;
+  return Math.ceil(
+    labelWidth
+    + valueWidth
+    + contentGap
+    + _disksHorizontalChromeWidth(itemStyle)
+    + _disksCompactFactBreathingPx(labelText, valueText)
+  );
+}
+
+function _disksCompactFactShouldSpanWide(item, width, containerWidth) {
+  const slug = String(item.dataset.disksFactSlug || '').trim().toLowerCase();
+  const value = String(item.querySelector('.disks-facts__value')?.textContent || '').trim();
+  if (_DISKS_COMPACT_ALWAYS_WIDE_FACTS.has(slug)) return true;
+  if (/[,\n]/.test(value)) return true;
+  const widthThreshold = Math.max(180, Math.floor(containerWidth * 0.72));
+  return width > widthThreshold;
+}
+
+function _disksApplyCompactPack(container, pretext) {
+  const containerWidth = _disksContainerWidth(container);
+  if (!containerWidth) return;
+  container.classList.add('is-pretext-ready');
+  container.querySelectorAll('.disks-compact-pack__item').forEach(item => {
+    const basis = _disksMeasureCompactPackWidth(pretext, item);
+    const wide = basis > Math.max(180, Math.floor(containerWidth * 0.92));
+    item.classList.toggle('is-wide', wide);
+    item.style.flex = wide ? '1 0 100%' : `0 0 ${Math.min(basis, containerWidth)}px`;
+    item.style.maxWidth = `${containerWidth}px`;
+  });
+}
+
+function _disksApplyCompactFacts(container, pretext) {
+  const containerWidth = _disksContainerWidth(container);
+  if (!containerWidth) return;
+  container.classList.add('disks-facts--compact', 'is-pretext-ready');
+  container.querySelectorAll('.disks-facts__item').forEach(item => {
+    const basis = _disksMeasureCompactFactWidth(pretext, item);
+    const wide = _disksCompactFactShouldSpanWide(item, basis, containerWidth);
+    item.classList.toggle('is-wide', wide);
+    item.style.flex = wide ? '1 0 100%' : `0 0 ${Math.min(basis, containerWidth)}px`;
+    item.style.maxWidth = `${containerWidth}px`;
+  });
+}
+
+function _disksApplyCompactPretextLayout(shell) {
+  if (!shell) return;
+  _disksResetCompactPretextLayout(shell);
+  if (!_disksCompactLayoutActive()) return;
+  if (!_disksPretextModule) {
+    _disksLoadPretextModule();
+    return;
+  }
+  shell.querySelectorAll('[data-disks-pretext-pack]').forEach(container => {
+    _disksApplyCompactPack(container, _disksPretextModule);
+  });
+  shell.querySelectorAll('.disks-facts').forEach(container => {
+    _disksApplyCompactFacts(container, _disksPretextModule);
+  });
+}
+
 function _disksApplyPhysicalDriveLayout() {
   const shell = _disksEl('disks-shell');
   if (!shell) return;
   _disksResetCardHeights(shell);
+  _disksApplyCompactPretextLayout(shell);
   let layoutChanged = false;
   shell.querySelectorAll('[data-disks-layout-shelf]').forEach(shelf => {
     const tracks = _disksShelfTrackCount(shelf);

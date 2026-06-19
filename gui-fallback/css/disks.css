@@ -125,6 +125,10 @@
   min-width: 0;
 }
 
+.disks-hero__stack {
+  min-width: 0;
+}
+
 .disks-hero__eyebrow {
   color: var(--text-dim);
   font-size: 11px;
@@ -249,6 +253,47 @@
   background: rgba(123, 130, 160, 0.12);
 }
 
+.disks-compact-pack {
+  display: none;
+  gap: 6px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.disks-compact-pack__item {
+  justify-content: flex-start;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.disks-compact-pack__item--eyebrow {
+  color: var(--text-dim);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.disks-compact-pack__item--primary {
+  border-color: rgba(var(--glyph-gold-rgb), 0.48);
+  color: var(--glyph-gold);
+  font-weight: 700;
+}
+
+.disks-compact-pack__item--accent {
+  border-color: rgba(91, 156, 246, 0.32);
+  color: rgba(222, 231, 255, 0.94);
+}
+
+.disks-compact-pack__item.is-wide {
+  min-height: 0;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  white-space: normal;
+  line-height: 1.3;
+}
+
 .disks-facts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
@@ -276,6 +321,47 @@
 .disks-facts__value {
   font-size: 12px;
   line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.disks-facts.disks-facts--compact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.disks-facts.disks-facts--compact .disks-facts__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.disks-facts.disks-facts--compact .disks-facts__label {
+  flex: 0 0 auto;
+  line-height: 1;
+}
+
+.disks-facts.disks-facts--compact .disks-facts__value {
+  flex: 0 1 auto;
+  line-height: 1.2;
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
+.disks-facts.disks-facts--compact .disks-facts__item.is-wide {
+  display: grid;
+  gap: 3px;
+  min-height: 0;
+  border-radius: 12px;
+  white-space: normal;
+}
+
+.disks-facts.disks-facts--compact .disks-facts__item.is-wide .disks-facts__value {
+  white-space: normal;
   overflow-wrap: anywhere;
 }
 
@@ -1283,6 +1369,19 @@ button.disks-tree__download-btn:disabled {
     padding: 12px;
   }
 
+  .disks-hero__compact-pack {
+    display: flex;
+    margin-bottom: 8px;
+  }
+
+  .disks-hero__stack {
+    display: none;
+  }
+
+  .disks-hero__pct {
+    display: none;
+  }
+
   .disks-card-grid {
     grid-template-columns: 1fr;
   }
@@ -1374,6 +1473,19 @@ button.disks-tree__download-btn:disabled {
 
   .disks-hero {
     padding: 12px;
+  }
+
+  .disks-hero__compact-pack {
+    display: flex;
+    margin-bottom: 8px;
+  }
+
+  .disks-hero__stack {
+    display: none;
+  }
+
+  .disks-hero__pct {
+    display: none;
   }
 
   #page-controls-slot #s25-lift-disks {
