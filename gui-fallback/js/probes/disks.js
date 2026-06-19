@@ -478,6 +478,13 @@ function _disksFilesystemTreeStatusText(data) {
   return `${total} item${total === 1 ? '' : 's'} in this folder`;
 }
 
+function _disksFilesystemTreePathHtml(path) {
+  const text = String(path || '').trim();
+  if (!text) return '';
+  if (text === '/') return '/';
+  return text.split('/').map(part => _disksEsc(part)).join('/<wbr>');
+}
+
 function _disksFilesystemTreeRowHtml(entry) {
   const type = String(entry?.type || '').trim() === 'folder' ? 'folder' : 'file';
   const browseable = type === 'folder' && !!entry?.browseable;
@@ -562,7 +569,7 @@ function _disksFilesystemTreeSectionHtml(node) {
       <div class="docs-tree-shell disks-tree__shell">
         <div class="disks-tree__toolbar">
           <button class="hub-modal-btn secondary" type="button" data-disks-tree-action="up"${canGoUp ? '' : ' disabled'}>Up</button>
-          <code class="docs-tree-path disks-tree__path">${_disksEsc(absolutePath)}</code>
+          <code class="docs-tree-path disks-tree__path">${_disksFilesystemTreePathHtml(absolutePath)}</code>
           <div class="disks-tree__toolbar-actions">
             <button class="hub-modal-btn secondary" type="button" data-disks-tree-action="root"${rootDisabled ? ' disabled' : ''}>Root</button>
             <button class="hub-modal-btn secondary" type="button" data-disks-tree-action="refresh">Refresh</button>
@@ -2976,7 +2983,7 @@ function _disksOfflineBrowseRender() {
     <div class="docs-tree-shell disks-tree__shell">
       <div class="disks-tree__toolbar">
         <button class="hub-modal-btn secondary" type="button" data-disks-offline-action="up"${canGoUp ? '' : ' disabled'}>Up</button>
-        <code class="docs-tree-path disks-tree__path">${_disksEsc(absolutePath)}</code>
+        <code class="docs-tree-path disks-tree__path">${_disksFilesystemTreePathHtml(absolutePath)}</code>
         <div class="disks-tree__toolbar-actions">
           <button class="hub-modal-btn secondary" type="button" data-disks-offline-action="root"${rootDisabled ? ' disabled' : ''}>Root</button>
           <button class="hub-modal-btn secondary" type="button" data-disks-offline-action="refresh">Refresh</button>

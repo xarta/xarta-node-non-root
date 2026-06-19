@@ -443,8 +443,16 @@
   flex-wrap: wrap;
 }
 
-.disks-tree__path {
+.disks-tree .docs-tree-path.disks-tree__path {
+  display: block;
   min-width: 0;
+  width: 100%;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  line-height: 1.35;
 }
 
 .disks-tree .docs-tree-panel {
@@ -1444,6 +1452,30 @@ button.disks-tree__download-btn:disabled {
 }
 
 @media (max-width: 600px) and (orientation: portrait) {
+  .disks-tree__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .disks-tree__toolbar-actions {
+    order: 1;
+    margin-left: auto;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+  }
+
+  .disks-tree__path {
+    order: 2;
+    flex: 1 0 100%;
+    width: 100%;
+  }
+
+  .disks-tree__relative {
+    display: none;
+  }
+
   .disks-card[data-disks-inline-title-usage="true"] .disks-card__title-usage {
     display: inline-flex;
   }
