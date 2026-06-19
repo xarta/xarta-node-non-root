@@ -21,6 +21,12 @@ assert.match(
   /setScrollStateClass\('has-managed-scroll-tab',\s*shouldLockBody\)/,
   'Managed-scroll tabs must lock root scroll through the shared state helper.',
 );
+for (const tabId of ['tab-diary', 'tab-calender', 'tab-todo', 'tab-imports', 'tab-kanban']) {
+  assert.ok(
+    bodyShadeJs.includes(`'${tabId}'`),
+    `${tabId} must stay in the managed-scroll resync page set.`,
+  );
+}
 assert.doesNotMatch(
   bodyShadeJs,
   /document\.body\.classList\.(?:add|remove|toggle)\('(?:shade-is-up|has-fill-tab|has-managed-scroll-tab)'/,
@@ -62,4 +68,9 @@ assert.match(
   activeBrowserObserver,
   /panel_left_delta_from_menu/,
   'Active Browser layout metrics must expose page/menu alignment deltas.',
+);
+assert.match(
+  activeBrowserObserver,
+  /scrollbar_active/,
+  'Active Browser layout metrics must expose managed shell scrollbar state.',
 );
