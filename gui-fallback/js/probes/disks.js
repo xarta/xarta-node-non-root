@@ -2195,6 +2195,7 @@ function _disksResetCompactPretextLayout(shell) {
       item.classList.remove('is-wide');
       item.style.removeProperty('flex');
       item.style.removeProperty('max-width');
+      item.style.removeProperty('order');
     });
   });
   shell.querySelectorAll('.disks-facts').forEach(container => {
@@ -2203,6 +2204,7 @@ function _disksResetCompactPretextLayout(shell) {
       item.classList.remove('is-wide');
       item.style.removeProperty('flex');
       item.style.removeProperty('max-width');
+      item.style.removeProperty('order');
     });
   });
 }
@@ -2257,30 +2259,149 @@ function _disksCompactFactShouldSpanWide(item, width, containerWidth) {
   return width > widthThreshold;
 }
 
+function _disksCompactContainerGapPx(container) {
+  const style = window.getComputedStyle(container);
+  const gap = Number.parseFloat(style.columnGap || style.gap || '0');
+  return Number.isFinite(gap) ? gap : 0;
+}
+
+function _disksCompactBitCount(mask) {
+  let count = 0;
+  let value = mask;
+  while (value) {
+    value &= value - 1;
+    count += 1;
+  }
+  return count;
+}
+
+function _disksCompactPackingBetter(candidate, currentBest) {
+  if (!currentBest) return true;
+  if (candidate.rowCount !== currentBest.rowCount) return candidate.rowCount < currentBest.rowCount;
+  if (candidate.inversions !== currentBest.inversions) return candidate.inversions < currentBest.inversions;
+  if (candidate.slack !== currentBest.slack) return candidate.slack < currentBest.slack;
+  return false;
+}
+
+function _disksCompactRowInversions(rowMask, remainingMask) {
+  let inversions = 0;
+  let bits = rowMask;
+  while (bits) {
+    const bit = bits & -bits;
+    const index = Math.log2(bit);
+    inversions += _disksCompactBitCount(remainingMask & ((1 << index) - 1));
+    bits ^= bit;
+  }
+  return inversions;
+}
+
+// Compact pill groups are small enough to solve exactly, so we minimise row
+// count first and only then fall back to stability/whitespace tie-breakers.
+function _disksCompactSolveRows(items, containerWidth, gapPx) {
+  const count = Array.isArray(items) ? items.length : 0;
+  if (!count) return [];
+  if (count === 1 || count > 12) return [items.slice()];
+  const widths = items.map(item => Math.min(item.basis, containerWidth));
+  const maxMask = 1 << count;
+  const subsetWidths = new Array(maxMask).fill(0);
+  const fits = new Array(maxMask).fill(false);
+  fits[0] = true;
+  for (let mask = 1; mask < maxMask; mask += 1) {
+    const bit = mask & -mask;
+    const index = Math.log2(bit);
+    const prev = mask ^ bit;
+    const extraGap = prev ? gapPx : 0;
+    subsetWidths[mask] = subsetWidths[prev] + widths[index] + extraGap;
+    fits[mask] = subsetWidths[mask] <= containerWidth;
+  }
+  const memo = new Array(maxMask);
+  const solve = (remainingMask) => {
+    if (!remainingMask) {
+      return {
+        rowCount: 0,
+        inversions: 0,
+        slack: 0,
+        rows: [],
+      };
+    }
+    if (memo[remainingMask]) return memo[remainingMask];
+    let best = null;
+    const anchorBit = remainingMask & -remainingMask;
+    for (let rowMask = remainingMask; rowMask; rowMask = (rowMask - 1) & remainingMask) {
+      if ((rowMask & anchorBit) === 0 || !fits[rowMask]) continue;
+      const restMask = remainingMask ^ rowMask;
+      const tail = solve(restMask);
+      const candidate = {
+        rowCount: tail.rowCount + 1,
+        inversions: tail.inversions + _disksCompactRowInversions(rowMask, restMask),
+        slack: tail.slack + Math.max(0, containerWidth - subsetWidths[rowMask]),
+        rows: [rowMask, ...tail.rows],
+      };
+      if (_disksCompactPackingBetter(candidate, best)) {
+        best = candidate;
+      }
+    }
+    memo[remainingMask] = best || {
+      rowCount: 1,
+      inversions: 0,
+      slack: 0,
+      rows: [remainingMask],
+    };
+    return memo[remainingMask];
+  };
+  const packed = solve(maxMask - 1);
+  return packed.rows.map(rowMask => {
+    const rowItems = [];
+    for (let index = 0; index < count; index += 1) {
+      if (rowMask & (1 << index)) rowItems.push(items[index]);
+    }
+    return rowItems;
+  });
+}
+
+function _disksApplyCompactOrdering(container, records) {
+  if (!container || !Array.isArray(records) || !records.length) return;
+  const gapPx = _disksCompactContainerGapPx(container);
+  const containerWidth = _disksContainerWidth(container);
+  let order = 0;
+  _disksCompactSolveRows(records, containerWidth, gapPx).forEach(row => {
+    row.forEach(record => {
+      record.item.style.order = String(order);
+      order += 1;
+    });
+  });
+}
+
 function _disksApplyCompactPack(container, pretext) {
   const containerWidth = _disksContainerWidth(container);
   if (!containerWidth) return;
   container.classList.add('is-pretext-ready');
-  container.querySelectorAll('.disks-compact-pack__item').forEach(item => {
+  const records = [];
+  container.querySelectorAll('.disks-compact-pack__item').forEach((item, index) => {
     const basis = _disksMeasureCompactPackWidth(pretext, item);
     const wide = basis > Math.max(180, Math.floor(containerWidth * 0.92));
     item.classList.toggle('is-wide', wide);
     item.style.flex = wide ? '1 0 100%' : `0 0 ${Math.min(basis, containerWidth)}px`;
     item.style.maxWidth = `${containerWidth}px`;
+    records.push({ item, basis, wide, index });
   });
+  _disksApplyCompactOrdering(container, records);
 }
 
 function _disksApplyCompactFacts(container, pretext) {
   const containerWidth = _disksContainerWidth(container);
   if (!containerWidth) return;
   container.classList.add('disks-facts--compact', 'is-pretext-ready');
-  container.querySelectorAll('.disks-facts__item').forEach(item => {
+  const records = [];
+  container.querySelectorAll('.disks-facts__item').forEach((item, index) => {
     const basis = _disksMeasureCompactFactWidth(pretext, item);
     const wide = _disksCompactFactShouldSpanWide(item, basis, containerWidth);
     item.classList.toggle('is-wide', wide);
     item.style.flex = wide ? '1 0 100%' : `0 0 ${Math.min(basis, containerWidth)}px`;
     item.style.maxWidth = `${containerWidth}px`;
+    records.push({ item, basis, wide, index });
   });
+  _disksApplyCompactOrdering(container, records);
 }
 
 function _disksApplyCompactPretextLayout(shell) {
