@@ -61,6 +61,11 @@
     longPressTimer = null;
   }
 
+  function setScrollStateClass(name, enabled) {
+    document.body.classList.toggle(name, !!enabled);
+    document.documentElement.classList.toggle(name, !!enabled);
+  }
+
   function getActiveMenuConfig() {
     if (typeof window !== 'undefined' && window.BlueprintsHubMenuBridge && typeof window.BlueprintsHubMenuBridge.getActiveMenuConfig === 'function') {
       var bridged = window.BlueprintsHubMenuBridge.getActiveMenuConfig();
@@ -111,7 +116,7 @@
         enterUp();
       } else {
         applyTranslate(0, false);
-        document.body.classList.remove('shade-is-up');
+        setScrollStateClass('shade-is-up', false);
       }
     }, LONG_PRESS_MS);
   }
@@ -327,7 +332,7 @@
     applyTranslate(-maxTravel, true);
     shade.classList.add('is-up');
     handle.classList.add('is-up');
-    document.body.classList.add('shade-is-up');
+    setScrollStateClass('shade-is-up', true);
     sizeActivePane();
   }
 
@@ -345,7 +350,7 @@
     if (handle) handle.classList.add('is-up');
     shade.classList.remove('is-dragging');
     if (handle) handle.classList.remove('is-dragging');
-    document.body.classList.add('shade-is-up');
+    setScrollStateClass('shade-is-up', true);
     document.dispatchEvent(new CustomEvent('bodyshadechange', { detail: { isUp: true } }));
     // Shade has settled at top — resize the fill table to the new position.
     sizeActivePane();
@@ -356,7 +361,7 @@
     shade.classList.remove('is-up');
     if (handle) handle.classList.remove('is-up');
     isUp = false;
-    document.body.classList.remove('shade-is-up');
+    setScrollStateClass('shade-is-up', false);
     document.dispatchEvent(new CustomEvent('bodyshadechange', { detail: { isUp: false } }));
     // shadeY and --shade-y are already set to -maxTravel; leave them as-is
     // so when drag resumes the position is continuous.
@@ -378,7 +383,7 @@
     } else {
       // Hide header and menu zone immediately on drag-start so fixed/stacked
       // elements don't paint over the shade during the drag animation.
-      document.body.classList.add('shade-is-up');
+      setScrollStateClass('shade-is-up', true);
       var prevScrollY = window.scrollY;
       maxTravel   = computeMaxTravel();
       startShadeY = shadeY;
@@ -489,7 +494,7 @@
     } else {
       applyTranslate(0, false);
       // Snap went down — restore header and menu zone.
-      document.body.classList.remove('shade-is-up');
+      setScrollStateClass('shade-is-up', false);
       // After the CSS transition settles, resize fill table to restored position.
       setTimeout(sizeActivePane, TRANSITION + 50);
     }
@@ -670,7 +675,7 @@
     // Only lock page scroll for fill tabs when the handle is already reachable.
     // If intro content pushes the handle below the viewport on short screens,
     // keep normal page scroll available so the user can reach the handle first.
-    document.body.classList.toggle('has-fill-tab', shouldLockFillBodyScroll(panel));
+    setScrollStateClass('has-fill-tab', shouldLockFillBodyScroll(panel));
     if (!panel) return;
     var fill = panel.querySelector('.table-wrap--fill');
     if (!fill) return;
@@ -706,7 +711,7 @@
     var panel = shade ? shade.querySelector('.tab-panel--managed-scroll.active') : null;
     var shouldLockBody = shouldLockManagedScrollBody(panel);
     if (shouldLockBody) clampRootVerticalScroll();
-    document.body.classList.toggle('has-managed-scroll-tab', shouldLockBody);
+    setScrollStateClass('has-managed-scroll-tab', shouldLockBody);
     if (!panel) return;
 
     var viewportH = getViewportHeight();

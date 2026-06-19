@@ -781,6 +781,71 @@ const BlueprintsActiveBrowserObserver = (() => {
     };
   }
 
+  function _roundPx(value) {
+    return Math.round(Number(value || 0) * 100) / 100;
+  }
+
+  function _rectState(node) {
+    if (!node || typeof node.getBoundingClientRect !== 'function') return null;
+    const rect = node.getBoundingClientRect();
+    return {
+      left: _roundPx(rect.left),
+      top: _roundPx(rect.top),
+      right: _roundPx(rect.right),
+      bottom: _roundPx(rect.bottom),
+      width: _roundPx(rect.width),
+      height: _roundPx(rect.height),
+    };
+  }
+
+  function _layoutState() {
+    const html = document.documentElement;
+    const body = document.body;
+    const scrolling = document.scrollingElement || html;
+    const activePanel = document.querySelector('#body-shade .tab-panel.active[id]');
+    const menuNav = document.getElementById('menu-zone-nav');
+    const main = document.querySelector('main');
+    const shell = activePanel ? activePanel.querySelector('.tab-scroll-shell') : null;
+    const handle = activePanel ? activePanel.querySelector('.body-shade-handle') : null;
+    const htmlStyle = html ? window.getComputedStyle(html) : null;
+    const bodyStyle = body ? window.getComputedStyle(body) : null;
+    const shellStyle = shell ? window.getComputedStyle(shell) : null;
+    const panelRect = _rectState(activePanel);
+    const menuRect = _rectState(menuNav);
+    return {
+      active_panel_id: activePanel ? activePanel.id : '',
+      root: {
+        scroll_element: scrolling ? scrolling.tagName : '',
+        html_overflow_y: htmlStyle ? htmlStyle.overflowY : '',
+        body_overflow_y: bodyStyle ? bodyStyle.overflowY : '',
+        html_has_managed_scroll_tab: !!(html && html.classList.contains('has-managed-scroll-tab')),
+        body_has_managed_scroll_tab: !!(body && body.classList.contains('has-managed-scroll-tab')),
+        window_scroll_y: _roundPx(window.scrollY || 0),
+        scroll_height: scrolling ? Math.round(scrolling.scrollHeight || 0) : 0,
+        client_height: scrolling ? Math.round(scrolling.clientHeight || 0) : 0,
+        body_scroll_height: body ? Math.round(body.scrollHeight || 0) : 0,
+        html_scroll_height: html ? Math.round(html.scrollHeight || 0) : 0,
+      },
+      rects: {
+        main: _rectState(main),
+        menu_nav: menuRect,
+        panel: panelRect,
+        handle: _rectState(handle),
+        shell: _rectState(shell),
+      },
+      shell: shell ? {
+        overflow_y: shellStyle ? shellStyle.overflowY : '',
+        client_height: Math.round(shell.clientHeight || 0),
+        scroll_height: Math.round(shell.scrollHeight || 0),
+        scrollbar_active: (shell.scrollHeight || 0) > (shell.clientHeight || 0) + 1,
+      } : null,
+      alignment: {
+        panel_left_delta_from_menu: panelRect && menuRect ? _roundPx(panelRect.left - menuRect.left) : null,
+        panel_right_delta_from_menu: panelRect && menuRect ? _roundPx(panelRect.right - menuRect.right) : null,
+      },
+    };
+  }
+
   function _payload(options = {}) {
     const payload = {
       browser_id: _browserId(),
@@ -800,6 +865,7 @@ const BlueprintsActiveBrowserObserver = (() => {
       automation: _automationState(),
       docs: _docsState(),
       body_shade: _bodyShadeState(),
+      layout: _layoutState(),
       client_now_ms: Date.now(),
     };
     if (options.includeDiagnostics) {
@@ -818,6 +884,7 @@ const BlueprintsActiveBrowserObserver = (() => {
       automation: payload.automation,
       docs: payload.docs,
       body_shade: payload.body_shade,
+      layout: payload.layout,
       tts: payload.tts,
       viewport: payload.viewport,
       voice: payload.voice,
