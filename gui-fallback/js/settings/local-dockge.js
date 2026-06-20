@@ -3,7 +3,10 @@
 const _LOCAL_DOCKGE_POLL_MS = 7000;
 const _LOCAL_DOCKGE_METRICS_POLL_MS = 1000;
 const _LOCAL_DOCKGE_METRICS_WINDOW = 10;
-const _LOCAL_DOCKGE_METRICS_SEGMENTS = 20;
+const _LOCAL_DOCKGE_METRICS_SEGMENTS = 16;
+const _LOCAL_DOCKGE_METRICS_TRACKS = 18;
+const _LOCAL_DOCKGE_METRICS_CPU_SCALE_CORES = 2;
+const _LOCAL_DOCKGE_METRICS_MEMORY_SCALE_BYTES = 8 * 1000 * 1000 * 1000;
 const _LOCAL_DOCKGE_COLS = ['stack', 'services', 'containers', 'status_health', 'updated', 'actions'];
 const _LOCAL_DOCKGE_FIELD_META = {
   stack: { label: 'Stack' },
@@ -45,7 +48,6 @@ let _localDockgeDownloadBusyStack = null;
 let _localDockgeLoadPromise = null;
 let _localDockgeMetricsPollInterval = null;
 let _localDockgeMetricsLoadPromise = null;
-let _localDockgeMetricsCapacity = null;
 let _localDockgeMetricsPulseSeq = 0;
 const _localDockgeMetricsByStack = new Map();
 const _LOCAL_DOCKGE_NARRATION_DOUBLE_CLICK_MS = 260;
@@ -176,22 +178,47 @@ function _localDockgeMetricState(stackName) {
   return _localDockgeMetricsByStack.get(stackName) || null;
 }
 
+function _localDockgeStackByName(stackName) {
+  const target = String(stackName || '').toLowerCase();
+  return (_localDockgeStacks || []).find(stack => String(stack.stack_name || '').toLowerCase() === target) || null;
+}
+
+function _localDockgeStackShowsResourceMotion(stack) {
+  const status = String(stack?.status || '').toLowerCase();
+  if (status === 'stopped' || status === 'none') return false;
+  return (stack?.containers || []).some(container => String(container?.state || '').toLowerCase() === 'running');
+}
+
 function _localDockgeAverageSample(samples, key) {
   const values = (samples || []).map(sample => Number(sample[key])).filter(Number.isFinite);
   if (!values.length) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function _localDockgeMetricLeadIndex(percent) {
-  const segmentSize = 100 / _LOCAL_DOCKGE_METRICS_SEGMENTS;
-  if (percent <= 0) return 0;
-  return Math.min(_LOCAL_DOCKGE_METRICS_SEGMENTS - 1, Math.ceil(percent / segmentSize) - 1);
+function _localDockgeScaleCpuPercent(metric) {
+  const dockerCpuPercent = Number(metric?.cpu_docker_percent);
+  if (Number.isFinite(dockerCpuPercent)) {
+    return _localDockgeClampPercent(dockerCpuPercent / _LOCAL_DOCKGE_METRICS_CPU_SCALE_CORES);
+  }
+  return _localDockgeClampPercent(metric?.cpu_percent);
 }
 
-function _localDockgeSegmentBarHtml(kind, percent, pulseSeq) {
+function _localDockgeScaleMemoryPercent(memoryBytes) {
+  return _localDockgeClampPercent((Math.max(0, Number(memoryBytes) || 0) / _LOCAL_DOCKGE_METRICS_MEMORY_SCALE_BYTES) * 100);
+}
+
+function _localDockgeMetricSegmentIndex(percent) {
   const pct = _localDockgeClampPercent(percent);
   const segmentSize = 100 / _LOCAL_DOCKGE_METRICS_SEGMENTS;
-  const leadIndex = _localDockgeMetricLeadIndex(pct);
+  if (pct <= 0) return 0;
+  return Math.min(_LOCAL_DOCKGE_METRICS_SEGMENTS - 1, Math.ceil(pct / segmentSize) - 1);
+}
+
+function _localDockgeSegmentBarHtml(kind, percent, tracePercent, pulseSeq) {
+  const pct = _localDockgeClampPercent(percent);
+  const segmentSize = 100 / _LOCAL_DOCKGE_METRICS_SEGMENTS;
+  const leadIndex = _localDockgeMetricSegmentIndex(pct);
+  const traceIndex = Number.isFinite(Number(tracePercent)) ? _localDockgeMetricSegmentIndex(tracePercent) : -1;
   const segments = [];
   for (let i = 0; i < _LOCAL_DOCKGE_METRICS_SEGMENTS; i += 1) {
     const start = i * segmentSize;
@@ -200,37 +227,42 @@ function _localDockgeSegmentBarHtml(kind, percent, pulseSeq) {
       'local-dockge-resource-segment',
       fill > 0 ? 'is-filled' : '',
       pulseSeq && i === leadIndex ? 'is-pulsing' : '',
+      i === traceIndex ? 'is-tracing' : '',
     ].filter(Boolean).join(' ');
     segments.push(`<span class="${cls}" style="--fill-pct:${(fill * 100).toFixed(1)}%"></span>`);
   }
-  return `<div class="local-dockge-resource-bar local-dockge-resource-bar--${esc(kind)}">${segments.join('')}</div>`;
+  return `<div class="local-dockge-resource-bar local-dockge-resource-bar--${esc(kind)}" style="--local-dockge-resource-tracks:${_LOCAL_DOCKGE_METRICS_TRACKS}">${segments.join('')}</div>`;
 }
 
 function _localDockgeMetricsBarsContent(stackName) {
   const state = _localDockgeMetricState(stackName);
+  const stack = _localDockgeStackByName(stackName);
+  const showMotion = Boolean(state?.showMotion && _localDockgeStackShowsResourceMotion(stack));
   const samples = state?.samples || [];
   const sampleCount = samples.length;
   const cpuPercent = _localDockgeAverageSample(samples, 'cpu_percent');
   const memoryPercent = _localDockgeAverageSample(samples, 'memory_percent');
+  const cpuCores = _localDockgeAverageSample(samples, 'cpu_cores');
   const memoryBytes = _localDockgeAverageSample(samples, 'memory_bytes');
   const windowText = sampleCount
     ? `${sampleCount}s rolling average${sampleCount >= _LOCAL_DOCKGE_METRICS_WINDOW ? '' : ' so far'}`
     : 'waiting for resource metrics';
-  const cpuUnits = _localDockgeMetricsCapacity?.cpu_units;
-  const memoryTotal = _localDockgeMetricsCapacity?.memory_bytes;
+  const trace = showMotion ? state?.trace : null;
+  const traceCpuText = trace ? `; transient ${Number(trace.cpu_cores || 0).toFixed(3)} cores` : '';
+  const traceMemText = trace ? `; transient ${_localDockgeFormatBytes(trace.memory_bytes)}` : '';
   const cpuTitle = sampleCount
-    ? `CPU ${_localDockgeFormatPercent(cpuPercent)} of ${cpuUnits || '?'} CPU units (${windowText})`
+    ? `CPU ${_localDockgeFormatPercent(cpuPercent)} of 2-core scale (${cpuCores.toFixed(3)} cores, ${windowText}${traceCpuText})`
     : 'CPU waiting for a successful metrics reading';
   const memTitle = sampleCount
-    ? `RAM ${_localDockgeFormatPercent(memoryPercent)} (${_localDockgeFormatBytes(memoryBytes)} of ${_localDockgeFormatBytes(memoryTotal)}) (${windowText})`
+    ? `RAM ${_localDockgeFormatPercent(memoryPercent)} of 8 GB scale (${_localDockgeFormatBytes(memoryBytes)}, ${windowText}, 500 MB per segment${traceMemText})`
     : 'RAM waiting for a successful metrics reading';
-  const pulseSeq = state?.pulseSeq || 0;
+  const pulseSeq = showMotion ? (state?.pulseSeq || 0) : 0;
   return `
     <div class="local-dockge-resource-row" title="${esc(cpuTitle)}" aria-label="${esc(cpuTitle)}">
-      ${_localDockgeSegmentBarHtml('cpu', cpuPercent, pulseSeq)}
+      ${_localDockgeSegmentBarHtml('cpu', cpuPercent, trace?.cpu_percent, pulseSeq)}
     </div>
     <div class="local-dockge-resource-row" title="${esc(memTitle)}" aria-label="${esc(memTitle)}">
-      ${_localDockgeSegmentBarHtml('memory', memoryPercent, pulseSeq)}
+      ${_localDockgeSegmentBarHtml('memory', memoryPercent, trace?.memory_percent, pulseSeq)}
     </div>`;
 }
 
@@ -883,22 +915,35 @@ function _localDockgeApplyMetrics(data) {
   const metricByStack = new Map((data.stacks || []).map(item => [item.stack_name, item]));
   const pulseSeq = _localDockgeMetricsPulseSeq + 1;
   _localDockgeMetricsPulseSeq = pulseSeq;
-  _localDockgeMetricsCapacity = data.capacity || null;
 
   (_localDockgeStacks || []).forEach(stack => {
     const stackName = stack.stack_name || '';
     if (!stackName) return;
+    const hasMetric = metricByStack.has(stackName);
     const metric = metricByStack.get(stackName) || {};
     const prev = _localDockgeMetricsByStack.get(stackName) || { samples: [] };
+    const memoryBytes = Math.max(0, Number(metric.memory_bytes) || 0);
+    const cpuDockerPercent = Math.max(0, Number(metric.cpu_docker_percent) || 0);
+    const cpuPercent = _localDockgeScaleCpuPercent(metric);
+    const memoryPercent = _localDockgeScaleMemoryPercent(memoryBytes);
+    const showMotion = hasMetric && _localDockgeStackShowsResourceMotion(stack);
     const samples = [...(prev.samples || []), {
-      cpu_percent: _localDockgeClampPercent(metric.cpu_percent),
-      memory_percent: _localDockgeClampPercent(metric.memory_percent),
-      memory_bytes: Math.max(0, Number(metric.memory_bytes) || 0),
+      cpu_percent: cpuPercent,
+      cpu_cores: cpuDockerPercent / 100,
+      memory_percent: memoryPercent,
+      memory_bytes: memoryBytes,
       sampled_at: data.updated_at || new Date().toISOString(),
     }].slice(-_LOCAL_DOCKGE_METRICS_WINDOW);
     _localDockgeMetricsByStack.set(stackName, {
       samples,
-      pulseSeq,
+      pulseSeq: showMotion ? pulseSeq : 0,
+      showMotion,
+      trace: showMotion ? {
+        cpu_percent: cpuPercent,
+        cpu_cores: cpuDockerPercent / 100,
+        memory_percent: memoryPercent,
+        memory_bytes: memoryBytes,
+      } : null,
       updated_at: data.updated_at || '',
     });
   });

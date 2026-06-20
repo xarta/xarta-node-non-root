@@ -1226,6 +1226,7 @@ button.table-icon-btn--play-toggle { font-size: 11px; line-height: 1; }
 
 .local-dockge-resource-bars {
   --local-dockge-resource-rgb: var(--hub-accent-rgb, 91, 156, 246);
+  --local-dockge-resource-trace-rgb: 224, 92, 92;
   display: grid;
   gap: 3px;
   width: 100%;
@@ -1239,7 +1240,7 @@ button.table-icon-btn--play-toggle { font-size: 11px; line-height: 1; }
 
 .local-dockge-resource-bar {
   display: grid;
-  grid-template-columns: repeat(20, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--local-dockge-resource-tracks, 18), minmax(0, 1fr));
   gap: 2px;
   width: 100%;
   height: 6px;
@@ -1247,8 +1248,10 @@ button.table-icon-btn--play-toggle { font-size: 11px; line-height: 1; }
 
 .local-dockge-resource-segment {
   display: block;
+  position: relative;
   min-width: 0;
   height: 6px;
+  overflow: hidden;
   border: 1px solid rgba(var(--local-dockge-resource-rgb), 0.25);
   border-radius: 1px;
   background: linear-gradient(
@@ -1264,6 +1267,16 @@ button.table-icon-btn--play-toggle { font-size: 11px; line-height: 1; }
 
 .local-dockge-resource-segment.is-pulsing {
   animation: local-dockge-resource-pulse 680ms ease-out 1;
+}
+
+.local-dockge-resource-segment.is-tracing::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: 1px;
+  background: rgba(var(--local-dockge-resource-trace-rgb), 0.88);
+  animation: local-dockge-resource-trace 500ms ease-out 1 forwards;
+  pointer-events: none;
 }
 
 .local-dockge-stack-error-btn {
@@ -1468,6 +1481,15 @@ button.secondary.table-icon-btn.local-dockge-download-btn.is-generating {
   45% {
     border-color: rgba(var(--local-dockge-resource-rgb), 0.95);
     box-shadow: 0 0 0 2px rgba(var(--local-dockge-resource-rgb), 0.24);
+  }
+}
+
+@keyframes local-dockge-resource-trace {
+  0% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
   }
 }
 
