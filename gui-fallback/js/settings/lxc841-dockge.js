@@ -1,6 +1,12 @@
 /* ── LXC841 Dockge ──────────────────────────────────────────────────────── */
 
 const _LXC841_DOCKGE_POLL_MS = 30000;
+const _LXC841_DOCKGE_METRICS_POLL_MS = 1000;
+const _LXC841_DOCKGE_METRICS_WINDOW = 10;
+const _LXC841_DOCKGE_METRICS_SEGMENTS = 16;
+const _LXC841_DOCKGE_METRICS_TRACKS = 18;
+const _LXC841_DOCKGE_METRICS_CPU_SCALE_CORES = 2;
+const _LXC841_DOCKGE_METRICS_MEMORY_SCALE_BYTES = 8 * 1000 * 1000 * 1000;
 const _LXC841_DOCKGE_COLS = ['stack', 'services', 'containers', 'status_health', 'updated', 'actions'];
 const _LXC841_DOCKGE_FIELD_META = {
   stack: { label: 'Stack' },
@@ -43,6 +49,10 @@ let _lxc841DockgeNarrationLongPressTimer = null;
 let _lxc841DockgeNarrationLastLongPressAt = 0;
 let _lxc841DockgeDownloadBusyStack = null;
 let _lxc841DockgeLoadPromise = null;
+let _lxc841DockgeMetricsPollInterval = null;
+let _lxc841DockgeMetricsLoadPromise = null;
+let _lxc841DockgeMetricsPulseSeq = 0;
+const _lxc841DockgeMetricsByStack = new Map();
 const _LXC841_DOCKGE_NARRATION_DOUBLE_CLICK_MS = 260;
 const _LXC841_DOCKGE_NARRATION_LONG_PRESS_MS = 650;
 
@@ -139,6 +149,128 @@ function _lxc841DockgeFormatUpdatedHtml(value) {
   if (text === '-') return '<span class="lxc841-dockge-updated">-</span>';
   const [date, time] = text.split(' ');
   return `<span class="lxc841-dockge-updated"><span>${esc(date || text)}</span>${time ? `<span>${esc(time)}</span>` : ''}</span>`;
+}
+
+function _lxc841DockgeClampPercent(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 0;
+  return Math.max(0, Math.min(100, num));
+}
+
+function _lxc841DockgeFormatPercent(value) {
+  const pct = _lxc841DockgeClampPercent(value);
+  if (pct >= 10) return `${pct.toFixed(1)}%`;
+  if (pct >= 1) return `${pct.toFixed(2)}%`;
+  return `${pct.toFixed(3)}%`;
+}
+
+function _lxc841DockgeFormatBytes(value) {
+  const bytes = Number(value) || 0;
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let size = Math.max(0, bytes);
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  const places = size >= 10 || unit === 0 ? 0 : 1;
+  return `${size.toFixed(places)} ${units[unit]}`;
+}
+
+function _lxc841DockgeMetricState(stackName) {
+  return _lxc841DockgeMetricsByStack.get(stackName) || null;
+}
+
+function _lxc841DockgeStackByName(stackName) {
+  const target = String(stackName || '').toLowerCase();
+  return (_lxc841DockgeStacks || []).find(stack => String(stack.stack_name || '').toLowerCase() === target) || null;
+}
+
+function _lxc841DockgeStackShowsResourceMotion(stack) {
+  const status = String(stack?.status || '').toLowerCase();
+  if (status === 'stopped' || status === 'none') return false;
+  return (stack?.containers || []).some(container => String(container?.state || '').toLowerCase() === 'running');
+}
+
+function _lxc841DockgeAverageSample(samples, key) {
+  const values = (samples || []).map(sample => Number(sample[key])).filter(Number.isFinite);
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function _lxc841DockgeScaleCpuPercent(metric) {
+  const dockerCpuPercent = Number(metric?.cpu_docker_percent);
+  if (Number.isFinite(dockerCpuPercent)) {
+    return _lxc841DockgeClampPercent(dockerCpuPercent / _LXC841_DOCKGE_METRICS_CPU_SCALE_CORES);
+  }
+  return _lxc841DockgeClampPercent(metric?.cpu_percent);
+}
+
+function _lxc841DockgeScaleMemoryPercent(memoryBytes) {
+  return _lxc841DockgeClampPercent((Math.max(0, Number(memoryBytes) || 0) / _LXC841_DOCKGE_METRICS_MEMORY_SCALE_BYTES) * 100);
+}
+
+function _lxc841DockgeMetricSegmentIndex(percent) {
+  const pct = _lxc841DockgeClampPercent(percent);
+  const segmentSize = 100 / _LXC841_DOCKGE_METRICS_SEGMENTS;
+  if (pct <= 0) return 0;
+  return Math.min(_LXC841_DOCKGE_METRICS_SEGMENTS - 1, Math.ceil(pct / segmentSize) - 1);
+}
+
+function _lxc841DockgeSegmentBarHtml(kind, percent, tracePercent, pulseSeq) {
+  const pct = _lxc841DockgeClampPercent(percent);
+  const segmentSize = 100 / _LXC841_DOCKGE_METRICS_SEGMENTS;
+  const leadIndex = _lxc841DockgeMetricSegmentIndex(pct);
+  const traceIndex = Number.isFinite(Number(tracePercent)) ? _lxc841DockgeMetricSegmentIndex(tracePercent) : -1;
+  const segments = [];
+  for (let i = 0; i < _LXC841_DOCKGE_METRICS_SEGMENTS; i += 1) {
+    const start = i * segmentSize;
+    const fill = Math.max(0, Math.min(1, (pct - start) / segmentSize));
+    const cls = [
+      'local-dockge-resource-segment',
+      fill > 0 ? 'is-filled' : '',
+      pulseSeq && i === leadIndex ? 'is-pulsing' : '',
+      i === traceIndex ? 'is-tracing' : '',
+    ].filter(Boolean).join(' ');
+    segments.push(`<span class="${cls}" style="--fill-pct:${(fill * 100).toFixed(1)}%"></span>`);
+  }
+  return `<div class="local-dockge-resource-bar local-dockge-resource-bar--${esc(kind)}" style="--local-dockge-resource-tracks:${_LXC841_DOCKGE_METRICS_TRACKS}">${segments.join('')}</div>`;
+}
+
+function _lxc841DockgeMetricsBarsContent(stackName) {
+  const state = _lxc841DockgeMetricState(stackName);
+  const stack = _lxc841DockgeStackByName(stackName);
+  const showMotion = Boolean(state?.showMotion && _lxc841DockgeStackShowsResourceMotion(stack));
+  const samples = state?.samples || [];
+  const sampleCount = samples.length;
+  const cpuPercent = _lxc841DockgeAverageSample(samples, 'cpu_percent');
+  const memoryPercent = _lxc841DockgeAverageSample(samples, 'memory_percent');
+  const cpuCores = _lxc841DockgeAverageSample(samples, 'cpu_cores');
+  const memoryBytes = _lxc841DockgeAverageSample(samples, 'memory_bytes');
+  const windowText = sampleCount
+    ? `${sampleCount}s rolling average${sampleCount >= _LXC841_DOCKGE_METRICS_WINDOW ? '' : ' so far'}`
+    : 'waiting for resource metrics';
+  const trace = showMotion ? state?.trace : null;
+  const traceCpuText = trace ? `; transient ${Number(trace.cpu_cores || 0).toFixed(3)} cores` : '';
+  const traceMemText = trace ? `; transient ${_lxc841DockgeFormatBytes(trace.memory_bytes)}` : '';
+  const cpuTitle = sampleCount
+    ? `CPU ${_lxc841DockgeFormatPercent(cpuPercent)} of 2-core scale (${cpuCores.toFixed(3)} cores, ${windowText}${traceCpuText})`
+    : 'CPU waiting for a successful metrics reading';
+  const memTitle = sampleCount
+    ? `RAM ${_lxc841DockgeFormatPercent(memoryPercent)} of 8 GB scale (${_lxc841DockgeFormatBytes(memoryBytes)}, ${windowText}, 500 MB per segment${traceMemText})`
+    : 'RAM waiting for a successful metrics reading';
+  const pulseSeq = showMotion ? (state?.pulseSeq || 0) : 0;
+  return `
+    <div class="local-dockge-resource-row" title="${esc(cpuTitle)}" aria-label="${esc(cpuTitle)}">
+      ${_lxc841DockgeSegmentBarHtml('cpu', cpuPercent, trace?.cpu_percent, pulseSeq)}
+    </div>
+    <div class="local-dockge-resource-row" title="${esc(memTitle)}" aria-label="${esc(memTitle)}">
+      ${_lxc841DockgeSegmentBarHtml('memory', memoryPercent, trace?.memory_percent, pulseSeq)}
+    </div>`;
+}
+
+function _lxc841DockgeMetricsBarsHtml(stackName) {
+  return `<div class="local-dockge-resource-bars" data-lxc841-dockge-metrics-stack="${esc(stackName || '')}">${_lxc841DockgeMetricsBarsContent(stackName)}</div>`;
 }
 
 function _lxc841DockgeFilterRows(stacks) {
@@ -750,7 +882,10 @@ function _renderLxc841DockgeStackRows() {
     const services = (stack.services || []).map(service => _lxc841DockgeServicePill(stack, service)).join(' ');
     const containers = (stack.containers || []).map(container => _lxc841DockgeRenderContainerChip(container)).join('');
     const rendered = {
-      stack: `<div class="lxc841-dockge-stack-cell">${_lxc841DockgeRenderStackName(stack)}${_lxc841DockgeStackErrorButton(stack)}</div>`,
+      stack: `<div class="lxc841-dockge-stack-cell">
+        <div class="lxc841-dockge-stack-title">${_lxc841DockgeRenderStackName(stack)}${_lxc841DockgeStackErrorButton(stack)}</div>
+        ${_lxc841DockgeMetricsBarsHtml(stack.stack_name || '')}
+      </div>`,
       services: services || '<span style="color:var(--text-dim)">-</span>',
       containers: containers
         ? `<div class="lxc841-dockge-container-list">${containers}</div>`
@@ -771,6 +906,80 @@ function renderLxc841DockgeStacks() {
     return;
   }
   _renderLxc841DockgeStackRows();
+}
+
+function _updateLxc841DockgeMetricsDom() {
+  document.querySelectorAll('[data-lxc841-dockge-metrics-stack]').forEach(el => {
+    el.innerHTML = _lxc841DockgeMetricsBarsContent(el.dataset.lxc841DockgeMetricsStack || '');
+  });
+}
+
+function _lxc841DockgeApplyMetrics(data) {
+  const metricByStack = new Map((data.stacks || []).map(item => [item.stack_name, item]));
+  const pulseSeq = _lxc841DockgeMetricsPulseSeq + 1;
+  _lxc841DockgeMetricsPulseSeq = pulseSeq;
+
+  (_lxc841DockgeStacks || []).forEach(stack => {
+    const stackName = stack.stack_name || '';
+    if (!stackName) return;
+    const hasMetric = metricByStack.has(stackName);
+    const metric = metricByStack.get(stackName) || {};
+    const prev = _lxc841DockgeMetricsByStack.get(stackName) || { samples: [] };
+    const memoryBytes = Math.max(0, Number(metric.memory_bytes) || 0);
+    const cpuDockerPercent = Math.max(0, Number(metric.cpu_docker_percent) || 0);
+    const cpuPercent = _lxc841DockgeScaleCpuPercent(metric);
+    const memoryPercent = _lxc841DockgeScaleMemoryPercent(memoryBytes);
+    const showMotion = hasMetric && _lxc841DockgeStackShowsResourceMotion(stack);
+    const samples = [...(prev.samples || []), {
+      cpu_percent: cpuPercent,
+      cpu_cores: cpuDockerPercent / 100,
+      memory_percent: memoryPercent,
+      memory_bytes: memoryBytes,
+      sampled_at: data.updated_at || new Date().toISOString(),
+    }].slice(-_LXC841_DOCKGE_METRICS_WINDOW);
+    _lxc841DockgeMetricsByStack.set(stackName, {
+      samples,
+      pulseSeq: showMotion ? pulseSeq : 0,
+      showMotion,
+      trace: showMotion ? {
+        cpu_percent: cpuPercent,
+        cpu_cores: cpuDockerPercent / 100,
+        memory_percent: memoryPercent,
+        memory_bytes: memoryBytes,
+      } : null,
+      updated_at: data.updated_at || '',
+    });
+  });
+  _updateLxc841DockgeMetricsDom();
+}
+
+async function loadLxc841DockgeMetrics() {
+  if (_lxc841DockgeMetricsLoadPromise) return _lxc841DockgeMetricsLoadPromise;
+  if (!_lxc841DockgeIsActive() || document.visibilityState === 'hidden') return null;
+  _lxc841DockgeMetricsLoadPromise = (async () => {
+    const r = await apiFetch('/api/v1/lxc841-dockge/metrics', { cache: 'no-store' });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || !data.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+    _lxc841DockgeApplyMetrics(data);
+    return data;
+  })();
+  try {
+    return await _lxc841DockgeMetricsLoadPromise;
+  } catch (e) {
+    console.warn('LXC841 Dockge metrics failed', e);
+    return null;
+  } finally {
+    _lxc841DockgeMetricsLoadPromise = null;
+  }
+}
+
+function _ensureLxc841DockgeMetricsPoll() {
+  if (_lxc841DockgeMetricsPollInterval) return;
+  _lxc841DockgeMetricsPollInterval = setInterval(() => {
+    if (_lxc841DockgeIsActive() && document.visibilityState !== 'hidden') {
+      loadLxc841DockgeMetrics();
+    }
+  }, _LXC841_DOCKGE_METRICS_POLL_MS);
 }
 
 function _ensureLxc841DockgePoll() {
@@ -795,12 +1004,14 @@ async function loadLxc841DockgeStacks(options = {}) {
     status.hidden = false;
   }
   _ensureLxc841DockgePoll();
+  _ensureLxc841DockgeMetricsPoll();
   _lxc841DockgeLoadPromise = (async () => {
     const r = await apiFetch('/api/v1/lxc841-dockge/stacks');
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
     _lxc841DockgeStacks = data.stacks || [];
     renderLxc841DockgeStacks();
+    if (_lxc841DockgeIsActive()) loadLxc841DockgeMetrics();
     if (status) {
       const via = data.ssh_host ? ` via ${data.ssh_host}` : '';
       status.textContent = `${_lxc841DockgeStacks.length} stack${_lxc841DockgeStacks.length === 1 ? '' : 's'} from ${data.stacks_dir || 'LXC841 Dockge'}${via}`;

@@ -1,6 +1,12 @@
 /* ── VPS Dockge ──────────────────────────────────────────────────────── */
 
 const _VPS_DOCKGE_POLL_MS = 30000;
+const _VPS_DOCKGE_METRICS_POLL_MS = 1000;
+const _VPS_DOCKGE_METRICS_WINDOW = 10;
+const _VPS_DOCKGE_METRICS_SEGMENTS = 16;
+const _VPS_DOCKGE_METRICS_TRACKS = 18;
+const _VPS_DOCKGE_METRICS_CPU_SCALE_CORES = 2;
+const _VPS_DOCKGE_METRICS_MEMORY_SCALE_BYTES = 8 * 1000 * 1000 * 1000;
 const _VPS_DOCKGE_COLS = ['stack', 'services', 'containers', 'status_health', 'updated', 'actions'];
 const _VPS_DOCKGE_FIELD_META = {
   stack: { label: 'Stack' },
@@ -43,6 +49,10 @@ let _vpsDockgeNarrationLongPressTimer = null;
 let _vpsDockgeNarrationLastLongPressAt = 0;
 let _vpsDockgeDownloadBusyStack = null;
 let _vpsDockgeLoadPromise = null;
+let _vpsDockgeMetricsPollInterval = null;
+let _vpsDockgeMetricsLoadPromise = null;
+let _vpsDockgeMetricsPulseSeq = 0;
+const _vpsDockgeMetricsByStack = new Map();
 const _VPS_DOCKGE_NARRATION_DOUBLE_CLICK_MS = 260;
 const _VPS_DOCKGE_NARRATION_LONG_PRESS_MS = 650;
 
@@ -139,6 +149,128 @@ function _vpsDockgeFormatUpdatedHtml(value) {
   if (text === '-') return '<span class="vps-dockge-updated">-</span>';
   const [date, time] = text.split(' ');
   return `<span class="vps-dockge-updated"><span>${esc(date || text)}</span>${time ? `<span>${esc(time)}</span>` : ''}</span>`;
+}
+
+function _vpsDockgeClampPercent(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 0;
+  return Math.max(0, Math.min(100, num));
+}
+
+function _vpsDockgeFormatPercent(value) {
+  const pct = _vpsDockgeClampPercent(value);
+  if (pct >= 10) return `${pct.toFixed(1)}%`;
+  if (pct >= 1) return `${pct.toFixed(2)}%`;
+  return `${pct.toFixed(3)}%`;
+}
+
+function _vpsDockgeFormatBytes(value) {
+  const bytes = Number(value) || 0;
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let size = Math.max(0, bytes);
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  const places = size >= 10 || unit === 0 ? 0 : 1;
+  return `${size.toFixed(places)} ${units[unit]}`;
+}
+
+function _vpsDockgeMetricState(stackName) {
+  return _vpsDockgeMetricsByStack.get(stackName) || null;
+}
+
+function _vpsDockgeStackByName(stackName) {
+  const target = String(stackName || '').toLowerCase();
+  return (_vpsDockgeStacks || []).find(stack => String(stack.stack_name || '').toLowerCase() === target) || null;
+}
+
+function _vpsDockgeStackShowsResourceMotion(stack) {
+  const status = String(stack?.status || '').toLowerCase();
+  if (status === 'stopped' || status === 'none') return false;
+  return (stack?.containers || []).some(container => String(container?.state || '').toLowerCase() === 'running');
+}
+
+function _vpsDockgeAverageSample(samples, key) {
+  const values = (samples || []).map(sample => Number(sample[key])).filter(Number.isFinite);
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function _vpsDockgeScaleCpuPercent(metric) {
+  const dockerCpuPercent = Number(metric?.cpu_docker_percent);
+  if (Number.isFinite(dockerCpuPercent)) {
+    return _vpsDockgeClampPercent(dockerCpuPercent / _VPS_DOCKGE_METRICS_CPU_SCALE_CORES);
+  }
+  return _vpsDockgeClampPercent(metric?.cpu_percent);
+}
+
+function _vpsDockgeScaleMemoryPercent(memoryBytes) {
+  return _vpsDockgeClampPercent((Math.max(0, Number(memoryBytes) || 0) / _VPS_DOCKGE_METRICS_MEMORY_SCALE_BYTES) * 100);
+}
+
+function _vpsDockgeMetricSegmentIndex(percent) {
+  const pct = _vpsDockgeClampPercent(percent);
+  const segmentSize = 100 / _VPS_DOCKGE_METRICS_SEGMENTS;
+  if (pct <= 0) return 0;
+  return Math.min(_VPS_DOCKGE_METRICS_SEGMENTS - 1, Math.ceil(pct / segmentSize) - 1);
+}
+
+function _vpsDockgeSegmentBarHtml(kind, percent, tracePercent, pulseSeq) {
+  const pct = _vpsDockgeClampPercent(percent);
+  const segmentSize = 100 / _VPS_DOCKGE_METRICS_SEGMENTS;
+  const leadIndex = _vpsDockgeMetricSegmentIndex(pct);
+  const traceIndex = Number.isFinite(Number(tracePercent)) ? _vpsDockgeMetricSegmentIndex(tracePercent) : -1;
+  const segments = [];
+  for (let i = 0; i < _VPS_DOCKGE_METRICS_SEGMENTS; i += 1) {
+    const start = i * segmentSize;
+    const fill = Math.max(0, Math.min(1, (pct - start) / segmentSize));
+    const cls = [
+      'local-dockge-resource-segment',
+      fill > 0 ? 'is-filled' : '',
+      pulseSeq && i === leadIndex ? 'is-pulsing' : '',
+      i === traceIndex ? 'is-tracing' : '',
+    ].filter(Boolean).join(' ');
+    segments.push(`<span class="${cls}" style="--fill-pct:${(fill * 100).toFixed(1)}%"></span>`);
+  }
+  return `<div class="local-dockge-resource-bar local-dockge-resource-bar--${esc(kind)}" style="--local-dockge-resource-tracks:${_VPS_DOCKGE_METRICS_TRACKS}">${segments.join('')}</div>`;
+}
+
+function _vpsDockgeMetricsBarsContent(stackName) {
+  const state = _vpsDockgeMetricState(stackName);
+  const stack = _vpsDockgeStackByName(stackName);
+  const showMotion = Boolean(state?.showMotion && _vpsDockgeStackShowsResourceMotion(stack));
+  const samples = state?.samples || [];
+  const sampleCount = samples.length;
+  const cpuPercent = _vpsDockgeAverageSample(samples, 'cpu_percent');
+  const memoryPercent = _vpsDockgeAverageSample(samples, 'memory_percent');
+  const cpuCores = _vpsDockgeAverageSample(samples, 'cpu_cores');
+  const memoryBytes = _vpsDockgeAverageSample(samples, 'memory_bytes');
+  const windowText = sampleCount
+    ? `${sampleCount}s rolling average${sampleCount >= _VPS_DOCKGE_METRICS_WINDOW ? '' : ' so far'}`
+    : 'waiting for resource metrics';
+  const trace = showMotion ? state?.trace : null;
+  const traceCpuText = trace ? `; transient ${Number(trace.cpu_cores || 0).toFixed(3)} cores` : '';
+  const traceMemText = trace ? `; transient ${_vpsDockgeFormatBytes(trace.memory_bytes)}` : '';
+  const cpuTitle = sampleCount
+    ? `CPU ${_vpsDockgeFormatPercent(cpuPercent)} of 2-core scale (${cpuCores.toFixed(3)} cores, ${windowText}${traceCpuText})`
+    : 'CPU waiting for a successful metrics reading';
+  const memTitle = sampleCount
+    ? `RAM ${_vpsDockgeFormatPercent(memoryPercent)} of 8 GB scale (${_vpsDockgeFormatBytes(memoryBytes)}, ${windowText}, 500 MB per segment${traceMemText})`
+    : 'RAM waiting for a successful metrics reading';
+  const pulseSeq = showMotion ? (state?.pulseSeq || 0) : 0;
+  return `
+    <div class="local-dockge-resource-row" title="${esc(cpuTitle)}" aria-label="${esc(cpuTitle)}">
+      ${_vpsDockgeSegmentBarHtml('cpu', cpuPercent, trace?.cpu_percent, pulseSeq)}
+    </div>
+    <div class="local-dockge-resource-row" title="${esc(memTitle)}" aria-label="${esc(memTitle)}">
+      ${_vpsDockgeSegmentBarHtml('memory', memoryPercent, trace?.memory_percent, pulseSeq)}
+    </div>`;
+}
+
+function _vpsDockgeMetricsBarsHtml(stackName) {
+  return `<div class="local-dockge-resource-bars" data-vps-dockge-metrics-stack="${esc(stackName || '')}">${_vpsDockgeMetricsBarsContent(stackName)}</div>`;
 }
 
 function _vpsDockgeFilterRows(stacks) {
@@ -750,7 +882,10 @@ function _renderVpsDockgeStackRows() {
     const services = (stack.services || []).map(service => _vpsDockgeServicePill(stack, service)).join(' ');
     const containers = (stack.containers || []).map(container => _vpsDockgeRenderContainerChip(container)).join('');
     const rendered = {
-      stack: `<div class="vps-dockge-stack-cell">${_vpsDockgeRenderStackName(stack)}${_vpsDockgeStackErrorButton(stack)}</div>`,
+      stack: `<div class="vps-dockge-stack-cell">
+        <div class="vps-dockge-stack-title">${_vpsDockgeRenderStackName(stack)}${_vpsDockgeStackErrorButton(stack)}</div>
+        ${_vpsDockgeMetricsBarsHtml(stack.stack_name || '')}
+      </div>`,
       services: services || '<span style="color:var(--text-dim)">-</span>',
       containers: containers
         ? `<div class="vps-dockge-container-list">${containers}</div>`
@@ -771,6 +906,80 @@ function renderVpsDockgeStacks() {
     return;
   }
   _renderVpsDockgeStackRows();
+}
+
+function _updateVpsDockgeMetricsDom() {
+  document.querySelectorAll('[data-vps-dockge-metrics-stack]').forEach(el => {
+    el.innerHTML = _vpsDockgeMetricsBarsContent(el.dataset.vpsDockgeMetricsStack || '');
+  });
+}
+
+function _vpsDockgeApplyMetrics(data) {
+  const metricByStack = new Map((data.stacks || []).map(item => [item.stack_name, item]));
+  const pulseSeq = _vpsDockgeMetricsPulseSeq + 1;
+  _vpsDockgeMetricsPulseSeq = pulseSeq;
+
+  (_vpsDockgeStacks || []).forEach(stack => {
+    const stackName = stack.stack_name || '';
+    if (!stackName) return;
+    const hasMetric = metricByStack.has(stackName);
+    const metric = metricByStack.get(stackName) || {};
+    const prev = _vpsDockgeMetricsByStack.get(stackName) || { samples: [] };
+    const memoryBytes = Math.max(0, Number(metric.memory_bytes) || 0);
+    const cpuDockerPercent = Math.max(0, Number(metric.cpu_docker_percent) || 0);
+    const cpuPercent = _vpsDockgeScaleCpuPercent(metric);
+    const memoryPercent = _vpsDockgeScaleMemoryPercent(memoryBytes);
+    const showMotion = hasMetric && _vpsDockgeStackShowsResourceMotion(stack);
+    const samples = [...(prev.samples || []), {
+      cpu_percent: cpuPercent,
+      cpu_cores: cpuDockerPercent / 100,
+      memory_percent: memoryPercent,
+      memory_bytes: memoryBytes,
+      sampled_at: data.updated_at || new Date().toISOString(),
+    }].slice(-_VPS_DOCKGE_METRICS_WINDOW);
+    _vpsDockgeMetricsByStack.set(stackName, {
+      samples,
+      pulseSeq: showMotion ? pulseSeq : 0,
+      showMotion,
+      trace: showMotion ? {
+        cpu_percent: cpuPercent,
+        cpu_cores: cpuDockerPercent / 100,
+        memory_percent: memoryPercent,
+        memory_bytes: memoryBytes,
+      } : null,
+      updated_at: data.updated_at || '',
+    });
+  });
+  _updateVpsDockgeMetricsDom();
+}
+
+async function loadVpsDockgeMetrics() {
+  if (_vpsDockgeMetricsLoadPromise) return _vpsDockgeMetricsLoadPromise;
+  if (!_vpsDockgeIsActive() || document.visibilityState === 'hidden') return null;
+  _vpsDockgeMetricsLoadPromise = (async () => {
+    const r = await apiFetch('/api/v1/vps-dockge/metrics', { cache: 'no-store' });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || !data.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+    _vpsDockgeApplyMetrics(data);
+    return data;
+  })();
+  try {
+    return await _vpsDockgeMetricsLoadPromise;
+  } catch (e) {
+    console.warn('VPS Dockge metrics failed', e);
+    return null;
+  } finally {
+    _vpsDockgeMetricsLoadPromise = null;
+  }
+}
+
+function _ensureVpsDockgeMetricsPoll() {
+  if (_vpsDockgeMetricsPollInterval) return;
+  _vpsDockgeMetricsPollInterval = setInterval(() => {
+    if (_vpsDockgeIsActive() && document.visibilityState !== 'hidden') {
+      loadVpsDockgeMetrics();
+    }
+  }, _VPS_DOCKGE_METRICS_POLL_MS);
 }
 
 function _ensureVpsDockgePoll() {
@@ -795,12 +1004,14 @@ async function loadVpsDockgeStacks(options = {}) {
     status.hidden = false;
   }
   _ensureVpsDockgePoll();
+  _ensureVpsDockgeMetricsPoll();
   _vpsDockgeLoadPromise = (async () => {
     const r = await apiFetch('/api/v1/vps-dockge/stacks');
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
     _vpsDockgeStacks = data.stacks || [];
     renderVpsDockgeStacks();
+    if (_vpsDockgeIsActive()) loadVpsDockgeMetrics();
     if (status) {
       const via = data.ssh_host ? ` via ${data.ssh_host}` : '';
       status.textContent = `${_vpsDockgeStacks.length} stack${_vpsDockgeStacks.length === 1 ? '' : 's'} from ${data.stacks_dir || 'VPS Dockge'}${via}`;

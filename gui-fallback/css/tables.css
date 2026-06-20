@@ -1688,6 +1688,12 @@ tr.table-group-row td.table-group-cell {
 }
 
 .vps-dockge-stack-cell {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+.vps-dockge-stack-title {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -1987,6 +1993,12 @@ button.secondary.table-icon-btn.vps-dockge-download-btn.is-generating {
 }
 
 .lxc841-dockge-stack-cell {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+.lxc841-dockge-stack-title {
   display: flex;
   align-items: center;
   gap: 7px;
