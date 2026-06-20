@@ -21,7 +21,10 @@
 .disks-shell {
   display: block;
   overflow: auto;
-  padding: 14px;
+  /* Keep the first disks column flush with the tab panel edge so it lines up
+     with the split-menu row and App Config cards. Use inner card padding for
+     breathing room instead of shifting the whole page right. */
+  padding: 14px 0;
 }
 
 .disks-page {
@@ -37,6 +40,17 @@
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.disks-lift-block {
+  display: none;
+}
+
+.disks-lift-copy {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .disks-breadcrumbs {
@@ -115,6 +129,10 @@
 }
 
 .disks-hero__copy {
+  min-width: 0;
+}
+
+.disks-hero__stack {
   min-width: 0;
 }
 
@@ -242,6 +260,47 @@
   background: rgba(123, 130, 160, 0.12);
 }
 
+.disks-compact-pack {
+  display: none;
+  gap: 6px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.disks-compact-pack__item {
+  justify-content: flex-start;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.disks-compact-pack__item--eyebrow {
+  color: var(--text-dim);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.disks-compact-pack__item--primary {
+  border-color: rgba(var(--glyph-gold-rgb), 0.48);
+  color: var(--glyph-gold);
+  font-weight: 700;
+}
+
+.disks-compact-pack__item--accent {
+  border-color: rgba(91, 156, 246, 0.32);
+  color: rgba(222, 231, 255, 0.94);
+}
+
+.disks-compact-pack__item.is-wide {
+  min-height: 0;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  white-space: normal;
+  line-height: 1.3;
+}
+
 .disks-facts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
@@ -270,6 +329,68 @@
   font-size: 12px;
   line-height: 1.35;
   overflow-wrap: anywhere;
+}
+
+.disks-facts.disks-facts--compact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.disks-facts.disks-facts--compact .disks-facts__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.disks-facts.disks-facts--compact .disks-facts__label {
+  flex: 0 0 auto;
+  line-height: 1;
+}
+
+.disks-facts.disks-facts--compact .disks-facts__value {
+  flex: 0 1 auto;
+  line-height: 1.2;
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
+.disks-facts.disks-facts--compact .disks-facts__item.is-wide {
+  display: grid;
+  gap: 3px;
+  min-height: 0;
+  border-radius: 12px;
+  white-space: normal;
+}
+
+.disks-facts.disks-facts--compact .disks-facts__item.is-wide .disks-facts__value {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.disks-hero__meter-meta.is-collapsed,
+.disks-facts__status-inline {
+  display: none;
+}
+
+.disks-facts.disks-facts--compact .disks-facts__status-inline.is-active {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  order: 9999;
+  min-width: 0;
+  margin-left: auto;
+  align-self: flex-end;
+}
+
+.disks-facts.disks-facts--compact .disks-facts__status-inline.is-active .disks-pill {
+  padding-left: 6px;
+  padding-right: 6px;
 }
 
 .disks-source-issues {
@@ -343,8 +464,16 @@
   flex-wrap: wrap;
 }
 
-.disks-tree__path {
+.disks-tree .docs-tree-path.disks-tree__path {
+  display: block;
   min-width: 0;
+  width: 100%;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  line-height: 1.35;
 }
 
 .disks-tree .docs-tree-panel {
@@ -379,15 +508,20 @@
   outline: none;
 }
 
-.disks-tree__download-btn {
-  --table-action-color: var(--text-dim);
-  --table-action-rgb: 123, 130, 160;
-  cursor: not-allowed;
-  opacity: 0.56;
+.disks-tree__file-name {
+  color: var(--text);
 }
 
-button.disks-tree__download-btn:disabled {
-  pointer-events: none;
+.disks-tree__file-name:hover,
+.disks-tree__file-name:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-style: dashed;
+}
+
+.disks-tree__download-btn {
+  --table-action-color: var(--accent);
+  --table-action-rgb: 91, 156, 246;
 }
 
 .disks-tree__error {
@@ -475,6 +609,166 @@ button.disks-tree__download-btn:disabled {
   border-color: rgba(230, 168, 23, 0.42);
   background: rgba(230, 168, 23, 0.12);
   outline: none;
+}
+
+.disks-pin-modal .hub-modal-body {
+  display: grid;
+  gap: 14px;
+}
+
+.disks-pin-display {
+  min-height: 72px;
+  padding: 12px 16px;
+  border: 1px solid rgba(255, 63, 63, 0.45);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 50% 10%, rgba(255, 70, 70, 0.18), transparent 42%),
+    rgba(12, 0, 0, 0.72);
+  box-shadow:
+    inset 0 0 26px rgba(255, 0, 0, 0.18),
+    0 0 24px rgba(255, 0, 0, 0.12);
+  color: #ff3131;
+  font-family: "DSEG7 Classic", "Segment7", "Courier New", monospace;
+  font-size: 46px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  text-align: center;
+  text-shadow:
+    0 0 6px rgba(255, 49, 49, 0.9),
+    0 0 18px rgba(255, 49, 49, 0.55);
+  user-select: none;
+}
+
+.disks-pin-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.disks-pin-keypad button {
+  min-height: 58px;
+  border: 1px solid rgba(255, 63, 63, 0.28);
+  border-radius: 8px;
+  background: rgba(20, 4, 8, 0.78);
+  color: #ffd7d7;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.disks-pin-keypad button:hover,
+.disks-pin-keypad button:focus-visible {
+  border-color: rgba(255, 63, 63, 0.6);
+  background: rgba(255, 63, 63, 0.14);
+  outline: none;
+}
+
+.disks-pin-status,
+.disks-file-viewer__status {
+  min-height: 1.4em;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.disks-pin-status[data-tone="error"],
+.disks-file-viewer__status[data-tone="error"] {
+  color: var(--err);
+}
+
+.disks-pin-status[data-tone="warn"],
+.disks-file-viewer__status[data-tone="warn"] {
+  color: var(--warn);
+}
+
+.disks-pin-status[data-tone="ok"],
+.disks-file-viewer__status[data-tone="ok"] {
+  color: var(--ok);
+}
+
+.disks-file-viewer {
+  display: grid;
+  gap: 10px;
+}
+
+.disks-file-viewer__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.disks-file-viewer__meta span {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 4px 9px;
+  border: 1px solid rgba(91, 156, 246, 0.24);
+  border-radius: 999px;
+  background: rgba(91, 156, 246, 0.08);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.disks-file-viewer__content {
+  min-height: min(58vh, 560px);
+  border: 1px solid rgba(91, 156, 246, 0.18);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.24);
+  overflow: auto;
+}
+
+.disks-file-viewer__preview {
+  min-height: min(58vh, 560px);
+  padding: 14px;
+}
+
+.disks-file-viewer__pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.disks-file-viewer__editor {
+  display: block;
+  width: 100%;
+  min-height: min(58vh, 560px);
+  padding: 14px;
+  border: 0;
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.disks-file-viewer__editor[hidden],
+.disks-file-viewer__preview[hidden] {
+  display: none;
+}
+
+.disks-file-viewer__image,
+.disks-file-viewer__video {
+  display: block;
+  max-width: 100%;
+  max-height: min(58vh, 560px);
+  margin: 0 auto;
+  border-radius: 8px;
+}
+
+.disks-file-viewer audio {
+  width: 100%;
+}
+
+.disks-file-viewer__pdf {
+  width: 100%;
+  min-height: min(58vh, 560px);
+  border: 0;
 }
 
 .disks-group {
@@ -753,6 +1047,19 @@ button.disks-tree__download-btn:disabled {
   line-height: 1;
 }
 
+.disks-card__title-usage {
+  display: none;
+  align-items: center;
+  min-height: 22px;
+  margin-left: 4px;
+  min-width: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .disks-card__subtitle {
   margin-top: 4px;
   color: var(--text-dim);
@@ -874,10 +1181,23 @@ button.disks-tree__download-btn:disabled {
   gap: 6px;
 }
 
+.disks-card .disks-facts.disks-facts--desktop-packed,
+.disks-hero .disks-facts.disks-facts--desktop-packed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
 .disks-card .disks-facts__item {
   gap: 3px;
   min-height: 0;
   padding: 7px 10px;
+}
+
+.disks-card .disks-facts.disks-facts--desktop-packed .disks-facts__item,
+.disks-hero .disks-facts.disks-facts--desktop-packed .disks-facts__item {
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .disks-card .disks-facts__item--full,
@@ -924,6 +1244,7 @@ button.disks-tree__download-btn:disabled {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  margin-left: auto;
   color: rgba(255, 224, 148, 0.96);
   cursor: pointer;
   user-select: none;
@@ -1265,15 +1586,43 @@ button.disks-tree__download-btn:disabled {
 
 @media (max-width: 600px) {
   .disks-shell {
-    padding: 12px;
+    padding: 8px 0 10px;
   }
 
   .disks-page {
-    gap: 14px;
+    gap: 12px;
   }
 
   .disks-hero {
-    padding: 14px;
+    padding: 12px;
+  }
+
+  .disks-hero.is-compact-icon-small .disks-hero__head {
+    gap: 10px;
+  }
+
+  .disks-hero.is-compact-icon-small .disks-hero__icon-wrap {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+  }
+
+  .disks-hero.is-compact-icon-small .disks-hero__icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .disks-hero__compact-pack {
+    display: flex;
+    margin-bottom: 8px;
+  }
+
+  .disks-hero__stack {
+    display: none;
+  }
+
+  .disks-hero__pct {
+    display: none;
   }
 
   .disks-card-grid {
@@ -1301,9 +1650,211 @@ button.disks-tree__download-btn:disabled {
     width: 100%;
   }
 
-  .disks-card__footer {
-    align-items: flex-start;
-    flex-direction: column;
+  .disks-pin-display {
+    min-height: 62px;
+    font-size: 38px;
   }
 
+  .disks-pin-keypad {
+    gap: 8px;
+  }
+
+  .disks-pin-keypad button {
+    min-height: 52px;
+    font-size: 20px;
+  }
+
+  .disks-file-viewer__content,
+  .disks-file-viewer__preview,
+  .disks-file-viewer__editor,
+  .disks-file-viewer__pdf {
+    min-height: min(54vh, 480px);
+  }
+
+  .disks-card__footer {
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .disks-card__footer-copy {
+    flex-wrap: nowrap;
+  }
+
+  .disks-card__footer-action {
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+  .disks-tree__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .disks-tree__toolbar-actions {
+    order: 1;
+    margin-left: auto;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+  }
+
+  .disks-tree__path {
+    order: 2;
+    flex: 1 0 100%;
+    width: 100%;
+  }
+
+  .disks-tree__relative {
+    display: none;
+  }
+
+  .disks-card[data-disks-inline-title-usage="true"] .disks-card__title-usage {
+    display: inline-flex;
+  }
+
+  .disks-card[data-disks-inline-title-usage="true"] .disks-card__usage {
+    display: none;
+  }
+
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-disks {
+    display: flex;
+    flex: 1 1 auto;
+    width: auto;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-disks .disks-page__chrome--lifted {
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-disks .disks-page__chrome--lift-note {
+    display: block;
+  }
+
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-disks .disks-breadcrumbs {
+    width: 100%;
+    gap: 4px 6px;
+    align-items: flex-start;
+  }
+
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-disks .disks-breadcrumbs__item,
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-disks .disks-back-btn {
+    padding: 4px 9px;
+    font-size: 11px;
+  }
+
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-disks .disks-breadcrumbs__sep {
+    font-size: 11px;
+    line-height: 24px;
+  }
+
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #tab-disks.active .disks-page__chrome--in-shell {
+    display: none;
+  }
+
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #tab-disks.active > #disks-status {
+    margin: 0 0 2px;
+    padding: 0;
+    line-height: 1.25;
+  }
+
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #tab-disks.active > .body-shade-handle {
+    margin-top: -4px;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 600px) and (pointer: coarse),
+       (orientation: landscape) and (max-height: 600px) and (hover: none),
+       (orientation: landscape) and (max-height: 600px) and (max-width: 1000px) {
+  .disks-shell {
+    padding: 6px 0 8px;
+  }
+
+  .disks-page {
+    gap: 10px;
+  }
+
+  .disks-hero {
+    padding: 12px;
+  }
+
+  .disks-hero.is-compact-icon-small .disks-hero__head {
+    gap: 10px;
+  }
+
+  .disks-hero.is-compact-icon-small .disks-hero__icon-wrap {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+  }
+
+  .disks-hero.is-compact-icon-small .disks-hero__icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .disks-hero__compact-pack {
+    display: flex;
+    margin-bottom: 8px;
+  }
+
+  .disks-hero__stack {
+    display: none;
+  }
+
+  .disks-hero__pct {
+    display: none;
+  }
+
+  #page-controls-slot #s25-lift-disks {
+    display: flex;
+    flex: 1 1 220px;
+    min-width: 0;
+  }
+
+  #page-controls-slot #s25-lift-disks .disks-page__chrome--lifted {
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  #page-controls-slot #s25-lift-disks .disks-page__chrome--lift-note {
+    display: block;
+  }
+
+  #page-controls-slot #s25-lift-disks .disks-breadcrumbs {
+    width: 100%;
+    gap: 4px 6px;
+    align-items: flex-start;
+  }
+
+  #page-controls-slot #s25-lift-disks .disks-breadcrumbs__item,
+  #page-controls-slot #s25-lift-disks .disks-back-btn {
+    padding: 4px 9px;
+    font-size: 11px;
+  }
+
+  #page-controls-slot #s25-lift-disks .disks-breadcrumbs__sep {
+    font-size: 11px;
+    line-height: 24px;
+  }
+
+  #tab-disks.active .disks-page__chrome--in-shell {
+    display: none;
+  }
+
+  #tab-disks.active > #disks-status {
+    margin: 0 0 2px;
+    padding: 0;
+    line-height: 1.25;
+  }
+
+  #tab-disks.active > .body-shade-handle {
+    margin-top: -4px;
+  }
 }

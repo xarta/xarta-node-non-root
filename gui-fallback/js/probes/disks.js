@@ -17,6 +17,15 @@ let _disksNoteSaving = new Set();
 let _disksNoteErrors = new Map();
 let _disksNoteSaveTimers = new Map();
 let _disksOfflineBrowseState = null;
+let _disksPinToken = '';
+let _disksPinTokenExpiresAt = 0;
+let _disksPinDialogState = null;
+let _disksLastFileTap = { key: '', at: 0 };
+let _disksFileViewerState = null;
+let _disksPretextModule = null;
+let _disksPretextLoadPromise = null;
+let _disksPretextLoadFailed = false;
+let _disksPretextPreparedCache = new Map();
 
 function _disksHubModalApi() {
   return typeof HubModal !== 'undefined' ? HubModal : null;
@@ -145,6 +154,18 @@ const _DISKS_FACT_PRIORITIES = {
     'source',
   ],
 };
+const _DISKS_COMPACT_LAYOUT_MEDIA = [
+  '(max-width: 600px)',
+  '(orientation: landscape) and (max-height: 600px) and (pointer: coarse)',
+  '(orientation: landscape) and (max-height: 600px) and (hover: none)',
+  '(orientation: landscape) and (max-height: 600px) and (max-width: 1000px)',
+].join(', ');
+const _DISKS_PRETEXT_IMPORT_VERSION = '20260619-compact-1';
+const _DISKS_COMPACT_ALWAYS_WIDE_FACTS = new Set([
+  'description',
+  'guest-roles',
+  'guest-usage-source',
+]);
 
 function _disksEl(id) {
   return document.getElementById(id);
@@ -157,6 +178,88 @@ function _disksEsc(text) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function _disksCompactLayoutActive() {
+  return typeof window.matchMedia === 'function'
+    && window.matchMedia(_DISKS_COMPACT_LAYOUT_MEDIA).matches;
+}
+
+function _disksLoadPretextModule() {
+  if (_disksPretextModule) return Promise.resolve(_disksPretextModule);
+  if (_disksPretextLoadFailed) return Promise.resolve(null);
+  if (!_disksPretextLoadPromise) {
+    _disksPretextLoadPromise = import(`/fallback-ui/vendor/pretext/layout.js?v=${_DISKS_PRETEXT_IMPORT_VERSION}`)
+      .then(mod => {
+        if (!mod || typeof mod.prepare !== 'function' || typeof mod.measureNaturalWidth !== 'function') {
+          throw new Error('Pretext layout module did not expose prepare/measureNaturalWidth.');
+        }
+        _disksPretextModule = mod;
+        _disksPretextLoadFailed = false;
+        _disksScheduleLayoutPass();
+        return mod;
+      })
+      .catch(err => {
+        _disksPretextLoadFailed = true;
+        console.error('Failed to load disks pretext module', err);
+        return null;
+      });
+  }
+  return _disksPretextLoadPromise;
+}
+
+function _disksCanvasFontFromStyle(style) {
+  if (!style) return '400 12px sans-serif';
+  const parts = [];
+  const fontStyle = String(style.fontStyle || '').trim();
+  const fontWeight = String(style.fontWeight || '').trim();
+  const fontSize = String(style.fontSize || '').trim();
+  const fontFamily = String(style.fontFamily || '').trim();
+  if (fontStyle && fontStyle !== 'normal') parts.push(fontStyle);
+  if (fontWeight && fontWeight !== 'normal') parts.push(fontWeight);
+  parts.push(fontSize || '12px');
+  parts.push(fontFamily || 'sans-serif');
+  return parts.join(' ');
+}
+
+function _disksLetterSpacingPx(style) {
+  const raw = String(style?.letterSpacing || '').trim();
+  if (!raw || raw === 'normal') return 0;
+  const value = Number.parseFloat(raw);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function _disksMeasureTextWidth(pretext, text, style) {
+  const value = String(text || '');
+  if (!pretext || !value) return 0;
+  const font = _disksCanvasFontFromStyle(style);
+  const letterSpacing = _disksLetterSpacingPx(style);
+  const cacheKey = `${font}\u0000${letterSpacing}\u0000${value}`;
+  const cached = _disksPretextPreparedCache.get(cacheKey);
+  if (cached) {
+    return pretext.measureNaturalWidth(cached);
+  }
+  const prepared = pretext.prepare(
+    value,
+    font,
+    letterSpacing ? { letterSpacing } : undefined,
+  );
+  _disksPretextPreparedCache.set(cacheKey, prepared);
+  return pretext.measureNaturalWidth(prepared);
+}
+
+function _disksHorizontalChromeWidth(style) {
+  if (!style) return 0;
+  const props = [
+    'paddingLeft',
+    'paddingRight',
+    'borderLeftWidth',
+    'borderRightWidth',
+  ];
+  return props.reduce((sum, prop) => {
+    const value = Number.parseFloat(style[prop] || '0');
+    return sum + (Number.isFinite(value) ? value : 0);
+  }, 0);
 }
 
 function _disksFormatBytes(bytes) {
@@ -228,11 +331,18 @@ function _disksUsagePctLabel(node, pct) {
   return `${pct.toFixed(1)}% used`;
 }
 
+function _disksInlineTitleUsageText(node) {
+  if (!node || _disksPartialUsage(node) || node.used_bytes != null || node.total_bytes == null) return '';
+  if (typeof node.usage_text === 'string' && node.usage_text.trim()) return '';
+  return _disksUsageText(node);
+}
+
 function _disksStatusTone(status) {
-  if (status === 'ok') return 'ok';
-  if (status === 'warn') return 'warn';
-  if (status === 'fail') return 'fail';
-  if (status === 'stale') return 'stale';
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'ok') return 'ok';
+  if (normalized === 'warn') return 'warn';
+  if (normalized === 'fail') return 'fail';
+  if (normalized === 'stale') return 'stale';
   return 'info';
 }
 
@@ -272,6 +382,7 @@ function _disksOfflineBrowserMeta(node) {
     volume_ref: volumeRef,
     volume_label: String(raw?.volume_label || '').trim(),
     slot: String(raw?.slot || '').trim(),
+    sensitive_hint: String(raw?.sensitive_hint || '').trim(),
   };
 }
 
@@ -304,6 +415,7 @@ function _disksFilesystemBrowserMeta(node) {
     filesystem: String(raw?.filesystem || '').trim(),
     source_path: String(raw?.source_path || '').trim(),
     dataset_name: String(raw?.dataset_name || '').trim(),
+    sensitive_hint: String(raw?.sensitive_hint || '').trim(),
     download_available: !!raw?.download_available,
   };
 }
@@ -320,6 +432,32 @@ function _disksFilesystemTreeCacheKey(meta, path) {
     ? `${meta.host}::device_ro::${meta.source_path || meta.root_path}`
     : `${meta.host}::mounted::${meta.root_path}`;
   return `${treeIdentity}::${_disksNormalizeRelativePath(path)}`;
+}
+
+function _disksFilesystemAccessPayload(meta, path, pinToken = '') {
+  return {
+    host: String(meta?.host || '').trim(),
+    root_path: String(meta?.root_path || '/').trim() || '/',
+    browse_mode: String(meta?.browse_mode || '').trim().toLowerCase() === 'device_ro' ? 'device_ro' : 'mounted',
+    source_path: String(meta?.source_path || '').trim() || null,
+    path: _disksNormalizeRelativePath(path) === '.' ? null : _disksNormalizeRelativePath(path),
+    filesystem: String(meta?.filesystem || '').trim(),
+    dataset_name: String(meta?.dataset_name || '').trim(),
+    sensitive_hint: String(meta?.sensitive_hint || '').trim(),
+    pin_token: pinToken || null,
+  };
+}
+
+function _disksFilesystemAccessSensitive(meta, path = '.') {
+  const haystack = [
+    meta?.root_path,
+    meta?.root_display,
+    meta?.source_path,
+    meta?.dataset_name,
+    meta?.sensitive_hint,
+    path,
+  ].join(' ').toLowerCase();
+  return haystack.includes('private');
 }
 
 function _disksFilesystemTreePathForNode(node, meta) {
@@ -373,14 +511,25 @@ function _disksFilesystemTreeStatusText(data) {
   return `${total} item${total === 1 ? '' : 's'} in this folder`;
 }
 
-function _disksFilesystemTreeRowHtml(entry) {
+function _disksFilesystemTreePathHtml(path) {
+  const text = String(path || '').trim();
+  if (!text) return '';
+  if (text === '/') return '/';
+  return text.split('/').map(part => _disksEsc(part)).join('/<wbr>');
+}
+
+function _disksFilesystemTreeRowHtml(entry, actionScope = 'tree') {
+  const actionAttr = actionScope === 'offline' ? 'data-disks-offline-action' : 'data-disks-tree-action';
   const type = String(entry?.type || '').trim() === 'folder' ? 'folder' : 'file';
   const browseable = type === 'folder' && !!entry?.browseable;
   const path = _disksNormalizeRelativePath(entry?.path || '.');
   const detailText = _disksFilesystemTreeEntryMetaText(entry);
+  const displayName = String(entry?.name || path).trim() || path;
+  const action = browseable ? 'browse' : 'file-tap';
+  const title = browseable ? `Open ${displayName}` : `Double-tap to view ${displayName}`;
   const nameHtml = browseable
-    ? `<button class="docs-tree-name bp-font-role-docs-markdown" type="button" data-disks-tree-action="browse" data-path="${_disksEsc(path)}" title="${_disksEsc(`Open ${entry?.name || 'folder'}`)}">${_disksEsc(entry?.name || path)}</button>`
-    : `<span class="docs-tree-name disks-tree__name-static bp-font-role-docs-markdown">${_disksEsc(entry?.name || path)}</span>`;
+    ? `<button class="docs-tree-name bp-font-role-docs-markdown" type="button" ${actionAttr}="${action}" data-path="${_disksEsc(path)}" title="${_disksEsc(title)}">${_disksEsc(displayName)}</button>`
+    : `<button class="docs-tree-name disks-tree__file-name bp-font-role-docs-markdown" type="button" ${actionAttr}="${action}" data-path="${_disksEsc(path)}" title="${_disksEsc(title)}">${_disksEsc(displayName)}</button>`;
   const labelHtml = detailText
     ? `
         <span class="docs-tree-label">
@@ -398,7 +547,7 @@ function _disksFilesystemTreeRowHtml(entry) {
       <span class="docs-tree-actions">
         ${linkBadge}
         ${typeBadge}
-        <button class="secondary table-icon-btn table-icon-btn--pull disks-tree__download-btn" type="button" disabled title="Download is coming later" aria-label="Download is coming later"></button>
+        <button class="secondary table-icon-btn table-icon-btn--pull disks-tree__download-btn" type="button" ${actionAttr}="download" data-path="${_disksEsc(path)}" data-entry-type="${_disksEsc(type)}" title="${_disksEsc(`Download ${displayName}`)}" aria-label="${_disksEsc(`Download ${displayName}`)}"></button>
       </span>
     </div>
   `;
@@ -457,7 +606,7 @@ function _disksFilesystemTreeSectionHtml(node) {
       <div class="docs-tree-shell disks-tree__shell">
         <div class="disks-tree__toolbar">
           <button class="hub-modal-btn secondary" type="button" data-disks-tree-action="up"${canGoUp ? '' : ' disabled'}>Up</button>
-          <code class="docs-tree-path disks-tree__path">${_disksEsc(absolutePath)}</code>
+          <code class="docs-tree-path disks-tree__path">${_disksFilesystemTreePathHtml(absolutePath)}</code>
           <div class="disks-tree__toolbar-actions">
             <button class="hub-modal-btn secondary" type="button" data-disks-tree-action="root"${rootDisabled ? ' disabled' : ''}>Root</button>
             <button class="hub-modal-btn secondary" type="button" data-disks-tree-action="refresh">Refresh</button>
@@ -532,12 +681,29 @@ function _disksEnsureFilesystemTree(node) {
       root_path: meta.root_path,
       browse_mode: meta.browse_mode,
       source_path: meta.browse_mode === 'device_ro' ? meta.source_path : null,
+      filesystem: meta.filesystem,
+      dataset_name: meta.dataset_name,
+      sensitive_hint: meta.sensitive_hint,
+      pin_token: _disksFilesystemAccessSensitive(meta, currentPath) ? _disksValidPinToken() : null,
       path: currentPath === '.' ? null : currentPath,
     }),
   })
     .then(async response => {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (response.status === 423) {
+          const lockedMessage = data.detail || 'PIN required for this filesystem tree.';
+          _disksFilesystemTreeCache.set(cacheKey, { ok: false, locked: true, error: lockedMessage });
+          _disksRequestPin('PIN required for this filesystem tree.').then(() => {
+            _disksFilesystemTreeCache.delete(cacheKey);
+            _disksFilesystemTreeLoadingKeys.delete(cacheKey);
+            _disksEnsureFilesystemTree(node);
+          }).catch(err => {
+            _disksFilesystemTreeCache.set(cacheKey, { ok: false, locked: true, error: err?.message || lockedMessage });
+            if (_disksCurrentNodeId === String(node?.id || '')) renderDisksPage();
+          });
+          return Promise.reject(new Error('__PIN_PROMPTED__'));
+        }
         throw new Error(data.detail || `HTTP ${response.status}`);
       }
       _disksFilesystemTreeCache.set(cacheKey, { ok: true, data });
@@ -547,6 +713,7 @@ function _disksEnsureFilesystemTree(node) {
       );
     })
     .catch(err => {
+      if (err && err.message === '__PIN_PROMPTED__') return;
       const message = err && err.message ? err.message : String(err || 'Filesystem tree failed');
       _disksFilesystemTreeCache.set(cacheKey, { ok: false, error: message });
     })
@@ -554,6 +721,446 @@ function _disksEnsureFilesystemTree(node) {
       _disksFilesystemTreeLoadingKeys.delete(cacheKey);
       if (_disksCurrentNodeId === String(node?.id || '')) renderDisksPage();
     });
+}
+
+function _disksValidPinToken() {
+  if (!_disksPinToken || !_disksPinTokenExpiresAt) return '';
+  if (Date.now() >= _disksPinTokenExpiresAt - 3000) {
+    _disksPinToken = '';
+    _disksPinTokenExpiresAt = 0;
+    return '';
+  }
+  return _disksPinToken;
+}
+
+function _disksSetPinDisplay() {
+  const display = _disksEl('disks-pin-display');
+  const status = _disksEl('disks-pin-status');
+  const digits = String(_disksPinDialogState?.pin || '').padEnd(6, ' ');
+  if (display) {
+    display.textContent = digits.split('').map(ch => (ch.trim() ? ch : '-')).join('');
+    display.dataset.length = String(_disksPinDialogState?.pin?.length || 0);
+  }
+  if (status && !_disksPinDialogState?.busy) {
+    status.textContent = _disksPinDialogState?.message || '';
+    status.dataset.tone = _disksPinDialogState?.tone || '';
+  }
+}
+
+function _disksClosePinDialog(error = null) {
+  const dialog = _disksEl('disks-pin-modal');
+  const state = _disksPinDialogState;
+  _disksPinDialogState = null;
+  try {
+    const hubModal = _disksHubModalApi();
+    if (dialog && hubModal && typeof hubModal.close === 'function') hubModal.close(dialog);
+    else dialog?.close?.();
+  } catch (_) {
+    dialog?.removeAttribute('open');
+  }
+  if (state) {
+    if (error) state.reject(error);
+    else state.reject(new Error('PIN entry cancelled'));
+  }
+}
+
+function _disksOpenPinDialog(message) {
+  const dialog = _disksEl('disks-pin-modal');
+  if (!dialog) return Promise.reject(new Error('PIN dialog is unavailable'));
+  if (_disksPinDialogState?.promise) return _disksPinDialogState.promise;
+  let resolveFn = null;
+  let rejectFn = null;
+  const promise = new Promise((resolve, reject) => {
+    resolveFn = resolve;
+    rejectFn = reject;
+  });
+  _disksPinDialogState = {
+    pin: '',
+    message: message || 'Enter the 6-digit filesystem PIN.',
+    tone: '',
+    busy: false,
+    resolve: resolveFn,
+    reject: rejectFn,
+    promise,
+  };
+  _disksSetPinDisplay();
+  try {
+    const hubModal = _disksHubModalApi();
+    if (hubModal && typeof hubModal.open === 'function') {
+      hubModal.open(dialog);
+    } else if (typeof dialog.showModal === 'function' && !dialog.open) {
+      dialog.showModal();
+    } else {
+      dialog.setAttribute('open', 'open');
+    }
+  } catch (_) {
+    dialog.setAttribute('open', 'open');
+  }
+  return promise;
+}
+
+async function _disksSubmitPin() {
+  const state = _disksPinDialogState;
+  if (!state || state.busy) return;
+  if (!/^\d{6}$/.test(state.pin || '')) {
+    state.message = 'Enter all 6 digits.';
+    state.tone = 'error';
+    _disksSetPinDisplay();
+    return;
+  }
+  state.busy = true;
+  const status = _disksEl('disks-pin-status');
+  if (status) {
+    status.textContent = 'Checking PIN...';
+    status.dataset.tone = 'warn';
+  }
+  try {
+    const response = await apiFetch('/api/v1/disks/filesystem/pin/unlock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: state.pin }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
+    _disksPinToken = String(payload.token || '').trim();
+    const expires = Date.parse(payload.expires_at || '');
+    _disksPinTokenExpiresAt = Number.isFinite(expires) ? expires : Date.now() + 10 * 60 * 1000;
+    const resolver = state.resolve;
+    _disksPinDialogState = null;
+    const dialog = _disksEl('disks-pin-modal');
+    try {
+      const hubModal = _disksHubModalApi();
+      if (dialog && hubModal && typeof hubModal.close === 'function') hubModal.close(dialog);
+      else dialog?.close?.();
+    } catch (_) {
+      dialog?.removeAttribute('open');
+    }
+    resolver(_disksPinToken);
+  } catch (err) {
+    state.busy = false;
+    state.pin = '';
+    state.message = err?.message || 'PIN was not accepted.';
+    state.tone = 'error';
+    _disksSetPinDisplay();
+  }
+}
+
+function _disksRequestPin(message = '') {
+  const current = _disksValidPinToken();
+  if (current) return Promise.resolve(current);
+  return _disksOpenPinDialog(message);
+}
+
+async function _disksFetchProtectedJson(url, baseBody, options = {}) {
+  let body = { ...baseBody };
+  const needsPin = !!options.sensitive;
+  if (needsPin) body.pin_token = await _disksRequestPin(options.pinMessage || '');
+  let response = await apiFetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  let payload = await response.json().catch(() => ({}));
+  if (response.status === 423) {
+    _disksPinToken = '';
+    _disksPinTokenExpiresAt = 0;
+    body = { ...baseBody, pin_token: await _disksRequestPin(options.pinMessage || '') };
+    response = await apiFetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    payload = await response.json().catch(() => ({}));
+  }
+  if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
+  return payload;
+}
+
+async function _disksFetchProtectedBlob(url, baseBody, options = {}) {
+  let body = { ...baseBody };
+  if (options.sensitive) body.pin_token = await _disksRequestPin(options.pinMessage || '');
+  let response = await apiFetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (response.status === 423) {
+    _disksPinToken = '';
+    _disksPinTokenExpiresAt = 0;
+    body = { ...baseBody, pin_token: await _disksRequestPin(options.pinMessage || '') };
+    response = await apiFetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.detail || `HTTP ${response.status}`);
+  }
+  return {
+    blob: await response.blob(),
+    filename: _disksContentDispositionFilename(response.headers.get('Content-Disposition') || ''),
+    transfer: response.headers.get('X-Blueprints-Disks-Transfer') || '',
+  };
+}
+
+function _disksContentDispositionFilename(value) {
+  const match = String(value || '').match(/filename="([^"]+)"/i);
+  return match ? match[1] : '';
+}
+
+function _disksSetFileStatus(message, tone = '') {
+  const status = _disksEl('disks-file-status');
+  if (!status) return;
+  status.textContent = message || '';
+  status.dataset.tone = tone || '';
+}
+
+function _disksClearFileViewer() {
+  if (_disksFileViewerState?.objectUrl) {
+    URL.revokeObjectURL(_disksFileViewerState.objectUrl);
+  }
+  _disksFileViewerState = null;
+  const editor = _disksEl('disks-file-editor');
+  if (editor) {
+    editor.value = '';
+    editor.hidden = true;
+  }
+  const preview = _disksEl('disks-file-preview');
+  if (preview) {
+    preview.innerHTML = '';
+    preview.hidden = false;
+  }
+  const save = _disksEl('disks-file-save');
+  if (save) save.hidden = true;
+  _disksSetFileStatus('');
+}
+
+function _disksCloseFileViewer() {
+  const dialog = _disksEl('disks-file-modal');
+  _disksClearFileViewer();
+  try {
+    const hubModal = _disksHubModalApi();
+    if (dialog && hubModal && typeof hubModal.close === 'function') hubModal.close(dialog);
+    else dialog?.close?.();
+  } catch (_) {
+    dialog?.removeAttribute('open');
+  }
+}
+
+function _disksRenderFilePreviewText(data) {
+  const preview = _disksEl('disks-file-preview');
+  if (!preview) return;
+  const text = String(data?.text || '');
+  const kind = String(data?.preview_kind || '').trim().toLowerCase();
+  if (kind === 'markdown' && typeof _mdToHtml === 'function') {
+    preview.innerHTML = _mdToHtml(text);
+    if (typeof _docsResolvePrevImgs === 'function') _docsResolvePrevImgs(preview);
+    return;
+  }
+  const pre = document.createElement('pre');
+  pre.className = 'disks-file-viewer__pre bp-font-role-docs-markdown';
+  pre.textContent = text;
+  preview.innerHTML = '';
+  preview.appendChild(pre);
+}
+
+async function _disksRenderFilePreviewMedia(meta, path, data) {
+  const preview = _disksEl('disks-file-preview');
+  if (!preview) return false;
+  const mime = String(data?.mime || '').trim().toLowerCase();
+  if (!mime.startsWith('image/') && !mime.startsWith('audio/') && !mime.startsWith('video/') && mime !== 'application/pdf') {
+    return false;
+  }
+  const baseBody = _disksFilesystemAccessPayload(meta, path, _disksValidPinToken());
+  const { blob } = await _disksFetchProtectedBlob('/api/v1/disks/filesystem/download', baseBody, {
+    sensitive: _disksFilesystemAccessSensitive(meta, path),
+    pinMessage: 'PIN required to preview this file.',
+  });
+  const url = URL.createObjectURL(blob);
+  if (_disksFileViewerState?.objectUrl) URL.revokeObjectURL(_disksFileViewerState.objectUrl);
+  _disksFileViewerState.objectUrl = url;
+  preview.innerHTML = '';
+  if (mime.startsWith('image/')) {
+    const img = document.createElement('img');
+    img.className = 'disks-file-viewer__image';
+    img.alt = String(data?.filename || 'file preview');
+    img.src = url;
+    preview.appendChild(img);
+    return true;
+  }
+  if (mime.startsWith('audio/')) {
+    const audio = document.createElement('audio');
+    audio.controls = true;
+    audio.preload = 'metadata';
+    audio.src = url;
+    preview.appendChild(audio);
+    return true;
+  }
+  if (mime.startsWith('video/')) {
+    const video = document.createElement('video');
+    video.className = 'disks-file-viewer__video';
+    video.controls = true;
+    video.preload = 'metadata';
+    video.src = url;
+    preview.appendChild(video);
+    return true;
+  }
+  const object = document.createElement('object');
+  object.className = 'disks-file-viewer__pdf';
+  object.type = 'application/pdf';
+  object.data = url;
+  object.textContent = 'PDF preview unavailable in this browser.';
+  preview.appendChild(object);
+  return true;
+}
+
+function _disksRenderFileMeta(data) {
+  const title = _disksEl('disks-file-title');
+  const meta = _disksEl('disks-file-meta');
+  if (title) title.textContent = String(data?.filename || data?.path || 'File viewer');
+  if (!meta) return;
+  const bits = [
+    String(data?.filesystem || '').toUpperCase(),
+    data?.size_bytes != null ? _disksFormatBytes(data.size_bytes) : '',
+    _disksFilesystemTreeFormatTimestamp(data?.modified_at),
+    data?.sensitive ? 'PIN protected' : '',
+  ].filter(Boolean);
+  meta.innerHTML = bits.map(bit => `<span>${_disksEsc(bit)}</span>`).join('');
+}
+
+async function _disksOpenFileViewer(meta, path) {
+  const dialog = _disksEl('disks-file-modal');
+  const preview = _disksEl('disks-file-preview');
+  const editor = _disksEl('disks-file-editor');
+  const save = _disksEl('disks-file-save');
+  const download = _disksEl('disks-file-download');
+  if (!dialog || !preview || !editor) return;
+  _disksClearFileViewer();
+  const baseBody = _disksFilesystemAccessPayload(meta, path, _disksValidPinToken());
+  _disksFileViewerState = {
+    meta,
+    path: _disksNormalizeRelativePath(path),
+    baseBody,
+    objectUrl: '',
+    dirty: false,
+    data: null,
+  };
+  preview.innerHTML = '<div class="docs-tree-loading">Loading file...</div>';
+  if (download) download.disabled = true;
+  if (save) save.hidden = true;
+  try {
+    const hubModal = _disksHubModalApi();
+    if (hubModal && typeof hubModal.open === 'function') {
+      hubModal.open(dialog, { onClose: _disksClearFileViewer });
+    } else if (typeof dialog.showModal === 'function' && !dialog.open) {
+      dialog.showModal();
+    } else {
+      dialog.setAttribute('open', 'open');
+    }
+  } catch (_) {
+    dialog.setAttribute('open', 'open');
+  }
+  try {
+    const data = await _disksFetchProtectedJson('/api/v1/disks/filesystem/preview', baseBody, {
+      sensitive: _disksFilesystemAccessSensitive(meta, path),
+      pinMessage: 'PIN required to preview this file.',
+    });
+    if (!_disksFileViewerState) return;
+    _disksFileViewerState.data = data;
+    _disksFileViewerState.baseBody = { ...baseBody, pin_token: _disksValidPinToken() || baseBody.pin_token };
+    _disksRenderFileMeta(data);
+    if (download) download.disabled = false;
+    preview.innerHTML = '';
+    const previewKind = String(data?.preview_kind || '').trim().toLowerCase();
+    if (previewKind === 'markdown' || previewKind === 'text') {
+      _disksRenderFilePreviewText(data);
+      editor.value = String(data?.text || '');
+      editor.hidden = true;
+      if (save) save.hidden = !data?.editable;
+    } else if (!(await _disksRenderFilePreviewMedia(meta, path, data))) {
+      preview.innerHTML = '<div class="matrix-chat-attachment-fallback"><strong>Preview unavailable</strong><span>Download is available for this file.</span></div>';
+    }
+    _disksSetFileStatus(data?.text_truncated ? 'Preview truncated; download has the full file.' : '', 'warn');
+  } catch (err) {
+    preview.innerHTML = '<div class="docs-tree-empty">Could not load this file.</div>';
+    _disksSetFileStatus(err?.message || 'File preview failed', 'error');
+  }
+}
+
+async function _disksDownloadFilesystemPath(meta, path) {
+  const baseBody = _disksFilesystemAccessPayload(meta, path, _disksValidPinToken());
+  const label = _disksNormalizeRelativePath(path);
+  _disksStatusMessage(`Preparing download for ${label === '.' ? 'root' : label}...`, 'info', true);
+  const { blob, filename, transfer } = await _disksFetchProtectedBlob('/api/v1/disks/filesystem/download', baseBody, {
+    sensitive: _disksFilesystemAccessSensitive(meta, path),
+    pinMessage: 'PIN required to download this item.',
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename || (label === '.' ? 'filesystem.tar.gz' : label.split('/').pop());
+  link.rel = 'noopener';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  _disksStatusMessage(`Download ready${transfer ? ` via ${transfer}` : ''}.`, 'ok');
+}
+
+async function _disksSaveFileViewer() {
+  const state = _disksFileViewerState;
+  const editor = _disksEl('disks-file-editor');
+  const save = _disksEl('disks-file-save');
+  if (!state || !editor || !state.data?.editable) return;
+  if (save) save.disabled = true;
+  _disksSetFileStatus('Saving file...', 'warn');
+  try {
+    const payload = {
+      ...state.baseBody,
+      pin_token: _disksValidPinToken() || state.baseBody.pin_token,
+      content: editor.value || '',
+    };
+    const data = await _disksFetchProtectedJson('/api/v1/disks/filesystem/save', payload, {
+      sensitive: _disksFilesystemAccessSensitive(state.meta, state.path),
+      pinMessage: 'PIN required to save this file.',
+    });
+    state.data = { ...state.data, ...data, text: editor.value || '' };
+    state.dirty = false;
+    _disksRenderFileMeta(state.data);
+    _disksRenderFilePreviewText(state.data);
+    _disksSetFileStatus('Saved.', 'ok');
+  } catch (err) {
+    _disksSetFileStatus(err?.message || 'Save failed', 'error');
+  } finally {
+    if (save) save.disabled = false;
+  }
+}
+
+function _disksToggleFileEditor() {
+  const state = _disksFileViewerState;
+  const preview = _disksEl('disks-file-preview');
+  const editor = _disksEl('disks-file-editor');
+  const toggle = _disksEl('disks-file-edit-toggle');
+  if (!state || !state.data?.editable || !preview || !editor) return;
+  const editing = editor.hidden;
+  editor.hidden = !editing;
+  preview.hidden = editing;
+  if (toggle) toggle.textContent = editing ? 'Preview' : 'Edit';
+}
+
+function _disksHandleFileTap(scope, meta, path) {
+  const cleanPath = _disksNormalizeRelativePath(path);
+  const key = `${scope}:${meta?.host || ''}:${meta?.root_path || ''}:${meta?.source_path || ''}:${cleanPath}`;
+  const now = Date.now();
+  if (_disksLastFileTap.key === key && now - _disksLastFileTap.at < 500) {
+    _disksLastFileTap = { key: '', at: 0 };
+    _disksOpenFileViewer(meta, cleanPath);
+    return;
+  }
+  _disksLastFileTap = { key, at: now };
+  _disksStatusMessage('Double-tap again to open the file viewer.', 'info');
 }
 
 function _disksIndexTree(node, parentId = '') {
@@ -578,6 +1185,82 @@ function _disksBreadcrumbs() {
     cursor = _disksParentById.get(cursor) || '';
   }
   return crumbs;
+}
+
+function _disksChromeState() {
+  const crumbs = _disksBreadcrumbs();
+  return {
+    crumbs,
+    backTarget: crumbs.length > 1 ? crumbs[crumbs.length - 2].id : '',
+  };
+}
+
+function _disksAtTopLevel() {
+  return _disksBreadcrumbs().length <= 1;
+}
+
+function _disksPortraitLiftModeActive() {
+  return typeof window.matchMedia === 'function'
+    && window.matchMedia('(max-width: 600px) and (orientation: portrait)').matches
+    && String(document?.documentElement?.dataset?.specialUiMode || '').trim() === 's25-stargate-touch-nav';
+}
+
+function _disksShouldLiftRootNote(node) {
+  return _disksAtTopLevel() && _disksPortraitLiftModeActive() && !!String(node?.note || '').trim();
+}
+
+function _disksBreadcrumbTrailHtml(items) {
+  return (Array.isArray(items) ? items : []).map(item => `
+    <button
+      type="button"
+      class="disks-breadcrumbs__item${item?.is_current ? ' is-current' : ''}"
+      data-disks-node="${_disksEsc(item?.id || '')}"
+    >${_disksEsc(item?.label || 'Item')}</button>
+  `).join('<span class="disks-breadcrumbs__sep">/</span>');
+}
+
+function _disksChromeHtml(options = {}) {
+  const chrome = _disksChromeState();
+  const crumbs = Array.isArray(chrome.crumbs) ? chrome.crumbs : [];
+  const backTarget = String(chrome.backTarget || '').trim();
+  const includeBackInTrail = !!options.includeBackInTrail && !!backTarget;
+  const suppressLoneRootCrumb = crumbs.length <= 1;
+  const trailItems = includeBackInTrail
+    ? [{ id: backTarget, label: 'Back', is_current: false }, ...(suppressLoneRootCrumb ? [] : crumbs.map((crumb, idx) => ({
+      id: crumb.id,
+      label: crumb.label,
+      is_current: idx === crumbs.length - 1,
+    })))]
+    : (suppressLoneRootCrumb ? [] : crumbs.map((crumb, idx) => ({
+      id: crumb.id,
+      label: crumb.label,
+      is_current: idx === crumbs.length - 1,
+    })));
+  const className = ['disks-page__chrome', String(options.className || '').trim()].filter(Boolean).join(' ');
+  const noteText = String(options.noteText || '').trim();
+  if (!trailItems.length && !backTarget && noteText) {
+    return `
+      <div class="${_disksEsc(`${className} disks-page__chrome--lift-note`)}">
+        <p class="disks-lift-copy">${_disksEsc(noteText)}</p>
+      </div>
+    `;
+  }
+  if (!trailItems.length && !backTarget) return '';
+  return `
+    <div class="${_disksEsc(className)}">
+      <div class="disks-breadcrumbs">
+        ${_disksBreadcrumbTrailHtml(trailItems)}
+      </div>
+      ${!includeBackInTrail && backTarget ? `<button type="button" class="disks-back-btn" data-disks-node="${_disksEsc(backTarget)}">Back</button>` : ''}
+    </div>
+  `;
+}
+
+function _disksStatusPillHtml(node) {
+  const label = String(node?.status || '').trim();
+  const tone = _disksStatusTone(label);
+  if (!label || tone === 'info') return '';
+  return `<span class="disks-pill disks-pill--${_disksEsc(tone)}" data-disks-pretext-text="${_disksEsc(label)}">${_disksEsc(label)}</span>`;
 }
 
 function _disksGroupChildren(node) {
@@ -810,6 +1493,7 @@ function _disksLogicalNodesForDrive(hostNode, driveNode) {
 
 function _disksUniqueVolumeMatch(node) {
   if (!node) return null;
+  const sourceHostId = String(_disksHostNodeFor(node)?.id || '').trim();
   const sourcePaths = new Set([
     _disksFactValue(node, 'Path'),
     _disksFactValue(node, 'Guest path'),
@@ -827,6 +1511,10 @@ function _disksUniqueVolumeMatch(node) {
   const candidates = Array.from(_disksNodeById.values()).filter(candidate => {
     if (!candidate || candidate === node) return false;
     if (String(candidate.kind || '').trim().toLowerCase() !== 'volume') return false;
+    if (sourceHostId) {
+      const candidateHostId = String(_disksHostNodeFor(candidate)?.id || '').trim();
+      if (candidateHostId !== sourceHostId) return false;
+    }
     let score = 0;
     const candidateValues = [
       _disksFactValue(candidate, 'Path'),
@@ -989,22 +1677,59 @@ function _disksDrivePurposeLabel(node) {
 
 function _disksFactsHtml(facts, limit = 6, options = {}) {
   const items = _disksOrderFacts(facts, options).slice(0, limit);
-  if (!items.length) return '';
+  const trailingHtml = String(options.trailingHtml || '');
+  if (!items.length && !trailingHtml) return '';
   return `<div class="disks-facts">${items.map(fact => `
-    <div class="disks-facts__item disks-facts__item--${_disksEsc(_disksFactSlug(fact.label))}${_DISKS_FULL_WIDTH_FACTS.has(_disksFactSlug(fact.label)) ? ' disks-facts__item--full' : ''}">
+    <div class="disks-facts__item disks-facts__item--${_disksEsc(_disksFactSlug(fact.label))}${_DISKS_FULL_WIDTH_FACTS.has(_disksFactSlug(fact.label)) ? ' disks-facts__item--full' : ''}" data-disks-fact-slug="${_disksEsc(_disksFactSlug(fact.label))}">
       <span class="disks-facts__label">${_disksEsc(fact.label)}</span>
       <span class="disks-facts__value">${_disksEsc(fact.value)}</span>
     </div>
-  `).join('')}</div>`;
+  `).join('')}${trailingHtml}</div>`;
+}
+
+function _disksCompactHeroItems(node, drivePurpose) {
+  const items = [];
+  const seen = new Set();
+  const push = (text, className = '') => {
+    const value = String(text || '').trim();
+    if (!value) return;
+    const key = value.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push({ text: value, className });
+  };
+  push(String(node?.kind || '').trim().toUpperCase(), 'disks-compact-pack__item--eyebrow');
+  push(node?.label, 'disks-compact-pack__item--primary');
+  push(drivePurpose, 'disks-compact-pack__item--accent');
+  String(node?.subtitle || '')
+    .split(/\s*·\s*/g)
+    .map(part => part.trim())
+    .filter(Boolean)
+    .forEach(part => push(part));
+  return items;
+}
+
+function _disksCompactPackHtml(items, className = '') {
+  const entries = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (!entries.length) return '';
+  const classes = ['disks-compact-pack', String(className || '').trim()].filter(Boolean).join(' ');
+  return `
+    <div class="${_disksEsc(classes)}" data-disks-pretext-pack="true">
+      ${entries.map(item => `
+        <span class="disks-pill disks-compact-pack__item ${_disksEsc(item.className || '')}" data-disks-pretext-text="${_disksEsc(item.text || '')}">
+          ${_disksEsc(item.text || '')}
+        </span>
+      `).join('')}
+    </div>
+  `;
 }
 
 function _disksHeroHtml(node) {
   const pct = _disksUsagePct(node);
   const partial = _disksPartialUsage(node);
-  const crumbs = _disksBreadcrumbs();
-  const backTarget = crumbs.length > 1 ? crumbs[crumbs.length - 2].id : '';
   const drivePurpose = _disksDrivePurposeLabel(node);
   const filesystemPill = _disksFilesystemPillLabel(node);
+  const liftRootNote = _disksShouldLiftRootNote(node);
   const facts = Array.isArray(node?.facts) ? node.facts.slice() : [];
   if (partial) {
     facts.push(
@@ -1021,36 +1746,32 @@ function _disksHeroHtml(node) {
   const sourceIssueHtml = _disksSourceIssues.length
     ? `<div class="disks-source-issues">${_disksSourceIssues.map(issue => `<span>${_disksEsc(issue)}</span>`).join('')}</div>`
     : '';
+  const statusPillHtml = _disksStatusPillHtml(node);
+  const filesystemPillHtml = filesystemPill ? `<span class="disks-pill" data-disks-hero-filesystem-pill>${_disksEsc(filesystemPill)}</span>` : '';
   return `
-    <div class="disks-page__chrome">
-      <div class="disks-breadcrumbs">
-        ${crumbs.map((crumb, idx) => `
-          <button type="button" class="disks-breadcrumbs__item${idx === crumbs.length - 1 ? ' is-current' : ''}" data-disks-node="${_disksEsc(crumb.id)}">
-            ${_disksEsc(crumb.label)}
-          </button>
-        `).join('<span class="disks-breadcrumbs__sep">/</span>')}
-      </div>
-      ${backTarget ? `<button type="button" class="disks-back-btn" data-disks-node="${_disksEsc(backTarget)}">Back</button>` : ''}
-    </div>
-    <section class="disks-hero">
+    ${_disksChromeHtml({ className: 'disks-page__chrome--in-shell' })}
+    <section class="disks-hero" data-disks-hero>
       <div class="disks-hero__head">
         <div class="disks-hero__icon-wrap">
           <img class="disks-hero__icon" src="${_disksNodeIcon(node)}" alt="" />
         </div>
         <div class="disks-hero__copy">
-          <div class="disks-hero__eyebrow">${_disksEsc(node.kind || 'storage')}</div>
-          <h2 class="disks-hero__title">
-            ${_disksEsc(node.label || 'Disks')}
-            ${drivePurpose ? `<span class="disks-hero__title-suffix">(${_disksEsc(drivePurpose)})</span>` : ''}
-          </h2>
-          ${node.subtitle ? `<p class="disks-hero__subtitle">${_disksEsc(node.subtitle)}</p>` : ''}
-          ${node.note ? `<p class="disks-hero__note">${_disksEsc(node.note)}</p>` : ''}
+          ${_disksCompactPackHtml(_disksCompactHeroItems(node, drivePurpose), 'disks-hero__compact-pack')}
+          <div class="disks-hero__stack">
+            <div class="disks-hero__eyebrow">${_disksEsc(node.kind || 'storage')}</div>
+            <h2 class="disks-hero__title">
+              ${_disksEsc(node.label || 'Disks')}
+              ${drivePurpose ? `<span class="disks-hero__title-suffix">(${_disksEsc(drivePurpose)})</span>` : ''}
+            </h2>
+            ${node.subtitle ? `<p class="disks-hero__subtitle">${_disksEsc(node.subtitle)}</p>` : ''}
+          </div>
+          ${node.note && !liftRootNote ? `<p class="disks-hero__note">${_disksEsc(node.note)}</p>` : ''}
         </div>
       </div>
       <div class="disks-hero__meter-wrap">
-        <div class="disks-hero__meter-meta">
-          <span class="disks-pill disks-pill--${_disksStatusTone(node.status)}">${_disksEsc(node.status || 'info')}</span>
-          ${filesystemPill ? `<span class="disks-pill">${_disksEsc(filesystemPill)}</span>` : ''}
+        <div class="disks-hero__meter-meta" data-disks-hero-meter-meta>
+          ${statusPillHtml ? `<span data-disks-hero-status-meta>${statusPillHtml}</span>` : ''}
+          ${filesystemPillHtml}
           ${pct == null ? '' : `<span class="disks-hero__pct">${pct.toFixed(1)}%</span>`}
         </div>
         <div class="disks-usage-line">
@@ -1062,7 +1783,13 @@ function _disksHeroHtml(node) {
             <span class="disks-meter__fill" style="width:${pct}%"></span>
           </div>
         `}
-        ${_disksFactsHtml(facts, 12, { kind: node?.kind, context: 'hero' })}
+        ${_disksFactsHtml(facts, 12, {
+          kind: node?.kind,
+          context: 'hero',
+          trailingHtml: statusPillHtml
+            ? `<div class="disks-facts__status-inline" data-disks-hero-status-inline>${statusPillHtml}</div>`
+            : '',
+        })}
         ${sourceIssueHtml}
       </div>
     </section>
@@ -1470,18 +2197,20 @@ function _disksCardHtml(node, options = {}) {
   const guestMeta = _disksGuestMeta(node);
   const filesystemTarget = shortcut ? shortcut.target : _disksFilesystemTarget(node);
   const filesystemPill = shortcut ? '' : _disksFilesystemPillLabel(node);
-  const floatingFilesystemPill = !shortcut && !filesystemTarget && String(node?.kind || '').trim().toLowerCase() === 'drive'
+  const usesActionRowFilesystemPill = !!filesystemPill;
+  const floatingFilesystemPill = !shortcut && !filesystemTarget && usesActionRowFilesystemPill
     ? filesystemPill
     : '';
   const inlineFilesystemPill = floatingFilesystemPill || filesystemTarget ? '' : filesystemPill;
   const floatingFilesystemButton = !shortcut && filesystemTarget
-    && String(node?.kind || '').trim().toLowerCase() === 'drive'
+    && usesActionRowFilesystemPill
     ? `
         <button type="button" class="disks-card__jump disks-card__jump--fs" title="${_disksEsc(`Open ${filesystemPill} details for ${String(filesystemTarget.label || 'filesystem').trim() || 'filesystem'}`)}" aria-label="${_disksEsc(`Open ${filesystemPill} details for ${String(filesystemTarget.label || 'filesystem').trim() || 'filesystem'}`)}" data-disks-node="${_disksEsc(filesystemTarget.id)}">${_disksEsc(filesystemPill)}</button>
       `
     : '';
   const inlineFilesystemButton = !shortcut && filesystemTarget
-    && String(node?.kind || '').trim().toLowerCase() !== 'drive'
+    && filesystemPill
+    && !usesActionRowFilesystemPill
     ? `
         <div class="disks-card__meta-pills">
           <span class="disks-card__jump disks-card__jump--fs" title="${_disksEsc(`Open ${filesystemPill} details for ${String(filesystemTarget.label || 'filesystem').trim() || 'filesystem'}`)}" aria-label="${_disksEsc(`Open ${filesystemPill} details for ${String(filesystemTarget.label || 'filesystem').trim() || 'filesystem'}`)}" data-disks-node="${_disksEsc(filesystemTarget.id)}">${_disksEsc(filesystemPill)}</span>
@@ -1489,11 +2218,10 @@ function _disksCardHtml(node, options = {}) {
       `
     : '';
   const pct = _disksUsagePct(node);
+  const inlineUsageText = _disksInlineTitleUsageText(node);
   const hasChildren = Array.isArray(primaryTarget.children) && primaryTarget.children.length > 0;
-  const cta = hasChildren ? 'Open' : 'View';
   const tone = _disksStatusTone(node.status);
   const canForget = !!node?.cached_missing && !!node?.cache_host;
-  const showSubtitle = !!node.subtitle && node.kind !== 'drive';
   const drivePurpose = _disksDrivePurposeLabel(node);
   const kindSlug = _disksFactSlug(node.kind || 'item');
   const contextSlug = _disksFactSlug(options.contextKind || _disksCurrentNode()?.kind || 'context');
@@ -1519,6 +2247,9 @@ function _disksCardHtml(node, options = {}) {
   if (options.pooledSingle) {
     attrs.push('data-disks-pool-single="true"');
   }
+  if (inlineUsageText) {
+    attrs.push('data-disks-inline-title-usage="true"');
+  }
   const styleAttr = options.poolColor ? ` style="--disks-cluster-rgb:${_disksEsc(options.poolColor)};"` : '';
   const poolCaption = options.pooledSingle && options.poolName
     && String(options.poolName || '').trim().toLowerCase() !== String(drivePurpose || '').trim().toLowerCase()
@@ -1527,7 +2258,7 @@ function _disksCardHtml(node, options = {}) {
   return `
     <article class="${classes.join(' ')}" ${attrs.join(' ')}${styleAttr}>
       <div class="disks-card__actions">
-        <span class="disks-pill disks-pill--${_disksEsc(tone)}">${_disksEsc(node.status || 'info')}</span>
+        ${_disksStatusPillHtml(node)}
         ${canForget ? `<button type="button" class="disks-card__forget" title="Remove cached inventory memory" aria-label="Remove cached inventory memory" data-disks-forget-host="${_disksEsc(node.cache_host)}" data-disks-forget-node="${_disksEsc(node.id)}">×</button>` : ''}
         ${shortcut ? `<button type="button" class="disks-card__jump disks-card__jump--${_disksEsc(shortcut.tone)}" title="${_disksEsc(shortcut.title)}" aria-label="${_disksEsc(shortcut.title)}" data-disks-node="${_disksEsc(shortcut.target.id)}">${_disksEsc(shortcut.label)}</button>` : ''}
         ${guestMeta ? _disksGuestSummaryButtonHtml(guestMeta) : ''}
@@ -1542,8 +2273,8 @@ function _disksCardHtml(node, options = {}) {
             <div class="disks-card__title-row">
               <strong class="disks-card__title">${_disksEsc(node.label)}</strong>
               ${drivePurpose ? `<span class="disks-card__title-suffix">(${_disksEsc(drivePurpose)})</span>` : ''}
+              ${inlineUsageText ? `<span class="disks-card__title-usage">${_disksEsc(inlineUsageText)}</span>` : ''}
             </div>
-            ${showSubtitle ? `<div class="disks-card__subtitle">${_disksEsc(node.subtitle)}</div>` : ''}
             ${poolCaption}
             ${inlineFilesystemButton}
             ${inlineFilesystemPill ? `<div class="disks-card__meta-pills"><span class="disks-pill">${_disksEsc(inlineFilesystemPill)}</span></div>` : ''}
@@ -1584,10 +2315,11 @@ function _disksCardHtml(node, options = {}) {
         ${node.note ? `<p class="disks-card__note">${_disksEsc(node.note)}</p>` : ''}
         ${_disksFactsHtml(node.facts, 6, { kind: node?.kind, context: 'card' })}
         <div class="disks-card__footer">
-          <span class="disks-card__footer-copy">
-            <span>${cta}</span>
-            ${hasChildren ? `<span>${primaryTarget.children.length} item${primaryTarget.children.length === 1 ? '' : 's'}</span>` : '<span>Details</span>'}
-          </span>
+          ${hasChildren ? `
+            <span class="disks-card__footer-copy">
+              <span>${primaryTarget.children.length} item${primaryTarget.children.length === 1 ? '' : 's'}</span>
+            </span>
+          ` : ''}
           <span
             class="disks-card__footer-action"
             data-disks-note-toggle="${_disksEsc(nodeId)}"
@@ -1728,9 +2460,11 @@ function _disksLoadingHtml() {
 
 function renderDisksPage() {
   const shell = _disksEl('disks-shell');
+  const liftChrome = _disksEl('s25-lift-disks');
   if (!shell) return;
   if (!_disksTopology || !_disksTopology.root) {
     shell.innerHTML = _disksLoadingHtml();
+    if (liftChrome) liftChrome.innerHTML = '';
     return;
   }
   if (!_disksNodeById.has(_disksCurrentNodeId)) {
@@ -1739,7 +2473,15 @@ function renderDisksPage() {
   const node = _disksCurrentNode();
   if (!node) {
     shell.innerHTML = _disksLoadingHtml();
+    if (liftChrome) liftChrome.innerHTML = '';
     return;
+  }
+  if (liftChrome) {
+    liftChrome.innerHTML = _disksChromeHtml({
+      includeBackInTrail: true,
+      className: 'disks-page__chrome--lifted',
+      noteText: _disksShouldLiftRootNote(node) ? String(node?.note || '').trim() : '',
+    });
   }
   shell.innerHTML = `
     <div class="disks-page">
@@ -1872,6 +2614,16 @@ function _disksEqualizeDirectGridHeights(grid) {
   _disksEqualizeCardRowHeights(grid.querySelectorAll(':scope > .disks-card'));
 }
 
+function _disksEqualizeBlockHeights(block) {
+  if (!block) return;
+  const clusterGrid = block.querySelector(':scope [data-disks-cluster-grid]');
+  if (clusterGrid) {
+    _disksEqualizeDirectGridHeights(clusterGrid);
+    return;
+  }
+  _disksEqualizeCardRowHeights(block.querySelectorAll(':scope > .disks-card'));
+}
+
 function _disksBlockRows(block) {
   if (!block) return [];
   const clusterGrid = block.querySelector(':scope [data-disks-cluster-grid]');
@@ -1890,6 +2642,14 @@ function _disksEqualizeShelfHeights(shelf) {
   const blocks = Array.from(shelf.querySelectorAll(':scope > [data-disks-layout-role]'));
   if (!blocks.length) {
     _disksEqualizeCardRowHeights(shelf.querySelectorAll('.disks-card'));
+    return;
+  }
+  const tracks = Number.parseInt(
+    shelf.style.getPropertyValue('--disks-layout-tracks') || String(_disksShelfTrackCount(shelf)),
+    10,
+  ) || 0;
+  if (tracks <= 2) {
+    blocks.forEach(_disksEqualizeBlockHeights);
     return;
   }
   const rowsByIndex = [];
@@ -1931,10 +2691,562 @@ function _disksApplyClusterEdges(grid) {
   });
 }
 
+function _disksResetCompactPretextLayout(shell) {
+  if (!shell) return;
+  shell.querySelectorAll('[data-disks-hero]').forEach(hero => {
+    hero.classList.remove('is-compact-icon-small');
+    hero.querySelector('[data-disks-hero-meter-meta]')?.classList.remove('is-collapsed');
+    const metaStatus = hero.querySelector('[data-disks-hero-status-meta]');
+    if (metaStatus) metaStatus.hidden = false;
+    hero.querySelectorAll('[data-disks-hero-status-inline]').forEach(item => item.classList.remove('is-active'));
+  });
+  shell.querySelectorAll('[data-disks-pretext-pack]').forEach(container => {
+    container.classList.remove('is-pretext-ready');
+    container.querySelectorAll('.disks-compact-pack__item').forEach(item => {
+      item.classList.remove('is-wide');
+      item.style.removeProperty('flex');
+      item.style.removeProperty('max-width');
+      item.style.removeProperty('order');
+    });
+  });
+  shell.querySelectorAll('.disks-facts').forEach(container => {
+    container.classList.remove('disks-facts--compact', 'disks-facts--desktop-packed', 'is-pretext-ready');
+    container.querySelectorAll('.disks-facts__item').forEach(item => {
+      item.classList.remove('is-wide');
+      item.style.removeProperty('flex');
+      item.style.removeProperty('max-width');
+      item.style.removeProperty('order');
+    });
+  });
+}
+
+function _disksContainerWidth(el) {
+  if (!el) return 0;
+  return el.clientWidth || el.getBoundingClientRect().width || 0;
+}
+
+function _disksCompactTextBreathingPx(text, base = 5, max = 12) {
+  const length = String(text || '').trim().length;
+  return Math.min(max, base + Math.ceil(length / 12));
+}
+
+function _disksCompactFactBreathingPx(labelText, valueText) {
+  const length = String(labelText || '').trim().length + String(valueText || '').trim().length;
+  return Math.min(14, 6 + Math.ceil(length / 10));
+}
+
+function _disksMeasureCompactPillWidth(pretext, item) {
+  const style = window.getComputedStyle(item);
+  const text = String(item.dataset.disksPretextText || item.textContent || '').trim();
+  const textWidth = _disksMeasureTextWidth(pretext, text, style);
+  return Math.ceil(textWidth + _disksHorizontalChromeWidth(style) + _disksCompactTextBreathingPx(text));
+}
+
+function _disksMeasureCompactPackWidth(pretext, item) {
+  return _disksMeasureCompactPillWidth(pretext, item);
+}
+
+function _disksMeasureCompactInlineStatusWidth(inlineStatus) {
+  if (!inlineStatus) return 0;
+  const host = document.createElement('div');
+  host.className = 'disks-facts disks-facts--compact';
+  host.style.position = 'absolute';
+  host.style.left = '-9999px';
+  host.style.top = '-9999px';
+  host.style.visibility = 'hidden';
+  host.style.pointerEvents = 'none';
+  const clone = inlineStatus.cloneNode(true);
+  clone.classList.add('is-active');
+  host.appendChild(clone);
+  document.body.appendChild(host);
+  const width = clone.getBoundingClientRect().width || 0;
+  host.remove();
+  return width;
+}
+
+function _disksMeasureCompactFactWidth(pretext, item) {
+  const itemStyle = window.getComputedStyle(item);
+  const labelEl = item.querySelector('.disks-facts__label');
+  const valueEl = item.querySelector('.disks-facts__value');
+  const labelText = String(labelEl?.textContent || '').trim();
+  const valueText = String(valueEl?.textContent || '').trim();
+  const labelWidth = labelText ? _disksMeasureTextWidth(pretext, labelText, window.getComputedStyle(labelEl)) : 0;
+  const valueWidth = valueText ? _disksMeasureTextWidth(pretext, valueText, window.getComputedStyle(valueEl)) : 0;
+  const gap = Number.parseFloat(itemStyle.columnGap || itemStyle.gap || '0');
+  const contentGap = labelWidth && valueWidth && Number.isFinite(gap) ? gap : 0;
+  return Math.ceil(
+    labelWidth
+    + valueWidth
+    + contentGap
+    + _disksHorizontalChromeWidth(itemStyle)
+    + _disksCompactFactBreathingPx(labelText, valueText)
+  );
+}
+
+function _disksDesktopFactBreathingPx(labelText, valueText) {
+  const length = Math.max(
+    String(labelText || '').trim().length,
+    String(valueText || '').trim().length,
+  );
+  return Math.min(18, 8 + Math.ceil(length / 9));
+}
+
+function _disksMeasureDesktopFactWidth(pretext, item) {
+  const itemStyle = window.getComputedStyle(item);
+  const labelEl = item.querySelector('.disks-facts__label');
+  const valueEl = item.querySelector('.disks-facts__value');
+  const labelText = String(labelEl?.textContent || '').trim();
+  const valueText = String(valueEl?.textContent || '').trim();
+  const labelWidth = labelText ? _disksMeasureTextWidth(pretext, labelText, window.getComputedStyle(labelEl)) : 0;
+  const valueWidth = valueText ? _disksMeasureTextWidth(pretext, valueText, window.getComputedStyle(valueEl)) : 0;
+  return Math.ceil(
+    Math.max(labelWidth, valueWidth)
+    + _disksHorizontalChromeWidth(itemStyle)
+    + _disksDesktopFactBreathingPx(labelText, valueText)
+  );
+}
+
+function _disksCompactFactShouldSpanWide(item, width, containerWidth) {
+  const slug = String(item.dataset.disksFactSlug || '').trim().toLowerCase();
+  const value = String(item.querySelector('.disks-facts__value')?.textContent || '').trim();
+  if (_DISKS_COMPACT_ALWAYS_WIDE_FACTS.has(slug)) return true;
+  if (/[,\n]/.test(value)) return true;
+  const widthThreshold = Math.max(180, Math.floor(containerWidth * 0.72));
+  return width > widthThreshold;
+}
+
+function _disksCompactContainerGapPx(container) {
+  const style = window.getComputedStyle(container);
+  const gap = Number.parseFloat(style.columnGap || style.gap || '0');
+  return Number.isFinite(gap) ? gap : 0;
+}
+
+function _disksCompactRowGroups(items) {
+  const rows = [];
+  (Array.isArray(items) ? items : []).forEach(item => {
+    if (!item) return;
+    const rect = item.getBoundingClientRect();
+    if (!rect.width && !rect.height) return;
+    let row = rows.find(entry => Math.abs(entry.top - rect.top) < 4);
+    if (!row) {
+      row = { top: rect.top, items: [] };
+      rows.push(row);
+    }
+    row.items.push({ item, rect });
+  });
+  rows.sort((left, right) => left.top - right.top);
+  rows.forEach(row => row.items.sort((left, right) => left.rect.left - right.rect.left));
+  return rows;
+}
+
+function _disksCompactBitCount(mask) {
+  let count = 0;
+  let value = mask;
+  while (value) {
+    value &= value - 1;
+    count += 1;
+  }
+  return count;
+}
+
+function _disksCompactPackingBetter(candidate, currentBest) {
+  if (!currentBest) return true;
+  if (candidate.rowCount !== currentBest.rowCount) return candidate.rowCount < currentBest.rowCount;
+  if (candidate.inversions !== currentBest.inversions) return candidate.inversions < currentBest.inversions;
+  if (candidate.slack !== currentBest.slack) return candidate.slack < currentBest.slack;
+  return false;
+}
+
+function _disksCompactRowInversions(rowMask, remainingMask) {
+  let inversions = 0;
+  let bits = rowMask;
+  while (bits) {
+    const bit = bits & -bits;
+    const index = Math.log2(bit);
+    inversions += _disksCompactBitCount(remainingMask & ((1 << index) - 1));
+    bits ^= bit;
+  }
+  return inversions;
+}
+
+function _disksDesktopFactRowRecords(rowMask, records) {
+  const rowRecords = [];
+  for (let index = 0; index < records.length; index += 1) {
+    if (rowMask & (1 << index)) rowRecords.push(records[index]);
+  }
+  return rowRecords;
+}
+
+function _disksDesktopFactCanUseUnits(record, units) {
+  if (units === 1) return !!record.canQuarter;
+  if (units === 2) return !!record.canHalf;
+  if (units === 4) return true;
+  return false;
+}
+
+function _disksDesktopFactRowLayouts(rowMask, records, options = {}) {
+  const allowRelaxedThirds = !!options.allowRelaxedThirds;
+  const allowQuarters = !!options.allowQuarters;
+  const rowRecords = _disksDesktopFactRowRecords(rowMask, records);
+  const count = rowRecords.length;
+  const layouts = [];
+  const addLayout = (kind, entries, relaxedCount = 0) => {
+    layouts.push({
+      kind,
+      entries,
+      records: rowRecords,
+      relaxedCount,
+    });
+  };
+  if (count === 1) {
+    addLayout('full', rowRecords.map(record => ({ record, units: 4 })));
+    return layouts;
+  }
+  if (count === 2 && rowRecords.every(record => record.canHalf)) {
+    addLayout('halves', rowRecords.map(record => ({ record, units: 2 })));
+  }
+  if (count === 3) {
+    const strictThirds = rowRecords.every(record => record.canThird);
+    if (strictThirds) {
+      addLayout('thirds', rowRecords.map(record => ({ record, units: 1 })));
+    } else if (allowRelaxedThirds && rowRecords.every(record => record.canThird || record.canRelaxedThird)) {
+      addLayout(
+        'thirds',
+        rowRecords.map(record => ({ record, units: 1 })),
+        rowRecords.filter(record => !record.canThird).length,
+      );
+    }
+    if (allowQuarters) {
+      [
+        [2, 1, 1],
+        [1, 2, 1],
+        [1, 1, 2],
+      ].forEach(units => {
+        if (!rowRecords.every((record, index) => _disksDesktopFactCanUseUnits(record, units[index]))) return;
+        addLayout('quarters', rowRecords.map((record, index) => ({ record, units: units[index] })));
+      });
+    }
+  }
+  if (count === 4 && allowQuarters && rowRecords.every(record => record.canQuarter)) {
+    addLayout('quarters', rowRecords.map(record => ({ record, units: 1 })));
+  }
+  return layouts;
+}
+
+function _disksDesktopFactPackingBetter(candidate, currentBest) {
+  if (!currentBest) return true;
+  if (candidate.rowCount !== currentBest.rowCount) return candidate.rowCount < currentBest.rowCount;
+  if (candidate.relaxedCount !== currentBest.relaxedCount) return candidate.relaxedCount < currentBest.relaxedCount;
+  if (candidate.singletons !== currentBest.singletons) return candidate.singletons < currentBest.singletons;
+  if (candidate.inversions !== currentBest.inversions) return candidate.inversions < currentBest.inversions;
+  return false;
+}
+
+function _disksDesktopFactSolveRows(records, options = {}) {
+  const count = Array.isArray(records) ? records.length : 0;
+  if (!count) return [];
+  if (count > 12) {
+    return records.map(record => ({
+      kind: 'full',
+      entries: [{ record, units: 4 }],
+      records: [record],
+      relaxedCount: 0,
+    }));
+  }
+  const allowRelaxedThirds = !!options.allowRelaxedThirds;
+  const allowQuarters = !!options.allowQuarters;
+  const maxMask = 1 << count;
+  const layoutsByMask = new Array(maxMask);
+  layoutsByMask[0] = [];
+  for (let mask = 1; mask < maxMask; mask += 1) {
+    layoutsByMask[mask] = _disksDesktopFactRowLayouts(mask, records, {
+      allowRelaxedThirds,
+      allowQuarters,
+    });
+  }
+  const memo = new Array(maxMask);
+  const solve = (remainingMask) => {
+    if (!remainingMask) {
+      return {
+        rowCount: 0,
+        relaxedCount: 0,
+        singletons: 0,
+        inversions: 0,
+        rows: [],
+      };
+    }
+    if (memo[remainingMask]) return memo[remainingMask];
+    let best = null;
+    const anchorBit = remainingMask & -remainingMask;
+    for (let rowMask = remainingMask; rowMask; rowMask = (rowMask - 1) & remainingMask) {
+      if ((rowMask & anchorBit) === 0) continue;
+      const layouts = layoutsByMask[rowMask] || [];
+      if (!layouts.length) continue;
+      const restMask = remainingMask ^ rowMask;
+      layouts.forEach(layout => {
+        const tail = solve(restMask);
+        const candidate = {
+          rowCount: tail.rowCount + 1,
+          relaxedCount: tail.relaxedCount + layout.relaxedCount,
+          singletons: tail.singletons + (layout.entries.length === 1 ? 1 : 0),
+          inversions: tail.inversions + _disksCompactRowInversions(rowMask, restMask),
+          rows: [layout, ...tail.rows],
+        };
+        if (_disksDesktopFactPackingBetter(candidate, best)) {
+          best = candidate;
+        }
+      });
+    }
+    memo[remainingMask] = best || {
+      rowCount: count,
+      relaxedCount: 0,
+      singletons: count,
+      inversions: 0,
+      rows: records.map(record => ({
+        kind: 'full',
+        entries: [{ record, units: 4 }],
+        records: [record],
+        relaxedCount: 0,
+      })),
+    };
+    return memo[remainingMask];
+  };
+  const packed = solve(maxMask - 1);
+  return packed.rows;
+}
+
+function _disksDesktopFactCanRelaxThird(item, basis, thirdSlot, halfSlot) {
+  if (basis <= thirdSlot) return false;
+  if (basis > halfSlot) return false;
+  const value = String(item.querySelector('.disks-facts__value')?.textContent || '').trim();
+  if (!/\s/.test(value)) return false;
+  return basis <= thirdSlot * 1.55;
+}
+
+function _disksDesktopFactAllowQuarters(containerWidth, quarterSlot) {
+  return containerWidth >= 420 && quarterSlot >= 104;
+}
+
+function _disksDesktopFactFlexBasis(entry, row, gapPx) {
+  const count = row.entries.length;
+  const gapTotal = Math.max(0, count - 1) * gapPx;
+  if (row.kind === 'full' || entry.units >= 4) return '100%';
+  if (row.kind === 'thirds') return `calc((100% - ${gapTotal}px) / 3)`;
+  if (entry.units === 2) return `calc((100% - ${gapTotal}px) / 2)`;
+  return `calc((100% - ${gapTotal}px) / 4)`;
+}
+
+// Compact pill groups are small enough to solve exactly, so we minimise row
+// count first and only then fall back to stability/whitespace tie-breakers.
+function _disksCompactSolveRows(items, containerWidth, gapPx) {
+  const count = Array.isArray(items) ? items.length : 0;
+  if (!count) return [];
+  if (count === 1 || count > 12) return [items.slice()];
+  const widths = items.map(item => Math.min(item.basis, containerWidth));
+  const maxMask = 1 << count;
+  const subsetWidths = new Array(maxMask).fill(0);
+  const fits = new Array(maxMask).fill(false);
+  fits[0] = true;
+  for (let mask = 1; mask < maxMask; mask += 1) {
+    const bit = mask & -mask;
+    const index = Math.log2(bit);
+    const prev = mask ^ bit;
+    const extraGap = prev ? gapPx : 0;
+    subsetWidths[mask] = subsetWidths[prev] + widths[index] + extraGap;
+    fits[mask] = subsetWidths[mask] <= containerWidth;
+  }
+  const memo = new Array(maxMask);
+  const solve = (remainingMask) => {
+    if (!remainingMask) {
+      return {
+        rowCount: 0,
+        inversions: 0,
+        slack: 0,
+        rows: [],
+      };
+    }
+    if (memo[remainingMask]) return memo[remainingMask];
+    let best = null;
+    const anchorBit = remainingMask & -remainingMask;
+    for (let rowMask = remainingMask; rowMask; rowMask = (rowMask - 1) & remainingMask) {
+      if ((rowMask & anchorBit) === 0 || !fits[rowMask]) continue;
+      const restMask = remainingMask ^ rowMask;
+      const tail = solve(restMask);
+      const candidate = {
+        rowCount: tail.rowCount + 1,
+        inversions: tail.inversions + _disksCompactRowInversions(rowMask, restMask),
+        slack: tail.slack + Math.max(0, containerWidth - subsetWidths[rowMask]),
+        rows: [rowMask, ...tail.rows],
+      };
+      if (_disksCompactPackingBetter(candidate, best)) {
+        best = candidate;
+      }
+    }
+    memo[remainingMask] = best || {
+      rowCount: 1,
+      inversions: 0,
+      slack: 0,
+      rows: [remainingMask],
+    };
+    return memo[remainingMask];
+  };
+  const packed = solve(maxMask - 1);
+  return packed.rows.map(rowMask => {
+    const rowItems = [];
+    for (let index = 0; index < count; index += 1) {
+      if (rowMask & (1 << index)) rowItems.push(items[index]);
+    }
+    return rowItems;
+  });
+}
+
+function _disksApplyCompactOrdering(container, records) {
+  if (!container || !Array.isArray(records) || !records.length) return;
+  const gapPx = _disksCompactContainerGapPx(container);
+  const containerWidth = _disksContainerWidth(container);
+  let order = 0;
+  _disksCompactSolveRows(records, containerWidth, gapPx).forEach(row => {
+    row.forEach(record => {
+      record.item.style.order = String(order);
+      order += 1;
+    });
+  });
+}
+
+function _disksApplyCompactHeroIcon(container) {
+  const hero = container?.closest('[data-disks-hero]');
+  if (!hero) return;
+  const rows = _disksCompactRowGroups(Array.from(container.querySelectorAll('.disks-compact-pack__item')));
+  hero.classList.toggle('is-compact-icon-small', rows.length <= 1);
+}
+
+function _disksApplyCompactHeroStatus(container, pretext) {
+  const inlineStatus = container?.querySelector('[data-disks-hero-status-inline]');
+  const meterWrap = container?.closest('.disks-hero__meter-wrap');
+  const meta = meterWrap?.querySelector('[data-disks-hero-meter-meta]');
+  const metaStatus = meterWrap?.querySelector('[data-disks-hero-status-meta]');
+  if (!inlineStatus || !meterWrap || !meta || !metaStatus) return;
+  const factItems = Array.from(container.querySelectorAll('.disks-facts__item'));
+  const statusPill = inlineStatus.querySelector('.disks-pill');
+  if (!factItems.length || !statusPill) return;
+  const rows = _disksCompactRowGroups(factItems);
+  if (!rows.length) return;
+  const lastRow = rows[rows.length - 1];
+  const containerRect = container.getBoundingClientRect();
+  const containerWidth = _disksContainerWidth(container);
+  const usedWidth = Math.max(...lastRow.items.map(entry => entry.rect.right - containerRect.left));
+  const statusWidth = Math.min(_disksMeasureCompactInlineStatusWidth(inlineStatus) || _disksMeasureCompactPillWidth(pretext, statusPill), containerWidth);
+  const requiredWidth = statusWidth + (lastRow.items.length ? _disksCompactContainerGapPx(container) : 0);
+  const slack = containerWidth - usedWidth;
+  if (slack + 0.5 < requiredWidth) return;
+  inlineStatus.classList.add('is-active');
+  metaStatus.hidden = true;
+  const hasFilesystemPill = !!meta.querySelector('[data-disks-hero-filesystem-pill]');
+  meta.classList.toggle('is-collapsed', !hasFilesystemPill);
+}
+
+function _disksApplyCompactPack(container, pretext) {
+  const containerWidth = _disksContainerWidth(container);
+  if (!containerWidth) return;
+  container.classList.add('is-pretext-ready');
+  const records = [];
+  container.querySelectorAll('.disks-compact-pack__item').forEach((item, index) => {
+    const basis = _disksMeasureCompactPackWidth(pretext, item);
+    const wide = basis > Math.max(180, Math.floor(containerWidth * 0.92));
+    item.classList.toggle('is-wide', wide);
+    item.style.flex = wide ? '1 0 100%' : `0 0 ${Math.min(basis, containerWidth)}px`;
+    item.style.maxWidth = `${containerWidth}px`;
+    records.push({ item, basis, wide, index });
+  });
+  _disksApplyCompactOrdering(container, records);
+  _disksApplyCompactHeroIcon(container);
+}
+
+function _disksApplyCompactFacts(container, pretext) {
+  const containerWidth = _disksContainerWidth(container);
+  if (!containerWidth) return;
+  container.classList.add('disks-facts--compact', 'is-pretext-ready');
+  const records = [];
+  container.querySelectorAll('.disks-facts__item').forEach((item, index) => {
+    const basis = _disksMeasureCompactFactWidth(pretext, item);
+    const wide = _disksCompactFactShouldSpanWide(item, basis, containerWidth);
+    item.classList.toggle('is-wide', wide);
+    item.style.flex = wide ? '1 0 100%' : `0 0 ${Math.min(basis, containerWidth)}px`;
+    item.style.maxWidth = `${containerWidth}px`;
+    records.push({ item, basis, wide, index });
+  });
+  _disksApplyCompactOrdering(container, records);
+  _disksApplyCompactHeroStatus(container, pretext);
+}
+
+function _disksApplyDesktopFacts(container, pretext) {
+  const containerWidth = _disksContainerWidth(container);
+  if (!containerWidth) return;
+  const gapPx = _disksCompactContainerGapPx(container);
+  const quarterSlot = Math.max(0, (containerWidth - (gapPx * 3)) / 4);
+  const thirdSlot = Math.max(0, (containerWidth - (gapPx * 2)) / 3);
+  const halfSlot = Math.max(0, (containerWidth - gapPx) / 2);
+  const halfAllowance = Math.min(12, Math.max(4, containerWidth * 0.025));
+  const thirdAllowance = Math.min(4, Math.max(1, containerWidth * 0.01));
+  const quarterAllowance = Math.min(3, Math.max(1, containerWidth * 0.006));
+  const allowQuarters = _disksDesktopFactAllowQuarters(containerWidth, quarterSlot);
+  const records = [];
+  container.classList.add('disks-facts--desktop-packed', 'is-pretext-ready');
+  container.querySelectorAll('.disks-facts__item').forEach((item, index) => {
+    const basis = _disksMeasureDesktopFactWidth(pretext, item);
+    records.push({
+      item,
+      basis,
+      index,
+      canQuarter: allowQuarters && basis <= quarterSlot + quarterAllowance,
+      canThird: basis <= thirdSlot + thirdAllowance,
+      canRelaxedThird: _disksDesktopFactCanRelaxThird(item, basis, thirdSlot + thirdAllowance, halfSlot + halfAllowance),
+      canHalf: basis <= halfSlot + halfAllowance,
+    });
+  });
+  const strictRows = _disksDesktopFactSolveRows(records, { allowQuarters });
+  const relaxedRows = records.some(record => record.canRelaxedThird)
+    ? _disksDesktopFactSolveRows(records, { allowRelaxedThirds: true, allowQuarters })
+    : strictRows;
+  const rows = relaxedRows.length < strictRows.length ? relaxedRows : strictRows;
+  let order = 0;
+  rows.forEach(row => {
+    row.entries.forEach(entry => {
+      const flexBasis = _disksDesktopFactFlexBasis(entry, row, gapPx);
+      entry.record.item.style.order = String(order);
+      entry.record.item.style.flex = `0 0 ${flexBasis}`;
+      entry.record.item.style.maxWidth = flexBasis;
+      order += 1;
+    });
+  });
+}
+
+function _disksApplyCompactPretextLayout(shell) {
+  if (!shell) return;
+  _disksResetCompactPretextLayout(shell);
+  if (!_disksPretextModule) {
+    _disksLoadPretextModule();
+    return;
+  }
+  if (_disksCompactLayoutActive()) {
+    shell.querySelectorAll('[data-disks-pretext-pack]').forEach(container => {
+      _disksApplyCompactPack(container, _disksPretextModule);
+    });
+    shell.querySelectorAll('.disks-facts').forEach(container => {
+      _disksApplyCompactFacts(container, _disksPretextModule);
+    });
+    return;
+  }
+  shell.querySelectorAll('.disks-card .disks-facts, .disks-hero .disks-facts').forEach(container => {
+    _disksApplyDesktopFacts(container, _disksPretextModule);
+  });
+}
+
 function _disksApplyPhysicalDriveLayout() {
   const shell = _disksEl('disks-shell');
   if (!shell) return;
   _disksResetCardHeights(shell);
+  _disksApplyCompactPretextLayout(shell);
   let layoutChanged = false;
   shell.querySelectorAll('[data-disks-layout-shelf]').forEach(shelf => {
     const tracks = _disksShelfTrackCount(shelf);
@@ -2542,6 +3854,22 @@ function _disksOfflineBrowseCurrentPath() {
   return state.paths.get(String(state.sourcePath || '').trim()) || '.';
 }
 
+function _disksOfflineAccessMeta() {
+  const state = _disksOfflineBrowseState;
+  const source = _disksOfflineBrowseCurrentSource();
+  if (!state || !source) return null;
+  return {
+    host: String(state.host || '').trim(),
+    root_path: '/',
+    root_display: String(source.path || '/').trim(),
+    browse_mode: 'device_ro',
+    source_path: String(source.path || '').trim(),
+    filesystem: String(source.filesystem || '').trim(),
+    dataset_name: String(source.dataset_name || '').trim(),
+    sensitive_hint: String(source.sensitive_hint || state.sensitiveHint || '').trim(),
+  };
+}
+
 function _disksOfflineBrowseRender() {
   const dialog = _disksEl('disks-offline-modal');
   const title = _disksEl('disks-offline-title');
@@ -2576,7 +3904,7 @@ function _disksOfflineBrowseRender() {
   } else if (data) {
     const entries = Array.isArray(data.entries) ? data.entries : [];
     listHtml = entries.length
-      ? entries.map(entry => _disksFilesystemTreeRowHtml(entry).replace(/data-disks-tree-action/g, 'data-disks-offline-action')).join('')
+      ? entries.map(entry => _disksFilesystemTreeRowHtml(entry, 'offline')).join('')
       : '<div class="docs-tree-empty">This folder is empty.</div>';
   } else if (!loading) {
     listHtml = '<div class="docs-tree-empty">Preparing offline file tree…</div>';
@@ -2614,7 +3942,7 @@ function _disksOfflineBrowseRender() {
     <div class="docs-tree-shell disks-tree__shell">
       <div class="disks-tree__toolbar">
         <button class="hub-modal-btn secondary" type="button" data-disks-offline-action="up"${canGoUp ? '' : ' disabled'}>Up</button>
-        <code class="docs-tree-path disks-tree__path">${_disksEsc(absolutePath)}</code>
+        <code class="docs-tree-path disks-tree__path">${_disksFilesystemTreePathHtml(absolutePath)}</code>
         <div class="disks-tree__toolbar-actions">
           <button class="hub-modal-btn secondary" type="button" data-disks-offline-action="root"${rootDisabled ? ' disabled' : ''}>Root</button>
           <button class="hub-modal-btn secondary" type="button" data-disks-offline-action="refresh">Refresh</button>
@@ -2652,18 +3980,36 @@ function _disksOfflineBrowseLoad(force = false) {
       root_path: '/',
       browse_mode: 'device_ro',
       source_path: source.path,
+      filesystem: source.filesystem,
+      dataset_name: source.dataset_name,
+      sensitive_hint: source.sensitive_hint || state.sensitiveHint || '',
+      pin_token: _disksFilesystemAccessSensitive(_disksOfflineAccessMeta(), currentPath) ? _disksValidPinToken() : null,
       path: currentPath === '.' ? null : currentPath,
     }),
   })
     .then(async response => {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (response.status === 423) {
+          const lockedMessage = data.detail || 'PIN required for this filesystem tree.';
+          state.cache.set(cacheKey, { ok: false, locked: true, error: lockedMessage });
+          _disksRequestPin('PIN required for this filesystem tree.').then(() => {
+            state.cache.delete(cacheKey);
+            state.loadingKeys.delete(cacheKey);
+            _disksOfflineBrowseLoad(true);
+          }).catch(err => {
+            state.cache.set(cacheKey, { ok: false, locked: true, error: err?.message || lockedMessage });
+            _disksOfflineBrowseRender();
+          });
+          return Promise.reject(new Error('__PIN_PROMPTED__'));
+        }
         throw new Error(data.detail || `HTTP ${response.status}`);
       }
       state.cache.set(cacheKey, { ok: true, data });
       state.paths.set(String(source.path || '').trim(), _disksNormalizeRelativePath(data?.current_path || currentPath));
     })
     .catch(err => {
+      if (err && err.message === '__PIN_PROMPTED__') return;
       const message = err && err.message ? err.message : String(err || 'Offline browse failed');
       state.cache.set(cacheKey, { ok: false, error: message });
     })
@@ -2732,6 +4078,16 @@ async function _disksOpenOfflineBrowse(node) {
     : false;
   if (!confirmed) return;
   _disksStatusMessage('Preparing read-only offline disk browse…', 'info', true);
+  const sensitive = _disksFilesystemAccessSensitive({
+    root_path: meta.volume_ref,
+    root_display: meta.volume_label,
+    source_path: meta.volume_ref,
+    dataset_name: '',
+    sensitive_hint: meta.sensitive_hint,
+  });
+  const pinToken = sensitive
+    ? await _disksRequestPin('PIN required to attach this offline disk.')
+    : '';
   const response = await apiFetch('/api/v1/disks/offline-browse/open', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2741,6 +4097,8 @@ async function _disksOpenOfflineBrowse(node) {
       guest_name: meta.guest_name,
       volume_ref: meta.volume_ref,
       volume_label: meta.volume_label,
+      sensitive_hint: meta.sensitive_hint,
+      pin_token: pinToken || null,
     }),
   });
   const payload = await response.json().catch(() => ({}));
@@ -2754,6 +4112,7 @@ async function _disksOpenOfflineBrowse(node) {
     host: String(payload.host || meta.host || '').trim(),
     title: volumeLabel,
     subtitle: `${guestLabel} · read-only attach`,
+    sensitiveHint: String(payload.sensitive_hint || meta.sensitive_hint || '').trim(),
     sources,
     sourcePath: String(defaultSource?.path || '').trim(),
     paths: new Map(),
@@ -2849,6 +4208,16 @@ function _disksOnShellClick(event) {
       _disksFilesystemTreeNavigate(node, meta, treeActionBtn.dataset.path || '.');
       return;
     }
+    if (action === 'file-tap') {
+      _disksHandleFileTap('tree', meta, treeActionBtn.dataset.path || '.');
+      return;
+    }
+    if (action === 'download') {
+      _disksDownloadFilesystemPath(meta, treeActionBtn.dataset.path || '.').catch(err => {
+        _disksStatusMessage(`Download failed: ${err?.message || err}`, 'fail', true);
+      });
+      return;
+    }
     if (action === 'up') {
       const currentPath = _disksFilesystemTreePathForNode(node, meta);
       const cached = _disksFilesystemTreeCached(node, meta, currentPath);
@@ -2917,6 +4286,7 @@ function _disksInit() {
   if (_disksInitDone) return;
   _disksInitDone = true;
   window.addEventListener('resize', _disksScheduleLayoutPass, { passive: true });
+  _disksEl('s25-lift-disks')?.addEventListener('click', _disksOnShellClick);
   _disksEl('disks-shell')?.addEventListener('click', _disksOnShellClick);
   _disksEl('disks-shell')?.addEventListener('input', _disksOnShellInput);
   _disksEl('disks-shell')?.addEventListener('keydown', _disksOnShellKeydown);
@@ -2981,6 +4351,20 @@ function _disksInit() {
         _disksOfflineBrowseLoad();
         return;
       }
+      if (action === 'file-tap') {
+        const meta = _disksOfflineAccessMeta();
+        if (meta) _disksHandleFileTap('offline', meta, actionBtn.dataset.path || '.');
+        return;
+      }
+      if (action === 'download') {
+        const meta = _disksOfflineAccessMeta();
+        if (meta) {
+          _disksDownloadFilesystemPath(meta, actionBtn.dataset.path || '.').catch(err => {
+            _disksStatusMessage(`Download failed: ${err?.message || err}`, 'fail', true);
+          });
+        }
+        return;
+      }
       if (action === 'up') {
         const source = _disksOfflineBrowseCurrentSource();
         const currentPath = _disksOfflineBrowseCurrentPath();
@@ -3010,5 +4394,78 @@ function _disksInit() {
   _disksEl('disks-offline-modal')?.addEventListener('cancel', (event) => {
     event.preventDefault();
     _disksCloseOfflineBrowseModal();
+  });
+  _disksEl('disks-pin-modal')?.addEventListener('click', (event) => {
+    const closeBtn = event.target.closest('.hub-modal-close');
+    if (closeBtn) {
+      event.preventDefault();
+      _disksClosePinDialog();
+      return;
+    }
+    const keyBtn = event.target.closest('[data-disks-pin-key]');
+    if (!keyBtn || !_disksPinDialogState || _disksPinDialogState.busy) return;
+    event.preventDefault();
+    const key = String(keyBtn.dataset.disksPinKey || '').trim();
+    if (/^\d$/.test(key) && _disksPinDialogState.pin.length < 6) {
+      _disksPinDialogState.pin += key;
+      _disksPinDialogState.message = '';
+      _disksPinDialogState.tone = '';
+      _disksSetPinDisplay();
+      if (_disksPinDialogState.pin.length === 6) _disksSubmitPin();
+      return;
+    }
+    if (key === 'back') {
+      _disksPinDialogState.pin = _disksPinDialogState.pin.slice(0, -1);
+      _disksSetPinDisplay();
+      return;
+    }
+    if (key === 'clear') {
+      _disksPinDialogState.pin = '';
+      _disksSetPinDisplay();
+      return;
+    }
+    if (key === 'unlock') {
+      _disksSubmitPin();
+    }
+  });
+  _disksEl('disks-pin-modal')?.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    _disksClosePinDialog();
+  });
+  _disksEl('disks-file-modal')?.addEventListener('click', (event) => {
+    const closeBtn = event.target.closest('.hub-modal-close');
+    if (closeBtn) {
+      event.preventDefault();
+      _disksCloseFileViewer();
+      return;
+    }
+    const downloadBtn = event.target.closest('#disks-file-download');
+    if (downloadBtn && _disksFileViewerState) {
+      event.preventDefault();
+      _disksDownloadFilesystemPath(_disksFileViewerState.meta, _disksFileViewerState.path).catch(err => {
+        _disksSetFileStatus(`Download failed: ${err?.message || err}`, 'error');
+      });
+      return;
+    }
+    const saveBtn = event.target.closest('#disks-file-save');
+    if (saveBtn) {
+      event.preventDefault();
+      _disksSaveFileViewer();
+      return;
+    }
+    const editBtn = event.target.closest('#disks-file-edit-toggle');
+    if (editBtn) {
+      event.preventDefault();
+      _disksToggleFileEditor();
+    }
+  });
+  _disksEl('disks-file-modal')?.addEventListener('input', (event) => {
+    if (!event.target.closest('#disks-file-editor') || !_disksFileViewerState) return;
+    _disksFileViewerState.dirty = true;
+    _disksSetFileStatus('Unsaved changes.', 'warn');
+  });
+  _disksEl('disks-file-modal')?.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    _disksCloseFileViewer();
   });
 }
