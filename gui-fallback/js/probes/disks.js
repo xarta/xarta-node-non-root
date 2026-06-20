@@ -8,6 +8,7 @@ let _disksLoadPromise = null;
 let _disksSourceIssues = [];
 let _disksInitDone = false;
 let _disksLayoutFrame = 0;
+let _disksSurfaceMode = 'items';
 let _disksFilesystemTreeCache = new Map();
 let _disksFilesystemTreePaths = new Map();
 let _disksFilesystemTreeLoadingKeys = new Set();
@@ -1110,6 +1111,43 @@ function _disksDualPaneSectionHtml(node) {
       </details>
     </section>
   `;
+}
+
+function _disksViewTabsHtml(className = '') {
+  const mode = _disksSurfaceMode === 'files' ? 'files' : 'items';
+  const classes = ['disks-view-tabs', String(className || '').trim()].filter(Boolean).join(' ');
+  const tabs = [
+    { mode: 'items', label: 'Items' },
+    { mode: 'files', label: 'File manager' },
+  ];
+  return `
+    <div class="${_disksEsc(classes)}" role="group" aria-label="Disks view">
+      ${tabs.map(tab => {
+        const active = tab.mode === mode;
+        return `
+          <button
+            class="disks-view-tab${active ? ' is-active' : ''}"
+            type="button"
+            data-disks-view="${_disksEsc(tab.mode)}"
+            aria-pressed="${active ? 'true' : 'false'}"
+          >${_disksEsc(tab.label)}</button>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function _disksSetSurfaceMode(mode) {
+  const nextMode = mode === 'files' ? 'files' : 'items';
+  if (_disksSurfaceMode === nextMode) return;
+  _disksSurfaceMode = nextMode;
+  renderDisksPage();
+  if (nextMode === 'files') {
+    _disksEnsureDualPaneTree('left');
+    _disksEnsureDualPaneTree('right');
+  } else {
+    _disksEnsureFilesystemTree(_disksCurrentNode());
+  }
 }
 
 function _disksValidPinToken() {
@@ -2424,6 +2462,7 @@ function _disksHeroHtml(node) {
             ${node.subtitle ? `<p class="disks-hero__subtitle">${_disksEsc(node.subtitle)}</p>` : ''}
           </div>
           ${node.note && !liftRootNote ? `<p class="disks-hero__note">${_disksEsc(node.note)}</p>` : ''}
+          ${_disksViewTabsHtml('disks-hero__view-tabs')}
         </div>
       </div>
       <div class="disks-hero__meter-wrap">
@@ -2451,6 +2490,7 @@ function _disksHeroHtml(node) {
         ${sourceIssueHtml}
       </div>
     </section>
+    ${_disksViewTabsHtml('disks-view-tabs--mobile')}
   `;
 }
 
@@ -3141,15 +3181,20 @@ function renderDisksPage() {
       noteText: _disksShouldLiftRootNote(node) ? String(node?.note || '').trim() : '',
     });
   }
-  shell.innerHTML = `
-    <div class="disks-page">
-      ${_disksHeroHtml(node)}
-      ${_disksDualPaneSectionHtml(node)}
+  const viewMode = _disksSurfaceMode === 'files' ? 'files' : 'items';
+  const viewHtml = viewMode === 'files'
+    ? _disksDualPaneSectionHtml(node)
+    : `
       ${_disksFilesystemTreeSectionHtml(node)}
       ${_disksOfflineBrowserSectionHtml(node)}
       <div class="disks-groups">
         ${_disksGroupsHtml(node)}
       </div>
+    `;
+  shell.innerHTML = `
+    <div class="disks-page" data-disks-view-mode="${_disksEsc(viewMode)}">
+      ${_disksHeroHtml(node)}
+      ${viewHtml}
     </div>
   `;
   shell.querySelectorAll('.disks-card__smart').forEach(button => {
@@ -3164,9 +3209,12 @@ function renderDisksPage() {
       );
     });
   });
-  _disksEnsureFilesystemTree(node);
-  _disksEnsureDualPaneTree('left');
-  _disksEnsureDualPaneTree('right');
+  if (viewMode === 'files') {
+    _disksEnsureDualPaneTree('left');
+    _disksEnsureDualPaneTree('right');
+  } else {
+    _disksEnsureFilesystemTree(node);
+  }
   _disksScheduleLayoutPass();
 }
 
@@ -5007,6 +5055,13 @@ function _disksOnShellDragEnd() {
 }
 
 function _disksOnShellClick(event) {
+  const viewBtn = event.target.closest('[data-disks-view]');
+  if (viewBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    _disksSetSurfaceMode(viewBtn.dataset.disksView || 'items');
+    return;
+  }
   const dualActionBtn = event.target.closest('[data-disks-dual-action]');
   if (dualActionBtn) {
     event.preventDefault();
