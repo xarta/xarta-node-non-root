@@ -16,8 +16,24 @@ let _disksFilesystemFavorites = [];
 let _disksFilesystemFavoritesLoaded = false;
 let _disksFilesystemFavoritesLoading = false;
 let _disksDualPaneState = {
-  left: { selectedKey: '', meta: null, path: '.', selectedPath: '', status: '' },
-  right: { selectedKey: '', meta: null, path: '.', selectedPath: '', status: '' },
+  left: {
+    selectedKey: '',
+    meta: null,
+    path: '.',
+    selectedPath: '',
+    status: '',
+    restoreFallback: false,
+    restoreFallbackTriedKeys: [],
+  },
+  right: {
+    selectedKey: '',
+    meta: null,
+    path: '.',
+    selectedPath: '',
+    status: '',
+    restoreFallback: false,
+    restoreFallbackTriedKeys: [],
+  },
   conflict: 'cancel',
   lastStatus: '',
   busy: false,
@@ -38,6 +54,7 @@ let _disksPretextModule = null;
 let _disksPretextLoadPromise = null;
 let _disksPretextLoadFailed = false;
 let _disksPretextPreparedCache = new Map();
+const _DISKS_DUAL_PANE_LOCATION_STORAGE_KEY = 'blueprints.disks.dualPane.locations.v1';
 
 function _disksHubModalApi() {
   return typeof HubModal !== 'undefined' ? HubModal : null;
@@ -858,15 +875,126 @@ function _disksDualPaneOptionByKey(key) {
   return options.all.find(option => option.key === key) || null;
 }
 
-function _disksDualPaneSetLocation(paneId, key) {
-  const option = _disksDualPaneOptionByKey(key);
+function _disksDualPaneStorage() {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return null;
+    return window.localStorage;
+  } catch (_) {
+    return null;
+  }
+}
+
+function _disksDualPaneMetaSnapshot(meta) {
+  return {
+    host: String(meta?.host || '').trim(),
+    root_path: String(meta?.root_path || '').trim(),
+    root_display: String(meta?.root_display || '').trim(),
+    browse_mode: String(meta?.browse_mode || '').trim(),
+    filesystem: String(meta?.filesystem || '').trim(),
+    source_path: String(meta?.source_path || '').trim(),
+    dataset_name: String(meta?.dataset_name || '').trim(),
+    guest_id: String(meta?.guest_id || '').trim(),
+    guest_name: String(meta?.guest_name || '').trim(),
+    guest_kind: String(meta?.guest_kind || '').trim(),
+    sensitive_hint: String(meta?.sensitive_hint || '').trim(),
+  };
+}
+
+function _disksDualPaneReadStoredLocations() {
+  const storage = _disksDualPaneStorage();
+  if (!storage) return {};
+  try {
+    const parsed = JSON.parse(storage.getItem(_DISKS_DUAL_PANE_LOCATION_STORAGE_KEY) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function _disksDualPaneStoredPane(paneId) {
+  const stored = _disksDualPaneReadStoredLocations();
+  const raw = stored && typeof stored[paneId] === 'object' ? stored[paneId] : null;
+  if (!raw) return null;
+  return {
+    key: String(raw.key || raw.selectedKey || '').trim(),
+    path: _disksNormalizeRelativePath(raw.path || '.'),
+    meta: _disksDualPaneMetaSnapshot(raw.meta || {}),
+  };
+}
+
+function _disksDualPaneRemember() {
+  const storage = _disksDualPaneStorage();
+  if (!storage) return;
+  const snapshot = { version: 1 };
+  ['left', 'right'].forEach(paneId => {
+    const pane = _disksDualPaneGet(paneId);
+    if (!pane?.meta) return;
+    snapshot[paneId] = {
+      key: String(pane.selectedKey || '').trim(),
+      path: _disksNormalizeRelativePath(pane.path || '.'),
+      meta: _disksDualPaneMetaSnapshot(pane.meta),
+    };
+  });
+  try {
+    storage.setItem(_DISKS_DUAL_PANE_LOCATION_STORAGE_KEY, JSON.stringify(snapshot));
+  } catch (_) {
+    // Local storage can be disabled in hardened/private browser contexts.
+  }
+}
+
+function _disksDualPaneMetaAffinity(storedMeta, optionMeta) {
+  const stored = _disksDualPaneMetaSnapshot(storedMeta || {});
+  const option = _disksDualPaneMetaSnapshot(optionMeta || {});
+  let score = 0;
+  const addIfEqual = (field, points) => {
+    if (stored[field] && option[field] && stored[field] === option[field]) score += points;
+  };
+  addIfEqual('host', 40);
+  addIfEqual('root_path', 26);
+  addIfEqual('source_path', 22);
+  addIfEqual('dataset_name', 20);
+  addIfEqual('guest_id', 16);
+  addIfEqual('guest_name', 10);
+  addIfEqual('filesystem', 8);
+  addIfEqual('browse_mode', 4);
+  return score;
+}
+
+function _disksDualPaneOptionFromStored(stored, options) {
+  if (!stored || !options?.all?.length) return null;
+  if (stored.key) {
+    const exact = options.all.find(option => option.key === stored.key);
+    if (exact) return exact;
+  }
+  let best = null;
+  let bestScore = 0;
+  options.all.forEach(option => {
+    const score = _disksDualPaneMetaAffinity(stored.meta, option.meta);
+    if (score > bestScore) {
+      best = option;
+      bestScore = score;
+    }
+  });
+  return best || null;
+}
+
+function _disksDualPaneApplyOption(paneId, option, path = '', remember = true) {
   if (!option) return;
   const pane = _disksDualPaneGet(paneId);
   pane.selectedKey = option.key;
   pane.meta = { ...option.meta };
-  pane.path = _disksNormalizeRelativePath(option.path || '.');
+  pane.path = _disksNormalizeRelativePath(path || option.path || '.');
   pane.selectedPath = '';
   pane.status = '';
+  pane.restoreFallback = false;
+  pane.restoreFallbackTriedKeys = [];
+  if (remember) _disksDualPaneRemember();
+}
+
+function _disksDualPaneSetLocation(paneId, key) {
+  const option = _disksDualPaneOptionByKey(key);
+  if (!option) return;
+  _disksDualPaneApplyOption(paneId, option, option.path || '.');
   renderDisksPage();
   _disksEnsureDualPaneTree(paneId);
 }
@@ -878,17 +1006,23 @@ function _disksDualPaneSeed(node) {
   const currentKey = currentMeta ? `node:${String(node?.id || '').trim()}` : '';
   const left = _disksDualPaneState.left;
   const right = _disksDualPaneState.right;
+  const storedLeft = _disksDualPaneStoredPane('left');
+  const storedRight = _disksDualPaneStoredPane('right');
   if (!left.meta) {
-    const seed = options.all.find(option => option.key === currentKey) || options.all[0];
-    left.selectedKey = seed.key;
-    left.meta = { ...seed.meta };
-    left.path = _disksNormalizeRelativePath(seed.path || '.');
+    const seed = _disksDualPaneOptionFromStored(storedLeft, options)
+      || options.all.find(option => option.key === currentKey)
+      || options.all[0];
+    _disksDualPaneApplyOption('left', seed, storedLeft ? storedLeft.path : seed.path, false);
+    left.restoreFallback = !!storedLeft;
+    left.restoreFallbackTriedKeys = [seed.key];
   }
   if (!right.meta) {
-    const seed = options.all.find(option => option.key !== left.selectedKey) || options.all[0];
-    right.selectedKey = seed.key;
-    right.meta = { ...seed.meta };
-    right.path = _disksNormalizeRelativePath(seed.path || '.');
+    const seed = _disksDualPaneOptionFromStored(storedRight, options)
+      || options.all.find(option => option.key !== left.selectedKey)
+      || options.all[0];
+    _disksDualPaneApplyOption('right', seed, storedRight ? storedRight.path : seed.path, false);
+    right.restoreFallback = !!storedRight;
+    right.restoreFallbackTriedKeys = [seed.key];
   }
 }
 
@@ -903,19 +1037,86 @@ function _disksDualPaneSetStatus(message, tone = '') {
   renderDisksPage();
 }
 
+function _disksDualPaneParentPath(path) {
+  const clean = _disksNormalizeRelativePath(path);
+  if (clean === '.') return '';
+  const parts = clean.split('/').filter(Boolean);
+  parts.pop();
+  return parts.length ? parts.join('/') : '.';
+}
+
+function _disksDualPaneRecoveryCandidate(paneId, triedKeys) {
+  const options = _disksFilesystemLocationOptions();
+  const stored = _disksDualPaneStoredPane(paneId);
+  const candidates = options.all
+    .filter(option => !triedKeys.has(option.key))
+    .map(option => ({
+      option,
+      score: stored ? _disksDualPaneMetaAffinity(stored.meta, option.meta) : 0,
+    }))
+    .sort((a, b) => b.score - a.score);
+  return candidates[0]?.option || null;
+}
+
+function _disksDualPaneRecoverFromFailedRestore(paneId, failedPath, err, failedKey = '') {
+  const pane = _disksDualPaneGet(paneId);
+  if (!pane?.meta || !pane.restoreFallback) return false;
+  if (failedKey && pane.selectedKey !== failedKey) return false;
+  const status = Number(err?.status || 0);
+  const message = String(err?.message || '').toLowerCase();
+  const recoverable = status === 400
+    || message.includes('filesystem root')
+    || message.includes('folder does not exist')
+    || message.includes('path does not exist')
+    || message.includes('not a directory');
+  if (!recoverable) return false;
+  const cleanFailed = _disksNormalizeRelativePath(failedPath);
+  if (_disksNormalizeRelativePath(pane.path) !== cleanFailed) return false;
+  const parentPath = _disksDualPaneParentPath(cleanFailed);
+  if (parentPath) {
+    pane.path = parentPath;
+    pane.selectedPath = '';
+    const label = parentPath === '.' ? 'root' : parentPath;
+    _disksDualPaneSetStatus(`Saved ${paneId} pane path was unavailable; trying ${label}.`, 'warn');
+    _disksEnsureDualPaneTree(paneId);
+    return true;
+  }
+  const triedKeys = new Set(Array.isArray(pane.restoreFallbackTriedKeys) ? pane.restoreFallbackTriedKeys : []);
+  triedKeys.add(pane.selectedKey);
+  const next = _disksDualPaneRecoveryCandidate(paneId, triedKeys);
+  if (next) {
+    const stored = _disksDualPaneStoredPane(paneId);
+    pane.selectedKey = next.key;
+    pane.meta = { ...next.meta };
+    pane.path = _disksNormalizeRelativePath(stored?.path || next.path || '.');
+    pane.selectedPath = '';
+    pane.status = '';
+    pane.restoreFallback = true;
+    pane.restoreFallbackTriedKeys = [...triedKeys, next.key];
+    _disksDualPaneSetStatus(`Saved ${paneId} pane location was unavailable; trying ${next.label}.`, 'warn');
+    _disksEnsureDualPaneTree(paneId);
+    return true;
+  }
+  pane.restoreFallback = false;
+  pane.restoreFallbackTriedKeys = [];
+  return false;
+}
+
 function _disksEnsureDualPaneTree(paneId) {
   const pane = _disksDualPaneGet(paneId);
   if (!pane.meta) return;
-  const cacheKey = _disksFilesystemTreeCacheKey(pane.meta, pane.path);
+  const requestPath = _disksNormalizeRelativePath(pane.path);
+  const requestKey = String(pane.selectedKey || '').trim();
+  const cacheKey = _disksFilesystemTreeCacheKey(pane.meta, requestPath);
   if (_disksFilesystemTreeCache.has(cacheKey) || _disksFilesystemTreeLoadingKeys.has(cacheKey)) return;
   _disksFilesystemTreeLoadingKeys.add(cacheKey);
   apiFetch('/api/v1/disks/filesystem/tree', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      ..._disksFilesystemAccessPayload(pane.meta, pane.path),
+      ..._disksFilesystemAccessPayload(pane.meta, requestPath),
       limit: 500,
-      pin_token: _disksFilesystemAccessSensitive(pane.meta, pane.path) ? _disksValidPinToken() : null,
+      pin_token: _disksFilesystemAccessSensitive(pane.meta, requestPath) ? _disksValidPinToken() : null,
     }),
   })
     .then(async response => {
@@ -934,14 +1135,22 @@ function _disksEnsureDualPaneTree(paneId) {
           });
           return Promise.reject(new Error('__PIN_PROMPTED__'));
         }
-        throw new Error(data.detail || `HTTP ${response.status}`);
+        const error = new Error(data.detail || `HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
       }
       _disksFilesystemTreeCache.set(cacheKey, { ok: true, data });
-      pane.path = _disksNormalizeRelativePath(data?.current_path || pane.path);
+      if (pane.selectedKey === requestKey && _disksNormalizeRelativePath(pane.path) === requestPath) {
+        pane.path = _disksNormalizeRelativePath(data?.current_path || requestPath);
+        pane.restoreFallback = false;
+        pane.restoreFallbackTriedKeys = [];
+        _disksDualPaneRemember();
+      }
     })
     .catch(err => {
       if (err && err.message === '__PIN_PROMPTED__') return;
       const message = err && err.message ? err.message : String(err || 'Filesystem pane failed');
+      if (_disksDualPaneRecoverFromFailedRestore(paneId, requestPath, err, requestKey)) return;
       _disksFilesystemTreeCache.set(cacheKey, { ok: false, error: message });
     })
     .finally(() => {
@@ -1007,6 +1216,8 @@ function _disksDualPaneHtml(paneId) {
       : _disksFilesystemTreeStatusText(data);
   const selected = pane.selectedPath ? _disksNormalizeRelativePath(pane.selectedPath) : '';
   const selectedLabel = selected ? (selected === '.' ? 'root' : selected) : 'No item selected';
+  const selectedStatusText = selected ? `Selected: ${selectedLabel}` : 'No item selected';
+  const footerText = [statusText, selectedStatusText].filter(Boolean).join(' · ');
   return `
     <section class="disks-dual-pane" data-disks-dual-pane="${_disksEsc(paneId)}" data-disks-dual-drop="${_disksEsc(paneId)}">
       <div class="disks-dual-pane__head">
@@ -1018,7 +1229,11 @@ function _disksDualPaneHtml(paneId) {
             ${_disksFilesystemAccessSensitive(meta, currentPath) ? '<span class="disks-pill disks-pill--warn">PIN</span>' : ''}
           </div>
         </div>
-        <button class="hub-modal-btn secondary" type="button" data-disks-dual-action="favorite-add" data-disks-dual-pane="${_disksEsc(paneId)}">Favourite</button>
+        <div class="disks-dual-pane__actions">
+          <button class="hub-modal-btn secondary" type="button" data-disks-dual-action="copy-selected" data-disks-dual-pane="${_disksEsc(paneId)}" data-disks-dual-target="${_disksEsc(other)}"${selected ? '' : ' disabled'}>Copy</button>
+          <button class="hub-modal-btn secondary" type="button" data-disks-dual-action="move-selected" data-disks-dual-pane="${_disksEsc(paneId)}" data-disks-dual-target="${_disksEsc(other)}"${selected ? '' : ' disabled'}>Move</button>
+          <button class="hub-modal-btn secondary" type="button" data-disks-dual-action="favorite-add" data-disks-dual-pane="${_disksEsc(paneId)}">Favourite</button>
+        </div>
       </div>
       <label class="disks-dual-pane__location">
         <span>Location</span>
@@ -1039,14 +1254,7 @@ function _disksDualPaneHtml(paneId) {
       <div class="docs-tree-panel">
         <div class="docs-tree-list disks-dual-pane__list">${listHtml}</div>
       </div>
-      <div class="disks-dual-pane__selected">
-        <span>${_disksEsc(selectedLabel)}</span>
-        <div>
-          <button class="hub-modal-btn secondary" type="button" data-disks-dual-action="copy-selected" data-disks-dual-pane="${_disksEsc(paneId)}" data-disks-dual-target="${_disksEsc(other)}"${selected ? '' : ' disabled'}>Copy</button>
-          <button class="hub-modal-btn secondary" type="button" data-disks-dual-action="move-selected" data-disks-dual-pane="${_disksEsc(paneId)}" data-disks-dual-target="${_disksEsc(other)}"${selected ? '' : ' disabled'}>Move</button>
-        </div>
-      </div>
-      <p class="docs-tree-status">${_disksEsc(statusText)}</p>
+      <p class="docs-tree-status disks-dual-pane__footer">${_disksEsc(footerText)}</p>
       <p class="hub-modal-error disks-tree__error"${error ? '' : ' hidden'}>${_disksEsc(error ? `Error: ${error}` : '')}</p>
     </section>
   `;
@@ -1096,19 +1304,21 @@ function _disksDualPaneSectionHtml(node) {
             ${['cancel', 'rename', 'skip', 'overwrite'].map(value => `<option value="${value}"${_disksDualPaneState.conflict === value ? ' selected' : ''}>${value}</option>`).join('')}
           </select>
         </label>
-        <button class="hub-modal-btn secondary" type="button" data-disks-dual-action="favorites-refresh">Refresh favourites</button>
+        <div class="disks-dual__controls-actions">
+          <details class="disks-dual__favorites">
+            <summary>Server favourites</summary>
+            <div class="disks-dual__favorites-list">
+              ${_disksFilesystemFavoritesLoading ? '<div class="docs-tree-loading">Loading favourites...</div>' : _disksDualPaneFavoritesHtml()}
+            </div>
+          </details>
+          <button class="hub-modal-btn secondary" type="button" data-disks-dual-action="favorites-refresh">Refresh favourites</button>
+        </div>
       </div>
       <div class="disks-dual__panes">
         ${_disksDualPaneHtml('left')}
         ${_disksDualPaneHtml('right')}
       </div>
       <div class="disks-dual__status"${status ? '' : ' hidden'}>${_disksEsc(status)}</div>
-      <details class="disks-dual__favorites">
-        <summary>Server favourites</summary>
-        <div class="disks-dual__favorites-list">
-          ${_disksFilesystemFavoritesLoading ? '<div class="docs-tree-loading">Loading favourites...</div>' : _disksDualPaneFavoritesHtml()}
-        </div>
-      </details>
     </section>
   `;
 }
@@ -5079,6 +5289,9 @@ function _disksOnShellClick(event) {
     if (action === 'browse') {
       pane.path = _disksNormalizeRelativePath(dualActionBtn.dataset.path || '.');
       pane.selectedPath = '';
+      pane.restoreFallback = false;
+      pane.restoreFallbackTriedKeys = [];
+      _disksDualPaneRemember();
       renderDisksPage();
       _disksEnsureDualPaneTree(paneId);
       return;
@@ -5102,6 +5315,9 @@ function _disksOnShellClick(event) {
       const cached = _disksDualPaneCache(paneId);
       pane.path = cached?.ok ? _disksNormalizeRelativePath(cached.data?.parent_path || '.') : '.';
       pane.selectedPath = '';
+      pane.restoreFallback = false;
+      pane.restoreFallbackTriedKeys = [];
+      _disksDualPaneRemember();
       renderDisksPage();
       _disksEnsureDualPaneTree(paneId);
       return;
@@ -5109,6 +5325,9 @@ function _disksOnShellClick(event) {
     if (action === 'root') {
       pane.path = '.';
       pane.selectedPath = '';
+      pane.restoreFallback = false;
+      pane.restoreFallbackTriedKeys = [];
+      _disksDualPaneRemember();
       renderDisksPage();
       _disksEnsureDualPaneTree(paneId);
       return;

@@ -599,6 +599,16 @@
   flex-wrap: wrap;
 }
 
+.disks-dual__controls-actions {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
 .disks-dual__controls label,
 .disks-dual-pane__location {
   display: grid;
@@ -662,7 +672,6 @@
 
 .disks-dual-pane {
   display: grid;
-  grid-template-rows: auto auto auto auto minmax(180px, 1fr) auto auto auto;
   gap: 9px;
   min-width: 0;
   min-height: 0;
@@ -673,7 +682,7 @@
 }
 
 .disks-dual-pane__head,
-.disks-dual-pane__selected,
+.disks-dual-pane__actions,
 .disks-dual-favorite,
 .disks-dual-favorite__actions {
   display: flex;
@@ -682,9 +691,18 @@
 }
 
 .disks-dual-pane__head,
-.disks-dual-pane__selected,
 .disks-dual-favorite {
   justify-content: space-between;
+}
+
+.disks-dual-pane__head {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.disks-dual-pane__actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .disks-dual-pane__head h3 {
@@ -711,7 +729,7 @@
 }
 
 .disks-dual-pane .docs-tree-panel {
-  min-height: 0;
+  min-height: 180px;
   background: rgba(0, 0, 0, 0.2);
 }
 
@@ -743,27 +761,8 @@
   font-size: 11px;
 }
 
-.disks-dual-pane__selected {
-  min-width: 0;
-  padding: 8px 9px;
-  border: 1px solid rgba(91, 156, 246, 0.16);
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.18);
-  color: var(--text-dim);
-  font-size: 11px;
-}
-
-.disks-dual-pane__selected > span {
-  min-width: 0;
+.disks-dual-pane__footer {
   overflow-wrap: anywhere;
-}
-
-.disks-dual-pane__selected > div {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
 }
 
 .disks-dual__status {
@@ -777,21 +776,44 @@
 }
 
 .disks-dual__favorites {
+  position: relative;
   border: 1px solid rgba(91, 156, 246, 0.16);
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.16);
 }
 
 .disks-dual__favorites summary {
+  min-width: 150px;
+  max-width: 190px;
   padding: 9px 11px;
   color: var(--text);
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .disks-dual__favorites-list {
   display: grid;
   gap: 8px;
-  padding: 0 10px 10px;
+  padding: 10px;
+}
+
+.disks-dual__controls .disks-dual__favorites[open] {
+  z-index: 20;
+}
+
+.disks-dual__controls .disks-dual__favorites[open] .disks-dual__favorites-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: min(92vw, 640px);
+  max-height: min(52vh, 420px);
+  overflow: auto;
+  border: 1px solid rgba(91, 156, 246, 0.18);
+  border-radius: 8px;
+  background: rgba(5, 7, 13, 0.96);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
 }
 
 .disks-dual-favorite {
