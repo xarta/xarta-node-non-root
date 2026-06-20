@@ -140,6 +140,15 @@ const _DISKS_FACT_PRIORITIES = {
     'uuid',
     'source',
   ],
+  dataset: [
+    'mount',
+    'type',
+    'proxmox-storage',
+    'direct-files',
+    'usage-source',
+    'child-datasets-volumes',
+    'encryption',
+  ],
   default: [
     'path',
     'filesystem',
@@ -2806,6 +2815,23 @@ function _disksMeasureDesktopFactWidth(pretext, item) {
   );
 }
 
+function _disksDesktopFactCanWrapLabelInThird(pretext, item, basis, thirdSlot, twoThirdSlot) {
+  if (basis <= thirdSlot || basis > twoThirdSlot) return false;
+  const itemStyle = window.getComputedStyle(item);
+  const labelEl = item.querySelector('.disks-facts__label');
+  const valueEl = item.querySelector('.disks-facts__value');
+  const labelText = String(labelEl?.textContent || '').trim();
+  const valueText = String(valueEl?.textContent || '').trim();
+  if (!labelText || !/[\s/-]/.test(labelText)) return false;
+  const valueWidth = valueText ? _disksMeasureTextWidth(pretext, valueText, window.getComputedStyle(valueEl)) : 0;
+  const valueBasis = Math.ceil(
+    valueWidth
+    + _disksHorizontalChromeWidth(itemStyle)
+    + _disksDesktopFactBreathingPx(labelText, valueText)
+  );
+  return valueBasis <= thirdSlot;
+}
+
 function _disksCompactFactShouldSpanWide(item, width, containerWidth) {
   const slug = String(item.dataset.disksFactSlug || '').trim().toLowerCase();
   const value = String(item.querySelector('.disks-facts__value')?.textContent || '').trim();
@@ -2884,9 +2910,30 @@ function _disksDesktopFactCanUseUnits(record, units) {
   return false;
 }
 
+function _disksDesktopFactCanUseThirdUnits(record, units, allowRelaxedThirds = false) {
+  if (units === 1) return !!record.canThird || (allowRelaxedThirds && !!record.canRelaxedThird);
+  if (units === 2) return !!record.canTwoThirds;
+  return false;
+}
+
+function _disksDesktopFactThirdUnitsRelaxedCount(record, units) {
+  return units === 1 && !record.canThird && record.canRelaxedThird ? 1 : 0;
+}
+
+function _disksDesktopFactNaturalRowFits(records, containerWidth, gapPx) {
+  const rowRecords = Array.isArray(records) ? records : [];
+  if (rowRecords.length < 2 || !containerWidth) return false;
+  const width = rowRecords.reduce((total, record) => total + Math.ceil(record.basis || 0), 0);
+  const gaps = Math.max(0, rowRecords.length - 1) * gapPx;
+  return width + gaps <= containerWidth + 1;
+}
+
 function _disksDesktopFactRowLayouts(rowMask, records, options = {}) {
   const allowRelaxedThirds = !!options.allowRelaxedThirds;
   const allowQuarters = !!options.allowQuarters;
+  const allowNaturalRows = !!options.allowNaturalRows;
+  const naturalContainerWidth = Math.max(0, Number(options.naturalContainerWidth) || 0);
+  const naturalGapPx = Math.max(0, Number(options.naturalGapPx) || 0);
   const rowRecords = _disksDesktopFactRowRecords(rowMask, records);
   const count = rowRecords.length;
   const layouts = [];
@@ -2904,6 +2951,18 @@ function _disksDesktopFactRowLayouts(rowMask, records, options = {}) {
   }
   if (count === 2 && rowRecords.every(record => record.canHalf)) {
     addLayout('halves', rowRecords.map(record => ({ record, units: 2 })));
+  }
+  if (count === 2) {
+    [
+      [2, 1],
+      [1, 2],
+    ].forEach(units => {
+      if (!rowRecords.every((record, index) => _disksDesktopFactCanUseThirdUnits(record, units[index], allowRelaxedThirds))) return;
+      const relaxedCount = rowRecords.reduce((total, record, index) => {
+        return total + _disksDesktopFactThirdUnitsRelaxedCount(record, units[index]);
+      }, 0);
+      addLayout('third-spans', rowRecords.map((record, index) => ({ record, units: units[index] })), relaxedCount);
+    });
   }
   if (count === 3) {
     const strictThirds = rowRecords.every(record => record.canThird);
@@ -2930,6 +2989,9 @@ function _disksDesktopFactRowLayouts(rowMask, records, options = {}) {
   if (count === 4 && allowQuarters && rowRecords.every(record => record.canQuarter)) {
     addLayout('quarters', rowRecords.map(record => ({ record, units: 1 })));
   }
+  if (allowNaturalRows && _disksDesktopFactNaturalRowFits(rowRecords, naturalContainerWidth, naturalGapPx)) {
+    addLayout('natural', rowRecords.map(record => ({ record, units: 0 })));
+  }
   return layouts;
 }
 
@@ -2955,6 +3017,9 @@ function _disksDesktopFactSolveRows(records, options = {}) {
   }
   const allowRelaxedThirds = !!options.allowRelaxedThirds;
   const allowQuarters = !!options.allowQuarters;
+  const allowNaturalRows = !!options.allowNaturalRows;
+  const naturalContainerWidth = Math.max(0, Number(options.naturalContainerWidth) || 0);
+  const naturalGapPx = Math.max(0, Number(options.naturalGapPx) || 0);
   const maxMask = 1 << count;
   const layoutsByMask = new Array(maxMask);
   layoutsByMask[0] = [];
@@ -2962,6 +3027,9 @@ function _disksDesktopFactSolveRows(records, options = {}) {
     layoutsByMask[mask] = _disksDesktopFactRowLayouts(mask, records, {
       allowRelaxedThirds,
       allowQuarters,
+      allowNaturalRows,
+      naturalContainerWidth,
+      naturalGapPx,
     });
   }
   const memo = new Array(maxMask);
@@ -3018,8 +3086,9 @@ function _disksDesktopFactSolveRows(records, options = {}) {
 function _disksDesktopFactCanRelaxThird(item, basis, thirdSlot, halfSlot) {
   if (basis <= thirdSlot) return false;
   if (basis > halfSlot) return false;
+  const label = String(item.querySelector('.disks-facts__label')?.textContent || '').trim();
   const value = String(item.querySelector('.disks-facts__value')?.textContent || '').trim();
-  if (!/\s/.test(value)) return false;
+  if (!/[\s/-]/.test(`${label} ${value}`)) return false;
   return basis <= thirdSlot * 1.55;
 }
 
@@ -3031,7 +3100,12 @@ function _disksDesktopFactFlexBasis(entry, row, gapPx) {
   const count = row.entries.length;
   const gapTotal = Math.max(0, count - 1) * gapPx;
   if (row.kind === 'full' || entry.units >= 4) return '100%';
-  if (row.kind === 'thirds') return `calc((100% - ${gapTotal}px) / 3)`;
+  if (row.kind === 'natural') return `${Math.ceil(entry.record.basis || 0)}px`;
+  if (row.kind === 'thirds' || row.kind === 'third-spans') {
+    const base = `(100% - ${gapTotal}px)`;
+    if (entry.units >= 2) return `calc(${base} - (${base} / 3))`;
+    return `calc(${base} / 3)`;
+  }
   if (entry.units === 2) return `calc((100% - ${gapTotal}px) / 2)`;
   return `calc((100% - ${gapTotal}px) / 4)`;
 }
@@ -3185,28 +3259,45 @@ function _disksApplyDesktopFacts(container, pretext) {
   const gapPx = _disksCompactContainerGapPx(container);
   const quarterSlot = Math.max(0, (containerWidth - (gapPx * 3)) / 4);
   const thirdSlot = Math.max(0, (containerWidth - (gapPx * 2)) / 3);
+  const twoThirdSlot = Math.max(0, ((containerWidth - gapPx) * 2) / 3);
   const halfSlot = Math.max(0, (containerWidth - gapPx) / 2);
   const halfAllowance = Math.min(12, Math.max(4, containerWidth * 0.025));
+  const twoThirdAllowance = Math.min(16, Math.max(6, containerWidth * 0.02));
   const thirdAllowance = Math.min(4, Math.max(1, containerWidth * 0.01));
   const quarterAllowance = Math.min(3, Math.max(1, containerWidth * 0.006));
   const allowQuarters = _disksDesktopFactAllowQuarters(containerWidth, quarterSlot);
+  const allowNaturalRows = !!container.closest('.disks-card') && containerWidth >= 680;
   const records = [];
   container.classList.add('disks-facts--desktop-packed', 'is-pretext-ready');
   container.querySelectorAll('.disks-facts__item').forEach((item, index) => {
     const basis = _disksMeasureDesktopFactWidth(pretext, item);
+    const canWrappedThird = _disksDesktopFactCanWrapLabelInThird(
+      pretext,
+      item,
+      basis,
+      thirdSlot + thirdAllowance,
+      twoThirdSlot + twoThirdAllowance,
+    );
     records.push({
       item,
       basis,
       index,
       canQuarter: allowQuarters && basis <= quarterSlot + quarterAllowance,
-      canThird: basis <= thirdSlot + thirdAllowance,
+      canThird: basis <= thirdSlot + thirdAllowance || canWrappedThird,
       canRelaxedThird: _disksDesktopFactCanRelaxThird(item, basis, thirdSlot + thirdAllowance, halfSlot + halfAllowance),
+      canTwoThirds: basis <= twoThirdSlot + twoThirdAllowance,
       canHalf: basis <= halfSlot + halfAllowance,
     });
   });
-  const strictRows = _disksDesktopFactSolveRows(records, { allowQuarters });
+  const solveOptions = {
+    allowQuarters,
+    allowNaturalRows,
+    naturalContainerWidth: containerWidth,
+    naturalGapPx: gapPx,
+  };
+  const strictRows = _disksDesktopFactSolveRows(records, solveOptions);
   const relaxedRows = records.some(record => record.canRelaxedThird)
-    ? _disksDesktopFactSolveRows(records, { allowRelaxedThirds: true, allowQuarters })
+    ? _disksDesktopFactSolveRows(records, { ...solveOptions, allowRelaxedThirds: true })
     : strictRows;
   const rows = relaxedRows.length < strictRows.length ? relaxedRows : strictRows;
   let order = 0;
@@ -3214,8 +3305,8 @@ function _disksApplyDesktopFacts(container, pretext) {
     row.entries.forEach(entry => {
       const flexBasis = _disksDesktopFactFlexBasis(entry, row, gapPx);
       entry.record.item.style.order = String(order);
-      entry.record.item.style.flex = `0 0 ${flexBasis}`;
-      entry.record.item.style.maxWidth = flexBasis;
+      entry.record.item.style.flex = row.kind === 'natural' ? `1 1 ${flexBasis}` : `0 0 ${flexBasis}`;
+      entry.record.item.style.maxWidth = row.kind === 'natural' ? 'none' : flexBasis;
       order += 1;
     });
   });
