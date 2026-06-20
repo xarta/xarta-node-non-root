@@ -2603,7 +2603,7 @@ function _disksEqualizeCards(cards) {
       return { card, main };
     })
     .filter(Boolean);
-  if (!entries.length) return;
+  if (entries.length < 2) return;
   const maxHeight = entries.reduce((height, entry) => {
     return Math.max(height, entry.main.getBoundingClientRect().height);
   }, 0);
@@ -2646,6 +2646,26 @@ function _disksBlockRows(block) {
   return nestedCards.length ? [nestedCards] : [];
 }
 
+function _disksCollectLayoutBlockRows(blocks) {
+  const rows = [];
+  Array.from(blocks || []).forEach(block => {
+    if (!block) return;
+    const rect = block.getBoundingClientRect();
+    if (!rect.width && !rect.height) return;
+    let row = rows.find(candidate => Math.abs(candidate.top - rect.top) < 8);
+    if (!row) {
+      row = { top: rect.top, blocks: [] };
+      rows.push(row);
+    }
+    row.blocks.push({ block, left: rect.left });
+  });
+  rows.sort((left, right) => left.top - right.top);
+  return rows.map(row => {
+    row.blocks.sort((left, right) => left.left - right.left);
+    return row.blocks.map(entry => entry.block);
+  });
+}
+
 function _disksEqualizeShelfHeights(shelf) {
   if (!shelf) return;
   const blocks = Array.from(shelf.querySelectorAll(':scope > [data-disks-layout-role]'));
@@ -2661,14 +2681,16 @@ function _disksEqualizeShelfHeights(shelf) {
     blocks.forEach(_disksEqualizeBlockHeights);
     return;
   }
-  const rowsByIndex = [];
-  blocks.forEach(block => {
-    _disksBlockRows(block).forEach((rowCards, rowIndex) => {
-      if (!rowsByIndex[rowIndex]) rowsByIndex[rowIndex] = [];
-      rowsByIndex[rowIndex].push(...rowCards);
+  _disksCollectLayoutBlockRows(blocks).forEach(blockRow => {
+    const rowsByIndex = [];
+    blockRow.forEach(block => {
+      _disksBlockRows(block).forEach((rowCards, rowIndex) => {
+        if (!rowsByIndex[rowIndex]) rowsByIndex[rowIndex] = [];
+        rowsByIndex[rowIndex].push(...rowCards);
+      });
     });
+    rowsByIndex.forEach(rowCards => _disksEqualizeCards(rowCards));
   });
-  rowsByIndex.forEach(rowCards => _disksEqualizeCards(rowCards));
 }
 
 function _disksApplyClusterEdges(grid) {
