@@ -1,6 +1,9 @@
 /* ── Local Dockge ──────────────────────────────────────────────────────── */
 
 const _LOCAL_DOCKGE_POLL_MS = 7000;
+const _LOCAL_DOCKGE_METRICS_POLL_MS = 1000;
+const _LOCAL_DOCKGE_METRICS_WINDOW = 10;
+const _LOCAL_DOCKGE_METRICS_SEGMENTS = 20;
 const _LOCAL_DOCKGE_COLS = ['stack', 'services', 'containers', 'status_health', 'updated', 'actions'];
 const _LOCAL_DOCKGE_FIELD_META = {
   stack: { label: 'Stack' },
@@ -40,6 +43,11 @@ let _localDockgeNarrationLongPressTimer = null;
 let _localDockgeNarrationLastLongPressAt = 0;
 let _localDockgeDownloadBusyStack = null;
 let _localDockgeLoadPromise = null;
+let _localDockgeMetricsPollInterval = null;
+let _localDockgeMetricsLoadPromise = null;
+let _localDockgeMetricsCapacity = null;
+let _localDockgeMetricsPulseSeq = 0;
+const _localDockgeMetricsByStack = new Map();
 const _LOCAL_DOCKGE_NARRATION_DOUBLE_CLICK_MS = 260;
 const _LOCAL_DOCKGE_NARRATION_LONG_PRESS_MS = 650;
 
@@ -136,6 +144,98 @@ function _localDockgeFormatUpdatedHtml(value) {
   if (text === '-') return '<span class="local-dockge-updated">-</span>';
   const [date, time] = text.split(' ');
   return `<span class="local-dockge-updated"><span>${esc(date || text)}</span>${time ? `<span>${esc(time)}</span>` : ''}</span>`;
+}
+
+function _localDockgeClampPercent(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 0;
+  return Math.max(0, Math.min(100, num));
+}
+
+function _localDockgeFormatPercent(value) {
+  const pct = _localDockgeClampPercent(value);
+  if (pct >= 10) return `${pct.toFixed(1)}%`;
+  if (pct >= 1) return `${pct.toFixed(2)}%`;
+  return `${pct.toFixed(3)}%`;
+}
+
+function _localDockgeFormatBytes(value) {
+  const bytes = Number(value) || 0;
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let size = Math.max(0, bytes);
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  const places = size >= 10 || unit === 0 ? 0 : 1;
+  return `${size.toFixed(places)} ${units[unit]}`;
+}
+
+function _localDockgeMetricState(stackName) {
+  return _localDockgeMetricsByStack.get(stackName) || null;
+}
+
+function _localDockgeAverageSample(samples, key) {
+  const values = (samples || []).map(sample => Number(sample[key])).filter(Number.isFinite);
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function _localDockgeMetricLeadIndex(percent) {
+  const segmentSize = 100 / _LOCAL_DOCKGE_METRICS_SEGMENTS;
+  if (percent <= 0) return 0;
+  return Math.min(_LOCAL_DOCKGE_METRICS_SEGMENTS - 1, Math.ceil(percent / segmentSize) - 1);
+}
+
+function _localDockgeSegmentBarHtml(kind, percent, pulseSeq) {
+  const pct = _localDockgeClampPercent(percent);
+  const segmentSize = 100 / _LOCAL_DOCKGE_METRICS_SEGMENTS;
+  const leadIndex = _localDockgeMetricLeadIndex(pct);
+  const segments = [];
+  for (let i = 0; i < _LOCAL_DOCKGE_METRICS_SEGMENTS; i += 1) {
+    const start = i * segmentSize;
+    const fill = Math.max(0, Math.min(1, (pct - start) / segmentSize));
+    const cls = [
+      'local-dockge-resource-segment',
+      fill > 0 ? 'is-filled' : '',
+      pulseSeq && i === leadIndex ? 'is-pulsing' : '',
+    ].filter(Boolean).join(' ');
+    segments.push(`<span class="${cls}" style="--fill-pct:${(fill * 100).toFixed(1)}%"></span>`);
+  }
+  return `<div class="local-dockge-resource-bar local-dockge-resource-bar--${esc(kind)}">${segments.join('')}</div>`;
+}
+
+function _localDockgeMetricsBarsContent(stackName) {
+  const state = _localDockgeMetricState(stackName);
+  const samples = state?.samples || [];
+  const sampleCount = samples.length;
+  const cpuPercent = _localDockgeAverageSample(samples, 'cpu_percent');
+  const memoryPercent = _localDockgeAverageSample(samples, 'memory_percent');
+  const memoryBytes = _localDockgeAverageSample(samples, 'memory_bytes');
+  const windowText = sampleCount
+    ? `${sampleCount}s rolling average${sampleCount >= _LOCAL_DOCKGE_METRICS_WINDOW ? '' : ' so far'}`
+    : 'waiting for resource metrics';
+  const cpuUnits = _localDockgeMetricsCapacity?.cpu_units;
+  const memoryTotal = _localDockgeMetricsCapacity?.memory_bytes;
+  const cpuTitle = sampleCount
+    ? `CPU ${_localDockgeFormatPercent(cpuPercent)} of ${cpuUnits || '?'} CPU units (${windowText})`
+    : 'CPU waiting for a successful metrics reading';
+  const memTitle = sampleCount
+    ? `RAM ${_localDockgeFormatPercent(memoryPercent)} (${_localDockgeFormatBytes(memoryBytes)} of ${_localDockgeFormatBytes(memoryTotal)}) (${windowText})`
+    : 'RAM waiting for a successful metrics reading';
+  const pulseSeq = state?.pulseSeq || 0;
+  return `
+    <div class="local-dockge-resource-row" title="${esc(cpuTitle)}" aria-label="${esc(cpuTitle)}">
+      ${_localDockgeSegmentBarHtml('cpu', cpuPercent, pulseSeq)}
+    </div>
+    <div class="local-dockge-resource-row" title="${esc(memTitle)}" aria-label="${esc(memTitle)}">
+      ${_localDockgeSegmentBarHtml('memory', memoryPercent, pulseSeq)}
+    </div>`;
+}
+
+function _localDockgeMetricsBarsHtml(stackName) {
+  return `<div class="local-dockge-resource-bars" data-local-dockge-metrics-stack="${esc(stackName || '')}">${_localDockgeMetricsBarsContent(stackName)}</div>`;
 }
 
 function _localDockgeFilterRows(stacks) {
@@ -747,7 +847,10 @@ function _renderLocalDockgeStackRows() {
     const services = (stack.services || []).map(service => _localDockgeServicePill(stack, service)).join(' ');
     const containers = (stack.containers || []).map(container => _localDockgeRenderContainerChip(container)).join('');
     const rendered = {
-      stack: `<div class="local-dockge-stack-cell">${_localDockgeRenderStackName(stack)}${_localDockgeStackErrorButton(stack)}</div>`,
+      stack: `<div class="local-dockge-stack-cell">
+        <div class="local-dockge-stack-title">${_localDockgeRenderStackName(stack)}${_localDockgeStackErrorButton(stack)}</div>
+        ${_localDockgeMetricsBarsHtml(stack.stack_name || '')}
+      </div>`,
       services: services || '<span style="color:var(--text-dim)">-</span>',
       containers: containers
         ? `<div class="local-dockge-container-list">${containers}</div>`
@@ -768,6 +871,67 @@ function renderLocalDockgeStacks() {
     return;
   }
   _renderLocalDockgeStackRows();
+}
+
+function _updateLocalDockgeMetricsDom() {
+  document.querySelectorAll('[data-local-dockge-metrics-stack]').forEach(el => {
+    el.innerHTML = _localDockgeMetricsBarsContent(el.dataset.localDockgeMetricsStack || '');
+  });
+}
+
+function _localDockgeApplyMetrics(data) {
+  const metricByStack = new Map((data.stacks || []).map(item => [item.stack_name, item]));
+  const pulseSeq = _localDockgeMetricsPulseSeq + 1;
+  _localDockgeMetricsPulseSeq = pulseSeq;
+  _localDockgeMetricsCapacity = data.capacity || null;
+
+  (_localDockgeStacks || []).forEach(stack => {
+    const stackName = stack.stack_name || '';
+    if (!stackName) return;
+    const metric = metricByStack.get(stackName) || {};
+    const prev = _localDockgeMetricsByStack.get(stackName) || { samples: [] };
+    const samples = [...(prev.samples || []), {
+      cpu_percent: _localDockgeClampPercent(metric.cpu_percent),
+      memory_percent: _localDockgeClampPercent(metric.memory_percent),
+      memory_bytes: Math.max(0, Number(metric.memory_bytes) || 0),
+      sampled_at: data.updated_at || new Date().toISOString(),
+    }].slice(-_LOCAL_DOCKGE_METRICS_WINDOW);
+    _localDockgeMetricsByStack.set(stackName, {
+      samples,
+      pulseSeq,
+      updated_at: data.updated_at || '',
+    });
+  });
+  _updateLocalDockgeMetricsDom();
+}
+
+async function loadLocalDockgeMetrics() {
+  if (_localDockgeMetricsLoadPromise) return _localDockgeMetricsLoadPromise;
+  if (!_localDockgeIsActive() || document.visibilityState === 'hidden') return null;
+  _localDockgeMetricsLoadPromise = (async () => {
+    const r = await apiFetch('/api/v1/local-dockge/metrics', { cache: 'no-store' });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || !data.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+    _localDockgeApplyMetrics(data);
+    return data;
+  })();
+  try {
+    return await _localDockgeMetricsLoadPromise;
+  } catch (e) {
+    console.warn('local Dockge metrics failed', e);
+    return null;
+  } finally {
+    _localDockgeMetricsLoadPromise = null;
+  }
+}
+
+function _ensureLocalDockgeMetricsPoll() {
+  if (_localDockgeMetricsPollInterval) return;
+  _localDockgeMetricsPollInterval = setInterval(() => {
+    if (_localDockgeIsActive() && document.visibilityState !== 'hidden') {
+      loadLocalDockgeMetrics();
+    }
+  }, _LOCAL_DOCKGE_METRICS_POLL_MS);
 }
 
 function _ensureLocalDockgePoll() {
@@ -792,12 +956,14 @@ async function loadLocalDockgeStacks(options = {}) {
     status.hidden = false;
   }
   _ensureLocalDockgePoll();
+  _ensureLocalDockgeMetricsPoll();
   _localDockgeLoadPromise = (async () => {
     const r = await apiFetch('/api/v1/local-dockge/stacks');
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
     _localDockgeStacks = data.stacks || [];
     renderLocalDockgeStacks();
+    if (_localDockgeIsActive()) loadLocalDockgeMetrics();
     if (status) {
       status.textContent = `${_localDockgeStacks.length} stack${_localDockgeStacks.length === 1 ? '' : 's'} from ${data.stacks_dir || 'local Dockge'}`;
       status.style.color = 'var(--text-dim)';
