@@ -2710,7 +2710,7 @@ function _disksResetCompactPretextLayout(shell) {
     });
   });
   shell.querySelectorAll('.disks-facts').forEach(container => {
-    container.classList.remove('disks-facts--compact', 'is-pretext-ready');
+    container.classList.remove('disks-facts--compact', 'disks-facts--desktop-packed', 'is-pretext-ready');
     container.querySelectorAll('.disks-facts__item').forEach(item => {
       item.classList.remove('is-wide');
       item.style.removeProperty('flex');
@@ -2783,6 +2783,29 @@ function _disksMeasureCompactFactWidth(pretext, item) {
   );
 }
 
+function _disksDesktopFactBreathingPx(labelText, valueText) {
+  const length = Math.max(
+    String(labelText || '').trim().length,
+    String(valueText || '').trim().length,
+  );
+  return Math.min(18, 8 + Math.ceil(length / 9));
+}
+
+function _disksMeasureDesktopFactWidth(pretext, item) {
+  const itemStyle = window.getComputedStyle(item);
+  const labelEl = item.querySelector('.disks-facts__label');
+  const valueEl = item.querySelector('.disks-facts__value');
+  const labelText = String(labelEl?.textContent || '').trim();
+  const valueText = String(valueEl?.textContent || '').trim();
+  const labelWidth = labelText ? _disksMeasureTextWidth(pretext, labelText, window.getComputedStyle(labelEl)) : 0;
+  const valueWidth = valueText ? _disksMeasureTextWidth(pretext, valueText, window.getComputedStyle(valueEl)) : 0;
+  return Math.ceil(
+    Math.max(labelWidth, valueWidth)
+    + _disksHorizontalChromeWidth(itemStyle)
+    + _disksDesktopFactBreathingPx(labelText, valueText)
+  );
+}
+
 function _disksCompactFactShouldSpanWide(item, width, containerWidth) {
   const slug = String(item.dataset.disksFactSlug || '').trim().toLowerCase();
   const value = String(item.querySelector('.disks-facts__value')?.textContent || '').trim();
@@ -2844,6 +2867,173 @@ function _disksCompactRowInversions(rowMask, remainingMask) {
     bits ^= bit;
   }
   return inversions;
+}
+
+function _disksDesktopFactRowRecords(rowMask, records) {
+  const rowRecords = [];
+  for (let index = 0; index < records.length; index += 1) {
+    if (rowMask & (1 << index)) rowRecords.push(records[index]);
+  }
+  return rowRecords;
+}
+
+function _disksDesktopFactCanUseUnits(record, units) {
+  if (units === 1) return !!record.canQuarter;
+  if (units === 2) return !!record.canHalf;
+  if (units === 4) return true;
+  return false;
+}
+
+function _disksDesktopFactRowLayouts(rowMask, records, options = {}) {
+  const allowRelaxedThirds = !!options.allowRelaxedThirds;
+  const allowQuarters = !!options.allowQuarters;
+  const rowRecords = _disksDesktopFactRowRecords(rowMask, records);
+  const count = rowRecords.length;
+  const layouts = [];
+  const addLayout = (kind, entries, relaxedCount = 0) => {
+    layouts.push({
+      kind,
+      entries,
+      records: rowRecords,
+      relaxedCount,
+    });
+  };
+  if (count === 1) {
+    addLayout('full', rowRecords.map(record => ({ record, units: 4 })));
+    return layouts;
+  }
+  if (count === 2 && rowRecords.every(record => record.canHalf)) {
+    addLayout('halves', rowRecords.map(record => ({ record, units: 2 })));
+  }
+  if (count === 3) {
+    const strictThirds = rowRecords.every(record => record.canThird);
+    if (strictThirds) {
+      addLayout('thirds', rowRecords.map(record => ({ record, units: 1 })));
+    } else if (allowRelaxedThirds && rowRecords.every(record => record.canThird || record.canRelaxedThird)) {
+      addLayout(
+        'thirds',
+        rowRecords.map(record => ({ record, units: 1 })),
+        rowRecords.filter(record => !record.canThird).length,
+      );
+    }
+    if (allowQuarters) {
+      [
+        [2, 1, 1],
+        [1, 2, 1],
+        [1, 1, 2],
+      ].forEach(units => {
+        if (!rowRecords.every((record, index) => _disksDesktopFactCanUseUnits(record, units[index]))) return;
+        addLayout('quarters', rowRecords.map((record, index) => ({ record, units: units[index] })));
+      });
+    }
+  }
+  if (count === 4 && allowQuarters && rowRecords.every(record => record.canQuarter)) {
+    addLayout('quarters', rowRecords.map(record => ({ record, units: 1 })));
+  }
+  return layouts;
+}
+
+function _disksDesktopFactPackingBetter(candidate, currentBest) {
+  if (!currentBest) return true;
+  if (candidate.rowCount !== currentBest.rowCount) return candidate.rowCount < currentBest.rowCount;
+  if (candidate.relaxedCount !== currentBest.relaxedCount) return candidate.relaxedCount < currentBest.relaxedCount;
+  if (candidate.singletons !== currentBest.singletons) return candidate.singletons < currentBest.singletons;
+  if (candidate.inversions !== currentBest.inversions) return candidate.inversions < currentBest.inversions;
+  return false;
+}
+
+function _disksDesktopFactSolveRows(records, options = {}) {
+  const count = Array.isArray(records) ? records.length : 0;
+  if (!count) return [];
+  if (count > 12) {
+    return records.map(record => ({
+      kind: 'full',
+      entries: [{ record, units: 4 }],
+      records: [record],
+      relaxedCount: 0,
+    }));
+  }
+  const allowRelaxedThirds = !!options.allowRelaxedThirds;
+  const allowQuarters = !!options.allowQuarters;
+  const maxMask = 1 << count;
+  const layoutsByMask = new Array(maxMask);
+  layoutsByMask[0] = [];
+  for (let mask = 1; mask < maxMask; mask += 1) {
+    layoutsByMask[mask] = _disksDesktopFactRowLayouts(mask, records, {
+      allowRelaxedThirds,
+      allowQuarters,
+    });
+  }
+  const memo = new Array(maxMask);
+  const solve = (remainingMask) => {
+    if (!remainingMask) {
+      return {
+        rowCount: 0,
+        relaxedCount: 0,
+        singletons: 0,
+        inversions: 0,
+        rows: [],
+      };
+    }
+    if (memo[remainingMask]) return memo[remainingMask];
+    let best = null;
+    const anchorBit = remainingMask & -remainingMask;
+    for (let rowMask = remainingMask; rowMask; rowMask = (rowMask - 1) & remainingMask) {
+      if ((rowMask & anchorBit) === 0) continue;
+      const layouts = layoutsByMask[rowMask] || [];
+      if (!layouts.length) continue;
+      const restMask = remainingMask ^ rowMask;
+      layouts.forEach(layout => {
+        const tail = solve(restMask);
+        const candidate = {
+          rowCount: tail.rowCount + 1,
+          relaxedCount: tail.relaxedCount + layout.relaxedCount,
+          singletons: tail.singletons + (layout.entries.length === 1 ? 1 : 0),
+          inversions: tail.inversions + _disksCompactRowInversions(rowMask, restMask),
+          rows: [layout, ...tail.rows],
+        };
+        if (_disksDesktopFactPackingBetter(candidate, best)) {
+          best = candidate;
+        }
+      });
+    }
+    memo[remainingMask] = best || {
+      rowCount: count,
+      relaxedCount: 0,
+      singletons: count,
+      inversions: 0,
+      rows: records.map(record => ({
+        kind: 'full',
+        entries: [{ record, units: 4 }],
+        records: [record],
+        relaxedCount: 0,
+      })),
+    };
+    return memo[remainingMask];
+  };
+  const packed = solve(maxMask - 1);
+  return packed.rows;
+}
+
+function _disksDesktopFactCanRelaxThird(item, basis, thirdSlot, halfSlot) {
+  if (basis <= thirdSlot) return false;
+  if (basis > halfSlot) return false;
+  const value = String(item.querySelector('.disks-facts__value')?.textContent || '').trim();
+  if (!/\s/.test(value)) return false;
+  return basis <= thirdSlot * 1.55;
+}
+
+function _disksDesktopFactAllowQuarters(containerWidth, quarterSlot) {
+  return containerWidth >= 420 && quarterSlot >= 104;
+}
+
+function _disksDesktopFactFlexBasis(entry, row, gapPx) {
+  const count = row.entries.length;
+  const gapTotal = Math.max(0, count - 1) * gapPx;
+  if (row.kind === 'full' || entry.units >= 4) return '100%';
+  if (row.kind === 'thirds') return `calc((100% - ${gapTotal}px) / 3)`;
+  if (entry.units === 2) return `calc((100% - ${gapTotal}px) / 2)`;
+  return `calc((100% - ${gapTotal}px) / 4)`;
 }
 
 // Compact pill groups are small enough to solve exactly, so we minimise row
@@ -2989,19 +3179,66 @@ function _disksApplyCompactFacts(container, pretext) {
   _disksApplyCompactHeroStatus(container, pretext);
 }
 
+function _disksApplyDesktopFacts(container, pretext) {
+  const containerWidth = _disksContainerWidth(container);
+  if (!containerWidth) return;
+  const gapPx = _disksCompactContainerGapPx(container);
+  const quarterSlot = Math.max(0, (containerWidth - (gapPx * 3)) / 4);
+  const thirdSlot = Math.max(0, (containerWidth - (gapPx * 2)) / 3);
+  const halfSlot = Math.max(0, (containerWidth - gapPx) / 2);
+  const halfAllowance = Math.min(12, Math.max(4, containerWidth * 0.025));
+  const thirdAllowance = Math.min(4, Math.max(1, containerWidth * 0.01));
+  const quarterAllowance = Math.min(3, Math.max(1, containerWidth * 0.006));
+  const allowQuarters = _disksDesktopFactAllowQuarters(containerWidth, quarterSlot);
+  const records = [];
+  container.classList.add('disks-facts--desktop-packed', 'is-pretext-ready');
+  container.querySelectorAll('.disks-facts__item').forEach((item, index) => {
+    const basis = _disksMeasureDesktopFactWidth(pretext, item);
+    records.push({
+      item,
+      basis,
+      index,
+      canQuarter: allowQuarters && basis <= quarterSlot + quarterAllowance,
+      canThird: basis <= thirdSlot + thirdAllowance,
+      canRelaxedThird: _disksDesktopFactCanRelaxThird(item, basis, thirdSlot + thirdAllowance, halfSlot + halfAllowance),
+      canHalf: basis <= halfSlot + halfAllowance,
+    });
+  });
+  const strictRows = _disksDesktopFactSolveRows(records, { allowQuarters });
+  const relaxedRows = records.some(record => record.canRelaxedThird)
+    ? _disksDesktopFactSolveRows(records, { allowRelaxedThirds: true, allowQuarters })
+    : strictRows;
+  const rows = relaxedRows.length < strictRows.length ? relaxedRows : strictRows;
+  let order = 0;
+  rows.forEach(row => {
+    row.entries.forEach(entry => {
+      const flexBasis = _disksDesktopFactFlexBasis(entry, row, gapPx);
+      entry.record.item.style.order = String(order);
+      entry.record.item.style.flex = `0 0 ${flexBasis}`;
+      entry.record.item.style.maxWidth = flexBasis;
+      order += 1;
+    });
+  });
+}
+
 function _disksApplyCompactPretextLayout(shell) {
   if (!shell) return;
   _disksResetCompactPretextLayout(shell);
-  if (!_disksCompactLayoutActive()) return;
   if (!_disksPretextModule) {
     _disksLoadPretextModule();
     return;
   }
-  shell.querySelectorAll('[data-disks-pretext-pack]').forEach(container => {
-    _disksApplyCompactPack(container, _disksPretextModule);
-  });
-  shell.querySelectorAll('.disks-facts').forEach(container => {
-    _disksApplyCompactFacts(container, _disksPretextModule);
+  if (_disksCompactLayoutActive()) {
+    shell.querySelectorAll('[data-disks-pretext-pack]').forEach(container => {
+      _disksApplyCompactPack(container, _disksPretextModule);
+    });
+    shell.querySelectorAll('.disks-facts').forEach(container => {
+      _disksApplyCompactFacts(container, _disksPretextModule);
+    });
+    return;
+  }
+  shell.querySelectorAll('.disks-card .disks-facts, .disks-hero .disks-facts').forEach(container => {
+    _disksApplyDesktopFacts(container, _disksPretextModule);
   });
 }
 

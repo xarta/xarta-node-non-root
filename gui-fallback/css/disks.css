@@ -1181,10 +1181,23 @@
   gap: 6px;
 }
 
+.disks-card .disks-facts.disks-facts--desktop-packed,
+.disks-hero .disks-facts.disks-facts--desktop-packed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
 .disks-card .disks-facts__item {
   gap: 3px;
   min-height: 0;
   padding: 7px 10px;
+}
+
+.disks-card .disks-facts.disks-facts--desktop-packed .disks-facts__item,
+.disks-hero .disks-facts.disks-facts--desktop-packed .disks-facts__item {
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .disks-card .disks-facts__item--full,
