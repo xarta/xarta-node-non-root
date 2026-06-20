@@ -53,6 +53,7 @@ let _lxc841DockgeMetricsPollInterval = null;
 let _lxc841DockgeMetricsLoadPromise = null;
 let _lxc841DockgeMetricsPulseSeq = 0;
 let _lxc841DockgeLastMetricsSampleAt = '';
+let _lxc841DockgeLastMetricsData = null;
 const _lxc841DockgeMetricsByStack = new Map();
 const _LXC841_DOCKGE_NARRATION_DOUBLE_CLICK_MS = 260;
 const _LXC841_DOCKGE_NARRATION_LONG_PRESS_MS = 650;
@@ -271,7 +272,39 @@ function _lxc841DockgeMetricsBarsContent(stackName) {
 }
 
 function _lxc841DockgeMetricsBarsHtml(stackName) {
-  return `<div class="local-dockge-resource-bars" data-lxc841-dockge-metrics-stack="${esc(stackName || '')}">${_lxc841DockgeMetricsBarsContent(stackName)}</div>`;
+  const name = stackName || '';
+  return `<button class="local-dockge-resource-bars local-dockge-resource-bars--clickable" type="button"
+      data-lxc841-dockge-metrics-stack="${esc(name)}"
+      data-lxc841-dockge-metrics-open="${esc(name)}"
+      aria-label="Open resource metrics for ${esc(name || 'stack')}">${_lxc841DockgeMetricsBarsContent(name)}</button>`;
+}
+
+function _lxc841DockgeMetricsModalContext(stackName) {
+  const via = _lxc841DockgeLastMetricsData?.ssh_host ? ` via ${_lxc841DockgeLastMetricsData.ssh_host}` : '';
+  return {
+    surface: 'lxc841-dockge',
+    surfaceLabel: '841 Dockge',
+    hostLabel: `841 Dockge host${via}`,
+    stackName,
+    data: _lxc841DockgeLastMetricsData,
+    state: _lxc841DockgeMetricState(stackName),
+    scale: {
+      cpuCores: _LXC841_DOCKGE_METRICS_CPU_SCALE_CORES,
+      memoryBytes: _LXC841_DOCKGE_METRICS_MEMORY_SCALE_BYTES,
+    },
+  };
+}
+
+function _lxc841DockgeOpenMetricsModal(stackName) {
+  if (typeof DockgeMetricsModal === 'undefined') return;
+  DockgeMetricsModal.open(_lxc841DockgeMetricsModalContext(stackName));
+}
+
+function _lxc841DockgeRefreshMetricsModal() {
+  if (typeof DockgeMetricsModal === 'undefined') return;
+  const active = DockgeMetricsModal.current();
+  if (active?.surface !== 'lxc841-dockge') return;
+  DockgeMetricsModal.refresh(_lxc841DockgeMetricsModalContext(active.stackName));
 }
 
 function _lxc841DockgeFilterRows(stacks) {
@@ -919,6 +952,7 @@ function _lxc841DockgeApplyMetrics(data) {
   const sampleAt = data.updated_at || '';
   if (!data.sample_ready || (sampleAt && sampleAt === _lxc841DockgeLastMetricsSampleAt)) return;
   _lxc841DockgeLastMetricsSampleAt = sampleAt;
+  _lxc841DockgeLastMetricsData = data;
   const metricByStack = new Map((data.stacks || []).map(item => [item.stack_name, item]));
   const pulseSeq = _lxc841DockgeMetricsPulseSeq + 1;
   _lxc841DockgeMetricsPulseSeq = pulseSeq;
@@ -945,6 +979,7 @@ function _lxc841DockgeApplyMetrics(data) {
       samples,
       pulseSeq: showMotion ? pulseSeq : 0,
       showMotion,
+      metric,
       trace: showMotion ? {
         cpu_percent: cpuPercent,
         cpu_cores: cpuDockerPercent / 100,
@@ -955,6 +990,7 @@ function _lxc841DockgeApplyMetrics(data) {
     });
   });
   _updateLxc841DockgeMetricsDom();
+  _lxc841DockgeRefreshMetricsModal();
 }
 
 async function loadLxc841DockgeMetrics() {
@@ -1099,6 +1135,12 @@ document.addEventListener('DOMContentLoaded', () => {
     _lxc841DockgeNarrationFsm.dispatch(narrationBtn.dataset.lxc841DockgeNarrateStack, 'doubleTap');
   });
   lxc841DockgeTbody?.addEventListener('click', e => {
+    const metricsBtn = e.target.closest('[data-lxc841-dockge-metrics-open]');
+    if (metricsBtn) {
+      e.preventDefault();
+      _lxc841DockgeOpenMetricsModal(metricsBtn.dataset.lxc841DockgeMetricsOpen || '');
+      return;
+    }
     const narrationBtn = e.target.closest('[data-lxc841-dockge-narrate-stack]');
     if (narrationBtn) {
       e.preventDefault();

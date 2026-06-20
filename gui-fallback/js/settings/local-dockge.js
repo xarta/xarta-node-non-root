@@ -50,6 +50,7 @@ let _localDockgeMetricsPollInterval = null;
 let _localDockgeMetricsLoadPromise = null;
 let _localDockgeMetricsPulseSeq = 0;
 let _localDockgeLastMetricsSampleAt = '';
+let _localDockgeLastMetricsData = null;
 const _localDockgeMetricsByStack = new Map();
 const _LOCAL_DOCKGE_NARRATION_DOUBLE_CLICK_MS = 260;
 const _LOCAL_DOCKGE_NARRATION_LONG_PRESS_MS = 650;
@@ -268,7 +269,38 @@ function _localDockgeMetricsBarsContent(stackName) {
 }
 
 function _localDockgeMetricsBarsHtml(stackName) {
-  return `<div class="local-dockge-resource-bars" data-local-dockge-metrics-stack="${esc(stackName || '')}">${_localDockgeMetricsBarsContent(stackName)}</div>`;
+  const name = stackName || '';
+  return `<button class="local-dockge-resource-bars local-dockge-resource-bars--clickable" type="button"
+      data-local-dockge-metrics-stack="${esc(name)}"
+      data-local-dockge-metrics-open="${esc(name)}"
+      aria-label="Open resource metrics for ${esc(name || 'stack')}">${_localDockgeMetricsBarsContent(name)}</button>`;
+}
+
+function _localDockgeMetricsModalContext(stackName) {
+  return {
+    surface: 'local-dockge',
+    surfaceLabel: 'Local Dockge',
+    hostLabel: 'Local Dockge host',
+    stackName,
+    data: _localDockgeLastMetricsData,
+    state: _localDockgeMetricState(stackName),
+    scale: {
+      cpuCores: _LOCAL_DOCKGE_METRICS_CPU_SCALE_CORES,
+      memoryBytes: _LOCAL_DOCKGE_METRICS_MEMORY_SCALE_BYTES,
+    },
+  };
+}
+
+function _localDockgeOpenMetricsModal(stackName) {
+  if (typeof DockgeMetricsModal === 'undefined') return;
+  DockgeMetricsModal.open(_localDockgeMetricsModalContext(stackName));
+}
+
+function _localDockgeRefreshMetricsModal() {
+  if (typeof DockgeMetricsModal === 'undefined') return;
+  const active = DockgeMetricsModal.current();
+  if (active?.surface !== 'local-dockge') return;
+  DockgeMetricsModal.refresh(_localDockgeMetricsModalContext(active.stackName));
 }
 
 function _localDockgeFilterRows(stacks) {
@@ -916,6 +948,7 @@ function _localDockgeApplyMetrics(data) {
   const sampleAt = data.updated_at || '';
   if (!data.sample_ready || (sampleAt && sampleAt === _localDockgeLastMetricsSampleAt)) return;
   _localDockgeLastMetricsSampleAt = sampleAt;
+  _localDockgeLastMetricsData = data;
   const metricByStack = new Map((data.stacks || []).map(item => [item.stack_name, item]));
   const pulseSeq = _localDockgeMetricsPulseSeq + 1;
   _localDockgeMetricsPulseSeq = pulseSeq;
@@ -942,6 +975,7 @@ function _localDockgeApplyMetrics(data) {
       samples,
       pulseSeq: showMotion ? pulseSeq : 0,
       showMotion,
+      metric,
       trace: showMotion ? {
         cpu_percent: cpuPercent,
         cpu_cores: cpuDockerPercent / 100,
@@ -952,6 +986,7 @@ function _localDockgeApplyMetrics(data) {
     });
   });
   _updateLocalDockgeMetricsDom();
+  _localDockgeRefreshMetricsModal();
 }
 
 async function loadLocalDockgeMetrics() {
@@ -1095,6 +1130,12 @@ document.addEventListener('DOMContentLoaded', () => {
     _localDockgeNarrationFsm.dispatch(narrationBtn.dataset.localDockgeNarrateStack, 'doubleTap');
   });
   localDockgeTbody?.addEventListener('click', e => {
+    const metricsBtn = e.target.closest('[data-local-dockge-metrics-open]');
+    if (metricsBtn) {
+      e.preventDefault();
+      _localDockgeOpenMetricsModal(metricsBtn.dataset.localDockgeMetricsOpen || '');
+      return;
+    }
     const narrationBtn = e.target.closest('[data-local-dockge-narrate-stack]');
     if (narrationBtn) {
       e.preventDefault();

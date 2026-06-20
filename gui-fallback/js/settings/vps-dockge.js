@@ -53,6 +53,7 @@ let _vpsDockgeMetricsPollInterval = null;
 let _vpsDockgeMetricsLoadPromise = null;
 let _vpsDockgeMetricsPulseSeq = 0;
 let _vpsDockgeLastMetricsSampleAt = '';
+let _vpsDockgeLastMetricsData = null;
 const _vpsDockgeMetricsByStack = new Map();
 const _VPS_DOCKGE_NARRATION_DOUBLE_CLICK_MS = 260;
 const _VPS_DOCKGE_NARRATION_LONG_PRESS_MS = 650;
@@ -271,7 +272,39 @@ function _vpsDockgeMetricsBarsContent(stackName) {
 }
 
 function _vpsDockgeMetricsBarsHtml(stackName) {
-  return `<div class="local-dockge-resource-bars" data-vps-dockge-metrics-stack="${esc(stackName || '')}">${_vpsDockgeMetricsBarsContent(stackName)}</div>`;
+  const name = stackName || '';
+  return `<button class="local-dockge-resource-bars local-dockge-resource-bars--clickable" type="button"
+      data-vps-dockge-metrics-stack="${esc(name)}"
+      data-vps-dockge-metrics-open="${esc(name)}"
+      aria-label="Open resource metrics for ${esc(name || 'stack')}">${_vpsDockgeMetricsBarsContent(name)}</button>`;
+}
+
+function _vpsDockgeMetricsModalContext(stackName) {
+  const via = _vpsDockgeLastMetricsData?.ssh_host ? ` via ${_vpsDockgeLastMetricsData.ssh_host}` : '';
+  return {
+    surface: 'vps-dockge',
+    surfaceLabel: 'VPS Dockge',
+    hostLabel: `VPS Dockge host${via}`,
+    stackName,
+    data: _vpsDockgeLastMetricsData,
+    state: _vpsDockgeMetricState(stackName),
+    scale: {
+      cpuCores: _VPS_DOCKGE_METRICS_CPU_SCALE_CORES,
+      memoryBytes: _VPS_DOCKGE_METRICS_MEMORY_SCALE_BYTES,
+    },
+  };
+}
+
+function _vpsDockgeOpenMetricsModal(stackName) {
+  if (typeof DockgeMetricsModal === 'undefined') return;
+  DockgeMetricsModal.open(_vpsDockgeMetricsModalContext(stackName));
+}
+
+function _vpsDockgeRefreshMetricsModal() {
+  if (typeof DockgeMetricsModal === 'undefined') return;
+  const active = DockgeMetricsModal.current();
+  if (active?.surface !== 'vps-dockge') return;
+  DockgeMetricsModal.refresh(_vpsDockgeMetricsModalContext(active.stackName));
 }
 
 function _vpsDockgeFilterRows(stacks) {
@@ -919,6 +952,7 @@ function _vpsDockgeApplyMetrics(data) {
   const sampleAt = data.updated_at || '';
   if (!data.sample_ready || (sampleAt && sampleAt === _vpsDockgeLastMetricsSampleAt)) return;
   _vpsDockgeLastMetricsSampleAt = sampleAt;
+  _vpsDockgeLastMetricsData = data;
   const metricByStack = new Map((data.stacks || []).map(item => [item.stack_name, item]));
   const pulseSeq = _vpsDockgeMetricsPulseSeq + 1;
   _vpsDockgeMetricsPulseSeq = pulseSeq;
@@ -945,6 +979,7 @@ function _vpsDockgeApplyMetrics(data) {
       samples,
       pulseSeq: showMotion ? pulseSeq : 0,
       showMotion,
+      metric,
       trace: showMotion ? {
         cpu_percent: cpuPercent,
         cpu_cores: cpuDockerPercent / 100,
@@ -955,6 +990,7 @@ function _vpsDockgeApplyMetrics(data) {
     });
   });
   _updateVpsDockgeMetricsDom();
+  _vpsDockgeRefreshMetricsModal();
 }
 
 async function loadVpsDockgeMetrics() {
@@ -1099,6 +1135,12 @@ document.addEventListener('DOMContentLoaded', () => {
     _vpsDockgeNarrationFsm.dispatch(narrationBtn.dataset.vpsDockgeNarrateStack, 'doubleTap');
   });
   vpsDockgeTbody?.addEventListener('click', e => {
+    const metricsBtn = e.target.closest('[data-vps-dockge-metrics-open]');
+    if (metricsBtn) {
+      e.preventDefault();
+      _vpsDockgeOpenMetricsModal(metricsBtn.dataset.vpsDockgeMetricsOpen || '');
+      return;
+    }
     const narrationBtn = e.target.closest('[data-vps-dockge-narrate-stack]');
     if (narrationBtn) {
       e.preventDefault();

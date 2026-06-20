@@ -1234,6 +1234,26 @@ button.table-icon-btn--play-toggle { font-size: 11px; line-height: 1; }
   margin-top: 5px;
 }
 
+.local-dockge-resource-bars--clickable {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.local-dockge-resource-bars--clickable:focus-visible {
+  outline: 1px solid rgba(var(--local-dockge-resource-rgb), 0.72);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+.local-dockge-resource-bars--clickable:hover .local-dockge-resource-segment {
+  border-color: rgba(var(--local-dockge-resource-rgb), 0.48);
+}
+
 .local-dockge-resource-row {
   min-width: 0;
 }
@@ -1277,6 +1297,203 @@ button.table-icon-btn--play-toggle { font-size: 11px; line-height: 1; }
   background: rgba(var(--local-dockge-resource-trace-rgb), 0.88);
   animation: local-dockge-resource-trace 500ms ease-out 1 forwards;
   pointer-events: none;
+}
+
+.dockge-metrics-modal .hub-modal-body {
+  padding: 18px 22px 20px;
+}
+
+.dockge-metrics-modal-body {
+  --dockge-metrics-rgb: var(--hub-accent-rgb, 91, 156, 246);
+  --dockge-metrics-red-rgb: 255, 49, 49;
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.dockge-metrics-modal__status {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.dockge-metrics-modal__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.dockge-metrics-panel {
+  min-width: 0;
+  border: 1px solid rgba(var(--dockge-metrics-rgb), 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 13px 14px 14px;
+}
+
+.dockge-metrics-panel--wide {
+  grid-column: 1 / -1;
+}
+
+.dockge-metrics-panel__title {
+  margin: 0 0 11px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.dockge-metrics-meter {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 12px;
+}
+
+.dockge-metrics-meter:first-of-type {
+  margin-top: 0;
+}
+
+.dockge-metrics-meter__head,
+.dockge-metrics-meter__scale {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.dockge-metrics-meter__label {
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.dockge-metrics-meter__value {
+  color: #dbeafe;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.dockge-metrics-meter__segments {
+  display: grid;
+  grid-template-columns: repeat(var(--dockge-metrics-segments, 24), minmax(0, 1fr));
+  gap: 3px;
+  height: 10px;
+  min-width: 0;
+}
+
+.dockge-metrics-meter__segment {
+  display: block;
+  min-width: 0;
+  height: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(var(--dockge-metrics-rgb), 0.24);
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    rgba(var(--dockge-metrics-rgb), 0.8) 0 var(--fill-pct, 0%),
+    rgba(var(--dockge-metrics-rgb), 0.08) var(--fill-pct, 0%) 100%
+  );
+}
+
+.dockge-metrics-meter__segment.is-filled {
+  border-color: rgba(var(--dockge-metrics-rgb), 0.58);
+}
+
+.dockge-metrics-meter__scale {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  color: var(--text-dim);
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.dockge-metrics-meter__scale span:nth-child(2) {
+  text-align: center;
+}
+
+.dockge-metrics-meter__scale span:nth-child(3) {
+  text-align: right;
+}
+
+.dockge-metrics-meter__detail {
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.dockge-metrics-led-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dockge-metrics-led {
+  min-width: 0;
+}
+
+.dockge-metrics-led__label {
+  display: block;
+  margin: 0 0 6px;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.dockge-metrics-led__display {
+  min-height: 54px;
+  padding: 10px 12px;
+  border: 1px solid rgba(var(--dockge-metrics-red-rgb), 0.45);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 50% 10%, rgba(var(--dockge-metrics-red-rgb), 0.18), transparent 42%),
+    rgba(12, 0, 0, 0.72);
+  box-shadow:
+    inset 0 0 22px rgba(var(--dockge-metrics-red-rgb), 0.18),
+    0 0 18px rgba(var(--dockge-metrics-red-rgb), 0.1);
+  color: rgb(var(--dockge-metrics-red-rgb));
+  font-family: "DSEG7 Classic", "Segment7", "Courier New", monospace;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: 0;
+  text-align: center;
+  text-shadow:
+    0 0 6px rgba(var(--dockge-metrics-red-rgb), 0.88),
+    0 0 16px rgba(var(--dockge-metrics-red-rgb), 0.5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+}
+
+.dockge-metrics-led__meta {
+  margin: 7px 0 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+@media (max-width: 720px) {
+  .dockge-metrics-modal .hub-modal-body {
+    padding: 14px;
+  }
+
+  .dockge-metrics-modal__grid,
+  .dockge-metrics-led-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dockge-metrics-led__display {
+    font-size: 24px;
+  }
 }
 
 .local-dockge-stack-error-btn {

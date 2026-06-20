@@ -4351,6 +4351,23 @@
   </div>
 </dialog>
 
+<!-- Shared Dockge resource metrics modal -->
+<dialog class="hub-modal hub-dialog dockge-metrics-modal" data-tone="info" id="dockge-metrics-modal" style="width:min(760px,96vw);max-width:96vw">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge" id="dockge-metrics-modal-badge">METRICS</span>
+      <span class="hub-dialog-title-text" id="dockge-metrics-modal-title">Dockge Resources</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body" style="min-height:0;overflow:auto">
+    <div id="dockge-metrics-modal-body" class="dockge-metrics-modal-body"></div>
+  </div>
+  <div class="hub-modal-footer">
+    <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Close</button>
+  </div>
+</dialog>
+
 <!-- Generic Fleet Nodes action modal -->
 <dialog class="hub-modal hub-dialog" data-tone="info" id="node-action-modal" style="width:min(540px,95vw)">
   <div class="hub-modal-header">
@@ -6001,6 +6018,7 @@
 <script src="js/form-control-manager.js?v={{$assetVersion}}"></script>
 <script src="js/hub-modal.js?v={{$assetVersion}}"></script>
 <script src="js/hub-dialogs.js?v={{$assetVersion}}"></script>
+<script src="js/dockge-metrics-modal.js?v={{$assetVersion}}"></script>
 <script src="js/shared-asset-picker.js?v={{$assetVersion}}"></script>
 <script src="js/gpu-activity-sound.js?v={{$assetVersion}}"></script>
 <script src="js/alarm-clock.js?v={{$assetVersion}}"></script>
