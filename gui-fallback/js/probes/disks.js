@@ -11,6 +11,17 @@ let _disksLayoutFrame = 0;
 let _disksFilesystemTreeCache = new Map();
 let _disksFilesystemTreePaths = new Map();
 let _disksFilesystemTreeLoadingKeys = new Set();
+let _disksFilesystemFavorites = [];
+let _disksFilesystemFavoritesLoaded = false;
+let _disksFilesystemFavoritesLoading = false;
+let _disksDualPaneState = {
+  left: { selectedKey: '', meta: null, path: '.', selectedPath: '', status: '' },
+  right: { selectedKey: '', meta: null, path: '.', selectedPath: '', status: '' },
+  conflict: 'cancel',
+  lastStatus: '',
+  busy: false,
+};
+let _disksDualPaneDrag = null;
 let _disksNoteDrafts = new Map();
 let _disksNoteOpen = new Set();
 let _disksNoteSaving = new Set();
@@ -424,8 +435,34 @@ function _disksFilesystemBrowserMeta(node) {
     filesystem: String(raw?.filesystem || '').trim(),
     source_path: String(raw?.source_path || '').trim(),
     dataset_name: String(raw?.dataset_name || '').trim(),
+    guest_id: String(node?.guest_identity?.guest_id || raw?.guest_id || '').trim(),
+    guest_name: String(node?.guest_identity?.guest_name || raw?.guest_name || '').trim(),
+    guest_kind: String(node?.guest_identity?.guest_kind || raw?.guest_kind || '').trim(),
     sensitive_hint: String(raw?.sensitive_hint || '').trim(),
     download_available: !!raw?.download_available,
+  };
+}
+
+function _disksFilesystemFavoriteMeta(favorite) {
+  const host = String(favorite?.host || '').trim();
+  const rootPath = String(favorite?.root_path || '').trim();
+  if (!host || !rootPath) return null;
+  const browseMode = String(favorite?.browse_mode || '').trim().toLowerCase() === 'device_ro'
+    ? 'device_ro'
+    : 'mounted';
+  return {
+    host,
+    root_path: rootPath,
+    root_display: String(favorite?.root_display || favorite?.root_path || '').trim(),
+    browse_mode: browseMode,
+    filesystem: String(favorite?.filesystem || '').trim(),
+    source_path: String(favorite?.source_path || '').trim(),
+    dataset_name: String(favorite?.dataset_name || '').trim(),
+    guest_id: String(favorite?.guest_id || '').trim(),
+    guest_name: String(favorite?.guest_name || '').trim(),
+    guest_kind: String(favorite?.guest_kind || '').trim(),
+    sensitive_hint: String(favorite?.sensitive_hint || '').trim(),
+    download_available: true,
   };
 }
 
@@ -452,21 +489,31 @@ function _disksFilesystemAccessPayload(meta, path, pinToken = '') {
     path: _disksNormalizeRelativePath(path) === '.' ? null : _disksNormalizeRelativePath(path),
     filesystem: String(meta?.filesystem || '').trim(),
     dataset_name: String(meta?.dataset_name || '').trim(),
+    guest_id: String(meta?.guest_id || '').trim(),
+    guest_name: String(meta?.guest_name || '').trim(),
+    guest_kind: String(meta?.guest_kind || '').trim(),
     sensitive_hint: String(meta?.sensitive_hint || '').trim(),
     pin_token: pinToken || null,
   };
 }
 
 function _disksFilesystemAccessSensitive(meta, path = '.') {
+  const filesystem = String(meta?.filesystem || '').trim().toLowerCase();
   const haystack = [
     meta?.root_path,
     meta?.root_display,
     meta?.source_path,
     meta?.dataset_name,
+    meta?.guest_id,
+    meta?.guest_name,
+    meta?.guest_kind,
     meta?.sensitive_hint,
     path,
   ].join(' ').toLowerCase();
-  return haystack.includes('private');
+  return filesystem === 'zfs'
+    || !!String(meta?.dataset_name || '').trim()
+    || haystack.includes('private')
+    || /(^|[^a-z0-9])secure([^a-z0-9]|$)/.test(haystack);
 }
 
 function _disksFilesystemTreePathForNode(node, meta) {
@@ -527,8 +574,15 @@ function _disksFilesystemTreePathHtml(path) {
   return text.split('/').map(part => _disksEsc(part)).join('/<wbr>');
 }
 
-function _disksFilesystemTreeRowHtml(entry, actionScope = 'tree') {
-  const actionAttr = actionScope === 'offline' ? 'data-disks-offline-action' : 'data-disks-tree-action';
+function _disksFilesystemTreeRowHtml(entry, actionScope = 'tree', options = {}) {
+  const isDual = actionScope === 'dual';
+  const actionAttr = actionScope === 'offline'
+    ? 'data-disks-offline-action'
+    : isDual
+      ? 'data-disks-dual-action'
+      : 'data-disks-tree-action';
+  const paneId = String(options.paneId || '').trim();
+  const paneAttr = isDual ? ` data-disks-dual-pane="${_disksEsc(paneId)}"` : '';
   const type = String(entry?.type || '').trim() === 'folder' ? 'folder' : 'file';
   const browseable = type === 'folder' && !!entry?.browseable;
   const path = _disksNormalizeRelativePath(entry?.path || '.');
@@ -537,8 +591,8 @@ function _disksFilesystemTreeRowHtml(entry, actionScope = 'tree') {
   const action = browseable ? 'browse' : 'file-tap';
   const title = browseable ? `Open ${displayName}` : `Double-tap to view ${displayName}`;
   const nameHtml = browseable
-    ? `<button class="docs-tree-name bp-font-role-docs-markdown" type="button" ${actionAttr}="${action}" data-path="${_disksEsc(path)}" title="${_disksEsc(title)}">${_disksEsc(displayName)}</button>`
-    : `<button class="docs-tree-name disks-tree__file-name bp-font-role-docs-markdown" type="button" ${actionAttr}="${action}" data-path="${_disksEsc(path)}" title="${_disksEsc(title)}">${_disksEsc(displayName)}</button>`;
+    ? `<button class="docs-tree-name bp-font-role-docs-markdown" type="button" ${actionAttr}="${action}"${paneAttr} data-path="${_disksEsc(path)}" title="${_disksEsc(title)}">${_disksEsc(displayName)}</button>`
+    : `<button class="docs-tree-name disks-tree__file-name bp-font-role-docs-markdown" type="button" ${actionAttr}="${action}"${paneAttr} data-path="${_disksEsc(path)}" title="${_disksEsc(title)}">${_disksEsc(displayName)}</button>`;
   const labelHtml = detailText
     ? `
         <span class="docs-tree-label">
@@ -549,14 +603,21 @@ function _disksFilesystemTreeRowHtml(entry, actionScope = 'tree') {
     : nameHtml;
   const typeBadge = `<span class="docs-tree-badge">${type === 'folder' ? 'Dir' : 'File'}</span>`;
   const linkBadge = entry?.symlink ? '<span class="docs-tree-badge">Link</span>' : '';
+  const selectButton = isDual
+    ? `<button class="hub-modal-btn secondary disks-dual-pane__select-btn" type="button" ${actionAttr}="select"${paneAttr} data-path="${_disksEsc(path)}" title="${_disksEsc(`Select ${displayName}`)}">Select</button>`
+    : '';
+  const dragAttrs = isDual
+    ? ` draggable="true" data-disks-dual-drag="item"${paneAttr}`
+    : '';
   return `
-    <div class="docs-tree-row" data-path="${_disksEsc(path)}" data-type="${_disksEsc(type)}">
+    <div class="docs-tree-row${isDual && options.selectedPath === path ? ' is-selected' : ''}" data-path="${_disksEsc(path)}" data-type="${_disksEsc(type)}"${dragAttrs}>
       <span class="docs-tree-icon docs-tree-icon--${_disksEsc(type)}" aria-hidden="true"></span>
       ${labelHtml}
       <span class="docs-tree-actions">
+        ${selectButton}
         ${linkBadge}
         ${typeBadge}
-        <button class="secondary table-icon-btn table-icon-btn--pull disks-tree__download-btn" type="button" ${actionAttr}="download" data-path="${_disksEsc(path)}" data-entry-type="${_disksEsc(type)}" title="${_disksEsc(`Download ${displayName}`)}" aria-label="${_disksEsc(`Download ${displayName}`)}"></button>
+        <button class="secondary table-icon-btn table-icon-btn--pull disks-tree__download-btn" type="button" ${actionAttr}="download"${paneAttr} data-path="${_disksEsc(path)}" data-entry-type="${_disksEsc(type)}" title="${_disksEsc(`Download ${displayName}`)}" aria-label="${_disksEsc(`Download ${displayName}`)}"></button>
       </span>
     </div>
   `;
@@ -730,6 +791,325 @@ function _disksEnsureFilesystemTree(node) {
       _disksFilesystemTreeLoadingKeys.delete(cacheKey);
       if (_disksCurrentNodeId === String(node?.id || '')) renderDisksPage();
     });
+}
+
+function _disksFilesystemLocationLabel(node, meta) {
+  const label = String(node?.label || '').trim() || String(meta?.dataset_name || '').trim() || 'Filesystem';
+  const host = String(meta?.host || '').trim();
+  const fs = String(meta?.filesystem || '').trim().toUpperCase();
+  return [label, host, fs].filter(Boolean).join(' · ');
+}
+
+function _disksFilesystemLocationOptions() {
+  const locations = [];
+  const visit = node => {
+    if (!node || typeof node !== 'object') return;
+    const meta = _disksFilesystemBrowserMeta(node);
+    if (meta) {
+      locations.push({
+        key: `node:${String(node.id || '').trim()}`,
+        label: _disksFilesystemLocationLabel(node, meta),
+        meta,
+        path: '.',
+        source: 'topology',
+      });
+    }
+    (Array.isArray(node.children) ? node.children : []).forEach(visit);
+  };
+  if (_disksTopology?.root) visit(_disksTopology.root);
+  const favorites = _disksFilesystemFavorites
+    .filter(favorite => favorite && favorite.enabled !== false)
+    .map(favorite => {
+      const meta = _disksFilesystemFavoriteMeta(favorite);
+      if (!meta) return null;
+      return {
+        key: `favorite:${String(favorite.favorite_id || '').trim()}`,
+        label: String(favorite.label || '').trim() || _favoriteLabelFromMeta(meta, favorite.path || '.'),
+        meta,
+        path: _disksNormalizeRelativePath(favorite.path || '.'),
+        source: 'favorite',
+      };
+    })
+    .filter(Boolean);
+  return { favorites, locations, all: [...favorites, ...locations] };
+}
+
+function _favoriteLabelFromMeta(meta, path) {
+  const cleanPath = _disksNormalizeRelativePath(path);
+  const root = String(meta?.root_display || meta?.root_path || '/').trim();
+  const guest = String(meta?.guest_name || '').trim();
+  const dataset = String(meta?.dataset_name || '').trim();
+  if (guest) return `${guest}: ${cleanPath === '.' ? root : cleanPath}`;
+  if (dataset) return `${dataset}: ${cleanPath === '.' ? 'root' : cleanPath}`;
+  return `${meta?.host || 'host'}: ${cleanPath === '.' ? root : cleanPath}`;
+}
+
+function _disksDualPaneOther(paneId) {
+  return paneId === 'left' ? 'right' : 'left';
+}
+
+function _disksDualPaneGet(paneId) {
+  return paneId === 'right' ? _disksDualPaneState.right : _disksDualPaneState.left;
+}
+
+function _disksDualPaneOptionByKey(key) {
+  const options = _disksFilesystemLocationOptions();
+  return options.all.find(option => option.key === key) || null;
+}
+
+function _disksDualPaneSetLocation(paneId, key) {
+  const option = _disksDualPaneOptionByKey(key);
+  if (!option) return;
+  const pane = _disksDualPaneGet(paneId);
+  pane.selectedKey = option.key;
+  pane.meta = { ...option.meta };
+  pane.path = _disksNormalizeRelativePath(option.path || '.');
+  pane.selectedPath = '';
+  pane.status = '';
+  renderDisksPage();
+  _disksEnsureDualPaneTree(paneId);
+}
+
+function _disksDualPaneSeed(node) {
+  const options = _disksFilesystemLocationOptions();
+  if (!options.all.length) return;
+  const currentMeta = _disksFilesystemBrowserMeta(node);
+  const currentKey = currentMeta ? `node:${String(node?.id || '').trim()}` : '';
+  const left = _disksDualPaneState.left;
+  const right = _disksDualPaneState.right;
+  if (!left.meta) {
+    const seed = options.all.find(option => option.key === currentKey) || options.all[0];
+    left.selectedKey = seed.key;
+    left.meta = { ...seed.meta };
+    left.path = _disksNormalizeRelativePath(seed.path || '.');
+  }
+  if (!right.meta) {
+    const seed = options.all.find(option => option.key !== left.selectedKey) || options.all[0];
+    right.selectedKey = seed.key;
+    right.meta = { ...seed.meta };
+    right.path = _disksNormalizeRelativePath(seed.path || '.');
+  }
+}
+
+function _disksDualPaneCache(paneId) {
+  const pane = _disksDualPaneGet(paneId);
+  if (!pane.meta) return null;
+  return _disksFilesystemTreeCache.get(_disksFilesystemTreeCacheKey(pane.meta, pane.path)) || null;
+}
+
+function _disksDualPaneSetStatus(message, tone = '') {
+  _disksDualPaneState.lastStatus = message ? `${tone ? `${tone}: ` : ''}${message}` : '';
+  renderDisksPage();
+}
+
+function _disksEnsureDualPaneTree(paneId) {
+  const pane = _disksDualPaneGet(paneId);
+  if (!pane.meta) return;
+  const cacheKey = _disksFilesystemTreeCacheKey(pane.meta, pane.path);
+  if (_disksFilesystemTreeCache.has(cacheKey) || _disksFilesystemTreeLoadingKeys.has(cacheKey)) return;
+  _disksFilesystemTreeLoadingKeys.add(cacheKey);
+  apiFetch('/api/v1/disks/filesystem/tree', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ..._disksFilesystemAccessPayload(pane.meta, pane.path),
+      limit: 500,
+      pin_token: _disksFilesystemAccessSensitive(pane.meta, pane.path) ? _disksValidPinToken() : null,
+    }),
+  })
+    .then(async response => {
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 423) {
+          const lockedMessage = data.detail || 'PIN required for this filesystem pane.';
+          _disksFilesystemTreeCache.set(cacheKey, { ok: false, locked: true, error: lockedMessage });
+          _disksRequestPin('PIN required for this filesystem pane.').then(() => {
+            _disksFilesystemTreeCache.delete(cacheKey);
+            _disksFilesystemTreeLoadingKeys.delete(cacheKey);
+            _disksEnsureDualPaneTree(paneId);
+          }).catch(err => {
+            _disksFilesystemTreeCache.set(cacheKey, { ok: false, locked: true, error: err?.message || lockedMessage });
+            renderDisksPage();
+          });
+          return Promise.reject(new Error('__PIN_PROMPTED__'));
+        }
+        throw new Error(data.detail || `HTTP ${response.status}`);
+      }
+      _disksFilesystemTreeCache.set(cacheKey, { ok: true, data });
+      pane.path = _disksNormalizeRelativePath(data?.current_path || pane.path);
+    })
+    .catch(err => {
+      if (err && err.message === '__PIN_PROMPTED__') return;
+      const message = err && err.message ? err.message : String(err || 'Filesystem pane failed');
+      _disksFilesystemTreeCache.set(cacheKey, { ok: false, error: message });
+    })
+    .finally(() => {
+      _disksFilesystemTreeLoadingKeys.delete(cacheKey);
+      renderDisksPage();
+    });
+}
+
+function _disksDualPaneSelectOptionsHtml(selectedKey) {
+  const options = _disksFilesystemLocationOptions();
+  const favoriteHtml = options.favorites.map(option => `
+    <option value="${_disksEsc(option.key)}"${option.key === selectedKey ? ' selected' : ''}>${_disksEsc(option.label)}</option>
+  `).join('');
+  const locationHtml = options.locations.map(option => `
+    <option value="${_disksEsc(option.key)}"${option.key === selectedKey ? ' selected' : ''}>${_disksEsc(option.label)}</option>
+  `).join('');
+  return `
+    ${favoriteHtml ? `<optgroup label="Favourites">${favoriteHtml}</optgroup>` : ''}
+    ${locationHtml ? `<optgroup label="Disks">${locationHtml}</optgroup>` : ''}
+  `;
+}
+
+function _disksDualPaneHtml(paneId) {
+  const pane = _disksDualPaneGet(paneId);
+  const other = _disksDualPaneOther(paneId);
+  const meta = pane.meta;
+  if (!meta) {
+    return `
+      <section class="disks-dual-pane" data-disks-dual-pane="${_disksEsc(paneId)}">
+        <div class="docs-tree-empty">No filesystem location is available.</div>
+      </section>
+    `;
+  }
+  const cache = _disksDualPaneCache(paneId);
+  const data = cache?.ok ? cache.data : null;
+  const error = cache && cache.ok === false ? cache.error : '';
+  const loading = _disksFilesystemTreeLoadingKeys.has(_disksFilesystemTreeCacheKey(meta, pane.path));
+  const currentPath = String(data?.current_path || pane.path || '.').trim() || '.';
+  const absolutePath = String(data?.current_absolute_path || meta.root_path).trim() || meta.root_path;
+  const breadcrumbs = Array.isArray(data?.breadcrumbs) ? data.breadcrumbs : [];
+  const canGoUp = !!data?.parent_path && currentPath !== '.';
+  const rootDisabled = currentPath === '.';
+  const entries = Array.isArray(data?.entries) ? data.entries : [];
+  const listHtml = error
+    ? '<div class="docs-tree-empty">Could not load this folder.</div>'
+    : data
+      ? entries.length
+        ? entries.map(entry => _disksFilesystemTreeRowHtml(entry, 'dual', {
+          paneId,
+          selectedPath: pane.selectedPath,
+        })).join('')
+        : '<div class="docs-tree-empty">This folder is empty.</div>'
+      : loading
+        ? '<div class="docs-tree-loading">Loading folder...</div>'
+        : '<div class="docs-tree-empty">Preparing filesystem tree...</div>';
+  const breadcrumbHtml = breadcrumbs.map(crumb => `
+    <button class="docs-tree-crumb bp-font-role-docs-markdown" type="button" data-disks-dual-action="browse" data-disks-dual-pane="${_disksEsc(paneId)}" data-path="${_disksEsc(crumb?.path || '.')}">${_disksEsc(crumb?.label || 'root')}</button>
+  `).join('');
+  const statusText = error
+    ? ''
+    : loading && !data
+      ? 'Loading folder...'
+      : _disksFilesystemTreeStatusText(data);
+  const selected = pane.selectedPath ? _disksNormalizeRelativePath(pane.selectedPath) : '';
+  const selectedLabel = selected ? (selected === '.' ? 'root' : selected) : 'No item selected';
+  return `
+    <section class="disks-dual-pane" data-disks-dual-pane="${_disksEsc(paneId)}" data-disks-dual-drop="${_disksEsc(paneId)}">
+      <div class="disks-dual-pane__head">
+        <div>
+          <h3>${paneId === 'left' ? 'Left' : 'Right'}</h3>
+          <div class="disks-dual-pane__badges">
+            <span class="disks-pill">${_disksEsc(meta.host)}</span>
+            <span class="disks-pill">${_disksEsc(String(meta.filesystem || 'filesystem').toUpperCase())}</span>
+            ${_disksFilesystemAccessSensitive(meta, currentPath) ? '<span class="disks-pill disks-pill--warn">PIN</span>' : ''}
+          </div>
+        </div>
+        <button class="hub-modal-btn secondary" type="button" data-disks-dual-action="favorite-add" data-disks-dual-pane="${_disksEsc(paneId)}">Favourite</button>
+      </div>
+      <label class="disks-dual-pane__location">
+        <span>Location</span>
+        <select data-disks-dual-location="${_disksEsc(paneId)}">
+          ${_disksDualPaneSelectOptionsHtml(pane.selectedKey)}
+        </select>
+      </label>
+      <div class="disks-tree__toolbar disks-dual-pane__toolbar">
+        <button class="hub-modal-btn secondary" type="button" data-disks-dual-action="up" data-disks-dual-pane="${_disksEsc(paneId)}"${canGoUp ? '' : ' disabled'}>Up</button>
+        <code class="docs-tree-path disks-tree__path">${_disksFilesystemTreePathHtml(absolutePath)}</code>
+        <div class="disks-tree__toolbar-actions">
+          <button class="hub-modal-btn secondary" type="button" data-disks-dual-action="root" data-disks-dual-pane="${_disksEsc(paneId)}"${rootDisabled ? ' disabled' : ''}>Root</button>
+          <button class="hub-modal-btn secondary" type="button" data-disks-dual-action="refresh" data-disks-dual-pane="${_disksEsc(paneId)}">Refresh</button>
+          <button class="hub-modal-btn secondary" type="button" data-disks-dual-action="upload" data-disks-dual-pane="${_disksEsc(paneId)}"${meta.browse_mode === 'device_ro' ? ' disabled' : ''}>Upload</button>
+        </div>
+      </div>
+      <div class="docs-tree-breadcrumbs"${breadcrumbs.length > 1 ? '' : ' hidden'}>${breadcrumbHtml}</div>
+      <div class="docs-tree-panel">
+        <div class="docs-tree-list disks-dual-pane__list">${listHtml}</div>
+      </div>
+      <div class="disks-dual-pane__selected">
+        <span>${_disksEsc(selectedLabel)}</span>
+        <div>
+          <button class="hub-modal-btn secondary" type="button" data-disks-dual-action="copy-selected" data-disks-dual-pane="${_disksEsc(paneId)}" data-disks-dual-target="${_disksEsc(other)}"${selected ? '' : ' disabled'}>Copy</button>
+          <button class="hub-modal-btn secondary" type="button" data-disks-dual-action="move-selected" data-disks-dual-pane="${_disksEsc(paneId)}" data-disks-dual-target="${_disksEsc(other)}"${selected ? '' : ' disabled'}>Move</button>
+        </div>
+      </div>
+      <p class="docs-tree-status">${_disksEsc(statusText)}</p>
+      <p class="hub-modal-error disks-tree__error"${error ? '' : ' hidden'}>${_disksEsc(error ? `Error: ${error}` : '')}</p>
+    </section>
+  `;
+}
+
+function _disksDualPaneFavoritesHtml() {
+  const favorites = [..._disksFilesystemFavorites].sort((a, b) => {
+    const order = Number(a?.sort_order || 0) - Number(b?.sort_order || 0);
+    if (order) return order;
+    return String(a?.label || '').localeCompare(String(b?.label || ''));
+  });
+  if (!favorites.length) {
+    return '<div class="docs-tree-empty">No server favourites saved yet.</div>';
+  }
+  return favorites.map((favorite, index) => `
+    <div class="disks-dual-favorite" data-disks-favorite="${_disksEsc(favorite.favorite_id || '')}">
+      <label class="hub-checkbox disks-dual-favorite__toggle">
+        <input class="hub-checkbox__input" type="checkbox" data-disks-favorite-enabled="${_disksEsc(favorite.favorite_id || '')}"${favorite.enabled === false ? '' : ' checked'} />
+        <span class="hub-checkbox__box" aria-hidden="true"></span>
+        <span class="hub-checkbox__label">${_disksEsc(favorite.label || 'Favourite')}</span>
+      </label>
+      <code>${_disksEsc(_favoriteLabelFromMeta(_disksFilesystemFavoriteMeta(favorite) || {}, favorite.path || '.'))}</code>
+      <div class="disks-dual-favorite__actions">
+        <button class="hub-modal-btn secondary" type="button" data-disks-favorite-action="up" data-favorite-id="${_disksEsc(favorite.favorite_id || '')}"${index === 0 ? ' disabled' : ''}>Up</button>
+        <button class="hub-modal-btn secondary" type="button" data-disks-favorite-action="down" data-favorite-id="${_disksEsc(favorite.favorite_id || '')}"${index === favorites.length - 1 ? ' disabled' : ''}>Down</button>
+        <button class="hub-modal-btn secondary" type="button" data-disks-favorite-action="delete" data-favorite-id="${_disksEsc(favorite.favorite_id || '')}">Delete</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function _disksDualPaneSectionHtml(node) {
+  _disksDualPaneSeed(node);
+  const options = _disksFilesystemLocationOptions();
+  if (!options.all.length && !_disksFilesystemFavoritesLoading) return '';
+  const status = _disksDualPaneState.lastStatus || '';
+  return `
+    <section class="disks-group disks-dual">
+      <div class="disks-group__header">
+        <h3>File manager</h3>
+        <span>${options.all.length} location${options.all.length === 1 ? '' : 's'} · ${_disksFilesystemFavorites.length} favourite${_disksFilesystemFavorites.length === 1 ? '' : 's'}</span>
+      </div>
+      <div class="disks-dual__controls">
+        <label>
+          <span>Conflict</span>
+          <select data-disks-dual-conflict>
+            ${['cancel', 'rename', 'skip', 'overwrite'].map(value => `<option value="${value}"${_disksDualPaneState.conflict === value ? ' selected' : ''}>${value}</option>`).join('')}
+          </select>
+        </label>
+        <button class="hub-modal-btn secondary" type="button" data-disks-dual-action="favorites-refresh">Refresh favourites</button>
+      </div>
+      <div class="disks-dual__panes">
+        ${_disksDualPaneHtml('left')}
+        ${_disksDualPaneHtml('right')}
+      </div>
+      <div class="disks-dual__status"${status ? '' : ' hidden'}>${_disksEsc(status)}</div>
+      <details class="disks-dual__favorites">
+        <summary>Server favourites</summary>
+        <div class="disks-dual__favorites-list">
+          ${_disksFilesystemFavoritesLoading ? '<div class="docs-tree-loading">Loading favourites...</div>' : _disksDualPaneFavoritesHtml()}
+        </div>
+      </details>
+    </section>
+  `;
 }
 
 function _disksValidPinToken() {
@@ -912,6 +1292,275 @@ async function _disksFetchProtectedBlob(url, baseBody, options = {}) {
     filename: _disksContentDispositionFilename(response.headers.get('Content-Disposition') || ''),
     transfer: response.headers.get('X-Blueprints-Disks-Transfer') || '',
   };
+}
+
+async function _disksLoadFilesystemFavorites(force = false) {
+  if (_disksFilesystemFavoritesLoading) return;
+  if (_disksFilesystemFavoritesLoaded && !force) return;
+  _disksFilesystemFavoritesLoading = true;
+  try {
+    const response = await apiFetch('/api/v1/disks/filesystem/favorites', { cache: 'no-store' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
+    _disksFilesystemFavorites = Array.isArray(payload.favorites) ? payload.favorites : [];
+    _disksFilesystemFavoritesLoaded = true;
+  } catch (err) {
+    _disksDualPaneSetStatus(`Could not load favourites: ${err?.message || err}`, 'warn');
+  } finally {
+    _disksFilesystemFavoritesLoading = false;
+    renderDisksPage();
+  }
+}
+
+async function _disksSaveFilesystemFavorite(paneId) {
+  const pane = _disksDualPaneGet(paneId);
+  if (!pane?.meta) return;
+  const dialogs = _disksHubDialogsApi();
+  const defaultLabel = _favoriteLabelFromMeta(pane.meta, pane.path);
+  const label = dialogs && typeof dialogs.prompt === 'function'
+    ? await dialogs.prompt({
+      title: 'Save Favourite',
+      message: 'Name this filesystem location.',
+      inputLabel: 'Label',
+      value: defaultLabel,
+      confirmText: 'Save',
+      validate: value => String(value || '').trim() ? '' : 'Label is required.',
+    })
+    : window.prompt('Name this filesystem location.', defaultLabel);
+  if (label === null) return;
+  const body = {
+    ..._disksFilesystemAccessPayload(pane.meta, pane.path),
+    label: String(label || '').trim(),
+    enabled: true,
+  };
+  delete body.pin_token;
+  const response = await apiFetch('/api/v1/disks/filesystem/favorites', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
+  await _disksLoadFilesystemFavorites(true);
+  _disksDualPaneSetStatus('Favourite saved.', 'ok');
+}
+
+async function _disksPatchFilesystemFavorite(favoriteId, patch) {
+  const response = await apiFetch(`/api/v1/disks/filesystem/favorites/${encodeURIComponent(favoriteId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch || {}),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
+  await _disksLoadFilesystemFavorites(true);
+  return payload.favorite;
+}
+
+async function _disksDeleteFilesystemFavorite(favoriteId) {
+  const favorite = _disksFilesystemFavorites.find(item => String(item.favorite_id || '') === favoriteId);
+  const dialogs = _disksHubDialogsApi();
+  const ok = dialogs && typeof dialogs.confirmDelete === 'function'
+    ? await dialogs.confirmDelete({
+      title: 'Delete Favourite',
+      message: `Delete ${String(favorite?.label || 'this favourite')}?`,
+    })
+    : window.confirm(`Delete ${String(favorite?.label || 'this favourite')}?`);
+  if (!ok) return;
+  const response = await apiFetch(`/api/v1/disks/filesystem/favorites/${encodeURIComponent(favoriteId)}`, {
+    method: 'DELETE',
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
+  await _disksLoadFilesystemFavorites(true);
+  _disksDualPaneSetStatus('Favourite deleted.', 'ok');
+}
+
+async function _disksMoveFilesystemFavorite(favoriteId, delta) {
+  const favorites = [..._disksFilesystemFavorites].sort((a, b) => {
+    const order = Number(a?.sort_order || 0) - Number(b?.sort_order || 0);
+    if (order) return order;
+    return String(a?.label || '').localeCompare(String(b?.label || ''));
+  });
+  const index = favorites.findIndex(item => String(item.favorite_id || '') === favoriteId);
+  const target = index + delta;
+  if (index < 0 || target < 0 || target >= favorites.length) return;
+  const [item] = favorites.splice(index, 1);
+  favorites.splice(target, 0, item);
+  const response = await apiFetch('/api/v1/disks/filesystem/favorites/reorder', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ favorite_ids: favorites.map(favorite => favorite.favorite_id) }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
+  await _disksLoadFilesystemFavorites(true);
+}
+
+async function _disksPostProtectedTransfer(body) {
+  const sourceSensitive = _disksFilesystemAccessSensitive(body.sourceMeta, body.sourcePath);
+  const destSensitive = _disksFilesystemAccessSensitive(body.destinationMeta, body.destinationPath);
+  let payload = {
+    operation: body.operation,
+    conflict: body.conflict,
+    source: _disksFilesystemAccessPayload(body.sourceMeta, body.sourcePath, _disksValidPinToken()),
+    destination: _disksFilesystemAccessPayload(body.destinationMeta, body.destinationPath, _disksValidPinToken()),
+  };
+  if (sourceSensitive || destSensitive) {
+    const token = await _disksRequestPin('PIN required for this filesystem transfer.');
+    payload.source.pin_token = token;
+    payload.destination.pin_token = token;
+  }
+  let response = await apiFetch('/api/v1/disks/filesystem/transfer', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  let data = await response.json().catch(() => ({}));
+  if (response.status === 423) {
+    _disksPinToken = '';
+    _disksPinTokenExpiresAt = 0;
+    const token = await _disksRequestPin('PIN required for this filesystem transfer.');
+    payload = {
+      ...payload,
+      source: { ...payload.source, pin_token: token },
+      destination: { ...payload.destination, pin_token: token },
+    };
+    response = await apiFetch('/api/v1/disks/filesystem/transfer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    data = await response.json().catch(() => ({}));
+  }
+  if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+  return data;
+}
+
+function _disksPickUploadFile() {
+  return new Promise(resolve => {
+    const input = document.createElement('input');
+    let settled = false;
+    input.type = 'file';
+    input.hidden = true;
+    input.tabIndex = -1;
+    const finish = file => {
+      if (settled) return;
+      settled = true;
+      input.remove();
+      resolve(file || null);
+    };
+    input.addEventListener('change', () => finish(input.files && input.files[0] ? input.files[0] : null), { once: true });
+    window.addEventListener('focus', () => {
+      window.setTimeout(() => {
+        if (!settled && (!input.files || !input.files.length)) finish(null);
+      }, 600);
+    }, { once: true });
+    document.body.appendChild(input);
+    input.click();
+  });
+}
+
+async function _disksPostProtectedUpload(pane, file) {
+  const destSensitive = _disksFilesystemAccessSensitive(pane.meta, pane.path);
+  let access = _disksFilesystemAccessPayload(pane.meta, pane.path, _disksValidPinToken());
+  if (destSensitive) {
+    access.pin_token = await _disksRequestPin('PIN required for this filesystem upload.');
+  }
+  const send = async currentAccess => {
+    const form = new FormData();
+    form.append('access_payload', JSON.stringify(currentAccess));
+    form.append('conflict', _disksDualPaneState.conflict);
+    form.append('file', file, file.name || 'upload.bin');
+    const response = await apiFetch('/api/v1/disks/filesystem/upload', {
+      method: 'POST',
+      body: form,
+    });
+    const data = await response.json().catch(() => ({}));
+    return { response, data };
+  };
+  let { response, data } = await send(access);
+  if (response.status === 423) {
+    _disksPinToken = '';
+    _disksPinTokenExpiresAt = 0;
+    access = {
+      ...access,
+      pin_token: await _disksRequestPin('PIN required for this filesystem upload.'),
+    };
+    ({ response, data } = await send(access));
+  }
+  if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+  return data;
+}
+
+async function _disksDualPaneUpload(paneId) {
+  const pane = _disksDualPaneGet(paneId);
+  if (!pane?.meta) return;
+  if (pane.meta.browse_mode === 'device_ro') {
+    _disksDualPaneSetStatus('Upload is not available for read-only offline filesystems.', 'warn');
+    return;
+  }
+  const file = await _disksPickUploadFile();
+  if (!file) return;
+  _disksDualPaneState.busy = true;
+  _disksDualPaneSetStatus(`Uploading ${file.name || 'file'}...`, 'info');
+  try {
+    const data = await _disksPostProtectedUpload(pane, file);
+    _disksFilesystemTreeCache.delete(_disksFilesystemTreeCacheKey(pane.meta, pane.path));
+    pane.selectedPath = data?.destination?.path || '';
+    _disksDualPaneSetStatus(data?.skipped ? 'Upload skipped.' : 'Upload complete.', data?.skipped ? 'warn' : 'ok');
+    _disksEnsureDualPaneTree(paneId);
+  } catch (err) {
+    _disksDualPaneSetStatus(`Upload failed: ${err?.message || err}`, 'fail');
+  } finally {
+    _disksDualPaneState.busy = false;
+    renderDisksPage();
+  }
+}
+
+async function _disksDualPaneTransfer(sourcePaneId, targetPaneId, operation, sourcePath = '') {
+  const sourcePane = _disksDualPaneGet(sourcePaneId);
+  const targetPane = _disksDualPaneGet(targetPaneId);
+  const cleanPath = _disksNormalizeRelativePath(sourcePath || sourcePane.selectedPath || '.');
+  if (!sourcePane?.meta || !targetPane?.meta || !cleanPath) return;
+  const dialogs = _disksHubDialogsApi();
+  const action = operation === 'move' ? 'Move' : 'Copy';
+  const ok = dialogs && typeof dialogs.confirm === 'function'
+    ? await dialogs.confirm({
+      title: `${action} Item`,
+      message: `${action} ${cleanPath === '.' ? 'root' : cleanPath} to the ${targetPaneId} pane?`,
+      detail: `Destination: ${targetPane.path === '.' ? 'root' : targetPane.path}. Conflict policy: ${_disksDualPaneState.conflict}.`,
+      confirmText: action,
+      tone: operation === 'move' ? 'warning' : 'info',
+    })
+    : window.confirm(`${action} ${cleanPath} to ${targetPaneId}?`);
+  if (!ok) return;
+  _disksDualPaneState.busy = true;
+  _disksDualPaneSetStatus(`${action} in progress...`, 'info');
+  try {
+    const data = await _disksPostProtectedTransfer({
+      operation,
+      conflict: _disksDualPaneState.conflict,
+      sourceMeta: sourcePane.meta,
+      sourcePath: cleanPath,
+      destinationMeta: targetPane.meta,
+      destinationPath: targetPane.path,
+    });
+    _disksFilesystemTreeCache.delete(_disksFilesystemTreeCacheKey(targetPane.meta, targetPane.path));
+    if (operation === 'move') {
+      _disksFilesystemTreeCache.delete(_disksFilesystemTreeCacheKey(sourcePane.meta, sourcePane.path));
+      sourcePane.selectedPath = '';
+    }
+    targetPane.selectedPath = data?.destination?.path || '';
+    _disksDualPaneSetStatus(data?.skipped ? 'Transfer skipped.' : `${action} complete.`, data?.skipped ? 'warn' : 'ok');
+    _disksEnsureDualPaneTree(targetPaneId);
+    if (operation === 'move') _disksEnsureDualPaneTree(sourcePaneId);
+  } catch (err) {
+    _disksDualPaneSetStatus(`${action} failed: ${err?.message || err}`, 'fail');
+  } finally {
+    _disksDualPaneState.busy = false;
+    renderDisksPage();
+  }
 }
 
 function _disksContentDispositionFilename(value) {
@@ -2495,6 +3144,7 @@ function renderDisksPage() {
   shell.innerHTML = `
     <div class="disks-page">
       ${_disksHeroHtml(node)}
+      ${_disksDualPaneSectionHtml(node)}
       ${_disksFilesystemTreeSectionHtml(node)}
       ${_disksOfflineBrowserSectionHtml(node)}
       <div class="disks-groups">
@@ -2515,6 +3165,8 @@ function renderDisksPage() {
     });
   });
   _disksEnsureFilesystemTree(node);
+  _disksEnsureDualPaneTree('left');
+  _disksEnsureDualPaneTree('right');
   _disksScheduleLayoutPass();
 }
 
@@ -3471,6 +4123,7 @@ async function loadDisks(force = false) {
       _disksSourceIssues = _disksCollectSourceIssues(payload);
       _disksFilesystemTreeReset();
       _disksIndexTopology(payload.root);
+      _disksLoadFilesystemFavorites().catch(() => {});
       _disksLoaded = true;
       renderDisksPage();
       _disksStatusMessage('Disk inventory refreshed.', _disksSourceIssues.length ? 'warn' : 'ok');
@@ -4266,6 +4919,28 @@ function _disksOnShellInput(event) {
   _disksQueueNoteSave(noteInput.dataset.disksNoteInput || '', noteInput.value || '');
 }
 
+function _disksOnShellChange(event) {
+  const locationSelect = event.target.closest('[data-disks-dual-location]');
+  if (locationSelect) {
+    const paneId = String(locationSelect.dataset.disksDualLocation || '').trim();
+    _disksDualPaneSetLocation(paneId, locationSelect.value || '');
+    return;
+  }
+  const conflictSelect = event.target.closest('[data-disks-dual-conflict]');
+  if (conflictSelect) {
+    const value = String(conflictSelect.value || '').trim();
+    _disksDualPaneState.conflict = ['cancel', 'rename', 'skip', 'overwrite'].includes(value) ? value : 'cancel';
+    return;
+  }
+  const favoriteEnabled = event.target.closest('[data-disks-favorite-enabled]');
+  if (favoriteEnabled) {
+    const favoriteId = String(favoriteEnabled.dataset.disksFavoriteEnabled || '').trim();
+    _disksPatchFilesystemFavorite(favoriteId, { enabled: !!favoriteEnabled.checked }).catch(err => {
+      _disksDualPaneSetStatus(`Favourite update failed: ${err?.message || err}`, 'fail');
+    });
+  }
+}
+
 function _disksOnShellKeydown(event) {
   const nodeTarget = event.target.closest('.disks-card__main[data-disks-node]');
   if (!nodeTarget) return;
@@ -4288,7 +4963,153 @@ function _disksOnShellFocusOut(event) {
   _disksSaveNoteNow(nodeId).catch(() => {});
 }
 
+function _disksOnShellDragStart(event) {
+  const row = event.target.closest('[data-disks-dual-drag="item"]');
+  if (!row) return;
+  const paneId = String(row.dataset.disksDualPane || '').trim();
+  const path = _disksNormalizeRelativePath(row.dataset.path || '.');
+  if (!paneId || !path) return;
+  _disksDualPaneDrag = { paneId, path };
+  event.dataTransfer.effectAllowed = 'copyMove';
+  event.dataTransfer.setData('application/x-blueprints-disks-path', JSON.stringify(_disksDualPaneDrag));
+  event.dataTransfer.setData('text/plain', path);
+}
+
+function _disksOnShellDragOver(event) {
+  const target = event.target.closest('[data-disks-dual-drop]');
+  if (!target || !_disksDualPaneDrag) return;
+  const targetPane = String(target.dataset.disksDualDrop || '').trim();
+  if (!targetPane || targetPane === _disksDualPaneDrag.paneId) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'copy';
+}
+
+function _disksOnShellDrop(event) {
+  const target = event.target.closest('[data-disks-dual-drop]');
+  if (!target) return;
+  let drag = _disksDualPaneDrag;
+  if (!drag && event.dataTransfer) {
+    try {
+      drag = JSON.parse(event.dataTransfer.getData('application/x-blueprints-disks-path') || '{}');
+    } catch (_) {
+      drag = null;
+    }
+  }
+  if (!drag?.paneId || !drag?.path) return;
+  const targetPane = String(target.dataset.disksDualDrop || '').trim();
+  if (!targetPane || targetPane === drag.paneId) return;
+  event.preventDefault();
+  _disksDualPaneTransfer(drag.paneId, targetPane, 'copy', drag.path);
+}
+
+function _disksOnShellDragEnd() {
+  _disksDualPaneDrag = null;
+}
+
 function _disksOnShellClick(event) {
+  const dualActionBtn = event.target.closest('[data-disks-dual-action]');
+  if (dualActionBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const action = String(dualActionBtn.dataset.disksDualAction || '').trim();
+    const paneId = String(dualActionBtn.dataset.disksDualPane || '').trim();
+    const pane = _disksDualPaneGet(paneId);
+    if (action === 'favorites-refresh') {
+      _disksLoadFilesystemFavorites(true).catch(err => {
+        _disksDualPaneSetStatus(`Could not refresh favourites: ${err?.message || err}`, 'fail');
+      });
+      return;
+    }
+    if (!pane?.meta) return;
+    if (action === 'browse') {
+      pane.path = _disksNormalizeRelativePath(dualActionBtn.dataset.path || '.');
+      pane.selectedPath = '';
+      renderDisksPage();
+      _disksEnsureDualPaneTree(paneId);
+      return;
+    }
+    if (action === 'file-tap') {
+      _disksHandleFileTap(`dual:${paneId}`, pane.meta, dualActionBtn.dataset.path || '.');
+      return;
+    }
+    if (action === 'download') {
+      _disksDownloadFilesystemPath(pane.meta, dualActionBtn.dataset.path || '.').catch(err => {
+        _disksDualPaneSetStatus(`Download failed: ${err?.message || err}`, 'fail');
+      });
+      return;
+    }
+    if (action === 'select') {
+      pane.selectedPath = _disksNormalizeRelativePath(dualActionBtn.dataset.path || '.');
+      renderDisksPage();
+      return;
+    }
+    if (action === 'up') {
+      const cached = _disksDualPaneCache(paneId);
+      pane.path = cached?.ok ? _disksNormalizeRelativePath(cached.data?.parent_path || '.') : '.';
+      pane.selectedPath = '';
+      renderDisksPage();
+      _disksEnsureDualPaneTree(paneId);
+      return;
+    }
+    if (action === 'root') {
+      pane.path = '.';
+      pane.selectedPath = '';
+      renderDisksPage();
+      _disksEnsureDualPaneTree(paneId);
+      return;
+    }
+    if (action === 'refresh') {
+      _disksFilesystemTreeCache.delete(_disksFilesystemTreeCacheKey(pane.meta, pane.path));
+      renderDisksPage();
+      _disksEnsureDualPaneTree(paneId);
+      return;
+    }
+    if (action === 'favorite-add') {
+      _disksSaveFilesystemFavorite(paneId).catch(err => {
+        _disksDualPaneSetStatus(`Could not save favourite: ${err?.message || err}`, 'fail');
+      });
+      return;
+    }
+    if (action === 'upload') {
+      _disksDualPaneUpload(paneId);
+      return;
+    }
+    if (action === 'copy-selected' || action === 'move-selected') {
+      const targetPane = String(dualActionBtn.dataset.disksDualTarget || '').trim();
+      _disksDualPaneTransfer(
+        paneId,
+        targetPane,
+        action === 'move-selected' ? 'move' : 'copy',
+        pane.selectedPath,
+      );
+      return;
+    }
+  }
+  const favoriteActionBtn = event.target.closest('[data-disks-favorite-action]');
+  if (favoriteActionBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const action = String(favoriteActionBtn.dataset.disksFavoriteAction || '').trim();
+    const favoriteId = String(favoriteActionBtn.dataset.favoriteId || '').trim();
+    if (action === 'up') {
+      _disksMoveFilesystemFavorite(favoriteId, -1).catch(err => {
+        _disksDualPaneSetStatus(`Favourite reorder failed: ${err?.message || err}`, 'fail');
+      });
+      return;
+    }
+    if (action === 'down') {
+      _disksMoveFilesystemFavorite(favoriteId, 1).catch(err => {
+        _disksDualPaneSetStatus(`Favourite reorder failed: ${err?.message || err}`, 'fail');
+      });
+      return;
+    }
+    if (action === 'delete') {
+      _disksDeleteFilesystemFavorite(favoriteId).catch(err => {
+        _disksDualPaneSetStatus(`Favourite delete failed: ${err?.message || err}`, 'fail');
+      });
+      return;
+    }
+  }
   const noteToggle = event.target.closest('[data-disks-note-toggle]');
   if (noteToggle) {
     event.preventDefault();
@@ -4402,8 +5223,13 @@ function _disksInit() {
   _disksEl('s25-lift-disks')?.addEventListener('click', _disksOnShellClick);
   _disksEl('disks-shell')?.addEventListener('click', _disksOnShellClick);
   _disksEl('disks-shell')?.addEventListener('input', _disksOnShellInput);
+  _disksEl('disks-shell')?.addEventListener('change', _disksOnShellChange);
   _disksEl('disks-shell')?.addEventListener('keydown', _disksOnShellKeydown);
   _disksEl('disks-shell')?.addEventListener('focusout', _disksOnShellFocusOut);
+  _disksEl('disks-shell')?.addEventListener('dragstart', _disksOnShellDragStart);
+  _disksEl('disks-shell')?.addEventListener('dragover', _disksOnShellDragOver);
+  _disksEl('disks-shell')?.addEventListener('drop', _disksOnShellDrop);
+  _disksEl('disks-shell')?.addEventListener('dragend', _disksOnShellDragEnd);
   _disksEl('disks-smart-modal')?.addEventListener('click', (event) => {
     const closeBtn = event.target.closest('.hub-modal-close');
     if (closeBtn) {
