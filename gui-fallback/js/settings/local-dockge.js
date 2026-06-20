@@ -49,6 +49,7 @@ let _localDockgeLoadPromise = null;
 let _localDockgeMetricsPollInterval = null;
 let _localDockgeMetricsLoadPromise = null;
 let _localDockgeMetricsPulseSeq = 0;
+let _localDockgeLastMetricsSampleAt = '';
 const _localDockgeMetricsByStack = new Map();
 const _LOCAL_DOCKGE_NARRATION_DOUBLE_CLICK_MS = 260;
 const _LOCAL_DOCKGE_NARRATION_LONG_PRESS_MS = 650;
@@ -912,6 +913,9 @@ function _updateLocalDockgeMetricsDom() {
 }
 
 function _localDockgeApplyMetrics(data) {
+  const sampleAt = data.updated_at || '';
+  if (!data.sample_ready || (sampleAt && sampleAt === _localDockgeLastMetricsSampleAt)) return;
+  _localDockgeLastMetricsSampleAt = sampleAt;
   const metricByStack = new Map((data.stacks || []).map(item => [item.stack_name, item]));
   const pulseSeq = _localDockgeMetricsPulseSeq + 1;
   _localDockgeMetricsPulseSeq = pulseSeq;

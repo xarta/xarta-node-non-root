@@ -52,6 +52,7 @@ let _vpsDockgeLoadPromise = null;
 let _vpsDockgeMetricsPollInterval = null;
 let _vpsDockgeMetricsLoadPromise = null;
 let _vpsDockgeMetricsPulseSeq = 0;
+let _vpsDockgeLastMetricsSampleAt = '';
 const _vpsDockgeMetricsByStack = new Map();
 const _VPS_DOCKGE_NARRATION_DOUBLE_CLICK_MS = 260;
 const _VPS_DOCKGE_NARRATION_LONG_PRESS_MS = 650;
@@ -915,6 +916,9 @@ function _updateVpsDockgeMetricsDom() {
 }
 
 function _vpsDockgeApplyMetrics(data) {
+  const sampleAt = data.updated_at || '';
+  if (!data.sample_ready || (sampleAt && sampleAt === _vpsDockgeLastMetricsSampleAt)) return;
+  _vpsDockgeLastMetricsSampleAt = sampleAt;
   const metricByStack = new Map((data.stacks || []).map(item => [item.stack_name, item]));
   const pulseSeq = _vpsDockgeMetricsPulseSeq + 1;
   _vpsDockgeMetricsPulseSeq = pulseSeq;
