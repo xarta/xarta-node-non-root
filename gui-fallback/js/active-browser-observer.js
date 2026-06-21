@@ -210,6 +210,9 @@ const BlueprintsActiveBrowserObserver = (() => {
   }
 
   function _openChatPage() {
+    if (typeof window.BlueprintsOpenMatrixChatPage === 'function') {
+      return window.BlueprintsOpenMatrixChatPage();
+    }
     if (typeof window.switchTab === 'function') {
       window.switchTab('matrix-chat');
       return true;

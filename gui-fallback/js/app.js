@@ -438,6 +438,32 @@ function _installSelectorOriginMenuBridge() {
   });
 }
 
+function openMatrixChatPage() {
+  switchGroup('settings');
+  switchTab('matrix-chat');
+  if (typeof SettingsMenuConfig !== 'undefined' && typeof SettingsMenuConfig.updateActiveTab === 'function') {
+    SettingsMenuConfig.updateActiveTab('matrix-chat');
+  }
+  return document.getElementById('tab-matrix-chat')?.classList.contains('active') || false;
+}
+
+function _closeOwningModal(node) {
+  const modal = node?.closest?.('dialog.hub-modal');
+  if (!modal || !modal.open) return;
+  if (typeof HubModal !== 'undefined' && typeof HubModal.close === 'function') {
+    HubModal.close(modal);
+    return;
+  }
+  if (typeof modal.close === 'function') modal.close();
+}
+
+document.addEventListener('click', event => {
+  const trigger = event.target?.closest?.('[data-open-matrix-chat]');
+  if (!trigger) return;
+  event.preventDefault();
+  if (openMatrixChatPage()) _closeOwningModal(trigger);
+});
+
 window.BlueprintsHubMenuBridge = {
   get activeGroup() {
     return _selectorOriginMenuGroup;
@@ -450,9 +476,11 @@ window.BlueprintsHubMenuBridge = {
   isS25StargateOriginMenuMode: _isS25StargateOriginMenuMode,
   closeAnchoredMenus: _closeActiveOriginMenus,
   openPage: _openAutomationPage,
+  openMatrixChatPage,
   invokeMenuFunction: _invokeAutomationMenuFunction,
   switchGroup,
 };
+window.BlueprintsOpenMatrixChatPage = openMatrixChatPage;
 window._currentPageState = _currentPageState;
 
 /* ── Group + tab switching ───────────────────────────────────────────── */
