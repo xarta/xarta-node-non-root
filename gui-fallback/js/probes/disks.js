@@ -5321,7 +5321,8 @@ function _disksOnShellClick(event) {
       return;
     }
     if (action === 'select') {
-      pane.selectedPath = _disksNormalizeRelativePath(dualActionBtn.dataset.path || '.');
+      const selectedPath = _disksNormalizeRelativePath(dualActionBtn.dataset.path || '.');
+      pane.selectedPath = _disksNormalizeRelativePath(pane.selectedPath || '') === selectedPath ? '' : selectedPath;
       renderDisksPage();
       return;
     }
