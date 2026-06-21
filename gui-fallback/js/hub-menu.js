@@ -1331,7 +1331,8 @@ function createHubMenu(cfg) {
             const rect = menu.getBoundingClientRect();
             const bottomPad = 8;
             const available = Math.floor(viewportHeight - rect.top - bottomPad);
-            if (rect.bottom <= viewportHeight - bottomPad || available <= 0) return;
+            const contentBottom = rect.top + Math.max(rect.height, menu.scrollHeight || 0);
+            if (contentBottom <= viewportHeight - bottomPad || available <= 0) return;
             menu.classList.add('hub-dropdown-menu--clipped');
             menu.style.maxHeight = Math.max(120, available) + 'px';
             menu.style.overflowY = 'auto';

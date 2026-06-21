@@ -5,6 +5,7 @@
 const CalendarPage = (() => {
   const YEAR_START_STORAGE_KEY = 'blueprints.calendar.yearStartMonth';
   const VIEW_STORAGE_KEY = 'blueprints.calendar.view';
+  const CONTENT_VIEW_STORAGE_KEY = 'blueprints.calendar.contentView';
   const MONTH_NAMES = [
     'January',
     'February',
@@ -20,6 +21,16 @@ const CalendarPage = (() => {
     'December',
   ];
   const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const CONTENT_VIEWS = [
+    { id: 'calendar', label: 'Year / Month Calendar' },
+    { id: 'selected', label: 'Selected Range Visible Items' },
+    { id: 'milestones', label: 'All-Day And Milestones' },
+    { id: 'search', label: 'Search And Review' },
+    { id: 'new-event', label: 'New Calendar Event' },
+    { id: 'upcoming', label: 'Upcoming' },
+    { id: 'provenance', label: 'Provenance' },
+  ];
+  const CONTENT_VIEW_IDS = CONTENT_VIEWS.map(view => view.id);
 
   const state = {
     loaded: false,
@@ -28,12 +39,18 @@ const CalendarPage = (() => {
     error: '',
     date: localDateString(new Date()),
     view: readStoredView(),
+    contentView: readStoredContentView(),
     mode: 'day',
     yearStartMonth: readStoredYearStartMonth(),
     sourceFilter: 'all',
     selection: null,
     lastWrite: null,
   };
+
+  let contentViewMenuHost = null;
+  let contentViewMenuPointerHandler = null;
+  let contentViewMenuKeyHandler = null;
+  let contentViewMenuFitHandler = null;
 
   const escHtml = typeof esc === 'function'
     ? esc
@@ -54,6 +71,18 @@ const CalendarPage = (() => {
       return localStorage.getItem(VIEW_STORAGE_KEY) === 'month' ? 'month' : 'year';
     } catch (_) {
       return 'year';
+    }
+  }
+
+  function normalizeContentView(value) {
+    return CONTENT_VIEW_IDS.includes(value) ? value : 'calendar';
+  }
+
+  function readStoredContentView() {
+    try {
+      return normalizeContentView(localStorage.getItem(CONTENT_VIEW_STORAGE_KEY));
+    } catch (_) {
+      return 'calendar';
     }
   }
 
@@ -202,6 +231,11 @@ const CalendarPage = (() => {
     return 'all sources';
   }
 
+  function contentViewLabel(value = state.contentView) {
+    const view = CONTENT_VIEWS.find(item => item.id === value);
+    return view ? view.label : CONTENT_VIEWS[0].label;
+  }
+
   function responseErrorMessage(data, status) {
     const detail = data?.detail;
     if (Array.isArray(detail)) {
@@ -342,6 +376,7 @@ const CalendarPage = (() => {
 
   function rowsForType(type) {
     const rows = groupEvents();
+    if (type === 'selected') return rows.timed.concat(rows.allDay).sort(compareEvents);
     if (type === 'timed') return rows.timed;
     if (type === 'all-day') return rows.allDay;
     if (type === 'upcoming') return rows.upcoming;
@@ -499,9 +534,25 @@ const CalendarPage = (() => {
   }
 
   function renderRefreshState() {
-    document.querySelectorAll('[data-calendar-action="refresh"]').forEach(btn => {
+    document.querySelectorAll('[data-calendar-action="refresh"], [data-calendar-view-trigger]').forEach(btn => {
       btn.classList.toggle('is-refreshing', Boolean(state.loading));
       btn.setAttribute('aria-busy', state.loading ? 'true' : 'false');
+    });
+  }
+
+  function renderContentPanels() {
+    document.querySelectorAll('[data-calendar-content-view]').forEach(panel => {
+      panel.hidden = panel.dataset.calendarContentView !== state.contentView;
+    });
+  }
+
+  function renderContentViewTrigger() {
+    document.querySelectorAll('[data-calendar-view-trigger]').forEach(btn => {
+      const label = contentViewLabel();
+      btn.dataset.calendarContentView = state.contentView;
+      btn.setAttribute('aria-label', `View: ${label}. Tap for next view, double tap to choose, long press to refresh.`);
+      btn.setAttribute('aria-expanded', contentViewMenuHost ? 'true' : 'false');
+      btn.title = `View: ${label}`;
     });
   }
 
@@ -512,10 +563,13 @@ const CalendarPage = (() => {
       : (state.error ? 'error' : (state.data ? 'ready' : 'empty'));
     const tone = state.loading ? 'warn' : statusTone(status);
     if (strip) {
+      const label = status === 'ready' ? '' : status;
+      strip.dataset.calendarStatus = status;
+      strip.setAttribute('aria-label', `${status} ${rangeLabel()}`);
       strip.innerHTML = `
         <span class="calendar-status-dot calendar-status-dot--${tone}" aria-hidden="true"></span>
-        <span>${escHtml(status)}</span>
-        <span>${escHtml(rangeLabel())}</span>
+        ${label ? `<span class="calendar-status-strip__label">${escHtml(label)}</span>` : ''}
+        <span class="calendar-status-strip__range">${escHtml(rangeLabel())}</span>
       `;
     }
     renderRefreshState();
@@ -525,7 +579,8 @@ const CalendarPage = (() => {
     const meta = el('calendar-meta');
     if (meta) {
       const count = visibleEvents().length;
-      meta.textContent = `${rangeLabel()} - ${state.view} view - ${count} visible event${count === 1 ? '' : 's'}`;
+      const content = state.contentView === 'calendar' ? '' : ` - ${contentViewLabel()}`;
+      meta.textContent = `${rangeLabel()} - ${state.view} view${content} - ${count} visible event${count === 1 ? '' : 's'}`;
     }
     const dateInput = el('calendar-date-input');
     if (dateInput) dateInput.value = state.date;
@@ -544,6 +599,8 @@ const CalendarPage = (() => {
     document.querySelectorAll('[data-calendar-mode-button]').forEach(btn => {
       btn.dataset.active = btn.dataset.calendarModeButton === state.mode ? 'true' : 'false';
     });
+    renderContentPanels();
+    renderContentViewTrigger();
   }
 
   function eventRow(event, index, type) {
@@ -583,10 +640,11 @@ const CalendarPage = (() => {
 
   function renderAgenda() {
     const rows = groupEvents();
+    const selectedRows = rows.timed.concat(rows.allDay).sort(compareEvents);
     const count = el('calendar-agenda-count');
-    if (count) count.textContent = String(rows.timed.length + rows.allDay.length);
+    if (count) count.textContent = String(selectedRows.length);
     renderSelectedSummary(rows);
-    renderList('calendar-agenda-list', rows.timed, 'timed', 'No timed events for this range.');
+    renderList('calendar-agenda-list', selectedRows, 'selected', 'No visible items for this range.');
     renderList('calendar-all-day-list', rows.allDay, 'all-day', 'No all-day items or milestones for this range.');
     renderList('calendar-upcoming-list', rows.upcoming, 'upcoming', 'No upcoming items for this range.');
   }
@@ -705,7 +763,9 @@ const CalendarPage = (() => {
     syncCreateDate();
     if (drillDown || state.view === 'year') {
       state.view = 'month';
+      state.contentView = 'calendar';
       writeStoredValue(VIEW_STORAGE_KEY, state.view);
+      writeStoredValue(CONTENT_VIEW_STORAGE_KEY, state.contentView);
       state.loaded = false;
       return load({ force: true });
     }
@@ -716,18 +776,22 @@ const CalendarPage = (() => {
   function openMonth(dateText) {
     state.date = localDateString(parseLocalDate(dateText));
     state.view = 'month';
+    state.contentView = 'calendar';
     state.loaded = false;
     state.selection = null;
     syncCreateDate();
     writeStoredValue(VIEW_STORAGE_KEY, state.view);
+    writeStoredValue(CONTENT_VIEW_STORAGE_KEY, state.contentView);
     return load({ force: true });
   }
 
   function setView(view) {
     state.view = view === 'month' ? 'month' : 'year';
+    state.contentView = 'calendar';
     state.loaded = false;
     state.selection = null;
     writeStoredValue(VIEW_STORAGE_KEY, state.view);
+    writeStoredValue(CONTENT_VIEW_STORAGE_KEY, state.contentView);
     return load({ force: true });
   }
 
@@ -752,6 +816,150 @@ const CalendarPage = (() => {
     state.selection = null;
     render();
     return state.sourceFilter;
+  }
+
+  function setContentView(view) {
+    state.contentView = normalizeContentView(view);
+    writeStoredValue(CONTENT_VIEW_STORAGE_KEY, state.contentView);
+    closeContentViewMenu();
+    render();
+    return state.contentView;
+  }
+
+  function cycleContentView() {
+    const current = Math.max(0, CONTENT_VIEW_IDS.indexOf(state.contentView));
+    return setContentView(CONTENT_VIEW_IDS[(current + 1) % CONTENT_VIEW_IDS.length]);
+  }
+
+  function resetContentViewAndRefresh() {
+    state.contentView = 'calendar';
+    writeStoredValue(CONTENT_VIEW_STORAGE_KEY, state.contentView);
+    closeContentViewMenu();
+    return load({ force: true });
+  }
+
+  function viewportHeight() {
+    if (window.visualViewport && Number.isFinite(window.visualViewport.height) && window.visualViewport.height > 0) {
+      return window.visualViewport.height;
+    }
+    return window.innerHeight || document.documentElement.clientHeight || 0;
+  }
+
+  function fallbackFitDropdownMenu(menu) {
+    if (!menu) return;
+    menu.classList.remove('hub-dropdown-menu--clipped');
+    menu.style.removeProperty('max-height');
+    menu.style.removeProperty('overflow-y');
+    menu.style.removeProperty('overflow-x');
+    const height = viewportHeight();
+    if (!height) return;
+    const rect = menu.getBoundingClientRect();
+    const available = Math.floor(height - rect.top - 8);
+    const contentBottom = rect.top + Math.max(rect.height, menu.scrollHeight || 0);
+    if (contentBottom <= height - 8 || available <= 0) return;
+    menu.classList.add('hub-dropdown-menu--clipped');
+    menu.style.maxHeight = Math.max(120, available) + 'px';
+    menu.style.overflowY = 'auto';
+    menu.style.overflowX = 'hidden';
+  }
+
+  function fitContentViewMenu(menu) {
+    if (typeof DaveMenuConfig !== 'undefined' && typeof DaveMenuConfig._fitDropdownMenu === 'function') {
+      DaveMenuConfig._fitDropdownMenu(menu);
+      return;
+    }
+    fallbackFitDropdownMenu(menu);
+  }
+
+  function positionContentViewMenu(anchor, host, menu) {
+    if (!anchor || !host || !menu) return;
+    const anchorRect = anchor.getBoundingClientRect();
+    const viewportW = window.innerWidth || document.documentElement.clientWidth || 0;
+    const top = Math.max(8, Math.round(anchorRect.bottom + 6));
+    host.style.left = '8px';
+    host.style.top = top + 'px';
+    const menuRect = menu.getBoundingClientRect();
+    if (viewportW > 0 && menuRect.width > 0) {
+      const desiredLeft = Math.round(anchorRect.left + (anchorRect.width / 2) - (menuRect.width / 2));
+      const maxLeft = Math.max(8, Math.floor(viewportW - menuRect.width - 8));
+      host.style.left = Math.min(Math.max(8, desiredLeft), maxLeft) + 'px';
+    }
+    fitContentViewMenu(menu);
+  }
+
+  function closeContentViewMenu() {
+    if (contentViewMenuPointerHandler) {
+      document.removeEventListener('pointerdown', contentViewMenuPointerHandler, true);
+      contentViewMenuPointerHandler = null;
+    }
+    if (contentViewMenuKeyHandler) {
+      document.removeEventListener('keydown', contentViewMenuKeyHandler, true);
+      contentViewMenuKeyHandler = null;
+    }
+    if (contentViewMenuFitHandler) {
+      window.removeEventListener('resize', contentViewMenuFitHandler);
+      window.removeEventListener('orientationchange', contentViewMenuFitHandler);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', contentViewMenuFitHandler);
+        window.visualViewport.removeEventListener('scroll', contentViewMenuFitHandler);
+      }
+      contentViewMenuFitHandler = null;
+    }
+    if (contentViewMenuHost && contentViewMenuHost.parentNode) {
+      contentViewMenuHost.parentNode.removeChild(contentViewMenuHost);
+    }
+    contentViewMenuHost = null;
+    renderContentViewTrigger();
+  }
+
+  function openContentViewMenu(anchor) {
+    if (!anchor || typeof anchor.getBoundingClientRect !== 'function') return false;
+    closeContentViewMenu();
+    const host = document.createElement('div');
+    host.className = 'hub-tab-dropdown open calendar-view-menu';
+    host.dataset.calendarViewMenu = '1';
+    const menu = document.createElement('div');
+    menu.className = 'hub-dropdown-menu calendar-view-menu__menu';
+    CONTENT_VIEWS.forEach(view => {
+      const btn = document.createElement('button');
+      btn.className = 'hub-dropdown-item';
+      btn.type = 'button';
+      btn.dataset.calendarContentTarget = view.id;
+      btn.setAttribute('aria-current', view.id === state.contentView ? 'true' : 'false');
+      btn.textContent = view.label;
+      btn.addEventListener('click', event => {
+        event.stopPropagation();
+        setContentView(view.id);
+      });
+      menu.appendChild(btn);
+    });
+    host.appendChild(menu);
+    document.body.appendChild(host);
+    contentViewMenuHost = host;
+    positionContentViewMenu(anchor, host, menu);
+    contentViewMenuFitHandler = () => positionContentViewMenu(anchor, host, menu);
+    window.addEventListener('resize', contentViewMenuFitHandler, { passive: true });
+    window.addEventListener('orientationchange', contentViewMenuFitHandler, { passive: true });
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', contentViewMenuFitHandler, { passive: true });
+      window.visualViewport.addEventListener('scroll', contentViewMenuFitHandler, { passive: true });
+    }
+    contentViewMenuPointerHandler = event => {
+      if (!contentViewMenuHost) return;
+      if (contentViewMenuHost.contains(event.target)) return;
+      if (event.target.closest && event.target.closest('[data-calendar-view-trigger]')) return;
+      closeContentViewMenu();
+    };
+    contentViewMenuKeyHandler = event => {
+      if (event.key === 'Escape') closeContentViewMenu();
+    };
+    window.setTimeout(() => {
+      if (!contentViewMenuHost) return;
+      document.addEventListener('pointerdown', contentViewMenuPointerHandler, true);
+      document.addEventListener('keydown', contentViewMenuKeyHandler, true);
+    }, 0);
+    renderContentViewTrigger();
+    return true;
   }
 
   function previous() {
@@ -864,8 +1072,10 @@ const CalendarPage = (() => {
     state.lastWrite = data;
     state.date = data.event?.local_date || payload.local_date || state.date;
     state.view = 'month';
+    state.contentView = 'calendar';
     state.loaded = false;
     writeStoredValue(VIEW_STORAGE_KEY, state.view);
+    writeStoredValue(CONTENT_VIEW_STORAGE_KEY, state.contentView);
     await load({ force: true });
     return true;
   }
@@ -943,8 +1153,10 @@ const CalendarPage = (() => {
     state.lastWrite = data;
     state.date = data.event?.local_date || state.date;
     state.view = 'month';
+    state.contentView = 'calendar';
     state.loaded = false;
     writeStoredValue(VIEW_STORAGE_KEY, state.view);
+    writeStoredValue(CONTENT_VIEW_STORAGE_KEY, state.contentView);
     await load({ force: true });
     return showActionModal('Edit Calendar Event', kvHtml([
       ['Event', data.event?.event_id || event.event_id],
@@ -1090,6 +1302,149 @@ const CalendarPage = (() => {
     ]), 'No write command was run.');
   }
 
+  const CalendarContentViewMachine = (() => {
+    let machineState = 'IDLE';
+    const transitions = {
+      IDLE: {
+        tap: { next: 'IDLE', actions: ['cycleView'] },
+        doubleTap: { next: 'MENU_OPEN', actions: ['openMenu'] },
+        longPress: { next: 'IDLE', actions: ['resetRefresh'] },
+      },
+      MENU_OPEN: {
+        tap: { next: 'IDLE', actions: ['closeMenu'] },
+        doubleTap: { next: 'IDLE', actions: ['closeMenu'] },
+        longPress: { next: 'IDLE', actions: ['closeMenu', 'resetRefresh'] },
+      },
+    };
+
+    function syncState() {
+      machineState = contentViewMenuHost ? 'MENU_OPEN' : 'IDLE';
+    }
+
+    function runAction(action, anchor) {
+      if (action === 'cycleView') cycleContentView();
+      if (action === 'openMenu') openContentViewMenu(anchor);
+      if (action === 'closeMenu') closeContentViewMenu();
+      if (action === 'resetRefresh') resetContentViewAndRefresh();
+    }
+
+    return {
+      dispatch(input, anchor) {
+        syncState();
+        const transition = transitions[machineState]?.[input];
+        if (!transition) return machineState;
+        machineState = transition.next;
+        transition.actions.forEach(action => runAction(action, anchor));
+        syncState();
+        return machineState;
+      },
+      getState() {
+        syncState();
+        return machineState;
+      },
+    };
+  })();
+
+  function bindContentViewTrigger(btn) {
+    if (!btn || btn.dataset.calendarViewTriggerBound === '1') return;
+    btn.dataset.calendarViewTriggerBound = '1';
+    const doubleMs = 280;
+    const longPressMs = 560;
+    const moveTolerance = 12;
+    let pendingTapTimer = null;
+    let lastTapAt = 0;
+    let lastTapX = 0;
+    let lastTapY = 0;
+    let longPressTimer = null;
+    let longPressStartX = 0;
+    let longPressStartY = 0;
+    let longPressFired = false;
+    let ignoreClicksUntil = 0;
+    let lastDoubleAt = 0;
+
+    function clearPendingTap() {
+      if (!pendingTapTimer) return;
+      clearTimeout(pendingTapTimer);
+      pendingTapTimer = null;
+    }
+
+    function clearLongPress() {
+      if (!longPressTimer) return;
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+
+    function dispatch(input) {
+      CalendarContentViewMachine.dispatch(input, btn);
+    }
+
+    btn.addEventListener('pointerdown', event => {
+      if (event.button !== undefined && event.button !== 0) return;
+      longPressFired = false;
+      longPressStartX = event.clientX;
+      longPressStartY = event.clientY;
+      clearLongPress();
+      longPressTimer = window.setTimeout(() => {
+        longPressTimer = null;
+        longPressFired = true;
+        ignoreClicksUntil = Date.now() + 700;
+        clearPendingTap();
+        dispatch('longPress');
+      }, longPressMs);
+    });
+
+    btn.addEventListener('pointermove', event => {
+      if (!longPressTimer) return;
+      const dx = event.clientX - longPressStartX;
+      const dy = event.clientY - longPressStartY;
+      if (Math.sqrt(dx * dx + dy * dy) > moveTolerance) clearLongPress();
+    });
+
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(type => {
+      btn.addEventListener(type, clearLongPress);
+    });
+
+    btn.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const now = Date.now();
+      if (longPressFired || now < ignoreClicksUntil) {
+        longPressFired = false;
+        return;
+      }
+      const dx = event.clientX - lastTapX;
+      const dy = event.clientY - lastTapY;
+      const moved = Math.sqrt(dx * dx + dy * dy);
+      const isDouble = event.detail >= 2 || (lastTapAt && (now - lastTapAt) <= doubleMs && moved <= 24);
+      if (isDouble) {
+        clearPendingTap();
+        lastTapAt = 0;
+        lastDoubleAt = now;
+        dispatch('doubleTap');
+        return;
+      }
+      lastTapAt = now;
+      lastTapX = event.clientX;
+      lastTapY = event.clientY;
+      clearPendingTap();
+      pendingTapTimer = window.setTimeout(() => {
+        pendingTapTimer = null;
+        lastTapAt = 0;
+        dispatch('tap');
+      }, doubleMs);
+    });
+
+    btn.addEventListener('dblclick', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      clearPendingTap();
+      const now = Date.now();
+      if (now - lastDoubleAt < 80) return;
+      lastDoubleAt = now;
+      dispatch('doubleTap');
+    });
+  }
+
   function bind() {
     const root = document.querySelector('[data-calendar-page]');
     if (!root || root.dataset.calendarBound === '1') return;
@@ -1138,6 +1493,7 @@ const CalendarPage = (() => {
     if (eventDate) eventDate.value = state.date;
     const allDay = el('calendar-event-all-day');
     if (allDay) allDay.addEventListener('change', () => setAllDayControls('calendar-event'));
+    document.querySelectorAll('[data-calendar-view-trigger]').forEach(bindContentViewTrigger);
     ['calendar-action-modal-close', 'calendar-action-modal-footer-close'].forEach(id => {
       const btn = el(id);
       if (btn) btn.addEventListener('click', closeActionModal);
@@ -1168,6 +1524,8 @@ const CalendarPage = (() => {
       range_end: rangeEnd(),
       range_label: rangeLabel(),
       view: state.view,
+      content_view: state.contentView,
+      content_view_label: contentViewLabel(),
       mode: state.mode,
       year_start_month: state.yearStartMonth,
       source_filter: state.sourceFilter,
@@ -1192,6 +1550,8 @@ const CalendarPage = (() => {
     today,
     viewYear: () => setView('year'),
     viewMonth: () => setView('month'),
+    toggleContentView: cycleContentView,
+    setContentView,
     modeDay: () => setMode('day'),
     modeWeek: () => setMode('week'),
     filterAll: () => setSourceFilter('all'),
@@ -1201,6 +1561,7 @@ const CalendarPage = (() => {
     filterImports: () => setSourceFilter('imports'),
     filterSources: () => setSourceFilter('sources'),
     newEvent: () => {
+      setContentView('new-event');
       const field = el('calendar-event-title');
       if (field) {
         field.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1225,6 +1586,7 @@ window.BlueprintsCalendarPage = CalendarPage;
 if (typeof DaveMenuConfig !== 'undefined') {
   DaveMenuConfig.registerFunctions({
     'calendar.refresh': () => CalendarPage.refresh(),
+    'calendar.toggleContentView': () => CalendarPage.toggleContentView(),
     'calendar.previous': () => CalendarPage.previous(),
     'calendar.next': () => CalendarPage.next(),
     'calendar.today': () => CalendarPage.today(),
