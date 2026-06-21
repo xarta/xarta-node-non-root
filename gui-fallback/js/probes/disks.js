@@ -619,22 +619,32 @@ function _disksFilesystemTreeRowHtml(entry, actionScope = 'tree', options = {}) 
         </span>
       `
     : nameHtml;
+  const selected = isDual && options.selectedPath === path;
   const typeBadge = `<span class="docs-tree-badge">${type === 'folder' ? 'Dir' : 'File'}</span>`;
-  const linkBadge = entry?.symlink ? '<span class="docs-tree-badge">Link</span>' : '';
+  const linkBadge = entry?.symlink
+    ? '<span class="docs-tree-badge">Link</span>'
+    : isDual
+      ? '<span class="docs-tree-badge disks-dual-pane__badge-slot" aria-hidden="true"></span>'
+      : '';
   const selectButton = isDual
-    ? `<button class="hub-modal-btn secondary disks-dual-pane__select-btn" type="button" ${actionAttr}="select"${paneAttr} data-path="${_disksEsc(path)}" title="${_disksEsc(`Select ${displayName}`)}">Select</button>`
+    ? `
+        <label class="hub-checkbox disks-dual-pane__select-check" ${actionAttr}="select"${paneAttr} data-path="${_disksEsc(path)}" title="${_disksEsc(`Select ${displayName}`)}">
+          <input class="hub-checkbox__input" type="checkbox" aria-label="${_disksEsc(`Select ${displayName}`)}"${selected ? ' checked' : ''} />
+          <span class="hub-checkbox__box" aria-hidden="true"></span>
+        </label>
+      `
     : '';
   const dragAttrs = isDual
     ? ` draggable="true" data-disks-dual-drag="item"${paneAttr}`
     : '';
   return `
-    <div class="docs-tree-row${isDual && options.selectedPath === path ? ' is-selected' : ''}" data-path="${_disksEsc(path)}" data-type="${_disksEsc(type)}"${dragAttrs}>
+    <div class="docs-tree-row${selected ? ' is-selected' : ''}" data-path="${_disksEsc(path)}" data-type="${_disksEsc(type)}"${dragAttrs}>
       <span class="docs-tree-icon docs-tree-icon--${_disksEsc(type)}" aria-hidden="true"></span>
       ${labelHtml}
-      <span class="docs-tree-actions">
-        ${selectButton}
+      <span class="docs-tree-actions${isDual ? ' disks-dual-pane__row-actions' : ''}">
         ${linkBadge}
         ${typeBadge}
+        ${selectButton}
         <button class="secondary table-icon-btn table-icon-btn--pull disks-tree__download-btn" type="button" ${actionAttr}="download"${paneAttr} data-path="${_disksEsc(path)}" data-entry-type="${_disksEsc(type)}" title="${_disksEsc(`Download ${displayName}`)}" aria-label="${_disksEsc(`Download ${displayName}`)}"></button>
       </span>
     </div>

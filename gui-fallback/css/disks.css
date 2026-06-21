@@ -587,6 +587,7 @@
 }
 
 .disks-dual {
+  --disks-dual-mobile-action-width: 138px;
   display: grid;
   gap: 12px;
 }
@@ -705,6 +706,10 @@
   flex-wrap: wrap;
 }
 
+.disks-dual-pane__head > div:first-child {
+  min-width: 0;
+}
+
 .disks-dual-pane__head h3 {
   margin: 0 0 5px;
   color: var(--text);
@@ -756,9 +761,27 @@
   background: rgba(230, 168, 23, 0.11);
 }
 
-.disks-dual-pane__select-btn {
-  padding: 4px 8px;
-  font-size: 11px;
+.disks-dual-pane__row-actions {
+  display: grid;
+  grid-template-columns: 42px 38px 24px 28px;
+  justify-items: end;
+}
+
+.disks-dual-pane__row-actions .docs-tree-badge {
+  box-sizing: border-box;
+  min-width: 38px;
+  text-align: center;
+}
+
+.disks-dual-pane__badge-slot {
+  visibility: hidden;
+}
+
+.disks-dual-pane__select-check {
+  justify-content: center;
+  gap: 0;
+  width: 24px;
+  min-height: 24px;
 }
 
 .disks-dual-pane__footer {
@@ -814,6 +837,60 @@
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
   backdrop-filter: blur(14px) saturate(150%);
   -webkit-backdrop-filter: blur(14px) saturate(150%);
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+  .disks-dual__controls > label {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .disks-dual__controls > label select {
+    flex: 0 0 var(--disks-dual-mobile-action-width);
+    width: var(--disks-dual-mobile-action-width);
+  }
+
+  .disks-dual__controls-actions {
+    flex: 1 1 100%;
+  }
+
+  .disks-dual__controls [data-disks-dual-action="favorites-refresh"] {
+    flex: 0 0 var(--disks-dual-mobile-action-width);
+    width: var(--disks-dual-mobile-action-width);
+  }
+
+  .disks-dual__controls .disks-dual__favorites[open] .disks-dual__favorites-list {
+    left: 50%;
+    right: auto;
+    width: min(calc(100vw - 48px), 340px);
+    transform: translateX(-50%);
+  }
+
+  .disks-dual-pane__head > div:first-child {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex: 1 1 100%;
+  }
+
+  .disks-dual-pane__head h3 {
+    margin: 0;
+  }
+
+  .disks-dual-pane__badges {
+    justify-content: flex-end;
+    margin-left: auto;
+  }
+
+  .disks-dual-pane__actions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+  }
 }
 
 .disks-dual-favorite {
