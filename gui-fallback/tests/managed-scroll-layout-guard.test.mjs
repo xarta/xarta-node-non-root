@@ -8,6 +8,11 @@ const bodyShadeJs = fs.readFileSync(path.resolve(here, '../js/body-shade.js'), '
 const bodyShadeCss = fs.readFileSync(path.resolve(here, '../css/body-shade.css'), 'utf8');
 const hubMenuJs = fs.readFileSync(path.resolve(here, '../js/hub-menu.js'), 'utf8');
 const indexHtml = fs.readFileSync(path.resolve(here, '../index.html'), 'utf8');
+const daveCalendarCss = fs.readFileSync(path.resolve(here, '../css/dave-calendar.css'), 'utf8');
+const daveDiaryCss = fs.readFileSync(path.resolve(here, '../css/dave-diary.css'), 'utf8');
+const daveTodoCss = fs.readFileSync(path.resolve(here, '../css/dave-todo.css'), 'utf8');
+const daveImportsCss = fs.readFileSync(path.resolve(here, '../css/dave-imports.css'), 'utf8');
+const kanbanBoardCss = fs.readFileSync(path.resolve(here, '../css/kanban-board.css'), 'utf8');
 const daveMenuJs = fs.readFileSync(path.resolve(here, '../js/dave/dave-menu.js'), 'utf8');
 const kanbanMenuJs = fs.readFileSync(path.resolve(here, '../js/kanban/kanban-menu.js'), 'utf8');
 const activeBrowserObserver = fs.readFileSync(
@@ -61,6 +66,73 @@ for (const [tabId, surface] of [
     `${surface} search strip must stay inside the managed scroll shell.`,
   );
 }
+for (const { tabId, surface, liftId, tabKey, titleClass, css } of [
+  {
+    tabId: 'tab-diary',
+    surface: 'diary',
+    liftId: 's25-lift-diary',
+    tabKey: 'diary',
+    titleClass: 'diary-page__title-block',
+    css: daveDiaryCss,
+  },
+  {
+    tabId: 'tab-calender',
+    surface: 'calendar',
+    liftId: 's25-lift-calender',
+    tabKey: 'calender',
+    titleClass: 'calendar-page__title-block',
+    css: daveCalendarCss,
+  },
+  {
+    tabId: 'tab-todo',
+    surface: 'todo',
+    liftId: 's25-lift-todo',
+    tabKey: 'todo',
+    titleClass: 'todo-page__title-block',
+    css: daveTodoCss,
+  },
+  {
+    tabId: 'tab-imports',
+    surface: 'imports',
+    liftId: 's25-lift-imports',
+    tabKey: 'imports',
+    titleClass: 'imports-dashboard__title-block',
+    css: daveImportsCss,
+  },
+  {
+    tabId: 'tab-kanban',
+    surface: 'kanban',
+    liftId: 's25-lift-kanban',
+    tabKey: 'kanban',
+    titleClass: 'kanban-page__title-block',
+    css: kanbanBoardCss,
+  },
+]) {
+  const tabHtml = tabSlice(tabId);
+  const liftNeedle = `id="${liftId}" class="s25-lift-block ${titleClass}" data-for-tab="${tabKey}"`;
+  const liftStart = tabHtml.indexOf(liftNeedle);
+  const handleStart = tabHtml.indexOf('class="body-shade-handle"');
+  assert.notEqual(liftStart, -1, `${surface} must wrap title/meta in the S25 lift block.`);
+  assert.ok(
+    handleStart > liftStart,
+    `${surface} S25 lift block must stay before the Body Shade handle.`,
+  );
+  assert.match(
+    css,
+    new RegExp(`#page-controls-slot-s25\\s+#${liftId}\\b`),
+    `${surface} CSS must style the lifted S25 title block.`,
+  );
+  assert.match(
+    css,
+    new RegExp(`#page-controls-slot-s25\\s+#${liftId}\\s+h2\\b`),
+    `${surface} CSS must size the lifted S25 title heading.`,
+  );
+}
+assert.doesNotMatch(
+  daveCalendarCss,
+  /(?:#s25-lift-calender|\.calendar-page__title-block)[\s\S]{0,240}letter-spacing\s*:\s*(?:0|normal|initial|unset)\b/i,
+  'Calendar lifted S25 title must keep the intentional inherited letter-spacing treatment.',
+);
 for (const [tabId, surface, formNeedle] of [
   ['tab-diary', 'diary', 'class="diary-quick-entry"'],
   ['tab-calender', 'calendar', 'class="calendar-quick-event"'],

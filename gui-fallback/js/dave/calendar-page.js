@@ -445,8 +445,7 @@ const CalendarPage = (() => {
     return `
       <article class="calendar-month-card">
         <button class="calendar-month-card__title" type="button" data-calendar-action="open-month" data-calendar-date="${escHtml(monthDateText)}">
-          <span>${escHtml(MONTH_NAMES[month])}</span>
-          <span>${escHtml(String(monthDate.getFullYear()))}</span>
+          <span>${escHtml(`${MONTH_NAMES[month]} ${monthDate.getFullYear()}`)}</span>
         </button>
         <div class="calendar-weekday-row calendar-weekday-row--mini">
           ${WEEKDAY_LABELS.map(label => `<span>${escHtml(label)}</span>`).join('')}
@@ -491,21 +490,35 @@ const CalendarPage = (() => {
     const pill = el('calendar-range-pill');
     const root = el('calendar-view-root');
     if (heading) heading.textContent = state.view === 'year' ? 'Year View' : 'Month View';
-    if (pill) pill.textContent = rangeLabel();
+    if (pill) {
+      pill.hidden = state.view === 'year';
+      pill.textContent = state.view === 'year' ? '' : rangeLabel();
+    }
     if (!root) return;
     root.innerHTML = state.view === 'year' ? renderYearView() : renderMonthView();
   }
 
+  function renderRefreshState() {
+    document.querySelectorAll('[data-calendar-action="refresh"]').forEach(btn => {
+      btn.classList.toggle('is-refreshing', Boolean(state.loading));
+      btn.setAttribute('aria-busy', state.loading ? 'true' : 'false');
+    });
+  }
+
   function renderStatus() {
     const strip = el('calendar-status-strip');
-    if (!strip) return;
-    const status = state.error ? 'error' : (state.data ? 'ready' : 'empty');
-    const tone = statusTone(status);
-    strip.innerHTML = `
-      <span class="calendar-status-dot calendar-status-dot--${tone}" aria-hidden="true"></span>
-      <span>${escHtml(status)}</span>
-      <span>${escHtml(rangeLabel())}</span>
-    `;
+    const status = state.loading
+      ? (state.data ? 'refreshing' : 'loading')
+      : (state.error ? 'error' : (state.data ? 'ready' : 'empty'));
+    const tone = state.loading ? 'warn' : statusTone(status);
+    if (strip) {
+      strip.innerHTML = `
+        <span class="calendar-status-dot calendar-status-dot--${tone}" aria-hidden="true"></span>
+        <span>${escHtml(status)}</span>
+        <span>${escHtml(rangeLabel())}</span>
+      `;
+    }
+    renderRefreshState();
   }
 
   function renderMeta() {
@@ -634,6 +647,7 @@ const CalendarPage = (() => {
     if (state.loaded && !options.force) return state.data;
     state.loading = true;
     state.error = '';
+    render();
     try {
       const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
       const limit = 200;
@@ -667,14 +681,13 @@ const CalendarPage = (() => {
       };
       state.data = data;
       state.loaded = true;
-      render();
       return data;
     } catch (error) {
       state.error = error.message || String(error);
-      renderError(state.error);
       return null;
     } finally {
       state.loading = false;
+      render();
     }
   }
 

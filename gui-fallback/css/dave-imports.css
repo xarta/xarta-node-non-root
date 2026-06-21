@@ -3,6 +3,8 @@
   flex-direction: column;
   gap: 14px;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   margin: 0;
   color: var(--text);
 }
@@ -13,6 +15,10 @@
 
 .imports-dashboard--body {
   padding: 0 0 30px;
+}
+
+.imports-dashboard__title-block {
+  min-width: 0;
 }
 
 .imports-dashboard__header,
@@ -105,8 +111,9 @@
 
 .imports-icon-btn:hover,
 .imports-icon-btn:focus-visible {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: rgba(91, 156, 246, .46);
+  background: rgba(91, 156, 246, .14);
+  color: var(--text);
   outline: none;
 }
 
@@ -394,7 +401,9 @@
 
 .imports-proof-row:hover,
 .imports-proof-row:focus-visible {
-  border-color: var(--accent);
+  border-color: rgba(91, 156, 246, .46);
+  background: rgba(91, 156, 246, .14);
+  color: var(--text);
   outline: none;
 }
 
@@ -496,5 +505,25 @@
   .imports-proof-row {
     align-items: flex-start;
     flex-direction: column;
+  }
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-imports {
+    display: grid;
+    gap: 2px;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-imports h2 {
+    font-size: 17px;
+    line-height: 1.1;
+  }
+
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-imports .imports-dashboard__meta {
+    margin-top: 0;
+    font-size: 11px;
+    line-height: 1.25;
   }
 }

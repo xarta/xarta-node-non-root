@@ -3242,7 +3242,7 @@
   <section id="tab-diary" class="tab-panel tab-panel--managed-scroll" aria-label="Diary" data-diary-page>
     <div class="diary-page diary-page--intro">
       <div class="diary-page__header">
-        <div>
+        <div id="s25-lift-diary" class="s25-lift-block diary-page__title-block" data-for-tab="diary">
           <h2>Diary</h2>
           <div class="diary-page__meta" id="diary-day-meta">Loading day...</div>
         </div>
@@ -3326,7 +3326,7 @@
   <section id="tab-calender" class="tab-panel tab-panel--managed-scroll" aria-label="Calendar" data-calendar-page>
     <div class="calendar-page calendar-page--intro">
       <div class="calendar-page__header">
-        <div>
+        <div id="s25-lift-calender" class="s25-lift-block calendar-page__title-block" data-for-tab="calender">
           <h2>Calendar</h2>
           <div class="calendar-page__meta" id="calendar-meta">Loading calendar...</div>
         </div>
@@ -3368,12 +3368,13 @@
           <button type="button" data-calendar-action="mode-day" data-calendar-mode-button="day">Day</button>
           <button type="button" data-calendar-action="mode-week" data-calendar-mode-button="week">Week</button>
         </div>
-        <div class="calendar-filter-strip" id="calendar-filter-strip">Filter: all sources</div>
-      </div>
-
-      <div class="calendar-status-strip" id="calendar-status-strip" role="status" aria-live="polite">
-        <span class="calendar-status-dot calendar-status-dot--unknown" aria-hidden="true"></span>
-        <span>Loading Calendar agenda</span>
+        <div class="calendar-status-row">
+          <div class="calendar-filter-strip" id="calendar-filter-strip">Filter: all sources</div>
+          <div class="calendar-status-strip" id="calendar-status-strip" role="status" aria-live="polite">
+            <span class="calendar-status-dot calendar-status-dot--unknown" aria-hidden="true"></span>
+            <span>Loading Calendar agenda</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -3476,7 +3477,7 @@
   <section id="tab-todo" class="tab-panel tab-panel--managed-scroll" aria-label="ToDo" data-todo-page>
     <div class="todo-page todo-page--intro">
       <div class="todo-page__header">
-        <div>
+        <div id="s25-lift-todo" class="s25-lift-block todo-page__title-block" data-for-tab="todo">
           <h2>ToDo</h2>
           <div class="todo-page__meta" id="todo-meta">Loading tasks...</div>
         </div>
@@ -3597,7 +3598,7 @@
   <section id="tab-imports" class="tab-panel tab-panel--managed-scroll" aria-label="Imports" data-imports-dashboard>
     <div class="imports-dashboard imports-dashboard--intro">
       <div class="imports-dashboard__header">
-        <div>
+        <div id="s25-lift-imports" class="s25-lift-block imports-dashboard__title-block" data-for-tab="imports">
           <h2>Imports</h2>
           <div class="imports-dashboard__meta" id="imports-dashboard-meta">Loading status...</div>
         </div>
@@ -3762,7 +3763,7 @@
   <section id="tab-kanban" class="tab-panel tab-panel--managed-scroll" aria-label="Kanban" data-kanban-board>
     <div class="kanban-page kanban-page--intro">
       <div class="kanban-page__header">
-        <div>
+        <div id="s25-lift-kanban" class="s25-lift-block kanban-page__title-block" data-for-tab="kanban">
           <h2>Kanban</h2>
           <div class="kanban-page__meta" id="kanban-meta">Loading board...</div>
         </div>

@@ -3,6 +3,8 @@
   flex-direction: column;
   gap: 14px;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   margin: 0;
   color: var(--text);
 }
@@ -13,6 +15,10 @@
 
 .kanban-page--body {
   padding: 0 0 30px;
+  min-width: 0;
+}
+
+.kanban-page__title-block {
   min-width: 0;
 }
 
@@ -153,16 +159,21 @@
 
 .kanban-icon-btn:hover,
 .kanban-icon-btn:focus-visible,
+.kanban-icon-btn:active,
 .kanban-card-btn:hover,
 .kanban-card-btn:focus-visible,
+.kanban-card-btn:active,
 .kanban-add-btn:hover,
 .kanban-add-btn:focus-visible,
+.kanban-add-btn:active,
 .kanban-command-btn:hover,
 .kanban-command-btn:focus-visible,
+.kanban-command-btn:active,
 .kanban-pill-btn:hover,
 .kanban-pill-btn:focus-visible {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: rgba(91, 156, 246, .46);
+  background: rgba(91, 156, 246, .14);
+  color: var(--text);
   outline: none;
 }
 
@@ -629,5 +640,25 @@
 
   .kanban-scoped-row__actions {
     justify-content: flex-start;
+  }
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-kanban {
+    display: grid;
+    gap: 2px;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-kanban h2 {
+    font-size: 17px;
+    line-height: 1.1;
+  }
+
+  html[data-special-ui-mode='s25-stargate-touch-nav'] #page-controls-slot-s25 #s25-lift-kanban .kanban-page__meta {
+    margin-top: 0;
+    font-size: 11px;
+    line-height: 1.25;
   }
 }

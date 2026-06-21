@@ -55,6 +55,35 @@ body.has-managed-scroll-tab .tab-panel--managed-scroll.active {
   margin-bottom: 0;
 }
 
+#tab-diary.active,
+#tab-calender.active,
+#tab-todo.active,
+#tab-imports.active,
+#tab-kanban.active {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+#tab-diary.active > .tab-scroll-shell,
+#tab-calender.active > .tab-scroll-shell,
+#tab-todo.active > .tab-scroll-shell,
+#tab-imports.active > .tab-scroll-shell,
+#tab-kanban.active > .tab-scroll-shell {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+#tab-diary.active > .tab-scroll-shell > .diary-page,
+#tab-calender.active > .tab-scroll-shell > .calendar-page,
+#tab-todo.active > .tab-scroll-shell > .todo-page,
+#tab-imports.active > .tab-scroll-shell > .imports-dashboard,
+#tab-kanban.active > .tab-scroll-shell > .kanban-page {
+  max-width: 100%;
+  min-width: 0;
+}
+
 /* Full-bleed fill panels already cancel main's side padding. Keep their shade
    handles at the panel width so the handle itself cannot create root x-scroll. */
 #tab-hermes-local.active > .body-shade-handle,
@@ -235,6 +264,15 @@ body.shade-is-up .tab-scroll-shell {
   max-height: var(--shade-up-max-h);
   overscroll-behavior: contain;
   padding-bottom: var(--shade-bottom-clearance);
+}
+
+body.shade-is-up #tab-diary.active > .tab-scroll-shell,
+body.shade-is-up #tab-calender.active > .tab-scroll-shell,
+body.shade-is-up #tab-todo.active > .tab-scroll-shell,
+body.shade-is-up #tab-imports.active > .tab-scroll-shell,
+body.shade-is-up #tab-kanban.active > .tab-scroll-shell {
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 /* Table-wraps inside a scroll shell: let the SHELL handle scrolling rather  */
