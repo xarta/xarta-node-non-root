@@ -23,8 +23,8 @@
 
 .calendar-page__header,
 .calendar-page__actions,
+.calendar-nav-actions,
 .calendar-control-strip,
-.calendar-status-row,
 .calendar-status-strip,
 .calendar-section-head,
 .calendar-quick-event__footer,
@@ -71,6 +71,13 @@
 }
 
 .calendar-page__actions {
+  gap: 8px;
+  flex: 1 1 420px;
+  min-width: min(100%, 320px);
+  justify-content: flex-end;
+}
+
+.calendar-nav-actions {
   gap: 8px;
   flex: 0 0 auto;
 }
@@ -236,14 +243,6 @@
   color: var(--text);
 }
 
-.calendar-status-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 10px;
-  grid-column: 1 / -1;
-  min-width: 0;
-}
-
 .calendar-filter-strip,
 .calendar-status-strip {
   min-height: 36px;
@@ -256,12 +255,29 @@
 }
 
 .calendar-filter-strip {
+  grid-column: 1 / -1;
   overflow-wrap: anywhere;
 }
 
 .calendar-status-strip {
+  flex: 1 1 220px;
+  justify-content: flex-start;
   gap: 8px;
-  flex-wrap: wrap;
+  height: 38px;
+  min-height: 38px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.calendar-status-strip__label,
+.calendar-status-strip__range {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.calendar-status-strip__range {
+  flex: 1 1 auto;
 }
 
 .calendar-status-dot {
@@ -723,10 +739,6 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
-  .calendar-filter-strip {
-    grid-column: auto;
-  }
-
   .calendar-layout,
   .calendar-layout--utility,
   .calendar-layout--lower {
@@ -749,7 +761,12 @@
   }
 
   .calendar-page__actions {
-    width: auto;
+    width: 100%;
+    min-width: 0;
+    gap: 6px;
+  }
+
+  .calendar-nav-actions {
     gap: 6px;
   }
 
@@ -766,6 +783,12 @@
   .calendar-filter-strip,
   .calendar-status-strip {
     width: 100%;
+  }
+
+  .calendar-status-strip {
+    height: 34px;
+    min-height: 34px;
+    padding: 6px 10px;
   }
 
   .calendar-segment {

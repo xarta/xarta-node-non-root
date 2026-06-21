@@ -3331,10 +3331,16 @@
           <div class="calendar-page__meta" id="calendar-meta">Loading calendar...</div>
         </div>
         <div class="calendar-page__actions" aria-label="Calendar actions">
-          <button class="calendar-icon-btn calendar-icon-btn--prev" type="button" data-calendar-action="previous" title="Previous range" aria-label="Previous range"></button>
-          <button class="calendar-icon-btn calendar-icon-btn--today" type="button" data-calendar-action="today" title="Today" aria-label="Today"></button>
-          <button class="calendar-icon-btn calendar-icon-btn--next" type="button" data-calendar-action="next" title="Next range" aria-label="Next range"></button>
-          <button class="calendar-icon-btn calendar-icon-btn--refresh" type="button" data-calendar-action="refresh" title="Refresh calendar" aria-label="Refresh calendar"></button>
+          <div class="calendar-status-strip" id="calendar-status-strip" role="status" aria-live="polite">
+            <span class="calendar-status-dot calendar-status-dot--unknown" aria-hidden="true"></span>
+            <span>Loading Calendar agenda</span>
+          </div>
+          <div class="calendar-nav-actions" aria-label="Calendar range actions">
+            <button class="calendar-icon-btn calendar-icon-btn--prev" type="button" data-calendar-action="previous" title="Previous range" aria-label="Previous range"></button>
+            <button class="calendar-icon-btn calendar-icon-btn--today" type="button" data-calendar-action="today" title="Today" aria-label="Today"></button>
+            <button class="calendar-icon-btn calendar-icon-btn--next" type="button" data-calendar-action="next" title="Next range" aria-label="Next range"></button>
+            <button class="calendar-icon-btn calendar-icon-btn--refresh" type="button" data-calendar-action="refresh" title="Refresh calendar" aria-label="Refresh calendar"></button>
+          </div>
         </div>
       </div>
 
@@ -3368,13 +3374,7 @@
           <button type="button" data-calendar-action="mode-day" data-calendar-mode-button="day">Day</button>
           <button type="button" data-calendar-action="mode-week" data-calendar-mode-button="week">Week</button>
         </div>
-        <div class="calendar-status-row">
-          <div class="calendar-filter-strip" id="calendar-filter-strip">Filter: all sources</div>
-          <div class="calendar-status-strip" id="calendar-status-strip" role="status" aria-live="polite">
-            <span class="calendar-status-dot calendar-status-dot--unknown" aria-hidden="true"></span>
-            <span>Loading Calendar agenda</span>
-          </div>
-        </div>
+        <div class="calendar-filter-strip" id="calendar-filter-strip">Filter: all sources</div>
       </div>
     </div>
 
@@ -3382,11 +3382,7 @@
 
     <div class="tab-scroll-shell">
     <div class="calendar-page calendar-page--body">
-      <section class="calendar-view-section" aria-labelledby="calendar-view-heading">
-        <div class="calendar-section-head">
-          <h3 id="calendar-view-heading">Calendar</h3>
-          <span class="calendar-pill" id="calendar-range-pill">Ready</span>
-        </div>
+      <section class="calendar-view-section" aria-label="Calendar view">
         <div id="calendar-view-root" class="calendar-view-root"></div>
       </section>
 

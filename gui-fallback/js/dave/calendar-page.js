@@ -512,10 +512,13 @@ const CalendarPage = (() => {
       : (state.error ? 'error' : (state.data ? 'ready' : 'empty'));
     const tone = state.loading ? 'warn' : statusTone(status);
     if (strip) {
+      const label = status === 'ready' ? '' : status;
+      strip.dataset.calendarStatus = status;
+      strip.setAttribute('aria-label', `${status} ${rangeLabel()}`);
       strip.innerHTML = `
         <span class="calendar-status-dot calendar-status-dot--${tone}" aria-hidden="true"></span>
-        <span>${escHtml(status)}</span>
-        <span>${escHtml(rangeLabel())}</span>
+        ${label ? `<span class="calendar-status-strip__label">${escHtml(label)}</span>` : ''}
+        <span class="calendar-status-strip__range">${escHtml(rangeLabel())}</span>
       `;
     }
     renderRefreshState();

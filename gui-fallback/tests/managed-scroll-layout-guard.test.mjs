@@ -13,6 +13,7 @@ const daveDiaryCss = fs.readFileSync(path.resolve(here, '../css/dave-diary.css')
 const daveTodoCss = fs.readFileSync(path.resolve(here, '../css/dave-todo.css'), 'utf8');
 const daveImportsCss = fs.readFileSync(path.resolve(here, '../css/dave-imports.css'), 'utf8');
 const kanbanBoardCss = fs.readFileSync(path.resolve(here, '../css/kanban-board.css'), 'utf8');
+const daveCalendarJs = fs.readFileSync(path.resolve(here, '../js/dave/calendar-page.js'), 'utf8');
 const daveMenuJs = fs.readFileSync(path.resolve(here, '../js/dave/dave-menu.js'), 'utf8');
 const kanbanMenuJs = fs.readFileSync(path.resolve(here, '../js/kanban/kanban-menu.js'), 'utf8');
 const activeBrowserObserver = fs.readFileSync(
@@ -30,6 +31,13 @@ function tabSlice(tabId) {
   return indexHtml.slice(tabStart, tabEnd);
 }
 
+function functionSlice(source, fnName) {
+  const fnStart = source.indexOf(`function ${fnName}`);
+  assert.notEqual(fnStart, -1, `${fnName} must exist.`);
+  const nextFn = source.indexOf('\n  function ', fnStart + 1);
+  return source.slice(fnStart, nextFn === -1 ? source.length : nextFn);
+}
+
 assert.match(
   bodyShadeJs,
   /function\s+setScrollStateClass\s*\([^)]*\)[\s\S]*document\.documentElement\.classList\.toggle/,
@@ -40,6 +48,55 @@ assert.match(
   /setScrollStateClass\('has-managed-scroll-tab',\s*shouldLockBody\)/,
   'Managed-scroll tabs must lock root scroll through the shared state helper.',
 );
+{
+  const sizeManagedScrollShell = functionSlice(bodyShadeJs, 'sizeManagedScrollShell');
+  assert.match(
+    sizeManagedScrollShell,
+    /var\s+panelTop\s*=\s*panel\.getBoundingClientRect\(\)\.top/,
+    'Managed-scroll shell sizing must use the real transformed panel top.',
+  );
+  assert.doesNotMatch(
+    sizeManagedScrollShell,
+    /panelTop\s*=\s*Math\.max\(0,\s*panel\.getBoundingClientRect\(\)\.top\)/,
+    'Managed-scroll shell sizing must not clamp panel top to zero while shade is up.',
+  );
+  assert.match(
+    sizeManagedScrollShell,
+    /panel\.style\.height\s*=\s*panelHeight\s*\+\s*'px'/,
+    'Managed-scroll active panels must get an exact measured height.',
+  );
+  assert.match(
+    sizeManagedScrollShell,
+    /panel\.style\.overflowY\s*=\s*'hidden'/,
+    'Managed-scroll active panels must not become a second vertical scroll owner.',
+  );
+  assert.match(
+    sizeManagedScrollShell,
+    /shell\.style\.overflowX\s*=\s*'hidden'/,
+    'Managed-scroll shells must suppress horizontal overflow explicitly.',
+  );
+  assert.match(
+    sizeManagedScrollShell,
+    /shell\.style\.overflowY\s*=\s*'auto'/,
+    'Managed-scroll shells must remain the sole vertical scroll owner.',
+  );
+  assert.doesNotMatch(
+    sizeManagedScrollShell,
+    /shell\.style\.overflow\s*=\s*'auto'/,
+    'Managed-scroll shell sizing must not use overflow:auto shorthand.',
+  );
+  const snapDown = functionSlice(bodyShadeJs, 'snapDown');
+  assert.match(
+    snapDown,
+    /requestAnimationFrame\([^)]*function\s*\(\)\s*\{[\s\S]*sizeActivePane\(\)/,
+    'Instant snap-down must remeasure active panes after dropping raised managed-scroll height.',
+  );
+  assert.match(
+    snapDown,
+    /setTimeout\(sizeActivePane,\s*TRANSITION\s*\+\s*50\)/,
+    'Animated snap-down must remeasure active panes after the shade transition settles.',
+  );
+}
 for (const tabId of ['tab-diary', 'tab-calender', 'tab-todo', 'tab-imports', 'tab-kanban']) {
   assert.ok(
     bodyShadeJs.includes(`'${tabId}'`),
@@ -132,6 +189,33 @@ assert.doesNotMatch(
   daveCalendarCss,
   /(?:#s25-lift-calender|\.calendar-page__title-block)[\s\S]{0,240}letter-spacing\s*:\s*(?:0|normal|initial|unset)\b/i,
   'Calendar lifted S25 title must keep the intentional inherited letter-spacing treatment.',
+);
+{
+  const tabHtml = tabSlice('tab-calender');
+  const statusStart = tabHtml.indexOf('id="calendar-status-strip"');
+  const navStart = tabHtml.indexOf('class="calendar-nav-actions"');
+  const filterStart = tabHtml.indexOf('id="calendar-filter-strip"');
+  assert.ok(
+    statusStart !== -1 && navStart > statusStart,
+    'Calendar status/range pill must sit to the left of the Today/nav/refresh buttons.',
+  );
+  assert.ok(
+    filterStart > navStart,
+    'Calendar filter pill must stay in the control grid after the header action row.',
+  );
+  assert.doesNotMatch(tabHtml, /calendar-status-row/, 'Calendar must not drift back to the old split status row.');
+  assert.doesNotMatch(tabHtml, /calendar-view-heading/, 'Calendar must not repeat a visible Year/Month View title.');
+  assert.doesNotMatch(tabHtml, /calendar-range-pill/, 'Calendar must not repeat the range in a body heading pill.');
+}
+assert.match(
+  daveCalendarCss,
+  /\.calendar-filter-strip\s*\{[\s\S]*grid-column:\s*1\s*\/\s*-1/,
+  'Calendar filter strip must span the full control row.',
+);
+assert.match(
+  daveCalendarJs,
+  /status\s*===\s*'ready'\s*\?\s*''\s*:\s*status/,
+  'Calendar ready status must suppress the word "ready" while keeping warning/error/loading labels available.',
 );
 for (const [tabId, surface, formNeedle] of [
   ['tab-diary', 'diary', 'class="diary-quick-entry"'],
