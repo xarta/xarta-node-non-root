@@ -757,8 +757,27 @@
 }
 
 .disks-dual-pane .docs-tree-row.is-selected {
-  border-color: rgba(230, 168, 23, 0.45);
+  position: relative;
+  border-bottom-color: transparent;
+  background: transparent;
+}
+
+.disks-dual-pane .docs-tree-row.is-selected::before {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 0;
+  bottom: -5px;
+  left: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-bottom: 1px solid rgba(230, 168, 23, 0.45);
   background: rgba(230, 168, 23, 0.11);
+}
+
+.disks-dual-pane .docs-tree-row.is-selected > * {
+  position: relative;
+  z-index: 1;
 }
 
 .disks-dual-pane .docs-tree-actions.disks-dual-pane__row-actions {
