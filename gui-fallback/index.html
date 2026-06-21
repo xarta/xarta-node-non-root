@@ -3328,7 +3328,7 @@
       <div class="calendar-page__header">
         <div>
           <h2>Calendar</h2>
-          <div class="calendar-page__meta" id="calendar-meta">Loading agenda...</div>
+          <div class="calendar-page__meta" id="calendar-meta">Loading calendar...</div>
         </div>
         <div class="calendar-page__actions" aria-label="Calendar actions">
           <button class="calendar-icon-btn calendar-icon-btn--prev" type="button" data-calendar-action="previous" title="Previous range" aria-label="Previous range"></button>
@@ -3339,11 +3339,32 @@
       </div>
 
       <div class="calendar-control-strip">
-        <label class="calendar-date-control" for="calendar-date-input">
+        <label class="calendar-control calendar-date-control" for="calendar-date-input">
           <span>Date</span>
           <input id="calendar-date-input" type="date" />
         </label>
-        <div class="calendar-segment" aria-label="Calendar mode">
+        <label class="calendar-control calendar-select-control" for="calendar-year-start">
+          <span>Year starts</span>
+          <select id="calendar-year-start" aria-label="Calendar year start month">
+            <option value="0">January</option>
+            <option value="1">February</option>
+            <option value="2">March</option>
+            <option value="3">April</option>
+            <option value="4">May</option>
+            <option value="5">June</option>
+            <option value="6">July</option>
+            <option value="7">August</option>
+            <option value="8">September</option>
+            <option value="9">October</option>
+            <option value="10">November</option>
+            <option value="11">December</option>
+          </select>
+        </label>
+        <div class="calendar-segment" aria-label="Calendar view">
+          <button type="button" data-calendar-action="view-year" data-calendar-view-button="year">Year</button>
+          <button type="button" data-calendar-action="view-month" data-calendar-view-button="month">Month</button>
+        </div>
+        <div class="calendar-segment calendar-segment--detail" aria-label="Calendar detail range">
           <button type="button" data-calendar-action="mode-day" data-calendar-mode-button="day">Day</button>
           <button type="button" data-calendar-action="mode-week" data-calendar-mode-button="week">Week</button>
         </div>
@@ -3360,52 +3381,21 @@
 
     <div class="tab-scroll-shell">
     <div class="calendar-page calendar-page--body">
-      <div class="personal-search-strip" data-personal-search-surface="calendar"></div>
-      <section class="calendar-quick-event" aria-labelledby="calendar-quick-event-heading">
+      <section class="calendar-view-section" aria-labelledby="calendar-view-heading">
         <div class="calendar-section-head">
-          <h3 id="calendar-quick-event-heading">New Calendar Event</h3>
-          <span class="calendar-pill" id="calendar-write-pill">Ready</span>
+          <h3 id="calendar-view-heading">Calendar</h3>
+          <span class="calendar-pill" id="calendar-range-pill">Ready</span>
         </div>
-        <div class="calendar-form-grid">
-          <label class="calendar-field calendar-field--wide" for="calendar-event-title">
-            <span>Title</span>
-            <input id="calendar-event-title" type="text" maxlength="180" autocomplete="off" />
-          </label>
-          <label class="calendar-field" for="calendar-event-date">
-            <span>Date</span>
-            <input id="calendar-event-date" type="date" />
-          </label>
-          <label class="calendar-field" for="calendar-event-start">
-            <span>Start</span>
-            <input id="calendar-event-start" type="time" />
-          </label>
-          <label class="calendar-field" for="calendar-event-end">
-            <span>End</span>
-            <input id="calendar-event-end" type="time" />
-          </label>
-          <label class="calendar-check hub-checkbox" for="calendar-event-all-day">
-            <input id="calendar-event-all-day" class="hub-checkbox__input" type="checkbox" />
-            <span class="hub-checkbox__box" aria-hidden="true"></span>
-            <span class="hub-checkbox__label">All day</span>
-          </label>
-          <label class="calendar-field calendar-field--wide" for="calendar-event-body">
-            <span>Notes</span>
-            <textarea id="calendar-event-body" rows="2" maxlength="2000"></textarea>
-          </label>
-        </div>
-        <div class="calendar-quick-event__footer">
-          <span id="calendar-entry-status" class="calendar-entry-status"></span>
-          <button class="calendar-command-btn" type="button" data-calendar-action="submit-event">Save Event</button>
-        </div>
+        <div id="calendar-view-root" class="calendar-view-root"></div>
       </section>
-      <div class="calendar-metrics" id="calendar-metrics" aria-label="Calendar metrics"></div>
 
       <div class="calendar-layout">
         <section class="calendar-band calendar-band--agenda" aria-labelledby="calendar-agenda-heading">
           <div class="calendar-section-head">
-            <h3 id="calendar-agenda-heading">Agenda</h3>
+            <h3 id="calendar-agenda-heading">Selected Range</h3>
             <span class="calendar-pill" id="calendar-agenda-count">0</span>
           </div>
+          <div id="calendar-selected-summary" class="calendar-selected-summary"></div>
           <div id="calendar-agenda-list" class="calendar-agenda-list"></div>
         </section>
 
@@ -3414,6 +3404,53 @@
             <h3 id="calendar-all-day-heading">All-Day And Milestones</h3>
           </div>
           <div id="calendar-all-day-list" class="calendar-agenda-list"></div>
+        </section>
+      </div>
+
+      <div class="calendar-layout calendar-layout--utility">
+        <section class="calendar-band calendar-band--search" aria-labelledby="calendar-search-heading">
+          <div class="calendar-section-head">
+            <h3 id="calendar-search-heading">Search And Review</h3>
+          </div>
+          <div class="personal-search-strip" data-personal-search-surface="calendar"></div>
+        </section>
+
+        <section class="calendar-quick-event" aria-labelledby="calendar-quick-event-heading">
+          <div class="calendar-section-head">
+            <h3 id="calendar-quick-event-heading">New Calendar Event</h3>
+            <span class="calendar-pill" id="calendar-write-pill">Ready</span>
+          </div>
+          <div class="calendar-form-grid">
+            <label class="calendar-field calendar-field--wide" for="calendar-event-title">
+              <span>Title</span>
+              <input id="calendar-event-title" type="text" maxlength="180" autocomplete="off" />
+            </label>
+            <label class="calendar-field" for="calendar-event-date">
+              <span>Date</span>
+              <input id="calendar-event-date" type="date" />
+            </label>
+            <label class="calendar-field" for="calendar-event-start">
+              <span>Start</span>
+              <input id="calendar-event-start" type="time" />
+            </label>
+            <label class="calendar-field" for="calendar-event-end">
+              <span>End</span>
+              <input id="calendar-event-end" type="time" />
+            </label>
+            <label class="calendar-check hub-checkbox" for="calendar-event-all-day">
+              <input id="calendar-event-all-day" class="hub-checkbox__input" type="checkbox" />
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label">All day</span>
+            </label>
+            <label class="calendar-field calendar-field--wide calendar-field--notes" for="calendar-event-body">
+              <span>Notes</span>
+              <textarea id="calendar-event-body" rows="2" maxlength="2000"></textarea>
+            </label>
+          </div>
+          <div class="calendar-quick-event__footer">
+            <span id="calendar-entry-status" class="calendar-entry-status"></span>
+            <button class="calendar-command-btn" type="button" data-calendar-action="submit-event">Save Event</button>
+          </div>
         </section>
       </div>
 

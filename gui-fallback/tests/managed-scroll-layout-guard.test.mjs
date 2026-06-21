@@ -145,6 +145,8 @@ for (const label of [
   'Open Day Folder',
   'Open Source',
   'Link Work',
+  'Mode Year',
+  'Mode Month',
   'Mode Day',
   'Mode Week',
   'Mode Today',
