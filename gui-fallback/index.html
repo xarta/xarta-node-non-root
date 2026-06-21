@@ -3339,7 +3339,7 @@
             <button class="calendar-icon-btn calendar-icon-btn--prev" type="button" data-calendar-action="previous" title="Previous range" aria-label="Previous range"></button>
             <button class="calendar-icon-btn calendar-icon-btn--today" type="button" data-calendar-action="today" title="Today" aria-label="Today"></button>
             <button class="calendar-icon-btn calendar-icon-btn--next" type="button" data-calendar-action="next" title="Next range" aria-label="Next range"></button>
-            <button class="calendar-icon-btn calendar-icon-btn--refresh" type="button" data-calendar-action="refresh" title="Refresh calendar" aria-label="Refresh calendar"></button>
+            <button class="calendar-icon-btn calendar-icon-btn--refresh" type="button" data-calendar-view-trigger title="Calendar view" aria-label="Calendar view"></button>
           </div>
         </div>
       </div>
@@ -3382,90 +3382,84 @@
 
     <div class="tab-scroll-shell">
     <div class="calendar-page calendar-page--body">
-      <section class="calendar-view-section" aria-label="Calendar view">
+      <section class="calendar-view-section" aria-label="Calendar view" data-calendar-content-view="calendar">
         <div id="calendar-view-root" class="calendar-view-root"></div>
       </section>
 
-      <div class="calendar-layout">
-        <section class="calendar-band calendar-band--agenda" aria-labelledby="calendar-agenda-heading">
-          <div class="calendar-section-head">
-            <h3 id="calendar-agenda-heading">Selected Range</h3>
-            <span class="calendar-pill" id="calendar-agenda-count">0</span>
-          </div>
-          <div id="calendar-selected-summary" class="calendar-selected-summary"></div>
-          <div id="calendar-agenda-list" class="calendar-agenda-list"></div>
-        </section>
+      <section class="calendar-band calendar-band--agenda" aria-labelledby="calendar-agenda-heading" data-calendar-content-view="selected">
+        <div class="calendar-section-head">
+          <h3 id="calendar-agenda-heading">Selected Range Visible Items</h3>
+          <span class="calendar-pill" id="calendar-agenda-count">0</span>
+        </div>
+        <div id="calendar-selected-summary" class="calendar-selected-summary"></div>
+        <div id="calendar-agenda-list" class="calendar-agenda-list"></div>
+      </section>
 
-        <section class="calendar-band" aria-labelledby="calendar-all-day-heading">
-          <div class="calendar-section-head">
-            <h3 id="calendar-all-day-heading">All-Day And Milestones</h3>
-          </div>
-          <div id="calendar-all-day-list" class="calendar-agenda-list"></div>
-        </section>
-      </div>
+      <section class="calendar-band" aria-labelledby="calendar-all-day-heading" data-calendar-content-view="milestones">
+        <div class="calendar-section-head">
+          <h3 id="calendar-all-day-heading">All-Day And Milestones</h3>
+        </div>
+        <div id="calendar-all-day-list" class="calendar-agenda-list"></div>
+      </section>
 
-      <div class="calendar-layout calendar-layout--utility">
-        <section class="calendar-band calendar-band--search" aria-labelledby="calendar-search-heading">
-          <div class="calendar-section-head">
-            <h3 id="calendar-search-heading">Search And Review</h3>
-          </div>
-          <div class="personal-search-strip" data-personal-search-surface="calendar"></div>
-        </section>
+      <section class="calendar-band calendar-band--search" aria-labelledby="calendar-search-heading" data-calendar-content-view="search">
+        <div class="calendar-section-head">
+          <h3 id="calendar-search-heading">Search And Review</h3>
+        </div>
+        <div class="personal-search-strip" data-personal-search-surface="calendar"></div>
+      </section>
 
-        <section class="calendar-quick-event" aria-labelledby="calendar-quick-event-heading">
-          <div class="calendar-section-head">
-            <h3 id="calendar-quick-event-heading">New Calendar Event</h3>
-            <span class="calendar-pill" id="calendar-write-pill">Ready</span>
-          </div>
-          <div class="calendar-form-grid">
-            <label class="calendar-field calendar-field--wide" for="calendar-event-title">
-              <span>Title</span>
-              <input id="calendar-event-title" type="text" maxlength="180" autocomplete="off" />
-            </label>
-            <label class="calendar-field" for="calendar-event-date">
-              <span>Date</span>
-              <input id="calendar-event-date" type="date" />
-            </label>
-            <label class="calendar-field" for="calendar-event-start">
-              <span>Start</span>
-              <input id="calendar-event-start" type="time" />
-            </label>
-            <label class="calendar-field" for="calendar-event-end">
-              <span>End</span>
-              <input id="calendar-event-end" type="time" />
-            </label>
-            <label class="calendar-check hub-checkbox" for="calendar-event-all-day">
-              <input id="calendar-event-all-day" class="hub-checkbox__input" type="checkbox" />
-              <span class="hub-checkbox__box" aria-hidden="true"></span>
-              <span class="hub-checkbox__label">All day</span>
-            </label>
-            <label class="calendar-field calendar-field--wide calendar-field--notes" for="calendar-event-body">
-              <span>Notes</span>
-              <textarea id="calendar-event-body" rows="2" maxlength="2000"></textarea>
-            </label>
-          </div>
-          <div class="calendar-quick-event__footer">
-            <span id="calendar-entry-status" class="calendar-entry-status"></span>
-            <button class="calendar-command-btn" type="button" data-calendar-action="submit-event">Save Event</button>
-          </div>
-        </section>
-      </div>
+      <section class="calendar-quick-event" aria-labelledby="calendar-quick-event-heading" data-calendar-content-view="new-event">
+        <div class="calendar-section-head">
+          <h3 id="calendar-quick-event-heading">New Calendar Event</h3>
+          <span class="calendar-pill" id="calendar-write-pill">Ready</span>
+        </div>
+        <div class="calendar-form-grid">
+          <label class="calendar-field calendar-field--wide" for="calendar-event-title">
+            <span>Title</span>
+            <input id="calendar-event-title" type="text" maxlength="180" autocomplete="off" />
+          </label>
+          <label class="calendar-field" for="calendar-event-date">
+            <span>Date</span>
+            <input id="calendar-event-date" type="date" />
+          </label>
+          <label class="calendar-field" for="calendar-event-start">
+            <span>Start</span>
+            <input id="calendar-event-start" type="time" />
+          </label>
+          <label class="calendar-field" for="calendar-event-end">
+            <span>End</span>
+            <input id="calendar-event-end" type="time" />
+          </label>
+          <label class="calendar-check hub-checkbox" for="calendar-event-all-day">
+            <input id="calendar-event-all-day" class="hub-checkbox__input" type="checkbox" />
+            <span class="hub-checkbox__box" aria-hidden="true"></span>
+            <span class="hub-checkbox__label">All day</span>
+          </label>
+          <label class="calendar-field calendar-field--wide calendar-field--notes" for="calendar-event-body">
+            <span>Notes</span>
+            <textarea id="calendar-event-body" rows="2" maxlength="2000"></textarea>
+          </label>
+        </div>
+        <div class="calendar-quick-event__footer">
+          <span id="calendar-entry-status" class="calendar-entry-status"></span>
+          <button class="calendar-command-btn" type="button" data-calendar-action="submit-event">Save Event</button>
+        </div>
+      </section>
 
-      <div class="calendar-layout calendar-layout--lower">
-        <section class="calendar-band" aria-labelledby="calendar-upcoming-heading">
-          <div class="calendar-section-head">
-            <h3 id="calendar-upcoming-heading">Upcoming</h3>
-          </div>
-          <div id="calendar-upcoming-list" class="calendar-agenda-list"></div>
-        </section>
+      <section class="calendar-band" aria-labelledby="calendar-upcoming-heading" data-calendar-content-view="upcoming">
+        <div class="calendar-section-head">
+          <h3 id="calendar-upcoming-heading">Upcoming</h3>
+        </div>
+        <div id="calendar-upcoming-list" class="calendar-agenda-list"></div>
+      </section>
 
-        <section class="calendar-band" aria-labelledby="calendar-provenance-heading">
-          <div class="calendar-section-head">
-            <h3 id="calendar-provenance-heading">Provenance</h3>
-          </div>
-          <div id="calendar-provenance" class="calendar-provenance-list"></div>
-        </section>
-      </div>
+      <section class="calendar-band" aria-labelledby="calendar-provenance-heading" data-calendar-content-view="provenance">
+        <div class="calendar-section-head">
+          <h3 id="calendar-provenance-heading">Provenance</h3>
+        </div>
+        <div id="calendar-provenance" class="calendar-provenance-list"></div>
+      </section>
     </div>
     </div><!-- /tab-scroll-shell -->
   </section>

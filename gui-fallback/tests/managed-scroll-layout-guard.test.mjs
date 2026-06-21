@@ -7,6 +7,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const bodyShadeJs = fs.readFileSync(path.resolve(here, '../js/body-shade.js'), 'utf8');
 const bodyShadeCss = fs.readFileSync(path.resolve(here, '../css/body-shade.css'), 'utf8');
 const hubMenuJs = fs.readFileSync(path.resolve(here, '../js/hub-menu.js'), 'utf8');
+const menuActionOrderJs = fs.readFileSync(path.resolve(here, '../js/menu-action-order.js'), 'utf8');
 const indexHtml = fs.readFileSync(path.resolve(here, '../index.html'), 'utf8');
 const daveCalendarCss = fs.readFileSync(path.resolve(here, '../css/dave-calendar.css'), 'utf8');
 const daveDiaryCss = fs.readFileSync(path.resolve(here, '../css/dave-diary.css'), 'utf8');
@@ -216,6 +217,72 @@ assert.match(
   daveCalendarJs,
   /status\s*===\s*'ready'\s*\?\s*''\s*:\s*status/,
   'Calendar ready status must suppress the word "ready" while keeping warning/error/loading labels available.',
+);
+assert.match(
+  hubMenuJs,
+  /contentBottom\s*=\s*rect\.top\s*\+\s*Math\.max\(rect\.height,\s*menu\.scrollHeight\s*\|\|\s*0\)/,
+  'Shared hub-menu dropdown fitting must consider overflowing item content, not only the clipped menu rect.',
+);
+assert.match(
+  menuActionOrderJs,
+  /key:\s*'view-switch'[\s\S]*rank:\s*0[\s\S]*\^view\$/,
+  'Function-menu ordering must keep View actions intentionally before Refresh.',
+);
+assert.match(
+  menuActionOrderJs,
+  /key:\s*'mode-switch'[\s\S]*rank:\s*65[\s\S]*\^mode\\b/,
+  'Function-menu ordering must map Mode actions without stealing the top-level View rule.',
+);
+assert.match(
+  daveMenuJs,
+  /id:\s*'calendar-view-cycle'[\s\S]*label:\s*'View'[\s\S]*fn:\s*'calendar\.toggleContentView'/,
+  'Calendar context menu must expose a top-level View function item.',
+);
+assert.match(
+  daveCalendarCss,
+  /\.calendar-day-number\s*\{[\s\S]*width:\s*2ch[\s\S]*text-align:\s*right/,
+  'Calendar day numbers must right-align single digits with the unit column of two-digit days.',
+);
+assert.match(
+  daveCalendarCss,
+  /\[data-calendar-content-view\]\[hidden\]\s*\{[\s\S]*display:\s*none\s*!important/,
+  'Calendar content panels must be mutually hidden by content-view state.',
+);
+{
+  const tabHtml = tabSlice('tab-calender');
+  assert.match(
+    tabHtml,
+    /data-calendar-view-trigger/,
+    'Calendar header must use the existing refresh icon button as the view trigger.',
+  );
+  for (const view of ['calendar', 'selected', 'milestones', 'search', 'new-event', 'upcoming', 'provenance']) {
+    assert.match(
+      tabHtml,
+      new RegExp(`data-calendar-content-view="${view}"`),
+      `Calendar must keep the ${view} content panel.`,
+    );
+  }
+}
+for (const label of [
+  'Year / Month Calendar',
+  'Selected Range Visible Items',
+  'All-Day And Milestones',
+  'Search And Review',
+  'New Calendar Event',
+  'Upcoming',
+  'Provenance',
+]) {
+  assert.ok(daveCalendarJs.includes(`label: '${label}'`), `Calendar view menu must include "${label}".`);
+}
+assert.match(
+  daveCalendarJs,
+  /const\s+CalendarContentViewMachine\s*=\s*\(\(\)\s*=>[\s\S]*transitions\s*=\s*\{[\s\S]*doubleTap[\s\S]*openMenu[\s\S]*longPress[\s\S]*resetRefresh/,
+  'Calendar view trigger must use an explicit FSM for tap, double-tap, and long-press.',
+);
+assert.match(
+  daveCalendarJs,
+  /'calendar\.toggleContentView':\s*\(\)\s*=>\s*CalendarPage\.toggleContentView\(\)/,
+  'Calendar View context action must call the same content-view cycle path.',
 );
 for (const [tabId, surface, formNeedle] of [
   ['tab-diary', 'diary', 'class="diary-quick-entry"'],
