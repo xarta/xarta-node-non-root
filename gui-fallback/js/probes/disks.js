@@ -1187,6 +1187,8 @@ function _disksDualPaneHtml(paneId) {
   const pane = _disksDualPaneGet(paneId);
   const other = _disksDualPaneOther(paneId);
   const meta = pane.meta;
+  const locationCount = _disksFilesystemLocationOptions().all.length;
+  const locationCountLabel = `${locationCount} location${locationCount === 1 ? '' : 's'}`;
   if (!meta) {
     return `
       <section class="disks-dual-pane" data-disks-dual-pane="${_disksEsc(paneId)}">
@@ -1246,7 +1248,7 @@ function _disksDualPaneHtml(paneId) {
         </div>
       </div>
       <label class="disks-dual-pane__location">
-        <span>Location</span>
+        <span>${_disksEsc(locationCountLabel)}</span>
         <select data-disks-dual-location="${_disksEsc(paneId)}">
           ${_disksDualPaneSelectOptionsHtml(pane.selectedKey)}
         </select>
@@ -1301,11 +1303,12 @@ function _disksDualPaneSectionHtml(node) {
   const options = _disksFilesystemLocationOptions();
   if (!options.all.length && !_disksFilesystemFavoritesLoading) return '';
   const status = _disksDualPaneState.lastStatus || '';
+  const favoritesCount = _disksFilesystemFavorites.length;
+  const favoritesCountText = `${favoritesCount} favourite${favoritesCount === 1 ? '' : 's'}`;
   return `
     <section class="disks-group disks-dual">
       <div class="disks-group__header">
         <h3>File manager</h3>
-        <span>${options.all.length} location${options.all.length === 1 ? '' : 's'} · ${_disksFilesystemFavorites.length} favourite${_disksFilesystemFavorites.length === 1 ? '' : 's'}</span>
       </div>
       <div class="disks-dual__controls">
         <label>
@@ -1315,6 +1318,7 @@ function _disksDualPaneSectionHtml(node) {
           </select>
         </label>
         <div class="disks-dual__controls-actions">
+          <span class="disks-pill disks-dual__favorites-count">${_disksEsc(favoritesCountText)}</span>
           <details class="disks-dual__favorites">
             <summary>Server favourites</summary>
             <div class="disks-dual__favorites-list">
