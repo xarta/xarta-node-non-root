@@ -175,9 +175,15 @@ select.hub-ctrl {
     max-width: 220px;
 }
 
-select.hub-ctrl option {
-    background: #0f0f19;
-    color: var(--hub-text);
+select.hub-ctrl option,
+select.hub-ctrl optgroup {
+    background-color: #05070d;
+    color: #fff;
+}
+
+select.hub-ctrl option:checked {
+    background-color: #17345f;
+    color: #fff;
 }
 
 /* ── Page-control group container ───────────────────────────── */

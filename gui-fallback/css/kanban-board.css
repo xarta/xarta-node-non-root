@@ -558,7 +558,7 @@
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: rgba(0,0,0,.14);
+  background-color: rgba(0,0,0,.14);
   padding: 7px 8px;
 }
 
