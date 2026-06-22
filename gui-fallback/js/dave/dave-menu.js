@@ -57,7 +57,7 @@ const DaveMenuConfig = createHubMenu({
         { id: 'calendar-view-cycle', label: 'View', icon: DaveActionIcons.calendar, pageLabel: 'Cycle Calendar View', parent: 'dave-layout', order: 0, fn: 'calendar.toggleContentView', activeOn: ['calender'] },
         { id: 'calendar-filters', label: 'Filters', icon: DaveActionIcons.filter, pageLabel: 'Calendar Filters', parent: 'dave-layout', order: 1, fn: 'calendar.showFilters', activeOn: ['calender'] },
         { id: 'calendar-filter-settings', label: 'Filter Settings', icon: DaveActionIcons.filter, pageLabel: 'Calendar Filter Settings', parent: 'dave-layout', order: 2, fn: 'calendar.showFilterSettings', activeOn: ['calender'] },
-        { id: 'calendar-new-event', label: 'New Event', icon: DaveActionIcons.newEntry, pageLabel: 'New Calendar Event', parent: 'dave-layout', order: 3, fn: 'calendar.newEvent', activeOn: ['calender'] },
+        { id: 'calendar-new-event', label: 'New Event', icon: DaveActionIcons.newEntry, pageLabel: 'New Event', parent: 'dave-layout', order: 3, fn: 'calendar.newEvent', activeOn: ['calender'] },
         { id: 'calendar-refresh', label: 'Refresh', icon: DaveActionIcons.refresh, pageLabel: 'Refresh Calendar', parent: 'dave-layout', order: 4, fn: 'calendar.refresh', activeOn: ['calender'] },
         { id: 'calendar-view-year', label: 'Mode Year', icon: DaveActionIcons.calendar, pageLabel: 'Calendar Year Mode', parent: 'dave-layout', order: 5, fn: 'calendar.viewYear', activeOn: ['calender'] },
         { id: 'calendar-view-month', label: 'Mode Month', icon: DaveActionIcons.calendar, pageLabel: 'Calendar Month Mode', parent: 'dave-layout', order: 6, fn: 'calendar.viewMonth', activeOn: ['calender'] },

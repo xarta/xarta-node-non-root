@@ -3386,7 +3386,7 @@
       <section class="calendar-view-section" aria-label="Calendar view" data-calendar-content-view="calendar">
         <div id="calendar-view-root" class="calendar-view-root"></div>
         <div class="calendar-filter-under-panel" aria-label="Calendar filters">
-          <div id="calendar-filter-inline-panel" data-personal-filter-host data-personal-filter-surface="calendar" data-personal-filter-layout="tabs"></div>
+          <div id="calendar-filter-inline-panel" data-personal-filter-host data-personal-filter-surface="calendar" data-personal-filter-layout="tabs" data-personal-filter-extra-tabs="new-event"></div>
         </div>
       </section>
 
@@ -3423,7 +3423,7 @@
 
       <section class="calendar-quick-event" aria-labelledby="calendar-quick-event-heading" data-calendar-content-view="new-event">
         <div class="calendar-section-head">
-          <h3 id="calendar-quick-event-heading">New Calendar Event</h3>
+          <h3 id="calendar-quick-event-heading">New Event</h3>
           <span class="calendar-pill" id="calendar-write-pill">Ready</span>
         </div>
         <div class="calendar-form-grid">
@@ -3433,7 +3433,7 @@
           </label>
           <label class="calendar-field" for="calendar-event-date">
             <span>Date</span>
-            <input id="calendar-event-date" type="date" />
+            <input id="calendar-event-date" type="date" data-calendar-event-date />
           </label>
           <label class="calendar-field" for="calendar-event-start">
             <span>Start</span>
@@ -3444,10 +3444,11 @@
             <input id="calendar-event-end" type="time" />
           </label>
           <label class="calendar-check hub-checkbox" for="calendar-event-all-day">
-            <input id="calendar-event-all-day" class="hub-checkbox__input" type="checkbox" />
+            <input id="calendar-event-all-day" class="hub-checkbox__input" type="checkbox" data-calendar-event-all-day="calendar-event" />
             <span class="hub-checkbox__box" aria-hidden="true"></span>
             <span class="hub-checkbox__label">All day</span>
           </label>
+          <div class="calendar-filter-strip calendar-event-tags-strip" role="button" tabindex="0" data-calendar-event-tags-strip data-personal-filter-open="calendar-event" data-personal-filter-tab="filters">Tags: Calendar</div>
           <label class="calendar-field calendar-field--wide calendar-field--notes" for="calendar-event-body">
             <span>Notes</span>
             <textarea id="calendar-event-body" rows="2" maxlength="2000"></textarea>

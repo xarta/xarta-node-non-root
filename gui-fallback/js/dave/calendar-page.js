@@ -6,6 +6,8 @@ const CalendarPage = (() => {
   const YEAR_START_STORAGE_KEY = 'blueprints.calendar.yearStartMonth';
   const VIEW_STORAGE_KEY = 'blueprints.calendar.view';
   const CONTENT_VIEW_STORAGE_KEY = 'blueprints.calendar.contentView';
+  const EVENT_TAG_SURFACE = 'calendar-event';
+  const EVENT_REQUIRED_TAGS = ['calendar'];
   const MONTH_NAMES = [
     'January',
     'February',
@@ -28,7 +30,7 @@ const CalendarPage = (() => {
     { id: 'selected', label: 'Selected Range Visible Items' },
     { id: 'milestones', label: 'All-Day And Milestones' },
     { id: 'search', label: 'Search And Review' },
-    { id: 'new-event', label: 'New Calendar Event' },
+    { id: 'new-event', label: 'New Event' },
     { id: 'upcoming', label: 'Upcoming' },
     { id: 'provenance', label: 'Provenance' },
   ];
@@ -596,8 +598,8 @@ const CalendarPage = (() => {
     }
     const dateInput = el('calendar-date-input');
     if (dateInput) dateInput.value = state.date;
-    const eventDate = el('calendar-event-date');
-    if (eventDate && !eventDate.value) eventDate.value = state.date;
+    syncCreateDate();
+    renderEventTagSummaries();
     const yearStart = el('calendar-year-start');
     if (yearStart) yearStart.value = String(state.yearStartMonth);
     const filter = el('calendar-filter-strip');
@@ -756,6 +758,10 @@ const CalendarPage = (() => {
         has_more: false,
       };
       state.data = data;
+      if (window.PersonalFilters?.invalidateSurface) {
+        window.PersonalFilters.invalidateSurface('calendar');
+        window.PersonalFilters.invalidateSurface(EVENT_TAG_SURFACE);
+      }
       state.loaded = true;
       return data;
     } catch (error) {
@@ -1037,8 +1043,80 @@ const CalendarPage = (() => {
   }
 
   function syncCreateDate() {
-    const eventDate = el('calendar-event-date');
-    if (eventDate) eventDate.value = state.date;
+    document.querySelectorAll('[data-calendar-event-date]').forEach(input => {
+      if (!input.value) input.value = state.date;
+    });
+  }
+
+  function eventTagsSummaryHtml() {
+    if (window.PersonalFilters?.summaryHtml) {
+      return window.PersonalFilters.summaryHtml(EVENT_TAG_SURFACE, { prefix: 'Tags:' });
+    }
+    return '<span class="personal-filter-summary"><span class="personal-filter-summary__label">Tags:</span><span class="personal-filter-summary__empty">Calendar</span></span>';
+  }
+
+  function renderEventTagSummaries() {
+    document.querySelectorAll('[data-calendar-event-tags-strip]').forEach(strip => {
+      strip.innerHTML = eventTagsSummaryHtml();
+      strip.dataset.personalFilterOpen = EVENT_TAG_SURFACE;
+      strip.dataset.personalFilterTab = 'filters';
+    });
+  }
+
+  function eventTagIds() {
+    const selected = window.PersonalFilters?.getSelectedIds
+      ? window.PersonalFilters.getSelectedIds(EVENT_TAG_SURFACE)
+      : [];
+    return Array.from(new Set([...(selected || []), ...EVENT_REQUIRED_TAGS]));
+  }
+
+  function embeddedEventFormHtml(prefix) {
+    const safePrefix = String(prefix || 'calendar-panel-event').replace(/[^a-zA-Z0-9_-]/g, '-');
+    const valueFor = (key, fallback = '') => String(el(`${safePrefix}-${key}`)?.value || fallback);
+    const allDay = !!el(`${safePrefix}-all-day`)?.checked;
+    const disabled = allDay ? ' disabled' : '';
+    return `
+      <section class="calendar-quick-event calendar-quick-event--embedded" aria-label="New Event">
+        <div class="calendar-form-grid">
+          <label class="calendar-field calendar-field--wide" for="${escHtml(safePrefix)}-title">
+            <span>Title</span>
+            <input id="${escHtml(safePrefix)}-title" type="text" maxlength="180" autocomplete="off" value="${escHtml(valueFor('title'))}" />
+          </label>
+          <label class="calendar-field" for="${escHtml(safePrefix)}-date">
+            <span>Date</span>
+            <input id="${escHtml(safePrefix)}-date" type="date" data-calendar-event-date value="${escHtml(valueFor('date', state.date))}" />
+          </label>
+          <label class="calendar-field" for="${escHtml(safePrefix)}-start">
+            <span>Start</span>
+            <input id="${escHtml(safePrefix)}-start" type="time" value="${escHtml(valueFor('start'))}"${disabled} />
+          </label>
+          <label class="calendar-field" for="${escHtml(safePrefix)}-end">
+            <span>End</span>
+            <input id="${escHtml(safePrefix)}-end" type="time" value="${escHtml(valueFor('end'))}"${disabled} />
+          </label>
+          <label class="calendar-check hub-checkbox" for="${escHtml(safePrefix)}-all-day">
+            <input id="${escHtml(safePrefix)}-all-day" class="hub-checkbox__input" type="checkbox" data-calendar-event-all-day="${escHtml(safePrefix)}"${allDay ? ' checked' : ''} />
+            <span class="hub-checkbox__box" aria-hidden="true"></span>
+            <span class="hub-checkbox__label">All day</span>
+          </label>
+          <div class="calendar-filter-strip calendar-event-tags-strip" role="button" tabindex="0" data-calendar-event-tags-strip data-personal-filter-open="${escHtml(EVENT_TAG_SURFACE)}" data-personal-filter-tab="filters">${eventTagsSummaryHtml()}</div>
+          <label class="calendar-field calendar-field--wide calendar-field--notes" for="${escHtml(safePrefix)}-body">
+            <span>Notes</span>
+            <textarea id="${escHtml(safePrefix)}-body" rows="2" maxlength="2000">${escHtml(valueFor('body'))}</textarea>
+          </label>
+        </div>
+        <div class="calendar-quick-event__footer">
+          <span id="${escHtml(safePrefix)}-status" class="calendar-entry-status"></span>
+          <button class="calendar-command-btn" type="button" data-calendar-action="submit-event" data-calendar-event-prefix="${escHtml(safePrefix)}">Save Event</button>
+        </div>
+      </section>
+    `;
+  }
+
+  function embeddedEventPrefixForHost(host) {
+    if (host?.id === 'calendar-filter-inline-panel') return 'calendar-inline-event';
+    if (host?.closest?.('#ultrawide-sidecar-body')) return 'calendar-sidecar-event';
+    return 'calendar-panel-event';
   }
 
   function closeActionModal() {
@@ -1077,6 +1155,7 @@ const CalendarPage = (() => {
       start_time: allDay ? null : String(el(`${prefix}-start`)?.value || '').trim() || null,
       end_time: allDay ? null : String(el(`${prefix}-end`)?.value || '').trim() || null,
       all_day: allDay,
+      tags: eventTagIds(),
       actor: 'blueprints-ui',
       source_surface: 'calendar-page',
       request_id: `ui-calendar-${Date.now()}`,
@@ -1091,9 +1170,9 @@ const CalendarPage = (() => {
     });
   }
 
-  async function submitEvent() {
-    const status = el('calendar-entry-status');
-    const payload = eventPayloadFromForm('calendar-event');
+  async function submitEvent(prefix = 'calendar-event') {
+    const status = el(prefix === 'calendar-event' ? 'calendar-entry-status' : `${prefix}-status`);
+    const payload = eventPayloadFromForm(prefix);
     if (!payload.title) {
       if (status) status.textContent = 'Event title is required.';
       return false;
@@ -1111,7 +1190,7 @@ const CalendarPage = (() => {
       return false;
     }
     ['title', 'body', 'start', 'end'].forEach(key => {
-      const field = el(`calendar-event-${key}`);
+      const field = el(`${prefix}-${key}`);
       if (field) field.value = '';
     });
     if (status) status.textContent = `Saved ${data.event?.event_id || ''}`;
@@ -1337,6 +1416,10 @@ const CalendarPage = (() => {
     const first = await fetcher(`/api/v1/personal/events?${params.toString()}`).then(resp => resp.json());
     const second = await fetcher(`/api/v1/personal/events?${params.toString()}`).then(resp => resp.json());
     state.data = second;
+    if (window.PersonalFilters?.invalidateSurface) {
+      window.PersonalFilters.invalidateSurface('calendar');
+      window.PersonalFilters.invalidateSurface(EVENT_TAG_SURFACE);
+    }
     state.loaded = true;
     render();
     return showActionModal('Calendar Safe Checks', kvHtml([
@@ -1498,14 +1581,31 @@ const CalendarPage = (() => {
     if (window.PersonalFilters?.registerSurface) {
       window.PersonalFilters.registerSurface('calendar', {
         getRecords: () => state.data?.items || [],
+        extraTabs: [
+          { id: 'new-event', label: 'New Event' },
+        ],
+        renderTab: (tab, host) => (tab === 'new-event' ? embeddedEventFormHtml(embeddedEventPrefixForHost(host)) : ''),
         onChange: () => {
           syncSharedFilterState();
           state.selection = null;
           render();
         },
       });
+      window.PersonalFilters.registerSurface(EVENT_TAG_SURFACE, {
+        getRecords: () => state.data?.items || [],
+        defaultSelectedIds: EVENT_REQUIRED_TAGS,
+        requiredSelectedIds: EVENT_REQUIRED_TAGS,
+        summaryPrefix: 'Tags:',
+        activePrefix: 'Selected',
+        emptyLabel: 'Calendar',
+        showClear: false,
+        onChange: () => {
+          renderEventTagSummaries();
+        },
+      });
     }
     syncCreateDate();
+    renderEventTagSummaries();
     root.addEventListener('click', event => {
       const selectable = event.target.closest('[data-calendar-select-type]');
       if (selectable) {
@@ -1524,7 +1624,18 @@ const CalendarPage = (() => {
       if (action === 'mode-week') setMode('week');
       if (action === 'select-day') selectDay(btn.dataset.calendarDate, state.view === 'year');
       if (action === 'open-month') openMonth(btn.dataset.calendarDate);
-      if (action === 'submit-event') submitEvent();
+      if (action === 'submit-event') submitEvent(btn.dataset.calendarEventPrefix || 'calendar-event');
+    });
+    document.addEventListener('click', event => {
+      const btn = event.target.closest('[data-calendar-action="submit-event"]');
+      if (!btn || root.contains(btn)) return;
+      event.preventDefault();
+      submitEvent(btn.dataset.calendarEventPrefix || 'calendar-event');
+    });
+    document.addEventListener('change', event => {
+      const control = event.target.closest('[data-calendar-event-all-day]');
+      if (!control) return;
+      setAllDayControls(control.dataset.calendarEventAllDay || 'calendar-event');
     });
     root.addEventListener('keydown', event => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -1586,6 +1697,7 @@ const CalendarPage = (() => {
       year_start_month: state.yearStartMonth,
       source_filter: state.sourceFilter,
       selected_filters: window.PersonalFilters?.getSelectedIds ? window.PersonalFilters.getSelectedIds('calendar') : [],
+      new_event_tags: eventTagIds(),
       event_count: visibleEvents().length,
       total_count: items.length,
       manual_calendar_count: items.filter(isCalendarEvent).length,

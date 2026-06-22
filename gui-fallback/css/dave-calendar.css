@@ -281,6 +281,12 @@
   cursor: pointer;
 }
 
+.calendar-event-tags-strip {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
+}
+
 .calendar-filter-strip__selection {
   color: var(--text-dim);
   font-size: 12px;
@@ -617,6 +623,13 @@
   gap: 10px;
   min-width: 0;
   padding: 14px;
+}
+
+.calendar-quick-event--embedded {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
 }
 
 .calendar-form-grid {
@@ -1017,4 +1030,8 @@
     font-size: 11px;
     line-height: 1.25;
   }
+}
+
+.calendar-quick-event.calendar-quick-event--embedded {
+  padding: 0;
 }
