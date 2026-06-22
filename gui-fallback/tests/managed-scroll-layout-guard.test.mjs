@@ -214,6 +214,16 @@ assert.match(
   'Calendar filter strip must span the full control row.',
 );
 assert.match(
+  daveCalendarCss,
+  /\.calendar-control-strip\s*\{[\s\S]*grid-template-columns:\s*minmax\(180px,\s*\.95fr\)\s*minmax\(210px,\s*1\.1fr\)\s*minmax\(150px,\s*\.65fr\)\s*minmax\(150px,\s*\.65fr\)/,
+  'Calendar desktop controls must keep Date, Year starts, Year/Month, and Day/Week on one row.',
+);
+assert.match(
+  daveCalendarCss,
+  /\.calendar-status-strip\s*\{[\s\S]*flex:\s*0\s*1\s*auto[\s\S]*width:\s*max-content/,
+  'Calendar desktop range pill must size to its content beside the navigation buttons.',
+);
+assert.match(
   daveCalendarJs,
   /status\s*===\s*'ready'\s*\?\s*''\s*:\s*status/,
   'Calendar ready status must suppress the word "ready" while keeping warning/error/loading labels available.',

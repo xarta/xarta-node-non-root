@@ -161,7 +161,7 @@
 
 .calendar-control-strip {
   display: grid;
-  grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr);
+  grid-template-columns: minmax(180px, .95fr) minmax(210px, 1.1fr) minmax(150px, .65fr) minmax(150px, .65fr);
   gap: 10px;
   align-items: stretch;
   width: 100%;
@@ -260,11 +260,13 @@
 }
 
 .calendar-status-strip {
-  flex: 1 1 220px;
+  flex: 0 1 auto;
   justify-content: flex-start;
   gap: 8px;
   height: 38px;
   min-height: 38px;
+  width: max-content;
+  max-width: min(100%, 520px);
   white-space: nowrap;
   overflow: hidden;
 }
@@ -771,7 +773,7 @@
   gap: 12px;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 820px) {
   .calendar-control-strip {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
@@ -823,6 +825,7 @@
   }
 
   .calendar-status-strip {
+    flex: 1 1 auto;
     height: 34px;
     min-height: 34px;
     padding: 6px 10px;
