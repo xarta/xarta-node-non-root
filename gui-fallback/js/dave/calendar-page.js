@@ -46,6 +46,8 @@ const CalendarPage = (() => {
     view: readStoredView(),
     contentView: readStoredContentView(),
     mode: 'day',
+    manualRangeStart: null,
+    manualRangeEnd: null,
     yearStartMonth: readStoredYearStartMonth(),
     sourceFilter: 'all',
     selection: null,
@@ -56,6 +58,8 @@ const CalendarPage = (() => {
   let contentViewMenuPointerHandler = null;
   let contentViewMenuKeyHandler = null;
   let contentViewMenuFitHandler = null;
+  let dateRangeDrag = null;
+  let suppressSelectDayClick = false;
 
   const escHtml = typeof esc === 'function'
     ? esc
@@ -196,12 +200,42 @@ const CalendarPage = (() => {
     return localDateString(state.view === 'year' ? yearRangeEndDate() : monthGridEndDate());
   }
 
+  function hasManualRange() {
+    return state.mode === 'range' && state.manualRangeStart && state.manualRangeEnd;
+  }
+
+  function orderedDateRange(startText, endText) {
+    const start = localDateString(parseLocalDate(startText));
+    const end = localDateString(parseLocalDate(endText || startText));
+    return start <= end ? { start, end } : { start: end, end: start };
+  }
+
+  function clearManualRange(nextMode = null) {
+    state.manualRangeStart = null;
+    state.manualRangeEnd = null;
+    if (nextMode) state.mode = nextMode;
+    else if (state.mode === 'range') state.mode = 'day';
+  }
+
+  function setManualRange(startText, endText) {
+    const range = orderedDateRange(startText, endText);
+    state.mode = 'range';
+    state.manualRangeStart = range.start;
+    state.manualRangeEnd = range.end;
+    state.date = range.start;
+    state.selection = null;
+    syncCreateDate();
+    render();
+  }
+
   function detailRangeStart() {
+    if (hasManualRange()) return state.manualRangeStart;
     if (state.mode === 'week') return localDateString(startOfWeek(parseLocalDate(state.date)));
     return state.date;
   }
 
   function detailRangeEnd() {
+    if (hasManualRange()) return state.manualRangeEnd;
     if (state.mode === 'week') return localDateString(endOfWeek(parseLocalDate(state.date)));
     return state.date;
   }
@@ -221,6 +255,12 @@ const CalendarPage = (() => {
   }
 
   function detailRangeLabel() {
+    if (hasManualRange()) {
+      if (detailRangeStart() === detailRangeEnd()) {
+        return monthLabel(detailRangeStart(), { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+      }
+      return `${monthLabel(detailRangeStart(), { day: '2-digit', month: 'short', year: 'numeric' })} to ${monthLabel(detailRangeEnd(), { day: '2-digit', month: 'short', year: 'numeric' })}`;
+    }
     if (state.mode === 'week') {
       return `${monthLabel(detailRangeStart(), { day: '2-digit', month: 'short', year: 'numeric' })} to ${monthLabel(detailRangeEnd(), { day: '2-digit', month: 'short', year: 'numeric' })}`;
     }
@@ -453,7 +493,14 @@ const CalendarPage = (() => {
     const date = parseLocalDate(dateText);
     if (date.getMonth() !== currentMonth) classes.push('calendar-day--outside');
     if (dateText === localDateString(new Date())) classes.push('calendar-day--today');
-    if (dateText === state.date) classes.push('calendar-day--selected');
+    if (hasManualRange() && dateText >= state.manualRangeStart && dateText <= state.manualRangeEnd) {
+      classes.push('calendar-day--range');
+      if (dateText === state.manualRangeStart || dateText === state.manualRangeEnd) {
+        classes.push('calendar-day--range-edge');
+      }
+    } else if (dateText === state.date) {
+      classes.push('calendar-day--selected');
+    }
     return classes.join(' ');
   }
 
@@ -547,6 +594,12 @@ const CalendarPage = (() => {
     root.innerHTML = state.view === 'year' ? renderYearView() : renderMonthView();
   }
 
+  function listHtml(rows, type, empty) {
+    return rows.length
+      ? rows.map((event, index) => eventRow(event, index, type)).join('')
+      : `<div class="calendar-empty">${escHtml(empty)}</div>`;
+  }
+
   function renderRefreshState() {
     document.querySelectorAll('[data-calendar-action="refresh"], [data-calendar-view-trigger]').forEach(btn => {
       btn.classList.toggle('is-refreshing', Boolean(state.loading));
@@ -626,7 +679,7 @@ const CalendarPage = (() => {
 
   function eventRow(event, index, type) {
     const source = sourceType(event) || event.kind || 'source';
-    const datePart = state.mode === 'week' ? `${monthLabel(eventStartDate(event), { weekday: 'short', day: '2-digit', month: 'short' })} - ` : '';
+    const datePart = state.mode !== 'day' ? `${monthLabel(eventStartDate(event), { weekday: 'short', day: '2-digit', month: 'short' })} - ` : '';
     const ref = event.source?.ref || (Array.isArray(event.file_refs) ? event.file_refs[0] : '') || event.event_id || '';
     return `
       <div class="calendar-agenda-row calendar-agenda-row--${escHtml(eventCategory(event))}" ${selectionAttrs(type, index)}>
@@ -644,19 +697,21 @@ const CalendarPage = (() => {
   function renderList(id, rows, type, empty) {
     const target = el(id);
     if (!target) return;
-    target.innerHTML = rows.length
-      ? rows.map((event, index) => eventRow(event, index, type)).join('')
-      : `<div class="calendar-empty">${escHtml(empty)}</div>`;
+    target.innerHTML = listHtml(rows, type, empty);
+  }
+
+  function selectedSummaryHtml(rows) {
+    const total = rows.timed.length + rows.allDay.length;
+    return `
+      <div class="calendar-selected-summary__date">${escHtml(detailRangeLabel())}</div>
+      <div class="calendar-selected-summary__meta">${escHtml(`${total} visible item${total === 1 ? '' : 's'} - ${filterLabel(state.sourceFilter)}`)}</div>
+    `;
   }
 
   function renderSelectedSummary(rows) {
     const target = el('calendar-selected-summary');
     if (!target) return;
-    const total = rows.timed.length + rows.allDay.length;
-    target.innerHTML = `
-      <div class="calendar-selected-summary__date">${escHtml(detailRangeLabel())}</div>
-      <div class="calendar-selected-summary__meta">${escHtml(`${total} visible item${total === 1 ? '' : 's'} - ${filterLabel(state.sourceFilter)}`)}</div>
-    `;
+    target.innerHTML = selectedSummaryHtml(rows);
   }
 
   function renderAgenda() {
@@ -779,6 +834,7 @@ const CalendarPage = (() => {
     state.date = localDateString(parseLocalDate(dateText));
     state.loaded = false;
     state.selection = null;
+    clearManualRange();
     syncCreateDate();
     return load({ force: true });
   }
@@ -786,6 +842,7 @@ const CalendarPage = (() => {
   function selectDay(dateText, drillDown = false) {
     state.date = localDateString(parseLocalDate(dateText));
     state.selection = null;
+    clearManualRange(state.mode === 'range' ? 'day' : null);
     syncCreateDate();
     if (drillDown || state.view === 'year') {
       state.view = 'month';
@@ -805,6 +862,7 @@ const CalendarPage = (() => {
     state.contentView = 'calendar';
     state.loaded = false;
     state.selection = null;
+    clearManualRange();
     syncCreateDate();
     writeStoredValue(VIEW_STORAGE_KEY, state.view);
     writeStoredValue(CONTENT_VIEW_STORAGE_KEY, state.contentView);
@@ -816,12 +874,14 @@ const CalendarPage = (() => {
     state.contentView = 'calendar';
     state.loaded = false;
     state.selection = null;
+    clearManualRange();
     writeStoredValue(VIEW_STORAGE_KEY, state.view);
     writeStoredValue(CONTENT_VIEW_STORAGE_KEY, state.contentView);
     return load({ force: true });
   }
 
   function setMode(mode) {
+    clearManualRange(mode === 'week' ? 'week' : 'day');
     state.mode = mode === 'week' ? 'week' : 'day';
     state.selection = null;
     render();
@@ -1024,6 +1084,7 @@ const CalendarPage = (() => {
     }
     state.loaded = false;
     state.selection = null;
+    clearManualRange();
     syncCreateDate();
     return load({ force: true });
   }
@@ -1036,6 +1097,7 @@ const CalendarPage = (() => {
     }
     state.loaded = false;
     state.selection = null;
+    clearManualRange();
     syncCreateDate();
     return load({ force: true });
   }
@@ -1046,6 +1108,9 @@ const CalendarPage = (() => {
 
   function syncCreateDate() {
     document.querySelectorAll('[data-calendar-event-date]').forEach(input => {
+      if (!input.value) input.value = state.date;
+    });
+    document.querySelectorAll('[data-calendar-event-end-date]').forEach(input => {
       if (!input.value) input.value = state.date;
     });
   }
@@ -1085,8 +1150,12 @@ const CalendarPage = (() => {
             <input id="${escHtml(safePrefix)}-title" type="text" maxlength="180" autocomplete="off" value="${escHtml(valueFor('title'))}" />
           </label>
           <label class="calendar-field" for="${escHtml(safePrefix)}-date">
-            <span>Date</span>
+            <span>Start date</span>
             <input id="${escHtml(safePrefix)}-date" type="date" data-calendar-event-date value="${escHtml(valueFor('date', state.date))}" />
+          </label>
+          <label class="calendar-field" for="${escHtml(safePrefix)}-end-date">
+            <span>End date</span>
+            <input id="${escHtml(safePrefix)}-end-date" type="date" data-calendar-event-end-date value="${escHtml(valueFor('end-date', valueFor('date', state.date)))}" />
           </label>
           <label class="calendar-field" for="${escHtml(safePrefix)}-start">
             <span>Start</span>
@@ -1131,6 +1200,21 @@ const CalendarPage = (() => {
     return `<div class="personal-search-strip personal-search-strip--embedded" data-personal-search-surface="calendar" data-personal-search-instance="${escHtml(instance)}"></div>`;
   }
 
+  function embeddedSelectedHtml() {
+    const rows = groupEvents();
+    const selectedRows = rows.timed.concat(rows.allDay).sort(compareEvents);
+    return `
+      <section class="calendar-band calendar-band--embedded-selected" aria-label="Selected Range Visible Items">
+        <div class="calendar-section-head">
+          <h3>Selected Range Visible Items</h3>
+          <span class="calendar-pill">${escHtml(selectedRows.length)}</span>
+        </div>
+        <div class="calendar-selected-summary">${selectedSummaryHtml(rows)}</div>
+        <div class="calendar-agenda-list">${listHtml(selectedRows, 'selected', 'No visible items for this range.')}</div>
+      </section>
+    `;
+  }
+
   function closeActionModal() {
     const modal = el('calendar-action-modal');
     if (!modal) return;
@@ -1158,20 +1242,41 @@ const CalendarPage = (() => {
     `).join('')}</dl>`;
   }
 
-  function eventPayloadFromForm(prefix = 'calendar-event') {
+  function eachDateText(startText, endText) {
+    const range = orderedDateRange(startText, endText);
+    const dates = [];
+    for (let date = parseLocalDate(range.start); localDateString(date) <= range.end; date = addDays(date, 1)) {
+      dates.push(localDateString(date));
+    }
+    return dates;
+  }
+
+  function eventPayloadsFromForm(prefix = 'calendar-event') {
     const allDay = !!el(`${prefix}-all-day`)?.checked;
-    return {
+    const startDate = String(el(`${prefix}-date`)?.value || state.date).trim();
+    const endDate = String(el(`${prefix}-end-date`)?.value || startDate || state.date).trim();
+    const dates = eachDateText(startDate, endDate);
+    const runId = dates.length > 1 ? `ui-calendar-range-${Date.now()}` : `ui-calendar-${Date.now()}`;
+    const base = {
       title: String(el(`${prefix}-title`)?.value || '').trim(),
       body: String(el(`${prefix}-body`)?.value || '').trim(),
-      local_date: String(el(`${prefix}-date`)?.value || state.date).trim(),
       start_time: allDay ? null : String(el(`${prefix}-start`)?.value || '').trim() || null,
       end_time: allDay ? null : String(el(`${prefix}-end`)?.value || '').trim() || null,
       all_day: allDay,
       tags: eventTagIds(),
       actor: 'blueprints-ui',
       source_surface: 'calendar-page',
-      request_id: `ui-calendar-${Date.now()}`,
     };
+    return dates.map((localDate, index) => ({
+      ...base,
+      local_date: localDate,
+      request_id: dates.length > 1 ? `${runId}-${index + 1}` : runId,
+      run_id: runId,
+    }));
+  }
+
+  function eventPayloadFromForm(prefix = 'calendar-event') {
+    return eventPayloadsFromForm(prefix)[0] || {};
   }
 
   function setAllDayControls(prefix = 'calendar-event') {
@@ -1184,37 +1289,113 @@ const CalendarPage = (() => {
 
   async function submitEvent(prefix = 'calendar-event') {
     const status = el(prefix === 'calendar-event' ? 'calendar-entry-status' : `${prefix}-status`);
-    const payload = eventPayloadFromForm(prefix);
-    if (!payload.title) {
+    const payloads = eventPayloadsFromForm(prefix);
+    const firstPayload = payloads[0];
+    if (!firstPayload?.title) {
       if (status) status.textContent = 'Event title is required.';
       return false;
     }
-    if (status) status.textContent = 'Saving event...';
-    const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
-    const resp = await fetcher('/api/v1/personal/calendar/events', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      if (status) status.textContent = responseErrorMessage(data, resp.status);
+    if (!payloads.length) {
+      if (status) status.textContent = 'A valid event date is required.';
       return false;
+    }
+    if (status) status.textContent = payloads.length > 1 ? `Saving ${payloads.length} events...` : 'Saving event...';
+    const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
+    const saved = [];
+    for (const payload of payloads) {
+      const resp = await fetcher('/api/v1/personal/calendar/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        if (status) status.textContent = `${payload.local_date}: ${responseErrorMessage(data, resp.status)}`;
+        return false;
+      }
+      saved.push(data);
     }
     ['title', 'body', 'start', 'end'].forEach(key => {
       const field = el(`${prefix}-${key}`);
       if (field) field.value = '';
     });
-    if (status) status.textContent = `Saved ${data.event?.event_id || ''}`;
-    state.lastWrite = data;
-    state.date = data.event?.local_date || payload.local_date || state.date;
+    const endDate = el(`${prefix}-end-date`);
+    if (endDate) endDate.value = el(`${prefix}-date`)?.value || state.date;
+    if (status) {
+      status.textContent = saved.length > 1
+        ? `Saved ${saved.length} events`
+        : `Saved ${saved[0]?.event?.event_id || ''}`;
+    }
+    state.lastWrite = saved[saved.length - 1];
+    state.date = saved[0]?.event?.local_date || firstPayload.local_date || state.date;
     state.view = 'month';
     state.contentView = 'calendar';
     state.loaded = false;
+    clearManualRange();
     writeStoredValue(VIEW_STORAGE_KEY, state.view);
     writeStoredValue(CONTENT_VIEW_STORAGE_KEY, state.contentView);
     await load({ force: true });
     return true;
+  }
+
+  function dateButtonFromPoint(event) {
+    if (!Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return null;
+    const node = document.elementFromPoint(event.clientX, event.clientY);
+    return node?.closest?.('[data-calendar-action="select-day"][data-calendar-date]') || null;
+  }
+
+  function removeDateRangeDragListeners() {
+    document.removeEventListener('pointermove', updateDateRangeDrag, false);
+    document.removeEventListener('pointerup', finishDateRangeDrag, false);
+    document.removeEventListener('pointercancel', cancelDateRangeDrag, false);
+  }
+
+  function beginDateRangeDrag(event) {
+    if (event.button !== undefined && event.button !== 0) return;
+    const btn = event.target.closest('[data-calendar-action="select-day"][data-calendar-date]');
+    if (!btn?.dataset?.calendarDate) return;
+    dateRangeDrag = {
+      pointerId: event.pointerId,
+      start: btn.dataset.calendarDate,
+      current: btn.dataset.calendarDate,
+      moved: false,
+    };
+    document.addEventListener('pointermove', updateDateRangeDrag, { passive: false });
+    document.addEventListener('pointerup', finishDateRangeDrag, { passive: false });
+    document.addEventListener('pointercancel', cancelDateRangeDrag, { passive: true });
+  }
+
+  function updateDateRangeDrag(event) {
+    if (!dateRangeDrag || event.pointerId !== dateRangeDrag.pointerId) return;
+    const btn = dateButtonFromPoint(event);
+    const dateText = btn?.dataset?.calendarDate;
+    if (!dateText || dateText === dateRangeDrag.current) return;
+    dateRangeDrag.current = dateText;
+    if (dateText !== dateRangeDrag.start) {
+      dateRangeDrag.moved = true;
+      setManualRange(dateRangeDrag.start, dateText);
+      event.preventDefault();
+    }
+  }
+
+  function finishDateRangeDrag(event) {
+    if (!dateRangeDrag || event.pointerId !== dateRangeDrag.pointerId) return;
+    const drag = dateRangeDrag;
+    dateRangeDrag = null;
+    removeDateRangeDragListeners();
+    if (!drag.moved) return;
+    suppressSelectDayClick = true;
+    setManualRange(drag.start, drag.current);
+    window.setTimeout(() => {
+      suppressSelectDayClick = false;
+    }, 160);
+    event.preventDefault();
+  }
+
+  function cancelDateRangeDrag(event) {
+    if (!dateRangeDrag || event.pointerId !== dateRangeDrag.pointerId) return;
+    dateRangeDrag = null;
+    removeDateRangeDragListeners();
   }
 
   function editSelected() {
@@ -1595,10 +1776,12 @@ const CalendarPage = (() => {
       window.PersonalFilters.registerSurface('calendar', {
         getRecords: () => state.data?.items || [],
         extraTabs: [
+          { id: 'selected', label: 'Selected' },
           { id: 'search', label: 'Search' },
           { id: 'new-event', label: 'New Event' },
         ],
         renderTab: (tab, host) => {
+          if (tab === 'selected') return embeddedSelectedHtml(host);
           if (tab === 'search') return embeddedSearchHtml(host);
           if (tab === 'new-event') return embeddedEventFormHtml(embeddedEventPrefixForHost(host));
           return '';
@@ -1623,8 +1806,8 @@ const CalendarPage = (() => {
       });
       window.PersonalFilters.registerSurface(SEARCH_TAG_SURFACE, {
         getRecords: () => state.data?.items || [],
-        summaryPrefix: 'Pool:',
-        activePrefix: 'Pool',
+        summaryPrefix: 'Filter:',
+        activePrefix: 'Filter',
         emptyLabel: 'all entries',
         clearLabel: 'All entries',
       });
@@ -1641,6 +1824,7 @@ const CalendarPage = (() => {
     }
     syncCreateDate();
     renderEventTagSummaries();
+    root.addEventListener('pointerdown', beginDateRangeDrag);
     root.addEventListener('click', event => {
       const selectable = event.target.closest('[data-calendar-select-type]');
       if (selectable) {
@@ -1657,7 +1841,13 @@ const CalendarPage = (() => {
       if (action === 'view-month') setView('month');
       if (action === 'mode-day') setMode('day');
       if (action === 'mode-week') setMode('week');
-      if (action === 'select-day') selectDay(btn.dataset.calendarDate, state.view === 'year');
+      if (action === 'select-day') {
+        if (suppressSelectDayClick) {
+          suppressSelectDayClick = false;
+          return;
+        }
+        selectDay(btn.dataset.calendarDate, state.view === 'year');
+      }
       if (action === 'open-month') openMonth(btn.dataset.calendarDate);
       if (action === 'submit-event') submitEvent(btn.dataset.calendarEventPrefix || 'calendar-event');
     });
@@ -1668,6 +1858,12 @@ const CalendarPage = (() => {
       submitEvent(btn.dataset.calendarEventPrefix || 'calendar-event');
     });
     document.addEventListener('change', event => {
+      const dateControl = event.target.closest('[data-calendar-event-date]');
+      if (dateControl) {
+        const prefix = dateControl.id.replace(/-date$/, '');
+        const endDate = el(`${prefix}-end-date`);
+        if (endDate && (!endDate.value || endDate.value < dateControl.value)) endDate.value = dateControl.value;
+      }
       const control = event.target.closest('[data-calendar-event-all-day]');
       if (!control) return;
       setAllDayControls(control.dataset.calendarEventAllDay || 'calendar-event');
@@ -1729,6 +1925,8 @@ const CalendarPage = (() => {
       content_view: state.contentView,
       content_view_label: contentViewLabel(),
       mode: state.mode,
+      selected_range_start: hasManualRange() ? state.manualRangeStart : '',
+      selected_range_end: hasManualRange() ? state.manualRangeEnd : '',
       year_start_month: state.yearStartMonth,
       source_filter: state.sourceFilter,
       selected_filters: window.PersonalFilters?.getSelectedIds ? window.PersonalFilters.getSelectedIds('calendar') : [],

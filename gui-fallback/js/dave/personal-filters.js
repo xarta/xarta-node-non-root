@@ -1034,7 +1034,9 @@ const PersonalFilters = (() => {
     if (!modal || !root) return false;
     root.dataset.personalFilterSurface = surface;
     root.dataset.personalFilterLayout = 'tabs';
-    root.dataset.personalFilterTab = tab === 'settings' ? 'settings' : 'filters';
+    if (surface === 'calendar') root.dataset.personalFilterExtraTabs = 'selected,search,new-event';
+    else delete root.dataset.personalFilterExtraTabs;
+    root.dataset.personalFilterTab = tab === 'filter-settings' ? 'settings' : (tab || 'filters');
     resetSettingsOrderForHost(root);
     if (title) title.textContent = tab === 'settings' ? 'Filter Settings' : 'Filters';
     renderHost(root);
@@ -1057,7 +1059,7 @@ const PersonalFilters = (() => {
     const surface = pageSurfaceFromState(current);
     if (!surface) return false;
     const title = `${surface === 'todo' ? 'ToDo' : titleCase(surface)} Filters`;
-    const extraTabs = surface === 'calendar' ? ' data-personal-filter-extra-tabs="search,new-event"' : '';
+    const extraTabs = surface === 'calendar' ? ' data-personal-filter-extra-tabs="selected,search,new-event"' : '';
     window.UltrawideSidecar.setTitle(title);
     window.UltrawideSidecar.setHTML(`<div class="personal-filter-sidecar-host" data-personal-filter-host data-personal-filter-surface="${escHtml(surface)}" data-personal-filter-layout="tabs" data-personal-filter-framed="false"${extraTabs}></div>`);
     renderHost(document.querySelector('#ultrawide-sidecar-body [data-personal-filter-host]'));

@@ -458,6 +458,7 @@
   cursor: pointer;
   text-align: left;
   font: inherit;
+  touch-action: none;
 }
 
 .calendar-mini-day {
@@ -493,6 +494,16 @@
 .calendar-day--selected {
   border-color: var(--accent);
   background: rgba(73, 144, 226, .15);
+}
+
+.calendar-day--range {
+  border-color: rgba(91, 156, 246, .72);
+  background: rgba(91, 156, 246, .16);
+}
+
+.calendar-day--range-edge {
+  border-color: rgba(221, 174, 59, .9);
+  box-shadow: inset 0 0 0 1px rgba(221, 174, 59, .34), 0 0 0 1px rgba(221, 174, 59, .14);
 }
 
 .calendar-day-number {
@@ -1033,5 +1044,11 @@
 }
 
 .calendar-quick-event.calendar-quick-event--embedded {
+  padding: 0;
+}
+
+.calendar-band--embedded-selected {
+  border: 0;
+  background: transparent;
   padding: 0;
 }

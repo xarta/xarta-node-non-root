@@ -3386,7 +3386,7 @@
       <section class="calendar-view-section" aria-label="Calendar view" data-calendar-content-view="calendar">
         <div id="calendar-view-root" class="calendar-view-root"></div>
         <div class="calendar-filter-under-panel" aria-label="Calendar filters">
-          <div id="calendar-filter-inline-panel" data-personal-filter-host data-personal-filter-surface="calendar" data-personal-filter-layout="tabs" data-personal-filter-extra-tabs="search,new-event"></div>
+          <div id="calendar-filter-inline-panel" data-personal-filter-host data-personal-filter-surface="calendar" data-personal-filter-layout="tabs" data-personal-filter-extra-tabs="selected,search,new-event"></div>
         </div>
       </section>
 
@@ -3432,8 +3432,12 @@
             <input id="calendar-event-title" type="text" maxlength="180" autocomplete="off" />
           </label>
           <label class="calendar-field" for="calendar-event-date">
-            <span>Date</span>
+            <span>Start date</span>
             <input id="calendar-event-date" type="date" data-calendar-event-date />
+          </label>
+          <label class="calendar-field" for="calendar-event-end-date">
+            <span>End date</span>
+            <input id="calendar-event-end-date" type="date" data-calendar-event-end-date />
           </label>
           <label class="calendar-field" for="calendar-event-start">
             <span>Start</span>
