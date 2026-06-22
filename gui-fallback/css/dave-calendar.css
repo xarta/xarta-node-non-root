@@ -282,9 +282,9 @@
 }
 
 .calendar-event-tags-strip {
-  grid-column: 1 / -1;
+  grid-column: 2 / -1;
   width: 100%;
-  min-width: 0;
+  min-width: min(100%, 220px);
 }
 
 .calendar-filter-strip__selection {
@@ -893,6 +893,11 @@
   }
 
   .calendar-filter-strip {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  .calendar-event-tags-strip {
     grid-column: 1 / -1;
     min-width: 0;
   }

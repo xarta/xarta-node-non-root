@@ -75,6 +75,48 @@
   font-size: 12px;
 }
 
+.personal-filter-summary__clear {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  border: 1px solid rgba(91, 156, 246, .5);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .025);
+  color: var(--accent, #5b9cf6);
+  cursor: pointer;
+  padding: 0;
+}
+
+.personal-filter-summary__clear::before,
+.personal-filter-summary__clear::after {
+  content: '';
+  position: absolute;
+  width: 11px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.personal-filter-summary__clear::before {
+  transform: rotate(45deg);
+}
+
+.personal-filter-summary__clear::after {
+  transform: rotate(-45deg);
+}
+
+.personal-filter-summary__clear:hover,
+.personal-filter-summary__clear:focus-visible {
+  border-color: rgba(91, 156, 246, .88);
+  background: rgba(91, 156, 246, .16);
+  color: var(--text);
+  outline: none;
+}
+
 .personal-filter-search {
   display: grid;
   grid-template-columns: minmax(180px, 300px);
@@ -447,6 +489,8 @@ dialog.hub-modal.personal-filter-modal[open] {
 .calendar-filter-strip .personal-filter-summary {
   flex-wrap: wrap;
   align-items: center;
+  width: 100%;
+  min-width: 0;
   overflow: visible;
   row-gap: 6px;
 }
@@ -496,6 +540,18 @@ dialog.hub-modal.personal-filter-modal[open] {
   flex: 0 0 auto;
   overflow-wrap: normal;
   white-space: nowrap;
+}
+
+.calendar-filter-strip .personal-filter-summary__clear {
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+}
+
+.calendar-filter-strip .personal-filter-summary__clear::before,
+.calendar-filter-strip .personal-filter-summary__clear::after {
+  width: 10px;
 }
 
 @media (max-width: 900px) {

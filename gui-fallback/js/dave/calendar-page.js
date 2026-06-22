@@ -224,7 +224,7 @@ const CalendarPage = (() => {
     state.manualRangeEnd = range.end;
     state.date = range.start;
     state.selection = null;
-    syncCreateDate();
+    syncCreateDate(true);
     render();
   }
 
@@ -488,17 +488,22 @@ const CalendarPage = (() => {
     return { timed, allDay, upcoming };
   }
 
-  function dayClass(dateText, currentMonth) {
+  function dayClass(dateText, currentMonth, options = {}) {
     const classes = ['calendar-day'];
     const date = parseLocalDate(dateText);
-    if (date.getMonth() !== currentMonth) classes.push('calendar-day--outside');
-    if (dateText === localDateString(new Date())) classes.push('calendar-day--today');
-    if (hasManualRange() && dateText >= state.manualRangeStart && dateText <= state.manualRangeEnd) {
+    const isOutside = date.getMonth() !== currentMonth;
+    const isManualRange = hasManualRange();
+    const isInManualRange = isManualRange && dateText >= state.manualRangeStart && dateText <= state.manualRangeEnd;
+    const isRangeEdge = isInManualRange && (dateText === state.manualRangeStart || dateText === state.manualRangeEnd);
+    const showRange = isInManualRange && (!isOutside || options.rangeOutsideDays !== false);
+    if (isOutside) classes.push('calendar-day--outside');
+    if (dateText === localDateString(new Date()) && (!isManualRange || (showRange && isRangeEdge))) {
+      classes.push('calendar-day--today');
+    }
+    if (showRange) {
       classes.push('calendar-day--range');
-      if (dateText === state.manualRangeStart || dateText === state.manualRangeEnd) {
-        classes.push('calendar-day--range-edge');
-      }
-    } else if (dateText === state.date) {
+      if (isRangeEdge) classes.push('calendar-day--range-edge');
+    } else if (dateText === state.date && (!isInManualRange || options.rangeOutsideDays !== false || !isOutside)) {
       classes.push('calendar-day--selected');
     }
     return classes.join(' ');
@@ -530,7 +535,7 @@ const CalendarPage = (() => {
       const dateText = localDateString(date);
       const events = dateEvents.get(dateText) || [];
       return `
-        <button class="${dayClass(dateText, month)} calendar-mini-day" type="button"
+        <button class="${dayClass(dateText, month, { rangeOutsideDays: false })} calendar-mini-day" type="button"
                 data-calendar-action="select-day" data-calendar-date="${escHtml(dateText)}"
                 aria-label="${escHtml(monthLabel(dateText, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }))}">
           <span class="calendar-day-number">${date.getDate()}</span>
@@ -1106,12 +1111,22 @@ const CalendarPage = (() => {
     return setDate(localDateString(new Date()));
   }
 
-  function syncCreateDate() {
+  function eventDefaultStartDate() {
+    return hasManualRange() ? state.manualRangeStart : state.date;
+  }
+
+  function eventDefaultEndDate() {
+    return hasManualRange() ? state.manualRangeEnd : eventDefaultStartDate();
+  }
+
+  function syncCreateDate(force = false) {
+    const startDate = eventDefaultStartDate();
+    const endDate = eventDefaultEndDate();
     document.querySelectorAll('[data-calendar-event-date]').forEach(input => {
-      if (!input.value) input.value = state.date;
+      if (force || !input.value) input.value = startDate;
     });
     document.querySelectorAll('[data-calendar-event-end-date]').forEach(input => {
-      if (!input.value) input.value = state.date;
+      if (force || !input.value) input.value = endDate;
     });
   }
 
@@ -1139,6 +1154,8 @@ const CalendarPage = (() => {
 
   function embeddedEventFormHtml(prefix) {
     const safePrefix = String(prefix || 'calendar-panel-event').replace(/[^a-zA-Z0-9_-]/g, '-');
+    const defaultStartDate = eventDefaultStartDate();
+    const defaultEndDate = eventDefaultEndDate();
     const valueFor = (key, fallback = '') => String(el(`${safePrefix}-${key}`)?.value || fallback);
     const allDay = !!el(`${safePrefix}-all-day`)?.checked;
     const disabled = allDay ? ' disabled' : '';
@@ -1151,11 +1168,11 @@ const CalendarPage = (() => {
           </label>
           <label class="calendar-field" for="${escHtml(safePrefix)}-date">
             <span>Start date</span>
-            <input id="${escHtml(safePrefix)}-date" type="date" data-calendar-event-date value="${escHtml(valueFor('date', state.date))}" />
+            <input id="${escHtml(safePrefix)}-date" type="date" data-calendar-event-date value="${escHtml(valueFor('date', defaultStartDate))}" />
           </label>
           <label class="calendar-field" for="${escHtml(safePrefix)}-end-date">
             <span>End date</span>
-            <input id="${escHtml(safePrefix)}-end-date" type="date" data-calendar-event-end-date value="${escHtml(valueFor('end-date', valueFor('date', state.date)))}" />
+            <input id="${escHtml(safePrefix)}-end-date" type="date" data-calendar-event-end-date value="${escHtml(valueFor('end-date', valueFor('date', defaultEndDate)))}" />
           </label>
           <label class="calendar-field" for="${escHtml(safePrefix)}-start">
             <span>Start</span>
@@ -1320,7 +1337,7 @@ const CalendarPage = (() => {
       if (field) field.value = '';
     });
     const endDate = el(`${prefix}-end-date`);
-    if (endDate) endDate.value = el(`${prefix}-date`)?.value || state.date;
+    if (endDate) endDate.value = el(`${prefix}-date`)?.value || eventDefaultStartDate();
     if (status) {
       status.textContent = saved.length > 1
         ? `Saved ${saved.length} events`
@@ -1888,7 +1905,9 @@ const CalendarPage = (() => {
       yearStart.addEventListener('change', event => setYearStartMonth(event.target.value));
     }
     const eventDate = el('calendar-event-date');
-    if (eventDate) eventDate.value = state.date;
+    if (eventDate) eventDate.value = eventDefaultStartDate();
+    const eventEndDate = el('calendar-event-end-date');
+    if (eventEndDate) eventEndDate.value = eventDefaultEndDate();
     const allDay = el('calendar-event-all-day');
     if (allDay) allDay.addEventListener('change', () => setAllDayControls('calendar-event'));
     document.querySelectorAll('[data-calendar-view-trigger]').forEach(bindContentViewTrigger);
@@ -1966,6 +1985,8 @@ const CalendarPage = (() => {
     filterSources: () => setSourceFilter('sources'),
     newEvent: () => {
       setContentView('new-event');
+      syncCreateDate(hasManualRange());
+      renderEventTagSummaries();
       const field = el('calendar-event-title');
       if (field) {
         field.scrollIntoView({ behavior: 'smooth', block: 'center' });

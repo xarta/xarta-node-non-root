@@ -51,7 +51,20 @@
   flex-wrap: wrap;
   align-items: center;
   row-gap: 6px;
+  width: 100%;
   min-width: 0;
+}
+
+.personal-search-filter-strip .personal-filter-summary__clear {
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+}
+
+.personal-search-filter-strip .personal-filter-summary__clear::before,
+.personal-search-filter-strip .personal-filter-summary__clear::after {
+  width: 10px;
 }
 
 .personal-search-filter-strip .personal-filter-chip {

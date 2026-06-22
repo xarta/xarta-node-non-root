@@ -760,12 +760,19 @@ const PersonalFilters = (() => {
     const labels = surfaceLabels(surface);
     const prefix = options.prefix || labels.summaryPrefix;
     const emptyLabel = options.emptyLabel || labels.emptyLabel;
+    const clearIds = clearSelectedIds(surface);
+    const canClear = options.showClear !== false && !selectedIdsEqual(selected, clearIds);
+    const clearLabel = String(prefix || 'filters').replace(/:\s*$/, '').trim() || 'filters';
+    const clearButton = canClear
+      ? `<button class="personal-filter-summary__clear" type="button" data-personal-filter-clear="${escHtml(surface)}" aria-label="Clear ${escHtml(clearLabel)}"></button>`
+      : '';
     if (!selected.length) {
       return `<span class="personal-filter-summary"><span class="personal-filter-summary__label">${escHtml(prefix)}</span><span class="personal-filter-summary__empty">${escHtml(emptyLabel)}</span></span>`;
     }
     return `<span class="personal-filter-summary">
       <span class="personal-filter-summary__label">${escHtml(prefix)}</span>
       ${selected.map(id => chipHtml(id, { selected: true })).join('')}
+      ${clearButton}
     </span>`;
   }
 
@@ -1201,7 +1208,18 @@ const PersonalFilters = (() => {
   function bind() {
     if (document.documentElement.dataset.personalFiltersBound === '1') return;
     document.documentElement.dataset.personalFiltersBound = '1';
+    function clearFromControl(control) {
+      const surface = control.dataset.personalFilterClear || control.closest('[data-personal-filter-host]')?.dataset.personalFilterSurface || 'calendar';
+      setSelectedIds(surface, clearSelectedIds(surface));
+    }
     document.addEventListener('click', event => {
+      const clear = event.target.closest('[data-personal-filter-clear]');
+      if (clear) {
+        event.preventDefault();
+        event.stopPropagation();
+        clearFromControl(clear);
+        return;
+      }
       const trigger = event.target.closest('[data-personal-filter-open]');
       if (trigger) {
         event.preventDefault();
@@ -1211,6 +1229,13 @@ const PersonalFilters = (() => {
     }, true);
     document.addEventListener('keydown', event => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
+      const clear = event.target.closest('[data-personal-filter-clear]');
+      if (clear) {
+        event.preventDefault();
+        event.stopPropagation();
+        clearFromControl(clear);
+        return;
+      }
       const trigger = event.target.closest('[data-personal-filter-open]');
       if (!trigger) return;
       event.preventDefault();
