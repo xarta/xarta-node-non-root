@@ -712,10 +712,12 @@
 
     var viewportH = getViewportHeight();
     var bottomClearance = getShadeBottomClearance();
-    var panelTop = Math.max(0, panel.getBoundingClientRect().top);
+    var panelTop = panel.getBoundingClientRect().top;
     var panelHeight = Math.max(120, Math.round(viewportH - panelTop - bottomClearance));
+    panel.style.height = panelHeight + 'px';
     panel.style.maxHeight = panelHeight + 'px';
-    panel.style.overflowY = 'auto';
+    panel.style.overflowX = 'hidden';
+    panel.style.overflowY = 'hidden';
     panel.style.overscrollBehavior = 'contain';
     panel.querySelectorAll('.tab-scroll-shell').forEach(function (shell) {
       var top = Math.max(0, shell.getBoundingClientRect().top);
@@ -724,7 +726,8 @@
         : Math.max(50, Math.round(viewportH - top - bottomClearance));
       shell.style.height = height + 'px';
       shell.style.maxHeight = height + 'px';
-      shell.style.overflow = 'auto';
+      shell.style.overflowX = 'hidden';
+      shell.style.overflowY = 'auto';
       shell.style.overscrollBehavior = 'contain';
       shell.style.scrollPaddingBottom = bottomClearance + 'px';
     });
@@ -914,9 +917,13 @@
       // execution — so the instant snap is committed before the transition
       // is re-enabled. Without the rAF, all three changes are batched and
       // the browser sees is-dragging=false at paint time → uses transition.
-      requestAnimationFrame(function () { shade.classList.remove('is-dragging'); });
+      requestAnimationFrame(function () {
+        shade.classList.remove('is-dragging');
+        sizeActivePane();
+      });
     } else {
       applyTranslate(0, false);
+      setTimeout(sizeActivePane, TRANSITION + 50);
     }
     if (handle) handle.classList.remove('is-up', 'is-grabbing', 'is-dragging');
     maxTravel = 0; // force recompute on next drag-start from new settled layout
