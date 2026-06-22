@@ -51,7 +51,7 @@ const DiaryPage = (() => {
 
   function filterLabel(value) {
     if (value === 'manual') return 'manual entries';
-    if (value === 'sources') return 'source imports';
+    if (value === 'sources') return 'source records';
     if (value === 'git') return 'git';
     if (value === 'imports') return 'imports';
     if (value === 'work') return 'work';

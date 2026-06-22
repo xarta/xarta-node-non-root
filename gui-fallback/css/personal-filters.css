@@ -75,6 +75,55 @@
   font-size: 12px;
 }
 
+.personal-filter-summary__clear {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  border: 1px solid rgba(91, 156, 246, .5);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .025);
+  color: var(--accent, #5b9cf6);
+  cursor: pointer;
+  padding: 0;
+}
+
+.personal-filter-summary__clear::before,
+.personal-filter-summary__clear::after {
+  content: '';
+  position: absolute;
+  width: 11px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.personal-filter-summary__clear::before {
+  transform: rotate(45deg);
+}
+
+.personal-filter-summary__clear::after {
+  transform: rotate(-45deg);
+}
+
+.personal-filter-summary__clear:hover,
+.personal-filter-summary__clear:focus-visible {
+  border-color: rgba(91, 156, 246, .88);
+  background: rgba(91, 156, 246, .16);
+  color: var(--text);
+  outline: none;
+}
+
+.personal-filter-search {
+  display: grid;
+  grid-template-columns: minmax(180px, 300px);
+  justify-content: start;
+  min-width: 0;
+}
+
 .personal-filter-grid {
   display: flex;
   flex-wrap: wrap;
@@ -82,6 +131,13 @@
   align-content: flex-start;
   gap: 14px;
   min-width: 0;
+}
+
+.personal-filter-empty {
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.35;
+  padding: 8px 2px;
 }
 
 .personal-filter-chip {
@@ -337,8 +393,13 @@
 }
 
 .personal-filter-field select option {
-  background-color: #11151f;
-  color: var(--text);
+  background-color: #05070d;
+  color: #fff;
+}
+
+.personal-filter-field select option:checked {
+  background-color: #17345f;
+  color: #fff;
 }
 
 .personal-filter-settings__preview {
@@ -433,6 +494,8 @@ dialog.hub-modal.personal-filter-modal[open] {
 .calendar-filter-strip .personal-filter-summary {
   flex-wrap: wrap;
   align-items: center;
+  width: 100%;
+  min-width: 0;
   overflow: visible;
   row-gap: 6px;
 }
@@ -484,6 +547,18 @@ dialog.hub-modal.personal-filter-modal[open] {
   white-space: nowrap;
 }
 
+.calendar-filter-strip .personal-filter-summary__clear {
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+}
+
+.calendar-filter-strip .personal-filter-summary__clear::before,
+.calendar-filter-strip .personal-filter-summary__clear::after {
+  width: 10px;
+}
+
 @media (max-width: 900px) {
   .personal-filter-settings-row {
     grid-template-columns: minmax(0, 1fr) minmax(110px, .8fr) max-content;
@@ -514,6 +589,10 @@ dialog.hub-modal.personal-filter-modal[open] {
 
   .personal-filter-grid {
     gap: 10px;
+  }
+
+  .personal-filter-search {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .personal-filter-settings__new {
@@ -554,10 +633,12 @@ dialog.hub-modal.personal-filter-modal[open] {
 }
 
 @media (max-width: 700px) and (orientation: portrait) {
+  .personal-filter-search .personal-filter-field > span,
   .personal-filter-settings__new .personal-filter-field > span {
     display: none;
   }
 
+  .personal-filter-search .personal-filter-field input,
   .personal-filter-settings__new .personal-filter-field input,
   .personal-filter-settings__new .personal-filter-command {
     height: 34px;

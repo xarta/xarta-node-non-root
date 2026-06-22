@@ -1060,7 +1060,7 @@ function createHubMenu(cfg) {
             menu.style.left = '0';
             menu.style.marginTop = '0';
 
-            fnItems.forEach(item => {
+            const renderFnButton = item => {
                 const btn = document.createElement('button');
                 btn.className = 'hub-dropdown-item hub-dropdown-fn';
                 btn.type = 'button';
@@ -1071,8 +1071,26 @@ function createHubMenu(cfg) {
                     e.stopPropagation();
                     this._invokeFunctionItem(item, { closeContextMenu: true });
                 });
-                menu.appendChild(btn);
-            });
+                return btn;
+            };
+
+            const columns = typeof cfg.contextMenuColumns === 'function'
+                ? cfg.contextMenuColumns(activeId, fnItems)
+                : null;
+            if (Array.isArray(columns) && columns.length > 1) {
+                host.classList.add('hub-context-menu-floating--columns');
+                menu.classList.add('hub-context-menu-floating__menu--columns');
+                columns.forEach(columnItems => {
+                    const column = document.createElement('div');
+                    column.className = 'hub-context-menu-floating__column';
+                    (Array.isArray(columnItems) ? columnItems : []).forEach(item => {
+                        if (item) column.appendChild(renderFnButton(item));
+                    });
+                    if (column.children.length) menu.appendChild(column);
+                });
+            } else {
+                fnItems.forEach(item => menu.appendChild(renderFnButton(item)));
+            }
 
             host.appendChild(menu);
             document.body.appendChild(host);
