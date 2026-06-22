@@ -8,6 +8,7 @@ const CalendarPage = (() => {
   const CONTENT_VIEW_STORAGE_KEY = 'blueprints.calendar.contentView';
   const EVENT_TAG_SURFACE = 'calendar-event';
   const EVENT_REQUIRED_TAGS = ['calendar'];
+  const SEARCH_TAG_SURFACE = 'calendar-search';
   const MONTH_NAMES = [
     'January',
     'February',
@@ -29,7 +30,7 @@ const CalendarPage = (() => {
     { id: 'filter-settings', label: 'Filter Settings' },
     { id: 'selected', label: 'Selected Range Visible Items' },
     { id: 'milestones', label: 'All-Day And Milestones' },
-    { id: 'search', label: 'Search And Review' },
+    { id: 'search', label: 'Search' },
     { id: 'new-event', label: 'New Event' },
     { id: 'upcoming', label: 'Upcoming' },
     { id: 'provenance', label: 'Provenance' },
@@ -761,6 +762,7 @@ const CalendarPage = (() => {
       if (window.PersonalFilters?.invalidateSurface) {
         window.PersonalFilters.invalidateSurface('calendar');
         window.PersonalFilters.invalidateSurface(EVENT_TAG_SURFACE);
+        window.PersonalFilters.invalidateSurface(SEARCH_TAG_SURFACE);
       }
       state.loaded = true;
       return data;
@@ -1119,6 +1121,16 @@ const CalendarPage = (() => {
     return 'calendar-panel-event';
   }
 
+  function embeddedSearchHtml(host) {
+    const instance = host?.id === 'calendar-filter-inline-panel'
+      ? 'calendar-inline-search'
+      : (host?.closest?.('#ultrawide-sidecar-body') ? 'calendar-sidecar-search' : 'calendar-panel-search');
+    window.setTimeout(() => {
+      if (window.BlueprintsPersonalSearch?.init) window.BlueprintsPersonalSearch.init();
+    }, 0);
+    return `<div class="personal-search-strip personal-search-strip--embedded" data-personal-search-surface="calendar" data-personal-search-instance="${escHtml(instance)}"></div>`;
+  }
+
   function closeActionModal() {
     const modal = el('calendar-action-modal');
     if (!modal) return;
@@ -1419,6 +1431,7 @@ const CalendarPage = (() => {
     if (window.PersonalFilters?.invalidateSurface) {
       window.PersonalFilters.invalidateSurface('calendar');
       window.PersonalFilters.invalidateSurface(EVENT_TAG_SURFACE);
+      window.PersonalFilters.invalidateSurface(SEARCH_TAG_SURFACE);
     }
     state.loaded = true;
     render();
@@ -1582,9 +1595,14 @@ const CalendarPage = (() => {
       window.PersonalFilters.registerSurface('calendar', {
         getRecords: () => state.data?.items || [],
         extraTabs: [
+          { id: 'search', label: 'Search' },
           { id: 'new-event', label: 'New Event' },
         ],
-        renderTab: (tab, host) => (tab === 'new-event' ? embeddedEventFormHtml(embeddedEventPrefixForHost(host)) : ''),
+        renderTab: (tab, host) => {
+          if (tab === 'search') return embeddedSearchHtml(host);
+          if (tab === 'new-event') return embeddedEventFormHtml(embeddedEventPrefixForHost(host));
+          return '';
+        },
         onChange: () => {
           syncSharedFilterState();
           state.selection = null;
@@ -1602,6 +1620,23 @@ const CalendarPage = (() => {
         onChange: () => {
           renderEventTagSummaries();
         },
+      });
+      window.PersonalFilters.registerSurface(SEARCH_TAG_SURFACE, {
+        getRecords: () => state.data?.items || [],
+        summaryPrefix: 'Pool:',
+        activePrefix: 'Pool',
+        emptyLabel: 'all entries',
+        clearLabel: 'All entries',
+      });
+    }
+    if (window.BlueprintsPersonalSearch?.registerSurface) {
+      window.BlueprintsPersonalSearch.registerSurface('calendar', {
+        filterSurface: SEARCH_TAG_SURFACE,
+        getRange: () => ({
+          start: rangeStart(),
+          end: rangeEnd(),
+          label: rangeLabel(),
+        }),
       });
     }
     syncCreateDate();

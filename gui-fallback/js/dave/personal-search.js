@@ -4,6 +4,7 @@
 
 const BlueprintsPersonalSearch = (() => {
   const state = {
+    adapters: {},
     surfaces: {},
     graph: {
       open: false,
@@ -17,38 +18,12 @@ const BlueprintsPersonalSearch = (() => {
   };
 
   const surfaceDefaults = {
-    diary: { mode: 'personal', recordType: '' },
-    calendar: { mode: 'calendar', recordType: 'calendar' },
-    todo: { mode: '', recordType: 'task' },
-    imports: { mode: 'imports', recordType: 'import' },
-    kanban: { mode: 'work', recordType: '' },
+    diary: { restrictToRange: false },
+    calendar: { restrictToRange: false },
+    todo: { restrictToRange: false },
+    imports: { restrictToRange: false },
+    kanban: { restrictToRange: false },
   };
-
-  const modeOptions = [
-    ['', 'All modes'],
-    ['today', 'Today'],
-    ['personal', 'Personal'],
-    ['calendar', 'Calendar'],
-    ['work', 'Work'],
-    ['blocked', 'Blocked'],
-    ['review', 'Review'],
-    ['imports', 'Imports'],
-    ['git_activity', 'Git'],
-  ];
-
-  const typeOptions = [
-    ['', 'All types'],
-    ['diary', 'Diary'],
-    ['timeline', 'Timeline'],
-    ['calendar', 'Calendar'],
-    ['task', 'Task'],
-    ['import', 'Import'],
-    ['work_item', 'Work item'],
-    ['work_issue', 'Issue'],
-    ['work_todo', 'Work ToDo'],
-    ['work_blocker', 'Blocker'],
-    ['git', 'Git'],
-  ];
 
   const escHtml = typeof esc === 'function'
     ? esc
@@ -60,19 +35,25 @@ const BlueprintsPersonalSearch = (() => {
         "'": '&#39;',
       }[ch]));
 
-  function optionHtml(options, selected) {
-    return options.map(([value, label]) => `
-      <option value="${escHtml(value)}" ${value === selected ? 'selected' : ''}>${escHtml(label)}</option>
-    `).join('');
+  function adapterFor(surface) {
+    return state.adapters[surface] || {};
+  }
+
+  function filterSurfaceFor(surface) {
+    return adapterFor(surface).filterSurface || `${surface}-search`;
+  }
+
+  function selectedTags(surface) {
+    if (!window.PersonalFilters?.getSelectedIds) return [];
+    return window.PersonalFilters.getSelectedIds(filterSurfaceFor(surface)) || [];
   }
 
   function surfaceState(surface) {
-    const defaults = surfaceDefaults[surface] || { mode: '', recordType: '' };
+    const defaults = surfaceDefaults[surface] || { restrictToRange: false };
     if (!state.surfaces[surface]) {
       state.surfaces[surface] = {
         query: '',
-        mode: defaults.mode,
-        recordType: defaults.recordType,
+        restrictToRange: Boolean(defaults.restrictToRange),
         loading: false,
         error: '',
         results: [],
@@ -83,36 +64,78 @@ const BlueprintsPersonalSearch = (() => {
   }
 
   function setStatus(surface, text, tone = '') {
-    const node = document.querySelector(`[data-personal-search-status="${surface}"]`);
-    if (!node) return;
-    node.textContent = text;
-    node.dataset.tone = tone;
+    document.querySelectorAll(`[data-personal-search-status="${surface}"]`).forEach(node => {
+      node.textContent = text;
+      node.dataset.tone = tone;
+    });
   }
 
-  function apiUrl(surface, data) {
-    const url = new URL('/api/v1/personal/search', window.location.origin);
-    if (data.query) url.searchParams.set('q', data.query);
-    if (data.mode) url.searchParams.set('mode', data.mode);
-    if (data.recordType) url.searchParams.set('record_type', data.recordType);
-    url.searchParams.set('limit', '8');
-    url.searchParams.set('include_vector', 'true');
-    url.searchParams.set('rerank_results', 'true');
-    url.searchParams.set('sync', 'true');
+  function fallbackRange(surface) {
+    if (surface === 'calendar' && window.BlueprintsCalendarPage?.snapshot) {
+      const snapshot = window.BlueprintsCalendarPage.snapshot();
+      return {
+        start: snapshot.range_start || '',
+        end: snapshot.range_end || snapshot.range_start || '',
+        label: snapshot.range_label || '',
+      };
+    }
     if (surface === 'diary') {
       const date = document.getElementById('diary-date-input')?.value || '';
-      if (date) {
-        url.searchParams.set('date_start', date);
-        url.searchParams.set('date_end', date);
-      }
+      return { start: date, end: date, label: date };
     }
-    if (surface === 'calendar') {
-      const date = document.getElementById('calendar-date-input')?.value || '';
-      if (date) {
-        url.searchParams.set('date_start', date);
-        url.searchParams.set('date_end', date);
-      }
+    return { start: '', end: '', label: '' };
+  }
+
+  function rangeFor(surface) {
+    const adapter = adapterFor(surface);
+    if (typeof adapter.getRange === 'function') {
+      const range = adapter.getRange() || {};
+      return {
+        start: range.start || range.date_start || '',
+        end: range.end || range.date_end || range.start || range.date_start || '',
+        label: range.label || '',
+      };
     }
+    return fallbackRange(surface);
+  }
+
+  function apiUrl(surface, data, options = {}) {
+    const url = new URL('/api/v1/personal/search', window.location.origin);
+    if (data.query) url.searchParams.set('q', data.query);
+    if (options.tag) url.searchParams.set('tag', options.tag);
+    if (data.restrictToRange) {
+      const range = rangeFor(surface);
+      if (range.start) url.searchParams.set('date_start', range.start);
+      if (range.end) url.searchParams.set('date_end', range.end);
+    }
+    url.searchParams.set('limit', '40');
+    url.searchParams.set('include_vector', 'true');
+    url.searchParams.set('rerank_results', 'true');
+    url.searchParams.set('sync', options.sync === false ? 'false' : 'true');
     return `${url.pathname}${url.search}`;
+  }
+
+  function searchLabel(surface) {
+    const tags = selectedTags(surface);
+    if (tags.length) return `${tags.length} filter${tags.length === 1 ? '' : 's'}`;
+    if (surfaceState(surface).restrictToRange) return 'shown period';
+    return 'Ready';
+  }
+
+  function filterSummaryHtml(surface) {
+    const filterSurface = filterSurfaceFor(surface);
+    if (window.PersonalFilters?.summaryHtml) {
+      return window.PersonalFilters.summaryHtml(filterSurface, { prefix: 'Filter:', emptyLabel: 'all entries' });
+    }
+    return '<span class="personal-filter-summary"><span class="personal-filter-summary__label">Filter:</span><span class="personal-filter-summary__empty">all entries</span></span>';
+  }
+
+  function renderFilterSummaries(surface) {
+    document.querySelectorAll(`[data-personal-search-tags-strip="${surface}"]`).forEach(strip => {
+      strip.innerHTML = filterSummaryHtml(surface);
+      strip.dataset.personalFilterOpen = filterSurfaceFor(surface);
+      strip.dataset.personalFilterTab = 'filters';
+    });
   }
 
   function scoreChips(result) {
@@ -276,16 +299,57 @@ const BlueprintsPersonalSearch = (() => {
 
   function renderResults(surface) {
     const data = surfaceState(surface);
-    const root = document.querySelector(`[data-personal-search-surface="${surface}"]`);
-    const results = document.querySelector(`[data-personal-search-results="${surface}"]`);
-    if (!root || !results) return;
-    root.dataset.searchEmpty = data.results.length ? 'false' : 'true';
-    results.innerHTML = data.results.map(resultHtml).join('');
+    document.querySelectorAll(`[data-personal-search-surface="${surface}"]`).forEach(root => {
+      const results = root.querySelector(`[data-personal-search-results="${surface}"]`);
+      if (!results) return;
+      root.dataset.searchEmpty = data.results.length ? 'false' : 'true';
+      results.innerHTML = data.results.map(resultHtml).join('');
+    });
+  }
+
+  function mergeSearchPayloads(payloads) {
+    const byId = new Map();
+    payloads.forEach(payload => {
+      (Array.isArray(payload.results) ? payload.results : []).forEach(result => {
+        const id = result.document_id || result.record_id || '';
+        if (!id || byId.has(id)) return;
+        byId.set(id, result);
+      });
+    });
+    return {
+      count: byId.size,
+      results: Array.from(byId.values()),
+      subsystems: {
+        ...(payloads[0]?.subsystems || {}),
+        tag_pool: {
+          status: 'ok',
+          candidate_count: byId.size,
+          request_count: payloads.length,
+        },
+      },
+    };
+  }
+
+  async function fetchSearchPayload(surface, data, options = {}) {
+    const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
+    const response = await fetcher(apiUrl(surface, data, options));
+    if (!response.ok) throw new Error(response.statusText || 'search failed');
+    return response.json();
+  }
+
+  async function fetchSearch(surface, data) {
+    const tags = selectedTags(surface);
+    if (tags.length <= 1) {
+      return fetchSearchPayload(surface, data, { tag: tags[0] || '' });
+    }
+    const first = await fetchSearchPayload(surface, data, { tag: tags[0], sync: true });
+    const rest = await Promise.all(tags.slice(1).map(tag => fetchSearchPayload(surface, data, { tag, sync: false })));
+    return mergeSearchPayloads([first, ...rest]);
   }
 
   async function run(surface) {
     const data = surfaceState(surface);
-    if (!data.query && !data.mode && !data.recordType) {
+    if (!data.query && !data.restrictToRange && !selectedTags(surface).length) {
       data.results = [];
       data.error = '';
       setStatus(surface, 'Ready');
@@ -296,10 +360,7 @@ const BlueprintsPersonalSearch = (() => {
     data.error = '';
     setStatus(surface, 'Searching');
     try {
-      const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
-      const response = await fetcher(apiUrl(surface, data));
-      if (!response.ok) throw new Error(response.statusText || 'search failed');
-      const payload = await response.json();
+      const payload = await fetchSearch(surface, data);
       data.results = Array.isArray(payload.results) ? payload.results : [];
       data.subsystems = payload.subsystems || {};
       setStatus(surface, `${payload.count || 0} result${payload.count === 1 ? '' : 's'}`);
@@ -310,6 +371,7 @@ const BlueprintsPersonalSearch = (() => {
     } finally {
       data.loading = false;
       renderResults(surface);
+      renderFilterSummaries(surface);
       if (window.BodyShade && typeof window.BodyShade.scheduleSizeFillTable === 'function') {
         window.BodyShade.scheduleSizeFillTable();
       }
@@ -339,17 +401,24 @@ const BlueprintsPersonalSearch = (() => {
     root.innerHTML = `
       <form class="personal-search-form" data-personal-search-form="${escHtml(surface)}">
         <input type="search" data-personal-search-query="${escHtml(surface)}" value="${escHtml(data.query)}" autocomplete="off" spellcheck="false" aria-label="Search personal records" />
-        <select data-personal-search-mode="${escHtml(surface)}" aria-label="Search mode">
-          ${optionHtml(modeOptions, data.mode)}
-        </select>
-        <select data-personal-search-type="${escHtml(surface)}" aria-label="Search record type">
-          ${optionHtml(typeOptions, data.recordType)}
-        </select>
+        <div class="personal-search-filter-strip" role="button" tabindex="0" data-personal-search-tags-strip="${escHtml(surface)}" data-personal-filter-open="${escHtml(filterSurfaceFor(surface))}" data-personal-filter-tab="filters">
+          ${filterSummaryHtml(surface)}
+        </div>
+        <label class="personal-search-range hub-checkbox">
+          <input class="hub-checkbox__input" type="checkbox" data-personal-search-range="${escHtml(surface)}" ${data.restrictToRange ? 'checked' : ''} />
+          <span class="hub-checkbox__box" aria-hidden="true"></span>
+          <span class="hub-checkbox__label">Shown period</span>
+        </label>
         <button class="personal-search-btn" type="submit" title="Search" aria-label="Search"></button>
       </form>
-      <div class="personal-search-status" data-personal-search-status="${escHtml(surface)}">Ready</div>
+      <div class="personal-search-status" data-personal-search-status="${escHtml(surface)}">${escHtml(searchLabel(surface))}</div>
       <div class="personal-search-results" data-personal-search-results="${escHtml(surface)}"></div>
     `;
+    if (root.dataset.personalSearchWired === '1') {
+      renderResults(surface);
+      return;
+    }
+    root.dataset.personalSearchWired = '1';
     root.addEventListener('submit', event => {
       event.preventDefault();
       run(surface);
@@ -357,9 +426,10 @@ const BlueprintsPersonalSearch = (() => {
     root.addEventListener('change', event => {
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
-      if (target.matches('[data-personal-search-mode]')) data.mode = target.value;
-      if (target.matches('[data-personal-search-type]')) data.recordType = target.value;
-      run(surface);
+      if (target.matches('[data-personal-search-range]')) {
+        data.restrictToRange = Boolean(target.checked);
+        run(surface);
+      }
     });
     root.addEventListener('input', event => {
       const target = event.target;
@@ -379,10 +449,35 @@ const BlueprintsPersonalSearch = (() => {
         openGraphLinks(surface, graphButton.dataset.personalGraphOpen);
       }
     });
+    renderResults(surface);
   }
 
   function init() {
     document.querySelectorAll('[data-personal-search-surface]').forEach(renderSurface);
+  }
+
+  function registerSurface(surface, adapter = {}) {
+    state.adapters[surface] = adapter;
+    document.querySelectorAll(`[data-personal-search-surface="${surface}"]`).forEach(renderSurface);
+    renderFilterSummaries(surface);
+  }
+
+  function surfaceForFilterSurface(filterSurface) {
+    const found = Object.entries(state.adapters)
+      .find(([, adapter]) => (adapter.filterSurface || '') === filterSurface);
+    if (found) return found[0];
+    return String(filterSurface || '').endsWith('-search')
+      ? String(filterSurface).slice(0, -'-search'.length)
+      : '';
+  }
+
+  function handlePersonalFilterChange(event) {
+    const surface = surfaceForFilterSurface(event.detail?.surface || '');
+    if (!surface) return;
+    renderFilterSummaries(surface);
+    const data = surfaceState(surface);
+    if (data.query || data.restrictToRange || selectedTags(surface).length) run(surface);
+    else renderResults(surface);
   }
 
   function snapshot() {
@@ -390,8 +485,9 @@ const BlueprintsPersonalSearch = (() => {
     for (const [key, value] of Object.entries(state.surfaces)) {
       surfaces[key] = {
         query: value.query,
-        mode: value.mode,
-        record_type: value.recordType,
+        restrict_to_range: value.restrictToRange,
+        filter_surface: filterSurfaceFor(key),
+        selected_tags: selectedTags(key),
         loading: value.loading,
         error: value.error,
         result_count: value.results.length,
@@ -419,9 +515,11 @@ const BlueprintsPersonalSearch = (() => {
   } else {
     init();
   }
+  window.addEventListener('personal-filters:change', handlePersonalFilterChange);
 
   return {
     init,
+    registerSurface,
     run,
     openGraphLinks,
     snapshot,
