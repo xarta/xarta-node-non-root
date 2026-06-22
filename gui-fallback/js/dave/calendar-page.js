@@ -9,6 +9,9 @@ const CalendarPage = (() => {
   const EVENT_TAG_SURFACE = 'calendar-event';
   const EVENT_REQUIRED_TAGS = ['calendar'];
   const SEARCH_TAG_SURFACE = 'calendar-search';
+  const UPCOMING_WIDE_BATCH_SIZE = 200;
+  const UPCOMING_WIDE_MAX_EVENTS = 2000;
+  const UPCOMING_WIDE_YEARS = 10;
   const MONTH_NAMES = [
     'January',
     'February',
@@ -36,6 +39,8 @@ const CalendarPage = (() => {
     { id: 'provenance', label: 'Provenance' },
   ];
   const CONTENT_VIEW_IDS = CONTENT_VIEWS.map(view => view.id);
+  const INLINE_CONTENT_VIEW_IDS = ['calendar', 'filters', 'filter-settings'];
+  const MODAL_CONTENT_VIEW_IDS = ['selected', 'milestones', 'search', 'new-event', 'upcoming', 'provenance'];
 
   const state = {
     loaded: false,
@@ -52,6 +57,16 @@ const CalendarPage = (() => {
     sourceFilter: 'all',
     selection: null,
     lastWrite: null,
+    upcomingWide: false,
+    upcomingWideLoading: false,
+    upcomingWideError: '',
+    upcomingWideItems: [],
+    upcomingWideRequestId: 0,
+    daySummaryDate: '',
+    daySummary: null,
+    daySummaryLoading: false,
+    daySummaryError: '',
+    daySummaryRequestId: 0,
   };
 
   let contentViewMenuHost = null;
@@ -87,9 +102,13 @@ const CalendarPage = (() => {
     return CONTENT_VIEW_IDS.includes(value) ? value : 'calendar';
   }
 
+  function normalizeInlineContentView(value) {
+    return INLINE_CONTENT_VIEW_IDS.includes(value) ? value : 'calendar';
+  }
+
   function readStoredContentView() {
     try {
-      return normalizeContentView(localStorage.getItem(CONTENT_VIEW_STORAGE_KEY));
+      return normalizeInlineContentView(localStorage.getItem(CONTENT_VIEW_STORAGE_KEY));
     } catch (_) {
       return 'calendar';
     }
@@ -142,6 +161,34 @@ const CalendarPage = (() => {
 
   function addMonths(date, deltaMonths) {
     return new Date(date.getFullYear(), date.getMonth() + deltaMonths, 1);
+  }
+
+  function dateTimePartsForZone(date, timeZone = 'Europe/London') {
+    try {
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+      }).formatToParts(date).reduce((acc, part) => {
+        if (part.type !== 'literal') acc[part.type] = part.value;
+        return acc;
+      }, {});
+      const localDate = `${parts.year}-${parts.month}-${parts.day}`;
+      const localTime = `${parts.hour}:${parts.minute}`;
+      return { date: localDate, time: localTime, stamp: `${localDate}T${localTime}` };
+    } catch (_) {
+      const fallback = localDateString(date);
+      const localTime = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+      return { date: fallback, time: localTime, stamp: `${fallback}T${localTime}` };
+    }
+  }
+
+  function londonNowParts() {
+    return dateTimePartsForZone(new Date(), 'Europe/London');
   }
 
   function shiftMonthKeepingDay(dateText, deltaMonths) {
@@ -277,7 +324,7 @@ const CalendarPage = (() => {
     if (value === 'tasks') return 'tasks and reminders';
     if (value === 'work') return 'work';
     if (value === 'imports') return 'imports';
-    if (value === 'sources') return 'source imports';
+    if (value === 'sources') return 'source records';
     return 'all sources';
   }
 
@@ -402,6 +449,20 @@ const CalendarPage = (() => {
       || String(a.event_id || '').localeCompare(String(b.event_id || ''));
   }
 
+  function isUpcomingEvent(event, nowParts = londonNowParts()) {
+    if (event?.start_at) {
+      const start = new Date(event.start_at);
+      if (!Number.isNaN(start.getTime())) return start.getTime() >= Date.now();
+    }
+    const localDate = eventStartDate(event);
+    if (!localDate) return false;
+    if (localDate > nowParts.date) return true;
+    if (localDate < nowParts.date) return false;
+    const localStart = calendarMeta(event).local_start_time || '';
+    if (!localStart || isAllDay(event)) return true;
+    return `${localDate}T${localStart}` >= nowParts.stamp;
+  }
+
   function visibleEvents() {
     const items = state.data?.items || [];
     return items.filter(matchesFilter);
@@ -481,29 +542,128 @@ const CalendarPage = (() => {
     const rows = eventsInRange(detailRangeStart(), detailRangeEnd());
     const timed = rows.filter(event => !isAllDay(event));
     const allDay = rows.filter(isAllDay);
-    const upcoming = visibleEvents()
-      .filter(event => eventStartDate(event) >= state.date)
-      .sort(compareEvents)
-      .slice(0, 16);
+    const nowParts = londonNowParts();
+    const upcoming = state.upcomingWide
+      ? (state.upcomingWideLoading ? [] : state.upcomingWideItems)
+      : rows.filter(event => isUpcomingEvent(event, nowParts)).sort(compareEvents).slice(0, 16);
     return { timed, allDay, upcoming };
+  }
+
+  function daySummaryTargetDate() {
+    return detailRangeStart();
+  }
+
+  function ensureDaySummary() {
+    const targetDate = daySummaryTargetDate();
+    if (!targetDate) return;
+    if (
+      state.daySummaryDate === targetDate
+      && (state.daySummary || state.daySummaryLoading || state.daySummaryError)
+    ) {
+      return;
+    }
+    fetchDaySummary(targetDate);
+  }
+
+  async function fetchDaySummary(dateText) {
+    const requestId = state.daySummaryRequestId + 1;
+    state.daySummaryRequestId = requestId;
+    state.daySummaryDate = dateText;
+    state.daySummary = null;
+    state.daySummaryError = '';
+    state.daySummaryLoading = true;
+    try {
+      const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
+      const params = new URLSearchParams({ date: dateText, source_filter: 'all' });
+      const resp = await fetcher(`/api/v1/personal/diary-day?${params.toString()}`);
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(responseErrorMessage(data, resp.status));
+      if (requestId !== state.daySummaryRequestId) return;
+      state.daySummary = data;
+    } catch (error) {
+      if (requestId !== state.daySummaryRequestId) return;
+      state.daySummaryError = error?.message || String(error);
+    } finally {
+      if (requestId === state.daySummaryRequestId) {
+        state.daySummaryLoading = false;
+        render();
+      }
+    }
+  }
+
+  async function generateDaySummary() {
+    const dateText = daySummaryTargetDate();
+    if (!dateText || state.daySummaryLoading) return false;
+    const requestId = state.daySummaryRequestId + 1;
+    state.daySummaryRequestId = requestId;
+    state.daySummaryDate = dateText;
+    state.daySummary = null;
+    state.daySummaryError = '';
+    state.daySummaryLoading = true;
+    render();
+    try {
+      const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
+      const resp = await fetcher('/api/v1/personal/diary-day/summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          local_date: dateText,
+          actor: 'blueprints-ui',
+          source_surface: 'calendar-page',
+          request_id: `calendar-day-summary-${Date.now()}`,
+        }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(responseErrorMessage(data, resp.status));
+      if (requestId !== state.daySummaryRequestId) return false;
+      state.daySummary = data.day || null;
+      return true;
+    } catch (error) {
+      if (requestId !== state.daySummaryRequestId) return false;
+      state.daySummaryError = error?.message || String(error);
+      state.daySummary = null;
+      return false;
+    } finally {
+      if (requestId === state.daySummaryRequestId) {
+        state.daySummaryLoading = false;
+        render();
+      }
+    }
+  }
+
+  function activeCalendarRange() {
+    if (hasManualRange()) {
+      return { start: state.manualRangeStart, end: state.manualRangeEnd };
+    }
+    if (state.mode === 'week') {
+      return {
+        start: localDateString(startOfWeek(parseLocalDate(state.date))),
+        end: localDateString(endOfWeek(parseLocalDate(state.date))),
+      };
+    }
+    return null;
   }
 
   function dayClass(dateText, currentMonth, options = {}) {
     const classes = ['calendar-day'];
     const date = parseLocalDate(dateText);
     const isOutside = date.getMonth() !== currentMonth;
-    const isManualRange = hasManualRange();
-    const isInManualRange = isManualRange && dateText >= state.manualRangeStart && dateText <= state.manualRangeEnd;
-    const isRangeEdge = isInManualRange && (dateText === state.manualRangeStart || dateText === state.manualRangeEnd);
-    const showRange = isInManualRange && (!isOutside || options.rangeOutsideDays !== false);
+    const activeRange = activeCalendarRange();
+    const hasActiveRange = Boolean(activeRange);
+    const isInRange = hasActiveRange && dateText >= activeRange.start && dateText <= activeRange.end;
+    const isRangeEdge = isInRange && (dateText === activeRange.start || dateText === activeRange.end);
+    const showRange = isInRange && (!isOutside || options.rangeOutsideDays !== false);
+    const showSelected = !hasActiveRange
+      && dateText === state.date
+      && (!isOutside || options.selectedOutsideDays !== false);
     if (isOutside) classes.push('calendar-day--outside');
-    if (dateText === localDateString(new Date()) && (!isManualRange || (showRange && isRangeEdge))) {
+    if (dateText === localDateString(new Date()) && (!hasActiveRange || (showRange && isRangeEdge))) {
       classes.push('calendar-day--today');
     }
     if (showRange) {
       classes.push('calendar-day--range');
       if (isRangeEdge) classes.push('calendar-day--range-edge');
-    } else if (dateText === state.date && (!isInManualRange || options.rangeOutsideDays !== false || !isOutside)) {
+    } else if (showSelected) {
       classes.push('calendar-day--selected');
     }
     return classes.join(' ');
@@ -535,7 +695,7 @@ const CalendarPage = (() => {
       const dateText = localDateString(date);
       const events = dateEvents.get(dateText) || [];
       return `
-        <button class="${dayClass(dateText, month, { rangeOutsideDays: false })} calendar-mini-day" type="button"
+        <button class="${dayClass(dateText, month, { rangeOutsideDays: false, selectedOutsideDays: false })} calendar-mini-day" type="button"
                 data-calendar-action="select-day" data-calendar-date="${escHtml(dateText)}"
                 aria-label="${escHtml(monthLabel(dateText, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }))}">
           <span class="calendar-day-number">${date.getDate()}</span>
@@ -679,6 +839,7 @@ const CalendarPage = (() => {
     });
     renderContentPanels();
     renderContentViewTrigger();
+    refreshOpenContentViewModal();
     if (window.PersonalFilters?.renderAll) window.PersonalFilters.renderAll();
   }
 
@@ -713,6 +874,58 @@ const CalendarPage = (() => {
     `;
   }
 
+  function daySummaryHtml() {
+    ensureDaySummary();
+    const dateText = daySummaryTargetDate();
+    const label = monthLabel(dateText, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+    let body = 'No summary for this day.';
+    if (state.daySummaryLoading) {
+      body = 'Loading day summary...';
+    } else if (state.daySummaryError) {
+      body = `Day summary unavailable: ${state.daySummaryError}`;
+    } else {
+      const info = state.daySummary?.summary || {};
+      if (info.state === 'ready') body = info.excerpt || info.file_ref || 'day-summary.md';
+      else if (info.state === 'summary_pending') body = 'Summary pending.';
+    }
+    return `
+      <div class="calendar-day-summary">
+        <div class="calendar-day-summary__head">
+          <span class="calendar-day-summary__title">Day Summary</span>
+          <span class="calendar-day-summary__meta">
+            <span class="calendar-day-summary__date">${escHtml(label)}</span>
+            <button class="calendar-command-btn calendar-day-summary__generate" type="button" data-calendar-action="generate-day-summary"${state.daySummaryLoading ? ' disabled' : ''}>${state.daySummaryLoading ? 'Generating' : 'Generate'}</button>
+          </span>
+        </div>
+        <div class="calendar-day-summary__body">${escHtml(body)}</div>
+      </div>
+    `;
+  }
+
+  function upcomingEmptyMessage() {
+    if (state.upcomingWideLoading) return `Loading future items for the next ${UPCOMING_WIDE_YEARS} years...`;
+    if (state.upcomingWideError) return `Upcoming refresh failed: ${state.upcomingWideError}`;
+    if (state.upcomingWide) return `No future items in the next ${UPCOMING_WIDE_YEARS} years.`;
+    return 'No future items for this range.';
+  }
+
+  function upcomingScopeHtml() {
+    return `
+      <label class="calendar-check calendar-upcoming-scope hub-checkbox">
+        <input class="hub-checkbox__input" type="checkbox" data-calendar-upcoming-next-years${state.upcomingWide ? ' checked' : ''}${state.upcomingWideLoading ? ' disabled' : ''} />
+        <span class="hub-checkbox__box" aria-hidden="true"></span>
+        <span class="hub-checkbox__label">Next ${UPCOMING_WIDE_YEARS} years</span>
+      </label>
+    `;
+  }
+
+  function syncUpcomingControls() {
+    document.querySelectorAll('[data-calendar-upcoming-next-years]').forEach(control => {
+      control.checked = state.upcomingWide;
+      control.disabled = state.upcomingWideLoading;
+    });
+  }
+
   function renderSelectedSummary(rows) {
     const target = el('calendar-selected-summary');
     if (!target) return;
@@ -724,21 +937,25 @@ const CalendarPage = (() => {
     const selectedRows = rows.timed.concat(rows.allDay).sort(compareEvents);
     const count = el('calendar-agenda-count');
     if (count) count.textContent = String(selectedRows.length);
+    const upcomingCount = el('calendar-upcoming-count');
+    if (upcomingCount) upcomingCount.textContent = String(rows.upcoming.length);
     renderSelectedSummary(rows);
     renderList('calendar-agenda-list', selectedRows, 'selected', 'No visible items for this range.');
-    renderList('calendar-all-day-list', rows.allDay, 'all-day', 'No all-day items or milestones for this range.');
-    renderList('calendar-upcoming-list', rows.upcoming, 'upcoming', 'No upcoming items for this range.');
+    const allDayTarget = el('calendar-all-day-list');
+    if (allDayTarget) {
+      allDayTarget.innerHTML = `${daySummaryHtml()}${listHtml(rows.allDay, 'all-day', 'No all-day items or milestones for this range.')}`;
+    }
+    renderList('calendar-upcoming-list', rows.upcoming, 'upcoming', upcomingEmptyMessage());
+    syncUpcomingControls();
   }
 
-  function renderProvenance() {
-    const target = el('calendar-provenance');
-    if (!target) return;
+  function provenanceRows() {
     const params = new URLSearchParams({
       date_start: rangeStart(),
       date_end: rangeEnd(),
       limit: '200',
     });
-    const rows = [
+    return [
       ['Events API', `/api/v1/personal/events?${params.toString()}`, 'shared read path'],
       ['Write API', '/api/v1/personal/calendar/events', 'manual-calendar source'],
       ['Calendar range', `${state.view} / ${rangeLabel()}`, `year starts ${MONTH_NAMES[state.yearStartMonth]}`],
@@ -746,7 +963,10 @@ const CalendarPage = (() => {
       ['Legacy page id', 'tab-calender', 'calendar route alias maps here'],
       ['Mode/filter', `${state.mode} / ${state.sourceFilter}`, 'client projection'],
     ];
-    target.innerHTML = rows.map(([title, path, meta]) => `
+  }
+
+  function provenanceRowsHtml() {
+    return provenanceRows().map(([title, path, meta]) => `
       <div class="calendar-provenance-row">
         <div class="calendar-provenance-main">
           <div class="calendar-provenance-title">${escHtml(title)}</div>
@@ -755,6 +975,12 @@ const CalendarPage = (() => {
         </div>
       </div>
     `).join('');
+  }
+
+  function renderProvenance() {
+    const target = el('calendar-provenance');
+    if (!target) return;
+    target.innerHTML = provenanceRowsHtml();
   }
 
   function render() {
@@ -779,6 +1005,71 @@ const CalendarPage = (() => {
     }
     const meta = el('calendar-meta');
     if (meta) meta.textContent = 'Calendar refresh failed';
+  }
+
+  function upcomingWideEndDate(startText) {
+    const date = parseLocalDate(startText);
+    date.setFullYear(date.getFullYear() + UPCOMING_WIDE_YEARS);
+    return localDateString(date);
+  }
+
+  async function fetchUpcomingWide() {
+    const requestId = state.upcomingWideRequestId + 1;
+    state.upcomingWideRequestId = requestId;
+    state.upcomingWideLoading = true;
+    state.upcomingWideError = '';
+    state.selection = null;
+    render();
+    const nowParts = londonNowParts();
+    try {
+      const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
+      const items = [];
+      let offset = 0;
+      for (let page = 0; items.length < UPCOMING_WIDE_MAX_EVENTS; page += 1) {
+        const params = new URLSearchParams({
+          date_start: nowParts.date,
+          date_end: upcomingWideEndDate(nowParts.date),
+          limit: String(UPCOMING_WIDE_BATCH_SIZE),
+          offset: String(offset),
+        });
+        const resp = await fetcher(`/api/v1/personal/events?${params.toString()}`);
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(responseErrorMessage(data, resp.status));
+        const pageItems = Array.isArray(data.items) ? data.items : [];
+        items.push(...pageItems);
+        const pagination = data.pagination || {};
+        if (!pagination.has_more || pageItems.length < UPCOMING_WIDE_BATCH_SIZE) break;
+        offset += UPCOMING_WIDE_BATCH_SIZE;
+      }
+      if (requestId !== state.upcomingWideRequestId) return;
+      state.upcomingWideItems = items
+        .filter(event => isUpcomingEvent(event, nowParts))
+        .sort(compareEvents)
+        .slice(0, UPCOMING_WIDE_MAX_EVENTS);
+    } catch (error) {
+      if (requestId !== state.upcomingWideRequestId) return;
+      state.upcomingWideError = error?.message || String(error);
+      state.upcomingWideItems = [];
+    } finally {
+      if (requestId === state.upcomingWideRequestId) {
+        state.upcomingWideLoading = false;
+        render();
+      }
+    }
+  }
+
+  function setUpcomingWide(enabled) {
+    const next = Boolean(enabled);
+    state.upcomingWide = next;
+    state.selection = null;
+    if (!next) {
+      state.upcomingWideRequestId += 1;
+      state.upcomingWideLoading = false;
+      state.upcomingWideError = '';
+      render();
+      return;
+    }
+    fetchUpcomingWide();
   }
 
   async function load(options = {}) {
@@ -841,6 +1132,7 @@ const CalendarPage = (() => {
     state.selection = null;
     clearManualRange();
     syncCreateDate();
+    syncSearchRange(true);
     return load({ force: true });
   }
 
@@ -849,13 +1141,18 @@ const CalendarPage = (() => {
     state.selection = null;
     clearManualRange(state.mode === 'range' ? 'day' : null);
     syncCreateDate();
-    if (drillDown || state.view === 'year') {
+    syncSearchRange(true);
+    if (drillDown) {
       state.view = 'month';
       state.contentView = 'calendar';
       writeStoredValue(VIEW_STORAGE_KEY, state.view);
       writeStoredValue(CONTENT_VIEW_STORAGE_KEY, state.contentView);
       state.loaded = false;
       return load({ force: true });
+    }
+    if (state.view === 'year') {
+      setManualRange(state.date, state.date);
+      return Promise.resolve(state.data);
     }
     render();
     return Promise.resolve(state.data);
@@ -869,6 +1166,7 @@ const CalendarPage = (() => {
     state.selection = null;
     clearManualRange();
     syncCreateDate();
+    syncSearchRange(true);
     writeStoredValue(VIEW_STORAGE_KEY, state.view);
     writeStoredValue(CONTENT_VIEW_STORAGE_KEY, state.contentView);
     return load({ force: true });
@@ -880,6 +1178,7 @@ const CalendarPage = (() => {
     state.loaded = false;
     state.selection = null;
     clearManualRange();
+    syncSearchRange(true);
     writeStoredValue(VIEW_STORAGE_KEY, state.view);
     writeStoredValue(CONTENT_VIEW_STORAGE_KEY, state.contentView);
     return load({ force: true });
@@ -889,6 +1188,7 @@ const CalendarPage = (() => {
     clearManualRange(mode === 'week' ? 'week' : 'day');
     state.mode = mode === 'week' ? 'week' : 'day';
     state.selection = null;
+    syncSearchRange(true);
     render();
     return state.mode;
   }
@@ -928,14 +1228,15 @@ const CalendarPage = (() => {
   }
 
   function openFilterModal(tab = 'filters') {
-    setContentView(tab === 'settings' ? 'filter-settings' : 'filters');
-    if (window.PersonalFilters?.openModal) return window.PersonalFilters.openModal('calendar', tab);
-    return true;
+    const cleanTab = tab === 'settings' || tab === 'filter-settings' ? 'settings' : 'filters';
+    closeContentViewMenu();
+    if (window.PersonalFilters?.openModal) return window.PersonalFilters.openModal('calendar', cleanTab);
+    return setContentView(cleanTab === 'settings' ? 'filter-settings' : 'filters');
   }
 
   function setContentView(view) {
     const previous = state.contentView;
-    state.contentView = normalizeContentView(view);
+    state.contentView = normalizeInlineContentView(view);
     if (state.contentView === 'filter-settings' && previous !== state.contentView) {
       window.PersonalFilters?.resetSettingsOrder?.('calendar');
     }
@@ -946,8 +1247,8 @@ const CalendarPage = (() => {
   }
 
   function cycleContentView() {
-    const current = Math.max(0, CONTENT_VIEW_IDS.indexOf(state.contentView));
-    return setContentView(CONTENT_VIEW_IDS[(current + 1) % CONTENT_VIEW_IDS.length]);
+    const current = Math.max(0, INLINE_CONTENT_VIEW_IDS.indexOf(state.contentView));
+    return setContentView(INLINE_CONTENT_VIEW_IDS[(current + 1) % INLINE_CONTENT_VIEW_IDS.length]);
   }
 
   function resetContentViewAndRefresh() {
@@ -1048,7 +1349,7 @@ const CalendarPage = (() => {
       btn.textContent = view.label;
       btn.addEventListener('click', event => {
         event.stopPropagation();
-        setContentView(view.id);
+        openContentViewModal(view.id);
       });
       menu.appendChild(btn);
     });
@@ -1091,6 +1392,7 @@ const CalendarPage = (() => {
     state.selection = null;
     clearManualRange();
     syncCreateDate();
+    syncSearchRange(true);
     return load({ force: true });
   }
 
@@ -1104,6 +1406,7 @@ const CalendarPage = (() => {
     state.selection = null;
     clearManualRange();
     syncCreateDate();
+    syncSearchRange(true);
     return load({ force: true });
   }
 
@@ -1128,6 +1431,21 @@ const CalendarPage = (() => {
     document.querySelectorAll('[data-calendar-event-end-date]').forEach(input => {
       if (force || !input.value) input.value = endDate;
     });
+    syncSearchRange(force);
+  }
+
+  function searchDefaultRange() {
+    return {
+      start: detailRangeStart(),
+      end: detailRangeEnd(),
+      label: detailRangeLabel(),
+    };
+  }
+
+  function syncSearchRange(force = false) {
+    if (window.BlueprintsPersonalSearch?.syncRange) {
+      window.BlueprintsPersonalSearch.syncRange('calendar', { force });
+    }
   }
 
   function eventTagsSummaryHtml() {
@@ -1161,7 +1479,7 @@ const CalendarPage = (() => {
     const disabled = allDay ? ' disabled' : '';
     return `
       <section class="calendar-quick-event calendar-quick-event--embedded" aria-label="New Event">
-        <div class="calendar-form-grid">
+        <div class="calendar-form-grid calendar-event-form-grid">
           <label class="calendar-field calendar-field--wide" for="${escHtml(safePrefix)}-title">
             <span>Title</span>
             <input id="${escHtml(safePrefix)}-title" type="text" maxlength="180" autocomplete="off" value="${escHtml(valueFor('title'))}" />
@@ -1182,12 +1500,14 @@ const CalendarPage = (() => {
             <span>End</span>
             <input id="${escHtml(safePrefix)}-end" type="time" value="${escHtml(valueFor('end'))}"${disabled} />
           </label>
-          <label class="calendar-check hub-checkbox" for="${escHtml(safePrefix)}-all-day">
-            <input id="${escHtml(safePrefix)}-all-day" class="hub-checkbox__input" type="checkbox" data-calendar-event-all-day="${escHtml(safePrefix)}"${allDay ? ' checked' : ''} />
-            <span class="hub-checkbox__box" aria-hidden="true"></span>
-            <span class="hub-checkbox__label">All day</span>
-          </label>
-          <div class="calendar-filter-strip calendar-event-tags-strip" role="button" tabindex="0" data-calendar-event-tags-strip data-personal-filter-open="${escHtml(EVENT_TAG_SURFACE)}" data-personal-filter-tab="filters">${eventTagsSummaryHtml()}</div>
+          <div class="calendar-event-options-row">
+            <label class="calendar-check hub-checkbox" for="${escHtml(safePrefix)}-all-day">
+              <input id="${escHtml(safePrefix)}-all-day" class="hub-checkbox__input" type="checkbox" data-calendar-event-all-day="${escHtml(safePrefix)}"${allDay ? ' checked' : ''} />
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label">All day</span>
+            </label>
+            <div class="calendar-filter-strip calendar-event-tags-strip" role="button" tabindex="0" data-calendar-event-tags-strip data-personal-filter-open="${escHtml(EVENT_TAG_SURFACE)}" data-personal-filter-tab="filters">${eventTagsSummaryHtml()}</div>
+          </div>
           <label class="calendar-field calendar-field--wide calendar-field--notes" for="${escHtml(safePrefix)}-body">
             <span>Notes</span>
             <textarea id="${escHtml(safePrefix)}-body" rows="2" maxlength="2000">${escHtml(valueFor('body'))}</textarea>
@@ -1208,45 +1528,194 @@ const CalendarPage = (() => {
   }
 
   function embeddedSearchHtml(host) {
-    const instance = host?.id === 'calendar-filter-inline-panel'
+    const instance = host?.dataset?.calendarModalHost === '1'
+      ? 'calendar-modal-search'
+      : (host?.id === 'calendar-filter-inline-panel'
       ? 'calendar-inline-search'
-      : (host?.closest?.('#ultrawide-sidecar-body') ? 'calendar-sidecar-search' : 'calendar-panel-search');
+      : (host?.closest?.('#ultrawide-sidecar-body') ? 'calendar-sidecar-search' : 'calendar-panel-search'));
     window.setTimeout(() => {
       if (window.BlueprintsPersonalSearch?.init) window.BlueprintsPersonalSearch.init();
     }, 0);
     return `<div class="personal-search-strip personal-search-strip--embedded" data-personal-search-surface="calendar" data-personal-search-instance="${escHtml(instance)}"></div>`;
   }
 
-  function embeddedSelectedHtml() {
+  function embeddedSelectedHtml(options = {}) {
     const rows = groupEvents();
     const selectedRows = rows.timed.concat(rows.allDay).sort(compareEvents);
-    return `
-      <section class="calendar-band calendar-band--embedded-selected" aria-label="Selected Range Visible Items">
-        <div class="calendar-section-head">
+    const head = options.modal
+      ? ''
+      : `<div class="calendar-section-head">
           <h3>Selected Range Visible Items</h3>
           <span class="calendar-pill">${escHtml(selectedRows.length)}</span>
-        </div>
+        </div>`;
+    return `
+      <section class="calendar-band calendar-band--embedded-selected" aria-label="Selected Range Visible Items">
+        ${head}
         <div class="calendar-selected-summary">${selectedSummaryHtml(rows)}</div>
         <div class="calendar-agenda-list">${listHtml(selectedRows, 'selected', 'No visible items for this range.')}</div>
       </section>
     `;
   }
 
+  function embeddedMilestonesHtml(options = {}) {
+    const rows = groupEvents();
+    const head = options.modal
+      ? ''
+      : `<div class="calendar-section-head">
+          <h3>All-Day And Milestones</h3>
+          <span class="calendar-pill">${escHtml(rows.allDay.length)}</span>
+        </div>`;
+    return `
+      <section class="calendar-band calendar-band--embedded-milestones" aria-label="All-Day And Milestones">
+        ${head}
+        ${daySummaryHtml()}
+        <div class="calendar-agenda-list">${listHtml(rows.allDay, 'all-day', 'No all-day items or milestones for this range.')}</div>
+      </section>
+    `;
+  }
+
+  function embeddedUpcomingHtml(options = {}) {
+    const rows = groupEvents();
+    const head = options.modal
+      ? ''
+      : `<div class="calendar-section-head">
+          <div class="calendar-section-head__cluster">
+            <h3>Upcoming</h3>
+            ${upcomingScopeHtml()}
+            <span class="calendar-pill">${escHtml(rows.upcoming.length)}</span>
+          </div>
+        </div>`;
+    return `
+      <section class="calendar-band calendar-band--embedded-upcoming" aria-label="Upcoming">
+        ${head}
+        <div class="calendar-agenda-list">${listHtml(rows.upcoming, 'upcoming', upcomingEmptyMessage())}</div>
+      </section>
+    `;
+  }
+
+  function embeddedProvenanceHtml(options = {}) {
+    const head = options.modal
+      ? ''
+      : `<div class="calendar-section-head">
+          <h3>Provenance</h3>
+        </div>`;
+    return `
+      <section class="calendar-band calendar-band--embedded-provenance" aria-label="Provenance">
+        ${head}
+        <div class="calendar-provenance-list">${provenanceRowsHtml()}</div>
+      </section>
+    `;
+  }
+
+  function contentViewModalToolsHtml(view) {
+    const rows = groupEvents();
+    if (view === 'selected') {
+      const selectedRows = rows.timed.concat(rows.allDay);
+      return `<span class="calendar-pill">${escHtml(selectedRows.length)}</span>`;
+    }
+    if (view === 'milestones') {
+      return `<span class="calendar-pill">${escHtml(rows.allDay.length)}</span>`;
+    }
+    if (view === 'upcoming') {
+      return `${upcomingScopeHtml()}<span class="calendar-pill">${escHtml(rows.upcoming.length)}</span>`;
+    }
+    return '';
+  }
+
+  function contentViewModalHtml(view) {
+    if (view === 'selected') return embeddedSelectedHtml({ modal: true });
+    if (view === 'milestones') return embeddedMilestonesHtml({ modal: true });
+    if (view === 'search') return embeddedSearchHtml({ dataset: { calendarModalHost: '1' } });
+    if (view === 'new-event') return embeddedEventFormHtml('calendar-modal-event');
+    if (view === 'upcoming') return embeddedUpcomingHtml({ modal: true });
+    if (view === 'provenance') return embeddedProvenanceHtml({ modal: true });
+    return '';
+  }
+
+  function prepareContentViewModal(view) {
+    if (view === 'new-event') {
+      syncCreateDate(hasManualRange());
+      renderEventTagSummaries();
+      setAllDayControls('calendar-modal-event');
+      window.setTimeout(() => el('calendar-modal-event-title')?.focus(), 0);
+    }
+    if (view === 'upcoming') syncUpcomingControls();
+    if (view === 'search' && window.BlueprintsPersonalSearch?.init) {
+      syncSearchRange(hasManualRange());
+      window.setTimeout(() => window.BlueprintsPersonalSearch.init(), 0);
+    }
+  }
+
+  function refreshOpenContentViewModal() {
+    const modal = el('calendar-action-modal');
+    const body = el('calendar-action-modal-body');
+    const tools = el('calendar-action-modal-tools');
+    const view = modal?.open ? modal.dataset.calendarActionModalView : '';
+    if (!body || !MODAL_CONTENT_VIEW_IDS.includes(view)) return;
+    if (tools) {
+      tools.innerHTML = contentViewModalToolsHtml(view);
+      tools.hidden = !tools.innerHTML.trim();
+    }
+    if (view === 'new-event' || view === 'search') {
+      if (view === 'new-event') {
+        syncCreateDate(hasManualRange());
+        renderEventTagSummaries();
+      }
+      if (view === 'search') syncSearchRange(hasManualRange());
+      return;
+    }
+    body.innerHTML = contentViewModalHtml(view);
+    prepareContentViewModal(view);
+  }
+
+  function openContentViewModal(view) {
+    const cleanView = normalizeContentView(view);
+    closeContentViewMenu();
+    if (cleanView === 'calendar') return setContentView('calendar');
+    if (cleanView === 'filters') return openFilterModal('filters');
+    if (cleanView === 'filter-settings') return openFilterModal('settings');
+    if (!MODAL_CONTENT_VIEW_IDS.includes(cleanView)) return false;
+    const shown = showActionModal(contentViewLabel(cleanView), contentViewModalHtml(cleanView), '', {
+      contentView: cleanView,
+      headerToolsHtml: contentViewModalToolsHtml(cleanView),
+    });
+    if (shown) prepareContentViewModal(cleanView);
+    return shown;
+  }
+
   function closeActionModal() {
     const modal = el('calendar-action-modal');
+    const body = el('calendar-action-modal-body');
+    const tools = el('calendar-action-modal-tools');
     if (!modal) return;
     if (typeof HubModal !== 'undefined') HubModal.close(modal);
     else if (typeof modal.close === 'function') modal.close();
+    modal.classList.remove('calendar-action-modal--content');
+    delete modal.dataset.calendarActionModalView;
+    if (body) body.innerHTML = '';
+    if (tools) {
+      tools.innerHTML = '';
+      tools.hidden = true;
+    }
   }
 
-  function showActionModal(title, html, status = '') {
+  function showActionModal(title, html, status = '', options = {}) {
     const modal = el('calendar-action-modal');
     const titleEl = el('calendar-action-modal-title');
     const body = el('calendar-action-modal-body');
+    const tools = el('calendar-action-modal-tools');
     const statusEl = el('calendar-action-modal-status');
     if (!modal || !body) return false;
+    const contentView = options.contentView || '';
+    modal.classList.toggle('calendar-action-modal--content', Boolean(contentView));
+    if (contentView) modal.dataset.calendarActionModalView = contentView;
+    else delete modal.dataset.calendarActionModalView;
     if (titleEl) titleEl.textContent = title;
     body.innerHTML = html;
+    if (tools) {
+      tools.innerHTML = options.headerToolsHtml || '';
+      tools.hidden = !tools.innerHTML.trim();
+    }
     if (statusEl) statusEl.textContent = status;
     if (typeof HubModal !== 'undefined') HubModal.open(modal);
     else if (typeof modal.showModal === 'function' && !modal.open) modal.showModal();
@@ -1794,13 +2263,19 @@ const CalendarPage = (() => {
         getRecords: () => state.data?.items || [],
         extraTabs: [
           { id: 'selected', label: 'Selected' },
+          { id: 'milestones', label: 'Day' },
           { id: 'search', label: 'Search' },
           { id: 'new-event', label: 'New Event' },
+          { id: 'upcoming', label: 'Upcoming' },
+          { id: 'provenance', label: 'Provenance' },
         ],
         renderTab: (tab, host) => {
           if (tab === 'selected') return embeddedSelectedHtml(host);
+          if (tab === 'milestones') return embeddedMilestonesHtml(host);
           if (tab === 'search') return embeddedSearchHtml(host);
           if (tab === 'new-event') return embeddedEventFormHtml(embeddedEventPrefixForHost(host));
+          if (tab === 'upcoming') return embeddedUpcomingHtml(host);
+          if (tab === 'provenance') return embeddedProvenanceHtml(host);
           return '';
         },
         onChange: () => {
@@ -1832,11 +2307,8 @@ const CalendarPage = (() => {
     if (window.BlueprintsPersonalSearch?.registerSurface) {
       window.BlueprintsPersonalSearch.registerSurface('calendar', {
         filterSurface: SEARCH_TAG_SURFACE,
-        getRange: () => ({
-          start: rangeStart(),
-          end: rangeEnd(),
-          label: rangeLabel(),
-        }),
+        rangeControls: true,
+        getRange: searchDefaultRange,
       });
     }
     syncCreateDate();
@@ -1854,6 +2326,7 @@ const CalendarPage = (() => {
       if (action === 'today') today();
       if (action === 'next') next();
       if (action === 'refresh') load({ force: true });
+      if (action === 'generate-day-summary') generateDaySummary();
       if (action === 'view-year') setView('year');
       if (action === 'view-month') setView('month');
       if (action === 'mode-day') setMode('day');
@@ -1863,10 +2336,20 @@ const CalendarPage = (() => {
           suppressSelectDayClick = false;
           return;
         }
-        selectDay(btn.dataset.calendarDate, state.view === 'year');
+        if (state.view === 'year' && event.detail >= 2) {
+          openMonth(btn.dataset.calendarDate);
+          return;
+        }
+        selectDay(btn.dataset.calendarDate);
       }
       if (action === 'open-month') openMonth(btn.dataset.calendarDate);
       if (action === 'submit-event') submitEvent(btn.dataset.calendarEventPrefix || 'calendar-event');
+    });
+    root.addEventListener('dblclick', event => {
+      const btn = event.target.closest('[data-calendar-action="select-day"][data-calendar-date]');
+      if (!btn || state.view !== 'year') return;
+      event.preventDefault();
+      openMonth(btn.dataset.calendarDate);
     });
     document.addEventListener('click', event => {
       const btn = event.target.closest('[data-calendar-action="submit-event"]');
@@ -1880,6 +2363,11 @@ const CalendarPage = (() => {
         const prefix = dateControl.id.replace(/-date$/, '');
         const endDate = el(`${prefix}-end-date`);
         if (endDate && (!endDate.value || endDate.value < dateControl.value)) endDate.value = dateControl.value;
+      }
+      const upcomingControl = event.target.closest('[data-calendar-upcoming-next-years]');
+      if (upcomingControl) {
+        setUpcomingWide(upcomingControl.checked);
+        return;
       }
       const control = event.target.closest('[data-calendar-event-all-day]');
       if (!control) return;
@@ -1918,6 +2406,11 @@ const CalendarPage = (() => {
     const modalBody = el('calendar-action-modal-body');
     if (modalBody) {
       modalBody.addEventListener('click', event => {
+        const summaryBtn = event.target.closest('[data-calendar-action="generate-day-summary"]');
+        if (summaryBtn) {
+          generateDaySummary();
+          return;
+        }
         const btn = event.target.closest('[data-calendar-modal-action]');
         if (!btn) return;
         if (btn.dataset.calendarModalAction === 'submit-edit') submitEdit();
@@ -1950,6 +2443,10 @@ const CalendarPage = (() => {
       source_filter: state.sourceFilter,
       selected_filters: window.PersonalFilters?.getSelectedIds ? window.PersonalFilters.getSelectedIds('calendar') : [],
       new_event_tags: eventTagIds(),
+      upcoming_next_years: state.upcomingWide,
+      upcoming_loading: state.upcomingWideLoading,
+      upcoming_error: state.upcomingWideError,
+      upcoming_count: groupEvents().upcoming.length,
       event_count: visibleEvents().length,
       total_count: items.length,
       manual_calendar_count: items.filter(isCalendarEvent).length,
@@ -1973,8 +2470,14 @@ const CalendarPage = (() => {
     viewMonth: () => setView('month'),
     toggleContentView: cycleContentView,
     setContentView,
+    showContentView: openContentViewModal,
     showFilters: () => openFilterModal('filters'),
     showFilterSettings: () => openFilterModal('settings'),
+    showSelected: () => openContentViewModal('selected'),
+    showMilestones: () => openContentViewModal('milestones'),
+    showSearch: () => openContentViewModal('search'),
+    showUpcoming: () => openContentViewModal('upcoming'),
+    showProvenance: () => openContentViewModal('provenance'),
     modeDay: () => setMode('day'),
     modeWeek: () => setMode('week'),
     filterAll: () => setSourceFilter('all'),
@@ -1983,17 +2486,7 @@ const CalendarPage = (() => {
     filterWork: () => setSourceFilter('work'),
     filterImports: () => setSourceFilter('imports'),
     filterSources: () => setSourceFilter('sources'),
-    newEvent: () => {
-      setContentView('new-event');
-      syncCreateDate(hasManualRange());
-      renderEventTagSummaries();
-      const field = el('calendar-event-title');
-      if (field) {
-        field.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        field.focus();
-      }
-      return true;
-    },
+    newEvent: () => openContentViewModal('new-event'),
     submitEvent,
     editSelected,
     openSource,
@@ -2014,6 +2507,11 @@ if (typeof DaveMenuConfig !== 'undefined') {
     'calendar.toggleContentView': () => CalendarPage.toggleContentView(),
     'calendar.showFilters': () => CalendarPage.showFilters(),
     'calendar.showFilterSettings': () => CalendarPage.showFilterSettings(),
+    'calendar.showSelected': () => CalendarPage.showSelected(),
+    'calendar.showMilestones': () => CalendarPage.showMilestones(),
+    'calendar.showSearch': () => CalendarPage.showSearch(),
+    'calendar.showUpcoming': () => CalendarPage.showUpcoming(),
+    'calendar.showProvenance': () => CalendarPage.showProvenance(),
     'calendar.previous': () => CalendarPage.previous(),
     'calendar.next': () => CalendarPage.next(),
     'calendar.today': () => CalendarPage.today(),

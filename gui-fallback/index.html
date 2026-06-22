@@ -3386,7 +3386,7 @@
       <section class="calendar-view-section" aria-label="Calendar view" data-calendar-content-view="calendar">
         <div id="calendar-view-root" class="calendar-view-root"></div>
         <div class="calendar-filter-under-panel" aria-label="Calendar filters">
-          <div id="calendar-filter-inline-panel" data-personal-filter-host data-personal-filter-surface="calendar" data-personal-filter-layout="tabs" data-personal-filter-extra-tabs="selected,search,new-event"></div>
+          <div id="calendar-filter-inline-panel" data-personal-filter-host data-personal-filter-surface="calendar" data-personal-filter-layout="tabs" data-personal-filter-extra-tabs="selected,milestones,search,new-event,upcoming,provenance"></div>
         </div>
       </section>
 
@@ -3426,7 +3426,7 @@
           <h3 id="calendar-quick-event-heading">New Event</h3>
           <span class="calendar-pill" id="calendar-write-pill">Ready</span>
         </div>
-        <div class="calendar-form-grid">
+        <div class="calendar-form-grid calendar-event-form-grid">
           <label class="calendar-field calendar-field--wide" for="calendar-event-title">
             <span>Title</span>
             <input id="calendar-event-title" type="text" maxlength="180" autocomplete="off" />
@@ -3447,12 +3447,14 @@
             <span>End</span>
             <input id="calendar-event-end" type="time" />
           </label>
-          <label class="calendar-check hub-checkbox" for="calendar-event-all-day">
-            <input id="calendar-event-all-day" class="hub-checkbox__input" type="checkbox" data-calendar-event-all-day="calendar-event" />
-            <span class="hub-checkbox__box" aria-hidden="true"></span>
-            <span class="hub-checkbox__label">All day</span>
-          </label>
-          <div class="calendar-filter-strip calendar-event-tags-strip" role="button" tabindex="0" data-calendar-event-tags-strip data-personal-filter-open="calendar-event" data-personal-filter-tab="filters">Tags: Calendar</div>
+          <div class="calendar-event-options-row">
+            <label class="calendar-check hub-checkbox" for="calendar-event-all-day">
+              <input id="calendar-event-all-day" class="hub-checkbox__input" type="checkbox" data-calendar-event-all-day="calendar-event" />
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label">All day</span>
+            </label>
+            <div class="calendar-filter-strip calendar-event-tags-strip" role="button" tabindex="0" data-calendar-event-tags-strip data-personal-filter-open="calendar-event" data-personal-filter-tab="filters">Tags: Calendar</div>
+          </div>
           <label class="calendar-field calendar-field--wide calendar-field--notes" for="calendar-event-body">
             <span>Notes</span>
             <textarea id="calendar-event-body" rows="2" maxlength="2000"></textarea>
@@ -3466,7 +3468,15 @@
 
       <section class="calendar-band" aria-labelledby="calendar-upcoming-heading" data-calendar-content-view="upcoming">
         <div class="calendar-section-head">
-          <h3 id="calendar-upcoming-heading">Upcoming</h3>
+          <div class="calendar-section-head__cluster">
+            <h3 id="calendar-upcoming-heading">Upcoming</h3>
+            <label class="calendar-check calendar-upcoming-scope hub-checkbox">
+              <input class="hub-checkbox__input" type="checkbox" data-calendar-upcoming-next-years />
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label">Next 10 years</span>
+            </label>
+            <span id="calendar-upcoming-count" class="calendar-pill">0</span>
+          </div>
         </div>
         <div id="calendar-upcoming-list" class="calendar-agenda-list"></div>
       </section>
@@ -3722,8 +3732,12 @@
 
   <dialog class="hub-modal hub-dialog" data-tone="info" id="calendar-action-modal" style="width:min(720px,94vw);max-width:94vw">
     <div class="hub-modal-header">
-      <h3 class="hub-dialog-title" id="calendar-action-modal-title">Calendar Action</h3>
-      <button type="button" class="hub-modal-close" id="calendar-action-modal-close" aria-label="Close"></button>
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">CALENDAR</span>
+        <span class="hub-dialog-title-text" id="calendar-action-modal-title">Calendar Action</span>
+      </h2>
+      <div class="calendar-action-modal-tools" id="calendar-action-modal-tools" hidden></div>
+      <button type="button" class="hub-modal-close hub-dialog-close" id="calendar-action-modal-close" aria-label="Close">&#10005;</button>
     </div>
     <div class="hub-modal-body calendar-action-modal-body" id="calendar-action-modal-body"></div>
     <div class="hub-modal-footer">

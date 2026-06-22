@@ -319,6 +319,33 @@
     white-space: nowrap;
 }
 
+.hub-context-menu-floating--columns .hub-context-menu-floating__menu {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(138px, 1fr));
+    gap: 6px;
+    width: min(560px, calc(100vw - 16px));
+    min-width: 0;
+    max-height: min(70vh, calc(100vh - 16px));
+    overflow: auto;
+}
+
+.hub-context-menu-floating__column {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.hub-context-menu-floating--columns .hub-dropdown-item {
+    min-width: 0;
+}
+
+@media (max-width: 500px) {
+    .hub-context-menu-floating--columns .hub-context-menu-floating__menu {
+        grid-template-columns: repeat(2, minmax(132px, 1fr));
+    }
+}
+
 .hub-primary-menu-floating {
     position: fixed;
     z-index: 12000;

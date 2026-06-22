@@ -393,8 +393,13 @@
 }
 
 .personal-filter-field select option {
-  background-color: #11151f;
-  color: var(--text);
+  background-color: #05070d;
+  color: #fff;
+}
+
+.personal-filter-field select option:checked {
+  background-color: #17345f;
+  color: #fff;
 }
 
 .personal-filter-settings__preview {

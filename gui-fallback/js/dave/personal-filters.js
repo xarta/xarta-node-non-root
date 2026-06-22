@@ -37,7 +37,7 @@ const PersonalFilters = (() => {
     tasks: { label: 'Tasks', color: 'green', shape: 'square', fill: 'outline' },
     work: { label: 'Work', color: 'gold', shape: 'rectangle', fill: 'outline' },
     imports: { label: 'Imports', color: 'purple', shape: 'rhombus', fill: 'outline' },
-    sources: { label: 'Source imports', color: 'grey', shape: 'pentagon', fill: 'outline' },
+    sources: { label: 'Source records', color: 'grey', shape: 'pentagon', fill: 'outline' },
     holiday: { label: 'Holiday', color: 'orange', shape: 'star', fill: 'filled' },
     'personal-holiday': { label: 'Personal holiday', color: 'pink', shape: 'circle', fill: 'filled' },
     'national-holiday': { label: 'National holiday', color: 'red', shape: 'star', fill: 'outline' },
@@ -416,8 +416,12 @@ const PersonalFilters = (() => {
     const color = COLORS.some(([value]) => value === setting.color) ? setting.color : (fallback.color || 'blue');
     const shape = SHAPES.includes(setting.shape) ? setting.shape : (fallback.shape || 'circle');
     const fill = FILLS.includes(setting.fill) ? setting.fill : (fallback.fill || 'outline');
+    let label = String(setting.label || fallback.label || titleCase(id));
+    if (id === 'sources' && label.trim().toLowerCase() === 'source imports') {
+      label = fallback.label || 'Source records';
+    }
     return {
-      label: String(setting.label || fallback.label || titleCase(id)),
+      label,
       color,
       shape,
       fill,
@@ -1041,8 +1045,7 @@ const PersonalFilters = (() => {
     if (!modal || !root) return false;
     root.dataset.personalFilterSurface = surface;
     root.dataset.personalFilterLayout = 'tabs';
-    if (surface === 'calendar') root.dataset.personalFilterExtraTabs = 'selected,search,new-event';
-    else delete root.dataset.personalFilterExtraTabs;
+    delete root.dataset.personalFilterExtraTabs;
     root.dataset.personalFilterTab = tab === 'filter-settings' ? 'settings' : (tab || 'filters');
     resetSettingsOrderForHost(root);
     if (title) title.textContent = tab === 'settings' ? 'Filter Settings' : 'Filters';
@@ -1066,7 +1069,7 @@ const PersonalFilters = (() => {
     const surface = pageSurfaceFromState(current);
     if (!surface) return false;
     const title = `${surface === 'todo' ? 'ToDo' : titleCase(surface)} Filters`;
-    const extraTabs = surface === 'calendar' ? ' data-personal-filter-extra-tabs="selected,search,new-event"' : '';
+    const extraTabs = surface === 'calendar' ? ' data-personal-filter-extra-tabs="selected,milestones,search,new-event,upcoming,provenance"' : '';
     window.UltrawideSidecar.setTitle(title);
     window.UltrawideSidecar.setHTML(`<div class="personal-filter-sidecar-host" data-personal-filter-host data-personal-filter-surface="${escHtml(surface)}" data-personal-filter-layout="tabs" data-personal-filter-framed="false"${extraTabs}></div>`);
     renderHost(document.querySelector('#ultrawide-sidecar-body [data-personal-filter-host]'));
