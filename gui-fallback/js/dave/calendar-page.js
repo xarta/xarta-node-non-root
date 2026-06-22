@@ -861,7 +861,11 @@ const CalendarPage = (() => {
   }
 
   function setContentView(view) {
+    const previous = state.contentView;
     state.contentView = normalizeContentView(view);
+    if (state.contentView === 'filter-settings' && previous !== state.contentView) {
+      window.PersonalFilters?.resetSettingsOrder?.('calendar');
+    }
     writeStoredValue(CONTENT_VIEW_STORAGE_KEY, state.contentView);
     closeContentViewMenu();
     render();

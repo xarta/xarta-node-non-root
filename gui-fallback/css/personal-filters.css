@@ -70,8 +70,7 @@
 }
 
 .personal-filter-summary__label,
-.personal-filter-summary__empty,
-.personal-filter-settings__count {
+.personal-filter-summary__empty {
   color: var(--text-dim);
   font-size: 12px;
 }
@@ -186,13 +185,12 @@
 }
 
 .personal-filter-chip.is-selected {
-  border-color: #d9aa32;
-  box-shadow: 0 0 0 1px rgba(217, 170, 50, .72), 0 0 14px rgba(217, 170, 50, .36);
-  filter: drop-shadow(0 0 10px rgba(217, 170, 50, .28));
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, .72), 0 0 14px color-mix(in srgb, var(--pf-color) 48%, transparent);
+  filter: drop-shadow(0 0 9px color-mix(in srgb, var(--pf-color) 34%, transparent));
 }
 
 .personal-filter-chip[data-shape="crescent"].is-selected {
-  box-shadow: inset 16px 0 0 rgba(8, 12, 20, .78), 0 0 0 1px rgba(217, 170, 50, .72), 0 0 14px rgba(217, 170, 50, .36);
+  box-shadow: inset 16px 0 0 rgba(8, 12, 20, .78), 0 0 0 2px rgba(255, 255, 255, .72), 0 0 14px color-mix(in srgb, var(--pf-color) 48%, transparent);
 }
 
 .personal-filter-chip__label,
@@ -283,13 +281,21 @@
 .personal-filter-chip[data-shape="star"].is-selected::before,
 .personal-filter-chip[data-shape="pentagon"].is-selected::before,
 .personal-filter-chip[data-shape="rhombus"].is-selected::before {
-  background: #d9aa32;
+  background: color-mix(in srgb, var(--pf-color) 82%, transparent);
+}
+
+.personal-filter-chip[data-shape="triangle"].is-selected,
+.personal-filter-chip[data-shape="star"].is-selected,
+.personal-filter-chip[data-shape="pentagon"].is-selected,
+.personal-filter-chip[data-shape="rhombus"].is-selected {
+  box-shadow: none;
+  filter: drop-shadow(0 0 1px rgba(255, 255, 255, .96)) drop-shadow(0 0 10px color-mix(in srgb, var(--pf-color) 46%, transparent));
 }
 
 .personal-filter-settings__new,
 .personal-filter-settings-row {
   display: grid;
-  grid-template-columns: minmax(130px, 1.1fr) minmax(110px, .85fr) minmax(120px, .85fr) minmax(96px, .6fr) auto;
+  grid-template-columns: minmax(92px, max-content) minmax(140px, 1fr) minmax(118px, .92fr) minmax(112px, .78fr) minmax(82px, .5fr) max-content;
   gap: 10px;
   align-items: end;
   min-width: 0;
@@ -297,7 +303,9 @@
 
 .personal-filter-settings__new {
   align-items: end;
-  grid-template-columns: minmax(180px, 1fr) auto;
+  grid-template-columns: minmax(180px, 300px) auto;
+  justify-content: start;
+  gap: 5px;
 }
 
 .personal-filter-settings-row {
@@ -335,6 +343,16 @@
 
 .personal-filter-settings__preview {
   align-self: center;
+  min-width: 0;
+}
+
+.personal-filter-settings__controls {
+  display: contents;
+}
+
+.personal-filter-settings-row > .personal-filter-field > span,
+.personal-filter-settings__controls .personal-filter-field > span {
+  display: none;
 }
 
 .personal-filter-settings__actions {
@@ -413,14 +431,18 @@ dialog.hub-modal.personal-filter-modal[open] {
 }
 
 .calendar-filter-strip .personal-filter-summary {
-  flex-wrap: nowrap;
-  overflow: hidden;
+  flex-wrap: wrap;
+  align-items: center;
+  overflow: visible;
+  row-gap: 6px;
 }
 
 .calendar-filter-strip .personal-filter-chip {
+  flex: 0 0 auto;
   width: auto;
   height: 24px;
   min-width: max-content;
+  max-width: 100%;
   padding: 3px 7px;
   margin: 0;
   font-size: 12px;
@@ -456,14 +478,26 @@ dialog.hub-modal.personal-filter-modal[open] {
   content: none;
 }
 
+.calendar-filter-strip .personal-filter-summary__label {
+  flex: 0 0 auto;
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
 @media (max-width: 900px) {
   .personal-filter-settings-row {
-    grid-template-columns: minmax(0, 1fr) minmax(110px, .8fr);
+    grid-template-columns: minmax(0, 1fr) minmax(110px, .8fr) max-content;
   }
 
   .personal-filter-settings__actions {
-    grid-column: 1 / -1;
-    justify-content: space-between;
+    grid-column: auto;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 700px) and (orientation: portrait) {
+  .calendar-filter-strip .personal-filter-summary__label {
+    display: none;
   }
 }
 
@@ -482,8 +516,50 @@ dialog.hub-modal.personal-filter-modal[open] {
     gap: 10px;
   }
 
-  .personal-filter-settings__new,
+  .personal-filter-settings__new {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 5px;
+  }
+
   .personal-filter-settings-row {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "preview name actions"
+      "controls controls controls";
+    align-items: end;
+    gap: 10px;
+  }
+
+  .personal-filter-settings__preview {
+    grid-area: preview;
+  }
+
+  .personal-filter-settings-row > .personal-filter-field {
+    grid-area: name;
+  }
+
+  .personal-filter-settings__controls {
+    grid-area: controls;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .personal-filter-settings__actions {
+    grid-area: actions;
+    align-self: center;
+  }
+}
+
+@media (max-width: 700px) and (orientation: portrait) {
+  .personal-filter-settings__new .personal-filter-field > span {
+    display: none;
+  }
+
+  .personal-filter-settings__new .personal-filter-field input,
+  .personal-filter-settings__new .personal-filter-command {
+    height: 34px;
   }
 }
