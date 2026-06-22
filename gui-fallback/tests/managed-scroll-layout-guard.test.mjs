@@ -210,13 +210,18 @@ assert.doesNotMatch(
 }
 assert.match(
   daveCalendarCss,
-  /\.calendar-filter-strip\s*\{[\s\S]*grid-column:\s*1\s*\/\s*-1/,
-  'Calendar filter strip must span the full control row.',
+  /\.calendar-control-strip\s*\{[\s\S]*display:\s*flex[\s\S]*flex-wrap:\s*wrap/,
+  'Calendar desktop controls must use a wrapping row so the filter can join when it fits.',
 );
 assert.match(
   daveCalendarCss,
-  /\.calendar-control-strip\s*\{[\s\S]*grid-template-columns:\s*minmax\(180px,\s*\.95fr\)\s*minmax\(210px,\s*1\.1fr\)\s*minmax\(150px,\s*\.65fr\)\s*minmax\(150px,\s*\.65fr\)/,
-  'Calendar desktop controls must keep Date, Year starts, Year/Month, and Day/Week on one row.',
+  /\.calendar-filter-strip\s*\{[\s\S]*flex:\s*999\s*1\s*max-content[\s\S]*min-width:\s*min\(100%,\s*max-content\)/,
+  'Calendar filter strip must stay inline only while its content fits, then wrap to a full row.',
+);
+assert.match(
+  daveCalendarCss,
+  /@media\s*\(max-width:\s*820px\)\s*\{[\s\S]*\.calendar-control-strip\s*\{[\s\S]*display:\s*grid[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(0,\s*1fr\)[\s\S]*\.calendar-filter-strip\s*\{[\s\S]*grid-column:\s*1\s*\/\s*-1[\s\S]*min-width:\s*0/,
+  'Calendar compact controls must keep the filter on its own full-width row.',
 );
 assert.match(
   daveCalendarCss,
