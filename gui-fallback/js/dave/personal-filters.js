@@ -56,6 +56,7 @@ const PersonalFilters = (() => {
     pretextLoadPromise: null,
     pretextLoadFailed: false,
     textWidthCache: new Map(),
+    settingsOrderByHost: new WeakMap(),
   };
 
   function escHtml(value) {
@@ -545,6 +546,35 @@ const PersonalFilters = (() => {
     });
   }
 
+  function resetSettingsOrderForHost(host) {
+    if (host) state.settingsOrderByHost.delete(host);
+  }
+
+  function resetSettingsOrder(surface = '') {
+    document.querySelectorAll('[data-personal-filter-host]').forEach(host => {
+      if (!surface || (host.dataset.personalFilterSurface || 'calendar') === surface) {
+        resetSettingsOrderForHost(host);
+      }
+    });
+  }
+
+  function settingsFilterIds(surface, host) {
+    if (!host) return sortedFilterIds(surface);
+    const fresh = sortedFilterIds(surface);
+    const existing = state.settingsOrderByHost.get(host);
+    if (!existing || existing.surface !== surface) {
+      state.settingsOrderByHost.set(host, { surface, ids: fresh });
+      return fresh;
+    }
+    const freshSet = new Set(fresh);
+    const kept = existing.ids.filter(id => freshSet.has(id));
+    const keptSet = new Set(kept);
+    const added = fresh.filter(id => !keptSet.has(id));
+    const ids = kept.concat(added);
+    state.settingsOrderByHost.set(host, { surface, ids });
+    return ids;
+  }
+
   function countFor(surface, id) {
     const token = normalizeId(id);
     return recordsFor(surface).filter(record => recordTokens(record).has(token)).length;
@@ -635,13 +665,13 @@ const PersonalFilters = (() => {
     return FILLS.map(id => `<option value="${escHtml(id)}"${id === selected ? ' selected' : ''}>${escHtml(id === 'filled' ? 'Filled' : 'Outline')}</option>`).join('');
   }
 
-  function settingsBodyHtml(surface) {
-    const ids = sortedFilterIds(surface);
+  function settingsBodyHtml(surface, host) {
+    const ids = settingsFilterIds(surface, host);
     return `<div class="personal-filter-settings">
       <div class="personal-filter-settings__new">
         <label class="personal-filter-field">
           <span>Tag</span>
-          <input type="text" data-personal-filter-new-name="${escHtml(surface)}" maxlength="48" autocomplete="off" />
+          <input type="text" data-personal-filter-new-name="${escHtml(surface)}" maxlength="48" autocomplete="off" aria-label="Tag" />
         </label>
         <button class="personal-filter-command" type="button" data-personal-filter-add="${escHtml(surface)}">Add Tag</button>
       </div>
@@ -654,23 +684,24 @@ const PersonalFilters = (() => {
             <div class="personal-filter-settings__preview">${chipHtml(id, { selected: getSelectedIds(surface).includes(id) })}</div>
             <label class="personal-filter-field">
               <span>Name</span>
-              <input type="text" data-personal-filter-setting="label" value="${escHtml(setting.label)}" maxlength="48" ${isCore ? 'readonly' : ''} />
+              <input type="text" data-personal-filter-setting="label" value="${escHtml(setting.label)}" maxlength="48" aria-label="Name" ${isCore ? 'readonly' : ''} />
             </label>
-            <label class="personal-filter-field">
-              <span>Color</span>
-              <select data-personal-filter-setting="color">${colorOptions(setting.color)}</select>
-            </label>
-            <label class="personal-filter-field">
-              <span>Shape</span>
-              <select data-personal-filter-setting="shape">${shapeOptions(setting.shape)}</select>
-            </label>
-            <label class="personal-filter-field">
-              <span>Fill</span>
-              <select data-personal-filter-setting="fill">${fillOptions(setting.fill)}</select>
-            </label>
+            <div class="personal-filter-settings__controls">
+              <label class="personal-filter-field">
+                <span>Colour</span>
+                <select data-personal-filter-setting="color" aria-label="Colour">${colorOptions(setting.color)}</select>
+              </label>
+              <label class="personal-filter-field">
+                <span>Shape</span>
+                <select data-personal-filter-setting="shape" aria-label="Shape">${shapeOptions(setting.shape)}</select>
+              </label>
+              <label class="personal-filter-field">
+                <span>Fill</span>
+                <select data-personal-filter-setting="fill" aria-label="Fill">${fillOptions(setting.fill)}</select>
+              </label>
+            </div>
             <div class="personal-filter-settings__actions">
-              <span class="personal-filter-settings__count">${count}</span>
-              <button class="personal-filter-command" type="button" data-personal-filter-remove="${escHtml(id)}" ${id === 'uncategorized' || isCore ? 'disabled' : ''}>Remove</button>
+              <button class="personal-filter-command" type="button" data-personal-filter-remove="${escHtml(id)}" ${id === 'uncategorized' || isCore ? 'disabled' : ''}>Remove (${count})</button>
             </div>
           </article>`;
         }).join('')}
@@ -685,6 +716,7 @@ const PersonalFilters = (() => {
     let active = host.dataset.personalFilterTab || 'filters';
     if (layout === 'filters') active = 'filters';
     if (layout === 'settings') active = 'settings';
+    if (active !== 'settings') resetSettingsOrderForHost(host);
     const framed = host.dataset.personalFilterFramed === 'false' ? '' : ' personal-filter-panel--framed';
     const tabs = layout === 'tabs'
       ? `<div class="personal-filter-panel__tabs" role="tablist">
@@ -694,7 +726,7 @@ const PersonalFilters = (() => {
       : '';
     host.innerHTML = `<div class="personal-filter-panel${framed}" data-personal-filter-panel="${escHtml(surface)}">
       ${tabs}
-      <div class="personal-filter-panel__body">${active === 'settings' ? settingsBodyHtml(surface) : filtersBodyHtml(surface)}</div>
+      <div class="personal-filter-panel__body">${active === 'settings' ? settingsBodyHtml(surface, host) : filtersBodyHtml(surface)}</div>
     </div>`;
     wireHost(host);
     bindHostControls(host);
@@ -797,6 +829,7 @@ const PersonalFilters = (() => {
     root.dataset.personalFilterSurface = surface;
     root.dataset.personalFilterLayout = 'tabs';
     root.dataset.personalFilterTab = tab === 'settings' ? 'settings' : 'filters';
+    resetSettingsOrderForHost(root);
     if (title) title.textContent = tab === 'settings' ? 'Filter Settings' : 'Filters';
     renderHost(root);
     if (typeof HubModal !== 'undefined') HubModal.open(modal);
@@ -833,7 +866,9 @@ const PersonalFilters = (() => {
       tab.addEventListener('click', event => {
         event.preventDefault();
         event.stopPropagation();
-        host.dataset.personalFilterTab = tab.dataset.personalFilterTab === 'settings' ? 'settings' : 'filters';
+        const nextTab = tab.dataset.personalFilterTab === 'settings' ? 'settings' : 'filters';
+        if (host.dataset.personalFilterTab !== nextTab) resetSettingsOrderForHost(host);
+        host.dataset.personalFilterTab = nextTab;
         renderHost(host);
       }, true);
     });
@@ -926,6 +961,7 @@ const PersonalFilters = (() => {
     selectedLabel,
     openModal,
     renderAll,
+    resetSettingsOrder,
     recordTokens,
     syncUltrawideSidecar,
     colors: () => COLORS.slice(),
