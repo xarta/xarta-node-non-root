@@ -31,6 +31,7 @@
   <link rel="stylesheet" href="css/dave-todo.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/dave-imports.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/personal-search.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/personal-filters.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/kanban-menu.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/kanban-board.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/splash-screens.css?v={{$assetVersion}}" />
@@ -3374,7 +3375,7 @@
           <button type="button" data-calendar-action="mode-day" data-calendar-mode-button="day">Day</button>
           <button type="button" data-calendar-action="mode-week" data-calendar-mode-button="week">Week</button>
         </div>
-        <div class="calendar-filter-strip" id="calendar-filter-strip">Filter: all sources</div>
+        <div class="calendar-filter-strip" id="calendar-filter-strip" role="button" tabindex="0" data-personal-filter-open="calendar">Filter: all sources</div>
       </div>
     </div>
 
@@ -3384,6 +3385,17 @@
     <div class="calendar-page calendar-page--body">
       <section class="calendar-view-section" aria-label="Calendar view" data-calendar-content-view="calendar">
         <div id="calendar-view-root" class="calendar-view-root"></div>
+        <div class="calendar-filter-under-panel" aria-label="Calendar filters">
+          <div id="calendar-filter-inline-panel" data-personal-filter-host data-personal-filter-surface="calendar" data-personal-filter-layout="tabs"></div>
+        </div>
+      </section>
+
+      <section class="calendar-band calendar-band--filters" aria-label="Filters" data-calendar-content-view="filters">
+        <div id="calendar-filter-view-panel" data-personal-filter-host data-personal-filter-surface="calendar" data-personal-filter-layout="filters"></div>
+      </section>
+
+      <section class="calendar-band calendar-band--filter-settings" aria-label="Filter Settings" data-calendar-content-view="filter-settings">
+        <div id="calendar-filter-settings-view-panel" data-personal-filter-host data-personal-filter-surface="calendar" data-personal-filter-layout="settings"></div>
       </section>
 
       <section class="calendar-band calendar-band--agenda" aria-labelledby="calendar-agenda-heading" data-calendar-content-view="selected">
@@ -3709,6 +3721,19 @@
     <div class="hub-modal-footer">
       <span id="todo-action-modal-status" class="hub-modal-status"></span>
       <button type="button" class="hub-modal-secondary" id="todo-action-modal-footer-close">Close</button>
+    </div>
+  </dialog>
+
+  <dialog class="hub-modal hub-dialog personal-filter-modal" data-tone="info" id="personal-filter-modal">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">FILTER</span>
+        <span class="hub-dialog-title-text" id="personal-filter-modal-title-text">Filters</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body">
+      <div id="personal-filter-modal-root" data-personal-filter-host data-personal-filter-surface="calendar" data-personal-filter-layout="tabs" data-personal-filter-framed="false"></div>
     </div>
   </dialog>
 
@@ -6064,6 +6089,7 @@
 <script src="js/synthesis/synthesis-menu.js?v={{$assetVersion}}"></script>
 <script src="js/dave/dave-menu.js?v={{$assetVersion}}"></script>
 <script src="js/dave/personal-search.js?v={{$assetVersion}}"></script>
+<script src="js/dave/personal-filters.js?v={{$assetVersion}}"></script>
 <script src="js/dave/diary-page.js?v={{$assetVersion}}"></script>
 <script src="js/dave/calendar-page.js?v={{$assetVersion}}"></script>
 <script src="js/dave/todo-page.js?v={{$assetVersion}}"></script>

@@ -41,6 +41,16 @@
   flex-wrap: wrap;
 }
 
+@media (min-width: 821px) {
+  .todo-page__title-block {
+    display: none;
+  }
+
+  .todo-page__header {
+    min-height: 0;
+  }
+}
+
 .todo-page__header h2,
 .todo-section-head h3 {
   margin: 0;

@@ -42,6 +42,16 @@
   flex-wrap: wrap;
 }
 
+@media (min-width: 821px) {
+  .kanban-page__title-block {
+    display: none;
+  }
+
+  .kanban-page__header {
+    min-height: 0;
+  }
+}
+
 .kanban-page__header h2,
 .kanban-section-head h3 {
   margin: 0;

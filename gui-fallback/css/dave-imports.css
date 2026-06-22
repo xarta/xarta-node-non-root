@@ -39,6 +39,16 @@
   min-height: 48px;
 }
 
+@media (min-width: 821px) {
+  .imports-dashboard__title-block {
+    display: none;
+  }
+
+  .imports-dashboard__header {
+    min-height: 0;
+  }
+}
+
 .imports-dashboard__header h2,
 .imports-band__head h3 {
   margin: 0;

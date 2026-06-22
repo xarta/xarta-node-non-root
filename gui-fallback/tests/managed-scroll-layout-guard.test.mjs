@@ -13,8 +13,10 @@ const daveCalendarCss = fs.readFileSync(path.resolve(here, '../css/dave-calendar
 const daveDiaryCss = fs.readFileSync(path.resolve(here, '../css/dave-diary.css'), 'utf8');
 const daveTodoCss = fs.readFileSync(path.resolve(here, '../css/dave-todo.css'), 'utf8');
 const daveImportsCss = fs.readFileSync(path.resolve(here, '../css/dave-imports.css'), 'utf8');
+const personalFiltersCss = fs.readFileSync(path.resolve(here, '../css/personal-filters.css'), 'utf8');
 const kanbanBoardCss = fs.readFileSync(path.resolve(here, '../css/kanban-board.css'), 'utf8');
 const daveCalendarJs = fs.readFileSync(path.resolve(here, '../js/dave/calendar-page.js'), 'utf8');
+const personalFiltersJs = fs.readFileSync(path.resolve(here, '../js/dave/personal-filters.js'), 'utf8');
 const daveMenuJs = fs.readFileSync(path.resolve(here, '../js/dave/dave-menu.js'), 'utf8');
 const kanbanMenuJs = fs.readFileSync(path.resolve(here, '../js/kanban/kanban-menu.js'), 'utf8');
 const activeBrowserObserver = fs.readFileSync(
@@ -188,9 +190,22 @@ for (const { tabId, surface, liftId, tabKey, titleClass, css } of [
 }
 assert.doesNotMatch(
   daveCalendarCss,
-  /(?:#s25-lift-calender|\.calendar-page__title-block)[\s\S]{0,240}letter-spacing\s*:\s*(?:0|normal|initial|unset)\b/i,
+  /(?:#s25-lift-calender|\.calendar-page__title-block)[^{]*\{[^}]*letter-spacing\s*:\s*(?:0|normal|initial|unset)\b/i,
   'Calendar lifted S25 title must keep the intentional inherited letter-spacing treatment.',
 );
+for (const { surface, css, titleClass } of [
+  { surface: 'diary', css: daveDiaryCss, titleClass: 'diary-page__title-block' },
+  { surface: 'calendar', css: daveCalendarCss, titleClass: 'calendar-page__title-block' },
+  { surface: 'todo', css: daveTodoCss, titleClass: 'todo-page__title-block' },
+  { surface: 'imports', css: daveImportsCss, titleClass: 'imports-dashboard__title-block' },
+  { surface: 'kanban', css: kanbanBoardCss, titleClass: 'kanban-page__title-block' },
+]) {
+  assert.match(
+    css,
+    new RegExp(`@media\\s*\\(min-width:\\s*821px\\)\\s*\\{[\\s\\S]*\\.${titleClass}\\s*\\{[\\s\\S]*display:\\s*none`),
+    `${surface} desktop view must hide the redundant page title while preserving mobile S25 title lift.`,
+  );
+}
 {
   const tabHtml = tabSlice('tab-calender');
   const statusStart = tabHtml.indexOf('id="calendar-status-strip"');
@@ -207,6 +222,14 @@ assert.doesNotMatch(
   assert.doesNotMatch(tabHtml, /calendar-status-row/, 'Calendar must not drift back to the old split status row.');
   assert.doesNotMatch(tabHtml, /calendar-view-heading/, 'Calendar must not repeat a visible Year/Month View title.');
   assert.doesNotMatch(tabHtml, /calendar-range-pill/, 'Calendar must not repeat the range in a body heading pill.');
+  assert.ok(
+    tabHtml.includes('id="calendar-filter-inline-panel"') && tabHtml.includes('data-personal-filter-layout="tabs"'),
+    'Calendar view must keep the under-calendar shared filter tab panel.',
+  );
+  assert.ok(
+    tabHtml.includes('data-calendar-content-view="filters"') && tabHtml.includes('data-calendar-content-view="filter-settings"'),
+    'Calendar FSM content views must include Filters and Filter Settings.',
+  );
 }
 assert.match(
   daveCalendarCss,
@@ -227,6 +250,150 @@ assert.match(
   daveCalendarCss,
   /\.calendar-status-strip\s*\{[\s\S]*flex:\s*0\s*1\s*auto[\s\S]*width:\s*max-content/,
   'Calendar desktop range pill must size to its content beside the navigation buttons.',
+);
+assert.match(
+  daveCalendarCss,
+  /@media\s*\(min-width:\s*821px\)\s*and\s*\(orientation:\s*portrait\)\s*\{[\s\S]*\.calendar-filter-under-panel\s*\{[\s\S]*display:\s*block/,
+  'Calendar under-calendar filter tab panel must be limited to desktop portrait.',
+);
+assert.ok(
+  indexHtml.includes('css/personal-filters.css') && indexHtml.includes('js/dave/personal-filters.js'),
+  'Shared Personal filter component assets must be loaded before page modules use them.',
+);
+assert.match(
+  indexHtml,
+  /id="personal-filter-modal"[\s\S]*id="personal-filter-modal-root"[\s\S]*data-personal-filter-layout="tabs"/,
+  'Shared Personal filter modal must remain a tabbed HubModal host.',
+);
+assert.match(
+  daveCalendarJs,
+  /id:\s*'filters'[\s\S]*id:\s*'filter-settings'/,
+  'Calendar content view FSM must include Filters and Filter Settings.',
+);
+assert.match(
+  daveCalendarJs,
+  /PersonalFilters\.registerSurface\('calendar'[\s\S]*getRecords:\s*\(\)\s*=>\s*state\.data\?\.items\s*\|\|\s*\[\]/,
+  'Calendar must register its records with the shared Personal filter component.',
+);
+assert.match(
+  personalFiltersJs,
+  /const\s+PersonalFilters\s*=[\s\S]*matchesRecord[\s\S]*openModal/,
+  'Shared Personal filter module must expose record matching and modal opening.',
+);
+assert.match(
+  personalFiltersJs,
+  /document\.addEventListener\('click'[\s\S]*\},\s*true\);/,
+  'Shared Personal filter chip clicks must be delegated in capture phase so HubModal internals cannot swallow them.',
+);
+assert.match(
+  personalFiltersJs,
+  /function\s+bindHostControls[\s\S]*data-personal-filter-toggle[\s\S]*toggle\.addEventListener\('click'[\s\S]*toggleFilter[\s\S]*\},\s*true\)/,
+  'Rendered Personal filter chips must own direct capture-phase click handling inside HubModal bodies.',
+);
+assert.match(
+  personalFiltersCss,
+  /\.personal-filter-chip\.is-selected\s*\{[\s\S]*border-color:\s*#d9aa32[\s\S]*box-shadow:/,
+  'Selected filter chips must keep the gold glow/border state.',
+);
+assert.match(
+  personalFiltersCss,
+  /dialog\.hub-modal\.personal-filter-modal\s*\{[\s\S]*width:\s*100vw[\s\S]*height:\s*100dvh[\s\S]*margin:\s*0[\s\S]*border-radius:\s*0[\s\S]*overflow:\s*hidden/,
+  'Shared Personal filter modal must use the whole viewport.',
+);
+assert.doesNotMatch(
+  personalFiltersCss + personalFiltersJs,
+  /personal-filter-chip__shape/,
+  'Personal filter shapes must be the whole chip, not a small shape inside a pill.',
+);
+assert.doesNotMatch(
+  personalFiltersCss,
+  /\.personal-filter-chip\[data-shape="(?:triangle|star|pentagon|rhombus)"\]\s*\{[^}]*min-height:/,
+  'Symbolic Personal filter chips must be text-measured, not fixed with shape min-heights.',
+);
+assert.match(
+  personalFiltersJs,
+  /vendor\/pretext\/layout\.js[\s\S]*measureNaturalWidth[\s\S]*function\s+shapeMetrics/,
+  'Personal filter chip sizing must use the existing pretext text-measurement path.',
+);
+assert.match(
+  personalFiltersJs,
+  /function\s+sortedFilterIds[\s\S]*?aMetrics\.sortHeight\s*-\s*bMetrics\.sortHeight/,
+  'Personal filter options must order by measured chip height so taller shapes are later.',
+);
+assert.match(
+  personalFiltersCss,
+  /\.personal-filter-chip\s*\{[\s\S]*width:\s*var\(--pf-chip-width[\s\S]*height:\s*var\(--pf-chip-height/,
+  'Personal filter chips must use measured width/height CSS variables.',
+);
+assert.match(
+  personalFiltersJs,
+  /function\s+candidateLineSets[\s\S]*function\s+maxLinesForShape[\s\S]*function\s+labelLayout/,
+  'Personal filter labels must choose measured word wrapping by shape instead of relying on browser wrapping.',
+);
+assert.match(
+  personalFiltersCss,
+  /\.personal-filter-chip__label[\s\S]*flex-direction:\s*column[\s\S]*\.personal-filter-chip__label-line/,
+  'Personal filter wrapped labels must render as explicit stacked lines.',
+);
+assert.match(
+  personalFiltersJs,
+  /shape\s*===\s*'triangle'[\s\S]*lowerTextMargin[\s\S]*width\s*=\s*Math\.ceil\(Math\.max/,
+  'Triangle filter chips must size around lower-placed text where the triangle is wider.',
+);
+assert.match(
+  personalFiltersCss,
+  /\.personal-filter-chip\[data-shape="triangle"\]\s+\.personal-filter-chip__label\s*\{[\s\S]*bottom:\s*10px/,
+  'Triangle filter labels must sit nearer the bottom of the shape where there is width for text.',
+);
+assert.match(
+  personalFiltersJs,
+  /function\s+countBadgeHtml[\s\S]*personal-filter-count-badge/,
+  'Personal filter assignment counts must render as their own badge, not inline text in the label.',
+);
+assert.doesNotMatch(
+  personalFiltersJs,
+  /sizeWithBadgeRoom|withCount|includeCounts/,
+  'Personal filter count badges must not participate in chip sizing or filter ordering.',
+);
+assert.match(
+  personalFiltersJs,
+  /const\s+BADGE_FONT[\s\S]*function\s+badgeMetrics[\s\S]*measureTextWidth\(label,\s*BADGE_FONT\)[\s\S]*function\s+badgePosition/,
+  'Personal filter count badge placement must use measured badge text width.',
+);
+assert.match(
+  personalFiltersJs,
+  /function\s+badgeMargins[\s\S]*badge\.left\s*\+\s*badge\.width\s*-\s*metrics\.width[\s\S]*--pf-chip-margin-right/,
+  'Personal filter chip spacing must account for count badge overflow.',
+);
+assert.match(
+  personalFiltersCss,
+  /\.personal-filter-chip\s*\{[\s\S]*margin:\s*var\(--pf-chip-margin-top/,
+  'Personal filter chips must apply measured badge overflow margins.',
+);
+assert.match(
+  personalFiltersJs,
+  /shape\s*===\s*'square'[\s\S]*textWidth\s*\+\s*14[\s\S]*shape\s*===\s*'triangle'[\s\S]*textWidth\s*\+\s*10[\s\S]*shape\s*===\s*'star'[\s\S]*\/\s*0\.58[\s\S]*shape\s*===\s*'pentagon'[\s\S]*\/\s*0\.72/,
+  'Square, triangle, and pentagon filter chips must stay tighter while stars keep enough room.',
+);
+assert.doesNotMatch(
+  personalFiltersJs,
+  /class="personal-filter-count"/,
+  'Personal filter assignment counts must not reuse the old inline count class.',
+);
+assert.match(
+  personalFiltersCss,
+  /\.personal-filter-count-badge\s*\{[\s\S]*position:\s*absolute[\s\S]*left:\s*var\(--pf-count-badge-left[\s\S]*width:\s*var\(--pf-count-badge-width[\s\S]*border:\s*1px\s+solid\s+rgba\(255,\s*255,\s*255,\s*\.92\)[\s\S]*background:\s*#020617[\s\S]*font-size:\s*11px/,
+  'Personal filter count badges must be compact high-contrast overlays.',
+);
+assert.match(
+  personalFiltersCss,
+  /\.personal-filter-chip\s*\{[\s\S]*overflow:\s*visible[\s\S]*\.personal-filter-chip\[data-shape="triangle"\]::before[\s\S]*clip-path:\s*var\(--pf-shape-clip\)/,
+  'Personal filter polygon chips must draw the shape in pseudo-elements so badges are not clipped.',
+);
+assert.match(
+  personalFiltersJs,
+  /function\s+syncUltrawideSidecar[\s\S]*BlueprintsPageState\.current\(\)[\s\S]*data-personal-filter-layout="tabs"/,
+  'Personal filter tabs must populate the ultrawide sidecar for Calendar/Diary/ToDo/Kanban pages.',
 );
 assert.match(
   daveCalendarJs,
@@ -262,6 +429,16 @@ assert.match(
   daveCalendarCss,
   /\[data-calendar-content-view\]\[hidden\]\s*\{[\s\S]*display:\s*none\s*!important/,
   'Calendar content panels must be mutually hidden by content-view state.',
+);
+assert.match(
+  daveCalendarJs,
+  /querySelectorAll\('section\[data-calendar-content-view\]'\)/,
+  'Calendar content-view rendering must target only section panels, not the FSM view button.',
+);
+assert.match(
+  daveCalendarJs,
+  /calendarCurrentContentView\s*=\s*state\.contentView/,
+  'Calendar FSM button must expose its current view with a distinct runtime dataset key.',
 );
 {
   const tabHtml = tabSlice('tab-calender');
