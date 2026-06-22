@@ -23,6 +23,8 @@ const CalendarPage = (() => {
   const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const CONTENT_VIEWS = [
     { id: 'calendar', label: 'Year / Month Calendar' },
+    { id: 'filters', label: 'Filters' },
+    { id: 'filter-settings', label: 'Filter Settings' },
     { id: 'selected', label: 'Selected Range Visible Items' },
     { id: 'milestones', label: 'All-Day And Milestones' },
     { id: 'search', label: 'Search And Review' },
@@ -223,6 +225,11 @@ const CalendarPage = (() => {
   }
 
   function filterLabel(value) {
+    if (value === 'custom' && window.PersonalFilters?.selectedLabel) return window.PersonalFilters.selectedLabel('calendar');
+    if (window.PersonalFilters?.getSelectedIds) {
+      const selected = window.PersonalFilters.getSelectedIds('calendar');
+      if (selected.length) return window.PersonalFilters.selectedLabel('calendar');
+    }
     if (value === 'calendar') return 'calendar';
     if (value === 'tasks') return 'tasks and reminders';
     if (value === 'work') return 'work';
@@ -297,6 +304,10 @@ const CalendarPage = (() => {
   }
 
   function matchesFilter(event) {
+    if (window.PersonalFilters?.getSelectedIds && window.PersonalFilters?.matchesRecord) {
+      const selected = window.PersonalFilters.getSelectedIds('calendar');
+      if (selected.length) return window.PersonalFilters.matchesRecord(event, 'calendar');
+    }
     if (state.sourceFilter === 'calendar') return isCalendarEvent(event);
     if (state.sourceFilter === 'tasks') return isTaskLike(event);
     if (state.sourceFilter === 'work') return isWorkLike(event);
@@ -541,7 +552,7 @@ const CalendarPage = (() => {
   }
 
   function renderContentPanels() {
-    document.querySelectorAll('[data-calendar-content-view]').forEach(panel => {
+    document.querySelectorAll('section[data-calendar-content-view]').forEach(panel => {
       panel.hidden = panel.dataset.calendarContentView !== state.contentView;
     });
   }
@@ -549,7 +560,7 @@ const CalendarPage = (() => {
   function renderContentViewTrigger() {
     document.querySelectorAll('[data-calendar-view-trigger]').forEach(btn => {
       const label = contentViewLabel();
-      btn.dataset.calendarContentView = state.contentView;
+      btn.dataset.calendarCurrentContentView = state.contentView;
       btn.setAttribute('aria-label', `View: ${label}. Tap for next view, double tap to choose, long press to refresh.`);
       btn.setAttribute('aria-expanded', contentViewMenuHost ? 'true' : 'false');
       btn.title = `View: ${label}`;
@@ -576,6 +587,7 @@ const CalendarPage = (() => {
   }
 
   function renderMeta() {
+    syncSharedFilterState();
     const meta = el('calendar-meta');
     if (meta) {
       const count = visibleEvents().length;
@@ -591,7 +603,12 @@ const CalendarPage = (() => {
     const filter = el('calendar-filter-strip');
     if (filter) {
       const selected = state.selection ? ` - selected ${state.selection.label}` : '';
-      filter.textContent = `Filter: ${filterLabel(state.sourceFilter)}${selected}`;
+      if (window.PersonalFilters?.summaryHtml) {
+        filter.innerHTML = `${window.PersonalFilters.summaryHtml('calendar')}${selected ? `<span class="calendar-filter-strip__selection">${escHtml(selected)}</span>` : ''}`;
+      } else {
+        filter.textContent = `Filter: ${filterLabel(state.sourceFilter)}${selected}`;
+      }
+      filter.dataset.personalFilterOpen = 'calendar';
     }
     document.querySelectorAll('[data-calendar-view-button]').forEach(btn => {
       btn.dataset.active = btn.dataset.calendarViewButton === state.view ? 'true' : 'false';
@@ -601,6 +618,7 @@ const CalendarPage = (() => {
     });
     renderContentPanels();
     renderContentViewTrigger();
+    if (window.PersonalFilters?.renderAll) window.PersonalFilters.renderAll();
   }
 
   function eventRow(event, index, type) {
@@ -812,10 +830,34 @@ const CalendarPage = (() => {
   }
 
   function setSourceFilter(filter) {
-    state.sourceFilter = ['all', 'calendar', 'tasks', 'work', 'imports', 'sources'].includes(filter) ? filter : 'all';
+    const clean = ['all', 'calendar', 'tasks', 'work', 'imports', 'sources'].includes(filter) ? filter : 'all';
+    state.sourceFilter = clean;
+    if (window.PersonalFilters?.setSelectedIds) {
+      window.PersonalFilters.setSelectedIds('calendar', clean === 'all' ? [] : [clean]);
+    }
     state.selection = null;
     render();
     return state.sourceFilter;
+  }
+
+  function syncSharedFilterState() {
+    if (!window.PersonalFilters?.getSelectedIds) return;
+    const selected = window.PersonalFilters.getSelectedIds('calendar');
+    if (!selected.length) {
+      state.sourceFilter = 'all';
+      return;
+    }
+    if (selected.length === 1 && ['calendar', 'tasks', 'work', 'imports', 'sources'].includes(selected[0])) {
+      state.sourceFilter = selected[0];
+      return;
+    }
+    state.sourceFilter = 'custom';
+  }
+
+  function openFilterModal(tab = 'filters') {
+    setContentView(tab === 'settings' ? 'filter-settings' : 'filters');
+    if (window.PersonalFilters?.openModal) return window.PersonalFilters.openModal('calendar', tab);
+    return true;
   }
 
   function setContentView(view) {
@@ -1449,6 +1491,16 @@ const CalendarPage = (() => {
     const root = document.querySelector('[data-calendar-page]');
     if (!root || root.dataset.calendarBound === '1') return;
     root.dataset.calendarBound = '1';
+    if (window.PersonalFilters?.registerSurface) {
+      window.PersonalFilters.registerSurface('calendar', {
+        getRecords: () => state.data?.items || [],
+        onChange: () => {
+          syncSharedFilterState();
+          state.selection = null;
+          render();
+        },
+      });
+    }
     syncCreateDate();
     root.addEventListener('click', event => {
       const selectable = event.target.closest('[data-calendar-select-type]');
@@ -1529,6 +1581,7 @@ const CalendarPage = (() => {
       mode: state.mode,
       year_start_month: state.yearStartMonth,
       source_filter: state.sourceFilter,
+      selected_filters: window.PersonalFilters?.getSelectedIds ? window.PersonalFilters.getSelectedIds('calendar') : [],
       event_count: visibleEvents().length,
       total_count: items.length,
       manual_calendar_count: items.filter(isCalendarEvent).length,
@@ -1552,6 +1605,8 @@ const CalendarPage = (() => {
     viewMonth: () => setView('month'),
     toggleContentView: cycleContentView,
     setContentView,
+    showFilters: () => openFilterModal('filters'),
+    showFilterSettings: () => openFilterModal('settings'),
     modeDay: () => setMode('day'),
     modeWeek: () => setMode('week'),
     filterAll: () => setSourceFilter('all'),
@@ -1587,6 +1642,8 @@ if (typeof DaveMenuConfig !== 'undefined') {
   DaveMenuConfig.registerFunctions({
     'calendar.refresh': () => CalendarPage.refresh(),
     'calendar.toggleContentView': () => CalendarPage.toggleContentView(),
+    'calendar.showFilters': () => CalendarPage.showFilters(),
+    'calendar.showFilterSettings': () => CalendarPage.showFilterSettings(),
     'calendar.previous': () => CalendarPage.previous(),
     'calendar.next': () => CalendarPage.next(),
     'calendar.today': () => CalendarPage.today(),

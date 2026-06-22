@@ -40,6 +40,16 @@
   min-height: 48px;
 }
 
+@media (min-width: 821px) {
+  .diary-page__title-block {
+    display: none;
+  }
+
+  .diary-page__header {
+    min-height: 0;
+  }
+}
+
 .diary-page__header h2,
 .diary-section-head h3 {
   margin: 0;

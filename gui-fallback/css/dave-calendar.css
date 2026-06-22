@@ -42,6 +42,16 @@
   flex-wrap: wrap;
 }
 
+@media (min-width: 821px) {
+  .calendar-page__title-block {
+    display: none;
+  }
+
+  .calendar-page__header {
+    min-height: 0;
+  }
+}
+
 .calendar-page__header h2,
 .calendar-section-head h3 {
   margin: 0;
@@ -268,6 +278,16 @@
   max-width: 100%;
   min-width: min(100%, max-content);
   overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.calendar-filter-strip__selection {
+  color: var(--text-dim);
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .calendar-status-strip {
@@ -313,6 +333,12 @@
   min-width: 0;
 }
 
+.calendar-filter-under-panel {
+  display: none;
+  margin-top: 14px;
+  min-width: 0;
+}
+
 [data-calendar-content-view][hidden] {
   display: none !important;
 }
@@ -351,6 +377,12 @@
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 218px), 1fr));
   gap: 12px;
   align-items: stretch;
+}
+
+@media (min-width: 821px) and (orientation: portrait) {
+  .calendar-filter-under-panel {
+    display: block;
+  }
 }
 
 .calendar-month-card,
