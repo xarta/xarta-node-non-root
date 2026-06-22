@@ -29,7 +29,7 @@ const ImportsDashboard = (() => {
 
   function statusTone(status) {
     const clean = String(status || '').toLowerCase();
-    if (clean === 'ok' || clean === 'done' || clean === 'completed' || clean === 'ready') return 'ok';
+    if (clean === 'ok' || clean === 'done' || clean === 'completed' || clean === 'processed' || clean === 'ready') return 'ok';
     if (clean === 'needs_review' || clean === 'warning' || clean === 'source_scan_only') return 'warn';
     if (clean === 'source_unavailable' || clean === 'error' || clean === 'blocked') return 'err';
     return 'unknown';
@@ -55,6 +55,19 @@ const ImportsDashboard = (() => {
     const text = String(value || '');
     if (!text.startsWith('sha256:') || text.length <= 30) return text;
     return `${text.slice(0, 18)}...${text.slice(-6)}`;
+  }
+
+  function compactDateTime(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    const parsed = new Date(text);
+    if (Number.isNaN(parsed.getTime())) return text;
+    return parsed.toLocaleString([], {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   }
 
   function selectionKey(type, index) {
@@ -146,9 +159,13 @@ const ImportsDashboard = (() => {
     if (!metrics) return;
     const interests = data.interests || {};
     const git = data.git_activity || {};
+    const openclaw = data.openclaw_coverage || {};
+    const domainGaps = (openclaw.ai_development_domains || [])
+      .filter(row => row.status === 'needs_review').length;
     metrics.innerHTML = [
       metric(interests.pending_review ?? 0, 'pending interests review'),
       metric(interests.actionable_backlog ?? 0, 'actionable interests backlog'),
+      metric(domainGaps, 'OpenClaw AI URL gaps'),
       metric((git.watched_repos || []).length, 'watched git repos'),
       metric(git.daily_summary?.commit_count ?? 0, 'git commits today'),
     ].join('');
@@ -207,6 +224,103 @@ const ImportsDashboard = (() => {
         { selectType: 'source_unavailable' }
       );
     }
+  }
+
+  function flattenArtifacts(item) {
+    const artifacts = item?.artifacts || {};
+    const groups = [];
+    Object.keys(artifacts).forEach(kind => {
+      (Array.isArray(artifacts[kind]) ? artifacts[kind] : []).forEach(artifact => {
+        if (!artifact?.path) return;
+        groups.push({
+          kind,
+          label: artifact.label || kind,
+          path: artifact.path,
+        });
+      });
+    });
+    return groups;
+  }
+
+  function submissionHtml(item, index) {
+    const tone = statusTone(item.status);
+    const artifactCount = flattenArtifacts(item).length;
+    const submitted = compactDateTime(item.submitted_at) || item.submitted_at || '';
+    const completed = compactDateTime(item.completed_at) || item.completed_at || '';
+    const meta = [
+      submitted ? `submitted ${submitted}` : '',
+      item.category || '',
+      item.detected_as ? `detected ${item.detected_as}` : '',
+      completed ? `processed ${completed}` : '',
+    ].filter(Boolean).join(' - ');
+    return `
+      <article class="imports-submission" ${selectionAttrs('recent_submission', index)}>
+        <div class="imports-submission__main">
+          <div class="imports-submission__top">
+            <div class="imports-submission__title">${escHtml(item.title || 'Submission')}</div>
+            <span class="imports-pill imports-pill--${tone}">${escHtml(String(item.status || 'unknown').replace(/_/g, ' '))}</span>
+          </div>
+          <div class="imports-submission__outcome">${escHtml(item.outcome || 'Processed')}</div>
+          <div class="imports-submission__meta">${escHtml(meta)}</div>
+        </div>
+        <div class="imports-submission__actions">
+          <button type="button" class="imports-mini-btn" data-imports-action="show-submission" data-imports-select-index="${escHtml(index)}">Details</button>
+          <span class="imports-submission__artifact-count">${escHtml(artifactCount)} artifacts</span>
+        </div>
+      </article>
+    `;
+  }
+
+  function renderSubmissions(data) {
+    const target = el('imports-recent-submissions');
+    if (!target) return;
+    const rows = data.interests?.recent_submissions || [];
+    target.innerHTML = rows.length
+      ? rows.map(submissionHtml).join('')
+      : '<div class="imports-empty">No recent traceable submissions reported.</div>';
+  }
+
+  function openclawAuditHtml(item) {
+    const tone = statusTone(item.status);
+    const examples = (item.examples || []).slice(0, 4);
+    const exampleHtml = examples.length ? `
+      <ul class="imports-openclaw-examples">
+        ${examples.map(example => `
+          <li>
+            <span>${escHtml(example.state || 'needs_review')}</span>
+            <code>${escHtml(example.url || '')}</code>
+            <small>${escHtml((example.categories || []).join(', ') || 'not in interests')}</small>
+          </li>
+        `).join('')}
+      </ul>
+    ` : '';
+    return `
+      <article class="imports-openclaw-row">
+        <div class="imports-openclaw-row__head">
+          <strong>${escHtml(item.domain || 'domain')}</strong>
+          <span class="imports-pill imports-pill--${tone}">${escHtml(String(item.status || 'unknown').replace(/_/g, ' '))}</span>
+        </div>
+        <div class="imports-openclaw-row__counts">
+          ${metric(item.unique_url_count ?? 0, 'unique URLs')}
+          ${metric(item.in_ai_developments ?? 0, 'in ai-developments')}
+          ${metric(item.in_other_category ?? 0, 'other category')}
+          ${metric(item.missing_from_interests ?? 0, 'missing')}
+        </div>
+        <div class="imports-openclaw-note">${escHtml(item.note || '')}</div>
+        ${exampleHtml}
+      </article>
+    `;
+  }
+
+  function renderOpenClaw(data) {
+    const audit = data.openclaw_coverage || {};
+    setPill('imports-openclaw-pill', audit.status);
+    const target = el('imports-openclaw-audit');
+    if (!target) return;
+    const rows = audit.ai_development_domains || [];
+    target.innerHTML = rows.length
+      ? rows.map(openclawAuditHtml).join('')
+      : '<div class="imports-empty">No OpenClaw AI-domain audit rows reported.</div>';
   }
 
   function repoHtml(repo, index) {
@@ -308,6 +422,8 @@ const ImportsDashboard = (() => {
     renderStatus(data);
     renderMeta(data);
     renderMetrics(data);
+    renderSubmissions(data);
+    renderOpenClaw(data);
     renderInterests(data);
     renderGit(data);
     renderRecent(data);
@@ -390,6 +506,7 @@ const ImportsDashboard = (() => {
     if (type === 'category') return interests.category_summary || [];
     if (type === 'input') return interests.input_health || [];
     if (type === 'source_unavailable') return interests.source_unavailable || [];
+    if (type === 'recent_submission') return interests.recent_submissions || [];
     if (type === 'repo') return git.watched_repos || [];
     if (type === 'recent_git') return data.recent_work?.git || [];
     if (type === 'recent_interest') return data.recent_work?.interests || [];
@@ -403,6 +520,7 @@ const ImportsDashboard = (() => {
     if (type === 'category') return row.Category || 'interests category';
     if (type === 'input') return row.Input || 'input health row';
     if (type === 'source_unavailable') return `${row.Category || 'source'} ${row['Work type'] || ''}`.trim();
+    if (type === 'recent_submission') return row.title || row.outcome || 'recent submission';
     if (type === 'recent_git') return row.subject || row.short_sha || 'git commit';
     if (type === 'recent_interest') return `${row.Category || 'interests'} ${row['Work type'] || ''}`.trim();
     if (type === 'blocker') return row.source || 'blocker';
@@ -413,6 +531,7 @@ const ImportsDashboard = (() => {
   function firstPath(row) {
     if (!row || typeof row !== 'object') return '';
     if (row.path) return row.path;
+    if (row.trace_path) return row.trace_path;
     const key = Object.keys(row).find(name => name.endsWith('_path') && row[name]);
     return key ? row[key] : '';
   }
@@ -465,6 +584,39 @@ const ImportsDashboard = (() => {
     `).join('')}</dl>`;
   }
 
+  function artifactOpenButton(path) {
+    if (!path) return '';
+    return `<button type="button" class="imports-mini-btn imports-mini-btn--inline" data-imports-action="open-artifact-path" data-artifact-path="${escHtml(path)}">Open</button>`;
+  }
+
+  async function openArtifactPath(path) {
+    const clean = String(path || '').trim();
+    if (!clean) return false;
+    showActionModal('Opening Artifact', `<p>${escHtml(clean)}</p>`, 'Loading...');
+    try {
+      const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
+      const resp = await fetcher(`/api/v1/personal/imports-artifact?path=${encodeURIComponent(clean)}`);
+      const payload = await resp.json().catch(() => ({}));
+      if (!resp.ok || payload.ok === false) {
+        const detail = payload.detail || payload.error || `HTTP ${resp.status}`;
+        showActionModal('Artifact Unavailable', `${kvHtml([['Path', clean], ['Error', detail]])}`);
+        return false;
+      }
+      const truncated = payload.truncated ? '<p class="imports-action-note">Preview truncated to the first 256 KiB.</p>' : '';
+      return showActionModal(
+        payload.name || clean,
+        `${kvHtml([
+          ['Path', payload.path || clean],
+          ['Size', `${payload.size_bytes ?? 0} bytes`],
+          ['SHA-256', payload.sha256 || 'unknown'],
+        ])}${truncated}<pre class="imports-artifact-preview">${escHtml(payload.preview || '')}</pre>`
+      );
+    } catch (error) {
+      showActionModal('Artifact Unavailable', `${kvHtml([['Path', clean], ['Error', error.message || String(error)]])}`);
+      return false;
+    }
+  }
+
   function artifactItems() {
     const data = state.data || {};
     const interests = data.interests || {};
@@ -486,9 +638,44 @@ const ImportsDashboard = (() => {
     const selectedPath = firstPath(state.selection?.row);
     const selected = selectedPath ? `<p>Selected row artifact: ${escHtml(selectedPath)}</p>` : '';
     const list = items.length ? `<ul class="imports-action-list">${items.map(item => `
-      <li><strong>${escHtml(item.label)}</strong><br><span>${escHtml(item.source)}</span><br><code>${escHtml(item.path)}</code></li>
+      <li><strong>${escHtml(item.label)}</strong> <span>${escHtml(item.source)}</span> ${artifactOpenButton(item.path)}<br><code>${escHtml(item.path)}</code></li>
     `).join('')}</ul>` : '<p>No artifact links reported by the current dashboard state.</p>';
     return showActionModal('Imports Artifacts', `${selected}${list}`);
+  }
+
+  function showSubmission(index) {
+    const rows = rowsForType('recent_submission');
+    const row = rows[Number(index)];
+    if (!row) return false;
+    state.selection = {
+      key: selectionKey('recent_submission', Number(index)),
+      type: 'recent_submission',
+      index: Number(index),
+      label: rowLabel('recent_submission', row),
+      row,
+    };
+    applySelectionStyles();
+    const artifacts = flattenArtifacts(row);
+    const artifactList = artifacts.length ? `<ul class="imports-action-list">${artifacts.map(item => `
+      <li><strong>${escHtml(item.label)}</strong> <span>${escHtml(item.kind)}</span> ${artifactOpenButton(item.path)}<br><code>${escHtml(item.path)}</code></li>
+    `).join('')}</ul>` : '<p>No artifact paths were reported for this submission.</p>';
+    const details = Array.isArray(row.details) && row.details.length
+      ? `<ul class="imports-action-list">${row.details.map(item => `<li>${escHtml(item)}</li>`).join('')}</ul>`
+      : '';
+    return showActionModal(
+      row.title || 'Submission',
+      `${kvHtml([
+        ['Status', row.status || 'unknown'],
+        ['Submitted', compactDateTime(row.submitted_at) || row.submitted_at || 'unknown'],
+        ['Processed', compactDateTime(row.completed_at) || row.completed_at || 'unknown'],
+        ['Category', row.category || 'unknown'],
+        ['Detected as', row.detected_as || 'unknown'],
+        ['Outcome', row.outcome || 'unknown'],
+        ['Trace', row.trace_path || 'none'],
+        ['Event', (row.matrix_event_ids || []).join(', ') || 'none'],
+        ['URL', row.url || 'none'],
+      ])}${details}${artifactList}`
+    );
   }
 
   async function openLatestProof() {
@@ -574,6 +761,13 @@ const ImportsDashboard = (() => {
     const root = document.querySelector('[data-imports-dashboard]');
     if (!root || root.dataset.importsBound === '1') return;
     root.dataset.importsBound = '1';
+    function handleAction(action, btn) {
+      if (action === 'refresh') load({ force: true });
+      if (action === 'open-interests-doc') openInterestsDoc();
+      if (action === 'open-doc-path') openDocPath(btn.dataset.docPath || '');
+      if (action === 'show-submission') showSubmission(btn.dataset.importsSelectIndex || '0');
+      if (action === 'open-artifact-path') openArtifactPath(btn.dataset.artifactPath || '');
+    }
     root.addEventListener('click', event => {
       const selectable = event.target.closest('[data-imports-select-type]');
       if (selectable) {
@@ -581,11 +775,16 @@ const ImportsDashboard = (() => {
       }
       const btn = event.target.closest('[data-imports-action]');
       if (!btn) return;
-      const action = btn.dataset.importsAction;
-      if (action === 'refresh') load({ force: true });
-      if (action === 'open-interests-doc') openInterestsDoc();
-      if (action === 'open-doc-path') openDocPath(btn.dataset.docPath || '');
+      handleAction(btn.dataset.importsAction, btn);
     });
+    const modal = el('imports-action-modal');
+    if (modal) {
+      modal.addEventListener('click', event => {
+        const btn = event.target.closest('[data-imports-action]');
+        if (!btn) return;
+        handleAction(btn.dataset.importsAction, btn);
+      });
+    }
     root.addEventListener('keydown', event => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       const selectable = event.target.closest('[data-imports-select-type]');
@@ -600,12 +799,15 @@ const ImportsDashboard = (() => {
   }
 
   function snapshot() {
+    const recentSubmissions = state.data?.interests?.recent_submissions || [];
     return {
       loaded: state.loaded,
       loading: state.loading,
       status: state.data?.status || '',
       source_digest: state.data?.source_digest || '',
       interests_status: state.data?.interests?.status || '',
+      recent_submission_count: recentSubmissions.length,
+      first_recent_submission_label: recentSubmissions[0]?.title || '',
       git_status: state.data?.git_activity?.status || '',
       watched_repo_count: state.data?.git_activity?.watched_repos?.length || 0,
       blocker_count: state.data?.blockers?.length || 0,
