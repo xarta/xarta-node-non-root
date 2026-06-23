@@ -6,6 +6,7 @@ const DiaryPage = (() => {
   const VIEW_STORAGE_KEY = 'blueprints.diary.view';
   const CONTENT_VIEW_STORAGE_KEY = 'blueprints.diary.contentView';
   const ENTRY_TAG_SURFACE = 'diary-entry';
+  const EDIT_TAG_SURFACE = 'diary-edit-entry';
   const ENTRY_REQUIRED_TAGS = ['diary'];
   const SEARCH_TAG_SURFACE = 'diary-search';
   const UPCOMING_WIDE_BATCH_SIZE = 200;
@@ -20,12 +21,13 @@ const DiaryPage = (() => {
     { id: 'day', label: 'All-Day And Milestones' },
     { id: 'search', label: 'Search' },
     { id: 'new-entry', label: 'New Entry' },
+    { id: 'edit-entry', label: 'Edit Entry' },
     { id: 'upcoming', label: 'Upcoming' },
     { id: 'provenance', label: 'Provenance' },
   ];
   const CONTENT_VIEW_IDS = CONTENT_VIEWS.map(view => view.id);
   const INLINE_CONTENT_VIEW_IDS = ['diary', 'filters', 'filter-settings'];
-  const MODAL_CONTENT_VIEW_IDS = ['selected', 'day', 'search', 'new-entry', 'upcoming', 'provenance'];
+  const MODAL_CONTENT_VIEW_IDS = ['selected', 'day', 'search', 'new-entry', 'edit-entry', 'upcoming', 'provenance'];
   const DAY_DOUBLE_TAP_MS = 560;
   const DAY_DOUBLE_TAP_PX = 28;
 
@@ -52,6 +54,7 @@ const DiaryPage = (() => {
     daySummaryError: '',
     daySummaryRequestId: 0,
     entryDraftRange: null,
+    selectedEntryId: '',
   };
 
   let contentViewMenuHost = null;
@@ -451,6 +454,71 @@ const DiaryPage = (() => {
     return { timed, allDay, upcoming };
   }
 
+  function entryIdentity(event) {
+    return String(event?.event_id || event?.source?.ref || event?.source_ref || '').trim();
+  }
+
+  function findEventById(eventId) {
+    const clean = String(eventId || '').trim();
+    if (!clean) return null;
+    return (state.data?.items || []).find(event => entryIdentity(event) === clean) || null;
+  }
+
+  function selectedEntry() {
+    return findEventById(state.selectedEntryId) || state.selection?.row || null;
+  }
+
+  function editEntryAvailable() {
+    return Boolean(selectedEntry()?.event_id);
+  }
+
+  function activateInlineDiaryTab(tabId) {
+    if (!window.PersonalFilters?.activateTab) return false;
+    return window.PersonalFilters.activateTab('diary', tabId, { visibleOnly: true });
+  }
+
+  function activeActionModalView() {
+    const modal = el('diary-action-modal');
+    return modal?.open ? String(modal.dataset.diaryActionModalView || '') : '';
+  }
+
+  function clearSelectedEntry(options = {}) {
+    const hadSelection = Boolean(state.selectedEntryId || state.selection);
+    state.selectedEntryId = '';
+    state.selection = null;
+    if (window.PersonalFilters?.setSelectedIds) {
+      window.PersonalFilters.setSelectedIds(EDIT_TAG_SURFACE, ENTRY_REQUIRED_TAGS);
+    }
+    if (options.moveEditToNew !== false) {
+      activateInlineDiaryTab('new-entry');
+      if (activeActionModalView() === 'edit-entry') {
+        openContentViewModal('new-entry');
+      }
+    }
+    return hadSelection;
+  }
+
+  function selectEntryById(eventId, options = {}) {
+    const row = findEventById(eventId);
+    if (!row) return false;
+    const cleanId = entryIdentity(row);
+    state.selectedEntryId = cleanId;
+    state.selection = {
+      key: cleanId,
+      type: options.type || 'entry',
+      index: Number.isFinite(Number(options.index)) ? Number(options.index) : -1,
+      label: rowLabel(row),
+      row,
+    };
+    if (window.PersonalFilters?.setSelectedIds) {
+      window.PersonalFilters.setSelectedIds(EDIT_TAG_SURFACE, editEntryTagIds(row));
+    }
+    applySelectionStyles();
+    renderMeta();
+    if (options.openEdit !== false) openEditEntryForSelected();
+    return true;
+  }
+
   function selectionKey(type, index) {
     return `${type}:${index}`;
   }
@@ -473,6 +541,7 @@ const DiaryPage = (() => {
     const idx = Number(index);
     const row = rows[idx];
     if (!row) return;
+    if (entryIdentity(row) && selectEntryById(entryIdentity(row), { type, index: idx })) return;
     state.selection = {
       key: selectionKey(type, idx),
       type,
@@ -488,13 +557,28 @@ const DiaryPage = (() => {
     return `data-diary-select-type="${escHtml(type)}" data-diary-select-index="${escHtml(index)}" tabindex="0"`;
   }
 
+  function entryAttrs(event) {
+    const id = entryIdentity(event);
+    return id ? `data-diary-action="select-entry" data-diary-entry-id="${escHtml(id)}"` : '';
+  }
+
   function applySelectionStyles() {
     document.querySelectorAll('[data-diary-selected="true"]').forEach(node => {
       node.removeAttribute('data-diary-selected');
     });
+    if (state.selectedEntryId) {
+      document.querySelectorAll('[data-diary-entry-id]').forEach(node => {
+        if (node.dataset.diaryEntryId === state.selectedEntryId) {
+          node.setAttribute('data-diary-selected', 'true');
+        }
+      });
+    }
     if (!state.selection) return;
     document.querySelectorAll('[data-diary-select-type]').forEach(node => {
-      if (selectionKey(node.dataset.diarySelectType, node.dataset.diarySelectIndex) === state.selection.key) {
+      if (
+        selectionKey(node.dataset.diarySelectType, node.dataset.diarySelectIndex) === state.selection.key
+        || (state.selectedEntryId && node.dataset.diaryEntryId === state.selectedEntryId)
+      ) {
         node.setAttribute('data-diary-selected', 'true');
       }
     });
@@ -594,7 +678,7 @@ const DiaryPage = (() => {
     const datePart = state.view !== 'day' ? `${monthLabel(eventStartDate(event), { weekday: 'short', day: '2-digit', month: 'short' })} - ` : '';
     const ref = event.source?.ref || (Array.isArray(event.file_refs) ? event.file_refs[0] : '') || event.event_id || '';
     return `
-      <div class="calendar-agenda-row diary-agenda-row calendar-agenda-row--${escHtml(eventCategory(event))}" ${selectionAttrs(type, index)}>
+      <div class="calendar-agenda-row diary-agenda-row calendar-agenda-row--${escHtml(eventCategory(event))}" ${selectionAttrs(type, index)} data-diary-entry-id="${escHtml(entryIdentity(event))}">
         <div class="calendar-agenda-time diary-agenda-time">${escHtml(eventTime(event))}</div>
         <div class="calendar-agenda-main diary-agenda-main">
           <div class="calendar-agenda-title diary-agenda-title">${escHtml(event.title || event.kind || event.event_id)}</div>
@@ -614,10 +698,10 @@ const DiaryPage = (() => {
 
   function weekEventChip(event) {
     return `
-      <div class="diary-week-event diary-week-event--${escHtml(eventCategory(event))}">
+      <button class="diary-week-event diary-week-event--${escHtml(eventCategory(event))}" type="button" ${entryAttrs(event)}>
         <span class="diary-week-event__time">${escHtml(eventTime(event))}</span>
         <span class="diary-week-event__title">${escHtml(event.title || event.kind || event.event_id)}</span>
-      </div>
+      </button>
     `;
   }
 
@@ -989,7 +1073,7 @@ const DiaryPage = (() => {
     state.upcomingWideRequestId = requestId;
     state.upcomingWideLoading = true;
     state.upcomingWideError = '';
-    state.selection = null;
+    clearSelectedEntry();
     render();
     const nowParts = londonNowParts();
     try {
@@ -1032,7 +1116,7 @@ const DiaryPage = (() => {
   function setUpcomingWide(enabled) {
     const next = Boolean(enabled);
     state.upcomingWide = next;
-    state.selection = null;
+    clearSelectedEntry();
     if (!next) {
       state.upcomingWideRequestId += 1;
       state.upcomingWideLoading = false;
@@ -1081,9 +1165,11 @@ const DiaryPage = (() => {
         has_more: false,
       };
       state.data = data;
+      if (state.selectedEntryId && !findEventById(state.selectedEntryId)) clearSelectedEntry();
       if (window.PersonalFilters?.invalidateSurface) {
         window.PersonalFilters.invalidateSurface('diary');
         window.PersonalFilters.invalidateSurface(ENTRY_TAG_SURFACE);
+        window.PersonalFilters.invalidateSurface(EDIT_TAG_SURFACE);
         window.PersonalFilters.invalidateSurface(SEARCH_TAG_SURFACE);
       }
       state.loaded = true;
@@ -1102,7 +1188,7 @@ const DiaryPage = (() => {
     state.date = localDateString(parseLocalDate(dateText));
     if (options.view) state.view = options.view === 'day' ? 'day' : 'week';
     state.loaded = false;
-    state.selection = null;
+    clearSelectedEntry();
     state.entryDraftRange = null;
     state.expandedGaps.clear();
     syncEntryDate(true);
@@ -1116,7 +1202,7 @@ const DiaryPage = (() => {
     state.view = view === 'day' ? 'day' : 'week';
     state.contentView = 'diary';
     state.loaded = false;
-    state.selection = null;
+    clearSelectedEntry();
     state.entryDraftRange = null;
     state.expandedGaps.clear();
     syncEntryDate(true);
@@ -1128,7 +1214,7 @@ const DiaryPage = (() => {
 
   function selectWeekDay(dateText, drillDown = false) {
     state.date = localDateString(parseLocalDate(dateText));
-    state.selection = null;
+    clearSelectedEntry();
     state.entryDraftRange = null;
     syncEntryDate(true);
     syncSearchRange(true);
@@ -1234,26 +1320,42 @@ const DiaryPage = (() => {
     }
   }
 
-  function entryTagsSummaryHtml() {
+  function entryTagsSummaryHtml(surface = ENTRY_TAG_SURFACE) {
     if (window.PersonalFilters?.summaryHtml) {
-      return window.PersonalFilters.summaryHtml(ENTRY_TAG_SURFACE, { prefix: 'Tags:' });
+      return window.PersonalFilters.summaryHtml(surface, { prefix: 'Tags:' });
     }
     return '<span class="personal-filter-summary"><span class="personal-filter-summary__label">Tags:</span><span class="personal-filter-summary__empty">Diary</span></span>';
   }
 
   function renderEntryTagSummaries() {
     document.querySelectorAll('[data-diary-entry-tags-strip]').forEach(strip => {
-      strip.innerHTML = entryTagsSummaryHtml();
+      const surface = strip.dataset.diaryEntryTagsSurface || ENTRY_TAG_SURFACE;
+      strip.innerHTML = entryTagsSummaryHtml(surface);
       strip.dataset.personalFilterOpen = ENTRY_TAG_SURFACE;
+      strip.dataset.personalFilterTab = 'filters';
+    });
+    document.querySelectorAll('[data-diary-edit-tags-strip]').forEach(strip => {
+      strip.innerHTML = entryTagsSummaryHtml(EDIT_TAG_SURFACE);
+      strip.dataset.personalFilterOpen = EDIT_TAG_SURFACE;
       strip.dataset.personalFilterTab = 'filters';
     });
   }
 
-  function entryTagIds() {
+  function tagIdsForSurface(surface) {
     const selected = window.PersonalFilters?.getSelectedIds
-      ? window.PersonalFilters.getSelectedIds(ENTRY_TAG_SURFACE)
+      ? window.PersonalFilters.getSelectedIds(surface)
       : [];
     return Array.from(new Set([...(selected || []), ...ENTRY_REQUIRED_TAGS]));
+  }
+
+  function entryTagIds() {
+    return tagIdsForSurface(ENTRY_TAG_SURFACE);
+  }
+
+  function editEntryTagIds(event = null) {
+    if (window.PersonalFilters?.getSelectedIds && event === null) return tagIdsForSurface(EDIT_TAG_SURFACE);
+    const tags = Array.isArray(event?.tags) ? event.tags.map(tag => String(tag).trim()).filter(Boolean) : [];
+    return Array.from(new Set([...tags, ...ENTRY_REQUIRED_TAGS]));
   }
 
   function setAllDayControls(prefix = 'diary-entry') {
@@ -1274,35 +1376,80 @@ const DiaryPage = (() => {
     }
   }
 
-  function embeddedEntryFormHtml(prefix) {
+  function splitEntryText(event) {
+    const projection = String(event?.content_projection || event?.body_excerpt || '').trim();
+    const title = String(event?.title || '').trim();
+    if (title && projection.startsWith(`${title}\n\n`)) {
+      return { title, body: projection.slice(title.length + 2).trim() };
+    }
+    if (title && projection === title) return { title, body: '' };
+    return { title, body: projection };
+  }
+
+  function entryFormDefaults(mode) {
+    if (mode !== 'edit') {
+      return {
+        title: '',
+        startDate: entryDefaultDate(),
+        endDate: entryDefaultEndDate(),
+        startTime: '',
+        endTime: '',
+        allDay: true,
+        body: '',
+      };
+    }
+    const event = selectedEntry();
+    const text = splitEntryText(event);
+    const meta = calendarMeta(event);
+    const startDate = eventStartDate(event);
+    const endDate = meta.local_end_date || startDate;
+    return {
+      title: text.title,
+      startDate,
+      endDate,
+      startTime: meta.local_start_time || '',
+      endTime: meta.local_end_time || '',
+      allDay: isAllDay(event),
+      body: text.body,
+    };
+  }
+
+  function embeddedEntryFormHtml(prefix, options = {}) {
     const safePrefix = String(prefix || 'diary-panel-entry').replace(/[^a-zA-Z0-9_-]/g, '-');
-    const defaultStartDate = entryDefaultDate();
-    const defaultEndDate = entryDefaultEndDate();
+    const mode = options.mode === 'edit' ? 'edit' : 'new';
+    const defaults = entryFormDefaults(mode);
     const valueFor = (key, fallback = '') => String(el(`${safePrefix}-${key}`)?.value || fallback);
-    const allDay = el(`${safePrefix}-all-day`) ? !!el(`${safePrefix}-all-day`)?.checked : true;
+    const allDay = el(`${safePrefix}-all-day`) ? !!el(`${safePrefix}-all-day`)?.checked : defaults.allDay;
     const disabled = allDay ? ' disabled' : '';
+    const title = mode === 'edit' ? 'Edit Entry' : 'New Entry';
+    const tagAttr = mode === 'edit'
+      ? `data-diary-edit-tags-strip data-diary-entry-tags-surface="${escHtml(EDIT_TAG_SURFACE)}" data-personal-filter-open="${escHtml(EDIT_TAG_SURFACE)}"`
+      : `data-diary-entry-tags-strip data-diary-entry-tags-surface="${escHtml(ENTRY_TAG_SURFACE)}" data-personal-filter-open="${escHtml(ENTRY_TAG_SURFACE)}"`;
+    const tagSummary = entryTagsSummaryHtml(mode === 'edit' ? EDIT_TAG_SURFACE : ENTRY_TAG_SURFACE);
+    const action = mode === 'edit' ? 'submit-edit-entry' : 'submit-entry';
+    const eventId = mode === 'edit' ? entryIdentity(selectedEntry()) : '';
     return `
-      <section class="calendar-quick-event calendar-quick-event--embedded diary-quick-entry diary-quick-entry--embedded" aria-label="New Entry">
+      <section class="calendar-quick-event calendar-quick-event--embedded diary-quick-entry diary-quick-entry--embedded" aria-label="${escHtml(title)}"${eventId ? ` data-diary-editing-entry-id="${escHtml(eventId)}"` : ''}>
         <div class="calendar-form-grid calendar-event-form-grid diary-entry-form-grid">
           <label class="calendar-field calendar-field--wide" for="${escHtml(safePrefix)}-title">
             <span>Title</span>
-            <input id="${escHtml(safePrefix)}-title" type="text" maxlength="180" autocomplete="off" value="${escHtml(valueFor('title'))}" />
+            <input id="${escHtml(safePrefix)}-title" type="text" maxlength="180" autocomplete="off" value="${escHtml(valueFor('title', defaults.title))}" />
           </label>
           <label class="calendar-field" for="${escHtml(safePrefix)}-date">
             <span>Start date</span>
-            <input id="${escHtml(safePrefix)}-date" type="date" data-diary-entry-date value="${escHtml(valueFor('date', defaultStartDate))}" />
+            <input id="${escHtml(safePrefix)}-date" type="date" data-diary-entry-date value="${escHtml(valueFor('date', defaults.startDate))}" />
           </label>
           <label class="calendar-field" for="${escHtml(safePrefix)}-end-date">
             <span>End date</span>
-            <input id="${escHtml(safePrefix)}-end-date" type="date" data-diary-entry-end-date value="${escHtml(valueFor('end-date', valueFor('date', defaultEndDate)))}" />
+            <input id="${escHtml(safePrefix)}-end-date" type="date" data-diary-entry-end-date value="${escHtml(valueFor('end-date', valueFor('date', defaults.endDate)))}" />
           </label>
           <label class="calendar-field" for="${escHtml(safePrefix)}-start">
             <span>Start</span>
-            <input id="${escHtml(safePrefix)}-start" type="time" value="${escHtml(valueFor('start'))}"${disabled} />
+            <input id="${escHtml(safePrefix)}-start" type="time" value="${escHtml(valueFor('start', defaults.startTime))}"${disabled} />
           </label>
           <label class="calendar-field" for="${escHtml(safePrefix)}-end">
             <span>End</span>
-            <input id="${escHtml(safePrefix)}-end" type="time" value="${escHtml(valueFor('end'))}"${disabled} />
+            <input id="${escHtml(safePrefix)}-end" type="time" value="${escHtml(valueFor('end', defaults.endTime))}"${disabled} />
           </label>
           <div class="calendar-event-options-row diary-entry-options-row">
             <label class="calendar-check hub-checkbox" for="${escHtml(safePrefix)}-all-day">
@@ -1310,16 +1457,16 @@ const DiaryPage = (() => {
               <span class="hub-checkbox__box" aria-hidden="true"></span>
               <span class="hub-checkbox__label">All day</span>
             </label>
-            <div class="calendar-filter-strip calendar-event-tags-strip diary-entry-tags-strip" role="button" tabindex="0" data-diary-entry-tags-strip data-personal-filter-open="${escHtml(ENTRY_TAG_SURFACE)}" data-personal-filter-tab="filters">${entryTagsSummaryHtml()}</div>
+            <div class="calendar-filter-strip calendar-event-tags-strip diary-entry-tags-strip" role="button" tabindex="0" ${tagAttr} data-personal-filter-tab="filters">${tagSummary}</div>
           </div>
           <label class="calendar-field calendar-field--wide calendar-field--notes" for="${escHtml(safePrefix)}-body">
             <span>Notes</span>
-            <textarea id="${escHtml(safePrefix)}-body" rows="3" maxlength="4000">${escHtml(valueFor('body'))}</textarea>
+            <textarea id="${escHtml(safePrefix)}-body" rows="3" maxlength="4000">${escHtml(valueFor('body', defaults.body))}</textarea>
           </label>
         </div>
         <div class="calendar-quick-event__footer diary-quick-entry__footer">
           <span id="${escHtml(safePrefix)}-status" class="calendar-entry-status diary-entry-status"></span>
-          <button class="calendar-command-btn diary-command-btn" type="button" data-diary-action="submit-entry" data-diary-entry-prefix="${escHtml(safePrefix)}">Save Entry</button>
+          <button class="calendar-command-btn diary-command-btn" type="button" data-diary-action="${escHtml(action)}" data-diary-entry-prefix="${escHtml(safePrefix)}"${mode === 'edit' && !eventId ? ' disabled' : ''}>Save Entry</button>
         </div>
       </section>
     `;
@@ -1329,6 +1476,12 @@ const DiaryPage = (() => {
     if (host?.id === 'diary-filter-inline-panel') return 'diary-inline-entry';
     if (host?.closest?.('#ultrawide-sidecar-body')) return 'diary-sidecar-entry';
     return 'diary-panel-entry';
+  }
+
+  function embeddedEditPrefixForHost(host) {
+    if (host?.id === 'diary-filter-inline-panel') return 'diary-inline-edit-entry';
+    if (host?.closest?.('#ultrawide-sidecar-body')) return 'diary-sidecar-edit-entry';
+    return 'diary-panel-edit-entry';
   }
 
   function embeddedSearchHtml(host) {
@@ -1427,6 +1580,7 @@ const DiaryPage = (() => {
     if (view === 'day') return embeddedDayHtml({ modal: true });
     if (view === 'search') return embeddedSearchHtml({ dataset: { diaryModalHost: '1' } });
     if (view === 'new-entry') return embeddedEntryFormHtml('diary-modal-entry');
+    if (view === 'edit-entry') return embeddedEntryFormHtml('diary-modal-edit-entry', { mode: 'edit' });
     if (view === 'upcoming') return embeddedUpcomingHtml({ modal: true });
     if (view === 'provenance') return embeddedProvenanceHtml({ modal: true });
     return '';
@@ -1438,6 +1592,15 @@ const DiaryPage = (() => {
       renderEntryTagSummaries();
       setAllDayControls('diary-modal-entry');
       window.setTimeout(() => el('diary-modal-entry-title')?.focus(), 0);
+    }
+    if (view === 'edit-entry') {
+      if (!editEntryAvailable()) {
+        openContentViewModal('new-entry');
+        return;
+      }
+      renderEntryTagSummaries();
+      setAllDayControls('diary-modal-edit-entry');
+      window.setTimeout(() => el('diary-modal-edit-entry-title')?.focus(), 0);
     }
     if (view === 'upcoming') syncUpcomingControls();
     if (view === 'search' && window.BlueprintsPersonalSearch?.init) {
@@ -1456,9 +1619,16 @@ const DiaryPage = (() => {
       tools.innerHTML = contentViewModalToolsHtml(view);
       tools.hidden = !tools.innerHTML.trim();
     }
-    if (view === 'new-entry' || view === 'search') {
+    if (view === 'new-entry' || view === 'edit-entry' || view === 'search') {
       if (view === 'new-entry') {
         syncEntryDate(false);
+        renderEntryTagSummaries();
+      }
+      if (view === 'edit-entry') {
+        if (!editEntryAvailable()) {
+          openContentViewModal('new-entry');
+          return;
+        }
         renderEntryTagSummaries();
       }
       if (view === 'search') syncSearchRange(false);
@@ -1514,6 +1684,9 @@ const DiaryPage = (() => {
     if (cleanView === 'diary') return setContentView('diary');
     if (cleanView === 'filters') return openFilterModal('filters');
     if (cleanView === 'filter-settings') return openFilterModal('settings');
+    if (cleanView === 'edit-entry' && !editEntryAvailable()) {
+      return openContentViewModal('new-entry');
+    }
     if (!MODAL_CONTENT_VIEW_IDS.includes(cleanView)) return false;
     if (cleanView === 'new-entry' && !options.keepEntryDraft) {
       state.entryDraftRange = null;
@@ -1647,6 +1820,7 @@ const DiaryPage = (() => {
     if (window.PersonalFilters?.invalidateSurface) {
       window.PersonalFilters.invalidateSurface('diary');
       window.PersonalFilters.invalidateSurface(ENTRY_TAG_SURFACE);
+      window.PersonalFilters.invalidateSurface(EDIT_TAG_SURFACE);
       window.PersonalFilters.invalidateSurface(SEARCH_TAG_SURFACE);
     }
     state.loaded = true;
@@ -1741,25 +1915,120 @@ const DiaryPage = (() => {
     return true;
   }
 
-  function openNewEntryForHour(hour) {
-    const range = hourEntryRange(hour);
-    state.entryDraftRange = range;
-    openContentViewModal('new-entry', { keepEntryDraft: true });
+  function prepareEntryForm(prefix, range = null) {
     window.setTimeout(() => {
-      const prefix = el('diary-modal-entry-date') ? 'diary-modal-entry' : 'diary-entry';
       const date = el(`${prefix}-date`);
       const endDate = el(`${prefix}-end-date`);
       const time = el(`${prefix}-start`);
       const end = el(`${prefix}-end`);
       const allDay = el(`${prefix}-all-day`);
-      if (date) date.value = range?.startDate || state.date;
-      if (endDate) endDate.value = range?.endDate || date?.value || state.date;
-      if (time) time.value = '';
-      if (end) end.value = '';
-      if (allDay) allDay.checked = true;
+      if (range) {
+        if (date) date.value = range.startDate || state.date;
+        if (endDate) endDate.value = range.endDate || date?.value || state.date;
+        if (time) time.value = '';
+        if (end) end.value = '';
+        if (allDay) allDay.checked = true;
+      }
       setAllDayControls(prefix);
       el(`${prefix}-title`)?.focus();
     }, 0);
+  }
+
+  function openNewEntry(options = {}) {
+    if (state.selectedEntryId || state.selection) clearSelectedEntry({ moveEditToNew: false });
+    if (!options.keepEntryDraft) state.entryDraftRange = null;
+    closeContentViewMenu();
+    const openedInline = activateInlineDiaryTab('new-entry');
+    if (openedInline) {
+      ['diary-inline-entry', 'diary-sidecar-entry', 'diary-panel-entry'].forEach(prefix => {
+        if (el(`${prefix}-date`)) prepareEntryForm(prefix, state.entryDraftRange);
+      });
+      return true;
+    }
+    const shown = openContentViewModal('new-entry', { keepEntryDraft: options.keepEntryDraft });
+    if (shown) prepareEntryForm('diary-modal-entry', state.entryDraftRange);
+    return shown;
+  }
+
+  function openNewEntryForHour(hour) {
+    const range = hourEntryRange(hour);
+    state.entryDraftRange = range;
+    return openNewEntry({ keepEntryDraft: true });
+  }
+
+  function openEditEntryForSelected() {
+    if (!editEntryAvailable()) return false;
+    closeContentViewMenu();
+    const openedInline = activateInlineDiaryTab('edit-entry');
+    if (openedInline) {
+      ['diary-inline-edit-entry', 'diary-sidecar-edit-entry', 'diary-panel-edit-entry'].forEach(prefix => {
+        if (el(`${prefix}-date`)) {
+          renderEntryTagSummaries();
+          setAllDayControls(prefix);
+          window.setTimeout(() => el(`${prefix}-title`)?.focus(), 0);
+        }
+      });
+      return true;
+    }
+    return openContentViewModal('edit-entry');
+  }
+
+  function editPayloadFromForm(prefix = 'diary-edit-entry') {
+    const title = String(el(`${prefix}-title`)?.value || '').trim();
+    const body = String(el(`${prefix}-body`)?.value || '').trim();
+    const text = [title, body].filter(Boolean).join('\n\n');
+    const allDay = !!el(`${prefix}-all-day`)?.checked;
+    const startDate = String(el(`${prefix}-date`)?.value || state.date).trim();
+    const endDate = String(el(`${prefix}-end-date`)?.value || startDate || state.date).trim();
+    const runId = `ui-diary-entry-edit-${Date.now()}`;
+    return {
+      body: text,
+      local_date: startDate,
+      range_start_date: startDate,
+      range_end_date: endDate,
+      local_time: allDay ? null : String(el(`${prefix}-start`)?.value || '').trim() || null,
+      end_time: allDay ? null : String(el(`${prefix}-end`)?.value || '').trim() || null,
+      all_day: allDay,
+      actor: 'blueprints-ui',
+      source_surface: 'diary-page',
+      request_id: runId,
+      run_id: runId,
+      tags: editEntryTagIds(),
+    };
+  }
+
+  async function submitEditEntry(prefix = 'diary-edit-entry') {
+    const status = el(`${prefix}-status`);
+    const event = selectedEntry();
+    if (!event?.event_id) {
+      if (status) status.textContent = 'Select an entry first.';
+      clearSelectedEntry();
+      return false;
+    }
+    const payload = editPayloadFromForm(prefix);
+    if (!payload.body) {
+      if (status) status.textContent = 'Entry body is required.';
+      return false;
+    }
+    if (status) status.textContent = 'Saving entry...';
+    const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
+    const resp = await fetcher(`/api/v1/personal/diary-day/entries/${encodeURIComponent(event.event_id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      if (status) status.textContent = responseErrorMessage(data, resp.status);
+      return false;
+    }
+    if (status) status.textContent = 'Saved entry.';
+    state.lastWrite = data;
+    state.date = data.event?.local_date || payload.local_date || state.date;
+    state.selectedEntryId = data.event?.event_id || event.event_id;
+    state.loaded = false;
+    state.daySummary = data.day || null;
+    await load({ force: true });
     return true;
   }
 
@@ -2076,6 +2345,7 @@ const DiaryPage = (() => {
           { id: 'day', label: 'Day' },
           { id: 'search', label: 'Search' },
           { id: 'new-entry', label: 'New Entry' },
+          { id: 'edit-entry', label: 'Edit Entry', disabled: () => !editEntryAvailable() },
           { id: 'upcoming', label: 'Upcoming' },
           { id: 'provenance', label: 'Provenance' },
         ],
@@ -2084,17 +2354,30 @@ const DiaryPage = (() => {
           if (tab === 'day') return embeddedDayHtml(host);
           if (tab === 'search') return embeddedSearchHtml(host);
           if (tab === 'new-entry') return embeddedEntryFormHtml(embeddedEntryPrefixForHost(host));
+          if (tab === 'edit-entry') return embeddedEntryFormHtml(embeddedEditPrefixForHost(host), { mode: 'edit' });
           if (tab === 'upcoming') return embeddedUpcomingHtml(host);
           if (tab === 'provenance') return embeddedProvenanceHtml(host);
           return '';
         },
         onChange: () => {
           syncSharedFilterState();
-          state.selection = null;
+          clearSelectedEntry();
           render();
         },
       });
       window.PersonalFilters.registerSurface(ENTRY_TAG_SURFACE, {
+        getRecords: () => state.data?.items || [],
+        defaultSelectedIds: ENTRY_REQUIRED_TAGS,
+        requiredSelectedIds: ENTRY_REQUIRED_TAGS,
+        summaryPrefix: 'Tags:',
+        activePrefix: 'Selected',
+        emptyLabel: 'Diary',
+        showClear: false,
+        onChange: () => {
+          renderEntryTagSummaries();
+        },
+      });
+      window.PersonalFilters.registerSurface(EDIT_TAG_SURFACE, {
         getRecords: () => state.data?.items || [],
         defaultSelectedIds: ENTRY_REQUIRED_TAGS,
         requiredSelectedIds: ENTRY_REQUIRED_TAGS,
@@ -2157,8 +2440,10 @@ const DiaryPage = (() => {
       }
       if (action === 'toggle-hour-gap') toggleHourGap(btn.dataset.diaryGap);
       if (action === 'new-entry-at-hour') openNewEntryForHour(btn.dataset.diaryHour);
-      if (action === 'show-new-entry') openContentViewModal('new-entry');
+      if (action === 'show-new-entry') openNewEntry();
+      if (action === 'select-entry') selectEntryById(btn.dataset.diaryEntryId);
       if (action === 'submit-entry') submitEntry(btn.dataset.diaryEntryPrefix || 'diary-entry');
+      if (action === 'submit-edit-entry') submitEditEntry(btn.dataset.diaryEntryPrefix || 'diary-edit-entry');
     });
     root.addEventListener('dblclick', event => {
       const btn = event.target.closest('[data-diary-action="select-week-day"][data-diary-date]');
@@ -2172,6 +2457,12 @@ const DiaryPage = (() => {
       if (!btn || root.contains(btn)) return;
       event.preventDefault();
       submitEntry(btn.dataset.diaryEntryPrefix || 'diary-entry');
+    });
+    document.addEventListener('click', event => {
+      const btn = event.target.closest('[data-diary-action="submit-edit-entry"]');
+      if (!btn || root.contains(btn)) return;
+      event.preventDefault();
+      submitEditEntry(btn.dataset.diaryEntryPrefix || 'diary-edit-entry');
     });
     document.addEventListener('change', event => {
       const upcomingControl = event.target.closest('[data-diary-upcoming-next-years]');
@@ -2276,7 +2567,8 @@ const DiaryPage = (() => {
     showSelected: () => openContentViewModal('selected'),
     showDay: () => openContentViewModal('day'),
     showSearch: () => openContentViewModal('search'),
-    newEntry: () => openContentViewModal('new-entry'),
+    newEntry: () => openNewEntry(),
+    editEntry: () => openEditEntryForSelected(),
     showUpcoming: () => openContentViewModal('upcoming'),
     showProvenance: () => openContentViewModal('provenance'),
     submitEntry,
@@ -2338,6 +2630,7 @@ if (typeof DaveMenuConfig !== 'undefined') {
     'diary.showDay': () => DiaryPage.showDay(),
     'diary.showSearch': () => DiaryPage.showSearch(),
     'diary.newEntry': () => DiaryPage.newEntry(),
+    'diary.editEntry': () => DiaryPage.editEntry(),
     'diary.showUpcoming': () => DiaryPage.showUpcoming(),
     'diary.showProvenance': () => DiaryPage.showProvenance(),
     'diary.viewWeek': () => DiaryPage.viewWeek(),

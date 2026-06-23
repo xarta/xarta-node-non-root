@@ -46,6 +46,21 @@
   outline: none;
 }
 
+.personal-filter-tab.is-disabled,
+.personal-filter-tab:disabled {
+  border-color: rgba(255, 255, 255, .08);
+  background: rgba(255, 255, 255, .018);
+  color: rgba(154, 166, 205, .48);
+  cursor: not-allowed;
+}
+
+.personal-filter-tab.is-disabled:hover,
+.personal-filter-tab:disabled:hover {
+  border-color: rgba(255, 255, 255, .08);
+  background: rgba(255, 255, 255, .018);
+  color: rgba(154, 166, 205, .48);
+}
+
 .personal-filter-panel__body {
   min-height: 0;
   overflow-y: auto;
