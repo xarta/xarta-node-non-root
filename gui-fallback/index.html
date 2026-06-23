@@ -3241,85 +3241,153 @@
 
   <!-- Dave — personal layer placeholders -->
   <section id="tab-diary" class="tab-panel tab-panel--managed-scroll" aria-label="Diary" data-diary-page>
-    <div class="diary-page diary-page--intro">
-      <div class="diary-page__header">
+    <div class="calendar-page diary-page diary-page--intro">
+      <div class="calendar-page__header diary-page__header">
         <div id="s25-lift-diary" class="s25-lift-block diary-page__title-block" data-for-tab="diary">
           <h2>Diary</h2>
-          <div class="diary-page__meta" id="diary-day-meta">Loading day...</div>
+          <div class="calendar-page__meta diary-page__meta" id="diary-meta">Loading diary...</div>
         </div>
-        <div class="diary-page__actions" aria-label="Diary actions">
-          <button class="diary-icon-btn diary-icon-btn--prev" type="button" data-diary-action="previous-day" title="Previous day" aria-label="Previous day"></button>
-          <button class="diary-icon-btn diary-icon-btn--today" type="button" data-diary-action="today" title="Today" aria-label="Today"></button>
-          <button class="diary-icon-btn diary-icon-btn--next" type="button" data-diary-action="next-day" title="Next day" aria-label="Next day"></button>
-          <button class="diary-icon-btn diary-icon-btn--refresh" type="button" data-diary-action="refresh" title="Refresh day" aria-label="Refresh day"></button>
+        <div class="calendar-page__actions diary-page__actions" aria-label="Diary actions">
+          <div class="calendar-status-strip diary-status-strip" id="diary-status-strip" role="status" aria-live="polite">
+            <span class="calendar-status-dot calendar-status-dot--unknown diary-status-dot diary-status-dot--unknown" aria-hidden="true"></span>
+            <span>Loading Diary range</span>
+          </div>
+          <div class="calendar-nav-actions diary-nav-actions" aria-label="Diary range actions">
+            <button class="calendar-icon-btn calendar-icon-btn--prev diary-icon-btn diary-icon-btn--prev" type="button" data-diary-action="previous" title="Previous range" aria-label="Previous range"></button>
+            <button class="calendar-icon-btn calendar-icon-btn--today diary-icon-btn diary-icon-btn--today" type="button" data-diary-action="today" title="Today" aria-label="Today"></button>
+            <button class="calendar-icon-btn calendar-icon-btn--next diary-icon-btn diary-icon-btn--next" type="button" data-diary-action="next" title="Next range" aria-label="Next range"></button>
+            <button class="calendar-icon-btn calendar-icon-btn--refresh diary-icon-btn diary-icon-btn--refresh" type="button" data-diary-view-trigger title="Diary view" aria-label="Diary view"></button>
+          </div>
         </div>
       </div>
 
-      <div class="diary-date-strip">
-        <label class="diary-date-control" for="diary-date-input">
+      <div class="calendar-control-strip diary-control-strip">
+        <label class="calendar-control calendar-date-control diary-date-control" for="diary-date-input">
           <span>Date</span>
           <input id="diary-date-input" type="date" />
         </label>
-        <div class="diary-filter-strip" id="diary-filter-strip">Filter: all sources</div>
-      </div>
-
-      <div class="diary-status-strip" id="diary-status-strip" role="status" aria-live="polite">
-        <span class="diary-status-dot diary-status-dot--unknown" aria-hidden="true"></span>
-        <span>Loading Diary day</span>
+        <div class="calendar-control calendar-select-control diary-purpose-control" aria-hidden="true"></div>
+        <div class="calendar-segment diary-calendar-segment" aria-label="Calendar range view">
+          <button type="button" data-diary-action="go-calendar-year" data-diary-calendar-button="year">Year</button>
+          <button type="button" data-diary-action="go-calendar-month" data-diary-calendar-button="month">Month</button>
+        </div>
+        <div class="calendar-segment calendar-segment--detail diary-segment" aria-label="Diary view">
+          <button type="button" data-diary-action="view-week" data-diary-view-button="week">Week</button>
+          <button type="button" data-diary-action="view-day" data-diary-view-button="day">Day</button>
+        </div>
+        <div class="calendar-filter-strip diary-filter-strip" id="diary-filter-strip" role="button" tabindex="0" data-personal-filter-open="diary">Filter: all sources</div>
       </div>
     </div>
 
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
 
     <div class="tab-scroll-shell">
-    <div class="diary-page diary-page--body">
-      <div class="personal-search-strip" data-personal-search-surface="diary"></div>
-      <section class="diary-quick-entry" aria-labelledby="diary-quick-entry-heading">
-        <div class="diary-section-head">
-          <h3 id="diary-quick-entry-heading">Quick Entry</h3>
-          <span class="diary-pill" id="diary-write-pill">Ready</span>
-        </div>
-        <textarea id="diary-quick-entry-body" maxlength="4000" rows="4"></textarea>
-        <div class="diary-quick-entry__footer">
-          <span id="diary-entry-status" class="diary-entry-status"></span>
-          <button class="diary-command-btn" type="button" data-diary-action="submit-entry">Save Entry</button>
+    <div class="calendar-page diary-page diary-page--body">
+      <section class="calendar-view-section diary-view-section" aria-label="Diary view" data-diary-content-view="diary">
+        <div id="diary-view-root" class="diary-view-root"></div>
+        <div class="calendar-filter-under-panel diary-filter-under-panel" aria-label="Diary filters">
+          <div id="diary-filter-inline-panel" data-personal-filter-host data-personal-filter-surface="diary" data-personal-filter-layout="tabs" data-personal-filter-extra-tabs="selected,day,search,new-entry,edit-entry,upcoming,provenance"></div>
         </div>
       </section>
-      <div class="diary-metrics" id="diary-metrics" aria-label="Diary day metrics"></div>
 
-      <div class="diary-layout">
-        <section class="diary-band diary-band--summary" aria-labelledby="diary-summary-heading">
-          <div class="diary-section-head">
-            <h3 id="diary-summary-heading">Day Summary</h3>
-          <button class="diary-text-btn" type="button" data-diary-action="generate-summary">Generate Summary</button>
-          </div>
-          <div id="diary-day-summary" class="diary-summary-body"></div>
-        </section>
+      <section class="calendar-band diary-band diary-band--filters" aria-label="Filters" data-diary-content-view="filters">
+        <div id="diary-filter-view-panel" data-personal-filter-host data-personal-filter-surface="diary" data-personal-filter-layout="filters"></div>
+      </section>
 
-        <section class="diary-band diary-band--moments" aria-labelledby="diary-moments-heading">
-          <div class="diary-section-head">
-            <h3 id="diary-moments-heading">Source Moments</h3>
-            <span class="diary-pill" id="diary-moments-count">0</span>
-          </div>
-          <div id="diary-source-moments" class="diary-moment-list"></div>
-        </section>
-      </div>
+      <section class="calendar-band diary-band diary-band--filter-settings" aria-label="Filter Settings" data-diary-content-view="filter-settings">
+        <div id="diary-filter-settings-view-panel" data-personal-filter-host data-personal-filter-surface="diary" data-personal-filter-layout="settings"></div>
+      </section>
 
-      <div class="diary-layout diary-layout--lower">
-        <section class="diary-band" aria-labelledby="diary-actions-heading">
-          <div class="diary-section-head">
-            <h3 id="diary-actions-heading">Next Actions</h3>
-          </div>
-          <div id="diary-next-actions" class="diary-action-list"></div>
-        </section>
+      <section class="calendar-band diary-band diary-band--selected" aria-labelledby="diary-selected-heading" data-diary-content-view="selected">
+        <div class="calendar-section-head diary-section-head">
+          <h3 id="diary-selected-heading">Selected Range Visible Items</h3>
+          <span class="calendar-pill diary-pill" id="diary-selected-count">0</span>
+        </div>
+        <div id="diary-selected-summary" class="calendar-selected-summary diary-selected-summary"></div>
+        <div id="diary-selected-list" class="calendar-agenda-list diary-agenda-list"></div>
+      </section>
 
-        <section class="diary-band" aria-labelledby="diary-provenance-heading">
-          <div class="diary-section-head">
-            <h3 id="diary-provenance-heading">Provenance</h3>
+      <section class="calendar-band diary-band diary-band--day" aria-labelledby="diary-day-heading" data-diary-content-view="day">
+        <div class="calendar-section-head diary-section-head">
+          <h3 id="diary-day-heading">All-Day And Milestones</h3>
+          <span class="calendar-pill diary-pill" id="diary-day-count">0</span>
+        </div>
+        <div id="diary-day-list" class="calendar-agenda-list diary-agenda-list"></div>
+      </section>
+
+      <section class="calendar-band diary-band diary-band--search" aria-labelledby="diary-search-heading" data-diary-content-view="search">
+        <div class="calendar-section-head diary-section-head">
+          <h3 id="diary-search-heading">Search</h3>
+        </div>
+        <div class="personal-search-strip" data-personal-search-surface="diary"></div>
+      </section>
+
+      <section class="calendar-quick-event diary-quick-entry" aria-labelledby="diary-quick-entry-heading" data-diary-content-view="new-entry">
+        <div class="calendar-section-head diary-section-head">
+          <h3 id="diary-quick-entry-heading">New Entry</h3>
+          <span class="calendar-pill diary-pill" id="diary-write-pill">Ready</span>
+        </div>
+        <div class="calendar-form-grid calendar-event-form-grid diary-entry-form-grid">
+          <label class="calendar-field calendar-field--wide" for="diary-entry-title">
+            <span>Title</span>
+            <input id="diary-entry-title" type="text" maxlength="180" autocomplete="off" />
+          </label>
+          <label class="calendar-field" for="diary-entry-date">
+            <span>Start date</span>
+            <input id="diary-entry-date" type="date" data-diary-entry-date />
+          </label>
+          <label class="calendar-field" for="diary-entry-end-date">
+            <span>End date</span>
+            <input id="diary-entry-end-date" type="date" data-diary-entry-end-date />
+          </label>
+          <label class="calendar-field" for="diary-entry-start">
+            <span>Start</span>
+            <input id="diary-entry-start" type="time" />
+          </label>
+          <label class="calendar-field" for="diary-entry-end">
+            <span>End</span>
+            <input id="diary-entry-end" type="time" />
+          </label>
+          <div class="calendar-event-options-row diary-entry-options-row">
+            <label class="calendar-check hub-checkbox" for="diary-entry-all-day">
+              <input id="diary-entry-all-day" class="hub-checkbox__input" type="checkbox" data-diary-entry-all-day="diary-entry" checked />
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label">All day</span>
+            </label>
+            <div class="calendar-filter-strip calendar-event-tags-strip diary-entry-tags-strip" role="button" tabindex="0" data-diary-entry-tags-strip data-personal-filter-open="diary-entry" data-personal-filter-tab="filters">Tags: Diary</div>
           </div>
-          <div id="diary-provenance" class="diary-provenance-list"></div>
-        </section>
-      </div>
+          <label class="calendar-field calendar-field--wide calendar-field--notes" for="diary-entry-body">
+            <span>Notes</span>
+            <textarea id="diary-entry-body" rows="3" maxlength="4000"></textarea>
+          </label>
+        </div>
+        <div class="calendar-quick-event__footer diary-quick-entry__footer">
+          <span id="diary-entry-status" class="calendar-entry-status diary-entry-status"></span>
+          <button class="calendar-command-btn diary-command-btn" type="button" data-diary-action="submit-entry">Save Entry</button>
+        </div>
+      </section>
+
+      <section class="calendar-band diary-band diary-band--upcoming" aria-labelledby="diary-upcoming-heading" data-diary-content-view="upcoming">
+        <div class="calendar-section-head diary-section-head">
+          <div class="calendar-section-head__cluster">
+            <h3 id="diary-upcoming-heading">Upcoming</h3>
+            <label class="calendar-check calendar-upcoming-scope hub-checkbox">
+              <input class="hub-checkbox__input" type="checkbox" data-diary-upcoming-next-years />
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label">Next 10 years</span>
+            </label>
+            <span id="diary-upcoming-count" class="calendar-pill diary-pill">0</span>
+          </div>
+        </div>
+        <div id="diary-upcoming-list" class="calendar-agenda-list diary-agenda-list"></div>
+      </section>
+
+      <section class="calendar-band diary-band diary-band--provenance" aria-labelledby="diary-provenance-heading" data-diary-content-view="provenance">
+        <div class="calendar-section-head diary-section-head">
+          <h3 id="diary-provenance-heading">Provenance</h3>
+        </div>
+        <div id="diary-provenance" class="calendar-provenance-list diary-provenance-list"></div>
+      </section>
     </div>
     </div><!-- /tab-scroll-shell -->
   </section>
@@ -3720,10 +3788,14 @@
 
   <dialog class="hub-modal hub-dialog" data-tone="info" id="diary-action-modal" style="width:min(720px,94vw);max-width:94vw">
     <div class="hub-modal-header">
-      <h3 class="hub-dialog-title" id="diary-action-modal-title">Diary Action</h3>
-      <button type="button" class="hub-modal-close" id="diary-action-modal-close" aria-label="Close"></button>
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">DIARY</span>
+        <span class="hub-dialog-title-text" id="diary-action-modal-title">Diary Action</span>
+      </h2>
+      <div class="calendar-action-modal-tools diary-action-modal-tools" id="diary-action-modal-tools" hidden></div>
+      <button type="button" class="hub-modal-close hub-dialog-close" id="diary-action-modal-close" aria-label="Close">&#10005;</button>
     </div>
-    <div class="hub-modal-body diary-action-modal-body" id="diary-action-modal-body"></div>
+    <div class="hub-modal-body calendar-action-modal-body diary-action-modal-body" id="diary-action-modal-body"></div>
     <div class="hub-modal-footer">
       <span id="diary-action-modal-status" class="hub-modal-status"></span>
       <button type="button" class="hub-modal-secondary" id="diary-action-modal-footer-close">Close</button>

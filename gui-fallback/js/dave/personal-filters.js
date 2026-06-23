@@ -899,7 +899,17 @@ const PersonalFilters = (() => {
     if (!Array.isArray(tabs)) return [];
     return tabs
       .filter(tab => tab && allowed.has(String(tab.id || '')))
-      .map(tab => ({ id: String(tab.id), label: String(tab.label || titleCase(tab.id)) }));
+      .map(tab => {
+        const id = String(tab.id);
+        const disabled = typeof tab.disabled === 'function'
+          ? Boolean(tab.disabled(host))
+          : Boolean(tab.disabled);
+        return {
+          id,
+          label: String(tab.label || titleCase(id)),
+          disabled,
+        };
+      });
   }
 
   function extraTabBody(surface, tabId, host) {
@@ -920,12 +930,12 @@ const PersonalFilters = (() => {
       { id: 'settings', label: 'Filter Settings' },
       ...extraTabsFor(surface, host),
     ];
-    if (!tabDefs.some(tab => tab.id === active)) active = 'filters';
+    if (!tabDefs.some(tab => tab.id === active && !tab.disabled)) active = tabDefs.some(tab => tab.id === 'new-entry' && !tab.disabled) ? 'new-entry' : 'filters';
     if (active !== 'settings') resetSettingsOrderForHost(host);
     const framed = host.dataset.personalFilterFramed === 'false' ? '' : ' personal-filter-panel--framed';
     const tabs = layout === 'tabs'
       ? `<div class="personal-filter-panel__tabs" role="tablist">
-          ${tabDefs.map(tab => `<button class="personal-filter-tab" type="button" role="tab" aria-selected="${active === tab.id ? 'true' : 'false'}" data-personal-filter-tab="${escHtml(tab.id)}">${escHtml(tab.label)}</button>`).join('')}
+          ${tabDefs.map(tab => `<button class="personal-filter-tab${tab.disabled ? ' is-disabled' : ''}" type="button" role="tab" aria-selected="${active === tab.id ? 'true' : 'false'}" aria-disabled="${tab.disabled ? 'true' : 'false'}" data-personal-filter-tab="${escHtml(tab.id)}"${tab.disabled ? ' disabled' : ''}>${escHtml(tab.label)}</button>`).join('')}
         </div>`
       : '';
     const body = active === 'settings'
@@ -945,6 +955,38 @@ const PersonalFilters = (() => {
       const surface = node.dataset.personalFilterSummaryFor || 'calendar';
       node.innerHTML = summaryHtml(surface);
     });
+  }
+
+  function hostIsVisible(host) {
+    if (!host || !host.isConnected) return false;
+    const style = window.getComputedStyle ? window.getComputedStyle(host) : null;
+    if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
+    const rect = typeof host.getBoundingClientRect === 'function' ? host.getBoundingClientRect() : null;
+    return !rect || (rect.width > 0 && rect.height > 0);
+  }
+
+  function activateTab(surface = 'calendar', tabId = 'filters', options = {}) {
+    const cleanSurface = surface || 'calendar';
+    const cleanTab = tabId || 'filters';
+    const scopedHost = options.host || null;
+    const hosts = scopedHost
+      ? [scopedHost]
+      : Array.from(document.querySelectorAll(`[data-personal-filter-host][data-personal-filter-surface="${cssEscape(cleanSurface)}"]`));
+    let activated = false;
+    hosts.forEach(host => {
+      if (!host || (options.visibleOnly !== false && !hostIsVisible(host))) return;
+      if ((host.dataset.personalFilterLayout || 'tabs') !== 'tabs') return;
+      const tab = [
+        { id: 'filters', disabled: false },
+        { id: 'settings', disabled: false },
+        ...extraTabsFor(cleanSurface, host),
+      ].find(item => item.id === cleanTab);
+      if (!tab || tab.disabled) return;
+      host.dataset.personalFilterTab = cleanTab;
+      renderHost(host);
+      activated = true;
+    });
+    return activated;
   }
 
   function emitChange(surface, reason) {
@@ -1069,7 +1111,11 @@ const PersonalFilters = (() => {
     const surface = pageSurfaceFromState(current);
     if (!surface) return false;
     const title = `${surface === 'todo' ? 'ToDo' : titleCase(surface)} Filters`;
-    const extraTabs = surface === 'calendar' ? ' data-personal-filter-extra-tabs="selected,milestones,search,new-event,upcoming,provenance"' : '';
+    const extraTabsBySurface = {
+      calendar: 'selected,milestones,search,new-event,upcoming,provenance',
+      diary: 'selected,day,search,new-entry,edit-entry,upcoming,provenance',
+    };
+    const extraTabs = extraTabsBySurface[surface] ? ` data-personal-filter-extra-tabs="${escHtml(extraTabsBySurface[surface])}"` : '';
     window.UltrawideSidecar.setTitle(title);
     window.UltrawideSidecar.setHTML(`<div class="personal-filter-sidecar-host" data-personal-filter-host data-personal-filter-surface="${escHtml(surface)}" data-personal-filter-layout="tabs" data-personal-filter-framed="false"${extraTabs}></div>`);
     renderHost(document.querySelector('#ultrawide-sidecar-body [data-personal-filter-host]'));
@@ -1274,6 +1320,7 @@ const PersonalFilters = (() => {
     resetSettingsOrder,
     recordTokens,
     syncUltrawideSidecar,
+    activateTab,
     colors: () => COLORS.slice(),
     shapes: () => SHAPES.slice(),
   };

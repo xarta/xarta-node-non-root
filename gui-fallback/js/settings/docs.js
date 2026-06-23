@@ -2791,6 +2791,14 @@ function _inlineMd(s) {
   return s;
 }
 
+function _docsStripFrontmatter(md) {
+  return String(md || '').replace(/^---\s*\n[\s\S]*?\n---\s*(\n|$)/, '');
+}
+
+window.BlueprintsMarkdown = window.BlueprintsMarkdown || {};
+window.BlueprintsMarkdown.stripFrontmatter = _docsStripFrontmatter;
+window.BlueprintsMarkdown.render = md => _mdToHtml(_docsStripFrontmatter(md));
+
 function _docsNormalizePreviewPath(path) {
   let clean = _docsCleanMarkdownHref(path).split('#')[0].split('?')[0];
   try {

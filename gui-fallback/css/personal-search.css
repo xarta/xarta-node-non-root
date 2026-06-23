@@ -32,16 +32,38 @@
 }
 
 .personal-search-form--calendar-range {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   margin: 0;
 }
 
+.personal-search-form--calendar-range > .calendar-field {
+  min-width: 0;
+}
+
+.personal-search-form--calendar-range > .calendar-field:not(.calendar-field--wide) {
+  flex: 0 1 154px;
+}
+
+.personal-search-form--calendar-range > .calendar-field--wide,
+.personal-search-form--calendar-range > .calendar-event-options-row,
+.personal-search-form--calendar-range > .personal-search-form-footer {
+  grid-column: 1 / -1;
+}
+
 .personal-search-form--calendar-range .calendar-field input {
-  width: 100%;
+  min-width: 0;
 }
 
 .personal-search-form--calendar-range .personal-search-query-input {
   min-width: 0;
+}
+
+@media (min-width: 700px) {
+  .personal-search-form--calendar-range {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 .personal-search-filter-strip {
@@ -325,6 +347,11 @@
   .personal-search-form {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 40px;
+  }
+
+  .personal-search-form--calendar-range {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .personal-search-form input {

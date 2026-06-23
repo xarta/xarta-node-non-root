@@ -232,6 +232,106 @@
   line-height: 1.4;
 }
 
+.calendar-field__label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.calendar-markdown-toggle {
+  min-height: 24px;
+  padding: 3px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent, #58a6ff) 58%, var(--border));
+  border-radius: 7px;
+  background: rgba(36, 80, 140, .24);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.calendar-markdown-toggle:hover,
+.calendar-markdown-toggle:focus-visible {
+  border-color: color-mix(in srgb, var(--gold, #d7b24a) 74%, var(--border));
+  box-shadow: 0 0 0 2px rgba(215, 178, 74, .18);
+}
+
+.calendar-markdown-preview {
+  min-height: 62px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, .18);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.calendar-markdown-preview p {
+  margin: 0 0 8px;
+}
+
+.calendar-markdown-preview p:last-child {
+  margin-bottom: 0;
+}
+
+.calendar-markdown-preview h1,
+.calendar-markdown-preview h2 {
+  margin: 14px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-weight: 800;
+}
+
+.calendar-markdown-preview h1 {
+  font-size: 1.45em;
+}
+
+.calendar-markdown-preview h2 {
+  font-size: 1.25em;
+}
+
+.calendar-markdown-preview h3,
+.calendar-markdown-preview h4,
+.calendar-markdown-preview h5,
+.calendar-markdown-preview h6 {
+  margin: 12px 0 6px;
+  color: var(--text);
+  font-weight: 800;
+}
+
+.calendar-markdown-preview ul,
+.calendar-markdown-preview ol {
+  margin: 6px 0 10px 22px;
+  padding: 0;
+}
+
+.calendar-markdown-preview li {
+  margin: 3px 0;
+}
+
+.calendar-markdown-preview blockquote {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent);
+  background: rgba(36, 80, 140, .16);
+  color: var(--text-dim);
+}
+
+.calendar-markdown-preview pre {
+  overflow-x: auto;
+}
+
+.calendar-markdown-gap {
+  height: 8px;
+}
+
+.calendar-markdown-empty {
+  color: var(--text-dim);
+}
+
 .calendar-segment {
   display: inline-flex;
   flex: .72 1 150px;
@@ -949,6 +1049,95 @@
 
 .calendar-action-modal-tools[hidden] {
   display: none;
+}
+
+button.calendar-action-icon-btn.table-icon-btn,
+.calendar-action-icon-btn {
+  --table-action-color: var(--gold, #d7b24a);
+  --table-action-rgb: 215, 178, 74;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  border: 1px solid color-mix(in srgb, var(--accent, #58a6ff) 62%, var(--border));
+  border-radius: 10px;
+  background: rgba(36, 80, 140, .22);
+  color: var(--gold, #d7b24a);
+  cursor: pointer;
+}
+
+button.calendar-action-icon-btn.table-icon-btn:hover,
+button.calendar-action-icon-btn.table-icon-btn:focus-visible,
+.calendar-action-icon-btn:hover,
+.calendar-action-icon-btn:focus-visible {
+  border-color: color-mix(in srgb, var(--gold, #d7b24a) 76%, var(--border));
+  box-shadow: 0 0 0 2px rgba(215, 178, 74, .18);
+}
+
+button.calendar-action-icon-btn.table-icon-btn::before {
+  width: 17px;
+  height: 17px;
+}
+
+button.calendar-action-icon-btn.table-icon-btn--edit::before {
+  content: '';
+  display: block;
+  width: 19px;
+  height: 19px;
+  background: transparent url("/fallback-ui/assets/icons/ui/edit-blue-gold.svg") center / contain no-repeat;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.calendar-entry-preview {
+  display: grid;
+  gap: 12px;
+}
+
+.calendar-entry-preview__meta {
+  color: var(--text-dim);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.calendar-entry-preview__body {
+  min-height: min(56dvh, 520px);
+}
+
+.calendar-entry-preview__notice {
+  margin: 0;
+  color: var(--text-dim);
+}
+
+.calendar-entry-preview-editor {
+  display: grid;
+  gap: 12px;
+}
+
+.calendar-entry-preview-editor__field {
+  display: grid;
+}
+
+.calendar-entry-preview-editor textarea {
+  min-height: min(58dvh, 560px);
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, .18);
+  color: var(--text);
+  resize: vertical;
+  color-scheme: dark;
+}
+
+.calendar-entry-preview-editor__footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
 }
 
 dialog.hub-modal.calendar-action-modal--content {
