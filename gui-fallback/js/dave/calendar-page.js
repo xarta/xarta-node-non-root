@@ -80,6 +80,8 @@ const CalendarPage = (() => {
   let suppressSelectDayClickUntil = 0;
   let lastDayTap = null;
   let lastDayClick = null;
+  let pendingEventTapTimer = null;
+  let lastEventTap = null;
 
   const escHtml = typeof esc === 'function'
     ? esc
@@ -368,6 +370,42 @@ const CalendarPage = (() => {
     return sourceType(event) === 'manual-calendar' || tags.includes('calendar');
   }
 
+  function eventEditability(event) {
+    if (!event?.event_id) {
+      return { editable: false, reason: 'No editable event is selected.' };
+    }
+    if (sourceType(event) === 'manual-calendar') {
+      return { editable: true, reason: '' };
+    }
+    const owner = sourceType(event) || event?.kind || 'source';
+    return {
+      editable: false,
+      reason: `Source-owned event (${owner}); open the source detail to edit upstream.`,
+    };
+  }
+
+  function stripFrontmatter(md) {
+    if (window.BlueprintsMarkdown?.stripFrontmatter) return window.BlueprintsMarkdown.stripFrontmatter(md);
+    return String(md || '').replace(/^---\s*\n[\s\S]*?\n---\s*(\n|$)/, '');
+  }
+
+  function renderMarkdown(md) {
+    if (window.BlueprintsMarkdown?.render) return window.BlueprintsMarkdown.render(md);
+    const clean = stripFrontmatter(md).trim();
+    if (!clean) return '<p class="calendar-markdown-empty">No event content.</p>';
+    return clean.split(/\n/).map(line => {
+      const heading = line.match(/^(#{1,6})\s+(.*)$/);
+      if (heading) {
+        const level = Math.min(6, heading[1].length);
+        return `<h${level}>${escHtml(heading[2])}</h${level}>`;
+      }
+      const bullet = line.match(/^\s*[-*+]\s+(.*)$/);
+      if (bullet) return `<ul><li>${escHtml(bullet[1])}</li></ul>`;
+      if (!line.trim()) return '<div class="calendar-markdown-gap"></div>';
+      return `<p>${escHtml(line)}</p>`;
+    }).join('');
+  }
+
   function isTaskLike(event) {
     const kind = String(event?.kind || '').toLowerCase();
     const relatedTasks = event?.related?.tasks || [];
@@ -517,6 +555,57 @@ const CalendarPage = (() => {
     };
     applySelectionStyles();
     renderMeta();
+  }
+
+  function clearPendingEventPreview() {
+    if (!pendingEventTapTimer) return;
+    window.clearTimeout(pendingEventTapTimer);
+    pendingEventTapTimer = null;
+  }
+
+  function handleEventActivation(row, event, options = {}) {
+    if (!row?.event_id) return false;
+    const now = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+    const x = Number.isFinite(event.clientX) ? event.clientX : 0;
+    const y = Number.isFinite(event.clientY) ? event.clientY : 0;
+    const previous = lastEventTap;
+    const isDouble = event.detail >= 2
+      || (previous
+        && previous.id === row.event_id
+        && now - previous.time <= 320
+        && Math.hypot(x - previous.x, y - previous.y) <= DAY_DOUBLE_TAP_PX);
+    clearPendingEventPreview();
+    state.selection = {
+      key: selectionKey(options.type || 'event', Number.isFinite(Number(options.index)) ? Number(options.index) : -1),
+      type: options.type || 'event',
+      index: Number.isFinite(Number(options.index)) ? Number(options.index) : -1,
+      label: rowLabel(row),
+      row,
+    };
+    applySelectionStyles();
+    renderMeta();
+    if (isDouble) {
+      lastEventTap = null;
+      event.preventDefault();
+      editSelected();
+      return true;
+    }
+    lastEventTap = { id: row.event_id, time: now, x, y };
+    pendingEventTapTimer = window.setTimeout(() => {
+      pendingEventTapTimer = null;
+      lastEventTap = null;
+      openEventPreview(row);
+    }, 280);
+    return true;
+  }
+
+  function handleSelectableEventActivation(selectable, event) {
+    const type = selectable.dataset.calendarSelectType;
+    const index = selectable.dataset.calendarSelectIndex;
+    const rows = rowsForType(type);
+    const row = rows[Number(index)];
+    if (!row) return false;
+    return handleEventActivation(row, event, { type, index: Number(index) });
   }
 
   function selectionKey(type, index) {
@@ -1513,10 +1602,14 @@ const CalendarPage = (() => {
             </label>
             <div class="calendar-filter-strip calendar-event-tags-strip" role="button" tabindex="0" data-calendar-event-tags-strip data-personal-filter-open="${escHtml(EVENT_TAG_SURFACE)}" data-personal-filter-tab="filters">${eventTagsSummaryHtml()}</div>
           </div>
-          <label class="calendar-field calendar-field--wide calendar-field--notes" for="${escHtml(safePrefix)}-body">
-            <span>Notes</span>
+          <div class="calendar-field calendar-field--wide calendar-field--notes calendar-markdown-field">
+            <div class="calendar-field__label-row">
+              <span>Notes</span>
+              <button class="calendar-markdown-toggle" type="button" data-calendar-action="toggle-markdown-preview" data-calendar-markdown-prefix="${escHtml(safePrefix)}">Preview</button>
+            </div>
             <textarea id="${escHtml(safePrefix)}-body" rows="2" maxlength="2000">${escHtml(valueFor('body'))}</textarea>
-          </label>
+            <div id="${escHtml(safePrefix)}-body-preview" class="calendar-markdown-preview" hidden></div>
+          </div>
         </div>
         <div class="calendar-quick-event__footer">
           <span id="${escHtml(safePrefix)}-status" class="calendar-entry-status"></span>
@@ -1731,6 +1824,181 @@ const CalendarPage = (() => {
     return `<dl class="calendar-action-kv">${items.map(([key, value]) => `
       <dt>${escHtml(key)}</dt><dd>${escHtml(value ?? '')}</dd>
     `).join('')}</dl>`;
+  }
+
+  function eventPreviewTitle(event) {
+    return event?.title || event?.kind || 'Calendar Event';
+  }
+
+  function eventPreviewBody(event) {
+    return event?.content_projection || event?.body_excerpt || '';
+  }
+
+  function eventPreviewMeta(event) {
+    const meta = calendarMeta(event);
+    const date = eventStartDate(event);
+    const bits = [
+      monthLabel(date, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }),
+      eventTime(event),
+      sourceType(event) || event?.kind || '',
+    ].filter(Boolean);
+    if (meta.local_end_date && meta.local_end_date !== date) {
+      bits.splice(1, 0, `to ${monthLabel(meta.local_end_date, { day: '2-digit', month: 'long', year: 'numeric' })}`);
+    }
+    return bits.join(' · ');
+  }
+
+	  function eventPreviewToolsHtml(event) {
+	    if (!eventEditability(event).editable) return '';
+	    return `
+	      <button class="calendar-action-icon-btn table-icon-btn table-icon-btn--edit" type="button" data-calendar-modal-action="edit-event-content" title="Edit content" aria-label="Edit content"></button>
+	    `;
+	  }
+
+  function eventPreviewHtml(event, options = {}) {
+    const editability = eventEditability(event);
+    const body = eventPreviewBody(event);
+    if (options.editing && editability.editable) {
+      return `
+        <section class="calendar-entry-preview" data-calendar-event-preview-id="${escHtml(event.event_id || '')}">
+          <div class="calendar-entry-preview__meta">${escHtml(eventPreviewMeta(event))}</div>
+          <div class="calendar-entry-preview-editor">
+            <div class="calendar-field calendar-field--wide calendar-field--notes calendar-markdown-field calendar-entry-preview-editor__field">
+              <div class="calendar-field__label-row">
+                <span>Content</span>
+                <button class="calendar-markdown-toggle" type="button" data-calendar-modal-action="toggle-event-content-preview" data-calendar-preview-editor="calendar-event-preview-editor" data-calendar-preview-output="calendar-event-preview-editor-preview">Preview</button>
+              </div>
+              <textarea id="calendar-event-preview-editor" rows="14" maxlength="4000">${escHtml(body)}</textarea>
+              <div id="calendar-event-preview-editor-preview" class="calendar-markdown-preview calendar-entry-preview-editor__markdown" hidden></div>
+            </div>
+            <div class="calendar-entry-preview-editor__footer">
+              <span id="calendar-event-preview-status" class="calendar-entry-status"></span>
+              <button class="calendar-command-btn" type="button" data-calendar-modal-action="save-event-content">Save Content</button>
+            </div>
+          </div>
+        </section>
+      `;
+    }
+    return `
+      <section class="calendar-entry-preview" data-calendar-event-preview-id="${escHtml(event?.event_id || '')}">
+        <div class="calendar-entry-preview__meta">${escHtml(eventPreviewMeta(event))}</div>
+        <div class="calendar-markdown-preview calendar-entry-preview__body">${renderMarkdown(body)}</div>
+        ${editability.editable ? '' : `<p class="calendar-entry-preview__notice">${escHtml(editability.reason)}</p>`}
+      </section>
+    `;
+  }
+
+  function openEventPreview(event) {
+    if (!event?.event_id) return false;
+    return showActionModal(eventPreviewTitle(event), eventPreviewHtml(event), '', {
+      contentView: 'event-preview',
+      headerToolsHtml: eventPreviewToolsHtml(event),
+    });
+  }
+
+  function openSelectedEventContentEditor() {
+    const event = state.selection?.row;
+    if (!event?.event_id || !eventEditability(event).editable) return false;
+    return showActionModal(eventPreviewTitle(event), eventPreviewHtml(event, { editing: true }), '', {
+      contentView: 'event-preview',
+    });
+  }
+
+  function calendarPayloadForContentEdit(event, bodyText) {
+    const meta = calendarMeta(event);
+    const runId = `ui-calendar-content-edit-${Date.now()}`;
+    return {
+      title: event?.title || 'Untitled',
+      body: bodyText.trim(),
+      local_date: eventStartDate(event),
+      start_time: isAllDay(event) ? null : meta.local_start_time || null,
+      end_time: isAllDay(event) ? null : meta.local_end_time || null,
+      all_day: isAllDay(event),
+      tags: eventTags(event),
+      actor: 'blueprints-ui',
+      source_surface: 'calendar-page',
+      request_id: runId,
+      run_id: runId,
+    };
+  }
+
+  async function saveSelectedEventContent() {
+    const event = state.selection?.row;
+    const status = el('calendar-event-preview-status');
+    const editability = eventEditability(event);
+    if (!editability.editable || !event?.event_id) {
+      if (status) status.textContent = editability.reason || 'Event cannot be edited.';
+      return false;
+    }
+    const payload = calendarPayloadForContentEdit(event, String(el('calendar-event-preview-editor')?.value || ''));
+    if (status) status.textContent = 'Saving content...';
+    const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
+    const resp = await fetcher(`/api/v1/personal/calendar/events/${encodeURIComponent(event.event_id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      if (status) status.textContent = responseErrorMessage(data, resp.status);
+      return false;
+    }
+    state.lastWrite = data;
+    state.date = data.event?.local_date || payload.local_date || state.date;
+    state.loaded = false;
+    await load({ force: true });
+	    const saved = data.event || event;
+	    state.selection = { key: 'event:-1', type: 'event', index: -1, label: rowLabel(saved), row: saved };
+	    applySelectionStyles();
+	    renderMeta();
+	    return showActionModal(eventPreviewTitle(saved), eventPreviewHtml(saved), 'Saved content.', {
+	      contentView: 'event-preview',
+	      headerToolsHtml: eventPreviewToolsHtml(saved),
+	    });
+  }
+
+  function toggleMarkdownPreview(target, actionRoot = document) {
+    const button = target?.nodeType === 1
+      ? target
+      : (actionRoot.querySelector?.(`[data-calendar-markdown-prefix="${target}"]`) || document.querySelector(`[data-calendar-markdown-prefix="${target}"]`));
+    const prefix = button?.dataset?.calendarMarkdownPrefix || String(target || 'calendar-event');
+    const field = button?.closest?.('.calendar-markdown-field');
+    const body = field?.querySelector?.('textarea') || el(`${prefix}-body`);
+    const preview = field?.querySelector?.('.calendar-markdown-preview') || el(`${prefix}-body-preview`);
+    if (!body || !preview) return false;
+    const showing = !preview.hidden;
+    if (showing) {
+      preview.hidden = true;
+      body.hidden = false;
+      if (button) button.textContent = 'Preview';
+      return true;
+    }
+    preview.innerHTML = renderMarkdown(body.value);
+    preview.hidden = false;
+    body.hidden = true;
+    if (button) button.textContent = 'Edit';
+    return true;
+  }
+
+  function toggleEventContentPreview(button) {
+    const editorId = button?.dataset?.calendarPreviewEditor || 'calendar-event-preview-editor';
+    const previewId = button?.dataset?.calendarPreviewOutput || 'calendar-event-preview-editor-preview';
+    const body = el(editorId);
+    const preview = el(previewId);
+    if (!body || !preview) return false;
+    const showing = !preview.hidden;
+    if (showing) {
+      preview.hidden = true;
+      body.hidden = false;
+      if (button) button.textContent = 'Preview';
+      body.focus();
+      return true;
+    }
+    preview.innerHTML = renderMarkdown(body.value);
+    preview.hidden = false;
+    body.hidden = true;
+    if (button) button.textContent = 'Edit';
+    return true;
   }
 
   function eachDateText(startText, endText) {
@@ -1996,10 +2264,14 @@ const CalendarPage = (() => {
           <span class="hub-checkbox__box" aria-hidden="true"></span>
           <span class="hub-checkbox__label">All day</span>
         </label>
-        <label class="calendar-field calendar-field--wide calendar-field--notes" for="calendar-edit-body">
-          <span>Notes</span>
+        <div class="calendar-field calendar-field--wide calendar-field--notes calendar-markdown-field">
+          <div class="calendar-field__label-row">
+            <span>Notes</span>
+            <button class="calendar-markdown-toggle" type="button" data-calendar-modal-action="toggle-markdown-preview" data-calendar-markdown-prefix="calendar-edit">Preview</button>
+          </div>
           <textarea id="calendar-edit-body" rows="2" maxlength="2000">${escHtml(event.content_projection || event.body_excerpt || '')}</textarea>
-        </label>
+          <div id="calendar-edit-body-preview" class="calendar-markdown-preview" hidden></div>
+        </div>
       </div>
       <button class="calendar-command-btn" type="button" data-calendar-modal-action="submit-edit">Save Edit</button>
     `;
@@ -2394,6 +2666,7 @@ const CalendarPage = (() => {
     root.addEventListener('click', event => {
       const selectable = event.target.closest('[data-calendar-select-type]');
       if (selectable) {
+        if (handleSelectableEventActivation(selectable, event)) return;
         setSelection(selectable.dataset.calendarSelectType, selectable.dataset.calendarSelectIndex);
       }
       const btn = event.target.closest('[data-calendar-action]');
@@ -2424,6 +2697,7 @@ const CalendarPage = (() => {
         selectDay(btn.dataset.calendarDate);
       }
       if (action === 'open-month') openMonth(btn.dataset.calendarDate);
+      if (action === 'toggle-markdown-preview') toggleMarkdownPreview(btn, root);
       if (action === 'submit-event') submitEvent(btn.dataset.calendarEventPrefix || 'calendar-event');
     });
     root.addEventListener('dblclick', event => {
@@ -2434,13 +2708,19 @@ const CalendarPage = (() => {
       if (state.view === 'year') openMonth(btn.dataset.calendarDate);
       else if (state.view === 'month') openDiaryWeek(btn.dataset.calendarDate);
     });
-    document.addEventListener('click', event => {
-      const btn = event.target.closest('[data-calendar-action="submit-event"]');
-      if (!btn || root.contains(btn)) return;
-      event.preventDefault();
-      submitEvent(btn.dataset.calendarEventPrefix || 'calendar-event');
-    });
-    document.addEventListener('change', event => {
+	    document.addEventListener('click', event => {
+	      const btn = event.target.closest('[data-calendar-action="submit-event"]');
+	      if (!btn || root.contains(btn)) return;
+	      event.preventDefault();
+	      submitEvent(btn.dataset.calendarEventPrefix || 'calendar-event');
+	    });
+	    document.addEventListener('click', event => {
+	      const btn = event.target.closest('[data-calendar-action="toggle-markdown-preview"]');
+	      if (!btn || root.contains(btn)) return;
+	      event.preventDefault();
+		      toggleMarkdownPreview(btn, document);
+	    });
+	    document.addEventListener('change', event => {
       const dateControl = event.target.closest('[data-calendar-event-date]');
       if (dateControl) {
         const prefix = dateControl.id.replace(/-date$/, '');
@@ -2482,23 +2762,37 @@ const CalendarPage = (() => {
     const allDay = el('calendar-event-all-day');
     if (allDay) allDay.addEventListener('change', () => setAllDayControls('calendar-event'));
     document.querySelectorAll('[data-calendar-view-trigger]').forEach(bindContentViewTrigger);
-    ['calendar-action-modal-close', 'calendar-action-modal-footer-close'].forEach(id => {
-      const btn = el(id);
-      if (btn) btn.addEventListener('click', closeActionModal);
-    });
-    const modalBody = el('calendar-action-modal-body');
-    if (modalBody) {
-      modalBody.addEventListener('click', event => {
+	    ['calendar-action-modal-close', 'calendar-action-modal-footer-close'].forEach(id => {
+	      const btn = el(id);
+	      if (btn) btn.addEventListener('click', closeActionModal);
+	    });
+	    const modalTools = el('calendar-action-modal-tools');
+	    if (modalTools) {
+	      modalTools.addEventListener('click', event => {
+	        const btn = event.target.closest('[data-calendar-modal-action]');
+	        if (!btn) return;
+	        event.preventDefault();
+	        event.stopPropagation();
+	        if (btn.dataset.calendarModalAction === 'edit-event-content') openSelectedEventContentEditor();
+	      });
+	    }
+	    const modalBody = el('calendar-action-modal-body');
+	    if (modalBody) {
+	      modalBody.addEventListener('click', event => {
         const summaryBtn = event.target.closest('[data-calendar-action="generate-day-summary"]');
         if (summaryBtn) {
           generateDaySummary();
           return;
         }
-        const btn = event.target.closest('[data-calendar-modal-action]');
-        if (!btn) return;
-        if (btn.dataset.calendarModalAction === 'submit-edit') submitEdit();
-        if (btn.dataset.calendarModalAction === 'submit-work-link') submitWorkLink();
-      });
+	        const btn = event.target.closest('[data-calendar-modal-action]');
+	        if (!btn) return;
+	        if (btn.dataset.calendarModalAction === 'submit-edit') submitEdit();
+		        if (btn.dataset.calendarModalAction === 'submit-work-link') submitWorkLink();
+		        if (btn.dataset.calendarModalAction === 'edit-event-content') openSelectedEventContentEditor();
+		        if (btn.dataset.calendarModalAction === 'save-event-content') saveSelectedEventContent();
+		        if (btn.dataset.calendarModalAction === 'toggle-markdown-preview') toggleMarkdownPreview(btn, modalBody);
+		        if (btn.dataset.calendarModalAction === 'toggle-event-content-preview') toggleEventContentPreview(btn);
+	      });
       modalBody.addEventListener('change', event => {
         if (event.target?.id === 'calendar-edit-all-day') setAllDayControls('calendar-edit');
       });

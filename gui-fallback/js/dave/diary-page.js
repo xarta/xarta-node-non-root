@@ -65,6 +65,9 @@ const DiaryPage = (() => {
   let lastWeekDayClick = null;
   let suppressWeekDayClick = false;
   let suppressWeekDayClickUntil = 0;
+  let pendingEntryTapTimer = null;
+  let lastEntryTap = null;
+  let lastEntryPointerCandidate = null;
 
   const escHtml = typeof esc === 'function'
     ? esc
@@ -86,6 +89,33 @@ const DiaryPage = (() => {
       : Date.now();
   }
 
+  function openPendingEntryTapAsEdit(event) {
+    const candidate = lastEntryTap || lastEntryPointerCandidate;
+    if (!candidate || eventNow() - candidate.time > DAY_DOUBLE_TAP_MS) return false;
+    const row = findEventById(candidate.id);
+    if (!row) return false;
+    clearPendingEntryPreview();
+    lastEntryTap = null;
+    lastEntryPointerCandidate = null;
+    selectEntryById(entryIdentity(row), { type: 'entry', index: -1, openEdit: false });
+    event.preventDefault();
+    event.stopPropagation();
+    return openEditEntryForSelected();
+  }
+
+  function markEntryTapCandidate(btn, event) {
+    const row = findEventById(btn?.dataset?.diaryEntryId);
+    const id = entryIdentity(row);
+    if (!id) return false;
+    lastEntryPointerCandidate = {
+      id,
+      time: eventNow(),
+      x: Number.isFinite(event.clientX) ? event.clientX : 0,
+      y: Number.isFinite(event.clientY) ? event.clientY : 0,
+    };
+    return true;
+  }
+
   function handleWeekDayDoubleTap(dateText, event) {
     if (!dateText) return false;
     const now = eventNow();
@@ -98,6 +128,10 @@ const DiaryPage = (() => {
       && Math.hypot(x - previous.x, y - previous.y) <= DAY_DOUBLE_TAP_PX;
     lastWeekDayTap = isDoubleTap ? null : { date: dateText, time: now, x, y };
     if (!isDoubleTap) return false;
+    if (openPendingEntryTapAsEdit(event)) {
+      suppressWeekDayInteractions(700);
+      return true;
+    }
     suppressWeekDayInteractions(700);
     setView('day', dateText);
     event.preventDefault();
@@ -131,6 +165,10 @@ const DiaryPage = (() => {
       && now - previous.time <= DAY_DOUBLE_TAP_MS;
     lastWeekDayClick = isDoubleTap ? null : { date: dateText, time: now };
     if (!isDoubleTap) return false;
+    if (openPendingEntryTapAsEdit(event)) {
+      suppressWeekDayInteractions(700);
+      return true;
+    }
     setView('day', dateText);
     event.preventDefault();
     return true;
@@ -302,6 +340,56 @@ const DiaryPage = (() => {
     return sourceType(event) === 'manual-diary' || tags.includes('diary') || sourceType(event) === 'manual';
   }
 
+  function isManualCalendarEvent(event) {
+    return sourceType(event) === 'manual-calendar';
+  }
+
+  function isDiaryQuickEntry(event) {
+    const tags = eventTags(event);
+    const kind = String(event?.kind || '').toLowerCase();
+    return kind === 'personal-log' || tags.includes('quick-entry');
+  }
+
+  function entryEditability(event) {
+    if (!event?.event_id) {
+      return { editable: false, route: '', reason: 'No editable entry is selected.' };
+    }
+    if (isManualCalendarEvent(event)) {
+      return { editable: true, route: 'calendar', reason: '' };
+    }
+    if (isDiaryQuickEntry(event)) {
+      return { editable: true, route: 'diary', reason: '' };
+    }
+    const owner = sourceType(event) || event?.kind || 'source';
+    return {
+      editable: false,
+      route: '',
+      reason: `Source-owned entry (${owner}); open the source detail to edit upstream.`,
+    };
+  }
+
+  function stripFrontmatter(md) {
+    if (window.BlueprintsMarkdown?.stripFrontmatter) return window.BlueprintsMarkdown.stripFrontmatter(md);
+    return String(md || '').replace(/^---\s*\n[\s\S]*?\n---\s*(\n|$)/, '');
+  }
+
+  function renderMarkdown(md) {
+    if (window.BlueprintsMarkdown?.render) return window.BlueprintsMarkdown.render(md);
+    const clean = stripFrontmatter(md).trim();
+    if (!clean) return '<p class="calendar-markdown-empty">No entry content.</p>';
+    return clean.split(/\n/).map(line => {
+      const heading = line.match(/^(#{1,6})\s+(.*)$/);
+      if (heading) {
+        const level = Math.min(6, heading[1].length);
+        return `<h${level}>${escHtml(heading[2])}</h${level}>`;
+      }
+      const bullet = line.match(/^\s*[-*+]\s+(.*)$/);
+      if (bullet) return `<ul><li>${escHtml(bullet[1])}</li></ul>`;
+      if (!line.trim()) return '<div class="calendar-markdown-gap"></div>';
+      return `<p>${escHtml(line)}</p>`;
+    }).join('');
+  }
+
   function isTaskLike(event) {
     const kind = String(event?.kind || '').toLowerCase();
     const relatedTasks = event?.related?.tasks || [];
@@ -469,12 +557,28 @@ const DiaryPage = (() => {
   }
 
   function editEntryAvailable() {
-    return Boolean(selectedEntry()?.event_id);
+    return Boolean(selectedEntry());
+  }
+
+  function diaryTabHostVisible(host) {
+    if (!host || !host.isConnected) return false;
+    const style = window.getComputedStyle ? window.getComputedStyle(host) : null;
+    if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
+    const rect = typeof host.getBoundingClientRect === 'function' ? host.getBoundingClientRect() : null;
+    return !rect || (rect.width > 0 && rect.height > 0);
   }
 
   function activateInlineDiaryTab(tabId) {
     if (!window.PersonalFilters?.activateTab) return false;
-    return window.PersonalFilters.activateTab('diary', tabId, { visibleOnly: true });
+    const hosts = [
+      document.getElementById('diary-filter-inline-panel'),
+      document.querySelector('#ultrawide-sidecar-body [data-personal-filter-host][data-personal-filter-surface="diary"]'),
+    ].filter(Boolean);
+    for (const host of hosts) {
+      if (!diaryTabHostVisible(host)) continue;
+      if (window.PersonalFilters.activateTab('diary', tabId, { host, visibleOnly: true })) return true;
+    }
+    return false;
   }
 
   function activeActionModalView() {
@@ -541,7 +645,7 @@ const DiaryPage = (() => {
     const idx = Number(index);
     const row = rows[idx];
     if (!row) return;
-    if (entryIdentity(row) && selectEntryById(entryIdentity(row), { type, index: idx })) return;
+    if (entryIdentity(row) && selectEntryById(entryIdentity(row), { type, index: idx, openEdit: false })) return;
     state.selection = {
       key: selectionKey(type, idx),
       type,
@@ -551,6 +655,69 @@ const DiaryPage = (() => {
     };
     applySelectionStyles();
     renderMeta();
+  }
+
+  function clearPendingEntryPreview() {
+    if (!pendingEntryTapTimer) return;
+    window.clearTimeout(pendingEntryTapTimer);
+    pendingEntryTapTimer = null;
+  }
+
+  function handleEntryActivation(row, event, options = {}) {
+    const id = entryIdentity(row);
+    if (!id) return false;
+    const now = eventNow();
+    const x = Number.isFinite(event.clientX) ? event.clientX : 0;
+    const y = Number.isFinite(event.clientY) ? event.clientY : 0;
+    const previous = lastEntryTap;
+    const isDouble = event.detail >= 2
+      || (previous
+        && previous.id === id
+        && now - previous.time <= DAY_DOUBLE_TAP_MS
+        && Math.hypot(x - previous.x, y - previous.y) <= DAY_DOUBLE_TAP_PX);
+    clearPendingEntryPreview();
+    selectEntryById(id, {
+      type: options.type || 'entry',
+      index: Number.isFinite(Number(options.index)) ? Number(options.index) : -1,
+      openEdit: false,
+    });
+    if (isDouble) {
+      lastEntryTap = null;
+      lastEntryPointerCandidate = null;
+      event.preventDefault();
+      openEditEntryForSelected();
+      return true;
+    }
+    lastEntryTap = { id, time: now, x, y };
+    pendingEntryTapTimer = window.setTimeout(() => {
+      pendingEntryTapTimer = null;
+      lastEntryTap = null;
+      lastEntryPointerCandidate = null;
+      const current = findEventById(id);
+      openEntryPreview(current || row);
+    }, DAY_DOUBLE_TAP_MS);
+    return true;
+  }
+
+  function handleEntryDoubleClick(btn, event) {
+    const row = findEventById(btn?.dataset?.diaryEntryId);
+    if (!row) return false;
+    clearPendingEntryPreview();
+    lastEntryTap = null;
+    lastEntryPointerCandidate = null;
+    selectEntryById(entryIdentity(row), { type: 'entry', index: -1, openEdit: false });
+    event.preventDefault();
+    event.stopPropagation();
+    return openEditEntryForSelected();
+  }
+
+  function handleSelectableEntryActivation(selectable, event) {
+    const type = selectable.dataset.diarySelectType;
+    const index = selectable.dataset.diarySelectIndex;
+    const rows = rowsForType(type);
+    const row = rows[Number(index)];
+    if (!row) return false;
+    return handleEntryActivation(row, event, { type, index: Number(index) });
   }
 
   function selectionAttrs(type, index) {
@@ -1417,31 +1584,37 @@ const DiaryPage = (() => {
   function embeddedEntryFormHtml(prefix, options = {}) {
     const safePrefix = String(prefix || 'diary-panel-entry').replace(/[^a-zA-Z0-9_-]/g, '-');
     const mode = options.mode === 'edit' ? 'edit' : 'new';
+    const event = mode === 'edit' ? selectedEntry() : null;
+    const editability = mode === 'edit' ? entryEditability(event) : { editable: true, route: 'diary', reason: '' };
+    const formDisabled = mode === 'edit' && !editability.editable;
+    const formDisabledAttr = formDisabled ? ' disabled' : '';
     const defaults = entryFormDefaults(mode);
     const valueFor = (key, fallback = '') => String(el(`${safePrefix}-${key}`)?.value || fallback);
     const allDay = el(`${safePrefix}-all-day`) ? !!el(`${safePrefix}-all-day`)?.checked : defaults.allDay;
-    const disabled = allDay ? ' disabled' : '';
+    const disabled = (allDay || formDisabled) ? ' disabled' : '';
     const title = mode === 'edit' ? 'Edit Entry' : 'New Entry';
-    const tagAttr = mode === 'edit'
+    const tagAttr = formDisabled
+      ? 'aria-disabled="true"'
+      : (mode === 'edit'
       ? `data-diary-edit-tags-strip data-diary-entry-tags-surface="${escHtml(EDIT_TAG_SURFACE)}" data-personal-filter-open="${escHtml(EDIT_TAG_SURFACE)}"`
-      : `data-diary-entry-tags-strip data-diary-entry-tags-surface="${escHtml(ENTRY_TAG_SURFACE)}" data-personal-filter-open="${escHtml(ENTRY_TAG_SURFACE)}"`;
+      : `data-diary-entry-tags-strip data-diary-entry-tags-surface="${escHtml(ENTRY_TAG_SURFACE)}" data-personal-filter-open="${escHtml(ENTRY_TAG_SURFACE)}"`);
     const tagSummary = entryTagsSummaryHtml(mode === 'edit' ? EDIT_TAG_SURFACE : ENTRY_TAG_SURFACE);
     const action = mode === 'edit' ? 'submit-edit-entry' : 'submit-entry';
-    const eventId = mode === 'edit' ? entryIdentity(selectedEntry()) : '';
+    const eventId = mode === 'edit' ? entryIdentity(event) : '';
     return `
       <section class="calendar-quick-event calendar-quick-event--embedded diary-quick-entry diary-quick-entry--embedded" aria-label="${escHtml(title)}"${eventId ? ` data-diary-editing-entry-id="${escHtml(eventId)}"` : ''}>
         <div class="calendar-form-grid calendar-event-form-grid diary-entry-form-grid">
           <label class="calendar-field calendar-field--wide" for="${escHtml(safePrefix)}-title">
             <span>Title</span>
-            <input id="${escHtml(safePrefix)}-title" type="text" maxlength="180" autocomplete="off" value="${escHtml(valueFor('title', defaults.title))}" />
+            <input id="${escHtml(safePrefix)}-title" type="text" maxlength="180" autocomplete="off" value="${escHtml(valueFor('title', defaults.title))}"${formDisabledAttr} />
           </label>
           <label class="calendar-field" for="${escHtml(safePrefix)}-date">
             <span>Start date</span>
-            <input id="${escHtml(safePrefix)}-date" type="date" data-diary-entry-date value="${escHtml(valueFor('date', defaults.startDate))}" />
+            <input id="${escHtml(safePrefix)}-date" type="date" data-diary-entry-date value="${escHtml(valueFor('date', defaults.startDate))}"${formDisabledAttr} />
           </label>
           <label class="calendar-field" for="${escHtml(safePrefix)}-end-date">
             <span>End date</span>
-            <input id="${escHtml(safePrefix)}-end-date" type="date" data-diary-entry-end-date value="${escHtml(valueFor('end-date', valueFor('date', defaults.endDate)))}" />
+            <input id="${escHtml(safePrefix)}-end-date" type="date" data-diary-entry-end-date value="${escHtml(valueFor('end-date', valueFor('date', defaults.endDate)))}"${formDisabledAttr} />
           </label>
           <label class="calendar-field" for="${escHtml(safePrefix)}-start">
             <span>Start</span>
@@ -1453,20 +1626,24 @@ const DiaryPage = (() => {
           </label>
           <div class="calendar-event-options-row diary-entry-options-row">
             <label class="calendar-check hub-checkbox" for="${escHtml(safePrefix)}-all-day">
-              <input id="${escHtml(safePrefix)}-all-day" class="hub-checkbox__input" type="checkbox" data-diary-entry-all-day="${escHtml(safePrefix)}"${allDay ? ' checked' : ''} />
+              <input id="${escHtml(safePrefix)}-all-day" class="hub-checkbox__input" type="checkbox" data-diary-entry-all-day="${escHtml(safePrefix)}"${allDay ? ' checked' : ''}${formDisabledAttr} />
               <span class="hub-checkbox__box" aria-hidden="true"></span>
               <span class="hub-checkbox__label">All day</span>
             </label>
             <div class="calendar-filter-strip calendar-event-tags-strip diary-entry-tags-strip" role="button" tabindex="0" ${tagAttr} data-personal-filter-tab="filters">${tagSummary}</div>
           </div>
-          <label class="calendar-field calendar-field--wide calendar-field--notes" for="${escHtml(safePrefix)}-body">
-            <span>Notes</span>
-            <textarea id="${escHtml(safePrefix)}-body" rows="3" maxlength="4000">${escHtml(valueFor('body', defaults.body))}</textarea>
-          </label>
+          <div class="calendar-field calendar-field--wide calendar-field--notes calendar-markdown-field">
+            <div class="calendar-field__label-row">
+              <span>Notes</span>
+              <button class="calendar-markdown-toggle" type="button" data-diary-action="toggle-markdown-preview" data-diary-markdown-prefix="${escHtml(safePrefix)}"${formDisabled ? ' disabled' : ''}>Preview</button>
+            </div>
+            <textarea id="${escHtml(safePrefix)}-body" rows="3" maxlength="4000"${formDisabledAttr}>${escHtml(valueFor('body', defaults.body))}</textarea>
+            <div id="${escHtml(safePrefix)}-body-preview" class="calendar-markdown-preview" hidden></div>
+          </div>
         </div>
         <div class="calendar-quick-event__footer diary-quick-entry__footer">
-          <span id="${escHtml(safePrefix)}-status" class="calendar-entry-status diary-entry-status"></span>
-          <button class="calendar-command-btn diary-command-btn" type="button" data-diary-action="${escHtml(action)}" data-diary-entry-prefix="${escHtml(safePrefix)}"${mode === 'edit' && !eventId ? ' disabled' : ''}>Save Entry</button>
+          <span id="${escHtml(safePrefix)}-status" class="calendar-entry-status diary-entry-status">${formDisabled ? escHtml(editability.reason) : ''}</span>
+          <button class="calendar-command-btn diary-command-btn" type="button" data-diary-action="${escHtml(action)}" data-diary-entry-prefix="${escHtml(safePrefix)}"${mode === 'edit' && (!eventId || formDisabled) ? ' disabled' : ''}>Save Entry</button>
         </div>
       </section>
     `;
@@ -1704,6 +1881,211 @@ const DiaryPage = (() => {
     return `<dl class="calendar-action-kv diary-action-kv">${items.map(([key, value]) => `
       <dt>${escHtml(key)}</dt><dd>${escHtml(value ?? '')}</dd>
     `).join('')}</dl>`;
+  }
+
+  function entryPreviewTitle(event) {
+    return splitEntryText(event).title || event?.title || event?.kind || 'Diary Entry';
+  }
+
+  function entryPreviewBody(event) {
+    const parts = splitEntryText(event);
+    return parts.body || event?.body_excerpt || event?.content_projection || '';
+  }
+
+  function entryPreviewMeta(event) {
+    const meta = calendarMeta(event);
+    const date = eventStartDate(event);
+    const bits = [
+      monthLabel(date, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }),
+      eventTime(event),
+      sourceType(event) || event?.kind || '',
+    ].filter(Boolean);
+    if (meta.local_end_date && meta.local_end_date !== date) {
+      bits.splice(1, 0, `to ${monthLabel(meta.local_end_date, { day: '2-digit', month: 'long', year: 'numeric' })}`);
+    }
+    return bits.join(' · ');
+  }
+
+	  function entryPreviewToolsHtml(event) {
+	    if (!entryEditability(event).editable) return '';
+	    return `
+	      <button class="calendar-action-icon-btn table-icon-btn table-icon-btn--edit" type="button" data-diary-modal-action="edit-entry-content" title="Edit content" aria-label="Edit content"></button>
+	    `;
+	  }
+
+  function entryPreviewHtml(event, options = {}) {
+    const editability = entryEditability(event);
+    const body = entryPreviewBody(event);
+    if (options.editing && editability.editable) {
+      return `
+        <section class="calendar-entry-preview diary-entry-preview" data-diary-entry-preview-id="${escHtml(entryIdentity(event))}">
+          <div class="calendar-entry-preview__meta">${escHtml(entryPreviewMeta(event))}</div>
+          <div class="calendar-entry-preview-editor">
+            <div class="calendar-field calendar-field--wide calendar-field--notes calendar-markdown-field calendar-entry-preview-editor__field">
+              <div class="calendar-field__label-row">
+                <span>Content</span>
+                <button class="calendar-markdown-toggle" type="button" data-diary-modal-action="toggle-entry-content-preview" data-diary-preview-editor="diary-entry-preview-editor" data-diary-preview-output="diary-entry-preview-editor-preview">Preview</button>
+              </div>
+              <textarea id="diary-entry-preview-editor" rows="14" maxlength="4000">${escHtml(body)}</textarea>
+              <div id="diary-entry-preview-editor-preview" class="calendar-markdown-preview calendar-entry-preview-editor__markdown" hidden></div>
+            </div>
+            <div class="calendar-entry-preview-editor__footer">
+              <span id="diary-entry-preview-status" class="calendar-entry-status diary-entry-status"></span>
+              <button class="calendar-command-btn diary-command-btn" type="button" data-diary-modal-action="save-entry-content">Save Content</button>
+            </div>
+          </div>
+        </section>
+      `;
+    }
+    return `
+      <section class="calendar-entry-preview diary-entry-preview" data-diary-entry-preview-id="${escHtml(entryIdentity(event))}">
+        <div class="calendar-entry-preview__meta">${escHtml(entryPreviewMeta(event))}</div>
+        <div class="calendar-markdown-preview calendar-entry-preview__body">${renderMarkdown(body)}</div>
+        ${editability.editable ? '' : `<p class="calendar-entry-preview__notice">${escHtml(editability.reason)}</p>`}
+      </section>
+    `;
+  }
+
+  function openEntryPreview(event) {
+    if (!event?.event_id) return false;
+    selectEntryById(entryIdentity(event), { openEdit: false });
+    return showActionModal(entryPreviewTitle(event), entryPreviewHtml(event), '', {
+      contentView: 'entry-preview',
+      headerToolsHtml: entryPreviewToolsHtml(event),
+    });
+  }
+
+  function openSelectedEntryContentEditor() {
+    const event = selectedEntry();
+    if (!event?.event_id || !entryEditability(event).editable) return false;
+    return showActionModal(entryPreviewTitle(event), entryPreviewHtml(event, { editing: true }), '', {
+      contentView: 'entry-preview',
+    });
+  }
+
+  function diaryEditPayloadForContent(event, bodyText) {
+    const parts = splitEntryText(event);
+    const title = parts.title || event?.title || '';
+    const meta = calendarMeta(event);
+    const startDate = eventStartDate(event);
+    const runId = `ui-diary-content-edit-${Date.now()}`;
+    return {
+      body: [title, bodyText.trim()].filter(Boolean).join('\n\n'),
+      local_date: startDate,
+      range_start_date: startDate,
+      range_end_date: meta.local_end_date || startDate,
+      local_time: isAllDay(event) ? null : meta.local_start_time || null,
+      end_time: isAllDay(event) ? null : meta.local_end_time || null,
+      all_day: isAllDay(event),
+      actor: 'blueprints-ui',
+      source_surface: 'diary-page',
+      request_id: runId,
+      run_id: runId,
+      tags: eventTags(event),
+    };
+  }
+
+  function calendarEditPayloadForContent(event, bodyText) {
+    const meta = calendarMeta(event);
+    const runId = `ui-diary-calendar-content-edit-${Date.now()}`;
+    return {
+      title: splitEntryText(event).title || event?.title || 'Untitled',
+      body: bodyText.trim(),
+      local_date: eventStartDate(event),
+      start_time: isAllDay(event) ? null : meta.local_start_time || null,
+      end_time: isAllDay(event) ? null : meta.local_end_time || null,
+      all_day: isAllDay(event),
+      tags: eventTags(event),
+      actor: 'blueprints-ui',
+      source_surface: 'diary-page',
+      request_id: runId,
+      run_id: runId,
+    };
+  }
+
+  async function saveSelectedEntryContent() {
+    const event = selectedEntry();
+    const status = el('diary-entry-preview-status');
+    const editability = entryEditability(event);
+    if (!editability.editable || !event?.event_id) {
+      if (status) status.textContent = editability.reason || 'Entry cannot be edited.';
+      return false;
+    }
+    const bodyText = String(el('diary-entry-preview-editor')?.value || '').trim();
+    if (status) status.textContent = 'Saving content...';
+    const route = editability.route === 'calendar'
+      ? `/api/v1/personal/calendar/events/${encodeURIComponent(event.event_id)}`
+      : `/api/v1/personal/diary-day/entries/${encodeURIComponent(event.event_id)}`;
+    const payload = editability.route === 'calendar'
+      ? calendarEditPayloadForContent(event, bodyText)
+      : diaryEditPayloadForContent(event, bodyText);
+    const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
+    const resp = await fetcher(route, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      if (status) status.textContent = responseErrorMessage(data, resp.status);
+      return false;
+    }
+    if (status) status.textContent = 'Saved content.';
+    state.lastWrite = data;
+    state.date = data.event?.local_date || payload.local_date || state.date;
+    state.selectedEntryId = data.event?.event_id || event.event_id;
+    state.loaded = false;
+    state.daySummary = data.day || state.daySummary;
+    await load({ force: true });
+    const saved = selectedEntry() || data.event || event;
+    return showActionModal(entryPreviewTitle(saved), entryPreviewHtml(saved), 'Saved content.', {
+      contentView: 'entry-preview',
+      headerToolsHtml: entryPreviewToolsHtml(saved),
+    });
+  }
+
+  function toggleMarkdownPreview(target, actionRoot = document) {
+    const button = target?.nodeType === 1
+      ? target
+      : (actionRoot.querySelector?.(`[data-diary-markdown-prefix="${target}"]`) || document.querySelector(`[data-diary-markdown-prefix="${target}"]`));
+    const prefix = button?.dataset?.diaryMarkdownPrefix || String(target || 'diary-entry');
+    const field = button?.closest?.('.calendar-markdown-field');
+    const body = field?.querySelector?.('textarea') || el(`${prefix}-body`);
+    const preview = field?.querySelector?.('.calendar-markdown-preview') || el(`${prefix}-body-preview`);
+    if (!body || !preview) return false;
+    const showing = !preview.hidden;
+    if (showing) {
+      preview.hidden = true;
+      body.hidden = false;
+      if (button) button.textContent = 'Preview';
+      return true;
+    }
+    preview.innerHTML = renderMarkdown(body.value);
+    preview.hidden = false;
+    body.hidden = true;
+    if (button) button.textContent = 'Edit';
+    return true;
+  }
+
+  function toggleEntryContentPreview(button) {
+    const editorId = button?.dataset?.diaryPreviewEditor || 'diary-entry-preview-editor';
+    const previewId = button?.dataset?.diaryPreviewOutput || 'diary-entry-preview-editor-preview';
+    const body = el(editorId);
+    const preview = el(previewId);
+    if (!body || !preview) return false;
+    const showing = !preview.hidden;
+    if (showing) {
+      preview.hidden = true;
+      body.hidden = false;
+      if (button) button.textContent = 'Preview';
+      body.focus();
+      return true;
+    }
+    preview.innerHTML = renderMarkdown(body.value);
+    preview.hidden = false;
+    body.hidden = true;
+    if (button) button.textContent = 'Edit';
+    return true;
   }
 
   function dayPayload() {
@@ -1997,22 +2379,55 @@ const DiaryPage = (() => {
     };
   }
 
+  function calendarEditPayloadFromEntryForm(prefix = 'diary-edit-entry') {
+    const allDay = !!el(`${prefix}-all-day`)?.checked;
+    const startDate = String(el(`${prefix}-date`)?.value || state.date).trim();
+    const runId = `ui-diary-calendar-entry-edit-${Date.now()}`;
+    return {
+      title: String(el(`${prefix}-title`)?.value || '').trim(),
+      body: String(el(`${prefix}-body`)?.value || '').trim(),
+      local_date: startDate,
+      start_time: allDay ? null : String(el(`${prefix}-start`)?.value || '').trim() || null,
+      end_time: allDay ? null : String(el(`${prefix}-end`)?.value || '').trim() || null,
+      all_day: allDay,
+      actor: 'blueprints-ui',
+      source_surface: 'diary-page',
+      request_id: runId,
+      run_id: runId,
+      tags: editEntryTagIds(),
+    };
+  }
+
   async function submitEditEntry(prefix = 'diary-edit-entry') {
     const status = el(`${prefix}-status`);
     const event = selectedEntry();
+    const editability = entryEditability(event);
     if (!event?.event_id) {
       if (status) status.textContent = 'Select an entry first.';
       clearSelectedEntry();
       return false;
     }
-    const payload = editPayloadFromForm(prefix);
-    if (!payload.body) {
+    if (!editability.editable) {
+      if (status) status.textContent = editability.reason;
+      return false;
+    }
+    const payload = editability.route === 'calendar'
+      ? calendarEditPayloadFromEntryForm(prefix)
+      : editPayloadFromForm(prefix);
+    if (editability.route === 'calendar' && !payload.title) {
+      if (status) status.textContent = 'Entry title is required.';
+      return false;
+    }
+    if (editability.route !== 'calendar' && !payload.body) {
       if (status) status.textContent = 'Entry body is required.';
       return false;
     }
     if (status) status.textContent = 'Saving entry...';
     const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
-    const resp = await fetcher(`/api/v1/personal/diary-day/entries/${encodeURIComponent(event.event_id)}`, {
+    const route = editability.route === 'calendar'
+      ? `/api/v1/personal/calendar/events/${encodeURIComponent(event.event_id)}`
+      : `/api/v1/personal/diary-day/entries/${encodeURIComponent(event.event_id)}`;
+    const resp = await fetcher(route, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -2407,6 +2822,8 @@ const DiaryPage = (() => {
     syncEntryDate(true);
     renderEntryTagSummaries();
     root.addEventListener('pointerup', event => {
+      const entryBtn = event.target.closest('[data-diary-action="select-entry"][data-diary-entry-id]');
+      if (entryBtn) markEntryTapCandidate(entryBtn, event);
       const btn = event.target.closest('[data-diary-action="select-week-day"][data-diary-date]');
       if (!btn) return;
       handleWeekDayDoubleTap(btn.dataset.diaryDate, event);
@@ -2414,6 +2831,7 @@ const DiaryPage = (() => {
     root.addEventListener('click', event => {
       const selectable = event.target.closest('[data-diary-select-type]');
       if (selectable) {
+        if (handleSelectableEntryActivation(selectable, event)) return;
         setSelection(selectable.dataset.diarySelectType, selectable.dataset.diarySelectIndex);
       }
       const btn = event.target.closest('[data-diary-action]');
@@ -2432,6 +2850,10 @@ const DiaryPage = (() => {
         if (shouldSuppressWeekDayInteraction(event)) return;
         if (event.detail >= 2) {
           lastWeekDayClick = null;
+          if (openPendingEntryTapAsEdit(event)) {
+            suppressWeekDayInteractions(700);
+            return;
+          }
           setView('day', btn.dataset.diaryDate);
           return;
         }
@@ -2441,26 +2863,39 @@ const DiaryPage = (() => {
       if (action === 'toggle-hour-gap') toggleHourGap(btn.dataset.diaryGap);
       if (action === 'new-entry-at-hour') openNewEntryForHour(btn.dataset.diaryHour);
       if (action === 'show-new-entry') openNewEntry();
-      if (action === 'select-entry') selectEntryById(btn.dataset.diaryEntryId);
+      if (action === 'select-entry') {
+        const row = findEventById(btn.dataset.diaryEntryId);
+        if (row) handleEntryActivation(row, event);
+      }
+      if (action === 'toggle-markdown-preview') toggleMarkdownPreview(btn, root);
       if (action === 'submit-entry') submitEntry(btn.dataset.diaryEntryPrefix || 'diary-entry');
       if (action === 'submit-edit-entry') submitEditEntry(btn.dataset.diaryEntryPrefix || 'diary-edit-entry');
     });
     root.addEventListener('dblclick', event => {
+      const entryBtn = event.target.closest('[data-diary-action="select-entry"][data-diary-entry-id]');
+      if (entryBtn && handleEntryDoubleClick(entryBtn, event)) return;
       const btn = event.target.closest('[data-diary-action="select-week-day"][data-diary-date]');
       if (!btn) return;
       if (shouldSuppressWeekDayInteraction(event)) return;
       event.preventDefault();
+      if (openPendingEntryTapAsEdit(event)) return;
       setView('day', btn.dataset.diaryDate);
     });
-    document.addEventListener('click', event => {
-      const btn = event.target.closest('[data-diary-action="submit-entry"]');
-      if (!btn || root.contains(btn)) return;
-      event.preventDefault();
-      submitEntry(btn.dataset.diaryEntryPrefix || 'diary-entry');
-    });
-    document.addEventListener('click', event => {
-      const btn = event.target.closest('[data-diary-action="submit-edit-entry"]');
-      if (!btn || root.contains(btn)) return;
+	    document.addEventListener('click', event => {
+	      const btn = event.target.closest('[data-diary-action="submit-entry"]');
+	      if (!btn || root.contains(btn)) return;
+	      event.preventDefault();
+	      submitEntry(btn.dataset.diaryEntryPrefix || 'diary-entry');
+	    });
+	    document.addEventListener('click', event => {
+	      const btn = event.target.closest('[data-diary-action="toggle-markdown-preview"]');
+	      if (!btn || root.contains(btn)) return;
+	      event.preventDefault();
+		      toggleMarkdownPreview(btn, document);
+	    });
+	    document.addEventListener('click', event => {
+	      const btn = event.target.closest('[data-diary-action="submit-edit-entry"]');
+	      if (!btn || root.contains(btn)) return;
       event.preventDefault();
       submitEditEntry(btn.dataset.diaryEntryPrefix || 'diary-edit-entry');
     });
@@ -2498,22 +2933,42 @@ const DiaryPage = (() => {
       setAllDayControls('diary-entry');
     }
     document.querySelectorAll('[data-diary-view-trigger]').forEach(bindContentViewTrigger);
-    ['diary-action-modal-close', 'diary-action-modal-footer-close'].forEach(id => {
-      const btn = el(id);
-      if (btn) btn.addEventListener('click', closeActionModal);
-    });
-    const modalBody = el('diary-action-modal-body');
-    if (modalBody) {
-      modalBody.addEventListener('click', event => {
-        const summaryBtn = event.target.closest('[data-diary-action="generate-summary"]');
-        if (summaryBtn) {
-          generateSummary();
+	    ['diary-action-modal-close', 'diary-action-modal-footer-close'].forEach(id => {
+	      const btn = el(id);
+	      if (btn) btn.addEventListener('click', closeActionModal);
+	    });
+	    const modalTools = el('diary-action-modal-tools');
+	    if (modalTools) {
+	      modalTools.addEventListener('click', event => {
+	        const btn = event.target.closest('[data-diary-modal-action]');
+	        if (!btn) return;
+	        event.preventDefault();
+	        event.stopPropagation();
+	        if (btn.dataset.diaryModalAction === 'edit-entry-content') openSelectedEntryContentEditor();
+	      });
+	    }
+	    const modalBody = el('diary-action-modal-body');
+	    if (modalBody) {
+	      modalBody.addEventListener('click', event => {
+	        const markdownBtn = event.target.closest('[data-diary-action="toggle-markdown-preview"]');
+	        if (markdownBtn) {
+	          event.preventDefault();
+	          event.stopPropagation();
+		          toggleMarkdownPreview(markdownBtn, modalBody);
+	          return;
+	        }
+	        const summaryBtn = event.target.closest('[data-diary-action="generate-summary"]');
+	        if (summaryBtn) {
+	          generateSummary();
           return;
         }
-        const btn = event.target.closest('[data-diary-modal-action]');
-        if (!btn) return;
-        if (btn.dataset.diaryModalAction === 'submit-work-link') submitWorkLink();
-      });
+	        const btn = event.target.closest('[data-diary-modal-action]');
+	        if (!btn) return;
+		        if (btn.dataset.diaryModalAction === 'submit-work-link') submitWorkLink();
+		        if (btn.dataset.diaryModalAction === 'edit-entry-content') openSelectedEntryContentEditor();
+		        if (btn.dataset.diaryModalAction === 'toggle-entry-content-preview') toggleEntryContentPreview(btn);
+		        if (btn.dataset.diaryModalAction === 'save-entry-content') saveSelectedEntryContent();
+	      });
       modalBody.addEventListener('change', event => {
         const control = event.target.closest('[data-diary-entry-all-day]');
         if (!control) return;
