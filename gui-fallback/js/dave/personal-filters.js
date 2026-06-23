@@ -13,7 +13,7 @@ const PersonalFilters = (() => {
   const BADGE_HEIGHT = 18;
   const BADGE_PAD_X = 10;
   const BADGE_LABEL_GAP = 2;
-  const BUILTIN_IDS = new Set(['calendar', 'tasks', 'work', 'imports', 'sources', 'holiday', 'personal-holiday', 'national-holiday', 'all-day', 'blocked', 'review', 'uncategorized']);
+  const BUILTIN_IDS = new Set(['calendar', 'tasks', 'work', 'imports', 'sources', 'git', 'holiday', 'personal-holiday', 'national-holiday', 'all-day', 'blocked', 'review', 'uncategorized']);
 
   const COLORS = [
     ['red', '#ef4444'],
@@ -38,6 +38,7 @@ const PersonalFilters = (() => {
     work: { label: 'Work', color: 'gold', shape: 'rectangle', fill: 'outline' },
     imports: { label: 'Imports', color: 'purple', shape: 'rhombus', fill: 'outline' },
     sources: { label: 'Source records', color: 'grey', shape: 'pentagon', fill: 'outline' },
+    git: { label: 'Git', color: 'gold', shape: 'rhombus', fill: 'filled' },
     holiday: { label: 'Holiday', color: 'orange', shape: 'star', fill: 'filled' },
     'personal-holiday': { label: 'Personal holiday', color: 'pink', shape: 'circle', fill: 'filled' },
     'national-holiday': { label: 'National holiday', color: 'red', shape: 'star', fill: 'outline' },
@@ -567,6 +568,7 @@ const PersonalFilters = (() => {
       tokens.add('imports');
       tokens.add('import');
     }
+    if (sourceType(record) === 'git' || tags.includes('git') || tags.includes('github')) tokens.add('git');
     if (!isCalendarRecord(record)) tokens.add('sources');
     if (isBlockedRecord(record)) tokens.add('blocked');
     if (isReviewRecord(record)) tokens.add('review');

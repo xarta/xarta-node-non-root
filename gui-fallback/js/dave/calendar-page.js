@@ -332,6 +332,7 @@ const CalendarPage = (() => {
     if (value === 'work') return 'work';
     if (value === 'imports') return 'imports';
     if (value === 'sources') return 'source records';
+    if (value === 'git') return 'git activity';
     return 'all sources';
   }
 
@@ -422,6 +423,11 @@ const CalendarPage = (() => {
     return ['interests-ingestion', 'git'].includes(sourceType(event)) || relatedImports.length > 0;
   }
 
+  function isGitLike(event) {
+    const tags = eventTags(event);
+    return sourceType(event) === 'git' || tags.includes('git') || tags.includes('github');
+  }
+
   function isHolidayLike(event) {
     const tags = eventTags(event);
     return tags.includes('holiday') || tags.includes('personal-holiday') || tags.includes('national-holiday');
@@ -446,6 +452,7 @@ const CalendarPage = (() => {
     if (state.sourceFilter === 'work') return isWorkLike(event);
     if (state.sourceFilter === 'imports') return isImportLike(event);
     if (state.sourceFilter === 'sources') return !isCalendarEvent(event);
+    if (state.sourceFilter === 'git') return isGitLike(event);
     return true;
   }
 
@@ -1297,7 +1304,7 @@ const CalendarPage = (() => {
   }
 
   function setSourceFilter(filter) {
-    const clean = ['all', 'calendar', 'tasks', 'work', 'imports', 'sources'].includes(filter) ? filter : 'all';
+    const clean = ['all', 'calendar', 'tasks', 'work', 'imports', 'sources', 'git'].includes(filter) ? filter : 'all';
     state.sourceFilter = clean;
     if (window.PersonalFilters?.setSelectedIds) {
       window.PersonalFilters.setSelectedIds('calendar', clean === 'all' ? [] : [clean]);
@@ -1314,7 +1321,7 @@ const CalendarPage = (() => {
       state.sourceFilter = 'all';
       return;
     }
-    if (selected.length === 1 && ['calendar', 'tasks', 'work', 'imports', 'sources'].includes(selected[0])) {
+    if (selected.length === 1 && ['calendar', 'tasks', 'work', 'imports', 'sources', 'git'].includes(selected[0])) {
       state.sourceFilter = selected[0];
       return;
     }
@@ -2863,6 +2870,7 @@ const CalendarPage = (() => {
     filterWork: () => setSourceFilter('work'),
     filterImports: () => setSourceFilter('imports'),
     filterSources: () => setSourceFilter('sources'),
+    filterGit: () => setSourceFilter('git'),
     newEvent: () => openContentViewModal('new-event'),
     submitEvent,
     editSelected,
@@ -2902,6 +2910,7 @@ if (typeof DaveMenuConfig !== 'undefined') {
     'calendar.filterWork': () => CalendarPage.filterWork(),
     'calendar.filterImports': () => CalendarPage.filterImports(),
     'calendar.filterSources': () => CalendarPage.filterSources(),
+    'calendar.filterGit': () => CalendarPage.filterGit(),
     'calendar.newEvent': () => CalendarPage.newEvent(),
     'calendar.editSelected': () => CalendarPage.editSelected(),
     'calendar.openSource': () => CalendarPage.openSource(),

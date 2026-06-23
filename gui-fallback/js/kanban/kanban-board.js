@@ -1043,6 +1043,33 @@ const KanbanBoardPage = (() => {
     return true;
   }
 
+  async function openItemById(itemId) {
+    const cleanItemId = cleanRouteId(itemId);
+    if (!cleanItemId) return false;
+    state.routeDetailItemId = cleanItemId;
+    writeRouteState(state.currentParentId, cleanItemId);
+    if (!state.loaded) {
+      await load({ force: false });
+      return state.detail?.item?.item_id === cleanItemId || state.routeDetailItemId === cleanItemId;
+    }
+    return openItemDetail(cleanItemId);
+  }
+
+  function itemRouteUrl(itemId) {
+    const cleanItemId = cleanRouteId(itemId);
+    if (!cleanItemId || !window.location) return '';
+    const url = new URL(window.location.href);
+    url.searchParams.set('group', 'kanban');
+    url.searchParams.set('tab', 'kanban');
+    url.searchParams.set('detail_item_id', cleanItemId);
+    url.searchParams.delete('parent_item_id');
+    url.searchParams.delete('scoped_kind');
+    url.searchParams.delete('scoped_item_id');
+    url.searchParams.delete('scoped_scope');
+    url.searchParams.delete('scoped_view');
+    return `${url.pathname}${url.search}${url.hash || ''}`;
+  }
+
   async function loadScoped(kind, itemId, scope = 'descendants', view = 'grouped') {
     const config = scopedKindConfig(kind);
     const params = new URLSearchParams({ scope, view });
@@ -1686,6 +1713,8 @@ const KanbanBoardPage = (() => {
     openUpBoard,
     openSelectedChildBoard: () => openChildBoard(),
     openSelectedDetail: () => openItemDetail(),
+    openItemById,
+    itemRouteUrl,
     addChildToSelected: () => openItemForm({ parentItemId: state.selection?.item?.item_id, childOfSelection: true }),
     addIssueToSelected: () => state.selection?.item?.item_id ? openLeafForm('issue', state.selection.item.item_id) : false,
     addTodoToSelected: () => state.selection?.item?.item_id ? openLeafForm('todo', state.selection.item.item_id) : false,

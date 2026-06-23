@@ -684,6 +684,55 @@ function switchTab(tab) {
   _emitPageStateChanged(`switch-tab:${tab}`);
 }
 
+function _parseBlueprintsInternalHref(href) {
+  const raw = String(href || '').trim();
+  const match = raw.match(/^blueprints:\/\/kanban\/items\/([^/?#]+)/i);
+  if (!match) return null;
+  let itemId = '';
+  try {
+    itemId = decodeURIComponent(match[1]);
+  } catch (_) {
+    itemId = match[1];
+  }
+  itemId = String(itemId || '').trim().replace(/[^a-zA-Z0-9_.:-]+/g, '-').slice(0, 180);
+  return itemId ? { kind: 'kanban-item', itemId } : null;
+}
+
+function _routeBlueprintsInternalHref(href) {
+  const parsed = _parseBlueprintsInternalHref(href);
+  if (!parsed) return false;
+  if (parsed.kind === 'kanban-item') {
+    if (typeof KanbanMenuConfig !== 'undefined') KanbanMenuConfig.showGroup();
+    switchTab('kanban');
+    if (typeof KanbanMenuConfig !== 'undefined') KanbanMenuConfig.updateActiveTab('kanban');
+    if (typeof window.BlueprintsKanbanBoardPage?.openItemById === 'function') {
+      Promise.resolve(window.BlueprintsKanbanBoardPage.openItemById(parsed.itemId)).catch(error => {
+        console.warn('Could not open Blueprints Kanban link', error);
+      });
+      return true;
+    }
+    if (typeof window.BlueprintsKanbanBoardPage?.itemRouteUrl === 'function') {
+      const route = window.BlueprintsKanbanBoardPage.itemRouteUrl(parsed.itemId);
+      if (route) window.history.replaceState(window.history.state, '', route);
+    }
+    return true;
+  }
+  return false;
+}
+
+function _installBlueprintsInternalLinkHandler() {
+  if (document.documentElement.dataset.blueprintsInternalLinksBound === '1') return;
+  document.documentElement.dataset.blueprintsInternalLinksBound = '1';
+  document.addEventListener('click', event => {
+    const link = event.target?.closest?.('a[href^="blueprints://"]');
+    if (!link) return;
+    const href = link.getAttribute('href') || '';
+    if (!_parseBlueprintsInternalHref(href)) return;
+    event.preventDefault();
+    _routeBlueprintsInternalHref(href);
+  });
+}
+
 function _applySemanticFontRoleClasses() {
   if (typeof document === 'undefined') return;
 
@@ -701,6 +750,7 @@ function _applySemanticFontRoleClasses() {
 /* ── Bootstrap ────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
   _applySemanticFontRoleClasses();
+  _installBlueprintsInternalLinkHandler();
   if (!localStorage.getItem(_LS_SECRET_KEY)) { openApiKeyModal(); }
   if (typeof SoundManager !== 'undefined') SoundManager.init();
   if (typeof FormControlManager !== 'undefined') { FormControlManager.init(); FormControlManager.load(); }
