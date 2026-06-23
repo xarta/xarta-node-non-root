@@ -1069,7 +1069,11 @@ const PersonalFilters = (() => {
     const surface = pageSurfaceFromState(current);
     if (!surface) return false;
     const title = `${surface === 'todo' ? 'ToDo' : titleCase(surface)} Filters`;
-    const extraTabs = surface === 'calendar' ? ' data-personal-filter-extra-tabs="selected,milestones,search,new-event,upcoming,provenance"' : '';
+    const extraTabsBySurface = {
+      calendar: 'selected,milestones,search,new-event,upcoming,provenance',
+      diary: 'selected,day,search,new-entry,upcoming,provenance',
+    };
+    const extraTabs = extraTabsBySurface[surface] ? ` data-personal-filter-extra-tabs="${escHtml(extraTabsBySurface[surface])}"` : '';
     window.UltrawideSidecar.setTitle(title);
     window.UltrawideSidecar.setHTML(`<div class="personal-filter-sidecar-host" data-personal-filter-host data-personal-filter-surface="${escHtml(surface)}" data-personal-filter-layout="tabs" data-personal-filter-framed="false"${extraTabs}></div>`);
     renderHost(document.querySelector('#ultrawide-sidecar-body [data-personal-filter-host]'));

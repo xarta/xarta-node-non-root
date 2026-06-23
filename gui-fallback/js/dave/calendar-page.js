@@ -41,6 +41,8 @@ const CalendarPage = (() => {
   const CONTENT_VIEW_IDS = CONTENT_VIEWS.map(view => view.id);
   const INLINE_CONTENT_VIEW_IDS = ['calendar', 'filters', 'filter-settings'];
   const MODAL_CONTENT_VIEW_IDS = ['selected', 'milestones', 'search', 'new-event', 'upcoming', 'provenance'];
+  const DAY_DOUBLE_TAP_MS = 560;
+  const DAY_DOUBLE_TAP_PX = 28;
 
   const state = {
     loaded: false,
@@ -75,6 +77,9 @@ const CalendarPage = (() => {
   let contentViewMenuFitHandler = null;
   let dateRangeDrag = null;
   let suppressSelectDayClick = false;
+  let suppressSelectDayClickUntil = 0;
+  let lastDayTap = null;
+  let lastDayClick = null;
 
   const escHtml = typeof esc === 'function'
     ? esc
@@ -1830,6 +1835,72 @@ const CalendarPage = (() => {
     return node?.closest?.('[data-calendar-action="select-day"][data-calendar-date]') || null;
   }
 
+  function eventNow() {
+    return typeof performance !== 'undefined' && typeof performance.now === 'function'
+      ? performance.now()
+      : Date.now();
+  }
+
+  function handleDateDoubleTap(dateText, event) {
+    if (!dateText) return false;
+    const now = eventNow();
+    const x = Number.isFinite(event.clientX) ? event.clientX : 0;
+    const y = Number.isFinite(event.clientY) ? event.clientY : 0;
+    const previous = lastDayTap;
+    const isDoubleTap = previous
+      && previous.date === dateText
+      && previous.view === state.view
+      && now - previous.time <= DAY_DOUBLE_TAP_MS
+      && Math.hypot(x - previous.x, y - previous.y) <= DAY_DOUBLE_TAP_PX;
+    lastDayTap = isDoubleTap ? null : { date: dateText, view: state.view, time: now, x, y };
+    if (!isDoubleTap) return false;
+    suppressSelectDayInteractions(700);
+    if (state.view === 'year') {
+      openMonth(dateText);
+    } else if (state.view === 'month') {
+      openDiaryWeek(dateText);
+    }
+    event.preventDefault();
+    return true;
+  }
+
+  function suppressSelectDayInteractions(durationMs = 220) {
+    suppressSelectDayClick = true;
+    suppressSelectDayClickUntil = eventNow() + durationMs;
+    window.setTimeout(() => {
+      if (eventNow() >= suppressSelectDayClickUntil) suppressSelectDayClick = false;
+    }, durationMs + 30);
+  }
+
+  function shouldSuppressSelectDayInteraction(event) {
+    if (!suppressSelectDayClick && eventNow() >= suppressSelectDayClickUntil) return false;
+    if (eventNow() >= suppressSelectDayClickUntil) {
+      suppressSelectDayClick = false;
+      return false;
+    }
+    event.preventDefault();
+    return true;
+  }
+
+  function handleDateClickDoubleTap(dateText, event) {
+    if (!dateText) return false;
+    const now = eventNow();
+    const previous = lastDayClick;
+    const isDoubleTap = previous
+      && previous.date === dateText
+      && previous.view === state.view
+      && now - previous.time <= DAY_DOUBLE_TAP_MS;
+    lastDayClick = isDoubleTap ? null : { date: dateText, view: state.view, time: now };
+    if (!isDoubleTap) return false;
+    if (state.view === 'year') {
+      openMonth(dateText);
+    } else if (state.view === 'month') {
+      openDiaryWeek(dateText);
+    }
+    event.preventDefault();
+    return true;
+  }
+
   function removeDateRangeDragListeners() {
     document.removeEventListener('pointermove', updateDateRangeDrag, false);
     document.removeEventListener('pointerup', finishDateRangeDrag, false);
@@ -1869,12 +1940,12 @@ const CalendarPage = (() => {
     const drag = dateRangeDrag;
     dateRangeDrag = null;
     removeDateRangeDragListeners();
-    if (!drag.moved) return;
-    suppressSelectDayClick = true;
+    if (!drag.moved) {
+      handleDateDoubleTap(drag.start, event);
+      return;
+    }
+    suppressSelectDayInteractions(180);
     setManualRange(drag.start, drag.current);
-    window.setTimeout(() => {
-      suppressSelectDayClick = false;
-    }, 160);
     event.preventDefault();
   }
 
@@ -1999,10 +2070,16 @@ const CalendarPage = (() => {
 
   function linkDiary() {
     const targetDate = state.selection?.row?.local_date || state.date;
+    return openDiaryWeek(targetDate);
+  }
+
+  function openDiaryWeek(dateText = state.date) {
+    const targetDate = localDateString(parseLocalDate(dateText));
     if (typeof switchGroup === 'function') switchGroup('dave');
     if (typeof switchTab === 'function') switchTab('diary');
     if (typeof DaveMenuConfig !== 'undefined') DaveMenuConfig.updateActiveTab('diary');
-    if (window.BlueprintsDiaryPage?.setDate) window.BlueprintsDiaryPage.setDate(targetDate);
+    if (window.BlueprintsDiaryPage?.openWeek) window.BlueprintsDiaryPage.openWeek(targetDate);
+    else if (window.BlueprintsDiaryPage?.setDate) window.BlueprintsDiaryPage.setDate(targetDate);
     return true;
   }
 
@@ -2332,14 +2409,18 @@ const CalendarPage = (() => {
       if (action === 'mode-day') setMode('day');
       if (action === 'mode-week') setMode('week');
       if (action === 'select-day') {
-        if (suppressSelectDayClick) {
-          suppressSelectDayClick = false;
-          return;
-        }
+        if (shouldSuppressSelectDayInteraction(event)) return;
         if (state.view === 'year' && event.detail >= 2) {
+          lastDayClick = null;
           openMonth(btn.dataset.calendarDate);
           return;
         }
+        if (state.view === 'month' && event.detail >= 2) {
+          lastDayClick = null;
+          openDiaryWeek(btn.dataset.calendarDate);
+          return;
+        }
+        if (handleDateClickDoubleTap(btn.dataset.calendarDate, event)) return;
         selectDay(btn.dataset.calendarDate);
       }
       if (action === 'open-month') openMonth(btn.dataset.calendarDate);
@@ -2347,9 +2428,11 @@ const CalendarPage = (() => {
     });
     root.addEventListener('dblclick', event => {
       const btn = event.target.closest('[data-calendar-action="select-day"][data-calendar-date]');
-      if (!btn || state.view !== 'year') return;
+      if (!btn) return;
+      if (shouldSuppressSelectDayInteraction(event)) return;
       event.preventDefault();
-      openMonth(btn.dataset.calendarDate);
+      if (state.view === 'year') openMonth(btn.dataset.calendarDate);
+      else if (state.view === 'month') openDiaryWeek(btn.dataset.calendarDate);
     });
     document.addEventListener('click', event => {
       const btn = event.target.closest('[data-calendar-action="submit-event"]');
