@@ -13,7 +13,7 @@ const PersonalFilters = (() => {
   const BADGE_HEIGHT = 18;
   const BADGE_PAD_X = 10;
   const BADGE_LABEL_GAP = 2;
-  const BUILTIN_IDS = new Set(['calendar', 'tasks', 'work', 'imports', 'sources', 'git', 'holiday', 'personal-holiday', 'national-holiday', 'all-day', 'blocked', 'review', 'uncategorized']);
+  const BUILTIN_IDS = new Set(['calendar', 'tasks', 'kanban', 'imports', 'sources', 'git', 'holiday', 'personal-holiday', 'national-holiday', 'all-day', 'blocked', 'review', 'uncategorized']);
 
   const COLORS = [
     ['red', '#ef4444'],
@@ -35,7 +35,7 @@ const PersonalFilters = (() => {
   const DEFAULTS = {
     calendar: { label: 'Calendar', color: 'blue', shape: 'circle', fill: 'outline' },
     tasks: { label: 'Tasks', color: 'green', shape: 'square', fill: 'outline' },
-    work: { label: 'Work', color: 'gold', shape: 'rectangle', fill: 'outline' },
+    kanban: { label: 'Kanban', color: 'gold', shape: 'rectangle', fill: 'outline' },
     imports: { label: 'Imports', color: 'purple', shape: 'rhombus', fill: 'outline' },
     sources: { label: 'Source records', color: 'grey', shape: 'pentagon', fill: 'outline' },
     git: { label: 'Git', color: 'gold', shape: 'rhombus', fill: 'filled' },
@@ -529,7 +529,7 @@ const PersonalFilters = (() => {
   function isWorkRecord(record) {
     const relatedWork = record?.related?.work_items || [];
     const tags = recordTags(record);
-    return sourceType(record) === 'work-management' || relatedWork.length > 0 || tags.includes('work');
+    return sourceType(record) === 'work-management' || relatedWork.length > 0 || tags.includes('kanban');
   }
 
   function isImportRecord(record) {
@@ -563,7 +563,7 @@ const PersonalFilters = (() => {
       tokens.add('tasks');
       tokens.add('task');
     }
-    if (isWorkRecord(record)) tokens.add('work');
+    if (isWorkRecord(record)) tokens.add('kanban');
     if (isImportRecord(record)) {
       tokens.add('imports');
       tokens.add('import');
@@ -767,7 +767,7 @@ const PersonalFilters = (() => {
     const prefix = options.prefix || labels.summaryPrefix;
     const emptyLabel = options.emptyLabel || labels.emptyLabel;
     const clearIds = clearSelectedIds(surface);
-    const canClear = options.showClear !== false && !selectedIdsEqual(selected, clearIds);
+    const canClear = options.showClear !== false && (options.alwaysShowClear || !selectedIdsEqual(selected, clearIds));
     const clearLabel = String(prefix || 'filters').replace(/:\s*$/, '').trim() || 'filters';
     const clearButton = canClear
       ? `<button class="personal-filter-summary__clear" type="button" data-personal-filter-clear="${escHtml(surface)}" aria-label="Clear ${escHtml(clearLabel)}"></button>`
@@ -1091,7 +1091,7 @@ const PersonalFilters = (() => {
     root.dataset.personalFilterLayout = 'tabs';
     const modalExtraTabsBySurface = {
       todo: 'selected,search,new-task,edit-task,sources,provenance',
-      kanban: 'selected,search,new-item,provenance',
+      kanban: 'selected,search,new-item,edit-item,provenance',
     };
     if (modalExtraTabsBySurface[surface]) root.dataset.personalFilterExtraTabs = modalExtraTabsBySurface[surface];
     else delete root.dataset.personalFilterExtraTabs;
@@ -1118,15 +1118,22 @@ const PersonalFilters = (() => {
     const surface = pageSurfaceFromState(current);
     if (!surface) return false;
     const title = `${surface === 'todo' ? 'ToDo' : titleCase(surface)} Filters`;
+    const existingHost = document.querySelector('#ultrawide-sidecar-body [data-personal-filter-host]');
+    const existingSurface = existingHost?.dataset.personalFilterSurface || '';
+    const selectedTab = existingHost?.querySelector?.('[data-personal-filter-tab][aria-selected="true"]')?.dataset.personalFilterTab || '';
+    const activeTab = existingSurface === surface
+      ? (existingHost?.dataset.personalFilterTab || selectedTab || '')
+      : '';
     const extraTabsBySurface = {
       calendar: 'selected,milestones,search,new-event,upcoming,provenance',
       diary: 'selected,day,search,new-entry,edit-entry,upcoming,provenance',
-      todo: 'selected,search,new-task,sources,provenance',
-      kanban: 'selected,search,new-item,provenance',
+      todo: 'selected,search,new-task,edit-task,sources,provenance',
+      kanban: 'selected,search,new-item,edit-item,provenance',
     };
     const extraTabs = extraTabsBySurface[surface] ? ` data-personal-filter-extra-tabs="${escHtml(extraTabsBySurface[surface])}"` : '';
+    const activeTabAttr = activeTab ? ` data-personal-filter-tab="${escHtml(activeTab)}"` : '';
     window.UltrawideSidecar.setTitle(title);
-    window.UltrawideSidecar.setHTML(`<div class="personal-filter-sidecar-host" data-personal-filter-host data-personal-filter-surface="${escHtml(surface)}" data-personal-filter-layout="tabs" data-personal-filter-framed="false"${extraTabs}></div>`);
+    window.UltrawideSidecar.setHTML(`<div class="personal-filter-sidecar-host" data-personal-filter-host data-personal-filter-surface="${escHtml(surface)}" data-personal-filter-layout="tabs" data-personal-filter-framed="false"${extraTabs}${activeTabAttr}></div>`);
     renderHost(document.querySelector('#ultrawide-sidecar-body [data-personal-filter-host]'));
     return true;
   }

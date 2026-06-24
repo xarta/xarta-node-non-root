@@ -67,7 +67,7 @@ const TodoPage = (() => {
     const labels = {
       today: 'Today',
       personal: 'Personal',
-      work: 'Work',
+      work: 'Kanban',
       blocked: 'Blocked',
       review: 'Review',
       done: 'Done',
@@ -189,13 +189,14 @@ const TodoPage = (() => {
 
   function taskFilterRecord(row) {
     const tags = [
+      ...(Array.isArray(row?.tags) ? row.tags : []),
       'task',
       'tasks',
       row?.mode,
       row?.status,
       sourceType(row),
       sourceAuthority(row),
-      ...(row?.related?.work_items?.length ? ['work'] : []),
+      ...(row?.related?.work_items?.length ? ['kanban'] : []),
     ].filter(Boolean);
     return {
       ...row,
@@ -442,7 +443,7 @@ const TodoPage = (() => {
       metric(taskRows().length, 'visible'),
       metric(counts.today || 0, 'today'),
       metric(counts.personal || 0, 'personal'),
-      metric(counts.work || 0, 'work'),
+      metric(counts.work || 0, 'kanban'),
       metric(counts.blocked || 0, 'blocked'),
       metric(counts.done || 0, 'done'),
     ].join('');
@@ -456,9 +457,9 @@ const TodoPage = (() => {
       <article class="todo-task-row" data-todo-index="${index}" tabindex="0">
         <div class="todo-task-main">
           <div class="todo-task-title">${escHtml(taskLabel(row))}</div>
-          <div class="todo-task-meta">${escHtml(taskTime(row) || 'no due time')} - ${escHtml(sourceType(row) || 'unknown')} - ${escHtml(row.mode || '')}</div>
+          <div class="todo-task-meta">${escHtml(taskTime(row) || 'no due time')} - ${escHtml(sourceType(row) || 'unknown')} - ${escHtml(modeLabel(row.mode || ''))}</div>
           ${markdownPreviewHtml(row.body_excerpt || '', 'todo-task-body', 'No task content.')}
-          ${refs.length ? `<div class="todo-task-meta todo-task-meta--links">work ${refs.map(workLinkHtml).join(' ')}</div>` : ''}
+          ${refs.length ? `<div class="todo-task-meta todo-task-meta--links">kanban ${refs.map(workLinkHtml).join(' ')}</div>` : ''}
         </div>
         <span class="todo-task-status todo-task-status--${escHtml(status)}">${escHtml(status)}</span>
         <span class="todo-task-source">${escHtml(row.source?.authority || 'source')}</span>
@@ -507,7 +508,7 @@ const TodoPage = (() => {
       detailRow(row.title || row.task_id, `${row.status || ''} - ${row.mode || ''}`, markdownPreviewHtml(row.body_excerpt || '', 'todo-detail-body', 'No task content.', true), { bodyHtml: true }),
       detailRow('Due', taskTime(row) || 'none', row.timezone || ''),
       detailRow('Source', `${sourceType(row)} - ${row.source?.authority || ''}`, row.source?.ref || ''),
-      detailRow('Work Links', (row.related?.work_items || []).join(', ') || 'none'),
+      detailRow('Kanban Links', (row.related?.work_items || []).join(', ') || 'none'),
     ].join('');
   }
 
@@ -606,7 +607,7 @@ const TodoPage = (() => {
             <span>Mode</span>
             <select id="${escHtml(safePrefix)}-mode">
               <option value="personal" ${valueFor('mode', state.mode) === 'personal' ? 'selected' : ''}>Personal</option>
-              <option value="work" ${valueFor('mode', state.mode) === 'work' ? 'selected' : ''}>Work</option>
+              <option value="work" ${valueFor('mode', state.mode) === 'work' ? 'selected' : ''}>Kanban</option>
               <option value="review" ${valueFor('mode', state.mode) === 'review' ? 'selected' : ''}>Review</option>
             </select>
           </label>
@@ -621,7 +622,7 @@ const TodoPage = (() => {
           </label>
           ${markdownFieldHtml(safePrefix, 'Notes', valueFor('body'), { modal: !!options.modal })}
           <label class="todo-field todo-field--wide" for="${escHtml(safePrefix)}-work">
-            <span>Work refs</span>
+            <span>Kanban refs</span>
             <input id="${escHtml(safePrefix)}-work" type="text" autocomplete="off" value="${escHtml(valueFor('work'))}" />
           </label>
         </div>
@@ -673,7 +674,7 @@ const TodoPage = (() => {
             <span>Mode</span>
             <select id="${escHtml(safePrefix)}-mode"${disabledAttr}>
               <option value="personal" ${valueFor('mode', task?.mode || state.mode) === 'personal' ? 'selected' : ''}>Personal</option>
-              <option value="work" ${valueFor('mode', task?.mode || state.mode) === 'work' ? 'selected' : ''}>Work</option>
+              <option value="work" ${valueFor('mode', task?.mode || state.mode) === 'work' ? 'selected' : ''}>Kanban</option>
               <option value="review" ${valueFor('mode', task?.mode || state.mode) === 'review' ? 'selected' : ''}>Review</option>
             </select>
           </label>
@@ -688,7 +689,7 @@ const TodoPage = (() => {
           </label>
           ${markdownFieldHtml(safePrefix, 'Notes', valueFor('body', task?.body_excerpt || ''), { modal: !!options.modal, rows: options.modal ? 4 : 3 })}
           <label class="todo-field todo-field--work" for="${escHtml(safePrefix)}-work">
-            <span>Work refs</span>
+            <span>Kanban refs</span>
             <input id="${escHtml(safePrefix)}-work" type="text" autocomplete="off" value="${escHtml(valueFor('work', (task?.related?.work_items || []).join(' ')))}"${disabledAttr} />
           </label>
         </div>
@@ -1031,16 +1032,16 @@ const TodoPage = (() => {
 
   function linkWorkItem() {
     const task = state.selection?.row;
-    if (!task) return showActionModal('Connect Work', '<p>Select a task before linking work.</p>');
-    return showActionModal('Connect Work', `${kvHtml([
+    if (!task) return showActionModal('Link Kanban', '<p>Select a task before linking a Kanban item.</p>');
+    return showActionModal('Link Kanban', `${kvHtml([
       ['Task', task.task_id || ''],
       ['Current links', (task.related?.work_items || []).join(', ') || 'none'],
     ])}
       <label class="todo-field" for="todo-work-link-input">
-        <span>Work ref</span>
+        <span>Kanban ref</span>
         <input id="todo-work-link-input" type="text" autocomplete="off" />
       </label>
-      <button class="todo-command-btn" type="button" data-todo-modal-action="submit-work-link">Connect Work</button>`);
+      <button class="todo-command-btn" type="button" data-todo-modal-action="submit-work-link">Link Kanban</button>`);
   }
 
   async function submitWorkLink() {
@@ -1080,15 +1081,15 @@ const TodoPage = (() => {
       });
     }
     const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) return showActionModal('Connect Work', `<p>${escHtml(data.detail || `HTTP ${resp.status}`)}</p>`);
+    if (!resp.ok) return showActionModal('Link Kanban', `<p>${escHtml(data.detail || `HTTP ${resp.status}`)}</p>`);
     state.lastWrite = data;
     state.loaded = false;
     await load({ force: true });
-    return showActionModal('Connect Work', kvHtml([
+    return showActionModal('Link Kanban', kvHtml([
       ['Task', task.task_id || ''],
-      ['Work ref', workRef],
+      ['Kanban ref', workRef],
       ['Audit', data.audit?.audit_id || ''],
-    ]), 'Work link recorded.');
+    ]), 'Kanban link recorded.');
   }
 
   function explainSelection() {

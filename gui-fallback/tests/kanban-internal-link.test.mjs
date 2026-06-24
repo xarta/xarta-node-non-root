@@ -24,7 +24,7 @@ assert.match(
 
 assert.match(
   kanbanSource,
-  /async function openItemById\(itemId\)[\s\S]*routeDetailItemId[\s\S]*openItemDetail\(cleanItemId\)/,
+  /async function openItemById\(itemId\)[\s\S]*routeDetailItemId[\s\S]*openItemDetail\(cleanItemId(?:,\s*\{[\s\S]*?routeTarget[\s\S]*?\})?\)/,
   'Kanban page must expose a direct item-id opener for internal links.',
 );
 

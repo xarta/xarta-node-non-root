@@ -306,6 +306,16 @@ assert.match(
   'Rendered Personal filter chips must own direct capture-phase click handling inside HubModal bodies.',
 );
 assert.match(
+  personalFiltersJs,
+  /BUILTIN_IDS\s*=\s*new\s+Set\(\[[\s\S]*'kanban'[\s\S]*DEFAULTS\s*=\s*\{[\s\S]*kanban:\s*\{[\s\S]*label:\s*'Kanban'[\s\S]*function\s+recordTags\(record\)[\s\S]*record\.tags\.map\(tag\s*=>\s*normalizeId\(tag\)\)[\s\S]*isWorkRecord\(record\)[\s\S]*tags\.includes\('kanban'\)/,
+  'Shared Personal filters must keep Kanban as the project-board token while preserving user tags literally.',
+);
+assert.doesNotMatch(
+  personalFiltersJs + daveTodoJs,
+  /id\s*={2,3}\s*['"]work['"]\s*\?\s*['"]kanban['"]/,
+  'The literal user tag "work" must not be normalized into Kanban.',
+);
+assert.match(
   personalFiltersCss,
   /\.personal-filter-chip\.is-selected\s*\{[\s\S]*border-color:\s*#d9aa32[\s\S]*box-shadow:/,
   'Selected filter chips must keep the gold glow/border state.',
@@ -656,14 +666,15 @@ for (const label of [
   'Mode Day',
   'Mode Week',
   'Mode Today',
-  'Mode Work',
-  'Promote To Work',
+  'Mode Kanban',
+  'Promote To Kanban',
+  'Link Kanban',
   'Open Artifacts',
   'Show Blockers',
 ]) {
   assert.ok(daveMenuJs.includes(`label: '${label}'`), `Dave menu must keep shared label "${label}".`);
 }
-for (const oldLabel of ['Run Summary', 'Browse Folder', 'Browse Ledger', 'Connect Work']) {
+for (const oldLabel of ['Run Summary', 'Browse Folder', 'Browse Ledger', 'Connect Work', 'Mode Work', 'Promote To Work']) {
   assert.ok(!daveMenuJs.includes(`label: '${oldLabel}'`), `Dave menu must not drift back to "${oldLabel}".`);
 }
 for (const label of [
@@ -676,6 +687,7 @@ for (const label of [
   'New ToDo',
   'Show Issues',
   'Show ToDos',
+  'Test Entries',
   'Write Detail Proof',
   'Write Scoped Proof',
 ]) {
@@ -1026,4 +1038,64 @@ assert.match(
   kanbanBoardCss,
   /@media\s*\(max-width:\s*820px\)\s*\{[\s\S]*\.kanban-metric-actions\s*\{[\s\S]*display:\s*none/,
   'Kanban duplicated metric-row shortcuts must be desktop-only so compact/mobile layouts do not gain vertical noise.',
+);
+assert.match(
+  kanbanBoardJs,
+  /REFRESH_LONG_PRESS_MS[\s\S]*startRefreshLongPress[\s\S]*toggleTestEntriesVisibility/,
+  'Kanban refresh must keep the long-press FSM that toggles server-side test-entry visibility.',
+);
+assert.match(
+  kanbanBoardJs,
+  /\/api\/v1\/personal\/work\/preferences[\s\S]*show_test_entries/,
+  'Kanban automation must be able to override test-entry visibility through the server preference API.',
+);
+assert.match(
+  kanbanBoardJs,
+  /refresh_fsm[\s\S]*show_test_entries[\s\S]*hidden_test_entries/,
+  'Kanban snapshots must expose test-entry visibility, hidden counts, and the refresh FSM.',
+);
+assert.match(
+  kanbanBoardJs,
+  /itemHasAgentWorkingOutTag[\s\S]*agent-working-out[\s\S]*itemHiddenByPreference[\s\S]*clearDetailSelectionState[\s\S]*hiddenDetailSuppressed/,
+  'Kanban hidden test-entry preference must also suppress stale selected/detail state by persisted agent-working-out tag.',
+);
+assert.match(
+  kanbanBoardJs,
+  /const\s+NEW_ITEM_TAG_SURFACE\s*=\s*'kanban-new-item'[\s\S]*const\s+EDIT_ITEM_TAG_SURFACE\s*=\s*'kanban-edit-item'[\s\S]*const\s+ITEM_REQUIRED_TAGS\s*=\s*\['kanban'\]/,
+  'Kanban New/Edit Item tag editing must use named shared PersonalFilters surfaces with kanban as the required tag.',
+);
+assert.match(
+  kanbanBoardJs,
+  /data-kanban-item-tags-strip[\s\S]*data-kanban-item-tags-surface="\$\{escHtml\(NEW_ITEM_TAG_SURFACE\)\}"[\s\S]*submitInlineItem[\s\S]*tags:\s*itemTagIds\(NEW_ITEM_TAG_SURFACE\)/,
+  'Kanban New Item panels must use the shared filter-tag strip and save selected tags.',
+);
+assert.match(
+  kanbanBoardJs,
+  /function\s+itemTagsSummaryHtml[\s\S]*PersonalFilters\.summaryHtml\(surface,\s*\{\s*prefix:\s*'Tags:',\s*alwaysShowClear:\s*true\s*\}\)/,
+  'Kanban item tag strips must keep the shared clear affordance visible like Diary and Calendar.',
+);
+assert.match(
+  kanbanBoardJs + kanbanBoardCss,
+  /kanban-item-primary-row[\s\S]*kanban-field--title[\s\S]*kanban-field--priority[\s\S]*kanban-item-tags-strip[\s\S]*\.kanban-item-primary-row\s*\{[\s\S]*flex-wrap:\s*wrap/,
+  'Kanban New Item must put Title, Priority, and Tags in the shared wrapping primary row pattern.',
+);
+assert.match(
+  kanbanBoardJs,
+  /data-kanban-item-tags-strip[\s\S]*data-kanban-item-tags-surface="\$\{escHtml\(EDIT_ITEM_TAG_SURFACE\)\}"[\s\S]*registerSurface\(EDIT_ITEM_TAG_SURFACE[\s\S]*syncEditItemDraftTagsFromSurface/,
+  'Kanban Edit Item must use the shared filter-tag strip and keep the edit draft synced.',
+);
+assert.match(
+  daveTodoJs,
+  /work:\s*'Kanban'[\s\S]*Array\.isArray\(row\?\.tags\)[\s\S]*\.\.\.\(row\?\.related\?\.work_items\?\.length\s*\?\s*\['kanban'\]\s*:\s*\[\]\)/,
+  'ToDo must display the legacy project mode as Kanban and filter linked project tasks with the kanban token, not a user work tag.',
+);
+assert.match(
+  kanbanBoardCss,
+  /#ultrawide-sidecar-body\s+\.kanban-detail-tabs\s*\{[\s\S]*width:\s*128px/,
+  'Kanban ultrawide vertical item tabs must allow breathing room for larger count badges.',
+);
+assert.match(
+  kanbanBoardCss,
+  /#tab-kanban\.active\s+\.kanban-filter-under-panel\s+\.kanban-detail-workspace,\s*#ultrawide-sidecar-body\s+\.kanban-detail-workspace\s*\{[\s\S]*overflow:\s*visible/,
+  'Kanban inline and sidecar Edit Item panels must leave vertical scrolling to the parent panel so section backgrounds stretch with their content.',
 );
