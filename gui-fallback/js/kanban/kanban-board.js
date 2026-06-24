@@ -49,6 +49,7 @@ const KanbanBoardPage = (() => {
     },
     routeApplied: false,
     routeDetailItemId: '',
+    routeHighlightItemId: '',
     routeScoped: null,
     rollups: {},
     selection: null,
@@ -87,6 +88,35 @@ const KanbanBoardPage = (() => {
 
   function cleanRouteId(value) {
     return String(value || '').trim().replace(/[^a-zA-Z0-9_.:-]+/g, '-').slice(0, 180);
+  }
+
+  function stripFrontmatter(md) {
+    if (window.BlueprintsMarkdown?.stripFrontmatter) return window.BlueprintsMarkdown.stripFrontmatter(md);
+    return String(md || '').replace(/^---\s*\n[\s\S]*?\n---\s*(\n|$)/, '');
+  }
+
+  function renderMarkdown(md, emptyText = 'No description.') {
+    if (window.BlueprintsMarkdown?.render) return window.BlueprintsMarkdown.render(md);
+    const clean = stripFrontmatter(md).trim();
+    if (!clean) return `<p class="calendar-markdown-empty">${escHtml(emptyText)}</p>`;
+    return clean.split(/\n/).map(line => {
+      const heading = line.match(/^(#{1,6})\s+(.*)$/);
+      if (heading) {
+        const level = Math.min(6, heading[1].length);
+        return `<h${level}>${escHtml(heading[2])}</h${level}>`;
+      }
+      const bullet = line.match(/^\s*[-*+]\s+(.*)$/);
+      if (bullet) return `<ul><li>${escHtml(bullet[1])}</li></ul>`;
+      if (!line.trim()) return '<div class="calendar-markdown-gap"></div>';
+      return `<p>${escHtml(line)}</p>`;
+    }).join('');
+  }
+
+  function markdownPreviewHtml(body, className = '', emptyText = 'No description.', showEmpty = false) {
+    const clean = stripFrontmatter(body).trim();
+    if (!clean && !showEmpty) return '';
+    const classes = ['calendar-markdown-preview', className].filter(Boolean).join(' ');
+    return `<div class="${escHtml(classes)}">${renderMarkdown(clean, emptyText)}</div>`;
   }
 
   function laneViewportSignature() {
@@ -185,7 +215,10 @@ const KanbanBoardPage = (() => {
     const scopedScope = String(params.get('scoped_scope') || 'descendants').trim().toLowerCase();
     const scopedView = String(params.get('scoped_view') || 'grouped').trim().toLowerCase();
     if (parentItemId) state.currentParentId = parentItemId;
-    if (detailItemId) state.routeDetailItemId = detailItemId;
+    if (detailItemId) {
+      state.routeDetailItemId = detailItemId;
+      state.routeHighlightItemId = detailItemId;
+    }
     if (scopedItemId && ['issues', 'issue', 'todos', 'todo'].includes(scopedKind)) {
       state.routeScoped = {
         kind: scopedKind,
@@ -458,7 +491,36 @@ const KanbanBoardPage = (() => {
   }
 
   function metric(value, label) {
-    return `<div class="kanban-metric"><div class="kanban-metric__value">${escHtml(value)}</div><div class="kanban-metric__label">${escHtml(label)}</div></div>`;
+    return `<div class="kanban-metric"><span class="kanban-metric__value">${escHtml(value)}</span><span class="kanban-metric__label">${escHtml(label)}</span></div>`;
+  }
+
+  function markdownFieldHtml(id, label, value = '', options = {}) {
+    const safeId = String(id || 'kanban-body').replace(/[^a-zA-Z0-9_-]/g, '-');
+    const actionAttr = options.detail
+      ? 'data-kanban-detail-action="toggle-markdown-preview"'
+      : (options.inline
+        ? 'data-kanban-action="toggle-markdown-preview"'
+        : 'data-kanban-modal-action="toggle-markdown-preview"');
+    return `
+      <div class="kanban-field kanban-field--markdown calendar-markdown-field">
+        <div class="calendar-field__label-row">
+          <span>${escHtml(label || 'Description')}</span>
+          <button class="calendar-markdown-toggle" type="button" ${actionAttr} data-kanban-markdown-prefix="${escHtml(safeId)}">Preview</button>
+        </div>
+        <textarea id="${escHtml(safeId)}" maxlength="${escHtml(options.maxlength || 4000)}">${escHtml(value)}</textarea>
+        <div id="${escHtml(safeId)}-preview" class="calendar-markdown-preview" hidden></div>
+      </div>
+    `;
+  }
+
+  function metricShortcutActions() {
+    return `
+      <div class="kanban-metric-actions" aria-label="Board shortcuts">
+        <button class="kanban-icon-btn kanban-icon-btn--up kanban-metric-action" type="button" data-kanban-action="up-board" title="Up board" aria-label="Up board"></button>
+        <button class="kanban-icon-btn kanban-icon-btn--root kanban-metric-action kanban-metric-action--desktop-extra" type="button" data-kanban-action="root-board" title="Root board" aria-label="Root board"></button>
+        <button class="kanban-icon-btn kanban-icon-btn--new kanban-metric-action kanban-metric-action--desktop-extra" type="button" data-kanban-action="new-root-item" title="New item" aria-label="New item"></button>
+      </div>
+    `;
   }
 
   function renderMetrics() {
@@ -472,6 +534,7 @@ const KanbanBoardPage = (() => {
       metric(rollup.issues?.open || 0, 'open issues'),
       metric(rollup.todos?.open || 0, 'open todos'),
       metric(state.board?.remaining_depth ?? depthLimit(), 'depth remaining'),
+      metricShortcutActions(),
     ].join('');
   }
 
@@ -528,8 +591,9 @@ const KanbanBoardPage = (() => {
   function cardHtml(item) {
     const pending = state.cardFsm.pendingItemId === item.item_id;
     const selected = state.selection?.item?.item_id === item.item_id;
+    const routeTarget = state.routeHighlightItemId && item.item_id === state.routeHighlightItemId;
     return `
-      <article class="kanban-card" data-kanban-item-id="${escHtml(item.item_id)}" tabindex="0" data-selected="${selected ? 'true' : 'false'}" data-pending="${pending ? 'true' : 'false'}">
+      <article class="kanban-card" data-kanban-item-id="${escHtml(item.item_id)}" tabindex="0" data-selected="${selected ? 'true' : 'false'}" data-pending="${pending ? 'true' : 'false'}" data-kanban-route-target="${routeTarget ? 'true' : 'false'}">
         <div class="kanban-card__head">
           <div class="kanban-card__title">${escHtml(item.title || item.item_id)}</div>
         </div>
@@ -538,7 +602,7 @@ const KanbanBoardPage = (() => {
           <span class="kanban-priority-pill" data-priority="${escHtml(item.priority_id || '')}">${escHtml(priorityLabel(item.priority_id))}</span>
           <span class="kanban-pill">d${escHtml(item.depth ?? 0)}</span>
         </div>
-        <div class="kanban-card__body">${escHtml(item.body_excerpt || '')}</div>
+        ${markdownPreviewHtml(item.body_excerpt || '', 'kanban-card__body kanban-card__body--markdown', 'No description.')}
         ${rollupRows(item)}
         <div class="kanban-card__actions" aria-label="Card actions">
           <button class="kanban-card-btn kanban-card-btn--left" type="button" data-kanban-card-action="move-left" data-kanban-item-id="${escHtml(item.item_id)}" title="Move left" aria-label="Move left"></button>
@@ -584,12 +648,12 @@ const KanbanBoardPage = (() => {
     restoreLaneWidths();
   }
 
-  function detailRow(title, meta, body = '') {
+  function detailRow(title, meta, body = '', options = {}) {
     return `
       <div class="kanban-detail-row">
         <div class="kanban-detail-title">${escHtml(title)}</div>
         <div class="kanban-detail-meta">${escHtml(meta || '')}</div>
-        ${body ? `<div class="kanban-detail-meta">${escHtml(body)}</div>` : ''}
+        ${body ? `<div class="kanban-detail-meta${options.bodyHtml ? ' kanban-detail-meta--markdown' : ''}">${options.bodyHtml ? body : escHtml(body)}</div>` : ''}
       </div>
     `;
   }
@@ -618,7 +682,9 @@ const KanbanBoardPage = (() => {
         <div class="kanban-scoped-row__main">
           <div class="kanban-detail-title">${escHtml(record.title || id)}</div>
           <div class="kanban-detail-meta">${escHtml(scope.title || record.item_id || '')} - ${escHtml(scope.relation || 'local')} - d${escHtml(scope.depth_offset ?? 0)}</div>
-          <div class="kanban-detail-meta">${escHtml(record.body_excerpt || record.source_ref || record.related_task_id || '')}</div>
+          ${record.body_excerpt
+            ? markdownPreviewHtml(record.body_excerpt, 'kanban-scoped-row__body', 'No details.')
+            : `<div class="kanban-detail-meta">${escHtml(record.source_ref || record.related_task_id || '')}</div>`}
         </div>
         <label class="kanban-field kanban-field--compact">
           <span>Status</span>
@@ -699,7 +765,7 @@ const KanbanBoardPage = (() => {
     }
     const rollup = rollupFor(item);
     return [
-      detailRow(item.title || item.item_id, `${stateLabel(item.state_id)} - ${priorityLabel(item.priority_id)}`, item.body_excerpt || ''),
+      detailRow(item.title || item.item_id, `${stateLabel(item.state_id)} - ${priorityLabel(item.priority_id)}`, markdownPreviewHtml(item.body_excerpt || '', 'kanban-detail-body', 'No description.', true), { bodyHtml: true }),
       detailRow('Rollup', `${rollup.items?.total || 0} scoped items`, `${rollup.issues?.open || 0} open issues - ${rollup.todos?.open || 0} open todos`),
       detailRow('Vector', item.vector?.index_key || '', item.search?.metadata?.vector?.index || ''),
       detailRow('Source', item.source?.ref || '', item.promoted_from_ref || ''),
@@ -758,10 +824,7 @@ const KanbanBoardPage = (() => {
             <span>Priority</span>
             <select id="${escHtml(safePrefix)}-priority">${priorityOptions(valueFor('priority', 'medium'))}</select>
           </label>
-          <label class="kanban-field" for="${escHtml(safePrefix)}-body">
-            <span>Description</span>
-            <textarea id="${escHtml(safePrefix)}-body" maxlength="4000">${escHtml(valueFor('body'))}</textarea>
-          </label>
+          ${markdownFieldHtml(`${safePrefix}-body`, 'Description', valueFor('body'), { inline: true })}
           <div class="kanban-modal-actions">
             <span id="${escHtml(safePrefix)}-status" class="kanban-detail-meta"></span>
             <button class="kanban-command-btn" type="button" data-kanban-action="submit-inline-item" data-kanban-item-prefix="${escHtml(safePrefix)}">Save Item</button>
@@ -822,7 +885,7 @@ const KanbanBoardPage = (() => {
       await loadRollups(rawBoardItems());
       renderAll();
       if (state.routeDetailItemId && !state.detailModalOpen && !options.skipRouteDetail) {
-        await openItemDetail(state.routeDetailItemId);
+        await openItemDetail(state.routeDetailItemId, { routeTarget: true });
       }
       if (state.routeScoped?.itemId && !state.scoped.open && !options.skipRouteScoped) {
         const scoped = state.routeScoped;
@@ -897,6 +960,30 @@ const KanbanBoardPage = (() => {
     if (!dialog.open) dialog.remove();
   }
 
+  function toggleMarkdownPreview(target, actionRoot = document) {
+    const button = target?.nodeType === 1
+      ? target
+      : (actionRoot.querySelector?.(`[data-kanban-markdown-prefix="${target}"]`) || document.querySelector(`[data-kanban-markdown-prefix="${target}"]`));
+    const prefix = button?.dataset?.kanbanMarkdownPrefix || String(target || 'kanban-body');
+    const field = button?.closest?.('.calendar-markdown-field');
+    const body = field?.querySelector?.('textarea') || el(prefix);
+    const preview = field?.querySelector?.('.calendar-markdown-preview') || el(`${prefix}-preview`);
+    if (!body || !preview) return false;
+    const showing = !preview.hidden;
+    if (showing) {
+      preview.hidden = true;
+      body.hidden = false;
+      if (button) button.textContent = 'Preview';
+      body.focus?.();
+      return true;
+    }
+    preview.innerHTML = renderMarkdown(body.value);
+    preview.hidden = false;
+    body.hidden = true;
+    if (button) button.textContent = 'Edit';
+    return true;
+  }
+
   function itemFormHtml(titleValue = '', bodyValue = '', priorityId = 'medium', depthInfo = null) {
     const depthLine = depthInfo
       ? `<div class="kanban-depth-note" data-depth-remaining="${escHtml(depthInfo.remaining)}">Parent: ${escHtml(depthInfo.label)} - remaining child depth ${escHtml(depthInfo.remaining)}</div>`
@@ -912,10 +999,7 @@ const KanbanBoardPage = (() => {
           <span>Priority</span>
           <select id="kanban-modal-priority">${priorityOptions(priorityId)}</select>
         </label>
-        <label class="kanban-field" for="kanban-modal-body">
-          <span>Description</span>
-          <textarea id="kanban-modal-body" maxlength="4000">${escHtml(bodyValue)}</textarea>
-        </label>
+        ${markdownFieldHtml('kanban-modal-body', 'Description', bodyValue)}
         <div class="kanban-modal-actions">
           <button class="kanban-command-btn" type="button" data-kanban-modal-action="cancel">Cancel</button>
           <button class="kanban-command-btn" type="button" data-kanban-modal-action="submit">Save Item</button>
@@ -944,6 +1028,10 @@ const KanbanBoardPage = (() => {
     dialog.addEventListener('click', async event => {
       const action = event.target?.dataset?.kanbanModalAction;
       if (!action) return;
+      if (action === 'toggle-markdown-preview') {
+        toggleMarkdownPreview(event.target, dialog);
+        return;
+      }
       if (action === 'cancel') {
         closeDialog(dialog);
         return;
@@ -1012,7 +1100,7 @@ const KanbanBoardPage = (() => {
     const dialog = openDialog(`New ${label}`, `
       <div class="kanban-modal-form">
         <label class="kanban-field" for="kanban-leaf-title"><span>Title</span><input id="kanban-leaf-title" type="text" maxlength="180" /></label>
-        <label class="kanban-field" for="kanban-leaf-body"><span>Details</span><textarea id="kanban-leaf-body" maxlength="4000"></textarea></label>
+        ${markdownFieldHtml('kanban-leaf-body', 'Details', '')}
         <div class="kanban-modal-actions">
           <button class="kanban-command-btn" type="button" data-kanban-modal-action="cancel">Cancel</button>
           <button class="kanban-command-btn" type="button" data-kanban-modal-action="submit">Save ${label}</button>
@@ -1027,6 +1115,10 @@ const KanbanBoardPage = (() => {
     dialog.addEventListener('click', async event => {
       const action = event.target?.dataset?.kanbanModalAction;
       if (!action) return;
+      if (action === 'toggle-markdown-preview') {
+        toggleMarkdownPreview(event.target, dialog);
+        return;
+      }
       if (action === 'cancel') {
         closeDialog(dialog);
         return;
@@ -1052,12 +1144,28 @@ const KanbanBoardPage = (() => {
     });
   }
 
-  async function setSelection(itemId, { openDetail = false } = {}) {
+  function scrollSelectionIntoView(options = {}) {
+    const itemId = state.selection?.item?.item_id || '';
+    if (!itemId) return;
+    window.requestAnimationFrame(() => {
+      const card = Array.from(document.querySelectorAll('#tab-kanban [data-kanban-item-id]'))
+        .find(node => node.dataset.kanbanItemId === itemId && node.classList?.contains('kanban-card'));
+      card?.scrollIntoView?.({
+        block: options.center ? 'center' : 'nearest',
+        inline: options.center ? 'center' : 'nearest',
+      });
+    });
+  }
+
+  async function setSelection(itemId, { openDetail = false, routeTarget = false, preserveRouteTarget = false } = {}) {
     const item = findItem(itemId);
     if (!item) return;
+    if (routeTarget) state.routeHighlightItemId = item.item_id;
+    else if (!preserveRouteTarget) state.routeHighlightItemId = '';
     state.selection = { item };
     setFsm('selected', 'select', itemId);
     renderAll();
+    scrollSelectionIntoView({ center: routeTarget });
     if (openDetail) await openItemDetail(itemId);
   }
 
@@ -1109,10 +1217,7 @@ const KanbanBoardPage = (() => {
               <select id="kanban-detail-priority-input">${priorityOptions(item.priority_id || 'medium')}</select>
             </label>
           </div>
-          <label class="kanban-field" for="kanban-detail-body-input">
-            <span>Description</span>
-            <textarea id="kanban-detail-body-input" maxlength="4000">${escHtml(item.body_excerpt || '')}</textarea>
-          </label>
+          ${markdownFieldHtml('kanban-detail-body-input', 'Description', item.body_excerpt || '', { detail: true })}
           <div class="kanban-modal-actions">
             <button class="kanban-command-btn" type="button" data-kanban-detail-action="save">Save Changes</button>
             <button class="kanban-command-btn" type="button" data-kanban-detail-action="child-board">Child Board</button>
@@ -1129,7 +1234,7 @@ const KanbanBoardPage = (() => {
         <section class="kanban-band">
           <div class="kanban-section-head"><h3>Direct Children</h3><span class="kanban-pill">${escHtml(detail.counts?.children ?? (detail.children || []).length)}</span></div>
           <div class="kanban-detail-list">
-            ${detailCollectionRows(detail.children, 'No direct child items.', child => detailRow(child.title || child.item_id, `${stateLabel(child.state_id)} - ${priorityLabel(child.priority_id)}`, child.body_excerpt || ''))}
+            ${detailCollectionRows(detail.children, 'No direct child items.', child => detailRow(child.title || child.item_id, `${stateLabel(child.state_id)} - ${priorityLabel(child.priority_id)}`, markdownPreviewHtml(child.body_excerpt || '', 'kanban-detail-body', 'No description.'), { bodyHtml: true }))}
           </div>
         </section>
         <section class="kanban-band">
@@ -1141,21 +1246,21 @@ const KanbanBoardPage = (() => {
         <section class="kanban-band">
           <div class="kanban-section-head"><h3>Blockers</h3><span class="kanban-pill">${escHtml(detail.counts?.blockers ?? (detail.blockers || []).length)}</span></div>
           <div class="kanban-detail-list">
-            ${detailCollectionRows(detail.blockers, 'No blockers recorded.', blocker => detailRow(blocker.title || blocker.blocker_id, `${blocker.status || 'open'} - ${blocker.blocked_by_ref || 'no source ref'}`, blocker.body_excerpt || ''))}
+            ${detailCollectionRows(detail.blockers, 'No blockers recorded.', blocker => detailRow(blocker.title || blocker.blocker_id, `${blocker.status || 'open'} - ${blocker.blocked_by_ref || 'no source ref'}`, markdownPreviewHtml(blocker.body_excerpt || '', 'kanban-detail-body', 'No details.'), { bodyHtml: true }))}
           </div>
         </section>
         <section class="kanban-band">
           <div class="kanban-section-head"><h3>Issues And ToDos</h3><span class="kanban-pill">${escHtml((detail.issues || []).length + (detail.todos || []).length)}</span></div>
           <div class="kanban-detail-list">
-            ${detailCollectionRows(detail.issues, 'No issues in this scope.', issue => detailRow(issue.title, `issue - ${issue.status}`, issue.body_excerpt || issue.source_ref || ''))}
-            ${detailCollectionRows(detail.todos, 'No todos in this scope.', todo => detailRow(todo.title, `todo - ${todo.status}`, todo.body_excerpt || todo.related_task_id || ''))}
+            ${detailCollectionRows(detail.issues, 'No issues in this scope.', issue => detailRow(issue.title, `issue - ${issue.status}`, issue.body_excerpt ? markdownPreviewHtml(issue.body_excerpt, 'kanban-detail-body', 'No details.') : (issue.source_ref || ''), { bodyHtml: !!issue.body_excerpt }))}
+            ${detailCollectionRows(detail.todos, 'No todos in this scope.', todo => detailRow(todo.title, `todo - ${todo.status}`, todo.body_excerpt ? markdownPreviewHtml(todo.body_excerpt, 'kanban-detail-body', 'No details.') : (todo.related_task_id || ''), { bodyHtml: !!todo.body_excerpt }))}
           </div>
         </section>
         <section class="kanban-band">
           <div class="kanban-section-head"><h3>History</h3><span class="kanban-pill">${escHtml((detail.discussions || []).length || (detail.audit || []).length)}</span></div>
           <div class="kanban-detail-list">
             ${(detail.discussions || []).length
-              ? detailCollectionRows(detail.discussions, 'No discussion history.', row => detailRow(row.author || row.discussion_id, row.status || 'open', row.body_excerpt || ''))
+              ? detailCollectionRows(detail.discussions, 'No discussion history.', row => detailRow(row.author || row.discussion_id, row.status || 'open', markdownPreviewHtml(row.body_excerpt || '', 'kanban-detail-body', 'No discussion.'), { bodyHtml: true }))
               : detailCollectionRows(detail.audit, 'No audit history.', row => detailRow(row.action || row.audit_id, `${row.actor || ''} - ${row.created_at || ''}`, compactJson(row.metadata)))}
           </div>
         </section>
@@ -1244,7 +1349,7 @@ const KanbanBoardPage = (() => {
       <div class="kanban-modal-form">
         <label class="kanban-field" for="kanban-blocker-title"><span>Title</span><input id="kanban-blocker-title" type="text" maxlength="180" /></label>
         <label class="kanban-field" for="kanban-blocker-ref"><span>Blocked By Ref</span><input id="kanban-blocker-ref" type="text" maxlength="220" /></label>
-        <label class="kanban-field" for="kanban-blocker-body"><span>Details</span><textarea id="kanban-blocker-body" maxlength="4000"></textarea></label>
+        ${markdownFieldHtml('kanban-blocker-body', 'Details', '')}
         <div class="kanban-modal-actions">
           <button class="kanban-command-btn" type="button" data-kanban-modal-action="cancel">Cancel</button>
           <button class="kanban-command-btn" type="button" data-kanban-modal-action="submit">Save Blocker</button>
@@ -1257,6 +1362,10 @@ const KanbanBoardPage = (() => {
     dialog.addEventListener('click', async event => {
       const action = event.target?.dataset?.kanbanModalAction;
       if (!action) return;
+      if (action === 'toggle-markdown-preview') {
+        toggleMarkdownPreview(event.target, dialog);
+        return;
+      }
       if (action === 'cancel') {
         closeDialog(dialog);
         return;
@@ -1284,7 +1393,7 @@ const KanbanBoardPage = (() => {
     });
   }
 
-  async function openItemDetail(itemId = state.selection?.item?.item_id) {
+  async function openItemDetail(itemId = state.selection?.item?.item_id, options = {}) {
     itemId = itemId || selectFirstItemIfNeeded();
     if (!itemId) {
       await HubDialogs.alert({ title: 'Kanban', message: 'Select a card first.', tone: 'warning' });
@@ -1292,16 +1401,29 @@ const KanbanBoardPage = (() => {
     }
     const detail = await requestJson(`/api/v1/personal/work/items/${encodeURIComponent(itemId)}`);
     const item = detail.item || {};
+    if (item.item_id) {
+      const targetParentId = item.parent_item_id || '';
+      if ((state.currentParentId || '') !== targetParentId) {
+        state.currentParentId = targetParentId;
+        state.routeDetailItemId = item.item_id;
+        if (options.routeTarget) state.routeHighlightItemId = item.item_id;
+        writeRouteState(state.currentParentId, item.item_id);
+        await load({ force: true, skipRouteDetail: true, skipRouteScoped: true });
+      }
+    }
     state.detail = detail;
     state.detailModalOpen = true;
     state.routeDetailItemId = item.item_id || itemId;
     if (item.item_id) {
       const boardItem = findItem(item.item_id);
+      if (options.routeTarget) state.routeHighlightItemId = item.item_id;
+      else if (!options.preserveRouteTarget) state.routeHighlightItemId = '';
       state.selection = { item: boardItem || item };
       setFsm('selected', 'openDetail', item.item_id);
     }
     writeRouteState(state.currentParentId, state.routeDetailItemId);
     renderAll();
+    scrollSelectionIntoView({ center: !!options.routeTarget });
     const dialog = openDialog(item.title || item.item_id, itemDetailHtml(detail), {
       badge: 'ITEM',
       id: 'kanban-detail-modal',
@@ -1313,10 +1435,13 @@ const KanbanBoardPage = (() => {
         renderAll();
       },
     });
+    if (options.routeTarget) dialog.setAttribute('data-kanban-route-target', 'true');
     dialog.addEventListener('click', async event => {
       const action = event.target?.dataset?.kanbanDetailAction;
       if (!action) return;
-      if (action === 'save') {
+      if (action === 'toggle-markdown-preview') {
+        toggleMarkdownPreview(event.target, dialog);
+      } else if (action === 'save') {
         await saveDetailFromDialog(dialog, item.item_id);
       } else if (action === 'child-board') {
         closeDialog(dialog);
@@ -1339,12 +1464,13 @@ const KanbanBoardPage = (() => {
     const cleanItemId = cleanRouteId(itemId);
     if (!cleanItemId) return false;
     state.routeDetailItemId = cleanItemId;
+    state.routeHighlightItemId = cleanItemId;
     writeRouteState(state.currentParentId, cleanItemId);
     if (!state.loaded) {
       await load({ force: false });
       return state.detail?.item?.item_id === cleanItemId || state.routeDetailItemId === cleanItemId;
     }
-    return openItemDetail(cleanItemId);
+    return openItemDetail(cleanItemId, { routeTarget: true });
   }
 
   function itemRouteUrl(itemId) {
@@ -1504,6 +1630,7 @@ const KanbanBoardPage = (() => {
     state.detail = null;
     state.detailModalOpen = false;
     state.routeDetailItemId = '';
+    state.routeHighlightItemId = '';
     writeRouteState(itemId, '');
     setFsm('idle', 'openChildBoard', itemId);
     await load({ force: true });
@@ -1516,6 +1643,7 @@ const KanbanBoardPage = (() => {
     state.detail = null;
     state.detailModalOpen = false;
     state.routeDetailItemId = '';
+    state.routeHighlightItemId = '';
     writeRouteState(state.currentParentId, '');
     setFsm('idle', parentItemId ? 'openBreadcrumbBoard' : 'openRootBoard', parentItemId || '');
     await load({ force: true });
@@ -2023,6 +2151,7 @@ const KanbanBoardPage = (() => {
         if (action === 'new-root-item') newRootItem();
         if (action === 'add-item-state') handleCardAction('add-item-state', '', button.dataset.kanbanStateId || 'todo');
         if (action === 'submit-inline-item') submitInlineItem(button.dataset.kanbanItemPrefix || 'kanban-inline-item');
+        if (action === 'toggle-markdown-preview') toggleMarkdownPreview(button, root);
         return;
       }
       const breadcrumb = event.target.closest('[data-kanban-breadcrumb]');
@@ -2071,6 +2200,12 @@ const KanbanBoardPage = (() => {
       if (!btn || root.contains(btn)) return;
       submitInlineItem(btn.dataset.kanbanItemPrefix || 'kanban-panel-item');
     });
+    document.addEventListener('click', event => {
+      const btn = event.target.closest('[data-kanban-action="toggle-markdown-preview"]');
+      if (!btn || root.contains(btn)) return;
+      event.preventDefault();
+      toggleMarkdownPreview(btn, document);
+    });
     window.addEventListener('resize', scheduleLaneRestore, { passive: true });
     window.addEventListener('orientationchange', scheduleLaneRestore, { passive: true });
     document.addEventListener('bodyshadechange', scheduleLaneRestore);
@@ -2094,6 +2229,8 @@ const KanbanBoardPage = (() => {
       item_count: items.length,
       selected_item_id: state.selection?.item?.item_id || '',
       selected_state: state.selection?.item?.state_id || '',
+      route_detail_item_id: state.routeDetailItemId || '',
+      route_highlight_item_id: state.routeHighlightItemId || '',
       detail_open: !!state.detailModalOpen,
       detail_item_id: detail.item?.item_id || '',
       detail_state: detail.item?.state_id || '',

@@ -204,8 +204,8 @@
 
 .kanban-status-strip,
 .kanban-breadcrumb {
-  min-height: 36px;
-  padding: 8px 12px;
+  min-height: 32px;
+  padding: 5px 12px;
   font-size: 13px;
   gap: 8px;
 }
@@ -220,9 +220,14 @@
 }
 
 .kanban-status-strip {
-  flex: 1 1 230px;
-  max-width: 500px;
-  flex-wrap: wrap;
+  height: 38px;
+  min-height: 38px;
+  padding: 0 12px;
+  flex: 0 1 auto;
+  width: max-content;
+  max-width: min(100%, 430px);
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .kanban-filter-strip {
@@ -274,29 +279,66 @@
 .kanban-status-dot--err { background: #e15e63; }
 
 .kanban-metrics {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(118px, 1fr));
+  --kanban-metric-height: 36px;
+  display: flex;
+  align-items: stretch;
   gap: 10px;
-}
-
-.kanban-metric {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: rgba(255,255,255,.028);
-  padding: 12px;
+  width: 100%;
   min-width: 0;
 }
 
+.kanban-metric {
+  min-height: var(--kanban-metric-height);
+  min-width: max-content;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255,255,255,.028);
+  padding: 0;
+  display: flex;
+  align-items: stretch;
+  flex: 1 1 0;
+  overflow: hidden;
+}
+
 .kanban-metric__value {
+  min-width: 48px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid rgba(91, 156, 246, .18);
+  background: rgba(91, 156, 246, .09);
   font-size: 22px;
   line-height: 1;
   font-weight: 760;
+  font-variant-numeric: tabular-nums;
 }
 
 .kanban-metric__label {
-  margin-top: 7px;
+  margin-top: 0;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: max-content;
   font-size: 12px;
   color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.kanban-metric-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  flex: 0 0 auto;
+  height: var(--kanban-metric-height);
+  min-height: var(--kanban-metric-height);
+}
+
+.kanban-metric-action {
+  width: var(--kanban-metric-height);
+  height: var(--kanban-metric-height);
+  min-height: var(--kanban-metric-height);
 }
 
 .kanban-board-shell {
@@ -438,6 +480,17 @@ body.is-resizing-kanban-lane * {
   box-shadow: 0 0 0 1px rgba(73,144,226,.25);
 }
 
+.kanban-card[data-kanban-route-target="true"] {
+  border-color: #d9aa32;
+  box-shadow: 0 0 0 1px rgba(217,170,50,.80), 0 0 0 4px rgba(217,170,50,.18);
+  background: rgba(217,170,50,.08);
+}
+
+#kanban-detail-modal[data-kanban-route-target="true"] {
+  border-color: #d9aa32;
+  box-shadow: 0 0 0 1px rgba(217,170,50,.80), 0 0 0 4px rgba(217,170,50,.18), 0 0 28px rgba(217,170,50,.20);
+}
+
 .kanban-card[data-pending="true"] {
   opacity: .72;
 }
@@ -461,6 +514,59 @@ body.is-resizing-kanban-lane * {
   overflow: hidden;
   font-size: 12px;
   line-height: 1.35;
+}
+
+.kanban-card__body.calendar-markdown-preview,
+.kanban-detail-body.calendar-markdown-preview,
+.kanban-scoped-row__body.calendar-markdown-preview {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.kanban-card__body.calendar-markdown-preview {
+  margin: 0;
+  max-height: 58px;
+}
+
+.kanban-detail-body.calendar-markdown-preview,
+.kanban-scoped-row__body.calendar-markdown-preview {
+  margin-top: 4px;
+}
+
+.kanban-card__body.calendar-markdown-preview p,
+.kanban-detail-body.calendar-markdown-preview p,
+.kanban-scoped-row__body.calendar-markdown-preview p {
+  margin: 0 0 4px;
+}
+
+.kanban-card__body.calendar-markdown-preview h1,
+.kanban-card__body.calendar-markdown-preview h2,
+.kanban-card__body.calendar-markdown-preview h3,
+.kanban-card__body.calendar-markdown-preview h4,
+.kanban-card__body.calendar-markdown-preview h5,
+.kanban-card__body.calendar-markdown-preview h6,
+.kanban-detail-body.calendar-markdown-preview h1,
+.kanban-detail-body.calendar-markdown-preview h2,
+.kanban-detail-body.calendar-markdown-preview h3,
+.kanban-detail-body.calendar-markdown-preview h4,
+.kanban-detail-body.calendar-markdown-preview h5,
+.kanban-detail-body.calendar-markdown-preview h6,
+.kanban-scoped-row__body.calendar-markdown-preview h1,
+.kanban-scoped-row__body.calendar-markdown-preview h2,
+.kanban-scoped-row__body.calendar-markdown-preview h3,
+.kanban-scoped-row__body.calendar-markdown-preview h4,
+.kanban-scoped-row__body.calendar-markdown-preview h5,
+.kanban-scoped-row__body.calendar-markdown-preview h6 {
+  margin: 6px 0 4px;
+  padding-bottom: 0;
+  border-bottom: 0;
+  font-size: 1em;
 }
 
 .kanban-card__meta {
@@ -648,6 +754,10 @@ body.is-resizing-kanban-lane * {
   overflow-wrap: anywhere;
 }
 
+.kanban-detail-meta--markdown {
+  color: var(--text);
+}
+
 .kanban-modal-form {
   display: grid;
   gap: 10px;
@@ -688,6 +798,10 @@ body.is-resizing-kanban-lane * {
   line-height: 1.4;
 }
 
+.kanban-field--markdown {
+  display: grid;
+}
+
 .kanban-modal-actions {
   justify-content: flex-end;
   gap: 8px;
@@ -705,7 +819,6 @@ body.is-resizing-kanban-lane * {
 }
 
 @media (max-width: 900px) {
-  .kanban-metrics,
   .kanban-selection-band {
     grid-template-columns: 1fr;
   }
@@ -717,6 +830,20 @@ body.is-resizing-kanban-lane * {
   .kanban-column {
     flex: 0 0 min(360px, 82vw);
     min-width: min(360px, 82vw);
+  }
+}
+
+@media (max-width: 820px) {
+  .kanban-metrics {
+    flex-wrap: wrap;
+  }
+
+  .kanban-metric {
+    flex-basis: calc(50% - 10px);
+  }
+
+  .kanban-metric-actions {
+    display: none;
   }
 }
 
@@ -734,6 +861,11 @@ body.is-resizing-kanban-lane * {
   .kanban-board-shell {
     height: clamp(300px, 48vh, 560px);
     min-height: 300px;
+  }
+
+  .kanban-metrics {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 
   .kanban-column {

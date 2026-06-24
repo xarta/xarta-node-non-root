@@ -1090,7 +1090,7 @@ const PersonalFilters = (() => {
     root.dataset.personalFilterSurface = surface;
     root.dataset.personalFilterLayout = 'tabs';
     const modalExtraTabsBySurface = {
-      todo: 'selected,search,new-task,sources,provenance',
+      todo: 'selected,search,new-task,edit-task,sources,provenance',
       kanban: 'selected,search,new-item,provenance',
     };
     if (modalExtraTabsBySurface[surface]) root.dataset.personalFilterExtraTabs = modalExtraTabsBySurface[surface];

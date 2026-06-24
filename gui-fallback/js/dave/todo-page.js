@@ -4,11 +4,12 @@
 
 const TodoPage = (() => {
   const CONTENT_VIEW_STORAGE_KEY = 'blueprints.todo.contentView.v1';
-  const CONTENT_VIEW_IDS = ['tasks', 'search', 'new-task', 'sources', 'provenance'];
+  const CONTENT_VIEW_IDS = ['tasks', 'search', 'new-task', 'edit-task', 'sources', 'provenance'];
   const CONTENT_VIEW_LABELS = {
     tasks: 'Tasks',
     search: 'Search',
     'new-task': 'New task',
+    'edit-task': 'Edit task',
     sources: 'Sources',
     provenance: 'Provenance',
   };
@@ -35,6 +36,7 @@ const TodoPage = (() => {
     contentView: readStoredContentView(),
     selection: null,
     routeTaskRef: '',
+    routeHighlightRef: '',
     lastWrite: null,
   };
 
@@ -177,6 +179,10 @@ const TodoPage = (() => {
     return sourceAuthority(task) === 'task' && sourceType(task) === 'manual-task';
   }
 
+  function editTaskAvailable() {
+    return Boolean(state.selection?.row && canWriteTask(state.selection.row));
+  }
+
   function rawTaskRows() {
     return state.data?.items || [];
   }
@@ -235,6 +241,35 @@ const TodoPage = (() => {
     return row?.title || row?.task_id || 'task';
   }
 
+  function stripFrontmatter(md) {
+    if (window.BlueprintsMarkdown?.stripFrontmatter) return window.BlueprintsMarkdown.stripFrontmatter(md);
+    return String(md || '').replace(/^---\s*\n[\s\S]*?\n---\s*(\n|$)/, '');
+  }
+
+  function renderMarkdown(md, emptyText = 'No task content.') {
+    if (window.BlueprintsMarkdown?.render) return window.BlueprintsMarkdown.render(md);
+    const clean = stripFrontmatter(md).trim();
+    if (!clean) return `<p class="calendar-markdown-empty">${escHtml(emptyText)}</p>`;
+    return clean.split(/\n/).map(line => {
+      const heading = line.match(/^(#{1,6})\s+(.*)$/);
+      if (heading) {
+        const level = Math.min(6, heading[1].length);
+        return `<h${level}>${escHtml(heading[2])}</h${level}>`;
+      }
+      const bullet = line.match(/^\s*[-*+]\s+(.*)$/);
+      if (bullet) return `<ul><li>${escHtml(bullet[1])}</li></ul>`;
+      if (!line.trim()) return '<div class="calendar-markdown-gap"></div>';
+      return `<p>${escHtml(line)}</p>`;
+    }).join('');
+  }
+
+  function markdownPreviewHtml(body, className = '', emptyText = 'No task content.', showEmpty = false) {
+    const clean = stripFrontmatter(body).trim();
+    if (!clean && !showEmpty) return '';
+    const classes = ['calendar-markdown-preview', className].filter(Boolean).join(' ');
+    return `<div class="${escHtml(classes)}">${renderMarkdown(clean, emptyText)}</div>`;
+  }
+
   function taskTime(row) {
     if (!row?.due_at) return row?.local_date || '';
     const meta = row?.provenance?.task || {};
@@ -253,7 +288,24 @@ const TodoPage = (() => {
   }
 
   function metric(value, label) {
-    return `<div class="todo-metric"><div class="todo-metric__value">${escHtml(value)}</div><div class="todo-metric__label">${escHtml(label)}</div></div>`;
+    return `<div class="todo-metric"><span class="todo-metric__value">${escHtml(value)}</span><span class="todo-metric__label">${escHtml(label)}</span></div>`;
+  }
+
+  function markdownFieldHtml(prefix, label, value = '', options = {}) {
+    const safePrefix = String(prefix || 'todo-task').replace(/[^a-zA-Z0-9_-]/g, '-');
+    const actionAttr = options.modal
+      ? 'data-todo-modal-action="toggle-markdown-preview"'
+      : 'data-todo-action="toggle-markdown-preview"';
+    return `
+      <div class="todo-field todo-field--wide todo-field--notes calendar-markdown-field">
+        <div class="calendar-field__label-row">
+          <span>${escHtml(label || 'Notes')}</span>
+          <button class="calendar-markdown-toggle" type="button" ${actionAttr} data-todo-markdown-prefix="${escHtml(safePrefix)}">Preview</button>
+        </div>
+        <textarea id="${escHtml(safePrefix)}-body" rows="${escHtml(options.rows || 2)}" maxlength="${escHtml(options.maxlength || 2000)}">${escHtml(value)}</textarea>
+        <div id="${escHtml(safePrefix)}-body-preview" class="calendar-markdown-preview" hidden></div>
+      </div>
+    `;
   }
 
   function kvHtml(items) {
@@ -262,10 +314,12 @@ const TodoPage = (() => {
     `).join('')}</dl>`;
   }
 
-  function setSelection(index) {
+  function setSelection(index, options = {}) {
     const idx = Number(index);
     const row = taskRows()[idx];
     if (!row) return;
+    if (options.routeTargetRef) state.routeHighlightRef = cleanTaskRef(options.routeTargetRef);
+    else if (!options.preserveRouteTarget) state.routeHighlightRef = '';
     state.selection = {
       index: idx,
       key: String(row.task_id || row.event_id || idx),
@@ -274,33 +328,43 @@ const TodoPage = (() => {
     };
     renderSelection();
     applySelectionStyles();
+    refreshActiveEditTaskPanels();
   }
 
   function applySelectionStyles() {
     document.querySelectorAll('[data-todo-selected="true"]').forEach(node => {
       node.removeAttribute('data-todo-selected');
     });
+    document.querySelectorAll('[data-todo-route-target="true"]').forEach(node => {
+      node.removeAttribute('data-todo-route-target');
+    });
     if (!state.selection) return;
-    document.querySelectorAll('[data-todo-index]').forEach(node => {
+    document.querySelectorAll('.todo-task-row[data-todo-index]').forEach(node => {
       if (Number(node.dataset.todoIndex) === state.selection.index) {
         node.setAttribute('data-todo-selected', 'true');
+        if (state.routeHighlightRef && taskMatchesRef(state.selection.row, state.routeHighlightRef)) {
+          node.setAttribute('data-todo-route-target', 'true');
+        }
       }
     });
   }
 
-  function scrollSelectionIntoView() {
+  function scrollSelectionIntoView(options = {}) {
     if (!state.selection) return;
     window.requestAnimationFrame(() => {
-      const row = document.querySelector(`[data-todo-index="${state.selection.index}"]`);
-      row?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+      const row = document.querySelector(`.todo-task-row[data-todo-index="${state.selection.index}"]`);
+      row?.scrollIntoView?.({
+        block: options.center ? 'center' : 'nearest',
+        inline: 'nearest',
+      });
     });
   }
 
-  function selectTaskRef(taskRef) {
+  function selectTaskRef(taskRef, options = {}) {
     const index = findTaskIndexByRef(taskRef);
     if (index < 0) return false;
-    setSelection(index);
-    scrollSelectionIntoView();
+    setSelection(index, { routeTargetRef: options.routeTarget ? taskRef : '', preserveRouteTarget: !options.routeTarget });
+    scrollSelectionIntoView({ center: !!options.routeTarget });
     return true;
   }
 
@@ -308,14 +372,14 @@ const TodoPage = (() => {
     const clean = cleanTaskRef(state.routeTaskRef || routeTaskRef());
     if (!clean) return false;
     state.routeTaskRef = clean;
-    if (selectTaskRef(clean)) return true;
+    if (selectTaskRef(clean, { routeTarget: true })) return true;
     if (options.searchModes === false) return false;
     for (const mode of modes) {
       if (mode === state.mode) continue;
       state.mode = mode;
       state.loaded = false;
       await load({ force: true, skipRouteSearch: true });
-      if (selectTaskRef(clean)) {
+      if (selectTaskRef(clean, { routeTarget: true })) {
         renderMeta();
         return true;
       }
@@ -393,7 +457,7 @@ const TodoPage = (() => {
         <div class="todo-task-main">
           <div class="todo-task-title">${escHtml(taskLabel(row))}</div>
           <div class="todo-task-meta">${escHtml(taskTime(row) || 'no due time')} - ${escHtml(sourceType(row) || 'unknown')} - ${escHtml(row.mode || '')}</div>
-          <div class="todo-task-meta">${escHtml(row.body_excerpt || '')}</div>
+          ${markdownPreviewHtml(row.body_excerpt || '', 'todo-task-body', 'No task content.')}
           ${refs.length ? `<div class="todo-task-meta todo-task-meta--links">work ${refs.map(workLinkHtml).join(' ')}</div>` : ''}
         </div>
         <span class="todo-task-status todo-task-status--${escHtml(status)}">${escHtml(status)}</span>
@@ -409,22 +473,20 @@ const TodoPage = (() => {
 
   function renderTasks() {
     const list = el('todo-task-list');
-    const count = el('todo-list-count');
     if (!list) return;
     const rows = taskRows();
-    if (count) count.textContent = String(rows.length);
     list.innerHTML = rows.length
       ? rows.map(taskRowHtml).join('')
       : '<div class="todo-empty">No tasks in this mode.</div>';
   }
 
-  function detailRow(title, meta, body = '') {
+  function detailRow(title, meta, body = '', options = {}) {
     return `
       <div class="todo-detail-row">
         <div class="todo-detail-main">
           <div class="todo-detail-title">${escHtml(title)}</div>
           <div class="todo-detail-meta">${escHtml(meta || '')}</div>
-          ${body ? `<div class="todo-detail-meta">${escHtml(body)}</div>` : ''}
+          ${body ? `<div class="todo-detail-meta${options.bodyHtml ? ' todo-detail-meta--markdown' : ''}">${options.bodyHtml ? body : escHtml(body)}</div>` : ''}
         </div>
       </div>
     `;
@@ -442,7 +504,7 @@ const TodoPage = (() => {
       return '<div class="todo-empty">Select a task to inspect actions and provenance.</div>';
     }
     return [
-      detailRow(row.title || row.task_id, `${row.status || ''} - ${row.mode || ''}`, row.body_excerpt || ''),
+      detailRow(row.title || row.task_id, `${row.status || ''} - ${row.mode || ''}`, markdownPreviewHtml(row.body_excerpt || '', 'todo-detail-body', 'No task content.', true), { bodyHtml: true }),
       detailRow('Due', taskTime(row) || 'none', row.timezone || ''),
       detailRow('Source', `${sourceType(row)} - ${row.source?.authority || ''}`, row.source?.ref || ''),
       detailRow('Work Links', (row.related?.work_items || []).join(', ') || 'none'),
@@ -557,10 +619,7 @@ const TodoPage = (() => {
               <option value="low" ${valueFor('priority') === 'low' ? 'selected' : ''}>Low</option>
             </select>
           </label>
-          <label class="todo-field todo-field--wide" for="${escHtml(safePrefix)}-body">
-            <span>Notes</span>
-            <textarea id="${escHtml(safePrefix)}-body" rows="2" maxlength="2000">${escHtml(valueFor('body'))}</textarea>
-          </label>
+          ${markdownFieldHtml(safePrefix, 'Notes', valueFor('body'), { modal: !!options.modal })}
           <label class="todo-field todo-field--wide" for="${escHtml(safePrefix)}-work">
             <span>Work refs</span>
             <input id="${escHtml(safePrefix)}-work" type="text" autocomplete="off" value="${escHtml(valueFor('work'))}" />
@@ -569,6 +628,73 @@ const TodoPage = (() => {
         <div class="todo-quick-task__footer">
           <span id="${escHtml(safePrefix)}-status" class="todo-entry-status"></span>
           <button class="todo-command-btn" type="button" ${actionAttr} data-todo-task-prefix="${escHtml(safePrefix)}">Save Task</button>
+        </div>
+      </section>
+    `;
+  }
+
+  function embeddedEditTaskFormHtml(prefix = 'todo-inline-edit-task', options = {}) {
+    const safePrefix = String(prefix || 'todo-inline-edit-task').replace(/[^a-zA-Z0-9_-]/g, '-');
+    const task = state.selection?.row;
+    const writable = Boolean(task && canWriteTask(task));
+    const disabledAttr = writable ? '' : ' disabled';
+    const meta = task?.provenance?.task || {};
+    const existingForm = Array.from(document.querySelectorAll('[data-todo-editing-task-id]'))
+      .find(form => form.dataset.todoEditingTaskId === String(task?.task_id || ''));
+    const preserveExisting = Boolean(task?.task_id && existingForm?.contains(el(`${safePrefix}-title`)));
+    const valueFor = (key, fallback = '') => {
+      const field = preserveExisting ? el(`${safePrefix}-${key}`) : null;
+      return String(field ? field.value : fallback);
+    };
+    const actionAttr = options.modal ? 'data-todo-modal-action="submit-edit"' : 'data-todo-action="submit-edit"';
+    const reason = task
+      ? (writable ? '' : 'This task is source-owned and cannot be edited here.')
+      : 'Select a manual task before editing.';
+    return `
+      <section class="calendar-quick-event calendar-quick-event--embedded todo-quick-task todo-quick-task--embedded todo-edit-task" aria-label="Edit Task"${task?.task_id ? ` data-todo-editing-task-id="${escHtml(task.task_id)}"` : ''}>
+        <dl class="todo-edit-task__meta">
+          <dt>Task</dt><dd>${escHtml(task?.task_id || 'No task selected')}</dd>
+          <dt>Source</dt><dd>${escHtml(sourceType(task) || 'none')}</dd>
+        </dl>
+        <div class="todo-form-grid todo-edit-task__grid">
+          <label class="todo-field todo-field--title" for="${escHtml(safePrefix)}-title">
+            <span>Title</span>
+            <input id="${escHtml(safePrefix)}-title" type="text" maxlength="180" autocomplete="off" value="${escHtml(valueFor('title', task?.title || ''))}"${disabledAttr} />
+          </label>
+          <label class="todo-field" for="${escHtml(safePrefix)}-date">
+            <span>Due</span>
+            <input id="${escHtml(safePrefix)}-date" type="date" value="${escHtml(valueFor('date', task?.local_date || localDateString(new Date())))}"${disabledAttr} />
+          </label>
+          <label class="todo-field" for="${escHtml(safePrefix)}-time">
+            <span>Time</span>
+            <input id="${escHtml(safePrefix)}-time" type="time" value="${escHtml(valueFor('time', meta.due_time || ''))}"${disabledAttr} />
+          </label>
+          <label class="todo-field" for="${escHtml(safePrefix)}-mode">
+            <span>Mode</span>
+            <select id="${escHtml(safePrefix)}-mode"${disabledAttr}>
+              <option value="personal" ${valueFor('mode', task?.mode || state.mode) === 'personal' ? 'selected' : ''}>Personal</option>
+              <option value="work" ${valueFor('mode', task?.mode || state.mode) === 'work' ? 'selected' : ''}>Work</option>
+              <option value="review" ${valueFor('mode', task?.mode || state.mode) === 'review' ? 'selected' : ''}>Review</option>
+            </select>
+          </label>
+          <label class="todo-field" for="${escHtml(safePrefix)}-priority">
+            <span>Priority</span>
+            <select id="${escHtml(safePrefix)}-priority"${disabledAttr}>
+              <option value="" ${valueFor('priority', task?.priority || '') ? '' : 'selected'}>Normal</option>
+              <option value="high" ${valueFor('priority', task?.priority || '') === 'high' ? 'selected' : ''}>High</option>
+              <option value="medium" ${valueFor('priority', task?.priority || '') === 'medium' ? 'selected' : ''}>Medium</option>
+              <option value="low" ${valueFor('priority', task?.priority || '') === 'low' ? 'selected' : ''}>Low</option>
+            </select>
+          </label>
+          ${markdownFieldHtml(safePrefix, 'Notes', valueFor('body', task?.body_excerpt || ''), { modal: !!options.modal, rows: options.modal ? 4 : 3 })}
+          <label class="todo-field todo-field--work" for="${escHtml(safePrefix)}-work">
+            <span>Work refs</span>
+            <input id="${escHtml(safePrefix)}-work" type="text" autocomplete="off" value="${escHtml(valueFor('work', (task?.related?.work_items || []).join(' ')))}"${disabledAttr} />
+          </label>
+        </div>
+        <div class="todo-quick-task__footer todo-edit-task__footer">
+          <span id="${escHtml(safePrefix)}-status" class="todo-entry-status">${escHtml(reason)}</span>
+          <button class="todo-command-btn" type="button" ${actionAttr} data-todo-task-prefix="${escHtml(safePrefix)}"${writable ? '' : ' disabled'}>Save Task</button>
         </div>
       </section>
     `;
@@ -654,6 +780,7 @@ const TodoPage = (() => {
     state.loaded = false;
     state.selection = null;
     state.routeTaskRef = '';
+    state.routeHighlightRef = '';
     writeRouteTaskRef('');
     return load({ force: true });
   }
@@ -665,12 +792,15 @@ const TodoPage = (() => {
     else if (typeof modal.close === 'function') modal.close();
   }
 
-  function showActionModal(title, html, status = '') {
+  function showActionModal(title, html, status = '', options = {}) {
     const modal = el('todo-action-modal');
     const titleEl = el('todo-action-modal-title');
     const body = el('todo-action-modal-body');
     const statusEl = el('todo-action-modal-status');
     if (!modal || !body) return false;
+    modal.classList.toggle('todo-action-modal--viewport', Boolean(options.viewport));
+    if (options.contentView) modal.dataset.todoActionModalView = options.contentView;
+    else delete modal.dataset.todoActionModalView;
     if (titleEl) titleEl.textContent = title;
     body.innerHTML = html;
     if (statusEl) statusEl.textContent = status;
@@ -679,11 +809,67 @@ const TodoPage = (() => {
     return true;
   }
 
+  function toggleMarkdownPreview(target, actionRoot = document) {
+    const button = target?.nodeType === 1
+      ? target
+      : (actionRoot.querySelector?.(`[data-todo-markdown-prefix="${target}"]`) || document.querySelector(`[data-todo-markdown-prefix="${target}"]`));
+    const prefix = button?.dataset?.todoMarkdownPrefix || String(target || 'todo-task');
+    const field = button?.closest?.('.calendar-markdown-field');
+    const body = field?.querySelector?.('textarea') || el(`${prefix}-body`);
+    const preview = field?.querySelector?.('.calendar-markdown-preview') || el(`${prefix}-body-preview`);
+    if (!body || !preview) return false;
+    const showing = !preview.hidden;
+    if (showing) {
+      preview.hidden = true;
+      body.hidden = false;
+      if (button) button.textContent = 'Preview';
+      body.focus?.();
+      return true;
+    }
+    preview.innerHTML = renderMarkdown(body.value);
+    preview.hidden = false;
+    body.hidden = true;
+    if (button) button.textContent = 'Edit';
+    return true;
+  }
+
   function setQuickDefaults(prefix = 'todo-inline-task') {
     const date = el(`${prefix}-date`);
     if (date && !date.value) date.value = localDateString(new Date());
     const mode = el(`${prefix}-mode`);
     if (mode && ['personal', 'work', 'review'].includes(state.mode)) mode.value = state.mode;
+  }
+
+  function todoPanelHostVisible(host) {
+    return hostIsVisible(host);
+  }
+
+  function activateTodoPanelTab(tabId) {
+    if (!window.PersonalFilters?.activateTab) return false;
+    const hosts = [
+      el('todo-filter-inline-panel'),
+      document.querySelector('#ultrawide-sidecar-body [data-personal-filter-host][data-personal-filter-surface="todo"]'),
+    ].filter(Boolean);
+    for (const host of hosts) {
+      if (!todoPanelHostVisible(host)) continue;
+      if (window.PersonalFilters.activateTab('todo', tabId, { host, visibleOnly: true })) return true;
+    }
+    return false;
+  }
+
+  function editPrefixForHost(host) {
+    if (host?.id === 'todo-filter-inline-panel') return 'todo-inline-edit-task';
+    if (host?.closest?.('#ultrawide-sidecar-body')) return 'todo-sidecar-edit-task';
+    return 'todo-panel-edit-task';
+  }
+
+  function refreshActiveEditTaskPanels() {
+    if (!window.PersonalFilters?.activateTab) return;
+    document.querySelectorAll('[data-personal-filter-host][data-personal-filter-surface="todo"]').forEach(host => {
+      if (host.dataset.personalFilterTab !== 'edit-task') return;
+      if (!hostIsVisible(host)) return;
+      window.PersonalFilters.activateTab('todo', 'edit-task', { host, visibleOnly: false });
+    });
   }
 
   function taskPayloadFromForm(prefix = 'todo-task') {
@@ -743,61 +929,31 @@ const TodoPage = (() => {
         ['State', 'source-owned'],
       ]));
     }
-    const meta = task.provenance?.task || {};
-    const html = `
-      ${kvHtml([
-        ['Task', task.task_id || ''],
-        ['Source', sourceType(task) || ''],
-      ])}
-      <div class="todo-form-grid">
-        <label class="todo-field todo-field--wide" for="todo-edit-title">
-          <span>Title</span>
-          <input id="todo-edit-title" type="text" maxlength="180" value="${escHtml(task.title || '')}" />
-        </label>
-        <label class="todo-field" for="todo-edit-date">
-          <span>Due</span>
-          <input id="todo-edit-date" type="date" value="${escHtml(task.local_date || localDateString(new Date()))}" />
-        </label>
-        <label class="todo-field" for="todo-edit-time">
-          <span>Time</span>
-          <input id="todo-edit-time" type="time" value="${escHtml(meta.due_time || '')}" />
-        </label>
-        <label class="todo-field" for="todo-edit-mode">
-          <span>Mode</span>
-          <select id="todo-edit-mode">
-            <option value="personal" ${task.mode === 'personal' ? 'selected' : ''}>Personal</option>
-            <option value="work" ${task.mode === 'work' ? 'selected' : ''}>Work</option>
-            <option value="review" ${task.mode === 'review' ? 'selected' : ''}>Review</option>
-          </select>
-        </label>
-        <label class="todo-field" for="todo-edit-priority">
-          <span>Priority</span>
-          <select id="todo-edit-priority">
-            <option value="" ${task.priority ? '' : 'selected'}>Normal</option>
-            <option value="high" ${task.priority === 'high' ? 'selected' : ''}>High</option>
-            <option value="medium" ${task.priority === 'medium' ? 'selected' : ''}>Medium</option>
-            <option value="low" ${task.priority === 'low' ? 'selected' : ''}>Low</option>
-          </select>
-        </label>
-        <label class="todo-field todo-field--wide" for="todo-edit-body">
-          <span>Notes</span>
-          <textarea id="todo-edit-body" rows="2" maxlength="2000">${escHtml(task.body_excerpt || '')}</textarea>
-        </label>
-        <label class="todo-field" for="todo-edit-work">
-          <span>Work refs</span>
-          <input id="todo-edit-work" type="text" value="${escHtml((task.related?.work_items || []).join(' '))}" />
-        </label>
-      </div>
-      <button class="todo-command-btn" type="button" data-todo-modal-action="submit-edit">Save Edit</button>
-    `;
-    return showActionModal('Edit Task', html);
+    if (activateTodoPanelTab('edit-task')) {
+      ['todo-inline-edit-task', 'todo-sidecar-edit-task', 'todo-panel-edit-task'].forEach(prefix => {
+        if (el(`${prefix}-title`)) window.setTimeout(() => el(`${prefix}-title`)?.focus(), 0);
+      });
+      return true;
+    }
+    showActionModal('Edit Task', embeddedEditTaskFormHtml('todo-modal-edit-task', { modal: true }), '', {
+      contentView: 'edit-task',
+      viewport: true,
+    });
+    window.requestAnimationFrame(() => el('todo-modal-edit-task-title')?.focus());
+    return true;
   }
 
-  async function submitEdit() {
+  async function submitEdit(prefix = 'todo-edit') {
     const task = state.selection?.row;
     if (!task?.task_id || !canWriteTask(task)) return false;
-    const payload = taskPayloadFromForm('todo-edit');
-    if (!payload.title) return showActionModal('Edit Task', '<p>Task title is required.</p>');
+    const status = el(`${prefix}-status`) || el('todo-action-modal-status');
+    const payload = taskPayloadFromForm(prefix);
+    if (!payload.title) {
+      if (status) status.textContent = 'Task title is required.';
+      else showActionModal('Edit Task', '<p>Task title is required.</p>');
+      return false;
+    }
+    if (status) status.textContent = 'Saving task...';
     const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
     const resp = await fetcher(`/api/v1/personal/tasks/${encodeURIComponent(task.task_id)}`, {
       method: 'PATCH',
@@ -805,15 +961,28 @@ const TodoPage = (() => {
       body: JSON.stringify(payload),
     });
     const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) return showActionModal('Edit Task', `<p>${escHtml(data.detail || `HTTP ${resp.status}`)}</p>`);
+    if (!resp.ok) {
+      if (status) status.textContent = data.detail || `HTTP ${resp.status}`;
+      else showActionModal('Edit Task', `<p>${escHtml(data.detail || `HTTP ${resp.status}`)}</p>`);
+      return false;
+    }
+    const taskRef = data.task?.task_id || task.task_id;
     state.lastWrite = data;
     state.loaded = false;
     await load({ force: true });
-    return showActionModal('Edit Task', kvHtml([
-      ['Task', data.task?.task_id || task.task_id],
-      ['Title', data.task?.title || payload.title],
-      ['Audit', data.audit?.audit_id || ''],
-    ]), 'Task updated.');
+    selectTaskRef(taskRef);
+    if (window.PersonalFilters?.renderAll) window.PersonalFilters.renderAll();
+    if (prefix === 'todo-modal-edit-task') {
+      closeActionModal();
+      return showActionModal('Edit Task', kvHtml([
+        ['Task', data.task?.task_id || task.task_id],
+        ['Title', data.task?.title || payload.title],
+        ['Audit', data.audit?.audit_id || ''],
+      ]), 'Task updated.');
+    }
+    const afterStatus = el(`${prefix}-status`);
+    if (afterStatus) afterStatus.textContent = 'Task updated.';
+    return true;
   }
 
   async function runTaskAction(action) {
@@ -974,6 +1143,7 @@ const TodoPage = (() => {
           { id: 'selected', label: 'Selected' },
           { id: 'search', label: 'Search' },
           { id: 'new-task', label: 'New Task' },
+          { id: 'edit-task', label: 'Edit Task', disabled: () => !editTaskAvailable() },
           { id: 'sources', label: 'Sources' },
           { id: 'provenance', label: 'Provenance' },
         ],
@@ -981,6 +1151,7 @@ const TodoPage = (() => {
           if (tab === 'selected') return embeddedSelectedHtml(host);
           if (tab === 'search') return embeddedSearchHtml(host);
           if (tab === 'new-task') return embeddedTaskFormHtml(host?.id === 'todo-filter-inline-panel' ? 'todo-inline-task' : 'todo-panel-task');
+          if (tab === 'edit-task') return embeddedEditTaskFormHtml(editPrefixForHost(host));
           if (tab === 'sources') return embeddedSourcesHtml(host);
           if (tab === 'provenance') return embeddedProvenanceHtml(host);
           return '';
@@ -1043,6 +1214,8 @@ const TodoPage = (() => {
       if (action === 'new-task') newTask();
       if (action === 'refresh') load({ force: true });
       if (action === 'submit-task') submitTask(btn.dataset.todoTaskPrefix || 'todo-inline-task');
+      if (action === 'submit-edit') submitEdit(btn.dataset.todoTaskPrefix || 'todo-inline-edit-task');
+      if (action === 'toggle-markdown-preview') toggleMarkdownPreview(btn, root);
     });
     root.addEventListener('keydown', event => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -1056,6 +1229,17 @@ const TodoPage = (() => {
       if (!btn || root.contains(btn)) return;
       submitTask(btn.dataset.todoTaskPrefix || 'todo-panel-task');
     });
+    document.addEventListener('click', event => {
+      const btn = event.target.closest('[data-todo-action="submit-edit"]');
+      if (!btn || root.contains(btn)) return;
+      submitEdit(btn.dataset.todoTaskPrefix || 'todo-panel-edit-task');
+    });
+    document.addEventListener('click', event => {
+      const btn = event.target.closest('[data-todo-action="toggle-markdown-preview"]');
+      if (!btn || root.contains(btn)) return;
+      event.preventDefault();
+      toggleMarkdownPreview(btn, document);
+    });
     ['todo-action-modal-close', 'todo-action-modal-footer-close'].forEach(id => {
       const btn = el(id);
       if (btn) btn.addEventListener('click', closeActionModal);
@@ -1065,9 +1249,10 @@ const TodoPage = (() => {
       modalBody.addEventListener('click', event => {
         const btn = event.target.closest('[data-todo-modal-action]');
         if (!btn) return;
-        if (btn.dataset.todoModalAction === 'submit-edit') submitEdit();
+        if (btn.dataset.todoModalAction === 'submit-edit') submitEdit(btn.dataset.todoTaskPrefix || 'todo-modal-edit-task');
         if (btn.dataset.todoModalAction === 'submit-work-link') submitWorkLink();
         if (btn.dataset.todoModalAction === 'submit-task') submitTask(btn.dataset.todoTaskPrefix || 'todo-modal-task');
+        if (btn.dataset.todoModalAction === 'toggle-markdown-preview') toggleMarkdownPreview(btn, modalBody);
       });
     }
   }
@@ -1110,6 +1295,8 @@ const TodoPage = (() => {
       source_counts: state.data?.counts?.sources || {},
       selection_status: state.selection?.row?.status || '',
       selection_label: state.selection?.label || '',
+      route_task_ref: state.routeTaskRef || '',
+      route_highlight_ref: state.routeHighlightRef || '',
       last_write_task_id: state.lastWrite?.task?.task_id || '',
       error: state.error,
     };

@@ -491,6 +491,63 @@ assert.match(
   /'calendar\.toggleContentView':\s*\(\)\s*=>\s*CalendarPage\.toggleContentView\(\)/,
   'Calendar View context action must call the same content-view cycle path.',
 );
+for (const [surface, js, css, routeAttr, markdownClass] of [
+  ['ToDo', daveTodoJs, daveTodoCss, 'data-todo-route-target', 'todo-task-body'],
+  ['Kanban', kanbanBoardJs, kanbanBoardCss, 'data-kanban-route-target', 'kanban-card__body--markdown'],
+]) {
+  assert.match(
+    js,
+    /BlueprintsMarkdown\?\.render/,
+    `${surface} must render task descriptions through the shared markdown renderer when available.`,
+  );
+  assert.ok(
+    js.includes(markdownClass) && js.includes('calendar-markdown-preview'),
+    `${surface} task descriptions must render as compact markdown previews.`,
+  );
+  assert.ok(
+    js.includes('toggle-markdown-preview') && js.includes('calendar-markdown-toggle'),
+    `${surface} edit/create forms must expose the Calendar/Diary Preview/Edit markdown toggle.`,
+  );
+  assert.ok(
+    js.includes(routeAttr),
+    `${surface} linked-route targets must carry a dedicated route-target data attribute.`,
+  );
+  assert.match(
+    css,
+    /#d9aa32[\s\S]*rgba\(217,\s*170,\s*50/,
+    `${surface} linked-route target highlight must use the shared gold border/glow treatment.`,
+  );
+}
+assert.match(
+  daveTodoJs,
+  /selectTaskRef\(clean,\s*\{\s*routeTarget:\s*true\s*\}\)/,
+  'ToDo deep links must select and center the routed task instead of only changing the URL.',
+);
+assert.match(
+  daveTodoJs,
+  /scrollSelectionIntoView\(\{\s*center:\s*!!options\.routeTarget\s*\}\)/,
+  'ToDo routed task selection must center the target row when opened from a link.',
+);
+assert.match(
+  kanbanBoardJs,
+  /openItemDetail\(state\.routeDetailItemId,\s*\{\s*routeTarget:\s*true\s*\}\)/,
+  'Kanban URL detail routes must open through the route-target highlight path.',
+);
+assert.match(
+  kanbanBoardJs,
+  /targetParentId[\s\S]*state\.currentParentId\s*=\s*targetParentId[\s\S]*skipRouteDetail:\s*true/,
+  'Kanban linked cards must navigate to the item parent board so the target card is visible in-page.',
+);
+assert.match(
+  kanbanBoardJs,
+  /options\.routeTarget[\s\S]*dialog\.setAttribute\('data-kanban-route-target',\s*'true'\)/,
+  'Kanban routed detail modals must keep the same route-target marker as the highlighted board card.',
+);
+assert.match(
+  kanbanBoardCss,
+  /#kanban-detail-modal\[data-kanban-route-target="true"\][\s\S]*border-color:\s*#d9aa32/,
+  'Kanban routed detail modal must use the shared gold target border when it opens above the board.',
+);
 for (const [tabId, surface, formNeedle] of [
   ['tab-diary', 'diary', 'class="diary-quick-entry"'],
   ['tab-calender', 'calendar', 'class="calendar-quick-event"'],
@@ -821,6 +878,84 @@ assert.match(
   /params\.get\('todo_task_id'\)[\s\S]*params\.get\('todo_ref'\)[\s\S]*function\s+taskRouteUrl/,
   'ToDo page must read durable todo_task_id/todo_ref routes.',
 );
+assert.match(
+  daveTodoCss,
+  /\.todo-status-strip\s*\{[\s\S]*flex:\s*0\s+1\s+auto[\s\S]*width:\s*max-content[\s\S]*white-space:\s*nowrap/,
+  'ToDo ready/status pill must size to its known content instead of stretching across the header.',
+);
+assert.match(
+  daveTodoCss,
+  /\.todo-status-strip\s*\{[\s\S]*height:\s*38px[\s\S]*min-height:\s*38px[\s\S]*padding:\s*0\s+12px/,
+  'ToDo ready/status pill must match the adjacent desktop icon-button height.',
+);
+assert.match(
+  daveTodoCss,
+  /\.todo-metrics\s*\{[\s\S]*--todo-metric-height:\s*36px[\s\S]*display:\s*flex[\s\S]*width:\s*100%/,
+  'ToDo metrics must use a compact one-line split-pill row that still fills the available width.',
+);
+assert.match(
+  daveTodoCss,
+  /\.todo-metric\s*\{[\s\S]*min-width:\s*max-content[\s\S]*display:\s*flex[\s\S]*flex:\s*1\s+1\s+0/,
+  'ToDo metric pills must divide extra row width while respecting label content width.',
+);
+assert.match(
+  daveTodoCss,
+  /\.todo-metric__value\s*\{[\s\S]*border-right:[\s\S]*background:[\s\S]*font-size:\s*23px/,
+  'ToDo metric value segment must remain visually distinct without shrinking the number font.',
+);
+assert.match(
+  daveTodoJs,
+  /<span class="todo-metric__value">[\s\S]*<span class="todo-metric__label">/,
+  'ToDo metric markup must keep value and label on one line as split segments.',
+);
+{
+  const todoTab = tabSlice('tab-todo');
+  assert.doesNotMatch(
+    todoTab,
+    /id="todo-list-heading"|id="todo-list-count"/,
+    'ToDo task list must not repeat the Tasks title or visible-count pill already shown by page context and metrics.',
+  );
+  assert.match(
+    todoTab,
+    /todo-band--tasks" aria-label="Visible ToDo tasks"[\s\S]*id="todo-task-list"/,
+    'ToDo task list must keep an accessible label after removing the visible section heading.',
+  );
+  assert.match(
+    todoTab,
+    /data-personal-filter-extra-tabs="selected,search,new-task,edit-task,sources,provenance"/,
+    'ToDo desktop portrait bottom panel must expose Edit Task beside New Task.',
+  );
+}
+assert.match(
+  personalFiltersJs,
+  /todo:\s*'selected,search,new-task,edit-task,sources,provenance'/,
+  'ToDo ultrawide sidecar must expose the same Edit Task panel tab as desktop portrait.',
+);
+assert.match(
+  daveTodoJs,
+  /extraTabs:\s*\[[\s\S]*\{ id: 'edit-task', label: 'Edit Task', disabled: \(\) => !editTaskAvailable\(\) \}/,
+  'ToDo shared panels must register an Edit Task tab that disables when editing is unavailable.',
+);
+assert.match(
+  daveTodoJs,
+  /function\s+editSelected\(\)[\s\S]*activateTodoPanelTab\('edit-task'\)[\s\S]*showActionModal\('Edit Task'[\s\S]*viewport:\s*true/,
+  'ToDo edit action must prefer visible panel tabs and use a viewport modal only as fallback.',
+);
+assert.match(
+  daveTodoJs,
+  /function\s+refreshActiveEditTaskPanels\(\)[\s\S]*personalFilterTab !== 'edit-task'[\s\S]*PersonalFilters\.activateTab\('todo', 'edit-task'/,
+  'ToDo active Edit Task panel must rerender when row selection changes.',
+);
+assert.match(
+  daveTodoCss,
+  /#todo-action-modal\.todo-action-modal--viewport\s*\{[\s\S]*width:\s*min\(980px,\s*calc\(100vw - 24px\)\)\s*!important[\s\S]*max-height:\s*calc\(100dvh - 20px\)/,
+  'ToDo fallback edit modal must expand to the viewport instead of using the compact action-modal width.',
+);
+assert.match(
+  daveTodoCss,
+  /\.todo-edit-task__grid\s*\{[\s\S]*minmax\(150px,\s*\.45fr\)[\s\S]*minmax\(130px,\s*\.4fr\)/,
+  'ToDo Edit Task panel grid must reserve enough width for date and select controls.',
+);
 
 assert.match(
   kanbanBoardCss,
@@ -851,4 +986,44 @@ assert.match(
   kanbanBoardJs,
   /ArrowLeft[\s\S]*ArrowRight[\s\S]*Home[\s\S]*End/,
   'Kanban lane handles must support keyboard width adjustment.',
+);
+assert.match(
+  kanbanBoardCss,
+  /\.kanban-status-strip\s*\{[\s\S]*flex:\s*0\s+1\s+auto[\s\S]*width:\s*max-content[\s\S]*white-space:\s*nowrap/,
+  'Kanban ready/status pill must size to its known content instead of stretching across the header.',
+);
+assert.match(
+  kanbanBoardCss,
+  /\.kanban-status-strip\s*\{[\s\S]*height:\s*38px[\s\S]*min-height:\s*38px[\s\S]*padding:\s*0\s+12px/,
+  'Kanban ready/status pill must match the adjacent icon-button height.',
+);
+assert.match(
+  kanbanBoardCss,
+  /\.kanban-metrics\s*\{[\s\S]*--kanban-metric-height:\s*36px[\s\S]*display:\s*flex[\s\S]*width:\s*100%/,
+  'Kanban metrics must use a compact one-line split-pill row that still fills the available width.',
+);
+assert.match(
+  kanbanBoardCss,
+  /\.kanban-metric\s*\{[\s\S]*min-width:\s*max-content[\s\S]*display:\s*flex[\s\S]*flex:\s*1\s+1\s+0/,
+  'Kanban metric pills must divide extra row width while respecting label content width.',
+);
+assert.match(
+  kanbanBoardCss,
+  /\.kanban-metric__value\s*\{[\s\S]*border-right:[\s\S]*background:[\s\S]*font-size:\s*22px/,
+  'Kanban metric value segment must remain visually distinct without shrinking the number font.',
+);
+assert.match(
+  kanbanBoardJs,
+  /function\s+metricShortcutActions\(\)[\s\S]*data-kanban-action="up-board"[\s\S]*data-kanban-action="root-board"[\s\S]*data-kanban-action="new-root-item"[\s\S]*metricShortcutActions\(\)/,
+  'Kanban metric row must duplicate Up, Root, and New Item shortcuts after the depth metric on desktop.',
+);
+assert.match(
+  kanbanBoardCss,
+  /\.kanban-metric-actions\s*\{[\s\S]*flex:\s*0\s+0\s+auto[\s\S]*height:\s*var\(--kanban-metric-height\)/,
+  'Kanban metric-row shortcuts must share the compact metric pill height while keeping fixed button width.',
+);
+assert.match(
+  kanbanBoardCss,
+  /@media\s*\(max-width:\s*820px\)\s*\{[\s\S]*\.kanban-metric-actions\s*\{[\s\S]*display:\s*none/,
+  'Kanban duplicated metric-row shortcuts must be desktop-only so compact/mobile layouts do not gain vertical noise.',
 );
