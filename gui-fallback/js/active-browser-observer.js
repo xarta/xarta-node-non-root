@@ -865,6 +865,46 @@ const BlueprintsActiveBrowserObserver = (() => {
     };
   }
 
+  function _nodeVisible(node) {
+    if (!node || typeof window.getComputedStyle !== 'function') return false;
+    const style = window.getComputedStyle(node);
+    const rect = node.getBoundingClientRect();
+    return style.display !== 'none'
+      && style.visibility !== 'hidden'
+      && style.opacity !== '0'
+      && rect.width > 0
+      && rect.height > 0;
+  }
+
+  function _localShadeState(activePanel) {
+    if (!activePanel) return [];
+    return Array.from(activePanel.querySelectorAll('[data-local-shade-handle]')).map(handle => ({
+      key: handle.dataset.localShadeKey || '',
+      css_var: handle.dataset.localShadeVar || '',
+      media: handle.dataset.localShadeMedia || '',
+      visible: _nodeVisible(handle),
+      rect: _rectState(handle),
+      aria_value_now: handle.getAttribute('aria-valuenow') || '',
+    }));
+  }
+
+  function _kanbanLaneState(activePanel) {
+    if (!activePanel || activePanel.id !== 'tab-kanban') return null;
+    const handles = Array.from(activePanel.querySelectorAll('[data-kanban-lane-width-handle]'));
+    const columns = Array.from(activePanel.querySelectorAll('.kanban-column[data-kanban-state-id]'));
+    return {
+      handle_count: handles.length,
+      visible_handle_count: handles.filter(_nodeVisible).length,
+      column_count: columns.length,
+      resized_count: columns.filter(column => column.dataset.kanbanLaneResized === 'true').length,
+      columns: columns.slice(0, 12).map(column => ({
+        state_id: column.dataset.kanbanStateId || '',
+        width: _roundPx(column.getBoundingClientRect().width || 0),
+        resized: column.dataset.kanbanLaneResized === 'true',
+      })),
+    };
+  }
+
   function _layoutState() {
     const html = document.documentElement;
     const body = document.body;
@@ -906,6 +946,8 @@ const BlueprintsActiveBrowserObserver = (() => {
         scroll_height: Math.round(shell.scrollHeight || 0),
         scrollbar_active: (shell.scrollHeight || 0) > (shell.clientHeight || 0) + 1,
       } : null,
+      local_shades: _localShadeState(activePanel),
+      kanban_lanes: _kanbanLaneState(activePanel),
       alignment: {
         panel_left_delta_from_menu: panelRect && menuRect ? _roundPx(panelRect.left - menuRect.left) : null,
         panel_right_delta_from_menu: panelRect && menuRect ? _roundPx(panelRect.right - menuRect.right) : null,

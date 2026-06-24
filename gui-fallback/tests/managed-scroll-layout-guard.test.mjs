@@ -16,9 +16,13 @@ const daveImportsCss = fs.readFileSync(path.resolve(here, '../css/dave-imports.c
 const personalFiltersCss = fs.readFileSync(path.resolve(here, '../css/personal-filters.css'), 'utf8');
 const kanbanBoardCss = fs.readFileSync(path.resolve(here, '../css/kanban-board.css'), 'utf8');
 const daveCalendarJs = fs.readFileSync(path.resolve(here, '../js/dave/calendar-page.js'), 'utf8');
+const daveDiaryJs = fs.readFileSync(path.resolve(here, '../js/dave/diary-page.js'), 'utf8');
+const daveTodoJs = fs.readFileSync(path.resolve(here, '../js/dave/todo-page.js'), 'utf8');
+const kanbanBoardJs = fs.readFileSync(path.resolve(here, '../js/kanban/kanban-board.js'), 'utf8');
 const personalFiltersJs = fs.readFileSync(path.resolve(here, '../js/dave/personal-filters.js'), 'utf8');
 const daveMenuJs = fs.readFileSync(path.resolve(here, '../js/dave/dave-menu.js'), 'utf8');
 const kanbanMenuJs = fs.readFileSync(path.resolve(here, '../js/kanban/kanban-menu.js'), 'utf8');
+const localShadeJs = fs.readFileSync(path.resolve(here, '../js/local-shade.js'), 'utf8');
 const activeBrowserObserver = fs.readFileSync(
   path.resolve(here, '../js/active-browser-observer.js'),
   'utf8',
@@ -117,14 +121,25 @@ for (const [tabId, surface] of [
   const handleStart = tabHtml.indexOf('class="body-shade-handle"');
   const shellStart = tabHtml.indexOf('<div class="tab-scroll-shell">');
   const searchStart = tabHtml.indexOf(`data-personal-search-surface="${surface}"`);
+  const filterHostStart = tabHtml.indexOf(`data-personal-filter-surface="${surface}"`);
   assert.ok(
     handleStart !== -1 && shellStart > handleStart,
     `${surface} Body Shade handle must sit before the managed scroll shell.`,
   );
-  assert.ok(
-    shellStart !== -1 && searchStart > shellStart,
-    `${surface} search strip must stay inside the managed scroll shell.`,
-  );
+  if (searchStart !== -1) {
+    assert.ok(
+      shellStart !== -1 && searchStart > shellStart,
+      `${surface} search strip must stay inside the managed scroll shell.`,
+    );
+  } else {
+    assert.ok(
+      shellStart !== -1
+        && filterHostStart > shellStart
+        && tabHtml.includes('data-personal-filter-extra-tabs="')
+        && tabHtml.slice(filterHostStart, filterHostStart + 260).includes('search'),
+      `${surface} shared filter/search host must stay inside the managed scroll shell.`,
+    );
+  }
 }
 for (const { tabId, surface, liftId, tabKey, titleClass, css } of [
   {
@@ -479,7 +494,6 @@ assert.match(
 for (const [tabId, surface, formNeedle] of [
   ['tab-diary', 'diary', 'class="diary-quick-entry"'],
   ['tab-calender', 'calendar', 'class="calendar-quick-event"'],
-  ['tab-todo', 'todo', 'class="todo-quick-task"'],
 ]) {
   const tabHtml = tabSlice(tabId);
   const handleStart = tabHtml.indexOf('class="body-shade-handle"');
@@ -493,6 +507,26 @@ for (const [tabId, surface, formNeedle] of [
   assert.ok(
     formStart > shellStart && formStart < shellEnd,
     `${surface} compose form must stay inside the managed scroll shell.`,
+  );
+}
+{
+  const tabHtml = tabSlice('tab-todo');
+  const handleStart = tabHtml.indexOf('class="body-shade-handle"');
+  const shellStart = tabHtml.indexOf('<div class="tab-scroll-shell">');
+  const shellEnd = tabHtml.indexOf('</div><!-- /tab-scroll-shell -->', shellStart);
+  const hostStart = tabHtml.indexOf('id="todo-filter-inline-panel"');
+  assert.ok(
+    handleStart !== -1 && shellStart > handleStart,
+    'todo Body Shade handle must be visible before bulky content begins.',
+  );
+  assert.ok(
+    hostStart > shellStart && hostStart < shellEnd,
+    'todo shared panel host must stay inside the managed scroll shell.',
+  );
+  assert.match(
+    daveTodoJs,
+    /if\s*\(tab\s*===\s*'new-task'\)\s*return\s+embeddedTaskFormHtml/,
+    'todo compose form must render through the managed shared new-task panel.',
   );
 }
 assert.match(
@@ -639,4 +673,182 @@ assert.match(
   activeBrowserObserver,
   /scrollbar_active/,
   'Active Browser layout metrics must expose managed shell scrollbar state.',
+);
+assert.match(
+  activeBrowserObserver,
+  /local_shades:\s*_localShadeState\(activePanel\)/,
+  'Active Browser layout metrics must expose page-local shade handles.',
+);
+assert.match(
+  activeBrowserObserver,
+  /kanban_lanes:\s*_kanbanLaneState\(activePanel\)/,
+  'Active Browser layout metrics must expose Kanban lane-width handles.',
+);
+
+assert.match(
+  indexHtml,
+  /js\/local-shade\.js/,
+  'Local shade handle script must be loaded by the fallback UI.',
+);
+assert.match(
+  localShadeJs,
+  /const\s+STORAGE_PREFIX\s*=\s*'blueprints\.localShade\.v1'/,
+  'Local shade memory must use a versioned localStorage prefix.',
+);
+assert.match(
+  localShadeJs,
+  /function\s+viewportSignature\(\)[\s\S]*desktop[\s\S]*portrait[\s\S]*\$\{width\}x\$\{height\}/,
+  'Local shade memory keys must include viewport class, orientation, and dimensions.',
+);
+assert.match(
+  localShadeJs,
+  /window\.matchMedia\(query\)\.matches/,
+  'Local shade handles must obey their viewport media query.',
+);
+assert.match(
+  localShadeJs,
+  /localStorage\.setItem\(storageKey\(handle\),\s*String\(height\)\)/,
+  'Local shade handle heights must persist per viewport key.',
+);
+
+for (const { tabId, surface, key, cssVar, rootId, panelClass, handleClass, css } of [
+  {
+    tabId: 'tab-diary',
+    surface: 'Diary',
+    key: 'diary-bottom-panel',
+    cssVar: '--diary-bottom-panel-height',
+    rootId: 'diary-view-root',
+    panelClass: 'diary-filter-under-panel',
+    handleClass: 'diary-local-shade-handle',
+    css: daveDiaryCss,
+  },
+  {
+    tabId: 'tab-calender',
+    surface: 'Calendar',
+    key: 'calendar-bottom-panel',
+    cssVar: '--calendar-bottom-panel-height',
+    rootId: 'calendar-view-root',
+    panelClass: 'calendar-filter-under-panel',
+    handleClass: 'calendar-local-shade-handle',
+    css: daveCalendarCss,
+  },
+  {
+    tabId: 'tab-todo',
+    surface: 'ToDo',
+    key: 'todo-bottom-panel',
+    cssVar: '--todo-bottom-panel-height',
+    rootId: 'todo-task-list',
+    panelClass: 'todo-filter-under-panel',
+    handleClass: 'todo-local-shade-handle',
+    css: daveTodoCss,
+  },
+  {
+    tabId: 'tab-kanban',
+    surface: 'Kanban',
+    key: 'kanban-lanes-bottom-panel',
+    cssVar: '--kanban-bottom-panel-height',
+    rootId: 'kanban-board-shell',
+    panelClass: 'kanban-filter-under-panel',
+    handleClass: 'kanban-local-shade-handle',
+    css: kanbanBoardCss,
+  },
+]) {
+  const tabHtml = tabSlice(tabId);
+  const mainStart = tabHtml.indexOf(`id="${rootId}"`);
+  const handleStart = tabHtml.indexOf(`data-local-shade-key="${key}"`);
+  const handleElementStart = tabHtml.lastIndexOf('<div', handleStart);
+  const handleElementEnd = tabHtml.indexOf('>', handleStart);
+  const panelStart = tabHtml.indexOf(panelClass, handleElementEnd);
+  assert.ok(
+    mainStart !== -1 && handleStart > mainStart && panelStart > handleStart,
+    `${surface} local shade handle must sit between main content and the bottom panel.`,
+  );
+  const handleHtml = tabHtml.slice(
+    handleElementStart === -1 ? handleStart : handleElementStart,
+    handleElementEnd === -1 ? panelStart : handleElementEnd + 1,
+  );
+  assert.ok(
+    handleHtml.includes(handleClass)
+      && handleHtml.includes(`data-local-shade-var="${cssVar}"`)
+      && handleHtml.includes('data-local-shade-media="(min-width: 821px) and (orientation: portrait)"'),
+    `${surface} local shade handle must use the expected viewport-scoped CSS variable.`,
+  );
+  assert.match(
+    css,
+    new RegExp(`${cssVar.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*${handleClass.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{[\\s\\S]*display:\\s*flex`),
+    `${surface} desktop portrait CSS must display its local shade handle and use the stored height variable.`,
+  );
+}
+
+assert.match(
+  daveCalendarJs,
+  /async\s+function\s+deleteSelectedEvent[\s\S]*HubDialogs\.confirmDelete[\s\S]*\/api\/v1\/personal\/calendar\/events\/\$\{encodeURIComponent\(event\.event_id\)\}[\s\S]*method:\s*'DELETE'/,
+  'Calendar edit form must delete manual calendar events through a Hub modal confirmation and DELETE endpoint.',
+);
+assert.match(
+  daveDiaryJs,
+  /async\s+function\s+deleteSelectedEntry[\s\S]*HubDialogs\.confirmDelete[\s\S]*\/api\/v1\/personal\/diary-day\/entries\/\$\{encodeURIComponent\(event\.event_id\)\}[\s\S]*method:\s*'DELETE'/,
+  'Diary edit form must delete quick entries through a Hub modal confirmation and DELETE endpoint.',
+);
+assert.match(
+  daveCalendarJs,
+  /data-calendar-modal-action="delete-event"/,
+  'Calendar edit modal must expose a Delete button when a deletable selected entry is being edited.',
+);
+assert.match(
+  daveDiaryJs,
+  /data-diary-action="delete-entry"[\s\S]*disabled/,
+  'Diary edit form must expose a Delete button that disables when deletion is not allowed.',
+);
+
+for (const [surface, js] of [
+  ['Calendar', daveCalendarJs],
+  ['Diary', daveDiaryJs],
+]) {
+  assert.match(
+    js,
+    /data-personal-todo-link="\$\{escHtml\(taskRef\)\}"/,
+    `${surface} entries must render task references as ToDo links.`,
+  );
+  assert.match(
+    js,
+    /BlueprintsTodoPage\?\.openTask[\s\S]*todoRouteUrl\(clean\)/,
+    `${surface} ToDo links must route to the ToDo page entry opener.`,
+  );
+}
+assert.match(
+  daveTodoJs,
+  /params\.get\('todo_task_id'\)[\s\S]*params\.get\('todo_ref'\)[\s\S]*function\s+taskRouteUrl/,
+  'ToDo page must read durable todo_task_id/todo_ref routes.',
+);
+
+assert.match(
+  kanbanBoardCss,
+  /\.kanban-board-shell\s*\{[\s\S]*display:\s*flex[\s\S]*overflow-x:\s*auto/,
+  'Kanban lanes must remain horizontally scrollable while allowing per-lane widths.',
+);
+assert.match(
+  kanbanBoardCss,
+  /\.kanban-column\s*\{[\s\S]*flex:\s*1\s+0\s+var\(--kanban-lane-width,\s*236px\)[\s\S]*min-width:\s*var\(--kanban-lane-width,\s*236px\)/,
+  'Kanban columns must use the per-lane width CSS variable.',
+);
+assert.match(
+  kanbanBoardCss,
+  /@media\s*\(min-width:\s*821px\)\s*\{[\s\S]*#tab-kanban\.active\s+\.kanban-lane-width-handle\s*\{[\s\S]*display:\s*flex/,
+  'Kanban lane width handles must be visible on desktop viewports.',
+);
+assert.match(
+  kanbanBoardJs,
+  /const\s+LANE_WIDTH_STORAGE_PREFIX\s*=\s*'blueprints\.kanbanLaneWidth\.v1'[\s\S]*function\s+laneViewportSignature\(\)[\s\S]*BlueprintsLocalShade\.viewportSignature/,
+  'Kanban lane width memory must use viewport-scoped keys shared with local shade signatures.',
+);
+assert.match(
+  kanbanBoardJs,
+  /data-kanban-lane-width-handle[\s\S]*role="separator"[\s\S]*aria-orientation="vertical"/,
+  'Kanban must render accessible per-lane width handles.',
+);
+assert.match(
+  kanbanBoardJs,
+  /ArrowLeft[\s\S]*ArrowRight[\s\S]*Home[\s\S]*End/,
+  'Kanban lane handles must support keyboard width adjustment.',
 );
