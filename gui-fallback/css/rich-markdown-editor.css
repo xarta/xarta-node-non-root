@@ -193,7 +193,7 @@
 
 .rich-md-picture-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) auto;
   gap: 10px;
   align-items: start;
   margin-bottom: 10px;

@@ -656,7 +656,12 @@ const KanbanBoardPage = (() => {
       documentId: itemId || safeId,
       itemId,
     };
-    const fieldAttr = options.fieldName ? { 'data-kanban-detail-field': options.fieldName } : {};
+    const textareaAttrs = { ...(options.textareaAttrs || {}) };
+    if (options.fieldName) textareaAttrs['data-kanban-detail-field'] = options.fieldName;
+    const attrsHtml = attrs => Object.entries(attrs || {})
+      .filter(([, attrValue]) => attrValue !== false && attrValue != null)
+      .map(([attrKey, attrValue]) => ` ${attrKey}="${escHtml(attrValue === true ? '' : attrValue)}"`)
+      .join('');
     if (window.BlueprintsRichMarkdown?.fieldHtml) {
       return window.BlueprintsRichMarkdown.fieldHtml({
         textareaId: safeId,
@@ -669,23 +674,66 @@ const KanbanBoardPage = (() => {
         hideLabel,
         emptyText,
         wrapperClass: 'kanban-field kanban-field--markdown calendar-markdown-field',
-        textareaAttrs: fieldAttr,
+        textareaAttrs,
         context,
       });
     }
-    const fieldAttrText = options.fieldName
-      ? ` data-kanban-detail-field="${escHtml(options.fieldName)}"`
-      : '';
     return `
       <div class="kanban-field kanban-field--markdown calendar-markdown-field">
         <div class="calendar-field__label-row${hideLabel ? ' calendar-field__label-row--actions-only' : ''}">
           <span class="${hideLabel ? 'kanban-visually-hidden' : ''}">${escHtml(label || 'Description')}</span>
           <button class="calendar-markdown-toggle" type="button" data-kanban-detail-action="toggle-markdown-preview" data-kanban-markdown-prefix="${escHtml(safeId)}">${previewDefault ? 'Edit' : 'Preview'}</button>
         </div>
-        <textarea id="${escHtml(safeId)}" maxlength="${escHtml(options.maxlength || 4000)}"${fieldAttrText}${previewDefault ? ' hidden' : ''}>${escHtml(value)}</textarea>
+        <textarea id="${escHtml(safeId)}" maxlength="${escHtml(options.maxlength || 4000)}"${attrsHtml(textareaAttrs)}${previewDefault ? ' hidden' : ''}>${escHtml(value)}</textarea>
         <div id="${escHtml(safeId)}-preview" class="calendar-markdown-preview"${previewDefault ? '' : ' hidden'}>${previewDefault ? renderMarkdown(value || '', emptyText) : ''}</div>
       </div>
     `;
+  }
+
+  function shareKindLabel(kind) {
+    const clean = String(kind || '').toLowerCase();
+    if (clean === 'issue' || clean === 'issues') return 'issue';
+    if (clean === 'todo' || clean === 'todos') return 'todo';
+    return 'item';
+  }
+
+  function shareCode(kind, id) {
+    const cleanId = String(id || '').trim();
+    return cleanId ? `xarta-kanban:${shareKindLabel(kind)}:${cleanId}` : '';
+  }
+
+  async function writeClipboardText(text) {
+    if (!text) return false;
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', 'readonly');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-1000px';
+    textarea.style.top = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const ok = document.execCommand?.('copy');
+    textarea.remove();
+    if (!ok) throw new Error('clipboard unavailable');
+    return true;
+  }
+
+  async function copyShareCode(kind, id, options = {}) {
+    const code = shareCode(kind, id);
+    if (!code) return false;
+    await writeClipboardText(code);
+    await HubDialogs.alert({
+      title: 'Share Code Copied',
+      message: code,
+      details: options.title ? [String(options.title)] : [],
+      tone: 'success',
+      autoCloseMs: 1800,
+    });
+    return true;
   }
 
   function metricShortcutActions() {
@@ -771,6 +819,7 @@ const KanbanBoardPage = (() => {
       <article class="kanban-card" data-kanban-item-id="${escHtml(item.item_id)}" tabindex="0" data-selected="${selected ? 'true' : 'false'}" data-pending="${pending ? 'true' : 'false'}" data-kanban-route-target="${routeTarget ? 'true' : 'false'}">
         <div class="kanban-card__head">
           <div class="kanban-card__title">${escHtml(item.title || item.item_id)}</div>
+          <button class="kanban-card-btn kanban-card-btn--share kanban-card__share" type="button" data-kanban-card-action="share" data-kanban-item-id="${escHtml(item.item_id)}" title="Copy share code" aria-label="Copy share code"></button>
         </div>
         <div class="kanban-card__meta">
           <span class="kanban-state-pill" data-state="${escHtml(item.state_id || '')}">${escHtml(stateLabel(item.state_id))}</span>
@@ -847,6 +896,10 @@ const KanbanBoardPage = (() => {
     return rows.find(row => scopedRecordId(row, config) === id) || null;
   }
 
+  function scopedDocumentType(config) {
+    return config.kind === 'issues' ? 'issue' : 'todo';
+  }
+
   function scopedBreadcrumbText(data) {
     const rows = Array.isArray(data?.breadcrumbs) ? data.breadcrumbs : [];
     return ['Root board', ...rows.map(item => item.title || item.item_id)].join(' / ');
@@ -856,27 +909,46 @@ const KanbanBoardPage = (() => {
     const id = scopedRecordId(record, config);
     const scope = record.scope || {};
     const priority = record.priority_id || record.severity_id || 'medium';
+    const bodyId = `kanban-scoped-${config.kind}-${id}-body`.replace(/[^a-zA-Z0-9_-]/g, '-');
     return `
       <article class="kanban-scoped-row" data-kanban-scoped-row="${escHtml(config.kind)}" data-kanban-scoped-id="${escHtml(id)}" data-kanban-scoped-item-id="${escHtml(record.item_id || '')}">
         <div class="kanban-scoped-row__main">
-          <div class="kanban-detail-title">${escHtml(record.title || id)}</div>
           <div class="kanban-detail-meta">${escHtml(scope.title || record.item_id || '')} - ${escHtml(scope.relation || 'local')} - d${escHtml(scope.depth_offset ?? 0)}</div>
-          ${record.body_excerpt
-            ? markdownPreviewHtml(record.body_excerpt, 'kanban-scoped-row__body', 'No details.')
-            : `<div class="kanban-detail-meta">${escHtml(record.source_ref || record.related_task_id || '')}</div>`}
+          <label class="kanban-field kanban-scoped-title-field">
+            <span class="kanban-visually-hidden">${escHtml(config.singular)} title</span>
+            <input type="text" maxlength="180" value="${escHtml(record.title || id)}" data-kanban-scoped-field="title" aria-label="${escHtml(config.singular)} title" />
+          </label>
+          ${markdownFieldHtml(bodyId, 'Details', record.body_excerpt || '', {
+            previewDefault: true,
+            hideLabel: true,
+            rows: 7,
+            maxlength: 120000,
+            emptyText: 'No details.',
+            textareaAttrs: { 'data-kanban-scoped-field': 'body' },
+            context: {
+              domain: 'kanban',
+              documentType: scopedDocumentType(config),
+              documentId: id,
+              itemId: record.item_id || '',
+            },
+          })}
+          ${record.source_ref || record.related_task_id ? `<div class="kanban-detail-meta">${escHtml(record.source_ref || record.related_task_id || '')}</div>` : ''}
         </div>
-        <label class="kanban-field kanban-field--compact">
-          <span>Status</span>
-          <select data-kanban-scoped-field="status">${leafStatusOptions(record.status || 'open')}</select>
-        </label>
-        <label class="kanban-field kanban-field--compact">
-          <span>${escHtml(config.priorityLabel)}</span>
-          <select data-kanban-scoped-field="priority">${priorityOptions(priority)}</select>
-        </label>
-        <div class="kanban-scoped-row__actions">
-          <button class="kanban-command-btn" type="button" data-kanban-scoped-row-action="save">Save</button>
-          <button class="kanban-command-btn" type="button" data-kanban-scoped-row-action="promote">Promote</button>
-          <button class="kanban-command-btn" type="button" data-kanban-scoped-row-action="archive">Archive</button>
+        <div class="kanban-scoped-row__controls">
+          <label class="kanban-field kanban-field--compact">
+            <span>Status</span>
+            <select data-kanban-scoped-field="status">${leafStatusOptions(record.status || 'open')}</select>
+          </label>
+          <label class="kanban-field kanban-field--compact">
+            <span>${escHtml(config.priorityLabel)}</span>
+            <select data-kanban-scoped-field="priority">${priorityOptions(priority)}</select>
+          </label>
+          <div class="kanban-scoped-row__actions">
+            <button class="kanban-command-btn" type="button" data-kanban-scoped-row-action="save">Save</button>
+            <button class="kanban-command-btn" type="button" data-kanban-scoped-row-action="promote">Promote</button>
+            <button class="kanban-command-btn" type="button" data-kanban-scoped-row-action="remove">Remove</button>
+            <button class="kanban-icon-btn kanban-icon-btn--share kanban-scoped-share-btn" type="button" data-kanban-scoped-row-action="share" title="Copy share code" aria-label="Copy share code"></button>
+          </div>
         </div>
       </article>
     `;
@@ -1834,6 +1906,7 @@ const KanbanBoardPage = (() => {
             <button class="kanban-command-btn" type="button" data-kanban-detail-action="add-child">Add Child</button>
             <button class="kanban-command-btn" type="button" data-kanban-detail-action="add-link">Add Link</button>
             <button class="kanban-command-btn" type="button" data-kanban-detail-action="add-blocker">Add Blocker</button>
+            <button class="kanban-icon-btn kanban-icon-btn--share kanban-detail-share-btn" type="button" data-kanban-detail-action="share" title="Copy share code" aria-label="Copy share code"></button>
           </div>
         </div>
         ${detailSectionsHtml(detail, options)}
@@ -2201,10 +2274,12 @@ const KanbanBoardPage = (() => {
     const id = scopedRecordId(record, config);
     const status = statusOverride || row.querySelector('[data-kanban-scoped-field="status"]')?.value || record.status || 'open';
     const priority = row.querySelector('[data-kanban-scoped-field="priority"]')?.value || record.priority_id || record.severity_id || 'medium';
+    const title = String(row.querySelector('[data-kanban-scoped-field="title"]')?.value || record.title || id).trim();
+    const body = row.querySelector('[data-kanban-scoped-field="body"]')?.value ?? record.body_excerpt ?? '';
     const payload = {
       item_id: record.item_id,
-      title: record.title || id,
-      body: record.body_excerpt || '',
+      title: title || id,
+      body,
       status,
       priority_id: priority,
       actor: 'blueprints-ui',
@@ -2277,7 +2352,7 @@ const KanbanBoardPage = (() => {
     const dialog = openDialog(`${config.plural} Scope`, scopedModalHtml(data, config), {
       badge: config.badge,
       id: 'kanban-scoped-modal',
-      width: 'min(980px,96vw)',
+      width: '100vw',
       onClose: () => {
         state.scoped.open = false;
         writeRouteState(state.currentParentId, '');
@@ -2285,6 +2360,12 @@ const KanbanBoardPage = (() => {
       },
     });
     dialog.addEventListener('click', async event => {
+      const markdownToggle = event.target.closest('[data-kanban-detail-action="toggle-markdown-preview"]');
+      if (markdownToggle) {
+        event.preventDefault();
+        toggleMarkdownPreview(markdownToggle, dialog);
+        return;
+      }
       const scopedAction = event.target.closest('[data-kanban-scoped-action]');
       if (scopedAction) {
         const action = scopedAction.dataset.kanbanScopedAction;
@@ -2311,7 +2392,17 @@ const KanbanBoardPage = (() => {
       const action = rowAction.dataset.kanbanScopedRowAction;
       if (action === 'save') {
         await saveScopedRecord(config, record, row);
-      } else if (action === 'archive') {
+      } else if (action === 'share') {
+        await copyShareCode(config.kind === 'issues' ? 'issue' : 'todo', scopedRecordId(record, config), { title: record.title || '' });
+        return;
+      } else if (action === 'remove') {
+        const ok = await HubDialogs.confirm({
+          title: `Remove ${config.singular}`,
+          message: record.title || scopedRecordId(record, config),
+          confirmText: 'Remove',
+          tone: 'warning',
+        });
+        if (!ok) return;
         await saveScopedRecord(config, record, row, 'archived');
       } else if (action === 'promote') {
         await promoteScopedRecord(config, record);
@@ -2821,6 +2912,10 @@ const KanbanBoardPage = (() => {
     if (action === 'add-child') return openItemForm({ parentItemId: itemId, stateId: 'todo', childOfSelection: true });
     if (action === 'add-issue') return openLeafForm('issue', itemId);
     if (action === 'add-todo') return openLeafForm('todo', itemId);
+    if (action === 'share') {
+      const item = findItem(itemId) || state.selection?.item || state.detail?.item || {};
+      return copyShareCode('item', itemId, { title: item.title || '' });
+    }
     if (action === 'open-detail') {
       setSelection(itemId);
       return openItemDetail(itemId);
@@ -2934,6 +3029,10 @@ const KanbanBoardPage = (() => {
     if (action === 'fullscreen') {
       syncDetailDraftFromScope(workspace);
       await openItemDetailModal(itemId, { forceModal: true, preserveRouteTarget: true });
+      return true;
+    }
+    if (action === 'share') {
+      await copyShareCode('item', itemId, { title: state.detail?.item?.title || state.selection?.item?.title || '' });
       return true;
     }
     if (action === 'save') {

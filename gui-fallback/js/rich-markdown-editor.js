@@ -10,7 +10,11 @@
     pickerImages: [],
     fullscreenTarget: null,
     filterTimer: null,
+    listenersInstalled: false,
+    inFlightUploads: new Set(),
+    recentInsertions: new Map(),
   };
+  const SUPPORTED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif']);
 
   function escHtml(value) {
     return String(value ?? '')
@@ -189,6 +193,159 @@
   function PathName(value) {
     const clean = String(value || '').split(/[/?#]/).filter(Boolean).pop() || 'image';
     return clean.replace(/\.[a-z0-9]+$/i, '');
+  }
+
+  function filenameStem(value, fallback = 'image') {
+    const raw = String(value || '').split(/[/?#]/).filter(Boolean).pop() || fallback;
+    const stem = raw.replace(/\.[a-z0-9]+$/i, '');
+    return stem
+      .replace(/[^a-zA-Z0-9_.:-]+/g, '-')
+      .replace(/-{2,}/g, '-')
+      .replace(/^[-.]+|[-.]+$/g, '')
+      .slice(0, 88) || fallback;
+  }
+
+  function timestampSuffix(date = new Date()) {
+    const pad = value => String(value).padStart(2, '0');
+    return [
+      date.getFullYear(),
+      pad(date.getMonth() + 1),
+      pad(date.getDate()),
+    ].join('') + `-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+  }
+
+  function stemWithTimestamp(stem) {
+    const clean = filenameStem(stem, 'image');
+    return /\d{8}-\d{6}$/.test(clean) ? clean : `${clean}-${timestampSuffix()}`;
+  }
+
+  function filenameWithExtension(stem, extension) {
+    const cleanExt = String(extension || 'png').replace(/[^a-z0-9]+/gi, '').toLowerCase() || 'png';
+    return `${stemWithTimestamp(stem)}.${cleanExt}`;
+  }
+
+  function imageNameInputValue() {
+    return document.getElementById('rich-markdown-picture-name')?.value || '';
+  }
+
+  function titleNearActiveField() {
+    const field = state.activeField;
+    const root = field?.closest?.('.kanban-detail-workspace, [data-kanban-scoped-row], dialog, .calendar-modal-body, .todo-modal-body')
+      || field?.closest?.('[data-rme-field-shell]')
+      || document;
+    const selectors = [
+      '[data-kanban-detail-field="title"]',
+      '[data-kanban-scoped-field="title"]',
+      '[data-todo-field="title"]',
+      'input[id$="-title-input"]',
+      'input[id$="-title"]',
+    ];
+    for (const selector of selectors) {
+      const input = root.querySelector?.(selector);
+      const value = String(input?.value || '').trim();
+      if (value) return value;
+    }
+    const shell = fieldShellFrom(field);
+    const label = Array.from(shell?.querySelectorAll?.('.rich-md-label-row span') || [])
+      .map(node => String(node.textContent || '').trim())
+      .find(Boolean);
+    if (label && !/^document$/i.test(label)) return label;
+    const context = contextFromElement(field);
+    return context.document_id || context.document_type || 'rich-document';
+  }
+
+  function suggestedImageStem(file, options = {}) {
+    const typed = imageNameInputValue();
+    if (typed) return filenameStem(typed, 'image');
+    const fileStem = filenameStem(file?.name || '', '');
+    if (fileStem && !/^image$|^clipboard|^screenshot$/i.test(fileStem)) return fileStem;
+    const title = filenameStem(titleNearActiveField(), 'rich-document');
+    const source = options.source === 'clipboard' ? 'screenshot' : 'image';
+    return `${title}-${source}`;
+  }
+
+  async function promptImageFilename(defaultName) {
+    if (typeof HubDialogs === 'undefined' || typeof HubDialogs.prompt !== 'function') return defaultName;
+    const value = await HubDialogs.prompt({
+      title: 'Image Name',
+      message: 'Name this picture before saving.',
+      inputLabel: 'Name',
+      value: defaultName,
+      confirmText: 'Save',
+      validate: input => filenameStem(input, '') ? '' : 'Enter a filename.',
+    });
+    if (value == null) return null;
+    return value;
+  }
+
+  function imageExtensionForFile(file, options = {}) {
+    if (options.forcePng) return 'png';
+    const suffix = String(file?.name || '').match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
+    if (['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(suffix)) return suffix;
+    return ({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' })[file?.type] || 'png';
+  }
+
+  function isSupportedImageFile(file) {
+    return Boolean(file && SUPPORTED_IMAGE_TYPES.has(String(file.type || '').toLowerCase()));
+  }
+
+  function canvasBlob(canvas, type = 'image/png') {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(blob => (blob ? resolve(blob) : reject(new Error('Image conversion failed'))), type);
+    });
+  }
+
+  async function imageFileToPng(file, filename) {
+    if (!file) return null;
+    let bitmap = null;
+    if (typeof createImageBitmap === 'function') {
+      try {
+        bitmap = await createImageBitmap(file);
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        canvas.getContext('2d').drawImage(bitmap, 0, 0);
+        const blob = await canvasBlob(canvas, 'image/png');
+        return new File([blob], filename, { type: 'image/png', lastModified: Date.now() });
+      } catch (_) {
+        // Fall back to object URL decoding below.
+      } finally {
+        bitmap?.close?.();
+      }
+    }
+    const objectUrl = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const node = new Image();
+        node.onload = () => resolve(node);
+        node.onerror = () => reject(new Error('Image conversion failed'));
+        node.src = objectUrl;
+      });
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      const blob = await canvasBlob(canvas, 'image/png');
+      return new File([blob], filename, { type: 'image/png', lastModified: Date.now() });
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+
+  async function prepareImageFile(file, options = {}) {
+    if (!isSupportedImageFile(file)) {
+      throw new Error('Picture type is not supported.');
+    }
+    const extension = imageExtensionForFile(file, options);
+    const defaultStem = suggestedImageStem(file, options);
+    const chosen = options.promptName ? await promptImageFilename(defaultStem) : defaultStem;
+    if (chosen == null) return null;
+    const filename = filenameWithExtension(chosen, extension);
+    if (options.forcePng) return imageFileToPng(file, filename);
+    return new File([file], filename, {
+      type: file.type || `image/${extension === 'jpg' ? 'jpeg' : extension}`,
+      lastModified: file.lastModified || Date.now(),
+    });
   }
 
   function isTableSeparator(line) {
@@ -469,9 +626,20 @@
     return state.activeInsertion;
   }
 
-  function insertAtActiveField(markdown) {
+  function insertAtActiveField(markdown, options = {}) {
     const textarea = state.activeField;
     if (!textarea) return false;
+    const dedupeKey = options.dedupeKey || '';
+    if (dedupeKey) {
+      const key = `${textarea.id || 'field'}:${dedupeKey}`;
+      const now = Date.now();
+      const last = state.recentInsertions.get(key) || 0;
+      if (now - last < 5000) return false;
+      state.recentInsertions.set(key, now);
+      for (const [recentKey, timestamp] of state.recentInsertions.entries()) {
+        if (now - timestamp > 10000) state.recentInsertions.delete(recentKey);
+      }
+    }
     const insertion = state.activeInsertion || insertionForTextarea(textarea);
     const before = textarea.value.slice(0, insertion.start);
     const after = textarea.value.slice(insertion.end);
@@ -479,6 +647,7 @@
     const needsTail = after && !after.startsWith('\n') ? '\n\n' : '';
     textarea.value = `${before}${needsLead}${markdown}${needsTail}${after}`;
     const caret = `${before}${needsLead}${markdown}`.length;
+    state.activeInsertion = { start: caret, end: caret };
     textarea.focus();
     textarea.setSelectionRange(caret, caret);
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
@@ -563,6 +732,8 @@
     if (!modal || !state.activeField) return;
     const filter = document.getElementById('rich-markdown-picture-filter');
     if (filter) filter.value = '';
+    const name = document.getElementById('rich-markdown-picture-name');
+    if (name && !name.value) name.value = suggestedImageStem(null, { source: 'upload' });
     if (typeof HubModal !== 'undefined') HubModal.open(modal, { onOpen: () => loadPictures().catch(showError) });
     else modal.showModal();
   }
@@ -576,7 +747,7 @@
     if (!file) return null;
     const context = contextFromElement(state.activeField);
     const form = new FormData();
-    form.append('file', file);
+    form.append('file', file, file.name || 'image.png');
     Object.entries(context).forEach(([key, value]) => form.append(key, value || ''));
     form.append('actor', 'blueprints-ui');
     form.append('source_surface', 'rich-document-editor');
@@ -589,6 +760,33 @@
     }
     const payload = await resp.json();
     return payload.image || null;
+  }
+
+  async function uploadAndInsertPicture(file, options = {}) {
+    if (!file) return null;
+    const prepared = await prepareImageFile(file, options);
+    if (!prepared) return null;
+    const context = contextFromElement(state.activeField);
+    const uploadKey = [
+      context.domain,
+      context.document_type,
+      context.document_id,
+      context.item_id,
+      prepared.name,
+      prepared.size,
+      prepared.lastModified,
+    ].join(':');
+    if (state.inFlightUploads.has(uploadKey)) return null;
+    state.inFlightUploads.add(uploadKey);
+    try {
+      const image = await uploadPicture(prepared);
+      if (!image) return null;
+      const markdown = markdownForImage(image.domain, image.path, PathName(image.filename));
+      insertAtActiveField(markdown, { dedupeKey: image.uri || image.path || prepared.name });
+      return image;
+    } finally {
+      state.inFlightUploads.delete(uploadKey);
+    }
   }
 
   function showError(error) {
@@ -660,6 +858,8 @@
   }
 
   function installListeners() {
+    if (state.listenersInstalled) return;
+    state.listenersInstalled = true;
     document.addEventListener('click', event => {
       const contextAction = event.target.closest?.('[data-rme-context-action]');
       if (contextAction) {
@@ -708,13 +908,20 @@
       rememberInsertion(event.target, event);
       const file = Array.from(event.dataTransfer?.files || []).find(item => /^image\//.test(item.type));
       if (file) {
-        uploadPicture(file)
-          .then(image => {
-            if (!image) return;
-            insertAtActiveField(markdownForImage(image.domain, image.path, PathName(image.filename)));
-          })
+        uploadAndInsertPicture(file, { source: 'drop', promptName: true })
           .catch(showError);
       }
+    });
+    document.addEventListener('paste', event => {
+      if (!fieldShellFrom(event.target)) return;
+      const file = Array.from(event.clipboardData?.items || [])
+        .find(item => item.kind === 'file' && /^image\//.test(item.type || ''))
+        ?.getAsFile?.();
+      if (!file) return;
+      event.preventDefault();
+      rememberInsertion(event.target, event);
+      uploadAndInsertPicture(file, { source: 'clipboard', forcePng: true, promptName: true })
+        .catch(showError);
     });
     document.getElementById('rich-markdown-picture-filter')?.addEventListener('input', () => {
       window.clearTimeout(state.filterTimer);
@@ -723,11 +930,10 @@
     document.getElementById('rich-markdown-picture-upload')?.addEventListener('change', event => {
       const file = event.target.files?.[0];
       if (!file) return;
-      uploadPicture(file)
+      uploadAndInsertPicture(file, { source: 'upload' })
         .then(image => {
           event.target.value = '';
           if (!image) return;
-          insertAtActiveField(markdownForImage(image.domain, image.path, PathName(image.filename)));
           return loadPictures();
         })
         .catch(showError);

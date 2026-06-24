@@ -195,6 +195,12 @@
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M4 4h16v5H4V4zm2 7h12v9H6v-9zm3 2v2h6v-2H9zM6 6v1h12V6H6z'/%3E%3C/svg%3E");
 }
 
+.kanban-card-btn--share::before,
+.kanban-icon-btn--share::before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M18 16.1c-.8 0-1.5.3-2 .9L8.9 12.9c.1-.3.1-.5.1-.9s0-.6-.1-.9L16 7c.6.6 1.3.9 2 .9a3 3 0 1 0-3-3c0 .3 0 .6.1.9L8 9.9A3 3 0 1 0 8 14l7.1 4.2c-.1.2-.1.5-.1.8a3 3 0 1 0 3-2.9z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M18 16.1c-.8 0-1.5.3-2 .9L8.9 12.9c.1-.3.1-.5.1-.9s0-.6-.1-.9L16 7c.6.6 1.3.9 2 .9a3 3 0 1 0-3-3c0 .3 0 .6.1.9L8 9.9A3 3 0 1 0 8 14l7.1 4.2c-.1.2-.1.5-.1.8a3 3 0 1 0 3-2.9z'/%3E%3C/svg%3E");
+}
+
 .kanban-icon-btn:hover,
 .kanban-icon-btn:focus-visible,
 .kanban-icon-btn:active,
@@ -550,6 +556,12 @@ dialog.hub-modal#kanban-detail-modal[open] {
 .kanban-card__head {
   justify-content: space-between;
   gap: 8px;
+}
+
+.kanban-card__share {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
 }
 
 .kanban-card__title {
@@ -1040,7 +1052,39 @@ dialog.hub-modal#kanban-detail-modal[open] {
 
 .kanban-scoped-modal {
   display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 12px;
+  min-height: 0;
+  height: 100%;
+}
+
+dialog.hub-modal#kanban-scoped-modal {
+  position: fixed !important;
+  inset: 0 !important;
+  box-sizing: border-box !important;
+  width: 100vw !important;
+  max-width: 100vw !important;
+  min-width: 100vw !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  min-height: 100dvh !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  overflow: hidden !important;
+}
+
+dialog.hub-modal#kanban-scoped-modal[open] {
+  display: flex !important;
+  flex-direction: column;
+  transform: none !important;
+  transition: opacity .16s ease;
+}
+
+#kanban-scoped-modal .hub-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: 14px;
 }
 
 .kanban-scoped-toolbar,
@@ -1066,6 +1110,10 @@ dialog.hub-modal#kanban-detail-modal[open] {
 
 .kanban-scoped-list {
   gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 2px;
 }
 
 .kanban-scoped-group {
@@ -1074,17 +1122,37 @@ dialog.hub-modal#kanban-detail-modal[open] {
 
 .kanban-scoped-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) repeat(2, minmax(128px, 150px)) minmax(150px, auto);
-  gap: 8px;
-  align-items: stretch;
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 280px);
+  gap: 12px;
+  align-items: start;
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 10px;
+  padding: 12px;
   background: rgba(0,0,0,.14);
 }
 
 .kanban-scoped-row__main {
+  display: grid;
+  gap: 9px;
   min-width: 0;
+}
+
+.kanban-scoped-row__controls {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.kanban-scoped-title-field input {
+  font-weight: 720;
+}
+
+.kanban-scoped-row .calendar-markdown-field {
+  min-width: 0;
+}
+
+.kanban-scoped-row .calendar-markdown-preview {
+  max-height: none;
 }
 
 .kanban-field--compact {
@@ -1096,6 +1164,14 @@ dialog.hub-modal#kanban-detail-modal[open] {
   justify-content: flex-end;
   align-content: flex-start;
   min-width: 0;
+}
+
+.kanban-scoped-share-btn,
+.kanban-detail-share-btn {
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  flex: 0 0 34px;
 }
 
 .kanban-detail-title {

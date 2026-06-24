@@ -13,6 +13,10 @@ const TodoPage = (() => {
     sources: 'Sources',
     provenance: 'Provenance',
   };
+  const REFRESH_LONG_PRESS_MS = 700;
+  let refreshLongPressTimer = null;
+  let refreshLongPressButton = null;
+  let refreshSuppressClickUntil = 0;
 
   function normalizeContentView(value) {
     const clean = String(value || '').trim();
@@ -38,8 +42,12 @@ const TodoPage = (() => {
     routeTaskRef: '',
     routeHighlightRef: '',
     lastWrite: null,
+    workPreferences: { show_test_entries: true },
+    testEntries: { show: true, hidden_work_todos: 0 },
+    refreshFsm: { state: 'idle', lastEvent: '' },
   };
 
+  // Legacy API mode "work" means Kanban-backed tasks, not future job-work tags.
   const modes = ['today', 'personal', 'work', 'blocked', 'review', 'done'];
 
   const escHtml = typeof esc === 'function'
@@ -154,6 +162,103 @@ const TodoPage = (() => {
     const href = workRouteUrl(clean);
     if (!clean || !href) return '';
     return `<a class="todo-related-link todo-related-link--work" href="${escHtml(href)}" data-todo-work-link="${escHtml(clean)}">${escHtml(clean)}</a>`;
+  }
+
+  function workTodoId(row) {
+    const sourceRef = String(row?.source?.ref || '').trim();
+    if (sourceRef.startsWith('work_todos:')) return sourceRef.slice('work_todos:'.length);
+    const dbRef = (row?.db_refs || []).find(ref => String(ref || '').startsWith('work_todos:'));
+    return dbRef ? String(dbRef).slice('work_todos:'.length) : '';
+  }
+
+  function applyWorkPreferenceState(payload = {}) {
+    const prefs = payload.work_preferences || payload.preferences || {};
+    if (Object.prototype.hasOwnProperty.call(prefs, 'show_test_entries')) {
+      state.workPreferences.show_test_entries = Boolean(prefs.show_test_entries);
+    }
+    const entries = payload.test_entries || {};
+    if (Object.prototype.hasOwnProperty.call(entries, 'show')) {
+      state.testEntries.show = Boolean(entries.show);
+    } else {
+      state.testEntries.show = Boolean(state.workPreferences.show_test_entries);
+    }
+    if (Object.prototype.hasOwnProperty.call(entries, 'hidden_work_todos')) {
+      const hidden = Number(entries.hidden_work_todos);
+      state.testEntries.hidden_work_todos = Number.isFinite(hidden) ? hidden : 0;
+    }
+    renderRefreshPreferenceState();
+  }
+
+  function showTestEntries() {
+    return Boolean(state.workPreferences.show_test_entries);
+  }
+
+  function hiddenWorkTodoCount() {
+    const hidden = Number(state.testEntries.hidden_work_todos || 0);
+    return Number.isFinite(hidden) ? Math.max(0, hidden) : 0;
+  }
+
+  function setRefreshFsm(nextState, eventName = '') {
+    state.refreshFsm = {
+      state: nextState || 'idle',
+      lastEvent: eventName || '',
+    };
+  }
+
+  function refreshButtonLabel() {
+    return !showTestEntries()
+      ? 'Refresh ToDo - proof rows hidden'
+      : 'Refresh ToDo';
+  }
+
+  function renderRefreshPreferenceState() {
+    const btn = document.querySelector('[data-todo-action="refresh"]');
+    if (!btn) return;
+    const hidden = !showTestEntries();
+    btn.dataset.todoTestEntries = hidden ? 'hidden' : 'shown';
+    btn.setAttribute('aria-pressed', hidden ? 'true' : 'false');
+    const label = refreshButtonLabel();
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+  }
+
+  async function copyShareText(text) {
+    if (!text) return false;
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', 'readonly');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-1000px';
+    textarea.style.top = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const ok = document.execCommand?.('copy');
+    textarea.remove();
+    if (!ok) throw new Error('clipboard unavailable');
+    return true;
+  }
+
+  async function shareKanbanTodo(row) {
+    const todoId = workTodoId(row);
+    if (!todoId) return false;
+    const code = `xarta-kanban:todo:${todoId}`;
+    await copyShareText(code);
+    if (typeof HubDialogs !== 'undefined') {
+      await HubDialogs.alert({
+        title: 'Share Code Copied',
+        message: code,
+        details: row?.title ? [row.title] : [],
+        tone: 'success',
+        autoCloseMs: 1800,
+      });
+    } else {
+      showActionModal('Share Code', `<p>${escHtml(code)}</p>`);
+    }
+    return true;
   }
 
   function openWorkLink(workRef) {
@@ -411,17 +516,25 @@ const TodoPage = (() => {
     if (!strip) return;
     const status = state.error ? 'error' : (state.loaded ? 'ready' : 'empty');
     const tone = statusTone(status);
+    const proofState = state.mode === 'work' && !showTestEntries()
+      ? '<span>proof rows hidden</span>'
+      : '';
     strip.innerHTML = `
       <span class="todo-status-dot todo-status-dot--${tone}" aria-hidden="true"></span>
       <span>${escHtml(status)}</span>
       <span>${escHtml(modeLabel(state.mode))}</span>
+      ${proofState}
     `;
   }
 
   function renderMeta() {
     const rows = taskRows();
     const meta = el('todo-meta');
-    if (meta) meta.textContent = `${modeLabel(state.mode)} - ${rows.length} visible task${rows.length === 1 ? '' : 's'}`;
+    const hidden = hiddenWorkTodoCount();
+    const hiddenText = state.mode === 'work' && !showTestEntries()
+      ? ` - ${hidden} proof row${hidden === 1 ? '' : 's'} hidden`
+      : '';
+    if (meta) meta.textContent = `${modeLabel(state.mode)} - ${rows.length} visible task${rows.length === 1 ? '' : 's'}${hiddenText}`;
     const filter = el('todo-filter-strip');
     if (filter) {
       filter.innerHTML = window.PersonalFilters?.summaryHtml
@@ -471,6 +584,7 @@ const TodoPage = (() => {
     const status = row.status || 'open';
     const refs = row.related?.work_items || [];
     const writable = canWriteTask(row);
+    const shareTodoId = workTodoId(row);
     return `
       <article class="todo-task-row" data-todo-index="${index}" tabindex="0">
         <div class="todo-task-main">
@@ -485,6 +599,7 @@ const TodoPage = (() => {
           <button class="todo-row-btn todo-row-btn--complete" type="button" data-todo-row-action="complete" data-todo-index="${index}" title="Complete task" aria-label="Complete task" ${writable ? '' : 'disabled'}></button>
           <button class="todo-row-btn todo-row-btn--edit" type="button" data-todo-row-action="edit" data-todo-index="${index}" title="Edit task" aria-label="Edit task" ${writable ? '' : 'disabled'}></button>
           <button class="todo-row-btn todo-row-btn--archive" type="button" data-todo-row-action="archive" data-todo-index="${index}" title="Archive task" aria-label="Archive task" ${writable ? '' : 'disabled'}></button>
+          ${shareTodoId ? `<button class="todo-row-btn todo-row-btn--share" type="button" data-todo-row-action="share" data-todo-index="${index}" title="Copy Kanban ToDo share code" aria-label="Copy Kanban ToDo share code"></button>` : ''}
         </div>
       </article>
     `;
@@ -740,6 +855,7 @@ const TodoPage = (() => {
     renderSelection();
     renderSources();
     renderProvenance();
+    renderRefreshPreferenceState();
     applySelectionStyles();
     if (window.PersonalFilters?.renderAll) window.PersonalFilters.renderAll();
     if (window.BodyShade && typeof window.BodyShade.scheduleSizeFillTable === 'function') {
@@ -776,6 +892,7 @@ const TodoPage = (() => {
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
       state.data = data;
+      applyWorkPreferenceState(data);
       state.loaded = true;
       state.selection = null;
       render();
@@ -802,6 +919,68 @@ const TodoPage = (() => {
     state.routeHighlightRef = '';
     writeRouteTaskRef('');
     return load({ force: true });
+  }
+
+  async function setTestEntriesVisible(show, options = {}) {
+    const nextValue = Boolean(show);
+    const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
+    const resp = await fetcher('/api/v1/personal/work/preferences', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        show_test_entries: nextValue,
+        actor: 'blueprints-ui',
+        source_surface: options.source_surface || 'todo-page',
+        request_id: `ui-todo-preferences-${Date.now()}`,
+      }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      state.error = data.detail || `HTTP ${resp.status}`;
+      renderError(state.error);
+      return false;
+    }
+    applyWorkPreferenceState(data);
+    state.loaded = false;
+    await load({ force: true });
+    return true;
+  }
+
+  function toggleTestEntriesVisibility(options = {}) {
+    return setTestEntriesVisible(!showTestEntries(), options);
+  }
+
+  function cancelRefreshLongPress(eventName = '') {
+    if (refreshLongPressTimer) {
+      window.clearTimeout(refreshLongPressTimer);
+      refreshLongPressTimer = null;
+    }
+    if (refreshLongPressButton) {
+      refreshLongPressButton.classList.remove('is-long-pressing');
+      refreshLongPressButton = null;
+    }
+    setRefreshFsm('idle', eventName);
+  }
+
+  function startRefreshLongPress(event, button) {
+    if (!button || event.button > 0) return;
+    cancelRefreshLongPress('restart');
+    refreshLongPressButton = button;
+    button.classList.add('is-long-pressing');
+    setRefreshFsm('pressing', event.type);
+    refreshLongPressTimer = window.setTimeout(() => {
+      const activeButton = refreshLongPressButton;
+      refreshLongPressTimer = null;
+      refreshLongPressButton = null;
+      if (activeButton) activeButton.classList.remove('is-long-pressing');
+      refreshSuppressClickUntil = Date.now() + 900;
+      setRefreshFsm('toggled', 'long-press');
+      toggleTestEntriesVisibility({ source_surface: 'todo-page-refresh-long-press' })
+        .catch(error => {
+          state.error = error.message || String(error);
+          renderError(state.error);
+        });
+    }, REFRESH_LONG_PRESS_MS);
   }
 
   function closeActionModal() {
@@ -1202,6 +1381,18 @@ const TodoPage = (() => {
     root.dataset.todoBound = '1';
     registerSharedPanels();
     setQuickDefaults();
+    root.addEventListener('pointerdown', event => {
+      const refreshButton = event.target.closest('[data-todo-action="refresh"]');
+      if (refreshButton) startRefreshLongPress(event, refreshButton);
+    });
+    root.addEventListener('pointerup', () => cancelRefreshLongPress('pointerup'));
+    root.addEventListener('pointercancel', () => cancelRefreshLongPress('pointercancel'));
+    root.addEventListener('pointerleave', event => {
+      const related = event.relatedTarget;
+      if (refreshLongPressButton && (!related || !root.contains(related))) {
+        cancelRefreshLongPress('pointerleave');
+      }
+    });
     root.addEventListener('click', event => {
       const workLink = event.target.closest('[data-todo-work-link]');
       if (workLink) {
@@ -1217,6 +1408,7 @@ const TodoPage = (() => {
         if (rowAction.dataset.todoRowAction === 'complete') runTaskAction('complete');
         if (rowAction.dataset.todoRowAction === 'edit') editSelected();
         if (rowAction.dataset.todoRowAction === 'archive') runTaskAction('archive');
+        if (rowAction.dataset.todoRowAction === 'share') shareKanbanTodo(state.selection?.row);
         return;
       }
       const selectable = event.target.closest('[data-todo-index]');
@@ -1231,7 +1423,11 @@ const TodoPage = (() => {
         return;
       }
       if (action === 'new-task') newTask();
-      if (action === 'refresh') load({ force: true });
+      if (action === 'refresh') {
+        event.preventDefault();
+        cancelRefreshLongPress('click');
+        if (Date.now() >= refreshSuppressClickUntil) load({ force: true });
+      }
       if (action === 'submit-task') submitTask(btn.dataset.todoTaskPrefix || 'todo-inline-task');
       if (action === 'submit-edit') submitEdit(btn.dataset.todoTaskPrefix || 'todo-inline-edit-task');
       if (action === 'toggle-markdown-preview') toggleMarkdownPreview(btn, root);
@@ -1339,6 +1535,11 @@ const TodoPage = (() => {
     modeBlocked: () => setMode('blocked'),
     modeReview: () => setMode('review'),
     modeDone: () => setMode('done'),
+    setTestEntriesVisible,
+    testEntriesVisible: showTestEntries,
+    showTestEntries: () => setTestEntriesVisible(true),
+    hideTestEntries: () => setTestEntriesVisible(false),
+    toggleTestEntriesVisibility,
     editSelected,
     completeSelected: () => runTaskAction('complete'),
     archiveSelected: () => runTaskAction('archive'),
