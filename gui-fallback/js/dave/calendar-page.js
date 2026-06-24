@@ -407,6 +407,50 @@ const CalendarPage = (() => {
     }).join('');
   }
 
+  function richMarkdownFieldHtml({
+    textareaId,
+    previewId,
+    label = 'Notes',
+    value = '',
+    rows = 2,
+    maxlength = 2000,
+    event = null,
+    disabled = false,
+    previewClass = '',
+  } = {}) {
+    const safeTextareaId = String(textareaId || 'calendar-body').replace(/[^a-zA-Z0-9_-]/g, '-');
+    const safePreviewId = String(previewId || `${safeTextareaId}-preview`).replace(/[^a-zA-Z0-9_-]/g, '-');
+    if (window.BlueprintsRichMarkdown?.fieldHtml) {
+      return window.BlueprintsRichMarkdown.fieldHtml({
+        textareaId: safeTextareaId,
+        previewId: safePreviewId,
+        label,
+        value,
+        rows,
+        maxlength,
+        wrapperClass: 'calendar-field calendar-field--wide calendar-field--notes calendar-markdown-field',
+        previewClass,
+        textareaAttrs: { disabled: Boolean(disabled) },
+        context: {
+          domain: 'diary',
+          documentType: 'calendar-event',
+          documentId: event?.event_id || safeTextareaId,
+          localDate: event?.local_date || state.date || '',
+        },
+      });
+    }
+    return `
+      <div class="calendar-field calendar-field--wide calendar-field--notes calendar-markdown-field">
+        <div class="calendar-field__label-row">
+          <span>${escHtml(label)}</span>
+          <button class="calendar-markdown-toggle" type="button" data-calendar-action="toggle-markdown-preview" data-calendar-markdown-prefix="${escHtml(safeTextareaId.replace(/-body$/, ''))}"${disabled ? ' disabled' : ''}>Preview</button>
+        </div>
+        <textarea id="${escHtml(safeTextareaId)}" rows="${escHtml(rows)}" maxlength="${escHtml(maxlength)}"${disabled ? ' disabled' : ''}>${escHtml(value)}</textarea>
+        <div id="${escHtml(safePreviewId)}" class="calendar-markdown-preview${previewClass ? ` ${escHtml(previewClass)}` : ''}" hidden></div>
+      </div>
+    `;
+  }
+
   function isTaskLike(event) {
     const kind = String(event?.kind || '').toLowerCase();
     const relatedTasks = event?.related?.tasks || [];
@@ -897,7 +941,9 @@ const CalendarPage = (() => {
       pill.textContent = state.view === 'year' ? '' : rangeLabel();
     }
     if (!root) return;
+    root.dataset.calendarView = state.view;
     root.innerHTML = state.view === 'year' ? renderYearView() : renderMonthView();
+    window.BlueprintsLocalShade?.refresh?.();
   }
 
   function listHtml(rows, type, empty) {
@@ -1650,14 +1696,15 @@ const CalendarPage = (() => {
             </label>
             <div class="calendar-filter-strip calendar-event-tags-strip" role="button" tabindex="0" data-calendar-event-tags-strip data-personal-filter-open="${escHtml(EVENT_TAG_SURFACE)}" data-personal-filter-tab="filters">${eventTagsSummaryHtml()}</div>
           </div>
-          <div class="calendar-field calendar-field--wide calendar-field--notes calendar-markdown-field">
-            <div class="calendar-field__label-row">
-              <span>Notes</span>
-              <button class="calendar-markdown-toggle" type="button" data-calendar-action="toggle-markdown-preview" data-calendar-markdown-prefix="${escHtml(safePrefix)}">Preview</button>
-            </div>
-            <textarea id="${escHtml(safePrefix)}-body" rows="2" maxlength="2000">${escHtml(valueFor('body'))}</textarea>
-            <div id="${escHtml(safePrefix)}-body-preview" class="calendar-markdown-preview" hidden></div>
-          </div>
+          ${richMarkdownFieldHtml({
+            textareaId: `${safePrefix}-body`,
+            previewId: `${safePrefix}-body-preview`,
+            label: 'Notes',
+            value: valueFor('body'),
+            rows: 2,
+            maxlength: 2000,
+            event: { event_id: safePrefix, local_date: valueFor('date', defaultStartDate) },
+          })}
         </div>
         <div class="calendar-quick-event__footer">
           <span id="${escHtml(safePrefix)}-status" class="calendar-entry-status"></span>
@@ -1911,14 +1958,16 @@ const CalendarPage = (() => {
         <section class="calendar-entry-preview" data-calendar-event-preview-id="${escHtml(event.event_id || '')}">
           <div class="calendar-entry-preview__meta">${escHtml(eventPreviewMeta(event))}${todoLinkHtml(event)}</div>
           <div class="calendar-entry-preview-editor">
-            <div class="calendar-field calendar-field--wide calendar-field--notes calendar-markdown-field calendar-entry-preview-editor__field">
-              <div class="calendar-field__label-row">
-                <span>Content</span>
-                <button class="calendar-markdown-toggle" type="button" data-calendar-modal-action="toggle-event-content-preview" data-calendar-preview-editor="calendar-event-preview-editor" data-calendar-preview-output="calendar-event-preview-editor-preview">Preview</button>
-              </div>
-              <textarea id="calendar-event-preview-editor" rows="14" maxlength="4000">${escHtml(body)}</textarea>
-              <div id="calendar-event-preview-editor-preview" class="calendar-markdown-preview calendar-entry-preview-editor__markdown" hidden></div>
-            </div>
+            ${richMarkdownFieldHtml({
+              textareaId: 'calendar-event-preview-editor',
+              previewId: 'calendar-event-preview-editor-preview',
+              label: 'Content',
+              value: body,
+              rows: 14,
+              maxlength: 4000,
+              event,
+              previewClass: 'calendar-entry-preview-editor__markdown',
+            })}
             <div class="calendar-entry-preview-editor__footer">
               <span id="calendar-event-preview-status" class="calendar-entry-status"></span>
               <button class="calendar-command-btn" type="button" data-calendar-modal-action="save-event-content">Save Content</button>
@@ -2312,14 +2361,15 @@ const CalendarPage = (() => {
           <span class="hub-checkbox__box" aria-hidden="true"></span>
           <span class="hub-checkbox__label">All day</span>
         </label>
-        <div class="calendar-field calendar-field--wide calendar-field--notes calendar-markdown-field">
-          <div class="calendar-field__label-row">
-            <span>Notes</span>
-            <button class="calendar-markdown-toggle" type="button" data-calendar-modal-action="toggle-markdown-preview" data-calendar-markdown-prefix="calendar-edit">Preview</button>
-          </div>
-          <textarea id="calendar-edit-body" rows="2" maxlength="2000">${escHtml(event.content_projection || event.body_excerpt || '')}</textarea>
-          <div id="calendar-edit-body-preview" class="calendar-markdown-preview" hidden></div>
-        </div>
+        ${richMarkdownFieldHtml({
+          textareaId: 'calendar-edit-body',
+          previewId: 'calendar-edit-body-preview',
+          label: 'Notes',
+          value: event.content_projection || event.body_excerpt || '',
+          rows: 2,
+          maxlength: 2000,
+          event,
+        })}
       </div>
       <div class="calendar-modal-actions">
         <button class="calendar-command-btn calendar-command-btn--danger" type="button" data-calendar-modal-action="delete-event">Delete</button>

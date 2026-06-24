@@ -390,6 +390,50 @@ const DiaryPage = (() => {
     }).join('');
   }
 
+  function richMarkdownFieldHtml({
+    textareaId,
+    previewId,
+    label = 'Notes',
+    value = '',
+    rows = 3,
+    maxlength = 4000,
+    event = null,
+    disabled = false,
+    previewClass = '',
+  } = {}) {
+    const safeTextareaId = String(textareaId || 'diary-body').replace(/[^a-zA-Z0-9_-]/g, '-');
+    const safePreviewId = String(previewId || `${safeTextareaId}-preview`).replace(/[^a-zA-Z0-9_-]/g, '-');
+    if (window.BlueprintsRichMarkdown?.fieldHtml) {
+      return window.BlueprintsRichMarkdown.fieldHtml({
+        textareaId: safeTextareaId,
+        previewId: safePreviewId,
+        label,
+        value,
+        rows,
+        maxlength,
+        wrapperClass: 'calendar-field calendar-field--wide calendar-field--notes calendar-markdown-field',
+        previewClass,
+        textareaAttrs: { disabled: Boolean(disabled) },
+        context: {
+          domain: 'diary',
+          documentType: 'diary-entry',
+          documentId: entryIdentity(event) || safeTextareaId,
+          localDate: event?.local_date || state.date || '',
+        },
+      });
+    }
+    return `
+      <div class="calendar-field calendar-field--wide calendar-field--notes calendar-markdown-field">
+        <div class="calendar-field__label-row">
+          <span>${escHtml(label)}</span>
+          <button class="calendar-markdown-toggle" type="button" data-diary-action="toggle-markdown-preview" data-diary-markdown-prefix="${escHtml(safeTextareaId.replace(/-body$/, ''))}"${disabled ? ' disabled' : ''}>Preview</button>
+        </div>
+        <textarea id="${escHtml(safeTextareaId)}" rows="${escHtml(rows)}" maxlength="${escHtml(maxlength)}"${disabled ? ' disabled' : ''}>${escHtml(value)}</textarea>
+        <div id="${escHtml(safePreviewId)}" class="calendar-markdown-preview${previewClass ? ` ${escHtml(previewClass)}` : ''}" hidden></div>
+      </div>
+    `;
+  }
+
   function isTaskLike(event) {
     const kind = String(event?.kind || '').toLowerCase();
     const relatedTasks = event?.related?.tasks || [];
@@ -1038,6 +1082,7 @@ const DiaryPage = (() => {
   function renderDiaryView() {
     const root = el('diary-view-root');
     if (!root) return;
+    root.dataset.diaryView = state.view;
     root.innerHTML = state.view === 'day' ? renderDayView() : renderWeekView();
   }
 
@@ -1268,6 +1313,15 @@ const DiaryPage = (() => {
     }
     const meta = el('diary-meta');
     if (meta) meta.textContent = 'Diary refresh failed';
+  }
+
+  function automationStatus() {
+    if (state.loading) return state.data ? 'refreshing' : 'loading';
+    if (state.error) return 'error';
+    if (!state.loaded) return '';
+    const dayStatus = String(dayPayload().day?.status || '').trim();
+    if (dayStatus) return dayStatus;
+    return visibleEvents().length ? 'ready' : 'empty';
   }
 
   function upcomingWideEndDate(startText) {
@@ -1673,14 +1727,16 @@ const DiaryPage = (() => {
             </label>
             <div class="calendar-filter-strip calendar-event-tags-strip diary-entry-tags-strip" role="button" tabindex="0" ${tagAttr} data-personal-filter-tab="filters">${tagSummary}</div>
           </div>
-          <div class="calendar-field calendar-field--wide calendar-field--notes calendar-markdown-field">
-            <div class="calendar-field__label-row">
-              <span>Notes</span>
-              <button class="calendar-markdown-toggle" type="button" data-diary-action="toggle-markdown-preview" data-diary-markdown-prefix="${escHtml(safePrefix)}"${formDisabled ? ' disabled' : ''}>Preview</button>
-            </div>
-            <textarea id="${escHtml(safePrefix)}-body" rows="3" maxlength="4000"${formDisabledAttr}>${escHtml(valueFor('body', defaults.body))}</textarea>
-            <div id="${escHtml(safePrefix)}-body-preview" class="calendar-markdown-preview" hidden></div>
-          </div>
+          ${richMarkdownFieldHtml({
+            textareaId: `${safePrefix}-body`,
+            previewId: `${safePrefix}-body-preview`,
+            label: 'Notes',
+            value: valueFor('body', defaults.body),
+            rows: 3,
+            maxlength: 4000,
+            event: event || { event_id: safePrefix, local_date: valueFor('date', defaults.startDate) },
+            disabled: formDisabled,
+          })}
         </div>
         <div class="calendar-quick-event__footer diary-quick-entry__footer">
           <span id="${escHtml(safePrefix)}-status" class="calendar-entry-status diary-entry-status">${formDisabled ? escHtml(editability.reason) : ''}</span>
@@ -1965,14 +2021,16 @@ const DiaryPage = (() => {
         <section class="calendar-entry-preview diary-entry-preview" data-diary-entry-preview-id="${escHtml(entryIdentity(event))}">
           <div class="calendar-entry-preview__meta">${escHtml(entryPreviewMeta(event))}${todoLinkHtml(event)}</div>
           <div class="calendar-entry-preview-editor">
-            <div class="calendar-field calendar-field--wide calendar-field--notes calendar-markdown-field calendar-entry-preview-editor__field">
-              <div class="calendar-field__label-row">
-                <span>Content</span>
-                <button class="calendar-markdown-toggle" type="button" data-diary-modal-action="toggle-entry-content-preview" data-diary-preview-editor="diary-entry-preview-editor" data-diary-preview-output="diary-entry-preview-editor-preview">Preview</button>
-              </div>
-              <textarea id="diary-entry-preview-editor" rows="14" maxlength="4000">${escHtml(body)}</textarea>
-              <div id="diary-entry-preview-editor-preview" class="calendar-markdown-preview calendar-entry-preview-editor__markdown" hidden></div>
-            </div>
+            ${richMarkdownFieldHtml({
+              textareaId: 'diary-entry-preview-editor',
+              previewId: 'diary-entry-preview-editor-preview',
+              label: 'Content',
+              value: body,
+              rows: 14,
+              maxlength: 4000,
+              event,
+              previewClass: 'calendar-entry-preview-editor__markdown',
+            })}
             <div class="calendar-entry-preview-editor__footer">
               <span id="diary-entry-preview-status" class="calendar-entry-status diary-entry-status"></span>
               <button class="calendar-command-btn diary-command-btn" type="button" data-diary-modal-action="save-entry-content">Save Content</button>
@@ -3104,6 +3162,7 @@ const DiaryPage = (() => {
       range_label: rangeLabel(),
       visible_count: visibleEvents().length,
       source_filter: state.sourceFilter,
+      status: automationStatus(),
       summary_state: state.daySummary?.summary?.state || '',
       ledger_exists: !!state.daySummary?.files?.source_ledger?.exists,
       day_folder_exists: !!state.daySummary?.files?.day_folder?.exists,

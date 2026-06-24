@@ -469,6 +469,7 @@
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     flex: 1 1 auto;
+    margin-bottom: 0;
     min-height: 0;
   }
 
@@ -492,10 +493,16 @@
   }
 }
 
+@media (min-width: 821px) and (orientation: landscape) {
+  #tab-todo.active > .tab-scroll-shell > .todo-page--body {
+    padding-bottom: var(--ultrawide-gap, 10px);
+  }
+}
+
 @media (min-width: 821px) and (orientation: portrait) {
   #tab-todo.active > .tab-scroll-shell > .todo-page--body {
     display: grid;
-    grid-template-rows: minmax(0, 1fr) auto minmax(260px, var(--todo-bottom-panel-height, clamp(320px, 24dvh, 420px)));
+    grid-template-rows: minmax(0, 1fr) auto minmax(0, var(--todo-bottom-panel-height, clamp(320px, 24dvh, 420px)));
     gap: 8px;
     height: 100%;
     max-height: 100%;

@@ -1359,6 +1359,7 @@ dialog.hub-modal#kanban-detail-modal[open] {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     flex: 1 1 auto;
+    margin-bottom: 0;
     min-height: 0;
   }
 
@@ -1373,10 +1374,16 @@ dialog.hub-modal#kanban-detail-modal[open] {
   }
 }
 
+@media (min-width: 821px) and (orientation: landscape) {
+  #tab-kanban.active > .tab-scroll-shell > .kanban-page--body {
+    padding-bottom: var(--ultrawide-gap, 10px);
+  }
+}
+
 @media (min-width: 821px) and (orientation: portrait) {
   #tab-kanban.active > .tab-scroll-shell > .kanban-page--body {
     display: grid;
-    grid-template-rows: minmax(0, 1fr) auto minmax(260px, var(--kanban-bottom-panel-height, clamp(320px, 24dvh, 420px)));
+    grid-template-rows: minmax(0, 1fr) auto minmax(0, var(--kanban-bottom-panel-height, clamp(320px, 24dvh, 420px)));
     gap: 8px;
     height: 100%;
     max-height: 100%;

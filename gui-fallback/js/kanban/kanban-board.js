@@ -120,7 +120,7 @@ const KanbanBoardPage = (() => {
   }
 
   function renderMarkdown(md, emptyText = 'No description.') {
-    if (window.BlueprintsMarkdown?.render) return window.BlueprintsMarkdown.render(md);
+    if (window.BlueprintsMarkdown?.render) return window.BlueprintsMarkdown.render(md, { emptyText });
     const clean = stripFrontmatter(md).trim();
     if (!clean) return `<p class="calendar-markdown-empty">${escHtml(emptyText)}</p>`;
     return clean.split(/\n/).map(line => {
@@ -649,21 +649,40 @@ const KanbanBoardPage = (() => {
     const previewDefault = Boolean(options.previewDefault);
     const hideLabel = Boolean(options.hideLabel);
     const emptyText = options.emptyText || `No ${String(label || 'description').toLowerCase()}.`;
-    const actionAttr = options.detail
-      ? 'data-kanban-detail-action="toggle-markdown-preview"'
-      : (options.inline
-        ? 'data-kanban-action="toggle-markdown-preview"'
-        : 'data-kanban-modal-action="toggle-markdown-preview"');
-    const fieldAttr = options.fieldName
+    const itemId = state.detail?.item?.item_id || '';
+    const context = options.context || {
+      domain: 'kanban',
+      documentType: options.fieldName === 'detailBody' ? 'item-detail' : 'item-body',
+      documentId: itemId || safeId,
+      itemId,
+    };
+    const fieldAttr = options.fieldName ? { 'data-kanban-detail-field': options.fieldName } : {};
+    if (window.BlueprintsRichMarkdown?.fieldHtml) {
+      return window.BlueprintsRichMarkdown.fieldHtml({
+        textareaId: safeId,
+        previewId: `${safeId}-preview`,
+        label: label || 'Description',
+        value,
+        rows: options.rows || 5,
+        maxlength: options.maxlength || 4000,
+        previewDefault,
+        hideLabel,
+        emptyText,
+        wrapperClass: 'kanban-field kanban-field--markdown calendar-markdown-field',
+        textareaAttrs: fieldAttr,
+        context,
+      });
+    }
+    const fieldAttrText = options.fieldName
       ? ` data-kanban-detail-field="${escHtml(options.fieldName)}"`
       : '';
     return `
       <div class="kanban-field kanban-field--markdown calendar-markdown-field">
         <div class="calendar-field__label-row${hideLabel ? ' calendar-field__label-row--actions-only' : ''}">
           <span class="${hideLabel ? 'kanban-visually-hidden' : ''}">${escHtml(label || 'Description')}</span>
-          <button class="calendar-markdown-toggle" type="button" ${actionAttr} data-kanban-markdown-prefix="${escHtml(safeId)}">${previewDefault ? 'Edit' : 'Preview'}</button>
+          <button class="calendar-markdown-toggle" type="button" data-kanban-detail-action="toggle-markdown-preview" data-kanban-markdown-prefix="${escHtml(safeId)}">${previewDefault ? 'Edit' : 'Preview'}</button>
         </div>
-        <textarea id="${escHtml(safeId)}" maxlength="${escHtml(options.maxlength || 4000)}"${fieldAttr}${previewDefault ? ' hidden' : ''}>${escHtml(value)}</textarea>
+        <textarea id="${escHtml(safeId)}" maxlength="${escHtml(options.maxlength || 4000)}"${fieldAttrText}${previewDefault ? ' hidden' : ''}>${escHtml(value)}</textarea>
         <div id="${escHtml(safeId)}-preview" class="calendar-markdown-preview"${previewDefault ? '' : ' hidden'}>${previewDefault ? renderMarkdown(value || '', emptyText) : ''}</div>
       </div>
     `;
@@ -1044,6 +1063,7 @@ const KanbanBoardPage = (() => {
     document.querySelectorAll('[data-personal-filter-host][data-personal-filter-surface="kanban"]').forEach(host => {
       if (host.dataset.personalFilterTab !== 'edit-item') return;
       if (!hostIsVisible(host)) return;
+      syncDetailDraftFromScope(host);
       window.PersonalFilters.activateTab('kanban', 'edit-item', { host, visibleOnly: false });
     });
   }
@@ -1488,28 +1508,71 @@ const KanbanBoardPage = (() => {
     const draft = ensureDetailDraft();
     if (!draft) return false;
     const key = field.dataset.kanbanDetailField;
+    return updateDetailDraftValue(key, field.value);
+  }
+
+  function updateDetailDraftValue(key, value) {
+    const draft = ensureDetailDraft();
+    if (!draft) return false;
     if (String(key || '').startsWith('discussion:')) {
       const discussionId = String(key).slice('discussion:'.length);
       draft.discussions = draft.discussions || {};
-      draft.discussions[discussionId] = field.value;
+      draft.discussions[discussionId] = value;
       return true;
     }
     if (!Object.prototype.hasOwnProperty.call(draft, key)) return false;
-    draft[key] = field.value;
+    draft[key] = value;
     return true;
   }
 
-  function syncDetailDraftFields(sourceField) {
-    const key = sourceField?.dataset?.kanbanDetailField || '';
+  function refreshDetailFieldPreview(field, value) {
+    if (!field) return;
+    const previewId = field.dataset?.rmePreviewId || (field.id ? `${field.id}-preview` : '');
+    const preview = previewId ? el(previewId) : field.closest?.('.calendar-markdown-field')?.querySelector?.('.calendar-markdown-preview');
+    if (!preview || preview.hidden) return;
+    const shell = field.closest?.('[data-rme-field-shell]');
+    preview.innerHTML = renderMarkdown(value, shell?.dataset?.rmeEmptyText || 'No content.');
+  }
+
+  function syncDetailDraftFieldByKey(key, sourceField = null) {
     if (!key || !state.detailDraft) return;
+    const value = detailDraftValue(key);
     document.querySelectorAll(`[data-kanban-detail-field="${key}"]`).forEach(field => {
-      if (field === sourceField) return;
-      if ('value' in field) field.value = detailDraftValue(key);
+      if (field !== sourceField && 'value' in field) field.value = value;
+      refreshDetailFieldPreview(field, value);
     });
+  }
+
+  function syncDetailDraftFields(sourceField) {
+    syncDetailDraftFieldByKey(sourceField?.dataset?.kanbanDetailField || '', sourceField);
   }
 
   function syncDetailDraftFromScope(scope) {
     scope?.querySelectorAll?.('[data-kanban-detail-field]').forEach(updateDetailDraftFromField);
+  }
+
+  function syncOpenDetailDraftSurfaces() {
+    const activeWorkspace = document.activeElement?.closest?.('.kanban-detail-workspace');
+    if (activeWorkspace) syncDetailDraftFromScope(activeWorkspace);
+    document.querySelectorAll('.kanban-detail-workspace').forEach(workspace => {
+      if (workspace === activeWorkspace) return;
+      if (!hostIsVisible(workspace) && !workspace.closest?.('dialog[open]')) return;
+      syncDetailDraftFromScope(workspace);
+    });
+  }
+
+  function handleRichMarkdownDraft(event) {
+    const detail = event?.detail || {};
+    const context = detail.context || {};
+    if (context.domain !== 'kanban') return;
+    const key = detail.fieldName || '';
+    if (!key) return;
+    const draft = ensureDetailDraft();
+    if (!draft) return;
+    const contextItem = context.item_id || context.itemId || '';
+    if (contextItem && draft.itemId && contextItem !== draft.itemId) return;
+    if (!updateDetailDraftValue(key, String(detail.value || ''))) return;
+    syncDetailDraftFieldByKey(key, detail.targetId ? el(detail.targetId) : null);
   }
 
   function detailItemAvailable() {
@@ -1552,6 +1615,36 @@ const KanbanBoardPage = (() => {
 
   function discussionBodyHtml(id, fieldName, value = '', { editMode = false, newEntry = false } = {}) {
     const safeId = String(id || 'kanban-discussion').replace(/[^a-zA-Z0-9_-]/g, '-');
+    const itemId = state.detail?.item?.item_id || '';
+    const discussionId = String(fieldName || '').startsWith('discussion:')
+      ? String(fieldName).slice('discussion:'.length)
+      : '';
+    if (window.BlueprintsRichMarkdown?.fieldHtml) {
+      return window.BlueprintsRichMarkdown.fieldHtml({
+        textareaId: safeId,
+        previewId: `${safeId}-preview`,
+        label: newEntry ? 'New discussion' : 'Discussion entry',
+        value,
+        rows: newEntry ? 6 : 8,
+        maxlength: 120000,
+        previewDefault: !editMode && !newEntry,
+        emptyText: 'No discussion text.',
+        wrapperClass: 'kanban-field kanban-field--markdown calendar-markdown-field kanban-discussion-field',
+        textareaClass: 'kanban-discussion-textarea',
+        previewClass: 'kanban-discussion-preview',
+        textareaAttrs: {
+          'data-kanban-detail-field': fieldName,
+          'aria-label': newEntry ? 'New discussion' : 'Discussion entry',
+        },
+        context: {
+          domain: 'kanban',
+          documentType: 'discussion',
+          documentId: discussionId || `${itemId || 'item'}-new-discussion`,
+          itemId,
+          discussionId,
+        },
+      });
+    }
     const hiddenPreview = editMode || newEntry;
     const hiddenEditor = !editMode && !newEntry;
     return `
@@ -2766,6 +2859,7 @@ const KanbanBoardPage = (() => {
     const dialog = el('kanban-detail-modal');
     const body = dialog?.querySelector?.('.hub-modal-body');
     if (!dialog?.open || !body || !state.detail?.item?.item_id) return false;
+    syncDetailDraftFromScope(body);
     body.innerHTML = itemDetailHtml(state.detail, {
       prefix: 'kanban-modal-detail',
       layout: isCompactDetailLayout() ? 'accordion' : 'tabs',
@@ -2774,6 +2868,7 @@ const KanbanBoardPage = (() => {
   }
 
   function refreshDetailSurfaces() {
+    syncOpenDetailDraftSurfaces();
     refreshActiveDetailPanels();
     renderOpenDetailModal();
     scheduleDetailLayoutRefresh();
@@ -3064,6 +3159,7 @@ const KanbanBoardPage = (() => {
       if (!field || root.contains(field)) return;
       handleDetailFieldEvent(event);
     });
+    document.addEventListener('blueprints:rich-markdown-draft', handleRichMarkdownDraft);
     window.addEventListener('resize', scheduleLaneRestore, { passive: true });
     window.addEventListener('orientationchange', scheduleLaneRestore, { passive: true });
     document.addEventListener('bodyshadechange', scheduleLaneRestore);

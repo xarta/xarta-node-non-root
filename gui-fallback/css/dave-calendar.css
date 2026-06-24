@@ -497,8 +497,9 @@
 
   #tab-calender.active .calendar-view-section {
     display: grid;
-    grid-template-rows: minmax(0, 1fr) auto minmax(260px, var(--calendar-bottom-panel-height, clamp(320px, 24dvh, 420px)));
+    grid-template-rows: minmax(0, 1fr) auto minmax(0, var(--calendar-bottom-panel-height, clamp(320px, 24dvh, 420px)));
     gap: 8px;
+    margin-bottom: 0;
     min-height: 0;
     overflow: hidden;
   }

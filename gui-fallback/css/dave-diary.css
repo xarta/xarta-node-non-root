@@ -537,8 +537,9 @@
 
   #tab-diary.active .diary-view-section {
     display: grid;
-    grid-template-rows: minmax(0, 1fr) auto minmax(260px, var(--diary-bottom-panel-height, clamp(320px, 24dvh, 420px)));
+    grid-template-rows: minmax(0, 1fr) auto minmax(0, var(--diary-bottom-panel-height, clamp(320px, 24dvh, 420px)));
     gap: 8px;
+    margin-bottom: 0;
     min-height: 0;
     overflow: hidden;
   }
@@ -918,5 +919,62 @@
 
   .diary-hour-row__time {
     padding-inline: 7px;
+  }
+}
+
+@media (min-width: 821px) {
+  #tab-diary.active .diary-view-root[data-diary-view="week"] {
+    display: grid;
+    min-height: 0;
+  }
+
+  #tab-diary.active .diary-view-root[data-diary-view="week"] .diary-week-grid {
+    height: 100%;
+    min-height: 0;
+    grid-auto-rows: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  #tab-diary.active .diary-view-root[data-diary-view="week"] .diary-week-card {
+    min-height: 0;
+  }
+
+  #tab-diary.active .diary-view-root[data-diary-view="week"] .diary-week-card__body {
+    min-height: 0;
+    overflow: auto;
+  }
+}
+
+@media (min-width: 821px) and (orientation: portrait) {
+  #tab-diary.active .diary-view-root[data-diary-view="week"] {
+    overflow: hidden;
+  }
+}
+
+@media (min-width: 821px) and (orientation: landscape) {
+  #tab-diary.active > .tab-scroll-shell > .diary-page--body {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    height: 100%;
+    max-height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    padding-bottom: var(--ultrawide-gap, 10px);
+  }
+
+  #tab-diary.active .diary-view-section[data-diary-content-view="diary"] {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    margin-bottom: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  #tab-diary.active .diary-view-root[data-diary-view="week"] {
+    overflow: hidden;
+  }
+
+  #tab-diary.active .diary-view-root[data-diary-view="day"] {
+    overflow: auto;
   }
 }

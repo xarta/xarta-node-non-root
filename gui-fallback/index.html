@@ -32,6 +32,7 @@
   <link rel="stylesheet" href="css/dave-imports.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/personal-search.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/personal-filters.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/rich-markdown-editor.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/kanban-menu.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/kanban-board.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/splash-screens.css?v={{$assetVersion}}" />
@@ -2259,6 +2260,59 @@
     </div>
   </dialog>
 
+  <dialog class="hub-modal hub-dialog" data-tone="info" id="rich-markdown-picture-modal" style="width:min(980px,96vw);max-width:96vw">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">DOC</span>
+        <span class="hub-dialog-title-text">Insert Picture</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body">
+      <p id="rich-markdown-picture-status" style="font-size:12px;margin:0 0 10px;color:var(--text-dim)"></p>
+      <div class="rich-md-picture-toolbar">
+        <div class="field">
+          <label for="rich-markdown-picture-filter">Filter</label>
+          <input type="text" id="rich-markdown-picture-filter" data-clearable-input placeholder="Filter pictures" autocomplete="off" />
+        </div>
+        <label class="hub-modal-btn rich-md-upload-btn" for="rich-markdown-picture-upload">
+          Upload
+          <input id="rich-markdown-picture-upload" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+        </label>
+      </div>
+      <div id="rich-markdown-picture-grid" class="rich-md-picture-grid"></div>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn secondary hub-modal-close" type="button" data-fc-key="modal.close">Cancel</button>
+    </div>
+  </dialog>
+
+  <dialog class="hub-modal hub-dialog rich-md-fullscreen-modal" data-tone="info" id="rich-markdown-fullscreen-modal">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">DOC</span>
+        <span class="hub-dialog-title-text">Rich Document</span>
+      </h2>
+      <button class="hub-modal-close hub-dialog-close" type="button" data-fc-key="modal.close" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body rich-md-fullscreen-body">
+      <div id="rich-markdown-fullscreen-shell" class="rich-md-fullscreen-shell" data-rme-field-shell data-rme-fullscreen-shell>
+        <textarea id="rich-markdown-fullscreen-editor" class="rich-md-textarea rich-md-fullscreen-editor" maxlength="120000" data-rme-field data-rme-preview-id="rich-markdown-fullscreen-preview"></textarea>
+        <div class="local-shade-handle rich-md-fullscreen-split-handle" data-local-shade-handle data-local-shade-key="rich-document-fullscreen-preview" data-local-shade-media="(min-width: 821px) and (orientation: portrait)" data-local-shade-scope="#rich-markdown-fullscreen-shell" data-local-shade-panel="#rich-markdown-fullscreen-preview" data-local-shade-var="--rich-md-fullscreen-preview-height" data-local-shade-min="0" data-local-shade-min-ratio="0.05" data-local-shade-main-min="0" data-local-shade-main-min-ratio="0.05" data-local-shade-max-ratio="0.95" data-local-shade-default="460" aria-label="Resize Rich Document editor and preview">
+          <div class="body-shade-grip" aria-hidden="true"></div>
+        </div>
+        <div id="rich-markdown-fullscreen-preview" class="rich-md-preview calendar-markdown-preview rich-md-fullscreen-preview" data-rme-preview data-rme-editor-id="rich-markdown-fullscreen-editor"></div>
+      </div>
+      <div class="rich-md-fullscreen-tabs" role="tablist" aria-label="Rich Document tools">
+        <button class="rich-md-fullscreen-tab is-active" type="button" aria-selected="true">Document</button>
+        <button class="rich-md-fullscreen-tab" type="button" data-rme-action="picture">Pictures</button>
+      </div>
+    </div>
+    <div class="hub-modal-footer">
+      <button class="hub-modal-btn" type="button" data-rme-action="fullscreen-apply">Apply</button>
+    </div>
+  </dialog>
+
   <!-- Form Controls -->
   <section id="tab-form-controls" class="tab-panel">
     <p style="font-size:12px;color:var(--text-dim);margin-bottom:8px">Assign sounds and icons to form controls (inputs, selects, toggles, buttons) by their <code>data-fc-key</code> identifier. Changes are fleet-synced.</p>
@@ -3285,7 +3339,7 @@
     <div class="calendar-page diary-page diary-page--body">
       <section class="calendar-view-section diary-view-section" aria-label="Diary view" data-diary-content-view="diary">
         <div id="diary-view-root" class="diary-view-root"></div>
-        <div class="local-shade-handle diary-local-shade-handle" data-local-shade-handle data-local-shade-key="diary-bottom-panel" data-local-shade-media="(min-width: 821px) and (orientation: portrait)" data-local-shade-scope="#tab-diary.active &gt; .tab-scroll-shell &gt; .diary-page--body" data-local-shade-panel="#tab-diary.active .diary-filter-under-panel" data-local-shade-var="--diary-bottom-panel-height" data-local-shade-min="260" data-local-shade-main-min="320" data-local-shade-max-ratio="0.56" data-local-shade-default="352" aria-label="Resize Diary panels">
+        <div class="local-shade-handle diary-local-shade-handle" data-local-shade-handle data-local-shade-key="diary-bottom-panel" data-local-shade-media="(min-width: 821px) and (orientation: portrait)" data-local-shade-scope="#tab-diary.active &gt; .tab-scroll-shell &gt; .diary-page--body" data-local-shade-panel="#tab-diary.active .diary-filter-under-panel" data-local-shade-var="--diary-bottom-panel-height" data-local-shade-min="0" data-local-shade-min-ratio="0.05" data-local-shade-main-min="0" data-local-shade-main-min-ratio="0.05" data-local-shade-max-ratio="0.95" data-local-shade-default="352" aria-label="Resize Diary panels">
           <div class="body-shade-grip" aria-hidden="true"></div>
         </div>
         <div class="calendar-filter-under-panel diary-filter-under-panel" aria-label="Diary filters">
@@ -3456,7 +3510,7 @@
     <div class="calendar-page calendar-page--body">
       <section class="calendar-view-section" aria-label="Calendar view" data-calendar-content-view="calendar">
         <div id="calendar-view-root" class="calendar-view-root"></div>
-        <div class="local-shade-handle calendar-local-shade-handle" data-local-shade-handle data-local-shade-key="calendar-bottom-panel" data-local-shade-media="(min-width: 821px) and (orientation: portrait)" data-local-shade-scope="#tab-calender.active &gt; .tab-scroll-shell &gt; .calendar-page--body" data-local-shade-panel="#tab-calender.active .calendar-filter-under-panel" data-local-shade-var="--calendar-bottom-panel-height" data-local-shade-min="260" data-local-shade-main-min="320" data-local-shade-max-ratio="0.56" data-local-shade-default="352" aria-label="Resize Calendar panels">
+        <div class="local-shade-handle calendar-local-shade-handle" data-local-shade-handle data-local-shade-key="calendar-bottom-panel" data-local-shade-media="(min-width: 821px) and (orientation: portrait)" data-local-shade-scope="#tab-calender.active &gt; .tab-scroll-shell &gt; .calendar-page--body" data-local-shade-panel="#tab-calender.active .calendar-filter-under-panel" data-local-shade-var="--calendar-bottom-panel-height" data-local-shade-min="0" data-local-shade-min-ratio="0.05" data-local-shade-main-min="0" data-local-shade-main-min-ratio="0.05" data-local-shade-max-ratio="0.95" data-local-shade-min-anchor="#tab-calender.active .calendar-view-root[data-calendar-view='month'] &gt; .calendar-month-board, #tab-calender.active .calendar-view-root[data-calendar-view='year'] &gt; .calendar-year-grid" data-local-shade-min-anchor-container="#tab-calender.active .calendar-view-root" data-local-shade-default="352" aria-label="Resize Calendar panels">
           <div class="body-shade-grip" aria-hidden="true"></div>
         </div>
         <div class="calendar-filter-under-panel" aria-label="Calendar filters">
@@ -3610,7 +3664,7 @@
         </div>
       </section>
 
-      <div class="local-shade-handle todo-local-shade-handle" data-local-shade-handle data-local-shade-key="todo-bottom-panel" data-local-shade-media="(min-width: 821px) and (orientation: portrait)" data-local-shade-scope="#tab-todo.active &gt; .tab-scroll-shell &gt; .todo-page--body" data-local-shade-panel="#tab-todo.active .todo-filter-under-panel" data-local-shade-var="--todo-bottom-panel-height" data-local-shade-min="260" data-local-shade-main-min="320" data-local-shade-max-ratio="0.56" data-local-shade-default="352" aria-label="Resize ToDo panels">
+      <div class="local-shade-handle todo-local-shade-handle" data-local-shade-handle data-local-shade-key="todo-bottom-panel" data-local-shade-media="(min-width: 821px) and (orientation: portrait)" data-local-shade-scope="#tab-todo.active &gt; .tab-scroll-shell &gt; .todo-page--body" data-local-shade-panel="#tab-todo.active .todo-filter-under-panel" data-local-shade-var="--todo-bottom-panel-height" data-local-shade-min="0" data-local-shade-min-ratio="0.05" data-local-shade-main-min="0" data-local-shade-main-min-ratio="0.05" data-local-shade-max-ratio="0.95" data-local-shade-default="352" aria-label="Resize ToDo panels">
         <div class="body-shade-grip" aria-hidden="true"></div>
       </div>
 
@@ -3859,7 +3913,7 @@
         <div class="kanban-board-shell" id="kanban-board-shell"></div>
       </section>
 
-      <div class="local-shade-handle kanban-local-shade-handle kanban-lane-shade-handle" data-local-shade-handle data-local-shade-key="kanban-lanes-bottom-panel" data-local-shade-media="(min-width: 821px) and (orientation: portrait)" data-local-shade-scope="#tab-kanban.active &gt; .tab-scroll-shell &gt; .kanban-page--body" data-local-shade-panel="#tab-kanban.active .kanban-filter-under-panel" data-local-shade-var="--kanban-bottom-panel-height" data-local-shade-min="260" data-local-shade-main-min="380" data-local-shade-max-ratio="0.56" data-local-shade-default="352" aria-label="Resize Kanban lanes and panels">
+      <div class="local-shade-handle kanban-local-shade-handle kanban-lane-shade-handle" data-local-shade-handle data-local-shade-key="kanban-lanes-bottom-panel" data-local-shade-media="(min-width: 821px) and (orientation: portrait)" data-local-shade-scope="#tab-kanban.active &gt; .tab-scroll-shell &gt; .kanban-page--body" data-local-shade-panel="#tab-kanban.active .kanban-filter-under-panel" data-local-shade-var="--kanban-bottom-panel-height" data-local-shade-min="0" data-local-shade-min-ratio="0.05" data-local-shade-main-min="0" data-local-shade-main-min-ratio="0.05" data-local-shade-max-ratio="0.95" data-local-shade-default="352" aria-label="Resize Kanban lanes and panels">
         <div class="body-shade-grip" aria-hidden="true"></div>
       </div>
 
@@ -6136,6 +6190,7 @@
 <script src="js/dave/dave-menu.js?v={{$assetVersion}}"></script>
 <script src="js/dave/personal-search.js?v={{$assetVersion}}"></script>
 <script src="js/dave/personal-filters.js?v={{$assetVersion}}"></script>
+<script src="js/rich-markdown-editor.js?v={{$assetVersion}}"></script>
 <script src="js/dave/diary-page.js?v={{$assetVersion}}"></script>
 <script src="js/dave/calendar-page.js?v={{$assetVersion}}"></script>
 <script src="js/dave/todo-page.js?v={{$assetVersion}}"></script>

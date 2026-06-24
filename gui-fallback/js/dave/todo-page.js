@@ -248,7 +248,7 @@ const TodoPage = (() => {
   }
 
   function renderMarkdown(md, emptyText = 'No task content.') {
-    if (window.BlueprintsMarkdown?.render) return window.BlueprintsMarkdown.render(md);
+    if (window.BlueprintsMarkdown?.render) return window.BlueprintsMarkdown.render(md, { emptyText });
     const clean = stripFrontmatter(md).trim();
     if (!clean) return `<p class="calendar-markdown-empty">${escHtml(emptyText)}</p>`;
     return clean.split(/\n/).map(line => {
@@ -294,14 +294,32 @@ const TodoPage = (() => {
 
   function markdownFieldHtml(prefix, label, value = '', options = {}) {
     const safePrefix = String(prefix || 'todo-task').replace(/[^a-zA-Z0-9_-]/g, '-');
-    const actionAttr = options.modal
-      ? 'data-todo-modal-action="toggle-markdown-preview"'
-      : 'data-todo-action="toggle-markdown-preview"';
+    const task = options.task || {};
+    if (window.BlueprintsRichMarkdown?.fieldHtml) {
+      return window.BlueprintsRichMarkdown.fieldHtml({
+        textareaId: `${safePrefix}-body`,
+        previewId: `${safePrefix}-body-preview`,
+        label: label || 'Notes',
+        value,
+        rows: options.rows || 2,
+        maxlength: options.maxlength || 2000,
+        wrapperClass: 'todo-field todo-field--wide todo-field--notes calendar-markdown-field',
+        textareaAttrs: {
+          disabled: Boolean(options.disabled),
+        },
+        context: {
+          domain: 'diary',
+          documentType: 'todo-task',
+          documentId: task.task_id || safePrefix,
+          localDate: task.local_date || task.due_date || '',
+        },
+      });
+    }
     return `
       <div class="todo-field todo-field--wide todo-field--notes calendar-markdown-field">
         <div class="calendar-field__label-row">
           <span>${escHtml(label || 'Notes')}</span>
-          <button class="calendar-markdown-toggle" type="button" ${actionAttr} data-todo-markdown-prefix="${escHtml(safePrefix)}">Preview</button>
+          <button class="calendar-markdown-toggle" type="button" data-todo-action="toggle-markdown-preview" data-todo-markdown-prefix="${escHtml(safePrefix)}">Preview</button>
         </div>
         <textarea id="${escHtml(safePrefix)}-body" rows="${escHtml(options.rows || 2)}" maxlength="${escHtml(options.maxlength || 2000)}">${escHtml(value)}</textarea>
         <div id="${escHtml(safePrefix)}-body-preview" class="calendar-markdown-preview" hidden></div>
@@ -620,7 +638,7 @@ const TodoPage = (() => {
               <option value="low" ${valueFor('priority') === 'low' ? 'selected' : ''}>Low</option>
             </select>
           </label>
-          ${markdownFieldHtml(safePrefix, 'Notes', valueFor('body'), { modal: !!options.modal })}
+          ${markdownFieldHtml(safePrefix, 'Notes', valueFor('body'), { modal: !!options.modal, task: { task_id: safePrefix, local_date: valueFor('date', localDateString(new Date())) } })}
           <label class="todo-field todo-field--wide" for="${escHtml(safePrefix)}-work">
             <span>Kanban refs</span>
             <input id="${escHtml(safePrefix)}-work" type="text" autocomplete="off" value="${escHtml(valueFor('work'))}" />
@@ -687,7 +705,7 @@ const TodoPage = (() => {
               <option value="low" ${valueFor('priority', task?.priority || '') === 'low' ? 'selected' : ''}>Low</option>
             </select>
           </label>
-          ${markdownFieldHtml(safePrefix, 'Notes', valueFor('body', task?.body_excerpt || ''), { modal: !!options.modal, rows: options.modal ? 4 : 3 })}
+          ${markdownFieldHtml(safePrefix, 'Notes', valueFor('body', task?.body_excerpt || ''), { modal: !!options.modal, rows: options.modal ? 4 : 3, task, disabled: !writable })}
           <label class="todo-field todo-field--work" for="${escHtml(safePrefix)}-work">
             <span>Kanban refs</span>
             <input id="${escHtml(safePrefix)}-work" type="text" autocomplete="off" value="${escHtml(valueFor('work', (task?.related?.work_items || []).join(' ')))}"${disabledAttr} />

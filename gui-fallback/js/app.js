@@ -122,6 +122,19 @@ function _normalizeLegacyPageId(tab) {
   return pageId;
 }
 
+function _replaceAutomationRoute(group, tab) {
+  const cleanGroup = String(group || '').trim().toLowerCase();
+  const cleanTab = _normalizeLegacyPageId(tab);
+  if (!cleanGroup || !cleanTab) return;
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set('group', cleanGroup);
+    url.searchParams.set('tab', cleanTab);
+    ['item_id', 'detail_item_id', 'parent_item_id', 'scope', 'view', 'kind'].forEach(key => url.searchParams.delete(key));
+    window.history.replaceState(window.history.state, '', url.toString());
+  } catch (_) {}
+}
+
 function _menuOwnsFunction(menu, fnKey, itemId) {
   if (!menu) return false;
   const items = [
@@ -303,7 +316,11 @@ function _openAutomationPage(options = {}) {
   if (typeof menu.invokeAutomationNavigation !== 'function') {
     return { ok: false, handled: false, detail: 'navigation_bridge_unavailable', group, page_id: pageId };
   }
-  return { group, ...menu.invokeAutomationNavigation(pageId) };
+  const result = menu.invokeAutomationNavigation(pageId);
+  if (result?.ok !== false) {
+    _replaceAutomationRoute(group, result?.target_id || result?.page_id || pageId);
+  }
+  return { group, ...result };
 }
 
 function _invokeAutomationMenuFunction(options = {}) {
