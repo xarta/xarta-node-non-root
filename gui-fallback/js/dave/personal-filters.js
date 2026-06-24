@@ -1089,7 +1089,12 @@ const PersonalFilters = (() => {
     if (!modal || !root) return false;
     root.dataset.personalFilterSurface = surface;
     root.dataset.personalFilterLayout = 'tabs';
-    delete root.dataset.personalFilterExtraTabs;
+    const modalExtraTabsBySurface = {
+      todo: 'selected,search,new-task,sources,provenance',
+      kanban: 'selected,search,new-item,provenance',
+    };
+    if (modalExtraTabsBySurface[surface]) root.dataset.personalFilterExtraTabs = modalExtraTabsBySurface[surface];
+    else delete root.dataset.personalFilterExtraTabs;
     root.dataset.personalFilterTab = tab === 'filter-settings' ? 'settings' : (tab || 'filters');
     resetSettingsOrderForHost(root);
     if (title) title.textContent = tab === 'settings' ? 'Filter Settings' : 'Filters';
@@ -1116,6 +1121,8 @@ const PersonalFilters = (() => {
     const extraTabsBySurface = {
       calendar: 'selected,milestones,search,new-event,upcoming,provenance',
       diary: 'selected,day,search,new-entry,edit-entry,upcoming,provenance',
+      todo: 'selected,search,new-task,sources,provenance',
+      kanban: 'selected,search,new-item,provenance',
     };
     const extraTabs = extraTabsBySurface[surface] ? ` data-personal-filter-extra-tabs="${escHtml(extraTabsBySurface[surface])}"` : '';
     window.UltrawideSidecar.setTitle(title);

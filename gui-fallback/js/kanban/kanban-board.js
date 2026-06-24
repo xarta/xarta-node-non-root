@@ -3,10 +3,38 @@
 'use strict';
 
 const KanbanBoardPage = (() => {
+  const CONTENT_VIEW_STORAGE_KEY = 'blueprints.kanban.contentView.v1';
+  const CONTENT_VIEW_IDS = ['board', 'search', 'selection', 'provenance'];
+  const CONTENT_VIEW_LABELS = {
+    board: 'Board',
+    search: 'Search',
+    selection: 'Selection',
+    provenance: 'Provenance',
+  };
+  const LANE_WIDTH_STORAGE_PREFIX = 'blueprints.kanbanLaneWidth.v1';
+  const LANE_WIDTH_MIN = 112;
+  const LANE_WIDTH_MAX = 560;
+  const LANE_WIDTH_STEP = 18;
+  let laneRestoreTimer = null;
+
+  function normalizeContentView(value) {
+    const clean = String(value || '').trim();
+    return CONTENT_VIEW_IDS.includes(clean) ? clean : 'board';
+  }
+
+  function readStoredContentView() {
+    try {
+      return normalizeContentView(localStorage.getItem(CONTENT_VIEW_STORAGE_KEY));
+    } catch (_) {
+      return 'board';
+    }
+  }
+
   const state = {
     loaded: false,
     loading: false,
     error: '',
+    contentView: readStoredContentView(),
     config: null,
     board: null,
     detail: null,
@@ -59,6 +87,91 @@ const KanbanBoardPage = (() => {
 
   function cleanRouteId(value) {
     return String(value || '').trim().replace(/[^a-zA-Z0-9_.:-]+/g, '-').slice(0, 180);
+  }
+
+  function laneViewportSignature() {
+    if (window.BlueprintsLocalShade?.viewportSignature) return window.BlueprintsLocalShade.viewportSignature();
+    const width = Math.round(window.innerWidth || document.documentElement.clientWidth || window.visualViewport?.width || 0);
+    const height = Math.round(window.innerHeight || document.documentElement.clientHeight || window.visualViewport?.height || 0);
+    const deviceClass = width >= 821 ? 'desktop' : (width <= 600 ? 'phone' : 'tablet');
+    const orientation = height >= width ? 'portrait' : 'landscape';
+    return `${deviceClass}.${orientation}.${width}x${height}`;
+  }
+
+  function laneStorageKey(stateId) {
+    const key = String(stateId || 'lane').replace(/[^a-zA-Z0-9_.:-]+/g, '-');
+    return `${LANE_WIDTH_STORAGE_PREFIX}.${key}.${laneViewportSignature()}`;
+  }
+
+  function clampLaneWidth(value) {
+    const next = Math.round(Number(value) || 0);
+    return Math.min(LANE_WIDTH_MAX, Math.max(LANE_WIDTH_MIN, next || LANE_WIDTH_MIN));
+  }
+
+  function readLaneWidth(stateId) {
+    try {
+      const stored = Number(localStorage.getItem(laneStorageKey(stateId)) || '');
+      return Number.isFinite(stored) && stored > 0 ? clampLaneWidth(stored) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function saveLaneWidth(stateId, width) {
+    try {
+      localStorage.setItem(laneStorageKey(stateId), String(clampLaneWidth(width)));
+    } catch (_) {
+      // Lane width memory is optional.
+    }
+  }
+
+  function laneWidthAttrs(stateId) {
+    const width = readLaneWidth(stateId);
+    return width
+      ? ` data-kanban-lane-resized="true" style="--kanban-lane-width:${width}px"`
+      : '';
+  }
+
+  function applyLaneWidth(column, width, persist = false) {
+    if (!column) return null;
+    const stateId = column.dataset.kanbanStateId || '';
+    const next = clampLaneWidth(width);
+    column.dataset.kanbanLaneResized = 'true';
+    column.style.setProperty('--kanban-lane-width', `${next}px`);
+    const handle = column.querySelector('[data-kanban-lane-width-handle]');
+    if (handle) {
+      handle.setAttribute('aria-valuemin', String(LANE_WIDTH_MIN));
+      handle.setAttribute('aria-valuemax', String(LANE_WIDTH_MAX));
+      handle.setAttribute('aria-valuenow', String(next));
+      handle.setAttribute('aria-valuetext', `${next} pixels`);
+    }
+    if (persist) saveLaneWidth(stateId, next);
+    return next;
+  }
+
+  function restoreLaneWidths() {
+    document.querySelectorAll('#tab-kanban .kanban-column[data-kanban-state-id]').forEach(column => {
+      const width = readLaneWidth(column.dataset.kanbanStateId || '');
+      if (width) {
+        applyLaneWidth(column, width, false);
+      } else {
+        column.removeAttribute('data-kanban-lane-resized');
+        column.style.removeProperty('--kanban-lane-width');
+        const handle = column.querySelector('[data-kanban-lane-width-handle]');
+        if (handle) {
+          handle.setAttribute('aria-valuemin', String(LANE_WIDTH_MIN));
+          handle.setAttribute('aria-valuemax', String(LANE_WIDTH_MAX));
+          handle.removeAttribute('aria-valuenow');
+          handle.removeAttribute('aria-valuetext');
+        }
+      }
+    });
+  }
+
+  function scheduleLaneRestore() {
+    window.clearTimeout(laneRestoreTimer);
+    laneRestoreTimer = window.setTimeout(restoreLaneWidths, 90);
+    [260, 560].forEach(delay => window.setTimeout(restoreLaneWidths, delay));
   }
 
   function applyInitialRouteState() {
@@ -130,12 +243,47 @@ const KanbanBoardPage = (() => {
     return resp.json();
   }
 
-  function boardItems() {
+  function rawBoardItems() {
     return (state.board?.columns || []).flatMap(column => column.items || []);
   }
 
+  function itemFilterRecord(item) {
+    const rollup = state.rollups[item.item_id] || {};
+    const tags = [
+      'work',
+      'kanban',
+      'task',
+      item?.state_id,
+      item?.priority_id,
+      item?.source?.type,
+      item?.status,
+      Number(rollup.issues?.open || 0) ? 'issues' : '',
+      Number(rollup.todos?.open || 0) ? 'tasks' : '',
+      Number(rollup.blockers?.open || 0) ? 'blocked' : '',
+    ].filter(Boolean);
+    return {
+      ...item,
+      kind: 'task',
+      tags,
+      source: {
+        ...(item.source || {}),
+        type: item.source?.type || 'work-management',
+      },
+      related: {
+        ...(item.related || {}),
+        work_items: [item.item_id],
+      },
+    };
+  }
+
+  function boardItems() {
+    const rows = rawBoardItems();
+    if (!window.PersonalFilters?.matchesRecord) return rows;
+    return rows.filter(item => window.PersonalFilters.matchesRecord(itemFilterRecord(item), 'kanban'));
+  }
+
   function findItem(itemId) {
-    return boardItems().find(item => item.item_id === itemId) || null;
+    return rawBoardItems().find(item => item.item_id === itemId) || null;
   }
 
   function stateRows() {
@@ -195,6 +343,10 @@ const KanbanBoardPage = (() => {
     if (clean === 'active' || clean === 'pending') return 'warn';
     if (clean === 'blocked' || clean === 'error') return 'err';
     return 'unknown';
+  }
+
+  function contentViewLabel(view) {
+    return CONTENT_VIEW_LABELS[normalizeContentView(view)] || 'Board';
   }
 
   function setFsm(nextState, eventName, itemId = '') {
@@ -277,6 +429,32 @@ const KanbanBoardPage = (() => {
         return `${index ? '<span class="kanban-breadcrumb__sep">/</span>' : ''}${button}`;
       }).join('');
     }
+    const filter = el('kanban-filter-strip');
+    if (filter) {
+      filter.innerHTML = window.PersonalFilters?.summaryHtml
+        ? window.PersonalFilters.summaryHtml('kanban', { prefix: 'Filter:', emptyLabel: 'all cards' })
+        : 'Filter: all cards';
+    }
+  }
+
+  function renderContentPanels() {
+    document.querySelectorAll('[data-kanban-content-view]').forEach(panel => {
+      panel.hidden = panel.dataset.kanbanContentView !== state.contentView;
+    });
+  }
+
+  function setContentView(view, options = {}) {
+    state.contentView = normalizeContentView(view);
+    try {
+      localStorage.setItem(CONTENT_VIEW_STORAGE_KEY, state.contentView);
+    } catch (_) {
+      // Browser-local preferences are optional.
+    }
+    if (options.render !== false) {
+      renderContentPanels();
+      renderMeta();
+    }
+    return true;
   }
 
   function metric(value, label) {
@@ -373,24 +551,37 @@ const KanbanBoardPage = (() => {
     `;
   }
 
+  function visibleColumnItems(column) {
+    const items = column?.items || [];
+    if (!window.PersonalFilters?.matchesRecord) return items;
+    return items.filter(item => window.PersonalFilters.matchesRecord(itemFilterRecord(item), 'kanban'));
+  }
+
   function renderBoard() {
     const shell = el('kanban-board-shell');
     if (!shell) return;
     const columns = state.board?.columns || [];
     shell.innerHTML = columns.length
-      ? columns.map(column => `
-        <section class="kanban-column" data-kanban-state-id="${escHtml(column.state.state_id)}">
+      ? columns.map(column => {
+        const items = visibleColumnItems(column);
+        const stateId = column.state.state_id || '';
+        const label = column.state.label || stateId;
+        return `
+        <section class="kanban-column" data-kanban-state-id="${escHtml(stateId)}"${laneWidthAttrs(stateId)}>
           <div class="kanban-column__head">
-            <div class="kanban-column__title">${escHtml(column.state.label || column.state.state_id)}</div>
-            <span class="kanban-column__count">${escHtml((column.items || []).length)}</span>
-            <button class="kanban-add-btn" type="button" data-kanban-action="add-item-state" data-kanban-state-id="${escHtml(column.state.state_id)}" title="Add item" aria-label="Add item"></button>
+            <div class="kanban-column__title">${escHtml(label)}</div>
+            <span class="kanban-column__count">${escHtml(items.length)}</span>
+            <button class="kanban-add-btn" type="button" data-kanban-action="add-item-state" data-kanban-state-id="${escHtml(stateId)}" title="Add item" aria-label="Add item"></button>
           </div>
           <div class="kanban-column__cards">
-            ${(column.items || []).length ? column.items.map(cardHtml).join('') : '<div class="kanban-empty">No cards in this state.</div>'}
+            ${items.length ? items.map(cardHtml).join('') : '<div class="kanban-empty">No cards in this state.</div>'}
           </div>
+          <button class="kanban-lane-width-handle" type="button" data-kanban-lane-width-handle data-kanban-state-id="${escHtml(stateId)}" title="Resize lane" aria-label="Resize ${escHtml(label)} lane" role="separator" aria-orientation="vertical"></button>
         </section>
-      `).join('')
+      `;
+      }).join('')
       : '<div class="kanban-empty">No Kanban states loaded.</div>';
+    restoreLaneWidths();
   }
 
   function detailRow(title, meta, body = '') {
@@ -498,13 +689,16 @@ const KanbanBoardPage = (() => {
     const pill = el('kanban-selection-pill');
     if (pill) pill.textContent = state.selection?.item?.item_id ? 'Selected' : 'None';
     if (!detail) return;
+    detail.innerHTML = selectionDetailHtml();
+  }
+
+  function selectionDetailHtml() {
     const item = state.selection?.item;
     if (!item) {
-      detail.innerHTML = '<div class="kanban-empty">Select a card to inspect state, rollups, and provenance.</div>';
-      return;
+      return '<div class="kanban-empty">Select a card to inspect state, rollups, and provenance.</div>';
     }
     const rollup = rollupFor(item);
-    detail.innerHTML = [
+    return [
       detailRow(item.title || item.item_id, `${stateLabel(item.state_id)} - ${priorityLabel(item.priority_id)}`, item.body_excerpt || ''),
       detailRow('Rollup', `${rollup.items?.total || 0} scoped items`, `${rollup.issues?.open || 0} open issues - ${rollup.todos?.open || 0} open todos`),
       detailRow('Vector', item.vector?.index_key || '', item.search?.metadata?.vector?.index || ''),
@@ -515,7 +709,11 @@ const KanbanBoardPage = (() => {
   function renderProvenance() {
     const target = el('kanban-provenance');
     if (!target) return;
-    target.innerHTML = [
+    target.innerHTML = provenanceHtml();
+  }
+
+  function provenanceHtml() {
+    return [
       detailRow('Board API', state.currentParentId ? `/api/v1/personal/work/items/${state.currentParentId}/board` : '/api/v1/personal/work/board', 'DB-canonical work_items'),
       detailRow('Config API', '/api/v1/personal/work/config', `${stateRows().length} states - ${priorityRows().length} priorities`),
       detailRow('FSM', state.cardFsm.state, state.cardFsm.lastEvent),
@@ -523,13 +721,74 @@ const KanbanBoardPage = (() => {
     ].join('');
   }
 
+  function embeddedSelectedHtml(options = {}) {
+    const head = options.modal
+      ? ''
+      : `<div class="calendar-section-head kanban-section-head">
+          <h3>Selected Card</h3>
+          <span class="kanban-pill">${escHtml(state.selection?.item?.item_id ? 'Selected' : 'None')}</span>
+        </div>`;
+    return `<section class="calendar-band kanban-band kanban-band--embedded-selected" aria-label="Selected Card">
+      ${head}
+      <div class="kanban-detail-list">${selectionDetailHtml()}</div>
+    </section>`;
+  }
+
+  function embeddedSearchHtml(host) {
+    const instance = host?.id === 'kanban-filter-inline-panel'
+      ? 'kanban-inline-search'
+      : (host?.closest?.('#ultrawide-sidecar-body') ? 'kanban-sidecar-search' : 'kanban-panel-search');
+    window.setTimeout(() => {
+      if (window.BlueprintsPersonalSearch?.init) window.BlueprintsPersonalSearch.init();
+    }, 0);
+    return `<div class="personal-search-strip personal-search-strip--embedded" data-personal-search-surface="kanban" data-personal-search-instance="${escHtml(instance)}"></div>`;
+  }
+
+  function embeddedItemFormHtml(prefix = 'kanban-inline-item') {
+    const safePrefix = String(prefix || 'kanban-inline-item').replace(/[^a-zA-Z0-9_-]/g, '-');
+    const valueFor = (key, fallback = '') => String(el(`${safePrefix}-${key}`)?.value || fallback);
+    return `
+      <section class="calendar-quick-event calendar-quick-event--embedded kanban-inline-item" aria-label="New Work Item">
+        <div class="kanban-modal-form kanban-inline-item__form">
+          <label class="kanban-field" for="${escHtml(safePrefix)}-title">
+            <span>Title</span>
+            <input id="${escHtml(safePrefix)}-title" type="text" maxlength="180" value="${escHtml(valueFor('title'))}" />
+          </label>
+          <label class="kanban-field" for="${escHtml(safePrefix)}-priority">
+            <span>Priority</span>
+            <select id="${escHtml(safePrefix)}-priority">${priorityOptions(valueFor('priority', 'medium'))}</select>
+          </label>
+          <label class="kanban-field" for="${escHtml(safePrefix)}-body">
+            <span>Description</span>
+            <textarea id="${escHtml(safePrefix)}-body" maxlength="4000">${escHtml(valueFor('body'))}</textarea>
+          </label>
+          <div class="kanban-modal-actions">
+            <span id="${escHtml(safePrefix)}-status" class="kanban-detail-meta"></span>
+            <button class="kanban-command-btn" type="button" data-kanban-action="submit-inline-item" data-kanban-item-prefix="${escHtml(safePrefix)}">Save Item</button>
+          </div>
+        </div>
+      </section>`;
+  }
+
+  function embeddedProvenanceHtml(options = {}) {
+    const head = options.modal
+      ? ''
+      : `<div class="calendar-section-head kanban-section-head"><h3>Provenance</h3></div>`;
+    return `<section class="calendar-band kanban-band kanban-band--embedded-provenance" aria-label="Provenance">
+      ${head}
+      <div class="kanban-detail-list">${provenanceHtml()}</div>
+    </section>`;
+  }
+
   function renderAll() {
     renderStatus();
     renderMeta();
+    renderContentPanels();
     renderMetrics();
     renderBoard();
     renderSelection();
     renderProvenance();
+    if (window.PersonalFilters?.renderAll) window.PersonalFilters.renderAll();
   }
 
   async function loadRollups(items) {
@@ -560,7 +819,7 @@ const KanbanBoardPage = (() => {
       const payload = await requestJson(path);
       state.board = payload.board || {};
       state.loaded = true;
-      await loadRollups(boardItems());
+      await loadRollups(rawBoardItems());
       renderAll();
       if (state.routeDetailItemId && !state.detailModalOpen && !options.skipRouteDetail) {
         await openItemDetail(state.routeDetailItemId);
@@ -713,6 +972,39 @@ const KanbanBoardPage = (() => {
       await load({ force: true });
       setSelection(resp.item?.item_id);
     });
+  }
+
+  async function submitInlineItem(prefix = 'kanban-inline-item') {
+    const titleInput = el(`${prefix}-title`);
+    const bodyInput = el(`${prefix}-body`);
+    const priorityInput = el(`${prefix}-priority`);
+    const status = el(`${prefix}-status`);
+    const cleanTitle = String(titleInput?.value || '').trim();
+    if (!cleanTitle) {
+      if (status) status.textContent = 'Title is required.';
+      return false;
+    }
+    if (status) status.textContent = 'Saving item...';
+    const resp = await requestJson('/api/v1/personal/work/items', {
+      method: 'POST',
+      body: JSON.stringify({
+        parent_item_id: state.currentParentId || null,
+        title: cleanTitle,
+        body: bodyInput?.value || '',
+        state_id: 'todo',
+        priority_id: priorityInput?.value || 'medium',
+        actor: 'blueprints-ui',
+        source_surface: 'kanban-inline-panel',
+        request_id: `ui-kanban-inline-item-${Date.now()}`,
+      }),
+    });
+    state.lastWrite = resp;
+    if (status) status.textContent = `Saved ${resp.item?.item_id || ''}`;
+    if (titleInput) titleInput.value = '';
+    if (bodyInput) bodyInput.value = '';
+    await load({ force: true });
+    if (resp.item?.item_id) setSelection(resp.item.item_id);
+    return true;
   }
 
   async function openLeafForm(kind, itemId) {
@@ -1578,6 +1870,66 @@ const KanbanBoardPage = (() => {
     return true;
   }
 
+  function registerSharedPanels() {
+    if (window.PersonalFilters?.registerSurface) {
+      window.PersonalFilters.registerSurface('kanban', {
+        getRecords: () => rawBoardItems().map(itemFilterRecord),
+        summaryPrefix: 'Filter:',
+        activePrefix: 'Filter',
+        emptyLabel: 'all cards',
+        clearLabel: 'All cards',
+        extraTabs: [
+          { id: 'selected', label: 'Selected' },
+          { id: 'search', label: 'Search' },
+          { id: 'new-item', label: 'New Item' },
+          { id: 'provenance', label: 'Provenance' },
+        ],
+        renderTab: (tab, host) => {
+          if (tab === 'selected') return embeddedSelectedHtml(host);
+          if (tab === 'search') return embeddedSearchHtml(host);
+          if (tab === 'new-item') return embeddedItemFormHtml(host?.id === 'kanban-filter-inline-panel' ? 'kanban-inline-item' : 'kanban-panel-item');
+          if (tab === 'provenance') return embeddedProvenanceHtml(host);
+          return '';
+        },
+        onChange: () => {
+          state.selection = null;
+          renderAll();
+        },
+      });
+      window.PersonalFilters.registerSurface('kanban-search', {
+        getRecords: () => rawBoardItems().map(itemFilterRecord),
+        summaryPrefix: 'Filter:',
+        activePrefix: 'Filter',
+        emptyLabel: 'all entries',
+        clearLabel: 'All entries',
+      });
+    }
+    if (window.BlueprintsPersonalSearch?.registerSurface) {
+      window.BlueprintsPersonalSearch.registerSurface('kanban', {
+        filterSurface: 'kanban-search',
+        rangeControls: true,
+      });
+    }
+  }
+
+  function hostIsVisible(node) {
+    if (!node || !node.isConnected) return false;
+    const style = window.getComputedStyle ? window.getComputedStyle(node) : null;
+    if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
+    const rect = typeof node.getBoundingClientRect === 'function' ? node.getBoundingClientRect() : null;
+    return !rect || (rect.width > 0 && rect.height > 0);
+  }
+
+  function newRootItem() {
+    const host = el('kanban-filter-inline-panel');
+    if (hostIsVisible(host) && window.PersonalFilters?.activateTab) {
+      window.PersonalFilters.activateTab('kanban', 'new-item', { host, visibleOnly: false });
+      window.requestAnimationFrame(() => el('kanban-inline-item-title')?.focus());
+      return true;
+    }
+    return openItemForm({ parentItemId: state.currentParentId });
+  }
+
   function handleCardAction(action, itemId, stateId = '') {
     if (action === 'add-child') return openItemForm({ parentItemId: itemId, stateId: 'todo', childOfSelection: true });
     if (action === 'add-issue') return openLeafForm('issue', itemId);
@@ -1603,19 +1955,74 @@ const KanbanBoardPage = (() => {
     return false;
   }
 
+  function startLaneResize(event, handle) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const column = handle.closest('.kanban-column');
+    if (!column) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const startX = event.clientX;
+    const startWidth = column.getBoundingClientRect().width || readLaneWidth(column.dataset.kanbanStateId) || 236;
+    handle.classList.add('is-grabbing');
+    document.body.classList.add('is-resizing-kanban-lane');
+    handle.setPointerCapture?.(event.pointerId);
+
+    const onMove = moveEvent => {
+      moveEvent.preventDefault();
+      applyLaneWidth(column, startWidth + (moveEvent.clientX - startX), false);
+    };
+    const onEnd = () => {
+      handle.classList.remove('is-grabbing');
+      document.body.classList.remove('is-resizing-kanban-lane');
+      applyLaneWidth(column, column.getBoundingClientRect().width, true);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onEnd);
+      window.removeEventListener('pointercancel', onEnd);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onEnd);
+    window.addEventListener('pointercancel', onEnd);
+  }
+
+  function handleLaneWidthKeydown(event, handle) {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return false;
+    const column = handle.closest('.kanban-column');
+    if (!column) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    const current = column.getBoundingClientRect().width || readLaneWidth(column.dataset.kanbanStateId) || 236;
+    if (event.key === 'ArrowLeft') applyLaneWidth(column, current - LANE_WIDTH_STEP, true);
+    if (event.key === 'ArrowRight') applyLaneWidth(column, current + LANE_WIDTH_STEP, true);
+    if (event.key === 'Home') applyLaneWidth(column, LANE_WIDTH_MIN, true);
+    if (event.key === 'End') applyLaneWidth(column, LANE_WIDTH_MAX, true);
+    return true;
+  }
+
   function bind() {
     const root = document.querySelector('[data-kanban-board]');
     if (!root || root.dataset.kanbanBound === '1') return;
     root.dataset.kanbanBound = '1';
+    registerSharedPanels();
+    root.addEventListener('pointerdown', event => {
+      const handle = event.target.closest('[data-kanban-lane-width-handle]');
+      if (handle) startLaneResize(event, handle);
+    });
     root.addEventListener('click', event => {
+      if (event.target.closest('[data-kanban-lane-width-handle]')) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       const button = event.target.closest('[data-kanban-action]');
       if (button) {
         const action = button.dataset.kanbanAction;
         if (action === 'refresh') load({ force: true });
         if (action === 'up-board') openUpBoard();
         if (action === 'root-board') openRootBoard();
-        if (action === 'new-root-item') openItemForm({ parentItemId: state.currentParentId });
+        if (action === 'new-root-item') newRootItem();
         if (action === 'add-item-state') handleCardAction('add-item-state', '', button.dataset.kanbanStateId || 'todo');
+        if (action === 'submit-inline-item') submitInlineItem(button.dataset.kanbanItemPrefix || 'kanban-inline-item');
         return;
       }
       const breadcrumb = event.target.closest('[data-kanban-breadcrumb]');
@@ -1642,6 +2049,8 @@ const KanbanBoardPage = (() => {
       if (card) setSelection(card.dataset.kanbanItemId, { openDetail: true });
     });
     root.addEventListener('keydown', event => {
+      const handle = event.target.closest('[data-kanban-lane-width-handle]');
+      if (handle && handleLaneWidthKeydown(event, handle)) return;
       const card = event.target.closest('[data-kanban-item-id]');
       if (!card) return;
       if (event.key === 'Enter' || event.key === ' ') {
@@ -1657,6 +2066,17 @@ const KanbanBoardPage = (() => {
         moveSelected(1);
       }
     });
+    document.addEventListener('click', event => {
+      const btn = event.target.closest('[data-kanban-action="submit-inline-item"]');
+      if (!btn || root.contains(btn)) return;
+      submitInlineItem(btn.dataset.kanbanItemPrefix || 'kanban-panel-item');
+    });
+    window.addEventListener('resize', scheduleLaneRestore, { passive: true });
+    window.addEventListener('orientationchange', scheduleLaneRestore, { passive: true });
+    document.addEventListener('bodyshadechange', scheduleLaneRestore);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', scheduleLaneRestore, { passive: true });
+    }
   }
 
   function snapshot() {
@@ -1708,7 +2128,7 @@ const KanbanBoardPage = (() => {
   return {
     load,
     refresh: () => load({ force: true }),
-    newRootItem: () => openItemForm({ parentItemId: state.currentParentId }),
+    newRootItem,
     openRootBoard,
     openUpBoard,
     openSelectedChildBoard: () => openChildBoard(),

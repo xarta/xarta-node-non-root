@@ -216,6 +216,43 @@ body.has-managed-scroll-tab .tab-panel--managed-scroll.active {
   opacity: 1 !important;
 }
 
+/* Local shade handles reuse the Body Shade visual language for page-internal
+   split panes, but intentionally do not use .body-shade-handle because the
+   shared body-shade controller binds that class as a page-level control. */
+.local-shade-handle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-height: 20px;
+  width: 100%;
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  opacity: .34;
+  transition: opacity .2s ease;
+  position: relative;
+  z-index: 2;
+}
+
+.local-shade-handle:hover,
+.local-shade-handle:focus-visible,
+.local-shade-handle.is-grabbing {
+  opacity: 1;
+  outline: none;
+}
+
+.local-shade-handle.is-grabbing {
+  cursor: ns-resize;
+}
+
+.local-shade-handle:hover .body-shade-grip,
+.local-shade-handle:focus-visible .body-shade-grip,
+.local-shade-handle.is-grabbing .body-shade-grip {
+  background: rgba(var(--hub-accent-rgb), 1);
+  width: 52px;
+}
+
 /* When shade is locked up, hide the menu zone so its stacked controls do not
    compete with the raised content area. Most profiles also hide the header;
    the S25 portrait installed-app path keeps the header visible so the shade

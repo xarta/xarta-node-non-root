@@ -3,13 +3,38 @@
 'use strict';
 
 const TodoPage = (() => {
+  const CONTENT_VIEW_STORAGE_KEY = 'blueprints.todo.contentView.v1';
+  const CONTENT_VIEW_IDS = ['tasks', 'search', 'new-task', 'sources', 'provenance'];
+  const CONTENT_VIEW_LABELS = {
+    tasks: 'Tasks',
+    search: 'Search',
+    'new-task': 'New task',
+    sources: 'Sources',
+    provenance: 'Provenance',
+  };
+
+  function normalizeContentView(value) {
+    const clean = String(value || '').trim();
+    return CONTENT_VIEW_IDS.includes(clean) ? clean : 'tasks';
+  }
+
+  function readStoredContentView() {
+    try {
+      return normalizeContentView(localStorage.getItem(CONTENT_VIEW_STORAGE_KEY));
+    } catch (_) {
+      return 'tasks';
+    }
+  }
+
   const state = {
     loaded: false,
     loading: false,
     data: null,
     error: '',
     mode: 'today',
+    contentView: readStoredContentView(),
     selection: null,
+    routeTaskRef: '',
     lastWrite: null,
   };
 
@@ -48,12 +73,96 @@ const TodoPage = (() => {
     return labels[mode] || 'Today';
   }
 
+  function contentViewLabel(view) {
+    return CONTENT_VIEW_LABELS[normalizeContentView(view)] || 'Tasks';
+  }
+
   function splitRefs(value) {
     return String(value || '')
       .split(/[,\s]+/)
       .map(item => item.trim())
       .filter(Boolean)
       .filter((item, index, array) => array.indexOf(item) === index);
+  }
+
+  function routeParams() {
+    try {
+      return new URLSearchParams(window.location.search || '');
+    } catch (_) {
+      return new URLSearchParams('');
+    }
+  }
+
+  function cleanTaskRef(value) {
+    return String(value || '').trim().replace(/[^a-zA-Z0-9_.:-]+/g, '-').slice(0, 180);
+  }
+
+  function routeTaskRef() {
+    const params = routeParams();
+    return cleanTaskRef(
+      params.get('todo_task_id')
+      || params.get('todo_ref')
+      || params.get('todo_event_id')
+      || params.get('task_id')
+      || ''
+    );
+  }
+
+  function writeRouteTaskRef(taskRef, options = {}) {
+    if (!window.history || !window.location) return;
+    const clean = cleanTaskRef(taskRef);
+    const url = new URL(window.location.href);
+    url.searchParams.set('group', 'dave');
+    url.searchParams.set('tab', 'todo');
+    ['todo_task_id', 'todo_ref', 'todo_event_id', 'task_id'].forEach(key => {
+      url.searchParams.delete(key);
+    });
+    if (clean) url.searchParams.set('todo_task_id', clean);
+    const method = options.push ? 'pushState' : 'replaceState';
+    window.history[method](window.history.state, '', url);
+  }
+
+  function taskRouteUrl(taskRef) {
+    const clean = cleanTaskRef(taskRef);
+    if (!clean || !window.location) return '';
+    const url = new URL(window.location.href);
+    url.searchParams.set('group', 'dave');
+    url.searchParams.set('tab', 'todo');
+    url.searchParams.set('todo_task_id', clean);
+    return `${url.pathname}${url.search}${url.hash || ''}`;
+  }
+
+  function cleanWorkRef(value) {
+    return String(value || '').trim().replace(/[^a-zA-Z0-9_.:-]+/g, '-').slice(0, 180);
+  }
+
+  function workRouteUrl(workRef) {
+    const clean = cleanWorkRef(workRef);
+    if (!clean || !window.location) return '';
+    if (window.BlueprintsKanbanBoardPage?.itemRouteUrl) return window.BlueprintsKanbanBoardPage.itemRouteUrl(clean);
+    const url = new URL(window.location.href);
+    url.searchParams.set('group', 'kanban');
+    url.searchParams.set('tab', 'kanban');
+    url.searchParams.set('detail_item_id', clean);
+    return `${url.pathname}${url.search}${url.hash || ''}`;
+  }
+
+  function workLinkHtml(workRef) {
+    const clean = cleanWorkRef(workRef);
+    const href = workRouteUrl(clean);
+    if (!clean || !href) return '';
+    return `<a class="todo-related-link todo-related-link--work" href="${escHtml(href)}" data-todo-work-link="${escHtml(clean)}">${escHtml(clean)}</a>`;
+  }
+
+  function openWorkLink(workRef) {
+    const clean = cleanWorkRef(workRef);
+    if (!clean) return false;
+    if (typeof switchGroup === 'function') switchGroup('kanban');
+    if (typeof switchTab === 'function') switchTab('kanban');
+    if (window.KanbanMenuConfig?.updateActiveTab) window.KanbanMenuConfig.updateActiveTab('kanban');
+    if (window.BlueprintsKanbanBoardPage?.openItemById) return window.BlueprintsKanbanBoardPage.openItemById(clean);
+    window.location.href = workRouteUrl(clean);
+    return true;
   }
 
   function sourceType(task) {
@@ -68,8 +177,58 @@ const TodoPage = (() => {
     return sourceAuthority(task) === 'task' && sourceType(task) === 'manual-task';
   }
 
-  function taskRows() {
+  function rawTaskRows() {
     return state.data?.items || [];
+  }
+
+  function taskFilterRecord(row) {
+    const tags = [
+      'task',
+      'tasks',
+      row?.mode,
+      row?.status,
+      sourceType(row),
+      sourceAuthority(row),
+      ...(row?.related?.work_items?.length ? ['work'] : []),
+    ].filter(Boolean);
+    return {
+      ...row,
+      kind: 'task',
+      tags,
+    };
+  }
+
+  function taskRows() {
+    const rows = rawTaskRows();
+    if (!window.PersonalFilters?.matchesRecord) return rows;
+    return rows.filter(row => window.PersonalFilters.matchesRecord(taskFilterRecord(row), 'todo'));
+  }
+
+  function taskCandidateRefs(row) {
+    const refs = [
+      row?.task_id,
+      row?.event_id,
+      row?.source?.ref,
+      ...(row?.related?.tasks || []),
+    ].filter(Boolean).map(value => String(value).trim()).filter(Boolean);
+    if (row?.task_id) refs.push(`personal_time_tasks:${row.task_id}`);
+    if (row?.event_id) refs.push(`personal_events:${row.event_id}`);
+    return refs.filter((value, index, array) => array.indexOf(value) === index);
+  }
+
+  function taskMatchesRef(row, taskRef) {
+    const clean = cleanTaskRef(taskRef);
+    if (!clean) return false;
+    const candidates = taskCandidateRefs(row).flatMap(value => {
+      const text = String(value || '').trim();
+      const tail = text.includes(':') ? text.split(':').pop() : '';
+      return tail ? [text, tail] : [text];
+    });
+    return candidates.some(value => value === clean);
+  }
+
+  function findTaskIndexByRef(taskRef) {
+    return taskRows().findIndex(row => taskMatchesRef(row, taskRef));
   }
 
   function taskLabel(row) {
@@ -129,6 +288,41 @@ const TodoPage = (() => {
     });
   }
 
+  function scrollSelectionIntoView() {
+    if (!state.selection) return;
+    window.requestAnimationFrame(() => {
+      const row = document.querySelector(`[data-todo-index="${state.selection.index}"]`);
+      row?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    });
+  }
+
+  function selectTaskRef(taskRef) {
+    const index = findTaskIndexByRef(taskRef);
+    if (index < 0) return false;
+    setSelection(index);
+    scrollSelectionIntoView();
+    return true;
+  }
+
+  async function applyRouteTaskSelection(options = {}) {
+    const clean = cleanTaskRef(state.routeTaskRef || routeTaskRef());
+    if (!clean) return false;
+    state.routeTaskRef = clean;
+    if (selectTaskRef(clean)) return true;
+    if (options.searchModes === false) return false;
+    for (const mode of modes) {
+      if (mode === state.mode) continue;
+      state.mode = mode;
+      state.loaded = false;
+      await load({ force: true, skipRouteSearch: true });
+      if (selectTaskRef(clean)) {
+        renderMeta();
+        return true;
+      }
+    }
+    return false;
+  }
+
   function renderStatus() {
     const strip = el('todo-status-strip');
     if (!strip) return;
@@ -147,12 +341,33 @@ const TodoPage = (() => {
     if (meta) meta.textContent = `${modeLabel(state.mode)} - ${rows.length} visible task${rows.length === 1 ? '' : 's'}`;
     const filter = el('todo-filter-strip');
     if (filter) {
-      const selected = state.selection ? ` - selected ${state.selection.label}` : '';
-      filter.textContent = `Mode: ${modeLabel(state.mode)}${selected}`;
+      filter.innerHTML = window.PersonalFilters?.summaryHtml
+        ? window.PersonalFilters.summaryHtml('todo', { prefix: 'Filter:', emptyLabel: 'all tasks' })
+        : 'Filter: all tasks';
     }
     document.querySelectorAll('[data-todo-mode-button]').forEach(btn => {
       btn.dataset.active = btn.dataset.todoModeButton === state.mode ? 'true' : 'false';
     });
+  }
+
+  function renderContentPanels() {
+    document.querySelectorAll('[data-todo-content-view]').forEach(panel => {
+      panel.hidden = panel.dataset.todoContentView !== state.contentView;
+    });
+  }
+
+  function setContentView(view, options = {}) {
+    state.contentView = normalizeContentView(view);
+    try {
+      localStorage.setItem(CONTENT_VIEW_STORAGE_KEY, state.contentView);
+    } catch (_) {
+      // Browser-local preferences are optional.
+    }
+    if (options.render !== false) {
+      renderContentPanels();
+      renderMeta();
+    }
+    return true;
   }
 
   function renderMetrics() {
@@ -179,7 +394,7 @@ const TodoPage = (() => {
           <div class="todo-task-title">${escHtml(taskLabel(row))}</div>
           <div class="todo-task-meta">${escHtml(taskTime(row) || 'no due time')} - ${escHtml(sourceType(row) || 'unknown')} - ${escHtml(row.mode || '')}</div>
           <div class="todo-task-meta">${escHtml(row.body_excerpt || '')}</div>
-          ${refs.length ? `<div class="todo-task-meta">work: ${escHtml(refs.join(', '))}</div>` : ''}
+          ${refs.length ? `<div class="todo-task-meta todo-task-meta--links">work ${refs.map(workLinkHtml).join(' ')}</div>` : ''}
         </div>
         <span class="todo-task-status todo-task-status--${escHtml(status)}">${escHtml(status)}</span>
         <span class="todo-task-source">${escHtml(row.source?.authority || 'source')}</span>
@@ -218,12 +433,15 @@ const TodoPage = (() => {
   function renderSelection() {
     const detail = el('todo-selection-detail');
     if (!detail) return;
+    detail.innerHTML = selectionDetailHtml();
+  }
+
+  function selectionDetailHtml() {
     const row = state.selection?.row;
     if (!row) {
-      detail.innerHTML = '<div class="todo-empty">Select a task to inspect actions and provenance.</div>';
-      return;
+      return '<div class="todo-empty">Select a task to inspect actions and provenance.</div>';
     }
-    detail.innerHTML = [
+    return [
       detailRow(row.title || row.task_id, `${row.status || ''} - ${row.mode || ''}`, row.body_excerpt || ''),
       detailRow('Due', taskTime(row) || 'none', row.timezone || ''),
       detailRow('Source', `${sourceType(row)} - ${row.source?.authority || ''}`, row.source?.ref || ''),
@@ -234,9 +452,13 @@ const TodoPage = (() => {
   function renderSources() {
     const target = el('todo-source-list');
     if (!target) return;
+    target.innerHTML = sourcesHtml();
+  }
+
+  function sourcesHtml() {
     const counts = state.data?.counts?.sources || {};
     const rows = Object.entries(counts).sort((a, b) => a[0].localeCompare(b[0]));
-    target.innerHTML = rows.length
+    return rows.length
       ? rows.map(([source, count]) => detailRow(source, `${count} task${count === 1 ? '' : 's'}`)).join('')
       : '<div class="todo-empty">No source counts yet.</div>';
   }
@@ -244,12 +466,112 @@ const TodoPage = (() => {
   function renderProvenance() {
     const target = el('todo-provenance');
     if (!target) return;
-    target.innerHTML = [
+    target.innerHTML = provenanceHtml();
+  }
+
+  function provenanceHtml() {
+    return [
       detailRow('Task API', `/api/v1/personal/tasks?mode=${state.mode}`, 'shared task response'),
       detailRow('Write API', '/api/v1/personal/tasks', 'manual-task source with durable files'),
       detailRow('Calendar Projection', 'personal_events kind=task', 'due tasks render in Calendar'),
       detailRow('Mode', modeLabel(state.mode), `${taskRows().length} visible rows`),
     ].join('');
+  }
+
+  function embeddedSelectedHtml(options = {}) {
+    const head = options.modal
+      ? ''
+      : `<div class="calendar-section-head todo-section-head">
+          <h3>Selected Task</h3>
+          <span class="todo-pill">${escHtml(state.selection ? 'Selected' : 'None')}</span>
+        </div>`;
+    return `<section class="calendar-band todo-band todo-band--embedded-selected" aria-label="Selected Task">
+      ${head}
+      <div class="todo-detail-list">${selectionDetailHtml()}</div>
+    </section>`;
+  }
+
+  function embeddedSourcesHtml(options = {}) {
+    const head = options.modal
+      ? ''
+      : `<div class="calendar-section-head todo-section-head"><h3>Sources</h3></div>`;
+    return `<section class="calendar-band todo-band todo-band--embedded-sources" aria-label="Sources">
+      ${head}
+      <div class="todo-detail-list">${sourcesHtml()}</div>
+    </section>`;
+  }
+
+  function embeddedProvenanceHtml(options = {}) {
+    const head = options.modal
+      ? ''
+      : `<div class="calendar-section-head todo-section-head"><h3>Provenance</h3></div>`;
+    return `<section class="calendar-band todo-band todo-band--embedded-provenance" aria-label="Provenance">
+      ${head}
+      <div class="todo-detail-list">${provenanceHtml()}</div>
+    </section>`;
+  }
+
+  function embeddedSearchHtml(host) {
+    const instance = host?.id === 'todo-filter-inline-panel'
+      ? 'todo-inline-search'
+      : (host?.closest?.('#ultrawide-sidecar-body') ? 'todo-sidecar-search' : 'todo-panel-search');
+    window.setTimeout(() => {
+      if (window.BlueprintsPersonalSearch?.init) window.BlueprintsPersonalSearch.init();
+    }, 0);
+    return `<div class="personal-search-strip personal-search-strip--embedded" data-personal-search-surface="todo" data-personal-search-instance="${escHtml(instance)}"></div>`;
+  }
+
+  function embeddedTaskFormHtml(prefix = 'todo-inline-task', options = {}) {
+    const safePrefix = String(prefix || 'todo-inline-task').replace(/[^a-zA-Z0-9_-]/g, '-');
+    const valueFor = (key, fallback = '') => String(el(`${safePrefix}-${key}`)?.value || fallback);
+    const actionAttr = options.modal ? 'data-todo-modal-action="submit-task"' : 'data-todo-action="submit-task"';
+    return `
+      <section class="calendar-quick-event calendar-quick-event--embedded todo-quick-task todo-quick-task--embedded" aria-label="New Task">
+        <div class="todo-form-grid">
+          <label class="todo-field todo-field--wide" for="${escHtml(safePrefix)}-title">
+            <span>Title</span>
+            <input id="${escHtml(safePrefix)}-title" type="text" maxlength="180" autocomplete="off" value="${escHtml(valueFor('title'))}" />
+          </label>
+          <label class="todo-field" for="${escHtml(safePrefix)}-date">
+            <span>Due</span>
+            <input id="${escHtml(safePrefix)}-date" type="date" value="${escHtml(valueFor('date', localDateString(new Date())))}" />
+          </label>
+          <label class="todo-field" for="${escHtml(safePrefix)}-time">
+            <span>Time</span>
+            <input id="${escHtml(safePrefix)}-time" type="time" value="${escHtml(valueFor('time'))}" />
+          </label>
+          <label class="todo-field" for="${escHtml(safePrefix)}-mode">
+            <span>Mode</span>
+            <select id="${escHtml(safePrefix)}-mode">
+              <option value="personal" ${valueFor('mode', state.mode) === 'personal' ? 'selected' : ''}>Personal</option>
+              <option value="work" ${valueFor('mode', state.mode) === 'work' ? 'selected' : ''}>Work</option>
+              <option value="review" ${valueFor('mode', state.mode) === 'review' ? 'selected' : ''}>Review</option>
+            </select>
+          </label>
+          <label class="todo-field" for="${escHtml(safePrefix)}-priority">
+            <span>Priority</span>
+            <select id="${escHtml(safePrefix)}-priority">
+              <option value="" ${valueFor('priority') ? '' : 'selected'}>Normal</option>
+              <option value="high" ${valueFor('priority') === 'high' ? 'selected' : ''}>High</option>
+              <option value="medium" ${valueFor('priority') === 'medium' ? 'selected' : ''}>Medium</option>
+              <option value="low" ${valueFor('priority') === 'low' ? 'selected' : ''}>Low</option>
+            </select>
+          </label>
+          <label class="todo-field todo-field--wide" for="${escHtml(safePrefix)}-body">
+            <span>Notes</span>
+            <textarea id="${escHtml(safePrefix)}-body" rows="2" maxlength="2000">${escHtml(valueFor('body'))}</textarea>
+          </label>
+          <label class="todo-field todo-field--wide" for="${escHtml(safePrefix)}-work">
+            <span>Work refs</span>
+            <input id="${escHtml(safePrefix)}-work" type="text" autocomplete="off" value="${escHtml(valueFor('work'))}" />
+          </label>
+        </div>
+        <div class="todo-quick-task__footer">
+          <span id="${escHtml(safePrefix)}-status" class="todo-entry-status"></span>
+          <button class="todo-command-btn" type="button" ${actionAttr} data-todo-task-prefix="${escHtml(safePrefix)}">Save Task</button>
+        </div>
+      </section>
+    `;
   }
 
   function renderError(message) {
@@ -267,20 +589,39 @@ const TodoPage = (() => {
   function render() {
     renderStatus();
     renderMeta();
+    renderContentPanels();
     renderMetrics();
     renderTasks();
     renderSelection();
     renderSources();
     renderProvenance();
     applySelectionStyles();
+    if (window.PersonalFilters?.renderAll) window.PersonalFilters.renderAll();
     if (window.BodyShade && typeof window.BodyShade.scheduleSizeFillTable === 'function') {
       window.BodyShade.scheduleSizeFillTable();
     }
   }
 
   async function load(options = {}) {
-    if (state.loading) return state.data;
-    if (state.loaded && !options.force) return state.data;
+    if (state.loading) {
+      await new Promise(resolve => {
+        let attempts = 0;
+        const poll = () => {
+          attempts += 1;
+          if (!state.loading || attempts > 100) resolve();
+          else window.setTimeout(poll, 50);
+        };
+        poll();
+      });
+      if (state.loaded && !options.force) {
+        if (!options.skipRouteSearch) await applyRouteTaskSelection({ searchModes: true });
+        return state.data;
+      }
+    }
+    if (state.loaded && !options.force) {
+      if (!options.skipRouteSearch) await applyRouteTaskSelection({ searchModes: true });
+      return state.data;
+    }
     state.loading = true;
     state.error = '';
     try {
@@ -293,6 +634,10 @@ const TodoPage = (() => {
       state.loaded = true;
       state.selection = null;
       render();
+      if (!options.skipRouteSearch) {
+        state.loading = false;
+        await applyRouteTaskSelection({ searchModes: true });
+      }
       return data;
     } catch (error) {
       state.error = error.message || String(error);
@@ -305,8 +650,11 @@ const TodoPage = (() => {
 
   function setMode(mode) {
     state.mode = modes.includes(mode) ? mode : 'today';
+    setContentView('tasks', { render: false });
     state.loaded = false;
     state.selection = null;
+    state.routeTaskRef = '';
+    writeRouteTaskRef('');
     return load({ force: true });
   }
 
@@ -331,10 +679,10 @@ const TodoPage = (() => {
     return true;
   }
 
-  function setQuickDefaults() {
-    const date = el('todo-task-date');
+  function setQuickDefaults(prefix = 'todo-inline-task') {
+    const date = el(`${prefix}-date`);
     if (date && !date.value) date.value = localDateString(new Date());
-    const mode = el('todo-task-mode');
+    const mode = el(`${prefix}-mode`);
     if (mode && ['personal', 'work', 'review'].includes(state.mode)) mode.value = state.mode;
   }
 
@@ -353,9 +701,9 @@ const TodoPage = (() => {
     };
   }
 
-  async function submitTask() {
-    const status = el('todo-entry-status');
-    const payload = taskPayloadFromForm('todo-task');
+  async function submitTask(prefix = 'todo-inline-task') {
+    const status = el(`${prefix}-status`) || el('todo-entry-status');
+    const payload = taskPayloadFromForm(prefix);
     if (!payload.title) {
       if (status) status.textContent = 'Task title is required.';
       return false;
@@ -373,14 +721,15 @@ const TodoPage = (() => {
       return false;
     }
     ['title', 'body', 'time', 'work'].forEach(key => {
-      const field = el(`todo-task-${key}`);
+      const field = el(`${prefix}-${key}`);
       if (field) field.value = '';
     });
     if (status) status.textContent = `Saved ${data.task?.task_id || ''}`;
     state.lastWrite = data;
     state.loaded = false;
     await load({ force: true });
-    setQuickDefaults();
+    setQuickDefaults(prefix);
+    if (prefix === 'todo-modal-task') closeActionModal();
     return true;
   }
 
@@ -600,12 +949,77 @@ const TodoPage = (() => {
     ]), 'No write command was run.');
   }
 
+  async function openTask(taskRef) {
+    const clean = cleanTaskRef(taskRef);
+    if (!clean) return false;
+    state.routeTaskRef = clean;
+    setContentView('tasks', { render: false });
+    writeRouteTaskRef(clean, { push: true });
+    if (typeof switchGroup === 'function') switchGroup('dave');
+    if (typeof switchTab === 'function') switchTab('todo');
+    if (window.DaveMenuConfig?.updateActiveTab) window.DaveMenuConfig.updateActiveTab('todo');
+    await load({ force: !state.loaded });
+    return applyRouteTaskSelection({ searchModes: true });
+  }
+
+  function registerSharedPanels() {
+    if (window.PersonalFilters?.registerSurface) {
+      window.PersonalFilters.registerSurface('todo', {
+        getRecords: () => rawTaskRows().map(taskFilterRecord),
+        summaryPrefix: 'Filter:',
+        activePrefix: 'Filter',
+        emptyLabel: 'all tasks',
+        clearLabel: 'All tasks',
+        extraTabs: [
+          { id: 'selected', label: 'Selected' },
+          { id: 'search', label: 'Search' },
+          { id: 'new-task', label: 'New Task' },
+          { id: 'sources', label: 'Sources' },
+          { id: 'provenance', label: 'Provenance' },
+        ],
+        renderTab: (tab, host) => {
+          if (tab === 'selected') return embeddedSelectedHtml(host);
+          if (tab === 'search') return embeddedSearchHtml(host);
+          if (tab === 'new-task') return embeddedTaskFormHtml(host?.id === 'todo-filter-inline-panel' ? 'todo-inline-task' : 'todo-panel-task');
+          if (tab === 'sources') return embeddedSourcesHtml(host);
+          if (tab === 'provenance') return embeddedProvenanceHtml(host);
+          return '';
+        },
+        onChange: () => {
+          state.selection = null;
+          render();
+        },
+      });
+      window.PersonalFilters.registerSurface('todo-search', {
+        getRecords: () => rawTaskRows().map(taskFilterRecord),
+        summaryPrefix: 'Filter:',
+        activePrefix: 'Filter',
+        emptyLabel: 'all entries',
+        clearLabel: 'All entries',
+      });
+    }
+    if (window.BlueprintsPersonalSearch?.registerSurface) {
+      window.BlueprintsPersonalSearch.registerSurface('todo', {
+        filterSurface: 'todo-search',
+        rangeControls: true,
+      });
+    }
+  }
+
   function bind() {
     const root = document.querySelector('[data-todo-page]');
     if (!root || root.dataset.todoBound === '1') return;
     root.dataset.todoBound = '1';
+    registerSharedPanels();
     setQuickDefaults();
     root.addEventListener('click', event => {
+      const workLink = event.target.closest('[data-todo-work-link]');
+      if (workLink) {
+        event.preventDefault();
+        event.stopPropagation();
+        openWorkLink(workLink.dataset.todoWorkLink);
+        return;
+      }
       const rowAction = event.target.closest('[data-todo-row-action]');
       if (rowAction) {
         event.stopPropagation();
@@ -622,9 +1036,13 @@ const TodoPage = (() => {
       const btn = event.target.closest('[data-todo-action]');
       if (!btn) return;
       const action = btn.dataset.todoAction;
+      if (action && action.startsWith('view-')) {
+        setContentView(action.slice(5));
+        return;
+      }
       if (action === 'new-task') newTask();
       if (action === 'refresh') load({ force: true });
-      if (action === 'submit-task') submitTask();
+      if (action === 'submit-task') submitTask(btn.dataset.todoTaskPrefix || 'todo-inline-task');
     });
     root.addEventListener('keydown', event => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -632,6 +1050,11 @@ const TodoPage = (() => {
       if (!selectable) return;
       event.preventDefault();
       setSelection(selectable.dataset.todoIndex);
+    });
+    document.addEventListener('click', event => {
+      const btn = event.target.closest('[data-todo-action="submit-task"]');
+      if (!btn || root.contains(btn)) return;
+      submitTask(btn.dataset.todoTaskPrefix || 'todo-panel-task');
     });
     ['todo-action-modal-close', 'todo-action-modal-footer-close'].forEach(id => {
       const btn = el(id);
@@ -644,14 +1067,30 @@ const TodoPage = (() => {
         if (!btn) return;
         if (btn.dataset.todoModalAction === 'submit-edit') submitEdit();
         if (btn.dataset.todoModalAction === 'submit-work-link') submitWorkLink();
+        if (btn.dataset.todoModalAction === 'submit-task') submitTask(btn.dataset.todoTaskPrefix || 'todo-modal-task');
       });
     }
   }
 
+  function hostIsVisible(node) {
+    if (!node || !node.isConnected) return false;
+    const style = window.getComputedStyle ? window.getComputedStyle(node) : null;
+    if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
+    const rect = typeof node.getBoundingClientRect === 'function' ? node.getBoundingClientRect() : null;
+    return !rect || (rect.width > 0 && rect.height > 0);
+  }
+
   function newTask() {
-    setQuickDefaults();
-    const field = el('todo-task-title');
-    if (field) field.focus();
+    const host = el('todo-filter-inline-panel');
+    if (hostIsVisible(host) && window.PersonalFilters?.activateTab) {
+      window.PersonalFilters.activateTab('todo', 'new-task', { host, visibleOnly: false });
+      setQuickDefaults('todo-inline-task');
+      window.requestAnimationFrame(() => el('todo-inline-task-title')?.focus());
+      return true;
+    }
+    showActionModal('New Task', embeddedTaskFormHtml('todo-modal-task', { modal: true }));
+    setQuickDefaults('todo-modal-task');
+    window.requestAnimationFrame(() => el('todo-modal-task-title')?.focus());
     return true;
   }
 
@@ -662,6 +1101,7 @@ const TodoPage = (() => {
       loading: state.loading,
       status: state.error ? 'error' : (state.loaded ? 'ready' : ''),
       mode: state.mode,
+      content_view: state.contentView,
       task_count: rows.length,
       total_count: state.data?.counts?.total || rows.length,
       open_count: rows.filter(row => row.status === 'open').length,
@@ -681,6 +1121,11 @@ const TodoPage = (() => {
     load,
     refresh: () => load({ force: true }),
     newTask,
+    setContentView,
+    showTasks: () => setContentView('tasks'),
+    showSearch: () => setContentView('search'),
+    showSources: () => setContentView('sources'),
+    showProvenance: () => setContentView('provenance'),
     submitTask,
     modeToday: () => setMode('today'),
     modePersonal: () => setMode('personal'),
@@ -696,6 +1141,8 @@ const TodoPage = (() => {
     promoteToWork: linkWorkItem,
     explainSelection,
     safeChecks,
+    openTask,
+    taskRouteUrl,
     snapshot,
   };
 })();
@@ -706,6 +1153,10 @@ if (typeof DaveMenuConfig !== 'undefined') {
   DaveMenuConfig.registerFunctions({
     'todo.refresh': () => TodoPage.refresh(),
     'todo.newTask': () => TodoPage.newTask(),
+    'todo.showTasks': () => TodoPage.showTasks(),
+    'todo.showSearch': () => TodoPage.showSearch(),
+    'todo.showSources': () => TodoPage.showSources(),
+    'todo.showProvenance': () => TodoPage.showProvenance(),
     'todo.modeToday': () => TodoPage.modeToday(),
     'todo.modePersonal': () => TodoPage.modePersonal(),
     'todo.modeWork': () => TodoPage.modeWork(),

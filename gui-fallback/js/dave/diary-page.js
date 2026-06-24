@@ -396,6 +396,46 @@ const DiaryPage = (() => {
     return ['todo', 'task', 'reminder'].includes(kind) || relatedTasks.length > 0;
   }
 
+  function cleanTodoRef(value) {
+    return String(value || '').trim().replace(/[^a-zA-Z0-9_.:-]+/g, '-').slice(0, 180);
+  }
+
+  function todoRefForEvent(event) {
+    if (!isTaskLike(event)) return '';
+    const refs = [
+      ...(event?.related?.tasks || []),
+      event?.source?.ref,
+      event?.event_id,
+    ];
+    return cleanTodoRef(refs.find(Boolean) || '');
+  }
+
+  function todoRouteUrl(taskRef) {
+    const clean = cleanTodoRef(taskRef);
+    if (!clean || !window.location) return '';
+    if (window.BlueprintsTodoPage?.taskRouteUrl) return window.BlueprintsTodoPage.taskRouteUrl(clean);
+    const url = new URL(window.location.href);
+    url.searchParams.set('group', 'dave');
+    url.searchParams.set('tab', 'todo');
+    url.searchParams.set('todo_task_id', clean);
+    return `${url.pathname}${url.search}${url.hash || ''}`;
+  }
+
+  function todoLinkHtml(event) {
+    const taskRef = todoRefForEvent(event);
+    const href = todoRouteUrl(taskRef);
+    if (!taskRef || !href) return '';
+    return `<a class="personal-related-link personal-related-link--todo" href="${escHtml(href)}" data-personal-todo-link="${escHtml(taskRef)}">ToDo</a>`;
+  }
+
+  function openTodoLink(taskRef) {
+    const clean = cleanTodoRef(taskRef);
+    if (!clean) return false;
+    if (window.BlueprintsTodoPage?.openTask) return window.BlueprintsTodoPage.openTask(clean);
+    window.location.href = todoRouteUrl(clean);
+    return true;
+  }
+
   function isWorkLike(event) {
     const relatedWork = event?.related?.work_items || [];
     return sourceType(event) === 'work-management' || relatedWork.length > 0;
@@ -844,13 +884,14 @@ const DiaryPage = (() => {
     const source = sourceType(event) || event.kind || 'source';
     const datePart = state.view !== 'day' ? `${monthLabel(eventStartDate(event), { weekday: 'short', day: '2-digit', month: 'short' })} - ` : '';
     const ref = event.source?.ref || (Array.isArray(event.file_refs) ? event.file_refs[0] : '') || event.event_id || '';
+    const todoLink = todoLinkHtml(event);
     return `
       <div class="calendar-agenda-row diary-agenda-row calendar-agenda-row--${escHtml(eventCategory(event))}" ${selectionAttrs(type, index)} data-diary-entry-id="${escHtml(entryIdentity(event))}">
         <div class="calendar-agenda-time diary-agenda-time">${escHtml(eventTime(event))}</div>
         <div class="calendar-agenda-main diary-agenda-main">
           <div class="calendar-agenda-title diary-agenda-title">${escHtml(event.title || event.kind || event.event_id)}</div>
           <div class="calendar-agenda-meta diary-agenda-meta">${escHtml(datePart + (event.body_excerpt || event.status || ''))}</div>
-          <div class="calendar-agenda-meta diary-agenda-meta">${escHtml(ref)}</div>
+          <div class="calendar-agenda-meta diary-agenda-meta calendar-agenda-meta--links">${escHtml(ref)}${todoLink}</div>
         </div>
         <span class="calendar-agenda-source diary-agenda-source">${escHtml(source)}</span>
       </div>
@@ -1643,7 +1684,10 @@ const DiaryPage = (() => {
         </div>
         <div class="calendar-quick-event__footer diary-quick-entry__footer">
           <span id="${escHtml(safePrefix)}-status" class="calendar-entry-status diary-entry-status">${formDisabled ? escHtml(editability.reason) : ''}</span>
-          <button class="calendar-command-btn diary-command-btn" type="button" data-diary-action="${escHtml(action)}" data-diary-entry-prefix="${escHtml(safePrefix)}"${mode === 'edit' && (!eventId || formDisabled) ? ' disabled' : ''}>Save Entry</button>
+          <div class="calendar-quick-event__actions diary-quick-entry__actions">
+            ${mode === 'edit' ? `<button class="calendar-command-btn diary-command-btn calendar-command-btn--danger diary-command-btn--danger" type="button" data-diary-action="delete-entry" data-diary-entry-prefix="${escHtml(safePrefix)}"${!eventId || formDisabled ? ' disabled' : ''}>Delete</button>` : ''}
+            <button class="calendar-command-btn diary-command-btn" type="button" data-diary-action="${escHtml(action)}" data-diary-entry-prefix="${escHtml(safePrefix)}"${mode === 'edit' && (!eventId || formDisabled) ? ' disabled' : ''}>Save Entry</button>
+          </div>
         </div>
       </section>
     `;
@@ -1919,7 +1963,7 @@ const DiaryPage = (() => {
     if (options.editing && editability.editable) {
       return `
         <section class="calendar-entry-preview diary-entry-preview" data-diary-entry-preview-id="${escHtml(entryIdentity(event))}">
-          <div class="calendar-entry-preview__meta">${escHtml(entryPreviewMeta(event))}</div>
+          <div class="calendar-entry-preview__meta">${escHtml(entryPreviewMeta(event))}${todoLinkHtml(event)}</div>
           <div class="calendar-entry-preview-editor">
             <div class="calendar-field calendar-field--wide calendar-field--notes calendar-markdown-field calendar-entry-preview-editor__field">
               <div class="calendar-field__label-row">
@@ -1939,7 +1983,7 @@ const DiaryPage = (() => {
     }
     return `
       <section class="calendar-entry-preview diary-entry-preview" data-diary-entry-preview-id="${escHtml(entryIdentity(event))}">
-        <div class="calendar-entry-preview__meta">${escHtml(entryPreviewMeta(event))}</div>
+        <div class="calendar-entry-preview__meta">${escHtml(entryPreviewMeta(event))}${todoLinkHtml(event)}</div>
         <div class="calendar-markdown-preview calendar-entry-preview__body">${renderMarkdown(body)}</div>
         ${editability.editable ? '' : `<p class="calendar-entry-preview__notice">${escHtml(editability.reason)}</p>`}
       </section>
@@ -2447,6 +2491,56 @@ const DiaryPage = (() => {
     return true;
   }
 
+  async function deleteSelectedEntry(prefix = 'diary-edit-entry') {
+    const status = el(`${prefix}-status`);
+    const event = selectedEntry();
+    const editability = entryEditability(event);
+    if (!event?.event_id) {
+      if (status) status.textContent = 'Select an entry first.';
+      clearSelectedEntry();
+      return false;
+    }
+    if (!editability.editable) {
+      if (status) status.textContent = editability.reason;
+      return false;
+    }
+    const label = editability.route === 'calendar' ? 'Calendar Entry' : 'Diary Entry';
+    const confirmed = await HubDialogs.confirmDelete({
+      title: `Delete ${label}`,
+      message: `Delete "${event.title || event.event_id}"?`,
+      detail: 'This removes the manually owned entry from shared personal events.',
+      confirmText: 'Delete Entry',
+    });
+    if (!confirmed) return false;
+    if (status) status.textContent = 'Deleting entry...';
+    const route = editability.route === 'calendar'
+      ? `/api/v1/personal/calendar/events/${encodeURIComponent(event.event_id)}`
+      : `/api/v1/personal/diary-day/entries/${encodeURIComponent(event.event_id)}`;
+    const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
+    const resp = await fetcher(route, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actor: 'blueprints-ui',
+        source_surface: 'diary-page',
+        request_id: `ui-diary-delete-${Date.now()}`,
+      }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      if (status) status.textContent = responseErrorMessage(data, resp.status);
+      return false;
+    }
+    if (status) status.textContent = 'Deleted entry.';
+    state.lastWrite = data;
+    state.date = data.deleted_event?.local_date || event.local_date || state.date;
+    state.loaded = false;
+    state.daySummary = data.day || null;
+    clearSelectedEntry();
+    await load({ force: true });
+    return true;
+  }
+
   function toggleHourGap(key) {
     if (!key) return;
     if (state.expandedGaps.has(key)) state.expandedGaps.delete(key);
@@ -2829,6 +2923,13 @@ const DiaryPage = (() => {
       handleWeekDayDoubleTap(btn.dataset.diaryDate, event);
     });
     root.addEventListener('click', event => {
+      const todoLink = event.target.closest('[data-personal-todo-link]');
+      if (todoLink) {
+        event.preventDefault();
+        event.stopPropagation();
+        openTodoLink(todoLink.dataset.personalTodoLink);
+        return;
+      }
       const selectable = event.target.closest('[data-diary-select-type]');
       if (selectable) {
         if (handleSelectableEntryActivation(selectable, event)) return;
@@ -2870,6 +2971,7 @@ const DiaryPage = (() => {
       if (action === 'toggle-markdown-preview') toggleMarkdownPreview(btn, root);
       if (action === 'submit-entry') submitEntry(btn.dataset.diaryEntryPrefix || 'diary-entry');
       if (action === 'submit-edit-entry') submitEditEntry(btn.dataset.diaryEntryPrefix || 'diary-edit-entry');
+      if (action === 'delete-entry') deleteSelectedEntry(btn.dataset.diaryEntryPrefix || 'diary-edit-entry');
     });
     root.addEventListener('dblclick', event => {
       const entryBtn = event.target.closest('[data-diary-action="select-entry"][data-diary-entry-id]');
@@ -2898,6 +3000,12 @@ const DiaryPage = (() => {
 	      if (!btn || root.contains(btn)) return;
       event.preventDefault();
       submitEditEntry(btn.dataset.diaryEntryPrefix || 'diary-edit-entry');
+    });
+	    document.addEventListener('click', event => {
+	      const btn = event.target.closest('[data-diary-action="delete-entry"]');
+	      if (!btn || root.contains(btn)) return;
+      event.preventDefault();
+      deleteSelectedEntry(btn.dataset.diaryEntryPrefix || 'diary-edit-entry');
     });
     document.addEventListener('change', event => {
       const upcomingControl = event.target.closest('[data-diary-upcoming-next-years]');
@@ -2950,6 +3058,13 @@ const DiaryPage = (() => {
 	    const modalBody = el('diary-action-modal-body');
 	    if (modalBody) {
 	      modalBody.addEventListener('click', event => {
+	        const todoLink = event.target.closest('[data-personal-todo-link]');
+	        if (todoLink) {
+	          event.preventDefault();
+	          event.stopPropagation();
+	          openTodoLink(todoLink.dataset.personalTodoLink);
+	          return;
+	        }
 	        const markdownBtn = event.target.closest('[data-diary-action="toggle-markdown-preview"]');
 	        if (markdownBtn) {
 	          event.preventDefault();

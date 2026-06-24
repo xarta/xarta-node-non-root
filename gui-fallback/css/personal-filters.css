@@ -256,6 +256,7 @@
 }
 
 .personal-filter-chip.is-selected {
+  border-color: #d9aa32;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, .72), 0 0 14px color-mix(in srgb, var(--pf-color) 48%, transparent);
   filter: drop-shadow(0 0 9px color-mix(in srgb, var(--pf-color) 34%, transparent));
 }

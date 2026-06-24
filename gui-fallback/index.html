@@ -3285,6 +3285,9 @@
     <div class="calendar-page diary-page diary-page--body">
       <section class="calendar-view-section diary-view-section" aria-label="Diary view" data-diary-content-view="diary">
         <div id="diary-view-root" class="diary-view-root"></div>
+        <div class="local-shade-handle diary-local-shade-handle" data-local-shade-handle data-local-shade-key="diary-bottom-panel" data-local-shade-media="(min-width: 821px) and (orientation: portrait)" data-local-shade-scope="#tab-diary.active &gt; .tab-scroll-shell &gt; .diary-page--body" data-local-shade-panel="#tab-diary.active .diary-filter-under-panel" data-local-shade-var="--diary-bottom-panel-height" data-local-shade-min="260" data-local-shade-main-min="320" data-local-shade-max-ratio="0.56" data-local-shade-default="352" aria-label="Resize Diary panels">
+          <div class="body-shade-grip" aria-hidden="true"></div>
+        </div>
         <div class="calendar-filter-under-panel diary-filter-under-panel" aria-label="Diary filters">
           <div id="diary-filter-inline-panel" data-personal-filter-host data-personal-filter-surface="diary" data-personal-filter-layout="tabs" data-personal-filter-extra-tabs="selected,day,search,new-entry,edit-entry,upcoming,provenance"></div>
         </div>
@@ -3322,7 +3325,7 @@
         <div class="personal-search-strip" data-personal-search-surface="diary"></div>
       </section>
 
-      <section class="calendar-quick-event diary-quick-entry" aria-labelledby="diary-quick-entry-heading" data-diary-content-view="new-entry">
+      <section class="diary-quick-entry" aria-labelledby="diary-quick-entry-heading" data-diary-content-view="new-entry">
         <div class="calendar-section-head diary-section-head">
           <h3 id="diary-quick-entry-heading">New Entry</h3>
           <span class="calendar-pill diary-pill" id="diary-write-pill">Ready</span>
@@ -3453,6 +3456,9 @@
     <div class="calendar-page calendar-page--body">
       <section class="calendar-view-section" aria-label="Calendar view" data-calendar-content-view="calendar">
         <div id="calendar-view-root" class="calendar-view-root"></div>
+        <div class="local-shade-handle calendar-local-shade-handle" data-local-shade-handle data-local-shade-key="calendar-bottom-panel" data-local-shade-media="(min-width: 821px) and (orientation: portrait)" data-local-shade-scope="#tab-calender.active &gt; .tab-scroll-shell &gt; .calendar-page--body" data-local-shade-panel="#tab-calender.active .calendar-filter-under-panel" data-local-shade-var="--calendar-bottom-panel-height" data-local-shade-min="260" data-local-shade-main-min="320" data-local-shade-max-ratio="0.56" data-local-shade-default="352" aria-label="Resize Calendar panels">
+          <div class="body-shade-grip" aria-hidden="true"></div>
+        </div>
         <div class="calendar-filter-under-panel" aria-label="Calendar filters">
           <div id="calendar-filter-inline-panel" data-personal-filter-host data-personal-filter-surface="calendar" data-personal-filter-layout="tabs" data-personal-filter-extra-tabs="selected,milestones,search,new-event,upcoming,provenance"></div>
         </div>
@@ -3484,14 +3490,14 @@
 
       <section class="calendar-band calendar-band--search" aria-labelledby="calendar-search-heading" data-calendar-content-view="search">
         <div class="calendar-section-head">
-          <h3 id="calendar-search-heading">Search</h3>
+          <h3 id="calendar-search-heading">Search And Review</h3>
         </div>
         <div class="personal-search-strip" data-personal-search-surface="calendar"></div>
       </section>
 
       <section class="calendar-quick-event" aria-labelledby="calendar-quick-event-heading" data-calendar-content-view="new-event">
         <div class="calendar-section-head">
-          <h3 id="calendar-quick-event-heading">New Event</h3>
+          <h3 id="calendar-quick-event-heading">New Calendar Event</h3>
           <span class="calendar-pill" id="calendar-write-pill">Ready</span>
         </div>
         <div class="calendar-form-grid calendar-event-form-grid">
@@ -3567,18 +3573,25 @@
           <div class="todo-page__meta" id="todo-meta">Loading tasks...</div>
         </div>
         <div class="todo-page__actions" aria-label="ToDo actions">
+          <div class="todo-status-strip" id="todo-status-strip" role="status" aria-live="polite">
+            <span class="todo-status-dot todo-status-dot--unknown" aria-hidden="true"></span>
+            <span>Loading ToDo state</span>
+          </div>
           <button class="todo-icon-btn todo-icon-btn--new" type="button" data-todo-action="new-task" title="New task" aria-label="New task"></button>
           <button class="todo-icon-btn todo-icon-btn--refresh" type="button" data-todo-action="refresh" title="Refresh ToDo" aria-label="Refresh ToDo"></button>
         </div>
       </div>
 
-      <div class="todo-mode-strip" id="todo-mode-strip" aria-label="ToDo modes">
-        <button type="button" data-todo-mode-button="today">Today</button>
-        <button type="button" data-todo-mode-button="personal">Personal</button>
-        <button type="button" data-todo-mode-button="work">Work</button>
-        <button type="button" data-todo-mode-button="blocked">Blocked</button>
-        <button type="button" data-todo-mode-button="review">Review</button>
-        <button type="button" data-todo-mode-button="done">Done</button>
+      <div class="calendar-control-strip todo-control-strip">
+        <div class="calendar-segment todo-mode-strip" id="todo-mode-strip" aria-label="ToDo modes">
+          <button type="button" data-todo-mode-button="today">Today</button>
+          <button type="button" data-todo-mode-button="personal">Personal</button>
+          <button type="button" data-todo-mode-button="work">Work</button>
+          <button type="button" data-todo-mode-button="blocked">Blocked</button>
+          <button type="button" data-todo-mode-button="review">Review</button>
+          <button type="button" data-todo-mode-button="done">Done</button>
+        </div>
+        <div class="calendar-filter-strip todo-filter-strip" id="todo-filter-strip" role="button" tabindex="0" data-personal-filter-open="todo">Filter: all tasks</div>
       </div>
 
     </div>
@@ -3587,94 +3600,26 @@
 
     <div class="tab-scroll-shell">
     <div class="todo-page todo-page--body">
-      <div class="personal-search-strip" data-personal-search-surface="todo"></div>
-      <section class="todo-quick-task" aria-labelledby="todo-quick-task-heading">
-        <div class="todo-section-head">
-          <h3 id="todo-quick-task-heading">Quick Task</h3>
-          <span class="todo-entry-status" id="todo-entry-status">Ready</span>
-        </div>
-        <div class="todo-form-grid">
-          <label class="todo-field todo-field--wide" for="todo-task-title">
-            <span>Title</span>
-            <input id="todo-task-title" type="text" maxlength="180" autocomplete="off" />
-          </label>
-          <label class="todo-field" for="todo-task-date">
-            <span>Due</span>
-            <input id="todo-task-date" type="date" />
-          </label>
-          <label class="todo-field" for="todo-task-time">
-            <span>Time</span>
-            <input id="todo-task-time" type="time" />
-          </label>
-          <label class="todo-field" for="todo-task-mode">
-            <span>Mode</span>
-            <select id="todo-task-mode">
-              <option value="personal">Personal</option>
-              <option value="work">Work</option>
-              <option value="review">Review</option>
-            </select>
-          </label>
-          <label class="todo-field" for="todo-task-priority">
-            <span>Priority</span>
-            <select id="todo-task-priority">
-              <option value="">Normal</option>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
-            </select>
-          </label>
-          <label class="todo-field todo-field--wide" for="todo-task-body">
-            <span>Notes</span>
-            <textarea id="todo-task-body" rows="2" maxlength="2000"></textarea>
-          </label>
-          <label class="todo-field todo-field--wide" for="todo-task-work">
-            <span>Work refs</span>
-            <input id="todo-task-work" type="text" autocomplete="off" />
-          </label>
-        </div>
-        <div class="todo-quick-task__footer">
-          <div class="todo-filter-strip" id="todo-filter-strip">Mode: today</div>
-          <button class="todo-command-btn" type="button" data-todo-action="submit-task">Save Task</button>
+      <section class="todo-view-section" aria-label="ToDo tasks">
+        <div class="todo-metrics" id="todo-metrics" aria-label="ToDo metrics"></div>
+
+        <div class="todo-layout">
+          <section class="todo-band todo-band--tasks" aria-labelledby="todo-list-heading">
+            <div class="todo-section-head">
+              <h3 id="todo-list-heading">Tasks</h3>
+              <span class="todo-pill" id="todo-list-count">0</span>
+            </div>
+            <div id="todo-task-list" class="todo-task-list"></div>
+          </section>
         </div>
       </section>
-      <div class="todo-status-strip" id="todo-status-strip" role="status" aria-live="polite">
-        <span class="todo-status-dot todo-status-dot--unknown" aria-hidden="true"></span>
-        <span>Loading ToDo state</span>
+
+      <div class="local-shade-handle todo-local-shade-handle" data-local-shade-handle data-local-shade-key="todo-bottom-panel" data-local-shade-media="(min-width: 821px) and (orientation: portrait)" data-local-shade-scope="#tab-todo.active &gt; .tab-scroll-shell &gt; .todo-page--body" data-local-shade-panel="#tab-todo.active .todo-filter-under-panel" data-local-shade-var="--todo-bottom-panel-height" data-local-shade-min="260" data-local-shade-main-min="320" data-local-shade-max-ratio="0.56" data-local-shade-default="352" aria-label="Resize ToDo panels">
+        <div class="body-shade-grip" aria-hidden="true"></div>
       </div>
 
-      <div class="todo-metrics" id="todo-metrics" aria-label="ToDo metrics"></div>
-
-      <div class="todo-layout">
-        <section class="todo-band todo-band--tasks" aria-labelledby="todo-list-heading">
-          <div class="todo-section-head">
-            <h3 id="todo-list-heading">Tasks</h3>
-            <span class="todo-pill" id="todo-list-count">0</span>
-          </div>
-          <div id="todo-task-list" class="todo-task-list"></div>
-        </section>
-
-        <section class="todo-band" aria-labelledby="todo-detail-heading">
-          <div class="todo-section-head">
-            <h3 id="todo-detail-heading">Selection</h3>
-          </div>
-          <div id="todo-selection-detail" class="todo-detail-list"></div>
-        </section>
-      </div>
-
-      <div class="todo-layout todo-layout--lower">
-        <section class="todo-band" aria-labelledby="todo-source-heading">
-          <div class="todo-section-head">
-            <h3 id="todo-source-heading">Sources</h3>
-          </div>
-          <div id="todo-source-list" class="todo-detail-list"></div>
-        </section>
-
-        <section class="todo-band" aria-labelledby="todo-provenance-heading">
-          <div class="todo-section-head">
-            <h3 id="todo-provenance-heading">Provenance</h3>
-          </div>
-          <div id="todo-provenance" class="todo-detail-list"></div>
-        </section>
+      <div class="calendar-filter-under-panel todo-filter-under-panel" aria-label="ToDo panels">
+        <div id="todo-filter-inline-panel" data-personal-filter-host data-personal-filter-surface="todo" data-personal-filter-layout="tabs" data-personal-filter-extra-tabs="selected,search,new-task,sources,provenance"></div>
       </div>
     </div>
     </div><!-- /tab-scroll-shell -->
@@ -3820,8 +3765,11 @@
 
   <dialog class="hub-modal hub-dialog" data-tone="info" id="todo-action-modal" style="width:min(720px,94vw);max-width:94vw">
     <div class="hub-modal-header">
-      <h3 class="hub-dialog-title" id="todo-action-modal-title">ToDo Action</h3>
-      <button type="button" class="hub-modal-close" id="todo-action-modal-close" aria-label="Close"></button>
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">TODO</span>
+        <span class="hub-dialog-title-text" id="todo-action-modal-title">ToDo Action</span>
+      </h2>
+      <button type="button" class="hub-modal-close hub-dialog-close" id="todo-action-modal-close" aria-label="Close">&#10005;</button>
     </div>
     <div class="hub-modal-body todo-action-modal-body" id="todo-action-modal-body"></div>
     <div class="hub-modal-footer">
@@ -3889,6 +3837,10 @@
           <div class="kanban-page__meta" id="kanban-meta">Loading board...</div>
         </div>
         <div class="kanban-page__actions" aria-label="Kanban actions">
+          <div class="kanban-status-strip" id="kanban-status-strip" role="status" aria-live="polite">
+            <span class="kanban-status-dot kanban-status-dot--unknown" aria-hidden="true"></span>
+            <span>Loading Kanban state</span>
+          </div>
           <button class="kanban-icon-btn kanban-icon-btn--up" type="button" data-kanban-action="up-board" title="Up board" aria-label="Up board"></button>
           <button class="kanban-icon-btn kanban-icon-btn--root" type="button" data-kanban-action="root-board" title="Root board" aria-label="Root board"></button>
           <button class="kanban-icon-btn kanban-icon-btn--new" type="button" data-kanban-action="new-root-item" title="New item" aria-label="New item"></button>
@@ -3896,35 +3848,27 @@
         </div>
       </div>
 
-      <div class="kanban-status-strip" id="kanban-status-strip" role="status" aria-live="polite">
-        <span class="kanban-status-dot kanban-status-dot--unknown" aria-hidden="true"></span>
-        <span>Loading Kanban state</span>
+      <div class="calendar-control-strip kanban-control-strip">
+        <nav class="calendar-filter-strip kanban-breadcrumb" id="kanban-breadcrumb" aria-label="Kanban breadcrumb">Root board</nav>
+        <div class="calendar-filter-strip kanban-filter-strip" id="kanban-filter-strip" role="button" tabindex="0" data-personal-filter-open="kanban">Filter: all cards</div>
       </div>
-
-      <nav class="kanban-breadcrumb" id="kanban-breadcrumb" aria-label="Kanban breadcrumb">Root board</nav>
     </div>
 
     <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
 
     <div class="tab-scroll-shell">
     <div class="kanban-page kanban-page--body">
-      <div class="personal-search-strip" data-personal-search-surface="kanban"></div>
-      <div class="kanban-metrics" id="kanban-metrics" aria-label="Kanban metrics"></div>
-      <div class="kanban-board-shell" id="kanban-board-shell"></div>
-      <div class="kanban-selection-band">
-        <section class="kanban-band" aria-labelledby="kanban-selection-heading">
-          <div class="kanban-section-head">
-            <h3 id="kanban-selection-heading">Selection</h3>
-            <span class="kanban-pill" id="kanban-selection-pill">None</span>
-          </div>
-          <div id="kanban-selection-detail" class="kanban-detail-list"></div>
-        </section>
-        <section class="kanban-band" aria-labelledby="kanban-provenance-heading">
-          <div class="kanban-section-head">
-            <h3 id="kanban-provenance-heading">Provenance</h3>
-          </div>
-          <div id="kanban-provenance" class="kanban-detail-list"></div>
-        </section>
+      <section class="kanban-view-section" aria-label="Kanban board">
+        <div class="kanban-metrics" id="kanban-metrics" aria-label="Kanban metrics"></div>
+        <div class="kanban-board-shell" id="kanban-board-shell"></div>
+      </section>
+
+      <div class="local-shade-handle kanban-local-shade-handle kanban-lane-shade-handle" data-local-shade-handle data-local-shade-key="kanban-lanes-bottom-panel" data-local-shade-media="(min-width: 821px) and (orientation: portrait)" data-local-shade-scope="#tab-kanban.active &gt; .tab-scroll-shell &gt; .kanban-page--body" data-local-shade-panel="#tab-kanban.active .kanban-filter-under-panel" data-local-shade-var="--kanban-bottom-panel-height" data-local-shade-min="260" data-local-shade-main-min="380" data-local-shade-max-ratio="0.56" data-local-shade-default="352" aria-label="Resize Kanban lanes and panels">
+        <div class="body-shade-grip" aria-hidden="true"></div>
+      </div>
+
+      <div class="calendar-filter-under-panel kanban-filter-under-panel" aria-label="Kanban panels">
+        <div id="kanban-filter-inline-panel" data-personal-filter-host data-personal-filter-surface="kanban" data-personal-filter-layout="tabs" data-personal-filter-extra-tabs="selected,search,new-item,provenance"></div>
       </div>
     </div>
     </div><!-- /tab-scroll-shell -->
@@ -6246,6 +6190,7 @@
 <script src="js/hub-select.js?v={{$assetVersion}}"></script>
 <script src="js/responsive-layout.js?v={{$assetVersion}}"></script>
 <script src="js/body-shade.js?v={{$assetVersion}}"></script>
+<script src="js/local-shade.js?v={{$assetVersion}}"></script>
 <script src="js/ultrawide-sidecar.js?v={{$assetVersion}}"></script>
 <script src="js/ultrawide-debug-panels.js?v={{$assetVersion}}"></script>
   <script src="js/app-mode-diag.js?v={{$assetVersion}}"></script>

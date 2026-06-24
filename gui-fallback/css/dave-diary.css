@@ -525,8 +525,52 @@
 }
 
 @media (min-width: 821px) and (orientation: portrait) {
+  #tab-diary.active > .tab-scroll-shell > .diary-page--body {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    height: 100%;
+    max-height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    padding-bottom: 0;
+  }
+
+  #tab-diary.active .diary-view-section {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto minmax(260px, var(--diary-bottom-panel-height, clamp(320px, 24dvh, 420px)));
+    gap: 8px;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  #tab-diary.active .diary-view-root {
+    min-height: 0;
+    overflow: auto;
+    scrollbar-gutter: stable;
+  }
+
+  #tab-diary.active .diary-local-shade-handle {
+    display: flex;
+  }
+
   .diary-filter-under-panel {
     display: block;
+  }
+
+  #tab-diary.active .diary-filter-under-panel {
+    height: 100%;
+    margin-top: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  #tab-diary.active .diary-filter-under-panel [data-personal-filter-host],
+  #tab-diary.active .diary-filter-under-panel .personal-filter-panel {
+    height: 100%;
+  }
+
+  #tab-diary.active .diary-filter-under-panel .personal-filter-panel__body {
+    flex: 1 1 auto;
   }
 }
 

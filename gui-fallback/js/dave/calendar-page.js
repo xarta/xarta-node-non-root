@@ -33,8 +33,8 @@ const CalendarPage = (() => {
     { id: 'filter-settings', label: 'Filter Settings' },
     { id: 'selected', label: 'Selected Range Visible Items' },
     { id: 'milestones', label: 'All-Day And Milestones' },
-    { id: 'search', label: 'Search' },
-    { id: 'new-event', label: 'New Event' },
+    { id: 'search', label: 'Search And Review' },
+    { id: 'new-event', label: 'New Calendar Event' },
     { id: 'upcoming', label: 'Upcoming' },
     { id: 'provenance', label: 'Provenance' },
   ];
@@ -411,6 +411,46 @@ const CalendarPage = (() => {
     const kind = String(event?.kind || '').toLowerCase();
     const relatedTasks = event?.related?.tasks || [];
     return ['todo', 'task', 'reminder'].includes(kind) || relatedTasks.length > 0;
+  }
+
+  function cleanTodoRef(value) {
+    return String(value || '').trim().replace(/[^a-zA-Z0-9_.:-]+/g, '-').slice(0, 180);
+  }
+
+  function todoRefForEvent(event) {
+    if (!isTaskLike(event)) return '';
+    const refs = [
+      ...(event?.related?.tasks || []),
+      event?.source?.ref,
+      event?.event_id,
+    ];
+    return cleanTodoRef(refs.find(Boolean) || '');
+  }
+
+  function todoRouteUrl(taskRef) {
+    const clean = cleanTodoRef(taskRef);
+    if (!clean || !window.location) return '';
+    if (window.BlueprintsTodoPage?.taskRouteUrl) return window.BlueprintsTodoPage.taskRouteUrl(clean);
+    const url = new URL(window.location.href);
+    url.searchParams.set('group', 'dave');
+    url.searchParams.set('tab', 'todo');
+    url.searchParams.set('todo_task_id', clean);
+    return `${url.pathname}${url.search}${url.hash || ''}`;
+  }
+
+  function todoLinkHtml(event) {
+    const taskRef = todoRefForEvent(event);
+    const href = todoRouteUrl(taskRef);
+    if (!taskRef || !href) return '';
+    return `<a class="personal-related-link personal-related-link--todo" href="${escHtml(href)}" data-personal-todo-link="${escHtml(taskRef)}">ToDo</a>`;
+  }
+
+  function openTodoLink(taskRef) {
+    const clean = cleanTodoRef(taskRef);
+    if (!clean) return false;
+    if (window.BlueprintsTodoPage?.openTask) return window.BlueprintsTodoPage.openTask(clean);
+    window.location.href = todoRouteUrl(clean);
+    return true;
   }
 
   function isWorkLike(event) {
@@ -948,13 +988,14 @@ const CalendarPage = (() => {
     const source = sourceType(event) || event.kind || 'source';
     const datePart = state.mode !== 'day' ? `${monthLabel(eventStartDate(event), { weekday: 'short', day: '2-digit', month: 'short' })} - ` : '';
     const ref = event.source?.ref || (Array.isArray(event.file_refs) ? event.file_refs[0] : '') || event.event_id || '';
+    const todoLink = todoLinkHtml(event);
     return `
       <div class="calendar-agenda-row calendar-agenda-row--${escHtml(eventCategory(event))}" ${selectionAttrs(type, index)}>
         <div class="calendar-agenda-time">${escHtml(eventTime(event))}</div>
         <div class="calendar-agenda-main">
           <div class="calendar-agenda-title">${escHtml(event.title || event.kind || event.event_id)}</div>
           <div class="calendar-agenda-meta">${escHtml(datePart + (event.body_excerpt || event.status || ''))}</div>
-          <div class="calendar-agenda-meta">${escHtml(ref)}</div>
+          <div class="calendar-agenda-meta calendar-agenda-meta--links">${escHtml(ref)}${todoLink}</div>
         </div>
         <span class="calendar-agenda-source">${escHtml(source)}</span>
       </div>
@@ -1868,7 +1909,7 @@ const CalendarPage = (() => {
     if (options.editing && editability.editable) {
       return `
         <section class="calendar-entry-preview" data-calendar-event-preview-id="${escHtml(event.event_id || '')}">
-          <div class="calendar-entry-preview__meta">${escHtml(eventPreviewMeta(event))}</div>
+          <div class="calendar-entry-preview__meta">${escHtml(eventPreviewMeta(event))}${todoLinkHtml(event)}</div>
           <div class="calendar-entry-preview-editor">
             <div class="calendar-field calendar-field--wide calendar-field--notes calendar-markdown-field calendar-entry-preview-editor__field">
               <div class="calendar-field__label-row">
@@ -1888,7 +1929,7 @@ const CalendarPage = (() => {
     }
     return `
       <section class="calendar-entry-preview" data-calendar-event-preview-id="${escHtml(event?.event_id || '')}">
-        <div class="calendar-entry-preview__meta">${escHtml(eventPreviewMeta(event))}</div>
+        <div class="calendar-entry-preview__meta">${escHtml(eventPreviewMeta(event))}${todoLinkHtml(event)}</div>
         <div class="calendar-markdown-preview calendar-entry-preview__body">${renderMarkdown(body)}</div>
         ${editability.editable ? '' : `<p class="calendar-entry-preview__notice">${escHtml(editability.reason)}</p>`}
       </section>
@@ -2280,7 +2321,10 @@ const CalendarPage = (() => {
           <div id="calendar-edit-body-preview" class="calendar-markdown-preview" hidden></div>
         </div>
       </div>
-      <button class="calendar-command-btn" type="button" data-calendar-modal-action="submit-edit">Save Edit</button>
+      <div class="calendar-modal-actions">
+        <button class="calendar-command-btn calendar-command-btn--danger" type="button" data-calendar-modal-action="delete-event">Delete</button>
+        <button class="calendar-command-btn" type="button" data-calendar-modal-action="submit-edit">Save Edit</button>
+      </div>
     `;
     return showActionModal('Edit Calendar Event', html);
   }
@@ -2317,6 +2361,48 @@ const CalendarPage = (() => {
       ['Title', data.event?.title || payload.title],
       ['Audit', data.audit?.audit_id || ''],
     ]), 'Calendar event updated.');
+  }
+
+  async function deleteSelectedEvent() {
+    const event = state.selection?.row;
+    const editability = eventEditability(event);
+    if (!event?.event_id) return showActionModal('Delete Calendar Event', '<p>Select a Calendar event before deleting.</p>');
+    if (!editability.editable) {
+      return showActionModal('Delete Calendar Event', kvHtml([
+        ['Event', event.event_id || ''],
+        ['State', editability.reason],
+      ]));
+    }
+    const confirmed = await HubDialogs.confirmDelete({
+      title: 'Delete Calendar Event',
+      message: `Delete "${event.title || event.event_id}"?`,
+      detail: 'This removes the manually owned Calendar event from shared personal events.',
+      confirmText: 'Delete Event',
+    });
+    if (!confirmed) return false;
+    const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
+    const resp = await fetcher(`/api/v1/personal/calendar/events/${encodeURIComponent(event.event_id)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actor: 'blueprints-ui',
+        source_surface: 'calendar-page',
+        request_id: `ui-calendar-delete-${Date.now()}`,
+      }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      return showActionModal('Delete Calendar Event', `<p>${escHtml(responseErrorMessage(data, resp.status))}</p>`);
+    }
+    state.lastWrite = data;
+    state.selection = null;
+    state.loaded = false;
+    await load({ force: true });
+    return showActionModal('Delete Calendar Event', kvHtml([
+      ['Event', data.event_id || event.event_id],
+      ['Title', data.deleted_event?.title || event.title || ''],
+      ['Audit', data.audit?.audit_id || ''],
+    ]), 'Calendar event deleted.');
   }
 
   function openSource() {
@@ -2671,6 +2757,13 @@ const CalendarPage = (() => {
     renderEventTagSummaries();
     root.addEventListener('pointerdown', beginDateRangeDrag);
     root.addEventListener('click', event => {
+      const todoLink = event.target.closest('[data-personal-todo-link]');
+      if (todoLink) {
+        event.preventDefault();
+        event.stopPropagation();
+        openTodoLink(todoLink.dataset.personalTodoLink);
+        return;
+      }
       const selectable = event.target.closest('[data-calendar-select-type]');
       if (selectable) {
         if (handleSelectableEventActivation(selectable, event)) return;
@@ -2786,6 +2879,13 @@ const CalendarPage = (() => {
 	    const modalBody = el('calendar-action-modal-body');
 	    if (modalBody) {
 	      modalBody.addEventListener('click', event => {
+        const todoLink = event.target.closest('[data-personal-todo-link]');
+        if (todoLink) {
+          event.preventDefault();
+          event.stopPropagation();
+          openTodoLink(todoLink.dataset.personalTodoLink);
+          return;
+        }
         const summaryBtn = event.target.closest('[data-calendar-action="generate-day-summary"]');
         if (summaryBtn) {
           generateDaySummary();
@@ -2794,6 +2894,7 @@ const CalendarPage = (() => {
 	        const btn = event.target.closest('[data-calendar-modal-action]');
 	        if (!btn) return;
 	        if (btn.dataset.calendarModalAction === 'submit-edit') submitEdit();
+	        if (btn.dataset.calendarModalAction === 'delete-event') deleteSelectedEvent();
 		        if (btn.dataset.calendarModalAction === 'submit-work-link') submitWorkLink();
 		        if (btn.dataset.calendarModalAction === 'edit-event-content') openSelectedEventContentEditor();
 		        if (btn.dataset.calendarModalAction === 'save-event-content') saveSelectedEventContent();
