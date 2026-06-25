@@ -81,9 +81,59 @@ assert.match(
   'Kanban SubItems and Issues rollup pills must render active, blocked, and done leaf metrics.',
 );
 assert.match(
+  kanbanJs,
+  /function\s+pillHtml\(kind,[\s\S]*kanban-pill-btn--single-metric[\s\S]*pillMetricChip\(count,\s*tone,\s*countLabel\)/,
+  'Kanban ToDos rollup must use the same square metric badge layout as other rollups.',
+);
+assert.match(
   kanbanCss,
   /\.kanban-pill-metrics\s*\{[\s\S]*display:\s*inline-flex[\s\S]*\.kanban-pill-metric\[data-tone="err"\]/,
   'Kanban multi-metric rollup chips must have compact stable styling and red blocker emphasis.',
+);
+assert.match(
+  kanbanCss,
+  /\.kanban-pill-btn\s*\{[\s\S]*max-width:\s*100%[\s\S]*overflow:\s*hidden/,
+  'Kanban rollup buttons must clip inside narrow cards instead of overflowing.',
+);
+assert.match(
+  kanbanCss,
+  /\.kanban-card\s*\{[\s\S]*max-width:\s*100%/,
+  'Kanban cards must not grow wider than squeezed lanes.',
+);
+assert.match(
+  kanbanCss,
+  /\.kanban-rollup-row\s*\{[\s\S]*min-width:\s*0[\s\S]*width:\s*100%[\s\S]*max-width:\s*100%/,
+  'Kanban rollup rows must not force narrow cards wider than their lane.',
+);
+assert.match(
+  kanbanCss,
+  /\.kanban-pill-btn--multi\s*\{[\s\S]*position:\s*relative[\s\S]*padding-right:\s*clamp\(/,
+  'Kanban multi-metric rollup labels must reserve clipped space behind the badge cluster.',
+);
+assert.match(
+  kanbanCss,
+  /\.kanban-pill-btn\s*\{[\s\S]*align-items:\s*center[\s\S]*text-align:\s*left/,
+  'Kanban rollup pill labels must share a left-aligned baseline.',
+);
+assert.match(
+  kanbanCss,
+  /\.kanban-pill-metrics\s*\{[\s\S]*position:\s*absolute[\s\S]*right:\s*6px[\s\S]*max-width:\s*calc\(100% - 12px\)[\s\S]*overflow:\s*hidden/,
+  'Kanban multi-metric badge clusters must stay in front and clip within the pill.',
+);
+assert.match(
+  kanbanCss,
+  /\.kanban-pill-btn--single-metric \.kanban-pill-metrics\s*\{[\s\S]*width:\s*min\(var\(--kanban-pill-metric-rail\),\s*calc\(100% - 12px\)\)/,
+  'Kanban one-chip ToDos metric rail must align with the three-chip rollup rail.',
+);
+assert.match(
+  kanbanCss,
+  /\.kanban-pill-metric\s*\{[\s\S]*width:\s*var\(--kanban-pill-metric-size\)[\s\S]*height:\s*var\(--kanban-pill-metric-size\)[\s\S]*border-radius:\s*5px/,
+  'Kanban multi-metric badges must render as compact square chips.',
+);
+assert.match(
+  kanbanCss,
+  /\.kanban-pill-btn > span:first-child\s*\{[\s\S]*min-width:\s*0[\s\S]*text-overflow:\s*ellipsis/,
+  'Kanban simple rollup labels must shrink before their count badge overflows.',
 );
 assert.match(
   kanbanJs,

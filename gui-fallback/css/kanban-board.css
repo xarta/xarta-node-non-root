@@ -501,6 +501,7 @@ body.is-resizing-kanban-lane * {
   background: rgba(255,255,255,.035);
   padding: 10px;
   min-width: 0;
+  max-width: 100%;
   display: grid;
   gap: 8px;
   cursor: pointer;
@@ -685,51 +686,105 @@ dialog.hub-modal#kanban-detail-modal[open] {
 .kanban-rollups {
   display: grid;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .kanban-rollup-row {
   gap: 6px;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
 }
 
 .kanban-pill-btn {
+  --kanban-pill-metric-size: 20px;
+  --kanban-pill-metric-rail: 66px;
   min-width: 0;
+  max-width: 100%;
   min-height: 28px;
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  align-items: center;
   justify-content: space-between;
+  justify-items: stretch;
   grid-template-columns: 1fr auto;
+  column-gap: 8px;
   padding: 0 8px;
   font-size: 12px;
+  text-align: left;
+  overflow: hidden;
 }
 
 .kanban-pill-btn--multi {
-  gap: 8px;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  padding-right: clamp(44px, 50%, calc(var(--kanban-pill-metric-rail) + 12px));
 }
 
-.kanban-pill-label {
+.kanban-pill-btn > span:first-child {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.1;
+  text-align: left;
+}
+
+.kanban-pill-btn > strong:last-child {
+  justify-self: end;
+  min-width: 0;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: clip;
+  text-align: center;
+}
+
+.kanban-pill-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.1;
+  text-align: left;
 }
 
 .kanban-pill-metrics {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
   gap: 3px;
   flex: 0 0 auto;
+  max-width: calc(100% - 12px);
+  overflow: hidden;
+  transform: translateY(-50%);
+}
+
+.kanban-pill-btn--single-metric .kanban-pill-metrics {
+  width: min(var(--kanban-pill-metric-rail), calc(100% - 12px));
 }
 
 .kanban-pill-metric {
-  min-width: 22px;
-  height: 20px;
+  flex: 0 0 auto;
+  width: var(--kanban-pill-metric-size);
+  min-width: var(--kanban-pill-metric-size);
+  max-width: var(--kanban-pill-metric-size);
+  height: var(--kanban-pill-metric-size);
   border: 1px solid rgba(141,151,170,.30);
-  border-radius: 999px;
+  border-radius: 5px;
   background: rgba(0,0,0,.18);
   color: #8d97aa;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 5px;
+  padding: 0;
+  overflow: hidden;
+  text-align: center;
   font-size: 11px;
   line-height: 1;
   font-variant-numeric: tabular-nums;

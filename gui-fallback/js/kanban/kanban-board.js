@@ -845,9 +845,17 @@ const KanbanBoardPage = (() => {
     };
   }
 
+  function pillMetricChip(value, tone, label) {
+    return `<strong class="kanban-pill-metric" data-tone="${escHtml(tone)}" title="${escHtml(label)}" aria-label="${escHtml(label)}">${escHtml(value)}</strong>`;
+  }
+
   function pillHtml(kind, label, count, tone, itemId) {
-    return `<button class="kanban-pill-btn" type="button" data-kanban-pill="${kind}" data-kanban-item-id="${escHtml(itemId)}" data-tone="${escHtml(tone)}">
-      <span>${escHtml(label)}</span><strong>${escHtml(count)}</strong>
+    const countLabel = `${count} open ${label}`;
+    return `<button class="kanban-pill-btn kanban-pill-btn--multi kanban-pill-btn--single-metric" type="button" data-kanban-pill="${kind}" data-kanban-item-id="${escHtml(itemId)}" data-tone="${escHtml(tone)}" title="${escHtml(`${label}: ${countLabel}`)}">
+      <span class="kanban-pill-label">${escHtml(label)}</span>
+      <span class="kanban-pill-metrics kanban-pill-metrics--single">
+        ${pillMetricChip(count, tone, countLabel)}
+      </span>
     </button>`;
   }
 
@@ -877,7 +885,7 @@ const KanbanBoardPage = (() => {
   }
 
   function leafMetricChip(value, tone, label) {
-    return `<strong class="kanban-pill-metric" data-tone="${escHtml(tone)}" title="${escHtml(label)}" aria-label="${escHtml(label)}">${escHtml(value)}</strong>`;
+    return pillMetricChip(value, tone, label);
   }
 
   function leafMetricsPillHtml(kind, label, metrics, itemId, options = {}) {
