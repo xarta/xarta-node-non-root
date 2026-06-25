@@ -647,11 +647,14 @@
 }
 
 .diary-week-card__body {
-  display: grid;
-  align-content: start;
+  --diary-week-event-height: 34px;
+  display: flex;
+  flex-direction: column;
   gap: 7px;
   min-height: 150px;
   padding: 10px 12px 12px;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .diary-week-empty {
@@ -730,6 +733,21 @@
   font-weight: 650;
   line-height: 1.25;
   overflow-wrap: anywhere;
+}
+
+.diary-week-card__body .diary-week-event {
+  flex: 0 0 var(--diary-week-event-height);
+  height: var(--diary-week-event-height);
+  min-height: var(--diary-week-event-height);
+  max-height: var(--diary-week-event-height);
+  overflow: hidden;
+}
+
+.diary-week-card__body .diary-week-event__time,
+.diary-week-card__body .diary-week-event__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .diary-day-board {

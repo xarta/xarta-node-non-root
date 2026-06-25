@@ -43,7 +43,7 @@ const TodoPage = (() => {
     routeHighlightRef: '',
     lastWrite: null,
     kanbanPreferences: { show_test_entries: true },
-    testEntries: { show: true, hidden_kanban_todos: 0 },
+    testEntries: { show: true, hidden_kanban_todos: 0, hidden_personal_tasks: 0, hidden_personal_events: 0 },
     refreshFsm: { state: 'idle', lastEvent: '' },
   };
 
@@ -186,6 +186,14 @@ const TodoPage = (() => {
       const hidden = Number(entries.hidden_kanban_todos);
       state.testEntries.hidden_kanban_todos = Number.isFinite(hidden) ? hidden : 0;
     }
+    if (Object.prototype.hasOwnProperty.call(entries, 'hidden_personal_tasks')) {
+      const hidden = Number(entries.hidden_personal_tasks);
+      state.testEntries.hidden_personal_tasks = Number.isFinite(hidden) ? hidden : 0;
+    }
+    if (Object.prototype.hasOwnProperty.call(entries, 'hidden_personal_events')) {
+      const hidden = Number(entries.hidden_personal_events);
+      state.testEntries.hidden_personal_events = Number.isFinite(hidden) ? hidden : 0;
+    }
     renderRefreshPreferenceState();
   }
 
@@ -194,7 +202,9 @@ const TodoPage = (() => {
   }
 
   function hiddenKanbanTodoCount() {
-    const hidden = Number(state.testEntries.hidden_kanban_todos || 0);
+    const hidden = Number(state.testEntries.hidden_kanban_todos || 0)
+      + Number(state.testEntries.hidden_personal_tasks || 0)
+      + Number(state.testEntries.hidden_personal_events || 0);
     return Number.isFinite(hidden) ? Math.max(0, hidden) : 0;
   }
 

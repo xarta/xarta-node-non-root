@@ -5,6 +5,7 @@
 const PersonalFilters = (() => {
   const SETTINGS_KEY = 'blueprints.personalFilters.settings.v1';
   const CUSTOM_KEY = 'blueprints.personalFilters.custom.v1';
+  const META_KEY = 'blueprints.personalFilters.meta.v1';
   const SELECTION_PREFIX = 'blueprints.personalFilters.selection.';
   const PRETEXT_IMPORT_VERSION = '2026-06-22-filter-shapes';
   const CHIP_FONT = '700 13px Segoe UI, system-ui, sans-serif';
@@ -32,6 +33,8 @@ const PersonalFilters = (() => {
   const SHAPES = ['circle', 'square', 'triangle', 'star', 'pentagon', 'rectangle', 'rhombus', 'semicircle', 'crescent'];
   const FILLS = ['filled', 'outline'];
 
+  const DEFAULT_META_GROUPS = {};
+
   const DEFAULTS = {
     calendar: { label: 'Calendar', color: 'blue', shape: 'circle', fill: 'outline' },
     tasks: { label: 'Tasks', color: 'green', shape: 'square', fill: 'outline' },
@@ -51,6 +54,7 @@ const PersonalFilters = (() => {
   const state = {
     settings: readJson(SETTINGS_KEY, {}),
     custom: readJson(CUSTOM_KEY, []),
+    meta: readJson(META_KEY, { groups: [] }),
     selected: new Map(),
     adapters: new Map(),
     pretext: null,
@@ -60,6 +64,7 @@ const PersonalFilters = (() => {
     settingsOrderByHost: new WeakMap(),
     filterIndexBySurface: new Map(),
     filterQueryByHost: new WeakMap(),
+    filterGroupByHost: new WeakMap(),
     filterRenderSerialByHost: new WeakMap(),
     filterRenderTimerByHost: new WeakMap(),
   };
@@ -99,6 +104,15 @@ const PersonalFilters = (() => {
       .replace(/&/g, ' and ')
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '') || 'uncategorized';
+  }
+
+  function normalizeOptionalId(value) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/&/g, ' and ')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
   }
 
   function titleCase(id) {
@@ -426,6 +440,7 @@ const PersonalFilters = (() => {
       color,
       shape,
       fill,
+      group: normalizeOptionalId(setting.group || fallback.group || ''),
       custom: Boolean(setting.custom || fallback.custom),
     };
   }
@@ -437,6 +452,61 @@ const PersonalFilters = (() => {
   function saveSettings() {
     writeJson(SETTINGS_KEY, state.settings);
     writeJson(CUSTOM_KEY, state.custom);
+    writeJson(META_KEY, normalizeMetaState(state.meta));
+  }
+
+  function normalizeMetaState(meta) {
+    const groups = Array.isArray(meta?.groups)
+      ? meta.groups.map(group => normalizeOptionalId(typeof group === 'string' ? group : group?.id)).filter(Boolean)
+      : [];
+    return { groups: unique(groups.filter(id => !DEFAULT_META_GROUPS[id])) };
+  }
+
+  function customMetaGroups() {
+    state.meta = normalizeMetaState(state.meta);
+    return state.meta.groups;
+  }
+
+  function groupLabel(id) {
+    const clean = normalizeOptionalId(id);
+    return DEFAULT_META_GROUPS[clean]?.label || titleCase(clean);
+  }
+
+  function filterGroupFor(id) {
+    return normalizeOptionalId(settingFor(id).group || '');
+  }
+
+  function metaGroupIds(surface = 'calendar') {
+    const ids = new Set(Object.keys(DEFAULT_META_GROUPS));
+    customMetaGroups().forEach(id => ids.add(id));
+    allFilterIds(surface).forEach(id => {
+      const group = filterGroupFor(id);
+      if (group) ids.add(group);
+    });
+    return Array.from(ids).sort((a, b) => groupLabel(a).localeCompare(groupLabel(b)));
+  }
+
+  function metaGroupOptions(surface, selected) {
+    const cleanSelected = normalizeOptionalId(selected || '');
+    return [
+      `<option value=""${cleanSelected ? '' : ' selected'}>Ungrouped</option>`,
+      ...metaGroupIds(surface).map(id => `<option value="${escHtml(id)}"${id === cleanSelected ? ' selected' : ''}>${escHtml(groupLabel(id))}</option>`),
+    ].join('');
+  }
+
+  function addMetaGroup(surface, input, host = null) {
+    const label = String(input?.value || '').trim();
+    if (!label) return;
+    const id = normalizeId(label);
+    if (!DEFAULT_META_GROUPS[id] && !customMetaGroups().includes(id)) {
+      state.meta.groups.push(id);
+      state.meta = normalizeMetaState(state.meta);
+    }
+    if (input) input.value = '';
+    setFilterGroupForHost(host || input?.closest?.('[data-personal-filter-host]'), id);
+    saveSettings();
+    emitChange(surface, 'meta-settings');
+    renderAll();
   }
 
   function adapterFor(surface) {
@@ -691,6 +761,16 @@ const PersonalFilters = (() => {
     state.filterQueryByHost.set(host, String(value || ''));
   }
 
+  function filterGroupForHost(host) {
+    return host ? (state.filterGroupByHost.get(host) || 'all') : 'all';
+  }
+
+  function setFilterGroupForHost(host, value) {
+    if (!host) return;
+    const clean = normalizeOptionalId(value || 'all') || 'all';
+    state.filterGroupByHost.set(host, clean);
+  }
+
   function resetSettingsOrderForHost(host) {
     if (host) state.settingsOrderByHost.delete(host);
   }
@@ -723,6 +803,14 @@ const PersonalFilters = (() => {
   function countFor(surface, id) {
     const token = normalizeId(id);
     return recordsFor(surface).filter(record => recordTokens(record).has(token)).length;
+  }
+
+  function idsForMetaGroup(surface, groupId) {
+    const cleanGroup = normalizeOptionalId(groupId || 'all');
+    const ids = sortedFilterIds(surface);
+    if (cleanGroup === 'all') return ids;
+    if (cleanGroup === 'ungrouped') return ids.filter(id => !filterGroupFor(id));
+    return ids.filter(id => filterGroupFor(id) === cleanGroup);
   }
 
   function getSelectedIds(surface) {
@@ -764,7 +852,7 @@ const PersonalFilters = (() => {
   function summaryHtml(surface, options = {}) {
     const selected = getSelectedIds(surface);
     const labels = surfaceLabels(surface);
-    const prefix = options.prefix || labels.summaryPrefix;
+    const prefix = Object.prototype.hasOwnProperty.call(options, 'prefix') ? options.prefix : labels.summaryPrefix;
     const emptyLabel = options.emptyLabel || labels.emptyLabel;
     const clearIds = clearSelectedIds(surface);
     const canClear = options.showClear !== false && (options.alwaysShowClear || !selectedIdsEqual(selected, clearIds));
@@ -785,7 +873,7 @@ const PersonalFilters = (() => {
   function filterSearchHtml(surface, host) {
     return `<div class="personal-filter-search">
       <label class="personal-filter-field">
-        <span>Filter</span>
+        <span>Filter Tags</span>
         <input type="search" data-personal-filter-search="${escHtml(surface)}" maxlength="80" autocomplete="off" aria-label="Filter filters" placeholder="Filter filters" value="${escHtml(filterQueryForHost(host))}" />
       </label>
     </div>`;
@@ -793,6 +881,23 @@ const PersonalFilters = (() => {
 
   function noMatchesHtml() {
     return `<div class="personal-filter-empty">No matching filters.</div>`;
+  }
+
+  function filterChipButtonHtml(surface, id, options = {}) {
+    const setting = settingFor(id);
+    const count = countFor(surface, id);
+    const metrics = shapeMetrics(setting);
+    const selected = Boolean(options.selected);
+    const actionAttr = options.action === 'remove'
+      ? `data-personal-filter-remove-selection="${escHtml(id)}"`
+      : `data-personal-filter-toggle="${escHtml(id)}"`;
+    const dragAttr = options.action === 'remove'
+      ? `data-personal-filter-selected-id="${escHtml(id)}"`
+      : `data-personal-filter-drag-id="${escHtml(id)}"`;
+    return `<button class="personal-filter-chip has-count${selected ? ' is-selected' : ''}" type="button" role="option" aria-selected="${selected ? 'true' : 'false'}" ${actionAttr} data-personal-filter-surface="${escHtml(surface)}" ${dragAttr} draggable="true" data-shape="${escHtml(setting.shape)}" data-fill="${escHtml(setting.fill)}" style="${chipStyle(setting, metrics, { count })}">
+      ${chipLabelHtml(metrics)}
+      ${countBadgeHtml(count)}
+    </button>`;
   }
 
   function filterGridHtml(surface, ids) {
@@ -804,28 +909,66 @@ const PersonalFilters = (() => {
     return `${labels.showClear ? `<button class="personal-filter-chip${selectedIdsEqual(Array.from(selected), clearIds) ? ' is-selected' : ''}" type="button" data-personal-filter-clear="${escHtml(surface)}" data-shape="${escHtml(clearSetting.shape)}" data-fill="${escHtml(clearSetting.fill)}" style="${chipStyle(clearSetting, clearMetrics)}">
       ${chipLabelHtml(clearMetrics)}
     </button>` : ''}
-    ${ids.map(id => {
-      const setting = settingFor(id);
-      const count = countFor(surface, id);
-      const metrics = shapeMetrics(setting);
-      const isSelected = selected.has(id);
-      return `<button class="personal-filter-chip has-count${isSelected ? ' is-selected' : ''}" type="button" role="option" aria-selected="${isSelected ? 'true' : 'false'}" data-personal-filter-toggle="${escHtml(id)}" data-personal-filter-surface="${escHtml(surface)}" data-shape="${escHtml(setting.shape)}" data-fill="${escHtml(setting.fill)}" style="${chipStyle(setting, metrics, { count })}">
-        ${chipLabelHtml(metrics)}
-        ${countBadgeHtml(count)}
-      </button>`;
-    }).join('')}
+    ${ids.map(id => filterChipButtonHtml(surface, id, { selected: selected.has(id) })).join('')}
     ${ids.length ? '' : noMatchesHtml()}`;
   }
 
+  function selectedFilterGridHtml(surface) {
+    const selected = getSelectedIds(surface);
+    const removable = selected.filter(id => !requiredSelectedIds(surface).includes(id));
+    if (!selected.length) return `<div class="personal-filter-empty">No tags assigned.</div>`;
+    return selected.map(id => filterChipButtonHtml(surface, id, {
+      selected: true,
+      action: removable.includes(id) ? 'remove' : 'required',
+    })).join('');
+  }
+
+  function groupTabsHtml(surface, host) {
+    const query = filterQueryForHost(host);
+    const active = filterGroupForHost(host);
+    const groups = [
+      { id: 'all', label: 'All' },
+      ...metaGroupIds(surface).map(id => ({ id, label: groupLabel(id) })),
+      { id: 'ungrouped', label: 'Ungrouped' },
+    ];
+    const terms = searchTerms(query);
+    return `<div class="personal-filter-group-tabs" role="tablist">
+      ${groups.map(group => {
+        const groupIds = idsForMetaGroup(surface, group.id);
+        const matchCount = terms.length
+          ? filteredFilterIds(surface, query, groupIds).length
+          : groupIds.length;
+        const activeAttr = active === group.id ? 'true' : 'false';
+        const matchClass = terms.length && matchCount ? ' has-filter-match' : '';
+        return `<button class="personal-filter-group-tab${matchClass}" type="button" role="tab" aria-selected="${activeAttr}" data-personal-filter-group="${escHtml(group.id)}">${escHtml(group.label)}<span>${escHtml(matchCount)}</span></button>`;
+      }).join('')}
+    </div>`;
+  }
+
   function filtersBodyHtml(surface, host) {
-    const ids = filteredFilterIds(surface, filterQueryForHost(host));
+    const selected = new Set(getSelectedIds(surface));
+    const groupedIds = idsForMetaGroup(surface, filterGroupForHost(host));
+    const ids = filteredFilterIds(surface, filterQueryForHost(host), groupedIds)
+      .filter(id => !selected.has(id));
     const labels = surfaceLabels(surface);
-    return `<div class="personal-filter-picker">
-      ${filterSearchHtml(surface, host)}
-      <div class="personal-filter-summary">${summaryHtml(surface, { prefix: labels.activePrefix })}</div>
-      <div class="personal-filter-grid" role="listbox" aria-multiselectable="true">
-        ${filterGridHtml(surface, ids)}
-      </div>
+    return `<div class="personal-filter-picker personal-filter-assignment">
+      <section class="personal-filter-assignment__selected" data-personal-filter-drop-selected="${escHtml(surface)}">
+        <div class="personal-filter-assignment__head">
+          <span>${escHtml(labels.activePrefix)}</span>
+          ${summaryHtml(surface, { prefix: '', emptyLabel: labels.emptyLabel })}
+        </div>
+        <div class="personal-filter-grid personal-filter-grid--selected" role="listbox" aria-multiselectable="true">
+          ${selectedFilterGridHtml(surface)}
+        </div>
+      </section>
+      <div class="personal-filter-assignment__divider" aria-hidden="true"></div>
+      <section class="personal-filter-assignment__available" data-personal-filter-drop-available="${escHtml(surface)}">
+        ${filterSearchHtml(surface, host)}
+        ${groupTabsHtml(surface, host)}
+        <div class="personal-filter-grid" role="listbox" aria-multiselectable="true">
+          ${filterGridHtml(surface, ids)}
+        </div>
+      </section>
     </div>`;
   }
 
@@ -866,6 +1009,10 @@ const PersonalFilters = (() => {
                 <span>Fill</span>
                 <select data-personal-filter-setting="fill" aria-label="Fill">${fillOptions(setting.fill)}</select>
               </label>
+              <label class="personal-filter-field">
+                <span>Group</span>
+                <select data-personal-filter-setting="group" aria-label="Filter tag group">${metaGroupOptions(surface, setting.group)}</select>
+              </label>
             </div>
             <div class="personal-filter-settings__actions">
               <button class="personal-filter-command" type="button" data-personal-filter-remove="${escHtml(id)}" ${id === 'uncategorized' || isCore ? 'disabled' : ''}>Remove (${count})</button>
@@ -884,6 +1031,11 @@ const PersonalFilters = (() => {
           <input type="text" data-personal-filter-new-name="${escHtml(surface)}" data-personal-filter-search="${escHtml(surface)}" maxlength="48" autocomplete="off" aria-label="Tag" value="${escHtml(filterQueryForHost(host))}" />
         </label>
         <button class="personal-filter-command" type="button" data-personal-filter-add="${escHtml(surface)}">Add Tag</button>
+        <label class="personal-filter-field">
+          <span>Meta Tag</span>
+          <input type="text" data-personal-filter-new-meta="${escHtml(surface)}" maxlength="48" autocomplete="off" aria-label="Meta Tag" />
+        </label>
+        <button class="personal-filter-command" type="button" data-personal-filter-add-meta="${escHtml(surface)}">Add Meta Tag</button>
       </div>
       <div class="personal-filter-settings__rows">
         ${settingsRowsHtml(surface, ids)}
@@ -1026,6 +1178,14 @@ const PersonalFilters = (() => {
     if (key === 'color') current.color = COLORS.some(([color]) => color === value) ? value : current.color;
     if (key === 'shape') current.shape = SHAPES.includes(value) ? value : current.shape;
     if (key === 'fill') current.fill = FILLS.includes(value) ? value : current.fill;
+    if (key === 'group') {
+      const group = normalizeOptionalId(value || '');
+      current.group = group === 'ungrouped' ? '' : group;
+      if (current.group && !DEFAULT_META_GROUPS[current.group] && !customMetaGroups().includes(current.group)) {
+        state.meta.groups.push(current.group);
+        state.meta = normalizeMetaState(state.meta);
+      }
+    }
     current.custom = state.custom.includes(id) || current.custom;
     state.settings[id] = current;
     saveSettings();
@@ -1039,12 +1199,14 @@ const PersonalFilters = (() => {
     const label = String(input?.value || '').trim();
     if (!label) return;
     const id = normalizeId(label);
+    const activeGroup = filterGroupForHost(host || input?.closest?.('[data-personal-filter-host]'));
     if (!state.custom.includes(id) && !BUILTIN_IDS.has(id)) state.custom.push(id);
     state.settings[id] = cleanSetting(id, {
       label,
       color: 'gold',
       shape: 'circle',
       fill: 'outline',
+      group: activeGroup !== 'all' && activeGroup !== 'ungrouped' ? activeGroup : '',
       custom: true,
     });
     if (input) input.value = '';
@@ -1153,10 +1315,48 @@ const PersonalFilters = (() => {
       const rows = host.querySelector('.personal-filter-settings__rows');
       if (rows) rows.innerHTML = settingsRowsHtml(surface, filteredFilterIds(surface, query, settingsFilterIds(surface, host)));
     } else {
-      const grid = host.querySelector('.personal-filter-grid');
-      if (grid) grid.innerHTML = filterGridHtml(surface, filteredFilterIds(surface, query));
+      const selected = new Set(getSelectedIds(surface));
+      const groupTabs = host.querySelector('.personal-filter-group-tabs');
+      if (groupTabs) groupTabs.outerHTML = groupTabsHtml(surface, host);
+      const selectedGrid = host.querySelector('.personal-filter-grid--selected');
+      if (selectedGrid) selectedGrid.innerHTML = selectedFilterGridHtml(surface);
+      const grid = host.querySelector('.personal-filter-assignment__available .personal-filter-grid');
+      const groupedIds = idsForMetaGroup(surface, filterGroupForHost(host));
+      const ids = filteredFilterIds(surface, query, groupedIds).filter(id => !selected.has(id));
+      if (grid) grid.innerHTML = filterGridHtml(surface, ids);
     }
     bindHostControls(host);
+  }
+
+  function removeSelection(surface, id) {
+    const clean = normalizeId(id);
+    if (!clean || requiredSelectedIds(surface).includes(clean)) return;
+    setSelectedIds(surface, getSelectedIds(surface).filter(item => item !== clean));
+  }
+
+  function addSelection(surface, id) {
+    const clean = normalizeId(id);
+    if (!clean) return;
+    setSelectedIds(surface, [...getSelectedIds(surface), clean]);
+  }
+
+  function dragPayload(event) {
+    try {
+      const raw = event.dataTransfer?.getData('application/x-blueprints-filter-tag')
+        || event.dataTransfer?.getData('text/plain')
+        || '';
+      return JSON.parse(raw);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function setDragPayload(event, payload) {
+    if (!event.dataTransfer) return;
+    const raw = JSON.stringify(payload);
+    event.dataTransfer.setData('application/x-blueprints-filter-tag', raw);
+    event.dataTransfer.setData('text/plain', raw);
+    event.dataTransfer.effectAllowed = 'move';
   }
 
   function scheduleFilteredListRender(host) {
@@ -1209,6 +1409,16 @@ const PersonalFilters = (() => {
         setSelectedIds(surface, clearSelectedIds(surface));
       }, true);
     });
+    host.querySelectorAll('[data-personal-filter-group]').forEach(group => {
+      if (group.dataset.personalFilterBound === '1') return;
+      group.dataset.personalFilterBound = '1';
+      group.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        setFilterGroupForHost(host, group.dataset.personalFilterGroup || 'all');
+        renderHost(host);
+      }, true);
+    });
     host.querySelectorAll('[data-personal-filter-toggle]').forEach(toggle => {
       if (toggle.dataset.personalFilterBound === '1') return;
       toggle.dataset.personalFilterBound = '1';
@@ -1216,6 +1426,15 @@ const PersonalFilters = (() => {
         event.preventDefault();
         event.stopPropagation();
         toggleFilter(toggle.dataset.personalFilterSurface || host.dataset.personalFilterSurface || 'calendar', toggle.dataset.personalFilterToggle);
+      }, true);
+    });
+    host.querySelectorAll('[data-personal-filter-remove-selection]').forEach(remove => {
+      if (remove.dataset.personalFilterBound === '1') return;
+      remove.dataset.personalFilterBound = '1';
+      remove.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        removeSelection(remove.dataset.personalFilterSurface || host.dataset.personalFilterSurface || 'calendar', remove.dataset.personalFilterRemoveSelection);
       }, true);
     });
     host.querySelectorAll('[data-personal-filter-add]').forEach(add => {
@@ -1229,6 +1448,17 @@ const PersonalFilters = (() => {
         addTag(surface, input, host);
       }, true);
     });
+    host.querySelectorAll('[data-personal-filter-add-meta]').forEach(add => {
+      if (add.dataset.personalFilterBound === '1') return;
+      add.dataset.personalFilterBound = '1';
+      add.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const surface = add.dataset.personalFilterAddMeta || host.dataset.personalFilterSurface || 'calendar';
+        const input = host.querySelector(`[data-personal-filter-new-meta="${cssEscape(surface)}"]`);
+        addMetaGroup(surface, input, host);
+      }, true);
+    });
     host.querySelectorAll('[data-personal-filter-remove]').forEach(remove => {
       if (remove.dataset.personalFilterBound === '1') return;
       remove.dataset.personalFilterBound = '1';
@@ -1238,6 +1468,36 @@ const PersonalFilters = (() => {
         const row = remove.closest('[data-personal-filter-setting-row]');
         removeTag(row?.dataset?.personalFilterSurface || host.dataset.personalFilterSurface || 'calendar', remove.dataset.personalFilterRemove);
       }, true);
+    });
+    host.querySelectorAll('[data-personal-filter-drag-id], [data-personal-filter-selected-id]').forEach(chip => {
+      if (chip.dataset.personalFilterDragBound === '1') return;
+      chip.dataset.personalFilterDragBound = '1';
+      chip.addEventListener('dragstart', event => {
+        const surface = chip.dataset.personalFilterSurface || host.dataset.personalFilterSurface || 'calendar';
+        const id = chip.dataset.personalFilterDragId || chip.dataset.personalFilterSelectedId || '';
+        setDragPayload(event, {
+          surface,
+          id,
+          selected: Boolean(chip.dataset.personalFilterSelectedId),
+        });
+      });
+    });
+    host.querySelectorAll('[data-personal-filter-drop-selected], [data-personal-filter-drop-available]').forEach(zone => {
+      if (zone.dataset.personalFilterDropBound === '1') return;
+      zone.dataset.personalFilterDropBound = '1';
+      zone.addEventListener('dragover', event => {
+        if (!dragPayload(event)) return;
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+      });
+      zone.addEventListener('drop', event => {
+        const payload = dragPayload(event);
+        if (!payload?.id) return;
+        event.preventDefault();
+        const surface = payload.surface || zone.dataset.personalFilterDropSelected || zone.dataset.personalFilterDropAvailable || host.dataset.personalFilterSurface || 'calendar';
+        if (zone.dataset.personalFilterDropSelected) addSelection(surface, payload.id);
+        if (zone.dataset.personalFilterDropAvailable) removeSelection(surface, payload.id);
+      });
     });
   }
 
@@ -1256,9 +1516,10 @@ const PersonalFilters = (() => {
 
   function handleStorageChange(event) {
     if (!event.key) return;
-    if (event.key === SETTINGS_KEY || event.key === CUSTOM_KEY) {
+    if (event.key === SETTINGS_KEY || event.key === CUSTOM_KEY || event.key === META_KEY) {
       state.settings = readJson(SETTINGS_KEY, {});
       state.custom = readJson(CUSTOM_KEY, []);
+      state.meta = readJson(META_KEY, { groups: [] });
       invalidateFilterIndex();
       renderAll();
       return;

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const bodyShadeJs = fs.readFileSync(path.resolve(here, '../js/body-shade.js'), 'utf8');
 const bodyShadeCss = fs.readFileSync(path.resolve(here, '../css/body-shade.css'), 'utf8');
+const layoutNavCss = fs.readFileSync(path.resolve(here, '../css/layout-nav.css'), 'utf8');
 const hubMenuJs = fs.readFileSync(path.resolve(here, '../js/hub-menu.js'), 'utf8');
 const menuActionOrderJs = fs.readFileSync(path.resolve(here, '../js/menu-action-order.js'), 'utf8');
 const indexHtml = fs.readFileSync(path.resolve(here, '../index.html'), 'utf8');
@@ -1055,6 +1056,11 @@ assert.match(
   'Kanban snapshots must expose test-entry visibility, hidden counts, and the refresh FSM.',
 );
 assert.match(
+  daveTodoJs,
+  /hidden_personal_tasks[\s\S]*hidden_personal_events[\s\S]*hiddenKanbanTodoCount\(\)[\s\S]*hidden_kanban_todos/,
+  'ToDo hidden test-entry counts must include legacy manual task/event proof rows as well as Kanban ToDos.',
+);
+assert.match(
   kanbanBoardJs,
   /itemHasAgentWorkingOutTag[\s\S]*agent-working-out[\s\S]*itemHiddenByPreference[\s\S]*clearDetailSelectionState[\s\S]*hiddenDetailSuppressed/,
   'Kanban hidden test-entry preference must also suppress stale selected/detail state by persisted agent-working-out tag.',
@@ -1068,6 +1074,66 @@ assert.match(
   kanbanBoardJs,
   /data-kanban-item-tags-strip[\s\S]*data-kanban-item-tags-surface="\$\{escHtml\(NEW_ITEM_TAG_SURFACE\)\}"[\s\S]*submitInlineItem[\s\S]*tags:\s*itemTagIds\(NEW_ITEM_TAG_SURFACE\)/,
   'Kanban New Item panels must use the shared filter-tag strip and save selected tags.',
+);
+assert.match(
+  daveDiaryCss,
+  /\.diary-week-card__body\s*\{[\s\S]*--diary-week-event-height:\s*34px[\s\S]*display:\s*flex[\s\S]*flex-direction:\s*column/,
+  'Diary week cards must use a non-compressing vertical stack so event pills do not overprint when the bottom panel is raised.',
+);
+assert.match(
+  daveDiaryCss,
+  /\.diary-week-card__body\s+\.diary-week-event\s*\{[\s\S]*flex:\s*0\s+0\s+var\(--diary-week-event-height\)[\s\S]*max-height:\s*var\(--diary-week-event-height\)/,
+  'Diary week event pills must keep a fixed height and let the card body scroll earlier.',
+);
+assert.match(
+  daveDiaryCss,
+  /\.diary-week-card__body\s+\.diary-week-event__time,[\s\S]*\.diary-week-card__body\s+\.diary-week-event__title\s*\{[\s\S]*text-overflow:\s*ellipsis[\s\S]*white-space:\s*nowrap/,
+  'Diary week event pill text must ellipsize instead of wrapping into neighbouring pills.',
+);
+assert.match(
+  daveDiaryJs,
+  /const\s+ENTRY_LONG_PRESS_MS[\s\S]*const\s+DiaryEntryGestureMachine[\s\S]*longPress:\s*\{\s*next:\s*'PREVIEW_OPEN'[\s\S]*openEntryPreview\(row\)/,
+  'Diary entry gestures must use an FSM where long press opens the read-only entry preview modal.',
+);
+assert.match(
+  daveDiaryJs,
+  /root\.addEventListener\('pointerdown',\s*beginEntryLongPress\)[\s\S]*root\.addEventListener\('pointermove',\s*moveEntryLongPress\)/,
+  'Diary entry long-press preview must be delegated across week/day entry surfaces.',
+);
+assert.match(
+  personalFiltersJs,
+  /const\s+META_KEY[\s\S]*normalizeMetaState[\s\S]*metaGroupOptions[\s\S]*data-personal-filter-setting="group"[\s\S]*data-personal-filter-new-meta/,
+  'Personal Filter Settings must support browser-local meta tags and per-filter group assignment.',
+);
+assert.match(
+  personalFiltersJs,
+  /const\s+DEFAULT_META_GROUPS\s*=\s*\{\s*\};/,
+  'Personal Filters must not assign built-in filter tags to invented meta groups by default.',
+);
+assert.match(
+  personalFiltersJs,
+  /personal-filter-assignment[\s\S]*data-personal-filter-drop-selected[\s\S]*personal-filter-group-tabs[\s\S]*data-personal-filter-drag-id/,
+  'Personal Filters must render selected and grouped available tags with drag-to-assign affordances.',
+);
+assert.match(
+  personalFiltersCss,
+  /\.personal-filter-assignment\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*\.9fr\)\s+12px\s+minmax\(0,\s*1\.1fr\)[\s\S]*\.personal-filter-group-tab\.has-filter-match/,
+  'Personal Filters grouped picker must keep a stable split layout and highlight matching meta-group tabs.',
+);
+assert.match(
+  layoutNavCss,
+  /body\.shade-is-up\s+\.ultrawide-sidecar\s*\{[\s\S]*top:\s*var\(--ultrawide-shade-up-top,\s*0px\)/,
+  'Ultrawide sidecar must lift to the shade-up top edge with the main workspace.',
+);
+assert.match(
+  layoutNavCss,
+  /body\.shade-is-up\s+\.ultrawide-sidecar__header\s*\{[\s\S]*height:\s*0[\s\S]*padding-block:\s*0[\s\S]*overflow:\s*hidden/,
+  'Ultrawide sidecar chrome must collapse while shade is up so panel content does not keep a stale top gap.',
+);
+assert.match(
+  kanbanBoardCss,
+  /#ultrawide-sidecar-body\s+\.kanban-item-primary-row\s*>\s*\.kanban-goal-flag\s*\{[\s\S]*flex:\s*0\s+0\s+76px[\s\S]*min-width:\s*76px/,
+  'Kanban sidecar Goal checkbox must reserve a stable compact width instead of overflowing the panel edge.',
 );
 assert.match(
   kanbanBoardJs,

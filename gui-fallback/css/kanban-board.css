@@ -1205,12 +1205,27 @@ dialog.hub-modal#kanban-detail-modal[open] {
 }
 
 .kanban-goal-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
   min-height: 34px;
   align-self: end;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: rgba(0,0,0,.14);
   padding: 7px 9px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.kanban-goal-flag .hub-checkbox__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .kanban-item-tags-strip {
@@ -1492,6 +1507,12 @@ dialog.hub-modal#kanban-scoped-modal[open] {
 
 #ultrawide-sidecar-body .kanban-detail-edit-grid {
   grid-template-columns: 1fr;
+}
+
+#ultrawide-sidecar-body .kanban-item-primary-row > .kanban-goal-flag {
+  flex: 0 0 76px;
+  min-width: 76px;
+  padding-inline: 8px;
 }
 
 @media (max-width: 900px) {

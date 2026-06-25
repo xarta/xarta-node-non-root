@@ -131,11 +131,25 @@ h2 { font-size: 13px; font-weight: 600; text-transform: uppercase;
   }
 
   body.shade-is-up .ultrawide-sidecar {
-    top: var(--ultrawide-gap);
+    top: var(--ultrawide-shade-up-top, 0px);
   }
 
   body.shade-is-up .ultrawide-splitter {
-    top: var(--ultrawide-gap);
+    top: var(--ultrawide-shade-up-top, 0px);
+  }
+
+  body.shade-is-up .ultrawide-sidecar__header {
+    height: 0;
+    min-height: 0;
+    padding-block: 0;
+    border-bottom: 0;
+    opacity: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  body.shade-is-up .ultrawide-sidecar__body {
+    padding-top: var(--ultrawide-gap);
   }
 }
 

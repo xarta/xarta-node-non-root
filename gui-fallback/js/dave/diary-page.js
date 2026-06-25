@@ -30,6 +30,7 @@ const DiaryPage = (() => {
   const MODAL_CONTENT_VIEW_IDS = ['selected', 'day', 'search', 'new-entry', 'edit-entry', 'upcoming', 'provenance'];
   const DAY_DOUBLE_TAP_MS = 560;
   const DAY_DOUBLE_TAP_PX = 28;
+  const ENTRY_LONG_PRESS_MS = 620;
 
   const state = {
     loaded: false,
@@ -68,6 +69,9 @@ const DiaryPage = (() => {
   let pendingEntryTapTimer = null;
   let lastEntryTap = null;
   let lastEntryPointerCandidate = null;
+  let entryLongPressTimer = null;
+  let entryLongPressCandidate = null;
+  let suppressEntryClickUntil = 0;
 
   const escHtml = typeof esc === 'function'
     ? esc
@@ -747,9 +751,22 @@ const DiaryPage = (() => {
     pendingEntryTapTimer = null;
   }
 
+  function selectEntryForGesture(row, options = {}) {
+    return selectEntryById(entryIdentity(row), {
+      type: options.type || 'entry',
+      index: Number.isFinite(Number(options.index)) ? Number(options.index) : -1,
+      openEdit: false,
+    });
+  }
+
   function handleEntryActivation(row, event, options = {}) {
     const id = entryIdentity(row);
     if (!id) return false;
+    if (eventNow() < suppressEntryClickUntil) {
+      event.preventDefault();
+      event.stopPropagation();
+      return true;
+    }
     const now = eventNow();
     const x = Number.isFinite(event.clientX) ? event.clientX : 0;
     const y = Number.isFinite(event.clientY) ? event.clientY : 0;
@@ -760,26 +777,15 @@ const DiaryPage = (() => {
         && now - previous.time <= DAY_DOUBLE_TAP_MS
         && Math.hypot(x - previous.x, y - previous.y) <= DAY_DOUBLE_TAP_PX);
     clearPendingEntryPreview();
-    selectEntryById(id, {
-      type: options.type || 'entry',
-      index: Number.isFinite(Number(options.index)) ? Number(options.index) : -1,
-      openEdit: false,
-    });
     if (isDouble) {
       lastEntryTap = null;
       lastEntryPointerCandidate = null;
       event.preventDefault();
-      openEditEntryForSelected();
+      DiaryEntryGestureMachine.dispatch('doubleTap', { row, event, options });
       return true;
     }
     lastEntryTap = { id, time: now, x, y };
-    pendingEntryTapTimer = window.setTimeout(() => {
-      pendingEntryTapTimer = null;
-      lastEntryTap = null;
-      lastEntryPointerCandidate = null;
-      const current = findEventById(id);
-      openEntryPreview(current || row);
-    }, DAY_DOUBLE_TAP_MS);
+    DiaryEntryGestureMachine.dispatch('tap', { row, event, options });
     return true;
   }
 
@@ -802,6 +808,93 @@ const DiaryPage = (() => {
     const row = rows[Number(index)];
     if (!row) return false;
     return handleEntryActivation(row, event, { type, index: Number(index) });
+  }
+
+  const DiaryEntryGestureMachine = (() => {
+    let machineState = 'IDLE';
+    const transitions = {
+      IDLE: {
+        tap: { next: 'IDLE', actions: ['select'] },
+        doubleTap: { next: 'IDLE', actions: ['select', 'edit'] },
+        longPress: { next: 'PREVIEW_OPEN', actions: ['select', 'preview'] },
+      },
+      PREVIEW_OPEN: {
+        tap: { next: 'IDLE', actions: ['select'] },
+        doubleTap: { next: 'IDLE', actions: ['select', 'edit'] },
+        longPress: { next: 'PREVIEW_OPEN', actions: ['select', 'preview'] },
+      },
+    };
+
+    function syncState() {
+      machineState = activeActionModalView() === 'entry-preview' ? 'PREVIEW_OPEN' : 'IDLE';
+    }
+
+    function runAction(action, context) {
+      const row = context?.row;
+      if (!row) return;
+      if (action === 'select') selectEntryForGesture(row, context.options || {});
+      if (action === 'edit') openEditEntryForSelected();
+      if (action === 'preview') openEntryPreview(row);
+    }
+
+    return {
+      dispatch(input, context = {}) {
+        syncState();
+        const transition = transitions[machineState]?.[input];
+        if (!transition) return machineState;
+        machineState = transition.next;
+        transition.actions.forEach(action => runAction(action, context));
+        syncState();
+        return machineState;
+      },
+    };
+  })();
+
+  function clearEntryLongPress() {
+    if (entryLongPressTimer) window.clearTimeout(entryLongPressTimer);
+    entryLongPressTimer = null;
+    entryLongPressCandidate = null;
+  }
+
+  function beginEntryLongPress(event) {
+    if (event.button !== undefined && event.button !== 0) return;
+    const target = event.target.closest('[data-diary-action="select-entry"][data-diary-entry-id], [data-diary-select-type][data-diary-entry-id]');
+    if (!target) return;
+    const row = findEventById(target.dataset.diaryEntryId);
+    if (!row) return;
+    clearEntryLongPress();
+    entryLongPressCandidate = {
+      id: entryIdentity(row),
+      x: Number.isFinite(event.clientX) ? event.clientX : 0,
+      y: Number.isFinite(event.clientY) ? event.clientY : 0,
+      options: {
+        type: target.dataset.diarySelectType || 'entry',
+        index: Number.isFinite(Number(target.dataset.diarySelectIndex)) ? Number(target.dataset.diarySelectIndex) : -1,
+      },
+    };
+    entryLongPressTimer = window.setTimeout(() => {
+      const candidate = entryLongPressCandidate;
+      clearEntryLongPress();
+      const current = findEventById(candidate?.id) || row;
+      suppressEntryClickUntil = eventNow() + 720;
+      clearPendingEntryPreview();
+      lastEntryTap = null;
+      lastEntryPointerCandidate = null;
+      DiaryEntryGestureMachine.dispatch('longPress', {
+        row: current,
+        event,
+        options: candidate?.options || {},
+      });
+    }, ENTRY_LONG_PRESS_MS);
+  }
+
+  function moveEntryLongPress(event) {
+    if (!entryLongPressTimer || !entryLongPressCandidate) return;
+    const x = Number.isFinite(event.clientX) ? event.clientX : 0;
+    const y = Number.isFinite(event.clientY) ? event.clientY : 0;
+    if (Math.hypot(x - entryLongPressCandidate.x, y - entryLongPressCandidate.y) > DAY_DOUBLE_TAP_PX) {
+      clearEntryLongPress();
+    }
   }
 
   function selectionAttrs(type, index) {
@@ -2973,6 +3066,11 @@ const DiaryPage = (() => {
     }
     syncEntryDate(true);
     renderEntryTagSummaries();
+    root.addEventListener('pointerdown', beginEntryLongPress);
+    root.addEventListener('pointermove', moveEntryLongPress);
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(type => {
+      root.addEventListener(type, clearEntryLongPress);
+    });
     root.addEventListener('pointerup', event => {
       const entryBtn = event.target.closest('[data-diary-action="select-entry"][data-diary-entry-id]');
       if (entryBtn) markEntryTapCandidate(entryBtn, event);
