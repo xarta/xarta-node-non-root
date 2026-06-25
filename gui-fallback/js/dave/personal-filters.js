@@ -510,6 +510,12 @@ const PersonalFilters = (() => {
     invalidateFilterIndex();
   }
 
+  function emitRegistryChange(reason) {
+    window.dispatchEvent(new CustomEvent('personal-filters:registry', {
+      detail: { reason: reason || 'registry-updated' },
+    }));
+  }
+
   function loadServerState() {
     if (state.serverStatePromise) return state.serverStatePromise;
     state.serverStatePromise = filterApi('/api/v1/personal/filters', {
@@ -519,6 +525,7 @@ const PersonalFilters = (() => {
       .then(payload => {
         applyServerState(payload);
         renderAll();
+        emitRegistryChange('server-state-loaded');
         return payload;
       })
       .catch(err => {

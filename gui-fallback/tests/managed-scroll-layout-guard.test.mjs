@@ -499,6 +499,36 @@ assert.match(
 );
 assert.match(
   daveCalendarJs,
+  /const\s+CalendarDayGestureMachine\s*=\s*\(\(\)\s*=>[\s\S]*TAP_PENDING[\s\S]*doubleTap:\s*\{\s*next:\s*'DOUBLE_HANDLED',\s*actions:\s*\[[^\]]*'clearTapTimer'[^\]]*'openDoubleTarget'[^\]]*\]\s*\}[\s\S]*tapTimeout:\s*\{\s*next:\s*'IDLE',\s*actions:\s*\['selectPendingDay'\]\s*\}[\s\S]*PRESSING[\s\S]*longPressTimeout:\s*\{\s*next:\s*'IDLE',\s*actions:\s*\[[^\]]*'openYearDayView'[^\]]*\]\s*\}/,
+  'Calendar day gestures must use an explicit FSM where single click selects, double click drills down, and Year long press opens the compact day view.',
+);
+assert.match(
+  daveCalendarJs,
+  /function\s+compactEventText\([\s\S]*function\s+dayHubViewHtml\([\s\S]*calendar-day-hub-view[\s\S]*function\s+openDayHubView\([\s\S]*showActionModal/,
+  'Calendar Year long press must open a compact read-only day summary modal rather than navigating to Diary day/week.',
+);
+assert.match(
+  daveCalendarJs,
+  /window\.addEventListener\('personal-filters:registry'[\s\S]*PersonalFilters\.invalidateSurface\('calendar'\)[\s\S]*render\(\)/,
+  'Calendar must re-render day borders when the server-backed Personal filter registry loads or changes.',
+);
+assert.match(
+  personalFiltersJs,
+  /function\s+emitRegistryChange\([\s\S]*personal-filters:registry[\s\S]*applyServerState\(payload\)[\s\S]*renderAll\(\)[\s\S]*emitRegistryChange\('server-state-loaded'\)/,
+  'Personal filters must emit a registry event after server-backed filter/meta-filter state loads.',
+);
+assert.doesNotMatch(
+  functionSlice(daveCalendarJs, 'load'),
+  /if\s*\(\s*state\.loading\s*\)\s*return\s+state\.data/,
+  'Calendar load must not return old month/week data while a Year range request is needed.',
+);
+assert.match(
+  functionSlice(daveCalendarJs, 'load'),
+  /requestRangeStart\s*=\s*rangeStart\(\)[\s\S]*requestRangeEnd\s*=\s*rangeEnd\(\)[\s\S]*loadRequestId[\s\S]*date_start:\s*requestRangeStart[\s\S]*date_end:\s*requestRangeEnd[\s\S]*requestId\s*!==\s*state\.loadRequestId/,
+  'Calendar load must pin the requested range and discard stale responses from older view/range requests.',
+);
+assert.match(
+  daveCalendarJs,
   /'calendar\.toggleContentView':\s*\(\)\s*=>\s*CalendarPage\.toggleContentView\(\)/,
   'Calendar View context action must call the same content-view cycle path.',
 );

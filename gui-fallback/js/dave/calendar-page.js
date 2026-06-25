@@ -41,12 +41,17 @@ const CalendarPage = (() => {
   const CONTENT_VIEW_IDS = CONTENT_VIEWS.map(view => view.id);
   const INLINE_CONTENT_VIEW_IDS = ['calendar', 'filters', 'filter-settings'];
   const MODAL_CONTENT_VIEW_IDS = ['selected', 'milestones', 'search', 'new-event', 'upcoming', 'provenance'];
-  const DAY_DOUBLE_TAP_MS = 560;
-  const DAY_DOUBLE_TAP_PX = 28;
+  const DAY_DOUBLE_TAP_MS = 280;
+  const DAY_DOUBLE_TAP_PX = 24;
+  const DAY_LONG_PRESS_MS = 560;
+  const DAY_MOVE_TOLERANCE_PX = 12;
 
   const state = {
     loaded: false,
     loading: false,
+    loadRequestId: 0,
+    loadedRangeStart: '',
+    loadedRangeEnd: '',
     data: null,
     error: '',
     date: localDateString(new Date()),
@@ -78,8 +83,6 @@ const CalendarPage = (() => {
   let dateRangeDrag = null;
   let suppressSelectDayClick = false;
   let suppressSelectDayClickUntil = 0;
-  let lastDayTap = null;
-  let lastDayClick = null;
   let pendingEventTapTimer = null;
   let lastEventTap = null;
 
@@ -880,6 +883,53 @@ const CalendarPage = (() => {
     return `<span class="calendar-event-dots">${bars}</span><span class="calendar-event-stack">${chips}${more}</span>`;
   }
 
+  function compactEventText(event) {
+    const text = String(event?.body || event?.body_excerpt || event?.summary || event?.status || '').trim();
+    if (!text) return '';
+    if (text.length <= 280) return text;
+    return `${text.slice(0, 277).trimEnd()}...`;
+  }
+
+  function dayHubViewHtml(dateText) {
+    const rows = eventsInRange(dateText, dateText);
+    const label = monthLabel(dateText, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+    const body = rows.length
+      ? rows.map(event => {
+        const tags = eventTags(event).slice(0, 8);
+        const text = compactEventText(event);
+        return `
+          <article class="calendar-day-hub-event calendar-day-hub-event--${escHtml(eventCategory(event))}">
+            <div class="calendar-day-hub-event__head">
+              <span class="calendar-day-hub-event__time">${escHtml(eventTime(event) || 'Event')}</span>
+              <span class="calendar-day-hub-event__title">${escHtml(event.title || event.kind || event.event_id || 'Untitled event')}</span>
+            </div>
+            ${text ? `<div class="calendar-day-hub-event__body">${escHtml(text)}</div>` : ''}
+            <div class="calendar-day-hub-event__meta">
+              <span>${escHtml(sourceType(event) || event.kind || 'source')}</span>
+              ${tags.map(tag => `<span>${escHtml(tag)}</span>`).join('')}
+            </div>
+          </article>
+        `;
+      }).join('')
+      : '<div class="calendar-empty">No visible events for this day.</div>';
+    return `
+      <section class="calendar-day-hub-view" data-calendar-day-hub-date="${escHtml(dateText)}">
+        <div class="calendar-day-hub-view__meta">${escHtml(label)} - ${rows.length} visible event${rows.length === 1 ? '' : 's'}</div>
+        <div class="calendar-day-hub-view__list">${body}</div>
+      </section>
+    `;
+  }
+
+  function openDayHubView(dateText) {
+    const cleanDate = localDateString(parseLocalDate(dateText));
+    return showActionModal(
+      monthLabel(cleanDate, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }),
+      dayHubViewHtml(cleanDate),
+      '',
+      { contentView: 'day-hub-view' },
+    );
+  }
+
   function monthGridDates(monthDate) {
     const start = startOfWeek(new Date(monthDate.getFullYear(), monthDate.getMonth(), 1));
     return Array.from({ length: 42 }, (_, index) => addDays(start, index));
@@ -1275,8 +1325,16 @@ const CalendarPage = (() => {
   }
 
   async function load(options = {}) {
-    if (state.loading) return state.data;
-    if (state.loaded && !options.force) return state.data;
+    const requestRangeStart = rangeStart();
+    const requestRangeEnd = rangeEnd();
+    if (
+      state.loaded
+      && !options.force
+      && state.loadedRangeStart === requestRangeStart
+      && state.loadedRangeEnd === requestRangeEnd
+    ) return state.data;
+    const requestId = state.loadRequestId + 1;
+    state.loadRequestId = requestId;
     state.loading = true;
     state.error = '';
     render();
@@ -1288,8 +1346,8 @@ const CalendarPage = (() => {
       const items = [];
       for (let page = 0; page < 20; page += 1) {
         const params = new URLSearchParams({
-          date_start: rangeStart(),
-          date_end: rangeEnd(),
+          date_start: requestRangeStart,
+          date_end: requestRangeEnd,
           limit: String(limit),
           offset: String(offset),
         });
@@ -1311,7 +1369,10 @@ const CalendarPage = (() => {
         count: items.length,
         has_more: false,
       };
+      if (requestId !== state.loadRequestId) return state.data;
       state.data = data;
+      state.loadedRangeStart = requestRangeStart;
+      state.loadedRangeEnd = requestRangeEnd;
       if (window.PersonalFilters?.invalidateSurface) {
         window.PersonalFilters.invalidateSurface('calendar');
         window.PersonalFilters.invalidateSurface(EVENT_TAG_SURFACE);
@@ -1320,11 +1381,14 @@ const CalendarPage = (() => {
       state.loaded = true;
       return data;
     } catch (error) {
+      if (requestId !== state.loadRequestId) return state.data;
       state.error = error.message || String(error);
       return null;
     } finally {
-      state.loading = false;
-      render();
+      if (requestId === state.loadRequestId) {
+        state.loading = false;
+        render();
+      }
     }
   }
 
@@ -2220,29 +2284,6 @@ const CalendarPage = (() => {
       : Date.now();
   }
 
-  function handleDateDoubleTap(dateText, event) {
-    if (!dateText) return false;
-    const now = eventNow();
-    const x = Number.isFinite(event.clientX) ? event.clientX : 0;
-    const y = Number.isFinite(event.clientY) ? event.clientY : 0;
-    const previous = lastDayTap;
-    const isDoubleTap = previous
-      && previous.date === dateText
-      && previous.view === state.view
-      && now - previous.time <= DAY_DOUBLE_TAP_MS
-      && Math.hypot(x - previous.x, y - previous.y) <= DAY_DOUBLE_TAP_PX;
-    lastDayTap = isDoubleTap ? null : { date: dateText, view: state.view, time: now, x, y };
-    if (!isDoubleTap) return false;
-    suppressSelectDayInteractions(700);
-    if (state.view === 'year') {
-      openMonth(dateText);
-    } else if (state.view === 'month') {
-      openDiaryWeek(dateText);
-    }
-    event.preventDefault();
-    return true;
-  }
-
   function suppressSelectDayInteractions(durationMs = 220) {
     suppressSelectDayClick = true;
     suppressSelectDayClickUntil = eventNow() + durationMs;
@@ -2256,25 +2297,6 @@ const CalendarPage = (() => {
     if (eventNow() >= suppressSelectDayClickUntil) {
       suppressSelectDayClick = false;
       return false;
-    }
-    event.preventDefault();
-    return true;
-  }
-
-  function handleDateClickDoubleTap(dateText, event) {
-    if (!dateText) return false;
-    const now = eventNow();
-    const previous = lastDayClick;
-    const isDoubleTap = previous
-      && previous.date === dateText
-      && previous.view === state.view
-      && now - previous.time <= DAY_DOUBLE_TAP_MS;
-    lastDayClick = isDoubleTap ? null : { date: dateText, view: state.view, time: now };
-    if (!isDoubleTap) return false;
-    if (state.view === 'year') {
-      openMonth(dateText);
-    } else if (state.view === 'month') {
-      openDiaryWeek(dateText);
     }
     event.preventDefault();
     return true;
@@ -2320,7 +2342,6 @@ const CalendarPage = (() => {
     dateRangeDrag = null;
     removeDateRangeDragListeners();
     if (!drag.moved) {
-      handleDateDoubleTap(drag.start, event);
       return;
     }
     suppressSelectDayInteractions(180);
@@ -2617,6 +2638,200 @@ const CalendarPage = (() => {
     ]), 'No write command was run.');
   }
 
+  const CalendarDayGestureMachine = (() => {
+    let machineState = 'IDLE';
+    let pendingTapTimer = null;
+    let pendingTapContext = null;
+    let longPressTimer = null;
+    let pressContext = null;
+    let ignoreClicksUntil = 0;
+    let lastDoubleAt = 0;
+    const transitions = {
+      IDLE: {
+        pointerDown: { next: 'PRESSING', actions: ['startLongPressTimer'] },
+        click: { next: 'TAP_PENDING', actions: ['startTapTimer'] },
+        doubleTap: { next: 'DOUBLE_HANDLED', actions: ['clearTapTimer', 'openDoubleTarget'] },
+        longPressTimeout: { next: 'IDLE', actions: ['markLongPress', 'clearTapTimer', 'openYearDayView'] },
+      },
+      TAP_PENDING: {
+        pointerDown: { next: 'PRESSING', actions: ['startLongPressTimer'] },
+        click: { next: 'TAP_PENDING', actions: ['startTapTimer'] },
+        doubleTap: { next: 'DOUBLE_HANDLED', actions: ['clearTapTimer', 'openDoubleTarget'] },
+        tapTimeout: { next: 'IDLE', actions: ['selectPendingDay'] },
+        longPressTimeout: { next: 'IDLE', actions: ['markLongPress', 'clearTapTimer', 'openYearDayView'] },
+      },
+      PRESSING: {
+        pointerMove: { next: 'PRESSING', actions: ['cancelLongPressIfMoved'] },
+        pointerUp: { next: 'IDLE', actions: ['clearLongPressTimer'] },
+        pointerCancel: { next: 'IDLE', actions: ['clearLongPressTimer'] },
+        longPressTimeout: { next: 'IDLE', actions: ['markLongPress', 'clearTapTimer', 'openYearDayView'] },
+      },
+      DOUBLE_HANDLED: {
+        click: { next: 'IDLE', actions: ['clearClickSuppressTimer'] },
+        pointerDown: { next: 'PRESSING', actions: ['startLongPressTimer'] },
+      },
+    };
+
+    function isGestureState() {
+      return machineState === 'TAP_PENDING' || machineState === 'PRESSING';
+    }
+
+    function syncState() {
+      if (!isGestureState()) machineState = 'IDLE';
+    }
+
+    function contextTime(context) {
+      return Number.isFinite(context?.time) ? context.time : eventNow();
+    }
+
+    function isSameTap(context, pending) {
+      if (!context?.date || !pending?.date) return false;
+      if (context.date !== pending.date || context.view !== pending.view) return false;
+      const elapsed = contextTime(context) - contextTime(pending);
+      const moved = Math.hypot((context.x || 0) - (pending.x || 0), (context.y || 0) - (pending.y || 0));
+      return elapsed <= DAY_DOUBLE_TAP_MS && moved <= DAY_DOUBLE_TAP_PX;
+    }
+
+    function clearTapTimer() {
+      if (pendingTapTimer) window.clearTimeout(pendingTapTimer);
+      pendingTapTimer = null;
+    }
+
+    function clearTapContext() {
+      pendingTapContext = null;
+    }
+
+    function startTapTimer(context) {
+      clearTapTimer();
+      pendingTapContext = context;
+      pendingTapTimer = window.setTimeout(() => {
+        dispatch('tapTimeout', pendingTapContext);
+      }, DAY_DOUBLE_TAP_MS);
+    }
+
+    function clearLongPressTimer() {
+      if (longPressTimer) window.clearTimeout(longPressTimer);
+      longPressTimer = null;
+      pressContext = null;
+    }
+
+    function startLongPressTimer(context) {
+      clearLongPressTimer();
+      pressContext = {
+        ...context,
+        startX: context?.x || 0,
+        startY: context?.y || 0,
+      };
+      longPressTimer = window.setTimeout(() => {
+        dispatch('longPressTimeout', pressContext);
+      }, DAY_LONG_PRESS_MS);
+    }
+
+    function cancelLongPressIfMoved(context) {
+      if (!longPressTimer || !pressContext) return;
+      const moved = Math.hypot((context?.x || 0) - pressContext.startX, (context?.y || 0) - pressContext.startY);
+      if (moved > DAY_MOVE_TOLERANCE_PX) clearLongPressTimer();
+    }
+
+    function noteDoubleTap() {
+      const now = eventNow();
+      if (now - lastDoubleAt < 80) return false;
+      lastDoubleAt = now;
+      return true;
+    }
+
+    function openDoubleTarget(context) {
+      const dateText = context?.date;
+      if (!dateText) return;
+      if (context.view === 'year') openMonth(dateText);
+      else if (context.view === 'month') openDiaryWeek(dateText);
+    }
+
+    function selectPendingDay(context) {
+      if (!context?.date) return;
+      selectDay(context.date);
+      clearTapContext();
+    }
+
+    function openYearDayView(context) {
+      if (context?.view !== 'year' || !context?.date) return;
+      openDayHubView(context.date);
+    }
+
+    function runAction(action, context) {
+      if (action === 'startTapTimer') {
+        startTapTimer(context);
+        return;
+      }
+      if (action === 'clearTapTimer') {
+        clearTapTimer();
+        clearTapContext();
+        return;
+      }
+      if (action === 'startLongPressTimer') {
+        startLongPressTimer(context);
+        return;
+      }
+      if (action === 'clearLongPressTimer') {
+        clearLongPressTimer();
+        return;
+      }
+      if (action === 'cancelLongPressIfMoved') {
+        cancelLongPressIfMoved(context);
+        return;
+      }
+      if (action === 'markLongPress') {
+        ignoreClicksUntil = eventNow() + 700;
+        clearLongPressTimer();
+        return;
+      }
+      if (action === 'clearClickSuppressTimer') {
+        ignoreClicksUntil = 0;
+        return;
+      }
+      if (action === 'selectPendingDay') selectPendingDay(context);
+      if (action === 'openDoubleTarget') openDoubleTarget(context);
+      if (action === 'openYearDayView') openYearDayView(context);
+    }
+
+    function eventContext(anchor, event, dateText = '') {
+      return {
+        anchor,
+        date: localDateString(parseLocalDate(dateText || anchor?.dataset?.calendarDate || state.date)),
+        view: state.view,
+        detail: Number(event?.detail || 0),
+        pointerId: event?.pointerId,
+        time: eventNow(),
+        x: Number.isFinite(event?.clientX) ? event.clientX : 0,
+        y: Number.isFinite(event?.clientY) ? event.clientY : 0,
+      };
+    }
+
+    function dispatch(input, context = {}) {
+      if (input === 'click' && eventNow() < ignoreClicksUntil) return machineState;
+      if (input === 'click' && (context.detail >= 2 || isSameTap(context, pendingTapContext))) {
+        input = 'doubleTap';
+      }
+      if (input === 'doubleTap' && !noteDoubleTap()) return machineState;
+      if (!isGestureState()) syncState();
+      const transition = transitions[machineState]?.[input];
+      if (!transition) return machineState;
+      machineState = transition.next;
+      transition.actions.forEach(action => runAction(action, context));
+      if (!isGestureState() && machineState !== 'DOUBLE_HANDLED') syncState();
+      return machineState;
+    }
+
+    return {
+      dispatch,
+      eventContext,
+      getState() {
+        if (!isGestureState()) syncState();
+        return machineState;
+      },
+    };
+  })();
+
   const CalendarContentViewMachine = (() => {
     const doubleTapMs = 280;
     const doubleTapPx = 24;
@@ -2905,7 +3120,36 @@ const CalendarPage = (() => {
     }
     syncCreateDate();
     renderEventTagSummaries();
-    root.addEventListener('pointerdown', beginDateRangeDrag);
+    window.addEventListener('personal-filters:registry', () => {
+      if (window.PersonalFilters?.invalidateSurface) {
+        window.PersonalFilters.invalidateSurface('calendar');
+        window.PersonalFilters.invalidateSurface(EVENT_TAG_SURFACE);
+        window.PersonalFilters.invalidateSurface(SEARCH_TAG_SURFACE);
+      }
+      render();
+    });
+    root.addEventListener('pointerdown', event => {
+      const btn = event.target.closest('[data-calendar-action="select-day"][data-calendar-date]');
+      if (btn && (event.button === undefined || event.button === 0)) {
+        try {
+          if (Number.isFinite(event.pointerId) && typeof btn.setPointerCapture === 'function') btn.setPointerCapture(event.pointerId);
+        } catch (_) {}
+        CalendarDayGestureMachine.dispatch('pointerDown', CalendarDayGestureMachine.eventContext(btn, event));
+      }
+      beginDateRangeDrag(event);
+    });
+    root.addEventListener('pointermove', event => {
+      const btn = event.target.closest('[data-calendar-action="select-day"][data-calendar-date]');
+      if (!btn) return;
+      CalendarDayGestureMachine.dispatch('pointerMove', CalendarDayGestureMachine.eventContext(btn, event));
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(type => {
+      root.addEventListener(type, event => {
+        const btn = event.target.closest('[data-calendar-action="select-day"][data-calendar-date]');
+        if (!btn) return;
+        CalendarDayGestureMachine.dispatch(type === 'pointerup' ? 'pointerUp' : 'pointerCancel', CalendarDayGestureMachine.eventContext(btn, event));
+      });
+    });
     root.addEventListener('click', event => {
       const todoLink = event.target.closest('[data-personal-todo-link]');
       if (todoLink) {
@@ -2933,18 +3177,9 @@ const CalendarPage = (() => {
       if (action === 'mode-week') setMode('week');
       if (action === 'select-day') {
         if (shouldSuppressSelectDayInteraction(event)) return;
-        if (state.view === 'year' && event.detail >= 2) {
-          lastDayClick = null;
-          openMonth(btn.dataset.calendarDate);
-          return;
-        }
-        if (state.view === 'month' && event.detail >= 2) {
-          lastDayClick = null;
-          openDiaryWeek(btn.dataset.calendarDate);
-          return;
-        }
-        if (handleDateClickDoubleTap(btn.dataset.calendarDate, event)) return;
-        selectDay(btn.dataset.calendarDate);
+        event.preventDefault();
+        CalendarDayGestureMachine.dispatch('click', CalendarDayGestureMachine.eventContext(btn, event));
+        return;
       }
       if (action === 'open-month') openMonth(btn.dataset.calendarDate);
       if (action === 'toggle-markdown-preview') toggleMarkdownPreview(btn, root);
@@ -2955,8 +3190,7 @@ const CalendarPage = (() => {
       if (!btn) return;
       if (shouldSuppressSelectDayInteraction(event)) return;
       event.preventDefault();
-      if (state.view === 'year') openMonth(btn.dataset.calendarDate);
-      else if (state.view === 'month') openDiaryWeek(btn.dataset.calendarDate);
+      CalendarDayGestureMachine.dispatch('doubleTap', CalendarDayGestureMachine.eventContext(btn, event));
     });
 	    document.addEventListener('click', event => {
 	      const btn = event.target.closest('[data-calendar-action="submit-event"]');

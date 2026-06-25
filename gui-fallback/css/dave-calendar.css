@@ -1062,6 +1062,85 @@
   overflow-wrap: anywhere;
 }
 
+.calendar-day-hub-view {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.calendar-day-hub-view__meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.calendar-day-hub-view__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(62vh, 560px);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.calendar-day-hub-event {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--calendar-event-color, var(--accent));
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: rgba(255, 255, 255, .025);
+}
+
+.calendar-day-hub-event--holiday { --calendar-event-color: #ef4444; }
+.calendar-day-hub-event--task { --calendar-event-color: #22c55e; }
+.calendar-day-hub-event--kanban { --calendar-event-color: #d9aa32; }
+.calendar-day-hub-event--import { --calendar-event-color: #a855f7; }
+.calendar-day-hub-event--calendar { --calendar-event-color: #5b9cf6; }
+
+.calendar-day-hub-event__head {
+  display: grid;
+  grid-template-columns: minmax(52px, max-content) minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+.calendar-day-hub-event__time {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.calendar-day-hub-event__title {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.calendar-day-hub-event__body {
+  margin-top: 5px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.calendar-day-hub-event__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.calendar-day-hub-event__meta span {
+  border: 1px solid rgba(91, 156, 246, .28);
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .calendar-agenda-list,
 .calendar-provenance-list {
   display: grid;
