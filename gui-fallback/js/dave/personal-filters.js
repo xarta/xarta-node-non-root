@@ -471,6 +471,20 @@ const PersonalFilters = (() => {
     return cleanSetting(id, state.settings[id] || DEFAULTS[id] || {});
   }
 
+  function filterPresentation(id) {
+    const clean = normalizeId(id);
+    const setting = settingFor(clean);
+    return {
+      id: clean,
+      label: setting.label,
+      color: setting.color,
+      colorValue: colorValue(setting.color),
+      shape: setting.shape,
+      fill: setting.fill,
+      group: setting.group || '',
+    };
+  }
+
   function saveSettings() {
     if (state.serverStateLoaded) return;
     writeJson(SETTINGS_KEY, state.settings);
@@ -2098,6 +2112,7 @@ const PersonalFilters = (() => {
     resetSettingsOrder,
     recordTokens,
     loadServerState,
+    filterPresentation,
     metaGroupForRecord,
     bestMetaGroupForRecords,
     metaGroupColor,

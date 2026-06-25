@@ -45,6 +45,22 @@ const CalendarPage = (() => {
   const DAY_DOUBLE_TAP_PX = 24;
   const DAY_LONG_PRESS_MS = 560;
   const DAY_MOVE_TOLERANCE_PX = 12;
+  const MONTH_EVENT_TITLE_LIMIT = 22;
+  const MONTH_DESKTOP_EVENT_LIMIT = 3;
+  const MONTH_MOBILE_MARKER_SLOTS = 4;
+  const MONTH_MARKER_GENERIC_TOKENS = new Set([
+    'calendar',
+    'calendar-event',
+    'all-day',
+    'timed',
+    'tasks',
+    'task',
+    'kanban',
+    'imports',
+    'import',
+    'sources',
+    'source',
+  ]);
 
   const state = {
     loaded: false,
@@ -367,6 +383,15 @@ const CalendarPage = (() => {
 
   function eventTags(event) {
     return Array.isArray(event?.tags) ? event.tags.map(tag => String(tag).toLowerCase()) : [];
+  }
+
+  function normalizeFilterId(value) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/&/g, ' and ')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
   }
 
   function isCalendarEvent(event) {
@@ -864,16 +889,152 @@ const CalendarPage = (() => {
     return ` style="--calendar-day-meta-color: ${escHtml(color)};" data-calendar-meta-group="${escHtml(metaGroup.id)}"`;
   }
 
+  function selectedCalendarFilterIds() {
+    return window.PersonalFilters?.getSelectedIds
+      ? window.PersonalFilters.getSelectedIds('calendar').map(normalizeFilterId).filter(Boolean)
+      : [];
+  }
+
+  function recordFilterTokens(event) {
+    const tokens = new Set();
+    if (window.PersonalFilters?.recordTokens) {
+      window.PersonalFilters.recordTokens(event).forEach(token => {
+        const clean = normalizeFilterId(token);
+        if (clean) tokens.add(clean);
+      });
+    }
+    eventTags(event).forEach(tag => {
+      const clean = normalizeFilterId(tag);
+      if (clean) tokens.add(clean);
+    });
+    const category = normalizeFilterId(eventCategory(event));
+    if (category) tokens.add(category);
+    return Array.from(tokens);
+  }
+
+  function markerTokenSortValue(token, event, selected, actualTags) {
+    const selectedIndex = selected.indexOf(token);
+    const actualIndex = actualTags.indexOf(token);
+    const generic = MONTH_MARKER_GENERIC_TOKENS.has(token) || token === normalizeFilterId(event?.kind);
+    const specificity = (token.match(/-/g) || []).length;
+    return {
+      selectedIndex,
+      bucket: selectedIndex >= 0 ? 0 : (actualIndex >= 0 ? 1 : 2) + (generic ? 1 : 0),
+      specificity,
+      length: token.length,
+      actualIndex: actualIndex >= 0 ? actualIndex : 9999,
+    };
+  }
+
+  function compareMarkerTokens(a, b, event, selected, actualTags) {
+    const left = markerTokenSortValue(a, event, selected, actualTags);
+    const right = markerTokenSortValue(b, event, selected, actualTags);
+    if (left.bucket !== right.bucket) return left.bucket - right.bucket;
+    if (left.selectedIndex !== right.selectedIndex && left.selectedIndex >= 0 && right.selectedIndex >= 0) {
+      return left.selectedIndex - right.selectedIndex;
+    }
+    if (left.specificity !== right.specificity) return right.specificity - left.specificity;
+    if (left.length !== right.length) return right.length - left.length;
+    if (left.actualIndex !== right.actualIndex) return left.actualIndex - right.actualIndex;
+    return a.localeCompare(b);
+  }
+
+  function monthEventMarker(event) {
+    const selected = selectedCalendarFilterIds();
+    const actualTags = eventTags(event).map(normalizeFilterId).filter(Boolean);
+    const tokens = recordFilterTokens(event);
+    const selectedMatches = selected.filter(id => tokens.includes(id));
+    const candidates = Array.from(new Set([
+      ...selectedMatches,
+      ...actualTags,
+      ...tokens,
+    ])).filter(Boolean);
+    const markerId = (candidates.sort((a, b) => compareMarkerTokens(a, b, event, selected, actualTags))[0])
+      || normalizeFilterId(eventCategory(event))
+      || 'calendar';
+    const presentation = window.PersonalFilters?.filterPresentation
+      ? window.PersonalFilters.filterPresentation(markerId)
+      : null;
+    return {
+      id: presentation?.id || markerId,
+      label: presentation?.label || markerId,
+      color: presentation?.colorValue || '',
+      shape: presentation?.shape || 'circle',
+      fill: presentation?.fill || 'filled',
+      selectedRank: selected.indexOf(markerId),
+    };
+  }
+
+  function monthEventMarkerHtml(marker) {
+    const colorStyle = marker.color ? ` style="--calendar-event-marker-color: ${escHtml(marker.color)};"` : '';
+    return `<span class="calendar-event-marker" data-shape="${escHtml(marker.shape)}" data-fill="${escHtml(marker.fill)}"${colorStyle} aria-hidden="true"></span>`;
+  }
+
+  function monthEventExcerpt(event) {
+    const title = String(event?.title || event?.kind || 'Event').replace(/\s+/g, ' ').trim();
+    return title.length > MONTH_EVENT_TITLE_LIMIT
+      ? title.slice(0, MONTH_EVENT_TITLE_LIMIT).trimEnd()
+      : title;
+  }
+
+  function monthEventChipHtml(event) {
+    const marker = monthEventMarker(event);
+    return `
+      <span class="calendar-event-chip calendar-event-chip--${escHtml(eventCategory(event))}">
+        ${monthEventMarkerHtml(marker)}
+        <span class="calendar-event-chip__title">${escHtml(monthEventExcerpt(event))}</span>
+      </span>
+    `;
+  }
+
+  function mobileMarkerGroups(events) {
+    const groups = new Map();
+    events.forEach(event => {
+      const marker = monthEventMarker(event);
+      const key = [marker.id, marker.shape, marker.fill, marker.color].join('\u0000');
+      const group = groups.get(key) || { marker, count: 0 };
+      group.count += 1;
+      groups.set(key, group);
+    });
+    return Array.from(groups.values()).sort((a, b) => {
+      const aSelected = a.marker.selectedRank >= 0 ? a.marker.selectedRank : 9999;
+      const bSelected = b.marker.selectedRank >= 0 ? b.marker.selectedRank : 9999;
+      return (aSelected - bSelected)
+        || (b.count - a.count)
+        || String(a.marker.label || a.marker.id).localeCompare(String(b.marker.label || b.marker.id));
+    });
+  }
+
+  function mobileMarkerGroupHtml(group) {
+    if (group.count > 2) {
+      return `<span class="calendar-event-mobile-group">${monthEventMarkerHtml(group.marker)}<span class="calendar-event-mobile-count">x${escHtml(group.count)}</span></span>`;
+    }
+    return Array.from({ length: group.count }, () => monthEventMarkerHtml(group.marker)).join('');
+  }
+
+  function mobileEventSummary(events) {
+    const groups = mobileMarkerGroups(events);
+    let slots = 0;
+    let shown = 0;
+    const html = [];
+    for (const group of groups) {
+      const cost = group.count > 2 ? 2 : group.count;
+      if (slots + cost > MONTH_MOBILE_MARKER_SLOTS) break;
+      slots += cost;
+      shown += group.count;
+      html.push(mobileMarkerGroupHtml(group));
+    }
+    const more = Math.max(0, events.length - shown);
+    if (more) html.push(`<span class="calendar-event-mobile-more">+${escHtml(more)}</span>`);
+    return html.join('');
+  }
+
   function dayEventSummary(events, compact = false) {
     if (!events.length) return '';
     if (compact) return '';
-    const categories = Array.from(new Set(events.map(eventCategory))).slice(0, 4);
-    const bars = categories.map(category => `<span class="calendar-event-dot calendar-event-dot--${escHtml(category)}"></span>`).join('');
-    const chips = events.slice(0, 3).map(event => `
-      <span class="calendar-event-chip calendar-event-chip--${escHtml(eventCategory(event))}">${escHtml(event.title || event.kind || 'Event')}</span>
-    `).join('');
-    const more = events.length > 3 ? `<span class="calendar-event-more">+${events.length - 3}</span>` : '';
-    return `<span class="calendar-event-dots">${bars}</span><span class="calendar-event-stack">${chips}${more}</span>`;
+    const chips = events.slice(0, MONTH_DESKTOP_EVENT_LIMIT).map(monthEventChipHtml).join('');
+    const more = events.length > MONTH_DESKTOP_EVENT_LIMIT ? `<span class="calendar-event-more">+${events.length - MONTH_DESKTOP_EVENT_LIMIT}</span>` : '';
+    return `<span class="calendar-event-stack calendar-event-stack--desktop">${chips}${more}</span><span class="calendar-event-stack calendar-event-stack--mobile">${mobileEventSummary(events)}</span>`;
   }
 
   function compactEventText(event) {

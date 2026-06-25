@@ -1250,6 +1250,26 @@ assert.match(
   'Calendar must use highest-priority meta tag colours for day borders and render no event content in year view.',
 );
 assert.match(
+  personalFiltersJs,
+  /function\s+filterPresentation[\s\S]*colorValue:\s*colorValue\(setting\.color\)[\s\S]*filterPresentation,/,
+  'Personal Filters must expose read-only presentation metadata for calendar month markers.',
+);
+assert.match(
+  daveCalendarJs,
+  /MONTH_EVENT_TITLE_LIMIT\s*=\s*22[\s\S]*monthEventExcerpt[\s\S]*slice\(0,\s*MONTH_EVENT_TITLE_LIMIT\)[\s\S]*monthEventMarkerHtml/,
+  'Calendar month desktop entries must use existing filter marker shapes and a 22-character title excerpt.',
+);
+assert.doesNotMatch(
+  daveCalendarJs,
+  /calendar-event-dots|const\s+bars\s*=/,
+  'Calendar month entries must not render the old separate category dot row.',
+);
+assert.match(
+  daveCalendarJs + daveCalendarCss,
+  /mobileEventSummary[\s\S]*calendar-event-mobile-count[\s\S]*@media\s*\(max-width:\s*700px\)[\s\S]*calendar-month-day\s*\{[\s\S]*aspect-ratio:\s*1[\s\S]*calendar-event-stack--mobile/,
+  'Calendar month mobile view must aggregate marker shapes with counts while preserving square-ish cells.',
+);
+assert.match(
   layoutNavCss,
   /body\.shade-is-up\s+\.ultrawide-sidecar\s*\{[\s\S]*top:\s*var\(--ultrawide-shade-up-top,\s*0px\)/,
   'Ultrawide sidecar must lift to the shade-up top edge with the main workspace.',
