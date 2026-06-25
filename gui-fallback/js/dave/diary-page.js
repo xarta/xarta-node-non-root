@@ -359,15 +359,7 @@ const DiaryPage = (() => {
     if (isManualCalendarEvent(event)) {
       return { editable: true, route: 'calendar', reason: '' };
     }
-    if (isDiaryQuickEntry(event)) {
-      return { editable: true, route: 'diary', reason: '' };
-    }
-    const owner = sourceType(event) || event?.kind || 'source';
-    return {
-      editable: false,
-      route: '',
-      reason: `Source-owned entry (${owner}); open the source detail to edit upstream.`,
-    };
+    return { editable: true, route: 'diary', reason: '' };
   }
 
   function stripFrontmatter(md) {

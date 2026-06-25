@@ -378,14 +378,7 @@ const CalendarPage = (() => {
     if (!event?.event_id) {
       return { editable: false, reason: 'No editable event is selected.' };
     }
-    if (sourceType(event) === 'manual-calendar') {
-      return { editable: true, reason: '' };
-    }
-    const owner = sourceType(event) || event?.kind || 'source';
-    return {
-      editable: false,
-      reason: `Source-owned event (${owner}); open the source detail to edit upstream.`,
-    };
+    return { editable: true, reason: '' };
   }
 
   function stripFrontmatter(md) {
@@ -2359,13 +2352,6 @@ const CalendarPage = (() => {
     const event = state.selection?.row;
     if (!event) {
       return showActionModal('Edit Calendar Event', '<p>Select a Calendar event before editing.</p>');
-    }
-    if (sourceType(event) !== 'manual-calendar') {
-      return showActionModal('Edit Calendar Event', kvHtml([
-        ['Event', event.event_id || ''],
-        ['Source', sourceType(event) || ''],
-        ['State', 'source-owned'],
-      ]));
     }
     const meta = calendarMeta(event);
     const allDay = !!meta.all_day;
