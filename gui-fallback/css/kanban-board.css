@@ -701,6 +701,64 @@ dialog.hub-modal#kanban-detail-modal[open] {
   font-size: 12px;
 }
 
+.kanban-pill-btn--multi {
+  gap: 8px;
+}
+
+.kanban-pill-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kanban-pill-metrics {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+
+.kanban-pill-metric {
+  min-width: 22px;
+  height: 20px;
+  border: 1px solid rgba(141,151,170,.30);
+  border-radius: 999px;
+  background: rgba(0,0,0,.18);
+  color: #8d97aa;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  font-size: 11px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.kanban-pill-metric[data-tone="info"] {
+  color: #7db7ff;
+  border-color: rgba(125,183,255,.42);
+  background: rgba(125,183,255,.10);
+}
+
+.kanban-pill-metric[data-tone="warn"] {
+  color: #e2c05a;
+  border-color: rgba(226,192,90,.46);
+  background: rgba(226,192,90,.11);
+}
+
+.kanban-pill-metric[data-tone="err"] {
+  color: #ff8088;
+  border-color: rgba(255,128,136,.48);
+  background: rgba(255,128,136,.11);
+}
+
+.kanban-pill-metric[data-tone="ok"] {
+  color: #65d49a;
+  border-color: rgba(101,212,154,.42);
+  background: rgba(101,212,154,.10);
+}
+
 .kanban-pill-btn[data-tone="empty"] { color: #8d97aa; }
 .kanban-pill-btn[data-tone="ok"] { color: #65d49a; border-color: rgba(101,212,154,.35); }
 .kanban-pill-btn[data-tone="warn"] { color: #e2c05a; border-color: rgba(226,192,90,.36); }

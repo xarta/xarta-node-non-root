@@ -37,6 +37,26 @@ assert.match(
 );
 assert.match(
   kanbanJs,
+  /reviewBody:\s*detail\?\.review_document\?\.body\s*\|\|\s*''/,
+  'Kanban item detail drafts must include the optional Review rich document body.',
+);
+assert.match(
+  kanbanJs,
+  /fieldName === 'reviewBody'\s*\?\s*'item-review'/,
+  'Kanban Review markdown fields must use the item-review rich-doc document type.',
+);
+assert.match(
+  kanbanJs,
+  /id:\s*'discussion'[\s\S]*id:\s*'review'[\s\S]*label:\s*'Review'/,
+  'Kanban item detail must render the Review tab immediately after Discussion.',
+);
+assert.match(
+  kanbanJs,
+  /data-kanban-detail-action="save-review-doc"[\s\S]*\/kanban\/items\/\$\{encodeURIComponent\(cleanItemId\)\}\/review/,
+  'Kanban Review tab must save through the item review document API.',
+);
+assert.match(
+  kanbanJs,
   /data-kanban-card-action="share"/,
   'Kanban lane cards must expose a share action for item codes.',
 );
@@ -54,6 +74,16 @@ assert.match(
   kanbanJs,
   /function\s+cardShareKind\(item\)[\s\S]*type === 'issue'[\s\S]*'issue'[\s\S]*'item'/,
   'Kanban lane card share actions must copy issue codes only for Issue cards and item codes otherwise.',
+);
+assert.match(
+  kanbanJs,
+  /function\s+leafMetricsFor\(rollup,[\s\S]*function\s+leafMetricsPillHtml\([\s\S]*kanban-pill-btn--multi/,
+  'Kanban SubItems and Issues rollup pills must render active, blocked, and done leaf metrics.',
+);
+assert.match(
+  kanbanCss,
+  /\.kanban-pill-metrics\s*\{[\s\S]*display:\s*inline-flex[\s\S]*\.kanban-pill-metric\[data-tone="err"\]/,
+  'Kanban multi-metric rollup chips must have compact stable styling and red blocker emphasis.',
 );
 assert.match(
   kanbanJs,

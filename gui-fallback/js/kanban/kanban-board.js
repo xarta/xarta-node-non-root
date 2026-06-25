@@ -701,7 +701,9 @@ const KanbanBoardPage = (() => {
     const itemId = state.detail?.item?.item_id || '';
     const context = options.context || {
       domain: 'kanban',
-      documentType: options.fieldName === 'detailBody' ? 'item-detail' : 'item-body',
+      documentType: options.fieldName === 'detailBody'
+        ? 'item-detail'
+        : (options.fieldName === 'reviewBody' ? 'item-review' : 'item-body'),
       documentId: itemId || safeId,
       itemId,
     };
@@ -843,20 +845,54 @@ const KanbanBoardPage = (() => {
     };
   }
 
-  function subitemsTone(rollup) {
-    const total = Number(rollup?.items?.total || 0);
-    const issues = Number(rollup?.issues?.open || 0);
-    const blocked = Number(rollup?.blockers?.open || 0) + Number(rollup?.items?.by_status?.blocked || 0);
-    const active = Number(rollup?.items?.by_status?.active || 0) + Number(rollup?.items?.by_status?.open || 0);
-    if (issues || blocked) return 'err';
-    if (total <= 1) return 'empty';
-    if (active) return 'warn';
-    return 'ok';
-  }
-
   function pillHtml(kind, label, count, tone, itemId) {
     return `<button class="kanban-pill-btn" type="button" data-kanban-pill="${kind}" data-kanban-item-id="${escHtml(itemId)}" data-tone="${escHtml(tone)}">
       <span>${escHtml(label)}</span><strong>${escHtml(count)}</strong>
+    </button>`;
+  }
+
+  function leafMetricsFor(rollup, group, fallbackActive = 0) {
+    const raw = rollup?.[group]?.leaf_metrics || {};
+    const hasMetrics = Object.prototype.hasOwnProperty.call(raw, 'active')
+      || Object.prototype.hasOwnProperty.call(raw, 'blocked')
+      || Object.prototype.hasOwnProperty.call(raw, 'done');
+    return {
+      total: Number(raw.total || (hasMetrics ? 0 : fallbackActive)),
+      active: Number(raw.active || (hasMetrics ? 0 : fallbackActive)),
+      activeDoing: Number(raw.active_doing || 0),
+      blocked: Number(raw.blocked || 0),
+      done: Number(raw.done || 0),
+    };
+  }
+
+  function leafMetricsTone(metrics, blockedCount) {
+    const active = Number(metrics.active || 0);
+    const done = Number(metrics.done || 0);
+    const blocked = Number(blockedCount || 0);
+    if (blocked > 0) return 'err';
+    if (Number(metrics.activeDoing || 0) > 0) return 'warn';
+    if (active > 0) return 'info';
+    if (done > 0) return 'ok';
+    return 'empty';
+  }
+
+  function leafMetricChip(value, tone, label) {
+    return `<strong class="kanban-pill-metric" data-tone="${escHtml(tone)}" title="${escHtml(label)}" aria-label="${escHtml(label)}">${escHtml(value)}</strong>`;
+  }
+
+  function leafMetricsPillHtml(kind, label, metrics, itemId, options = {}) {
+    const blockedCount = Number(options.blockedCount ?? metrics.blocked ?? 0);
+    const tone = leafMetricsTone(metrics, blockedCount);
+    const activeLabel = `${metrics.active || 0} backlog, todo, or doing leaf ${Number(metrics.active || 0) === 1 ? 'item' : 'items'}`;
+    const blockedLabel = `${blockedCount} blocked leaf or blocker ${blockedCount === 1 ? 'item' : 'items'}`;
+    const doneLabel = `${metrics.done || 0} done leaf ${Number(metrics.done || 0) === 1 ? 'item' : 'items'}`;
+    return `<button class="kanban-pill-btn kanban-pill-btn--multi" type="button" data-kanban-pill="${kind}" data-kanban-item-id="${escHtml(itemId)}" data-tone="${escHtml(tone)}" title="${escHtml(`${label}: ${activeLabel}, ${blockedLabel}, ${doneLabel}`)}">
+      <span class="kanban-pill-label">${escHtml(label)}</span>
+      <span class="kanban-pill-metrics">
+        ${leafMetricChip(metrics.active || 0, Number(metrics.activeDoing || 0) > 0 ? 'warn' : (Number(metrics.active || 0) > 0 ? 'info' : 'empty'), activeLabel)}
+        ${leafMetricChip(blockedCount, blockedCount > 0 ? 'err' : 'empty', blockedLabel)}
+        ${leafMetricChip(metrics.done || 0, Number(metrics.done || 0) > 0 ? 'ok' : 'empty', doneLabel)}
+      </span>
     </button>`;
   }
 
@@ -866,14 +902,20 @@ const KanbanBoardPage = (() => {
     const subitems = Math.max(0, Number(rollup.items?.total || 1) - 1);
     const issues = Number(rollup.issues?.open || 0);
     const todos = Number(rollup.todos?.open || 0);
+    const itemLeafMetrics = leafMetricsFor(rollup, 'items', subitems);
+    const issueLeafMetrics = leafMetricsFor(rollup, 'issues', issues);
+    const subitemBlocked = Math.max(
+      Number(itemLeafMetrics.blocked || 0),
+      Number(rollup.blockers?.open || 0),
+    );
     return `
       <div class="kanban-rollups">
         <div class="kanban-rollup-row">
-          ${pillHtml('subitems', 'SubItems', subitems, subitemsTone(rollup), item.item_id)}
+          ${leafMetricsPillHtml('subitems', 'SubItems', itemLeafMetrics, item.item_id, { blockedCount: subitemBlocked })}
           <button class="kanban-add-btn" type="button" data-kanban-card-action="add-child" data-kanban-item-id="${escHtml(item.item_id)}" title="Add child item" aria-label="Add child item"></button>
         </div>
         <div class="kanban-rollup-row">
-          ${pillHtml('issues', 'Issues', issues, issues ? 'err' : 'empty', item.item_id)}
+          ${leafMetricsPillHtml('issues', 'Issues', issueLeafMetrics, item.item_id)}
           <button class="kanban-add-btn" type="button" data-kanban-card-action="add-issue" data-kanban-item-id="${escHtml(item.item_id)}" title="Add issue" aria-label="Add issue"></button>
         </div>
         <div class="kanban-rollup-row">
@@ -1639,6 +1681,7 @@ const KanbanBoardPage = (() => {
       tags: itemTagIds(EDIT_ITEM_TAG_SURFACE, item.tags || []),
       body: item.body_excerpt || '',
       detailBody: detail?.detail_document?.body || '',
+      reviewBody: detail?.review_document?.body || '',
       newDiscussionBody: '',
       discussions,
     };
@@ -1832,6 +1875,24 @@ const KanbanBoardPage = (() => {
       </div>`;
   }
 
+  function reviewDocumentSectionHtml(detail) {
+    const draft = ensureDetailDraft(detail) || detailDraftFromDetail(detail);
+    return `
+      <div class="kanban-detail-doc kanban-review-doc">
+        ${markdownFieldHtml('kanban-item-review-doc', 'Review', draft.reviewBody || '', {
+          detail: true,
+          fieldName: 'reviewBody',
+          previewDefault: true,
+          maxlength: 120000,
+          emptyText: 'No review notes yet.',
+        })}
+        <div class="kanban-modal-actions kanban-modal-actions--compact">
+          <span class="kanban-detail-save-status" data-kanban-review-document-status></span>
+          <button class="kanban-command-btn" type="button" data-kanban-detail-action="save-review-doc">Save Review</button>
+        </div>
+      </div>`;
+  }
+
   function discussionBodyHtml(id, fieldName, value = '', { editMode = false, newEntry = false } = {}) {
     const safeId = String(id || 'kanban-discussion').replace(/[^a-zA-Z0-9_-]/g, '-');
     const itemId = state.detail?.item?.item_id || '';
@@ -1921,6 +1982,7 @@ const KanbanBoardPage = (() => {
     const issues = detail?.issues || [];
     const todos = detail?.todos || [];
     const discussions = detail?.discussions || [];
+    const reviewCount = detail?.counts?.review ?? (String(detail?.review_document?.body || '').trim() ? 1 : 0);
     return [
       {
         id: 'detail',
@@ -1932,6 +1994,12 @@ const KanbanBoardPage = (() => {
         label: 'Discussion',
         count: discussions.length,
         html: discussionSectionHtml(detail),
+      },
+      {
+        id: 'review',
+        label: 'Review',
+        count: reviewCount,
+        html: reviewDocumentSectionHtml(detail),
       },
       {
         id: 'info',
@@ -2115,6 +2183,29 @@ const KanbanBoardPage = (() => {
     });
     state.lastWrite = resp;
     if (status) status.textContent = 'Detail saved.';
+    await loadItemDetail(cleanItemId, { preserveRouteTarget: true });
+    refreshDetailSurfaces();
+    return true;
+  }
+
+  async function saveReviewDocument(itemId = state.detail?.item?.item_id, options = {}) {
+    if (options.scope) syncDetailDraftFromScope(options.scope);
+    const draft = ensureDetailDraft();
+    const cleanItemId = itemId || draft?.itemId || '';
+    const status = options.statusEl || null;
+    if (!cleanItemId || !draft) return false;
+    if (status) status.textContent = 'Saving review...';
+    const resp = await requestJson(`/api/v1/personal/kanban/items/${encodeURIComponent(cleanItemId)}/review`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        body: draft.reviewBody || '',
+        actor: 'blueprints-ui',
+        source_surface: 'kanban-detail',
+        request_id: `ui-kanban-review-doc-${Date.now()}`,
+      }),
+    });
+    state.lastWrite = resp;
+    if (status) status.textContent = 'Review saved.';
     await loadItemDetail(cleanItemId, { preserveRouteTarget: true });
     refreshDetailSurfaces();
     return true;
@@ -3214,6 +3305,13 @@ const KanbanBoardPage = (() => {
       });
       return true;
     }
+    if (action === 'save-review-doc') {
+      await saveReviewDocument(itemId, {
+        scope: workspace,
+        statusEl: workspace.querySelector?.('[data-kanban-review-document-status]') || null,
+      });
+      return true;
+    }
     if (action === 'edit-discussions') {
       syncDetailDraftFromScope(workspace);
       state.discussionEditMode = !state.discussionEditMode;
@@ -3460,6 +3558,7 @@ const KanbanBoardPage = (() => {
       child_count: detail.counts?.children ?? (detail.children || []).length ?? 0,
       link_count: detail.counts?.links ?? (detail.links || []).length ?? 0,
       blocker_count: detail.counts?.blockers ?? (detail.blockers || []).length ?? 0,
+      review_count: detail.counts?.review ?? (String(detail.review_document?.body || '').trim() ? 1 : 0),
       scoped_open: !!state.scoped.open,
       scoped_kind: state.scoped.kind || '',
       scoped_scope: state.scoped.scope || '',
