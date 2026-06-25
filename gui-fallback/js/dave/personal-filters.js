@@ -462,7 +462,7 @@ const PersonalFilters = (() => {
       color,
       shape,
       fill,
-      group: normalizeOptionalId(setting.group || ''),
+      group: normalizeOptionalId(setting.group || 'codex-generated'),
       custom: Boolean(setting.custom || fallback.custom),
     };
   }
