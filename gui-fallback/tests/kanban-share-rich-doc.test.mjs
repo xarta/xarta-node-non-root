@@ -23,17 +23,17 @@ assert.match(
 assert.match(
   kanbanJs,
   /function\s+openFirstScopedCard\(kind,[\s\S]*loadScoped\(config\.kind,\s*itemId,\s*'descendants',\s*'flat'\)[\s\S]*navigateToBoard\(first\?\.parent_item_id[\s\S]*setSelection\(firstCardId,\s*\{\s*routeTarget:\s*true\s*\}\)/,
-  'Issue and ToDo rollup drill-down must open the first typed descendant lane card.',
+  'Issue and ToDo rollup drill-down must open the first matching descendant lane card.',
 );
 assert.match(
   kanbanJs,
   /kanbanPill === 'issues'[\s\S]*openFirstScopedCard\('issues',\s*itemId\)[\s\S]*kanbanPill === 'todos'[\s\S]*openFirstScopedCard\('todos',\s*itemId\)/,
-  'Ancestor Issues and ToDos rollup pills must drill to typed lane cards.',
+  'Ancestor Issues and ToDos rollup pills must drill to matching lane cards.',
 );
 assert.match(
   kanbanJs,
-  /function\s+cardShareKind\(item\)[\s\S]*type === 'issue'[\s\S]*type === 'todo'[\s\S]*'item'/,
-  'Kanban lane card share actions must copy issue/todo codes for typed cards and item codes otherwise.',
+  /function\s+cardShareKind\(item\)[\s\S]*type === 'issue'[\s\S]*'issue'[\s\S]*'item'/,
+  'Kanban lane card share actions must copy issue codes only for Issue cards and item codes otherwise.',
 );
 assert.match(
   kanbanJs,
@@ -68,7 +68,7 @@ assert.doesNotMatch(
 assert.match(
   kanbanJs,
   /kanban-type-pill/,
-  'Kanban lane cards must render a compact type badge for typed issue/todo cards.',
+  'Kanban lane cards must render a compact type badge for typed Issue cards.',
 );
 assert.match(
   kanbanJs,

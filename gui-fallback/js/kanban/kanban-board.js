@@ -493,19 +493,18 @@ const KanbanBoardPage = (() => {
   }
 
   function isTypedLeafCard(item) {
-    return ['issue', 'todo'].includes(itemType(item));
+    return itemType(item) === 'issue';
   }
 
   function itemTypeLabel(item) {
     const type = itemType(item);
     if (type === 'issue') return 'Issue';
-    if (type === 'todo') return 'ToDo';
     return 'Item';
   }
 
   function cardShareKind(item) {
     const type = itemType(item);
-    return type === 'issue' || type === 'todo' ? type : 'item';
+    return type === 'issue' ? 'issue' : 'item';
   }
 
   function scopedKindConfig(kind) {
