@@ -647,7 +647,8 @@
 }
 
 .diary-week-card__body {
-  --diary-week-event-height: 34px;
+  --diary-week-event-min-height: 34px;
+  --diary-week-event-max-height: 88px;
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -655,6 +656,8 @@
   padding: 10px 12px 12px;
   min-width: 0;
   overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .diary-week-empty {
@@ -666,9 +669,9 @@
   appearance: none;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
+  align-items: start;
   gap: 7px;
-  min-height: 28px;
+  min-height: var(--diary-week-event-min-height, 34px);
   min-width: 0;
   padding: 5px 7px;
   border: 1px solid var(--border);
@@ -679,6 +682,7 @@
   font: inherit;
   text-align: left;
   width: 100%;
+  overflow: hidden;
 }
 
 .diary-week-event:hover,
@@ -736,18 +740,25 @@
 }
 
 .diary-week-card__body .diary-week-event {
-  flex: 0 0 var(--diary-week-event-height);
-  height: var(--diary-week-event-height);
-  min-height: var(--diary-week-event-height);
-  max-height: var(--diary-week-event-height);
+  flex: 0 0 auto;
+  height: auto;
+  min-height: var(--diary-week-event-min-height, 34px);
+  max-height: var(--diary-week-event-max-height, 88px);
   overflow: hidden;
 }
 
-.diary-week-card__body .diary-week-event__time,
-.diary-week-card__body .diary-week-event__title {
+.diary-week-card__body .diary-week-event__time {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.diary-week-card__body .diary-week-event__title {
+  overflow: hidden;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 
 .diary-day-board {

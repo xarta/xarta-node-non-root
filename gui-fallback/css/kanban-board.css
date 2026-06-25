@@ -1498,11 +1498,23 @@ dialog.hub-modal#kanban-scoped-modal[open] {
 }
 
 #ultrawide-sidecar-body .kanban-detail-primary-grid {
-  grid-template-columns: minmax(140px, 1fr) minmax(96px, 126px) minmax(96px, 126px);
+  grid-template-columns: minmax(118px, 1fr) minmax(92px, 118px) minmax(92px, 118px) minmax(78px, 88px);
 }
 
 #ultrawide-sidecar-body .kanban-detail-primary-grid--panel {
-  grid-template-columns: minmax(140px, 1fr) minmax(96px, 126px) minmax(96px, 126px) 38px;
+  grid-template-columns: minmax(118px, 1fr) minmax(92px, 118px) minmax(92px, 118px) minmax(78px, 88px) 38px;
+}
+
+#ultrawide-sidecar-body .kanban-detail-primary-grid--panel .kanban-goal-flag {
+  gap: 5px;
+  justify-content: flex-start;
+  padding-inline: 6px;
+}
+
+#ultrawide-sidecar-body .kanban-detail-primary-grid--panel .kanban-goal-flag .hub-checkbox__label {
+  flex: 0 0 auto;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 #ultrawide-sidecar-body .kanban-detail-edit-grid {

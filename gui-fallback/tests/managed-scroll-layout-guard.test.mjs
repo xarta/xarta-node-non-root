@@ -494,8 +494,8 @@ for (const label of [
 }
 assert.match(
   daveCalendarJs,
-  /const\s+CalendarContentViewMachine\s*=\s*\(\(\)\s*=>[\s\S]*transitions\s*=\s*\{[\s\S]*doubleTap[\s\S]*openMenu[\s\S]*longPress[\s\S]*resetRefresh/,
-  'Calendar view trigger must use an explicit FSM for tap, double-tap, and long-press.',
+  /const\s+CalendarContentViewMachine\s*=\s*\(\(\)\s*=>[\s\S]*TAP_PENDING[\s\S]*doubleTap[\s\S]*openMenu[\s\S]*tapTimeout[\s\S]*cycleView[\s\S]*PRESSING[\s\S]*longPressTimeout[\s\S]*resetRefresh[\s\S]*eventContext/,
+  'Calendar view trigger must use an explicit FSM that owns tap, double-tap, long-press timing, and browser echo handling.',
 );
 assert.match(
   daveCalendarJs,
@@ -1046,6 +1046,11 @@ assert.match(
   'Kanban refresh must keep the long-press FSM that toggles server-side test-entry visibility.',
 );
 assert.match(
+  daveTodoJs,
+  /const\s+TodoRefreshGestureMachine\s*=\s*\(\(\)\s*=>[\s\S]*longPressTimeout[\s\S]*CLICK_SUPPRESSED[\s\S]*toggleTestEntries[\s\S]*startClickSuppressTimer[\s\S]*click:\s*\{\s*next:\s*'IDLE',\s*actions:\s*\['clearClickSuppressTimer'\]\s*\}/,
+  'ToDo refresh long-press must use an explicit FSM that owns the click echo suppression state.',
+);
+assert.match(
   kanbanBoardJs,
   /\/api\/v1\/personal\/kanban\/preferences[\s\S]*show_test_entries/,
   'Kanban automation must be able to override test-entry visibility through the server preference API.',
@@ -1077,23 +1082,38 @@ assert.match(
 );
 assert.match(
   daveDiaryCss,
-  /\.diary-week-card__body\s*\{[\s\S]*--diary-week-event-height:\s*34px[\s\S]*display:\s*flex[\s\S]*flex-direction:\s*column/,
-  'Diary week cards must use a non-compressing vertical stack so event pills do not overprint when the bottom panel is raised.',
+  /\.diary-week-card__body\s*\{[\s\S]*--diary-week-event-min-height:\s*34px[\s\S]*--diary-week-event-max-height:\s*88px[\s\S]*overflow-y:\s*auto[\s\S]*scrollbar-gutter:\s*stable/,
+  'Diary week cards must scroll vertically while pills keep content-based min/max heights.',
 );
 assert.match(
   daveDiaryCss,
-  /\.diary-week-card__body\s+\.diary-week-event\s*\{[\s\S]*flex:\s*0\s+0\s+var\(--diary-week-event-height\)[\s\S]*max-height:\s*var\(--diary-week-event-height\)/,
-  'Diary week event pills must keep a fixed height and let the card body scroll earlier.',
+  /\.diary-week-card__body\s+\.diary-week-event\s*\{[\s\S]*flex:\s*0\s+0\s+auto[\s\S]*height:\s*auto[\s\S]*max-height:\s*var\(--diary-week-event-max-height/,
+  'Diary week event pills must not compress to fit the card body; the body scrolls instead.',
 );
 assert.match(
   daveDiaryCss,
-  /\.diary-week-card__body\s+\.diary-week-event__time,[\s\S]*\.diary-week-card__body\s+\.diary-week-event__title\s*\{[\s\S]*text-overflow:\s*ellipsis[\s\S]*white-space:\s*nowrap/,
-  'Diary week event pill text must ellipsize instead of wrapping into neighbouring pills.',
+  /\.diary-week-card__body\s+\.diary-week-event__title\s*\{[\s\S]*white-space:\s*normal[\s\S]*-webkit-line-clamp:\s*3/,
+  'Diary week event pill titles must be allowed to wrap inside the content-based max height.',
 );
 assert.match(
   daveDiaryJs,
-  /const\s+ENTRY_LONG_PRESS_MS[\s\S]*const\s+DiaryEntryGestureMachine[\s\S]*longPress:\s*\{\s*next:\s*'PREVIEW_OPEN'[\s\S]*openEntryPreview\(row\)/,
-  'Diary entry gestures must use an FSM where long press opens the read-only entry preview modal.',
+  /const\s+ENTRY_LONG_PRESS_MS[\s\S]*const\s+DiaryEntryGestureMachine[\s\S]*TAP_PENDING[\s\S]*doubleTap:\s*\{\s*next:\s*'IDLE',\s*actions:\s*\[[^\]]*'clearTapTimer'[^\]]*'editTabs'[^\]]*\]\s*\}[\s\S]*tapTimeout:\s*\{\s*next:\s*'IDLE',\s*actions:\s*\['selectPendingTap',\s*'editModal'\]\s*\}[\s\S]*longPressTimeout:\s*\{\s*next:\s*'PREVIEW_OPEN',\s*actions:\s*\[[^\]]*'clearTapTimer'[^\]]*'preview'[^\]]*\]\s*\}/,
+  'Diary entry gestures must use an FSM where single-click timeout opens the edit modal, double click opens edit tabs, and long press opens the read-only preview modal.',
+);
+assert.match(
+  daveDiaryJs,
+  /const\s+DiaryContentViewMachine\s*=\s*\(\(\)\s*=>[\s\S]*TAP_PENDING[\s\S]*doubleTap[\s\S]*openMenu[\s\S]*tapTimeout[\s\S]*cycleView[\s\S]*PRESSING[\s\S]*longPressTimeout[\s\S]*resetRefresh[\s\S]*eventContext/,
+  'Diary view trigger must use an explicit FSM that owns tap, double-tap, long-press timing, and browser echo handling.',
+);
+assert.match(
+  daveDiaryJs,
+  /function\s+handleEntryActivation[\s\S]*DiaryEntryGestureMachine\.dispatch\(input,\s*entryGestureContext[\s\S]*function\s+handleEntryDoubleClick[\s\S]*DiaryEntryGestureMachine\.dispatch\('doubleTap'/,
+  'Diary entry click handlers must stay thin and dispatch into the shared gesture FSM.',
+);
+assert.match(
+  daveDiaryJs,
+  /function\s+openEditEntryInTabsIfAvailable\(\)[\s\S]*activateInlineDiaryTab\('edit-entry'\)[\s\S]*prepareInlineEditEntryForms\(\)[\s\S]*function\s+openEditEntryModalForSelected\(\)[\s\S]*openContentViewModal\('edit-entry'\)/,
+  'Diary double-click must use the inline edit tab when available, while single-click uses the edit modal path.',
 );
 assert.match(
   daveDiaryJs,
@@ -1102,13 +1122,33 @@ assert.match(
 );
 assert.match(
   personalFiltersJs,
-  /const\s+META_KEY[\s\S]*normalizeMetaState[\s\S]*metaGroupOptions[\s\S]*data-personal-filter-setting="group"[\s\S]*data-personal-filter-new-meta/,
-  'Personal Filter Settings must support browser-local meta tags and per-filter group assignment.',
+  /loadServerState[\s\S]*\/api\/v1\/personal\/filters[\s\S]*persistFilterTag[\s\S]*\/api\/v1\/personal\/filters\/tags[\s\S]*data-personal-filter-setting="group"/,
+  'Personal Filter Settings must load and persist tag/meta assignment through the server-backed Personal Filters API.',
+);
+assert.match(
+  personalFiltersJs,
+  /id:\s*'meta-filters'[\s\S]*metaFiltersBodyHtml|metaFiltersBodyHtml[\s\S]*id:\s*'meta-filters'/,
+  'Personal Filters must expose a first-class Meta Filters tab.',
+);
+assert.match(
+  personalFiltersJs,
+  /data-personal-filter-meta-row[\s\S]*data-personal-filter-meta-setting="priority"/,
+  'Meta Filters rows must edit meta tag priority.',
+);
+assert.match(
+  personalFiltersJs,
+  /bestMetaGroupForRecords[\s\S]*metaGroupColor[\s\S]*metaGroupPriority/,
+  'Personal Filters must expose calendar-facing meta colour and priority helpers.',
 );
 assert.match(
   personalFiltersJs,
   /const\s+DEFAULT_META_GROUPS\s*=\s*\{\s*\};/,
-  'Personal Filters must not assign built-in filter tags to invented meta groups by default.',
+  'Personal Filters must not create hardcoded meta filter tags by default.',
+);
+assert.match(
+  personalFiltersJs,
+  /calendar:\s*\{[^}]*label:\s*'Calendar'[^}]*\}[\s\S]*'national-holiday':\s*\{[^}]*label:\s*'National holiday'[^}]*\}/,
+  'Built-in filter tags must remain ordinary filter tags, not hidden meta assignments.',
 );
 assert.match(
   personalFiltersJs,
@@ -1119,6 +1159,11 @@ assert.match(
   personalFiltersCss,
   /\.personal-filter-assignment\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*\.9fr\)\s+12px\s+minmax\(0,\s*1\.1fr\)[\s\S]*\.personal-filter-group-tab\.has-filter-match/,
   'Personal Filters grouped picker must keep a stable split layout and highlight matching meta-group tabs.',
+);
+assert.match(
+  daveCalendarJs + daveCalendarCss,
+  /calendar-day--meta[\s\S]*bestMetaGroupForRecords[\s\S]*--calendar-day-meta-color[\s\S]*if\s*\(compact\)\s*return\s*''/,
+  'Calendar must use highest-priority meta tag colours for day borders and render no event content in year view.',
 );
 assert.match(
   layoutNavCss,
@@ -1132,8 +1177,8 @@ assert.match(
 );
 assert.match(
   kanbanBoardCss,
-  /#ultrawide-sidecar-body\s+\.kanban-item-primary-row\s*>\s*\.kanban-goal-flag\s*\{[\s\S]*flex:\s*0\s+0\s+76px[\s\S]*min-width:\s*76px/,
-  'Kanban sidecar Goal checkbox must reserve a stable compact width instead of overflowing the panel edge.',
+  /#ultrawide-sidecar-body\s+\.kanban-detail-primary-grid--panel\s*\{[\s\S]*grid-template-columns:\s*minmax\(118px,\s*1fr\)\s+minmax\(92px,\s*118px\)\s+minmax\(92px,\s*118px\)\s+minmax\(78px,\s*88px\)\s+38px[\s\S]*#ultrawide-sidecar-body\s+\.kanban-detail-primary-grid--panel\s+\.kanban-goal-flag\s+\.hub-checkbox__label\s*\{[\s\S]*overflow:\s*visible/,
+  'Kanban sidecar Goal label must remain visible while the fullscreen button stays in the same edit-item row.',
 );
 assert.match(
   kanbanBoardJs,

@@ -650,6 +650,15 @@
   box-shadow: inset 0 0 0 1px rgba(221, 174, 59, .34), 0 0 0 1px rgba(221, 174, 59, .14);
 }
 
+.calendar-day--meta {
+  border-color: var(--calendar-day-meta-color, var(--border));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--calendar-day-meta-color, var(--border)) 46%, transparent);
+}
+
+.calendar-day--meta.calendar-day--range-edge {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--calendar-day-meta-color, var(--border)) 52%, transparent), 0 0 0 1px rgba(221, 174, 59, .14);
+}
+
 .calendar-day-number {
   display: block;
   width: 2ch;

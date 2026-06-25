@@ -67,11 +67,9 @@ const DiaryPage = (() => {
   let suppressWeekDayClick = false;
   let suppressWeekDayClickUntil = 0;
   let pendingEntryTapTimer = null;
+  let pendingEntryTapContext = null;
   let lastEntryTap = null;
   let lastEntryPointerCandidate = null;
-  let entryLongPressTimer = null;
-  let entryLongPressCandidate = null;
-  let suppressEntryClickUntil = 0;
 
   const escHtml = typeof esc === 'function'
     ? esc
@@ -93,8 +91,8 @@ const DiaryPage = (() => {
       : Date.now();
   }
 
-  function openPendingEntryTapAsEdit(event) {
-    const candidate = lastEntryTap || lastEntryPointerCandidate;
+  function openPendingEntryTapInEditTabs(event) {
+    const candidate = pendingEntryTapContext || lastEntryTap || lastEntryPointerCandidate;
     if (!candidate || eventNow() - candidate.time > DAY_DOUBLE_TAP_MS) return false;
     const row = findEventById(candidate.id);
     if (!row) return false;
@@ -104,7 +102,7 @@ const DiaryPage = (() => {
     selectEntryById(entryIdentity(row), { type: 'entry', index: -1, openEdit: false });
     event.preventDefault();
     event.stopPropagation();
-    return openEditEntryForSelected();
+    return openEditEntryInTabsIfAvailable();
   }
 
   function markEntryTapCandidate(btn, event) {
@@ -132,7 +130,7 @@ const DiaryPage = (() => {
       && Math.hypot(x - previous.x, y - previous.y) <= DAY_DOUBLE_TAP_PX;
     lastWeekDayTap = isDoubleTap ? null : { date: dateText, time: now, x, y };
     if (!isDoubleTap) return false;
-    if (openPendingEntryTapAsEdit(event)) {
+    if (openPendingEntryTapInEditTabs(event)) {
       suppressWeekDayInteractions(700);
       return true;
     }
@@ -169,7 +167,7 @@ const DiaryPage = (() => {
       && now - previous.time <= DAY_DOUBLE_TAP_MS;
     lastWeekDayClick = isDoubleTap ? null : { date: dateText, time: now };
     if (!isDoubleTap) return false;
-    if (openPendingEntryTapAsEdit(event)) {
+    if (openPendingEntryTapInEditTabs(event)) {
       suppressWeekDayInteractions(700);
       return true;
     }
@@ -746,9 +744,9 @@ const DiaryPage = (() => {
   }
 
   function clearPendingEntryPreview() {
-    if (!pendingEntryTapTimer) return;
-    window.clearTimeout(pendingEntryTapTimer);
+    if (pendingEntryTapTimer) window.clearTimeout(pendingEntryTapTimer);
     pendingEntryTapTimer = null;
+    pendingEntryTapContext = null;
   }
 
   function selectEntryForGesture(row, options = {}) {
@@ -759,46 +757,43 @@ const DiaryPage = (() => {
     });
   }
 
+  function entryGestureContext(row, event, options = {}) {
+    const id = entryIdentity(row);
+    return {
+      row,
+      event,
+      options,
+      id,
+      time: eventNow(),
+      x: Number.isFinite(event?.clientX) ? event.clientX : 0,
+      y: Number.isFinite(event?.clientY) ? event.clientY : 0,
+    };
+  }
+
   function handleEntryActivation(row, event, options = {}) {
     const id = entryIdentity(row);
     if (!id) return false;
-    if (eventNow() < suppressEntryClickUntil) {
+    if (DiaryEntryGestureMachine.shouldIgnoreClick()) {
       event.preventDefault();
       event.stopPropagation();
       return true;
     }
-    const now = eventNow();
-    const x = Number.isFinite(event.clientX) ? event.clientX : 0;
-    const y = Number.isFinite(event.clientY) ? event.clientY : 0;
-    const previous = lastEntryTap;
-    const isDouble = event.detail >= 2
-      || (previous
-        && previous.id === id
-        && now - previous.time <= DAY_DOUBLE_TAP_MS
-        && Math.hypot(x - previous.x, y - previous.y) <= DAY_DOUBLE_TAP_PX);
-    clearPendingEntryPreview();
-    if (isDouble) {
-      lastEntryTap = null;
-      lastEntryPointerCandidate = null;
-      event.preventDefault();
-      DiaryEntryGestureMachine.dispatch('doubleTap', { row, event, options });
-      return true;
-    }
-    lastEntryTap = { id, time: now, x, y };
-    DiaryEntryGestureMachine.dispatch('tap', { row, event, options });
+    event.preventDefault();
+    event.stopPropagation();
+    const input = event.detail >= 2 ? 'doubleTap' : 'tap';
+    if (input === 'doubleTap' && !DiaryEntryGestureMachine.noteDoubleTap()) return true;
+    DiaryEntryGestureMachine.dispatch(input, entryGestureContext(row, event, options));
     return true;
   }
 
   function handleEntryDoubleClick(btn, event) {
     const row = findEventById(btn?.dataset?.diaryEntryId);
     if (!row) return false;
-    clearPendingEntryPreview();
-    lastEntryTap = null;
-    lastEntryPointerCandidate = null;
-    selectEntryById(entryIdentity(row), { type: 'entry', index: -1, openEdit: false });
     event.preventDefault();
     event.stopPropagation();
-    return openEditEntryForSelected();
+    if (!DiaryEntryGestureMachine.noteDoubleTap()) return true;
+    DiaryEntryGestureMachine.dispatch('doubleTap', entryGestureContext(row, event, { type: 'entry', index: -1 }));
+    return true;
   }
 
   function handleSelectableEntryActivation(selectable, event) {
@@ -812,15 +807,34 @@ const DiaryPage = (() => {
 
   const DiaryEntryGestureMachine = (() => {
     let machineState = 'IDLE';
+    let longPressTimer = null;
+    let pointer = null;
+    let ignoreClicksUntil = 0;
+    let lastDoubleAt = 0;
     const transitions = {
       IDLE: {
-        tap: { next: 'IDLE', actions: ['select'] },
-        doubleTap: { next: 'IDLE', actions: ['select', 'edit'] },
+        pointerDown: { next: 'PRESSING', actions: ['startLongPressTimer'] },
+        tap: { next: 'TAP_PENDING', actions: ['startTapTimer'] },
+        doubleTap: { next: 'IDLE', actions: ['clearTapTimer', 'select', 'editTabs'] },
         longPress: { next: 'PREVIEW_OPEN', actions: ['select', 'preview'] },
       },
+      TAP_PENDING: {
+        pointerDown: { next: 'PRESSING', actions: ['startLongPressTimer'] },
+        tap: { next: 'IDLE', actions: ['confirmDoubleTap'] },
+        doubleTap: { next: 'IDLE', actions: ['clearTapTimer', 'select', 'editTabs'] },
+        tapTimeout: { next: 'IDLE', actions: ['selectPendingTap', 'editModal'] },
+        longPress: { next: 'PREVIEW_OPEN', actions: ['clearTapTimer', 'select', 'preview'] },
+      },
+      PRESSING: {
+        pointerMove: { next: 'PRESSING', actions: ['cancelLongPressIfMoved'] },
+        pointerUp: { next: 'IDLE', actions: ['clearLongPressTimer'] },
+        pointerCancel: { next: 'IDLE', actions: ['clearLongPressTimer'] },
+        longPressTimeout: { next: 'PREVIEW_OPEN', actions: ['markLongPress', 'clearTapTimer', 'select', 'preview'] },
+      },
       PREVIEW_OPEN: {
-        tap: { next: 'IDLE', actions: ['select'] },
-        doubleTap: { next: 'IDLE', actions: ['select', 'edit'] },
+        pointerDown: { next: 'PRESSING', actions: ['startLongPressTimer'] },
+        tap: { next: 'TAP_PENDING', actions: ['startTapTimer'] },
+        doubleTap: { next: 'IDLE', actions: ['clearTapTimer', 'select', 'editTabs'] },
         longPress: { next: 'PREVIEW_OPEN', actions: ['select', 'preview'] },
       },
     };
@@ -829,32 +843,137 @@ const DiaryPage = (() => {
       machineState = activeActionModalView() === 'entry-preview' ? 'PREVIEW_OPEN' : 'IDLE';
     }
 
+    function clearLongPressTimer() {
+      if (longPressTimer) window.clearTimeout(longPressTimer);
+      longPressTimer = null;
+      pointer = null;
+    }
+
+    function isSameTap(context, pending) {
+      return Boolean(context?.id && pending?.id
+        && context.id === pending.id
+        && context.time - pending.time <= DAY_DOUBLE_TAP_MS
+        && Math.hypot((context.x || 0) - (pending.x || 0), (context.y || 0) - (pending.y || 0)) <= DAY_DOUBLE_TAP_PX);
+    }
+
+    function clearTapTimer() {
+      if (pendingEntryTapTimer) window.clearTimeout(pendingEntryTapTimer);
+      pendingEntryTapTimer = null;
+    }
+
+    function startTapTimer(context) {
+      clearTapTimer();
+      pendingEntryTapContext = context;
+      lastEntryTap = context;
+      pendingEntryTapTimer = window.setTimeout(() => {
+        dispatch('tapTimeout', pendingEntryTapContext);
+      }, DAY_DOUBLE_TAP_MS);
+    }
+
+    function startLongPressTimer(context) {
+      clearLongPressTimer();
+      pointer = {
+        ...context,
+        startX: context?.x || 0,
+        startY: context?.y || 0,
+      };
+      longPressTimer = window.setTimeout(() => {
+        dispatch('longPressTimeout', pointer);
+      }, ENTRY_LONG_PRESS_MS);
+    }
+
+    function cancelLongPressIfMoved(context) {
+      if (!longPressTimer || !pointer) return;
+      const moved = Math.hypot((context?.x || 0) - pointer.startX, (context?.y || 0) - pointer.startY);
+      if (moved > DAY_DOUBLE_TAP_PX) clearLongPressTimer();
+    }
+
     function runAction(action, context) {
+      if (action === 'startTapTimer') {
+        startTapTimer(context);
+        return;
+      }
+      if (action === 'clearTapTimer') {
+        clearTapTimer();
+        pendingEntryTapContext = null;
+        lastEntryTap = null;
+        return;
+      }
+      if (action === 'startLongPressTimer') {
+        startLongPressTimer(context);
+        return;
+      }
+      if (action === 'clearLongPressTimer') {
+        clearLongPressTimer();
+        return;
+      }
+      if (action === 'cancelLongPressIfMoved') {
+        cancelLongPressIfMoved(context);
+        return;
+      }
+      if (action === 'markLongPress') {
+        ignoreClicksUntil = eventNow() + 720;
+        clearLongPressTimer();
+        pendingEntryTapContext = null;
+        lastEntryTap = null;
+        lastEntryPointerCandidate = null;
+        return;
+      }
+      if (action === 'confirmDoubleTap') {
+        const pending = pendingEntryTapContext;
+        clearTapTimer();
+        pendingEntryTapContext = null;
+        lastEntryTap = null;
+        if (isSameTap(context, pending)) {
+          runAction('select', context);
+          runAction('editTabs', context);
+        } else {
+          machineState = 'TAP_PENDING';
+          startTapTimer(context);
+        }
+        return;
+      }
+      if (action === 'selectPendingTap') {
+        const pending = pendingEntryTapContext;
+        pendingEntryTapContext = null;
+        lastEntryTap = null;
+        if (pending) runAction('select', pending);
+        return;
+      }
       const row = context?.row;
       if (!row) return;
       if (action === 'select') selectEntryForGesture(row, context.options || {});
-      if (action === 'edit') openEditEntryForSelected();
+      if (action === 'editModal') openEditEntryModalForSelected();
+      if (action === 'editTabs') openEditEntryInTabsIfAvailable();
       if (action === 'preview') openEntryPreview(row);
     }
 
+    function dispatch(input, context = {}) {
+      if (input === 'tap' && pendingEntryTapContext && isSameTap(context, pendingEntryTapContext)) {
+        input = 'doubleTap';
+      }
+      if (machineState !== 'TAP_PENDING' && machineState !== 'PRESSING') syncState();
+      const transition = transitions[machineState]?.[input];
+      if (!transition) return machineState;
+      machineState = transition.next;
+      transition.actions.forEach(action => runAction(action, context));
+      if (machineState !== 'TAP_PENDING' && machineState !== 'PRESSING') syncState();
+      return machineState;
+    }
+
     return {
-      dispatch(input, context = {}) {
-        syncState();
-        const transition = transitions[machineState]?.[input];
-        if (!transition) return machineState;
-        machineState = transition.next;
-        transition.actions.forEach(action => runAction(action, context));
-        syncState();
-        return machineState;
+      dispatch,
+      shouldIgnoreClick() {
+        return eventNow() < ignoreClicksUntil;
+      },
+      noteDoubleTap() {
+        const now = eventNow();
+        if (now - lastDoubleAt < 80) return false;
+        lastDoubleAt = now;
+        return true;
       },
     };
   })();
-
-  function clearEntryLongPress() {
-    if (entryLongPressTimer) window.clearTimeout(entryLongPressTimer);
-    entryLongPressTimer = null;
-    entryLongPressCandidate = null;
-  }
 
   function beginEntryLongPress(event) {
     if (event.button !== undefined && event.button !== 0) return;
@@ -862,39 +981,17 @@ const DiaryPage = (() => {
     if (!target) return;
     const row = findEventById(target.dataset.diaryEntryId);
     if (!row) return;
-    clearEntryLongPress();
-    entryLongPressCandidate = {
-      id: entryIdentity(row),
-      x: Number.isFinite(event.clientX) ? event.clientX : 0,
-      y: Number.isFinite(event.clientY) ? event.clientY : 0,
-      options: {
-        type: target.dataset.diarySelectType || 'entry',
-        index: Number.isFinite(Number(target.dataset.diarySelectIndex)) ? Number(target.dataset.diarySelectIndex) : -1,
-      },
-    };
-    entryLongPressTimer = window.setTimeout(() => {
-      const candidate = entryLongPressCandidate;
-      clearEntryLongPress();
-      const current = findEventById(candidate?.id) || row;
-      suppressEntryClickUntil = eventNow() + 720;
-      clearPendingEntryPreview();
-      lastEntryTap = null;
-      lastEntryPointerCandidate = null;
-      DiaryEntryGestureMachine.dispatch('longPress', {
-        row: current,
-        event,
-        options: candidate?.options || {},
-      });
-    }, ENTRY_LONG_PRESS_MS);
+    DiaryEntryGestureMachine.dispatch('pointerDown', entryGestureContext(row, event, {
+      type: target.dataset.diarySelectType || 'entry',
+      index: Number.isFinite(Number(target.dataset.diarySelectIndex)) ? Number(target.dataset.diarySelectIndex) : -1,
+    }));
   }
 
   function moveEntryLongPress(event) {
-    if (!entryLongPressTimer || !entryLongPressCandidate) return;
-    const x = Number.isFinite(event.clientX) ? event.clientX : 0;
-    const y = Number.isFinite(event.clientY) ? event.clientY : 0;
-    if (Math.hypot(x - entryLongPressCandidate.x, y - entryLongPressCandidate.y) > DAY_DOUBLE_TAP_PX) {
-      clearEntryLongPress();
-    }
+    DiaryEntryGestureMachine.dispatch('pointerMove', {
+      x: Number.isFinite(event.clientX) ? event.clientX : 0,
+      y: Number.isFinite(event.clientY) ? event.clientY : 0,
+    });
   }
 
   function selectionAttrs(type, index) {
@@ -2533,21 +2630,46 @@ const DiaryPage = (() => {
     return openNewEntry({ keepEntryDraft: true });
   }
 
+  function prepareInlineEditEntryForms() {
+    renderEntryTagSummaries();
+    ['diary-inline-edit-entry', 'diary-sidecar-edit-entry', 'diary-panel-edit-entry'].forEach(prefix => {
+      if (el(`${prefix}-date`)) {
+        setAllDayControls(prefix);
+        window.setTimeout(() => el(`${prefix}-title`)?.focus(), 0);
+      }
+    });
+  }
+
   function openEditEntryForSelected() {
     if (!editEntryAvailable()) return false;
     closeContentViewMenu();
     const openedInline = activateInlineDiaryTab('edit-entry');
     if (openedInline) {
-      ['diary-inline-edit-entry', 'diary-sidecar-edit-entry', 'diary-panel-edit-entry'].forEach(prefix => {
-        if (el(`${prefix}-date`)) {
-          renderEntryTagSummaries();
-          setAllDayControls(prefix);
-          window.setTimeout(() => el(`${prefix}-title`)?.focus(), 0);
-        }
-      });
+      prepareInlineEditEntryForms();
       return true;
     }
     return openContentViewModal('edit-entry');
+  }
+
+  function openEditEntryInTabsIfAvailable() {
+    if (!editEntryAvailable()) return false;
+    closeContentViewMenu();
+    const openedInline = activateInlineDiaryTab('edit-entry');
+    if (openedInline) prepareInlineEditEntryForms();
+    return openedInline;
+  }
+
+  function openEditEntryModalForSelected() {
+    if (!editEntryAvailable()) return false;
+    closeContentViewMenu();
+    return openContentViewModal('edit-entry');
+  }
+
+  function openSelectedEntryInTabs() {
+    closeContentViewMenu();
+    const openedInline = activateInlineDiaryTab('selected');
+    if (openedInline) return true;
+    return openContentViewModal('selected');
   }
 
   function editPayloadFromForm(prefix = 'diary-edit-entry') {
@@ -2855,141 +2977,227 @@ const DiaryPage = (() => {
   }
 
   const DiaryContentViewMachine = (() => {
+    const doubleTapMs = 280;
+    const doubleTapPx = 24;
+    const longPressMs = 560;
+    const moveTolerance = 12;
     let machineState = 'IDLE';
+    let pendingTapTimer = null;
+    let pendingTapContext = null;
+    let longPressTimer = null;
+    let pressContext = null;
+    let ignoreClicksUntil = 0;
+    let lastDoubleAt = 0;
     const transitions = {
       IDLE: {
-        tap: { next: 'IDLE', actions: ['cycleView'] },
-        doubleTap: { next: 'MENU_OPEN', actions: ['openMenu'] },
-        longPress: { next: 'IDLE', actions: ['resetRefresh'] },
+        pointerDown: { next: 'PRESSING', actions: ['startLongPressTimer'] },
+        click: { next: 'TAP_PENDING', actions: ['startTapTimer'] },
+        doubleTap: { next: 'MENU_OPEN', actions: ['clearTapTimer', 'openMenu'] },
+        longPressTimeout: { next: 'IDLE', actions: ['markLongPress', 'clearTapTimer', 'resetRefresh'] },
+      },
+      TAP_PENDING: {
+        pointerDown: { next: 'PRESSING', actions: ['startLongPressTimer'] },
+        click: { next: 'TAP_PENDING', actions: ['startTapTimer'] },
+        doubleTap: { next: 'MENU_OPEN', actions: ['clearTapTimer', 'openMenu'] },
+        tapTimeout: { next: 'IDLE', actions: ['cycleView', 'clearTapContext'] },
+        longPressTimeout: { next: 'IDLE', actions: ['markLongPress', 'clearTapTimer', 'resetRefresh'] },
+      },
+      PRESSING: {
+        pointerMove: { next: 'PRESSING', actions: ['cancelLongPressIfMoved'] },
+        pointerUp: { next: 'IDLE', actions: ['clearLongPressTimer'] },
+        pointerCancel: { next: 'IDLE', actions: ['clearLongPressTimer'] },
+        longPressTimeout: { next: 'IDLE', actions: ['markLongPress', 'clearTapTimer', 'resetRefresh'] },
       },
       MENU_OPEN: {
-        tap: { next: 'IDLE', actions: ['closeMenu'] },
-        doubleTap: { next: 'IDLE', actions: ['closeMenu'] },
-        longPress: { next: 'IDLE', actions: ['closeMenu', 'resetRefresh'] },
+        pointerDown: { next: 'MENU_PRESSING', actions: ['startLongPressTimer'] },
+        click: { next: 'MENU_TAP_PENDING', actions: ['startTapTimer'] },
+        doubleTap: { next: 'IDLE', actions: ['clearTapTimer', 'closeMenu'] },
+        longPressTimeout: { next: 'IDLE', actions: ['markLongPress', 'clearTapTimer', 'closeMenu', 'resetRefresh'] },
+      },
+      MENU_TAP_PENDING: {
+        pointerDown: { next: 'MENU_PRESSING', actions: ['startLongPressTimer'] },
+        click: { next: 'MENU_TAP_PENDING', actions: ['startTapTimer'] },
+        doubleTap: { next: 'IDLE', actions: ['clearTapTimer', 'closeMenu'] },
+        tapTimeout: { next: 'IDLE', actions: ['closeMenu', 'clearTapContext'] },
+        longPressTimeout: { next: 'IDLE', actions: ['markLongPress', 'clearTapTimer', 'closeMenu', 'resetRefresh'] },
+      },
+      MENU_PRESSING: {
+        pointerMove: { next: 'MENU_PRESSING', actions: ['cancelLongPressIfMoved'] },
+        pointerUp: { next: 'MENU_OPEN', actions: ['clearLongPressTimer'] },
+        pointerCancel: { next: 'MENU_OPEN', actions: ['clearLongPressTimer'] },
+        longPressTimeout: { next: 'IDLE', actions: ['markLongPress', 'clearTapTimer', 'closeMenu', 'resetRefresh'] },
       },
     };
+
+    function isGestureState() {
+      return machineState === 'TAP_PENDING'
+        || machineState === 'PRESSING'
+        || machineState === 'MENU_TAP_PENDING'
+        || machineState === 'MENU_PRESSING';
+    }
 
     function syncState() {
       machineState = contentViewMenuHost ? 'MENU_OPEN' : 'IDLE';
     }
 
-    function runAction(action, anchor) {
+    function contextTime(context) {
+      return Number.isFinite(context?.time) ? context.time : eventNow();
+    }
+
+    function isSameTap(context, pending) {
+      if (!context?.anchor || !pending?.anchor) return false;
+      if (context.anchor !== pending.anchor) return false;
+      const elapsed = contextTime(context) - contextTime(pending);
+      const moved = Math.hypot((context.x || 0) - (pending.x || 0), (context.y || 0) - (pending.y || 0));
+      return elapsed <= doubleTapMs && moved <= doubleTapPx;
+    }
+
+    function clearTapTimer() {
+      if (pendingTapTimer) window.clearTimeout(pendingTapTimer);
+      pendingTapTimer = null;
+    }
+
+    function clearTapContext() {
+      pendingTapContext = null;
+    }
+
+    function startTapTimer(context) {
+      clearTapTimer();
+      pendingTapContext = context;
+      pendingTapTimer = window.setTimeout(() => {
+        dispatch('tapTimeout', pendingTapContext);
+      }, doubleTapMs);
+    }
+
+    function clearLongPressTimer() {
+      if (longPressTimer) window.clearTimeout(longPressTimer);
+      longPressTimer = null;
+      pressContext = null;
+    }
+
+    function startLongPressTimer(context) {
+      clearLongPressTimer();
+      pressContext = {
+        ...context,
+        startX: context?.x || 0,
+        startY: context?.y || 0,
+      };
+      longPressTimer = window.setTimeout(() => {
+        dispatch('longPressTimeout', pressContext);
+      }, longPressMs);
+    }
+
+    function cancelLongPressIfMoved(context) {
+      if (!longPressTimer || !pressContext) return;
+      const moved = Math.hypot((context?.x || 0) - pressContext.startX, (context?.y || 0) - pressContext.startY);
+      if (moved > moveTolerance) clearLongPressTimer();
+    }
+
+    function noteDoubleTap() {
+      const now = eventNow();
+      if (now - lastDoubleAt < 80) return false;
+      lastDoubleAt = now;
+      return true;
+    }
+
+    function runAction(action, context) {
+      const anchor = context?.anchor;
+      if (action === 'startTapTimer') {
+        startTapTimer(context);
+        return;
+      }
+      if (action === 'clearTapTimer') {
+        clearTapTimer();
+        clearTapContext();
+        return;
+      }
+      if (action === 'clearTapContext') {
+        clearTapContext();
+        return;
+      }
+      if (action === 'startLongPressTimer') {
+        startLongPressTimer(context);
+        return;
+      }
+      if (action === 'clearLongPressTimer') {
+        clearLongPressTimer();
+        return;
+      }
+      if (action === 'cancelLongPressIfMoved') {
+        cancelLongPressIfMoved(context);
+        return;
+      }
+      if (action === 'markLongPress') {
+        ignoreClicksUntil = eventNow() + 700;
+        clearLongPressTimer();
+        return;
+      }
       if (action === 'cycleView') cycleContentView();
       if (action === 'openMenu') openContentViewMenu(anchor);
       if (action === 'closeMenu') closeContentViewMenu();
       if (action === 'resetRefresh') resetContentViewAndRefresh();
     }
 
+    function gestureContext(anchor, event) {
+      return {
+        anchor,
+        detail: Number(event?.detail || 0),
+        time: eventNow(),
+        x: Number.isFinite(event?.clientX) ? event.clientX : 0,
+        y: Number.isFinite(event?.clientY) ? event.clientY : 0,
+      };
+    }
+
+    function dispatch(input, context = {}) {
+      if (input === 'click' && eventNow() < ignoreClicksUntil) return machineState;
+      if (input === 'click' && (context.detail >= 2 || isSameTap(context, pendingTapContext))) {
+        input = 'doubleTap';
+      }
+      if (input === 'doubleTap' && !noteDoubleTap()) return machineState;
+      if (!isGestureState()) syncState();
+      const transition = transitions[machineState]?.[input];
+      if (!transition) return machineState;
+      machineState = transition.next;
+      transition.actions.forEach(action => runAction(action, context));
+      if (!isGestureState()) syncState();
+      return machineState;
+    }
+
     return {
-      dispatch(input, anchor) {
-        syncState();
-        const transition = transitions[machineState]?.[input];
-        if (!transition) return machineState;
-        machineState = transition.next;
-        transition.actions.forEach(action => runAction(action, anchor));
-        syncState();
-        return machineState;
-      },
+      dispatch,
+      eventContext: gestureContext,
     };
   })();
 
   function bindContentViewTrigger(btn) {
     if (!btn || btn.dataset.diaryViewTriggerBound === '1') return;
     btn.dataset.diaryViewTriggerBound = '1';
-    const doubleMs = 280;
-    const longPressMs = 560;
-    const moveTolerance = 12;
-    let pendingTapTimer = null;
-    let lastTapAt = 0;
-    let lastTapX = 0;
-    let lastTapY = 0;
-    let longPressTimer = null;
-    let longPressStartX = 0;
-    let longPressStartY = 0;
-    let longPressFired = false;
-    let ignoreClicksUntil = 0;
-    let lastDoubleAt = 0;
-
-    function clearPendingTap() {
-      if (!pendingTapTimer) return;
-      clearTimeout(pendingTapTimer);
-      pendingTapTimer = null;
-    }
-
-    function clearLongPress() {
-      if (!longPressTimer) return;
-      clearTimeout(longPressTimer);
-      longPressTimer = null;
-    }
-
-    function dispatch(input) {
-      DiaryContentViewMachine.dispatch(input, btn);
-    }
 
     btn.addEventListener('pointerdown', event => {
       if (event.button !== undefined && event.button !== 0) return;
-      longPressFired = false;
-      longPressStartX = event.clientX;
-      longPressStartY = event.clientY;
-      clearLongPress();
-      longPressTimer = window.setTimeout(() => {
-        longPressTimer = null;
-        longPressFired = true;
-        ignoreClicksUntil = Date.now() + 700;
-        clearPendingTap();
-        dispatch('longPress');
-      }, longPressMs);
+      DiaryContentViewMachine.dispatch('pointerDown', DiaryContentViewMachine.eventContext(btn, event));
     });
 
     btn.addEventListener('pointermove', event => {
-      if (!longPressTimer) return;
-      const dx = event.clientX - longPressStartX;
-      const dy = event.clientY - longPressStartY;
-      if (Math.sqrt(dx * dx + dy * dy) > moveTolerance) clearLongPress();
+      DiaryContentViewMachine.dispatch('pointerMove', DiaryContentViewMachine.eventContext(btn, event));
     });
 
     ['pointerup', 'pointercancel', 'pointerleave'].forEach(type => {
-      btn.addEventListener(type, clearLongPress);
+      btn.addEventListener(type, event => {
+        DiaryContentViewMachine.dispatch(type === 'pointerup' ? 'pointerUp' : 'pointerCancel', DiaryContentViewMachine.eventContext(btn, event));
+      });
     });
 
     btn.addEventListener('click', event => {
       event.preventDefault();
       event.stopPropagation();
-      const now = Date.now();
-      if (longPressFired || now < ignoreClicksUntil) {
-        longPressFired = false;
-        return;
-      }
-      const dx = event.clientX - lastTapX;
-      const dy = event.clientY - lastTapY;
-      const moved = Math.sqrt(dx * dx + dy * dy);
-      const isDouble = event.detail >= 2 || (lastTapAt && (now - lastTapAt) <= doubleMs && moved <= 24);
-      if (isDouble) {
-        clearPendingTap();
-        lastTapAt = 0;
-        lastDoubleAt = now;
-        dispatch('doubleTap');
-        return;
-      }
-      lastTapAt = now;
-      lastTapX = event.clientX;
-      lastTapY = event.clientY;
-      clearPendingTap();
-      pendingTapTimer = window.setTimeout(() => {
-        pendingTapTimer = null;
-        lastTapAt = 0;
-        dispatch('tap');
-      }, doubleMs);
+      DiaryContentViewMachine.dispatch('click', DiaryContentViewMachine.eventContext(btn, event));
     });
 
     btn.addEventListener('dblclick', event => {
       event.preventDefault();
       event.stopPropagation();
-      clearPendingTap();
-      const now = Date.now();
-      if (now - lastDoubleAt < 80) return;
-      lastDoubleAt = now;
-      dispatch('doubleTap');
+      DiaryContentViewMachine.dispatch('doubleTap', DiaryContentViewMachine.eventContext(btn, event));
     });
   }
 
@@ -3069,7 +3277,12 @@ const DiaryPage = (() => {
     root.addEventListener('pointerdown', beginEntryLongPress);
     root.addEventListener('pointermove', moveEntryLongPress);
     ['pointerup', 'pointercancel', 'pointerleave'].forEach(type => {
-      root.addEventListener(type, clearEntryLongPress);
+      root.addEventListener(type, event => {
+        DiaryEntryGestureMachine.dispatch(type === 'pointerup' ? 'pointerUp' : 'pointerCancel', {
+          x: Number.isFinite(event.clientX) ? event.clientX : 0,
+          y: Number.isFinite(event.clientY) ? event.clientY : 0,
+        });
+      });
     });
     root.addEventListener('pointerup', event => {
       const entryBtn = event.target.closest('[data-diary-action="select-entry"][data-diary-entry-id]');
@@ -3107,7 +3320,7 @@ const DiaryPage = (() => {
         if (shouldSuppressWeekDayInteraction(event)) return;
         if (event.detail >= 2) {
           lastWeekDayClick = null;
-          if (openPendingEntryTapAsEdit(event)) {
+          if (openPendingEntryTapInTabs(event)) {
             suppressWeekDayInteractions(700);
             return;
           }
@@ -3136,7 +3349,7 @@ const DiaryPage = (() => {
       if (!btn) return;
       if (shouldSuppressWeekDayInteraction(event)) return;
       event.preventDefault();
-      if (openPendingEntryTapAsEdit(event)) return;
+      if (openPendingEntryTapInTabs(event)) return;
       setView('day', btn.dataset.diaryDate);
     });
 	    document.addEventListener('click', event => {

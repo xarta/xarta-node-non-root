@@ -218,8 +218,8 @@ assert.match(
 );
 assert.match(
   todoJs,
-  /data-todo-action="refresh"[\s\S]*startRefreshLongPress/,
-  'The ToDo refresh button must start the long-press test-entry toggle state machine.',
+  /const\s+TodoRefreshGestureMachine\s*=\s*\(\(\)\s*=>[\s\S]*longPressTimeout[\s\S]*CLICK_SUPPRESSED[\s\S]*toggleTestEntries[\s\S]*data-todo-action="refresh"[\s\S]*TodoRefreshGestureMachine\.dispatch\('pointerDown'/,
+  'The ToDo refresh button must dispatch into the long-press test-entry toggle state machine.',
 );
 assert.match(
   todoJs,

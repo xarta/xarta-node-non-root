@@ -14,9 +14,6 @@ const TodoPage = (() => {
     provenance: 'Provenance',
   };
   const REFRESH_LONG_PRESS_MS = 700;
-  let refreshLongPressTimer = null;
-  let refreshLongPressButton = null;
-  let refreshSuppressClickUntil = 0;
 
   function normalizeContentView(value) {
     const clean = String(value || '').trim();
@@ -960,38 +957,114 @@ const TodoPage = (() => {
     return setTestEntriesVisible(!showTestEntries(), options);
   }
 
-  function cancelRefreshLongPress(eventName = '') {
-    if (refreshLongPressTimer) {
-      window.clearTimeout(refreshLongPressTimer);
-      refreshLongPressTimer = null;
-    }
-    if (refreshLongPressButton) {
-      refreshLongPressButton.classList.remove('is-long-pressing');
-      refreshLongPressButton = null;
-    }
-    setRefreshFsm('idle', eventName);
-  }
+  const TodoRefreshGestureMachine = (() => {
+    let machineState = 'IDLE';
+    let longPressTimer = null;
+    let suppressTimer = null;
+    let activeButton = null;
+    const transitions = {
+      IDLE: {
+        pointerDown: { next: 'PRESSING', actions: ['startLongPressTimer'] },
+        click: { next: 'IDLE', actions: ['refresh'] },
+      },
+      PRESSING: {
+        pointerUp: { next: 'IDLE', actions: ['clearLongPressTimer'] },
+        pointerCancel: { next: 'IDLE', actions: ['clearLongPressTimer'] },
+        pointerLeave: { next: 'IDLE', actions: ['clearLongPressTimer'] },
+        longPressTimeout: { next: 'CLICK_SUPPRESSED', actions: ['completeLongPress', 'toggleTestEntries', 'startClickSuppressTimer'] },
+      },
+      CLICK_SUPPRESSED: {
+        click: { next: 'IDLE', actions: ['clearClickSuppressTimer'] },
+        pointerUp: { next: 'CLICK_SUPPRESSED', actions: ['clearLongPressTimer'] },
+        pointerCancel: { next: 'CLICK_SUPPRESSED', actions: ['clearLongPressTimer'] },
+        pointerLeave: { next: 'CLICK_SUPPRESSED', actions: ['clearLongPressTimer'] },
+        suppressTimeout: { next: 'IDLE', actions: ['clearClickSuppressTimer'] },
+      },
+    };
 
-  function startRefreshLongPress(event, button) {
-    if (!button || event.button > 0) return;
-    cancelRefreshLongPress('restart');
-    refreshLongPressButton = button;
-    button.classList.add('is-long-pressing');
-    setRefreshFsm('pressing', event.type);
-    refreshLongPressTimer = window.setTimeout(() => {
-      const activeButton = refreshLongPressButton;
-      refreshLongPressTimer = null;
-      refreshLongPressButton = null;
+    function clearActiveButton() {
       if (activeButton) activeButton.classList.remove('is-long-pressing');
-      refreshSuppressClickUntil = Date.now() + 900;
-      setRefreshFsm('toggled', 'long-press');
-      toggleTestEntriesVisibility({ source_surface: 'todo-page-refresh-long-press' })
-        .catch(error => {
-          state.error = error.message || String(error);
-          renderError(state.error);
-        });
-    }, REFRESH_LONG_PRESS_MS);
-  }
+      activeButton = null;
+    }
+
+    function clearLongPressTimer() {
+      if (longPressTimer) window.clearTimeout(longPressTimer);
+      longPressTimer = null;
+      clearActiveButton();
+    }
+
+    function clearClickSuppressTimer() {
+      if (suppressTimer) window.clearTimeout(suppressTimer);
+      suppressTimer = null;
+    }
+
+    function runAction(action, context = {}) {
+      if (action === 'startLongPressTimer') {
+        clearLongPressTimer();
+        activeButton = context.button || null;
+        activeButton?.classList.add('is-long-pressing');
+        setRefreshFsm('pressing', context.eventName || 'pointerdown');
+        longPressTimer = window.setTimeout(() => {
+          dispatch('longPressTimeout', context);
+        }, REFRESH_LONG_PRESS_MS);
+        return;
+      }
+      if (action === 'clearLongPressTimer') {
+        clearLongPressTimer();
+        setRefreshFsm('idle', context.eventName || 'cancel');
+        return;
+      }
+      if (action === 'completeLongPress') {
+        clearLongPressTimer();
+        setRefreshFsm('toggled', 'long-press');
+        return;
+      }
+      if (action === 'toggleTestEntries') {
+        toggleTestEntriesVisibility({ source_surface: 'todo-page-refresh-long-press' })
+          .catch(error => {
+            state.error = error.message || String(error);
+            renderError(state.error);
+          });
+        return;
+      }
+      if (action === 'startClickSuppressTimer') {
+        clearClickSuppressTimer();
+        suppressTimer = window.setTimeout(() => {
+          dispatch('suppressTimeout', { eventName: 'suppress-timeout' });
+        }, 900);
+        return;
+      }
+      if (action === 'clearClickSuppressTimer') {
+        clearClickSuppressTimer();
+        setRefreshFsm('idle', context.eventName || 'click-echo');
+        return;
+      }
+      if (action === 'refresh') {
+        setRefreshFsm('idle', context.eventName || 'click');
+        load({ force: true });
+      }
+    }
+
+    function eventContext(button, event, eventName) {
+      return {
+        button,
+        eventName: eventName || event?.type || '',
+      };
+    }
+
+    function dispatch(input, context = {}) {
+      const transition = transitions[machineState]?.[input];
+      if (!transition) return machineState;
+      machineState = transition.next;
+      transition.actions.forEach(action => runAction(action, context));
+      return machineState;
+    }
+
+    return {
+      dispatch,
+      eventContext,
+    };
+  })();
 
   function closeActionModal() {
     const modal = el('todo-action-modal');
@@ -1393,14 +1466,20 @@ const TodoPage = (() => {
     setQuickDefaults();
     root.addEventListener('pointerdown', event => {
       const refreshButton = event.target.closest('[data-todo-action="refresh"]');
-      if (refreshButton) startRefreshLongPress(event, refreshButton);
+      if (refreshButton && !(event.button > 0)) {
+        TodoRefreshGestureMachine.dispatch('pointerDown', TodoRefreshGestureMachine.eventContext(refreshButton, event));
+      }
     });
-    root.addEventListener('pointerup', () => cancelRefreshLongPress('pointerup'));
-    root.addEventListener('pointercancel', () => cancelRefreshLongPress('pointercancel'));
+    root.addEventListener('pointerup', event => {
+      TodoRefreshGestureMachine.dispatch('pointerUp', TodoRefreshGestureMachine.eventContext(null, event));
+    });
+    root.addEventListener('pointercancel', event => {
+      TodoRefreshGestureMachine.dispatch('pointerCancel', TodoRefreshGestureMachine.eventContext(null, event));
+    });
     root.addEventListener('pointerleave', event => {
       const related = event.relatedTarget;
-      if (refreshLongPressButton && (!related || !root.contains(related))) {
-        cancelRefreshLongPress('pointerleave');
+      if (!related || !root.contains(related)) {
+        TodoRefreshGestureMachine.dispatch('pointerLeave', TodoRefreshGestureMachine.eventContext(null, event));
       }
     });
     root.addEventListener('click', event => {
@@ -1435,8 +1514,7 @@ const TodoPage = (() => {
       if (action === 'new-task') newTask();
       if (action === 'refresh') {
         event.preventDefault();
-        cancelRefreshLongPress('click');
-        if (Date.now() >= refreshSuppressClickUntil) load({ force: true });
+        TodoRefreshGestureMachine.dispatch('click', TodoRefreshGestureMachine.eventContext(btn, event));
       }
       if (action === 'submit-task') submitTask(btn.dataset.todoTaskPrefix || 'todo-inline-task');
       if (action === 'submit-edit') submitEdit(btn.dataset.todoTaskPrefix || 'todo-inline-edit-task');

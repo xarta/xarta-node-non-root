@@ -67,6 +67,9 @@ const PersonalFilters = (() => {
     filterGroupByHost: new WeakMap(),
     filterRenderSerialByHost: new WeakMap(),
     filterRenderTimerByHost: new WeakMap(),
+    serverStateLoaded: false,
+    serverStateFailed: false,
+    serverStatePromise: null,
   };
 
   function escHtml(value) {
@@ -440,7 +443,7 @@ const PersonalFilters = (() => {
       color,
       shape,
       fill,
-      group: normalizeOptionalId(setting.group || fallback.group || ''),
+      group: normalizeOptionalId(setting.group || ''),
       custom: Boolean(setting.custom || fallback.custom),
     };
   }
@@ -450,30 +453,224 @@ const PersonalFilters = (() => {
   }
 
   function saveSettings() {
+    if (state.serverStateLoaded) return;
     writeJson(SETTINGS_KEY, state.settings);
     writeJson(CUSTOM_KEY, state.custom);
     writeJson(META_KEY, normalizeMetaState(state.meta));
   }
 
-  function normalizeMetaState(meta) {
-    const groups = Array.isArray(meta?.groups)
-      ? meta.groups.map(group => normalizeOptionalId(typeof group === 'string' ? group : group?.id)).filter(Boolean)
-      : [];
-    return { groups: unique(groups.filter(id => !DEFAULT_META_GROUPS[id])) };
+  async function filterApi(path, options = {}) {
+    const requestOptions = { ...options };
+    requestOptions.headers = {
+      'Content-Type': 'application/json',
+      ...(requestOptions.headers || {}),
+    };
+    const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
+    const resp = await fetcher(path, requestOptions);
+    if (!resp.ok) {
+      let detail = '';
+      try {
+        const data = await resp.clone().json();
+        detail = data?.detail || data?.error || '';
+      } catch (_) {}
+      throw new Error(detail || `Personal filter API failed with HTTP ${resp.status}`);
+    }
+    return resp.json();
   }
 
-  function customMetaGroups() {
+  function applyServerState(payload) {
+    const nextSettings = {};
+    const nextCustom = [];
+    (Array.isArray(payload?.tags) ? payload.tags : []).forEach(tag => {
+      const id = normalizeId(tag.tag_id || tag.id || tag.label);
+      if (!id) return;
+      nextSettings[id] = cleanSetting(id, {
+        label: tag.label || titleCase(id),
+        color: tag.color,
+        shape: tag.shape,
+        fill: tag.fill,
+        group: tag.meta_tag_id || tag.group || '',
+        custom: tag.custom !== false && !tag.builtin,
+      });
+      if (!BUILTIN_IDS.has(id) && tag.source !== 'discovered') nextCustom.push(id);
+    });
+    state.settings = nextSettings;
+    state.custom = unique(nextCustom);
+    state.meta = normalizeMetaState({
+      groups: (Array.isArray(payload?.meta_tags) ? payload.meta_tags : []).map(group => ({
+        id: group.meta_tag_id || group.id,
+        label: group.label,
+        color: group.color,
+        priority: group.priority,
+        custom: true,
+      })),
+    });
+    state.serverStateLoaded = true;
+    state.serverStateFailed = false;
+    invalidateFilterIndex();
+  }
+
+  function loadServerState() {
+    if (state.serverStatePromise) return state.serverStatePromise;
+    state.serverStatePromise = filterApi('/api/v1/personal/filters', {
+      method: 'GET',
+      trackActivity: false,
+    })
+      .then(payload => {
+        applyServerState(payload);
+        renderAll();
+        return payload;
+      })
+      .catch(err => {
+        state.serverStateFailed = true;
+        console.warn('Personal filter API unavailable; using browser fallback state.', err);
+        return null;
+      })
+      .finally(() => {
+        state.serverStatePromise = null;
+      });
+    return state.serverStatePromise;
+  }
+
+  function persistFilterTag(id) {
+    const clean = normalizeId(id);
+    if (!clean || !state.serverStateLoaded) {
+      saveSettings();
+      return;
+    }
+    const setting = settingFor(clean);
+    filterApi('/api/v1/personal/filters/tags', {
+      method: 'POST',
+      body: JSON.stringify({
+        tag_id: clean,
+        label: setting.label,
+        color: setting.color,
+        shape: setting.shape,
+        fill: setting.fill,
+        meta_tag_id: setting.group || '',
+        builtin: BUILTIN_IDS.has(clean),
+        actor: 'blueprints-ui',
+        source_surface: 'personal-filters-ui',
+        request_id: `ui-personal-filter-tag-${Date.now()}`,
+      }),
+    }).then(loadServerState).catch(err => {
+      state.serverStateFailed = true;
+      console.error('Failed to save Personal filter tag', err);
+    });
+  }
+
+  function persistMetaGroup(id) {
+    const clean = normalizeOptionalId(id);
+    if (!clean || !state.serverStateLoaded) {
+      saveSettings();
+      return;
+    }
+    const setting = metaGroupSetting(clean);
+    filterApi('/api/v1/personal/filters/meta-tags', {
+      method: 'POST',
+      body: JSON.stringify({
+        meta_tag_id: clean,
+        label: setting.label,
+        color: setting.color,
+        priority: setting.priority,
+        actor: 'blueprints-ui',
+        source_surface: 'personal-filters-ui',
+        request_id: `ui-personal-filter-meta-${Date.now()}`,
+      }),
+    }).then(loadServerState).catch(err => {
+      state.serverStateFailed = true;
+      console.error('Failed to save Personal filter meta tag', err);
+    });
+  }
+
+  function cleanMetaGroup(group) {
+    const rawId = typeof group === 'string' ? group : group?.id;
+    const rawLabel = typeof group === 'string' ? '' : (group?.label || group?.name || '');
+    const id = normalizeOptionalId(rawId || rawLabel);
+    if (!id || DEFAULT_META_GROUPS[id]) return null;
+    const color = COLORS.some(([colorId]) => colorId === group?.color) ? group.color : 'blue';
+    const priority = Number(group?.priority);
+    return {
+      id,
+      label: String(rawLabel || titleCase(id)).trim() || titleCase(id),
+      color,
+      priority: Number.isFinite(priority) ? Math.max(0, Math.min(999, Math.round(priority))) : 0,
+      custom: true,
+    };
+  }
+
+  function normalizeMetaState(meta) {
+    const seen = new Set();
+    const groups = [];
+    if (Array.isArray(meta?.groups)) {
+      meta.groups.forEach(group => {
+        const clean = cleanMetaGroup(group);
+        if (!clean || seen.has(clean.id)) return;
+        seen.add(clean.id);
+        groups.push(clean);
+      });
+    }
+    return { groups };
+  }
+
+  function customMetaGroupRows() {
     state.meta = normalizeMetaState(state.meta);
     return state.meta.groups;
   }
 
-  function groupLabel(id) {
+  function customMetaGroups() {
+    return customMetaGroupRows().map(group => group.id);
+  }
+
+  function metaGroupSetting(id) {
     const clean = normalizeOptionalId(id);
-    return DEFAULT_META_GROUPS[clean]?.label || titleCase(clean);
+    if (!clean) return null;
+    const fallback = DEFAULT_META_GROUPS[clean] || {};
+    const custom = customMetaGroupRows().find(group => group.id === clean) || {};
+    return {
+      id: clean,
+      label: String(custom.label || fallback.label || titleCase(clean)).trim() || titleCase(clean),
+      color: COLORS.some(([colorId]) => colorId === custom.color) ? custom.color : (COLORS.some(([colorId]) => colorId === fallback.color) ? fallback.color : 'blue'),
+      priority: Number.isFinite(Number(custom.priority ?? fallback.priority)) ? Math.max(0, Math.min(999, Math.round(Number(custom.priority ?? fallback.priority)))) : 0,
+      custom: Boolean(custom.custom || !DEFAULT_META_GROUPS[clean]),
+    };
+  }
+
+  function groupLabel(id) {
+    return metaGroupSetting(id)?.label || titleCase(id);
+  }
+
+  function metaGroupColor(id) {
+    return colorValue(metaGroupSetting(id)?.color || 'blue');
+  }
+
+  function metaGroupPriority(id) {
+    return metaGroupSetting(id)?.priority || 0;
   }
 
   function filterGroupFor(id) {
     return normalizeOptionalId(settingFor(id).group || '');
+  }
+
+  function metaGroupForRecord(record) {
+    const groups = [];
+    recordTokens(record).forEach(token => {
+      const group = filterGroupFor(token);
+      if (group) groups.push(metaGroupSetting(group));
+    });
+    return groups
+      .filter(Boolean)
+      .sort((a, b) => (b.priority - a.priority) || a.label.localeCompare(b.label))[0] || null;
+  }
+
+  function bestMetaGroupForRecords(records = []) {
+    const groups = [];
+    (Array.isArray(records) ? records : []).forEach(record => {
+      const group = metaGroupForRecord(record);
+      if (group) groups.push(group);
+    });
+    return groups
+      .sort((a, b) => (b.priority - a.priority) || a.label.localeCompare(b.label))[0] || null;
   }
 
   function metaGroupIds(surface = 'calendar') {
@@ -499,14 +696,48 @@ const PersonalFilters = (() => {
     if (!label) return;
     const id = normalizeId(label);
     if (!DEFAULT_META_GROUPS[id] && !customMetaGroups().includes(id)) {
-      state.meta.groups.push(id);
+      state.meta.groups.push({ id, label, color: 'blue', priority: 0, custom: true });
       state.meta = normalizeMetaState(state.meta);
     }
     if (input) input.value = '';
     setFilterGroupForHost(host || input?.closest?.('[data-personal-filter-host]'), id);
-    saveSettings();
+    persistMetaGroup(id);
     emitChange(surface, 'meta-settings');
     renderAll();
+  }
+
+  function metaGroupUsageCount(surface, id) {
+    const clean = normalizeOptionalId(id);
+    if (!clean) return 0;
+    return allFilterIds(surface).filter(filterId => filterGroupFor(filterId) === clean).length;
+  }
+
+  function metaGroupRowsHtml(surface) {
+    const ids = metaGroupIds(surface);
+    if (!ids.length) return noMatchesHtml();
+    return ids.map(id => {
+      const setting = metaGroupSetting(id);
+      const count = metaGroupUsageCount(surface, id);
+      const removable = !DEFAULT_META_GROUPS[id] && count === 0;
+      return `<article class="personal-filter-meta-row" data-personal-filter-meta-row="${escHtml(id)}" data-personal-filter-surface="${escHtml(surface)}">
+        <div class="personal-filter-meta-swatch" style="--personal-filter-meta-color: ${escHtml(metaGroupColor(id))};" aria-hidden="true"></div>
+        <label class="personal-filter-field">
+          <span>Name</span>
+          <input type="text" data-personal-filter-meta-setting="label" value="${escHtml(setting.label)}" maxlength="48" aria-label="Meta tag name" />
+        </label>
+        <label class="personal-filter-field">
+          <span>Colour</span>
+          <select data-personal-filter-meta-setting="color" aria-label="Meta tag colour">${colorOptions(setting.color)}</select>
+        </label>
+        <label class="personal-filter-field">
+          <span>Priority</span>
+          <input type="number" data-personal-filter-meta-setting="priority" min="0" max="999" step="1" value="${escHtml(setting.priority)}" aria-label="Meta tag priority" />
+        </label>
+        <div class="personal-filter-settings__actions">
+          <button class="personal-filter-command" type="button" data-personal-filter-remove-meta="${escHtml(id)}" ${removable ? '' : 'disabled'}>Remove (${count})</button>
+        </div>
+      </article>`;
+    }).join('');
   }
 
   function adapterFor(surface) {
@@ -1043,6 +1274,21 @@ const PersonalFilters = (() => {
     </div>`;
   }
 
+  function metaFiltersBodyHtml(surface) {
+    return `<div class="personal-filter-settings personal-filter-meta-settings">
+      <div class="personal-filter-settings__new personal-filter-meta-settings__new">
+        <label class="personal-filter-field">
+          <span>Meta Tag</span>
+          <input type="text" data-personal-filter-new-meta="${escHtml(surface)}" maxlength="48" autocomplete="off" aria-label="Meta Tag" />
+        </label>
+        <button class="personal-filter-command" type="button" data-personal-filter-add-meta="${escHtml(surface)}">Add Meta Tag</button>
+      </div>
+      <div class="personal-filter-settings__rows personal-filter-meta-settings__rows">
+        ${metaGroupRowsHtml(surface)}
+      </div>
+    </div>`;
+  }
+
   function extraTabsFor(surface, host) {
     const allowed = new Set(String(host?.dataset?.personalFilterExtraTabs || '')
       .split(',')
@@ -1082,10 +1328,11 @@ const PersonalFilters = (() => {
     const tabDefs = [
       { id: 'filters', label: 'Filters' },
       { id: 'settings', label: 'Filter Settings' },
+      { id: 'meta-filters', label: 'Meta Filters' },
       ...extraTabsFor(surface, host),
     ];
     if (!tabDefs.some(tab => tab.id === active && !tab.disabled)) active = tabDefs.some(tab => tab.id === 'new-entry' && !tab.disabled) ? 'new-entry' : 'filters';
-    if (active !== 'settings') resetSettingsOrderForHost(host);
+    if (active !== 'settings' && active !== 'meta-filters') resetSettingsOrderForHost(host);
     const framed = host.dataset.personalFilterFramed === 'false' ? '' : ' personal-filter-panel--framed';
     const tabs = layout === 'tabs'
       ? `<div class="personal-filter-panel__tabs" role="tablist">
@@ -1094,7 +1341,8 @@ const PersonalFilters = (() => {
       : '';
     const body = active === 'settings'
       ? settingsBodyHtml(surface, host)
-      : (active === 'filters' ? filtersBodyHtml(surface, host) : extraTabBody(surface, active, host));
+      : (active === 'meta-filters' ? metaFiltersBodyHtml(surface, host)
+        : (active === 'filters' ? filtersBodyHtml(surface, host) : extraTabBody(surface, active, host)));
     host.innerHTML = `<div class="personal-filter-panel${framed}" data-personal-filter-panel="${escHtml(surface)}">
       ${tabs}
       <div class="personal-filter-panel__body">${body}</div>
@@ -1134,6 +1382,7 @@ const PersonalFilters = (() => {
         { id: 'filters', disabled: false },
         { id: 'settings', disabled: false },
         ...extraTabsFor(cleanSurface, host),
+        { id: 'meta-filters', disabled: false },
       ].find(item => item.id === cleanTab);
       if (!tab || tab.disabled) return;
       host.dataset.personalFilterTab = cleanTab;
@@ -1188,11 +1437,65 @@ const PersonalFilters = (() => {
     }
     current.custom = state.custom.includes(id) || current.custom;
     state.settings[id] = current;
-    saveSettings();
     const surface = row.dataset.personalFilterSurface || 'calendar';
+    persistFilterTag(id);
     invalidateFilterIndex();
     emitChange(surface, 'settings');
     renderAll();
+  }
+
+  function upsertMetaGroup(setting) {
+    const clean = cleanMetaGroup(setting);
+    if (!clean) return null;
+    state.meta = normalizeMetaState(state.meta);
+    const existing = state.meta.groups.findIndex(group => group.id === clean.id);
+    if (existing >= 0) state.meta.groups[existing] = clean;
+    else state.meta.groups.push(clean);
+    state.meta = normalizeMetaState(state.meta);
+    return clean;
+  }
+
+  function updateMetaGroup(row, key, value) {
+    const id = normalizeOptionalId(row?.dataset?.personalFilterMetaRow || '');
+    if (!id) return;
+    const current = metaGroupSetting(id) || { id, label: titleCase(id), color: 'blue', priority: 0, custom: true };
+    const next = { ...current, custom: true };
+    if (key === 'label') next.label = String(value || '').trim() || current.label || titleCase(id);
+    if (key === 'color') next.color = COLORS.some(([color]) => color === value) ? value : current.color;
+    if (key === 'priority') {
+      const numeric = Number(value);
+      next.priority = Number.isFinite(numeric) ? Math.max(0, Math.min(999, Math.round(numeric))) : current.priority;
+    }
+    upsertMetaGroup(next);
+    const surface = row.dataset.personalFilterSurface || 'calendar';
+    persistMetaGroup(next.id);
+    emitChange(surface, 'meta-settings');
+    renderAll();
+  }
+
+  function removeMetaGroup(surface, id) {
+    const clean = normalizeOptionalId(id);
+    if (!clean || DEFAULT_META_GROUPS[clean] || metaGroupUsageCount(surface, clean) > 0) return false;
+    if (state.serverStateLoaded) {
+      filterApi(`/api/v1/personal/filters/meta-tags/${encodeURIComponent(clean)}`, {
+        method: 'DELETE',
+        body: JSON.stringify({
+          actor: 'blueprints-ui',
+          source_surface: 'personal-filters-ui',
+          request_id: `ui-personal-filter-meta-delete-${Date.now()}`,
+        }),
+      }).then(loadServerState).catch(err => {
+        state.serverStateFailed = true;
+        console.error('Failed to remove Personal filter meta tag', err);
+      });
+    }
+    state.meta = normalizeMetaState({
+      groups: customMetaGroupRows().filter(group => group.id !== clean),
+    });
+    saveSettings();
+    emitChange(surface, 'meta-settings');
+    renderAll();
+    return true;
   }
 
   function addTag(surface, input, host = null) {
@@ -1212,7 +1515,7 @@ const PersonalFilters = (() => {
     if (input) input.value = '';
     setFilterQueryForHost(host || input?.closest?.('[data-personal-filter-host]'), '');
     invalidateFilterIndex(surface);
-    saveSettings();
+    persistFilterTag(id);
     emitChange(surface, 'settings');
     renderAll();
   }
@@ -1231,6 +1534,22 @@ const PersonalFilters = (() => {
         cancelText: 'Cancel',
       });
       if (!ok) return false;
+    }
+    if (state.serverStateLoaded) {
+      try {
+        await filterApi(`/api/v1/personal/filters/tags/${encodeURIComponent(clean)}`, {
+          method: 'DELETE',
+          body: JSON.stringify({
+            actor: 'blueprints-ui',
+            source_surface: 'personal-filters-ui',
+            request_id: `ui-personal-filter-tag-delete-${Date.now()}`,
+          }),
+        });
+      } catch (err) {
+        state.serverStateFailed = true;
+        console.error('Failed to remove Personal filter tag', err);
+        return false;
+      }
     }
     delete state.settings[clean];
     state.custom = state.custom.filter(item => item !== clean);
@@ -1259,7 +1578,9 @@ const PersonalFilters = (() => {
     else delete root.dataset.personalFilterExtraTabs;
     root.dataset.personalFilterTab = tab === 'filter-settings' ? 'settings' : (tab || 'filters');
     resetSettingsOrderForHost(root);
-    if (title) title.textContent = tab === 'settings' ? 'Filter Settings' : 'Filters';
+    if (title) title.textContent = tab === 'settings' || tab === 'filter-settings'
+      ? 'Filter Settings'
+      : (tab === 'meta-filters' ? 'Meta Filters' : 'Filters');
     renderHost(root);
     if (typeof HubModal !== 'undefined') HubModal.open(modal);
     else if (typeof modal.showModal === 'function' && !modal.open) modal.showModal();
@@ -1469,6 +1790,16 @@ const PersonalFilters = (() => {
         removeTag(row?.dataset?.personalFilterSurface || host.dataset.personalFilterSurface || 'calendar', remove.dataset.personalFilterRemove);
       }, true);
     });
+    host.querySelectorAll('[data-personal-filter-remove-meta]').forEach(remove => {
+      if (remove.dataset.personalFilterBound === '1') return;
+      remove.dataset.personalFilterBound = '1';
+      remove.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const row = remove.closest('[data-personal-filter-meta-row]');
+        removeMetaGroup(row?.dataset?.personalFilterSurface || host.dataset.personalFilterSurface || 'calendar', remove.dataset.personalFilterRemoveMeta);
+      }, true);
+    });
     host.querySelectorAll('[data-personal-filter-drag-id], [data-personal-filter-selected-id]').forEach(chip => {
       if (chip.dataset.personalFilterDragBound === '1') return;
       chip.dataset.personalFilterDragBound = '1';
@@ -1503,6 +1834,11 @@ const PersonalFilters = (() => {
 
   function handleHostChange(event) {
     const host = event.currentTarget;
+    const metaField = event.target.closest('[data-personal-filter-meta-setting]');
+    if (isInside(host, metaField)) {
+      updateMetaGroup(metaField.closest('[data-personal-filter-meta-row]'), metaField.dataset.personalFilterMetaSetting, metaField.value);
+      return;
+    }
     const field = event.target.closest('[data-personal-filter-setting]');
     if (!isInside(host, field)) return;
     updateSetting(field.closest('[data-personal-filter-setting-row]'), field.dataset.personalFilterSetting, field.value);
@@ -1517,6 +1853,7 @@ const PersonalFilters = (() => {
   function handleStorageChange(event) {
     if (!event.key) return;
     if (event.key === SETTINGS_KEY || event.key === CUSTOM_KEY || event.key === META_KEY) {
+      if (state.serverStateLoaded) return;
       state.settings = readJson(SETTINGS_KEY, {});
       state.custom = readJson(CUSTOM_KEY, []);
       state.meta = readJson(META_KEY, { groups: [] });
@@ -1575,6 +1912,7 @@ const PersonalFilters = (() => {
     window.setTimeout(() => syncUltrawideSidecar(), 250);
     window.setTimeout(() => syncUltrawideSidecar(), 900);
     loadPretext();
+    loadServerState();
     renderAll();
   }
 
@@ -1596,6 +1934,11 @@ const PersonalFilters = (() => {
     invalidateSurface: invalidateFilterIndex,
     resetSettingsOrder,
     recordTokens,
+    loadServerState,
+    metaGroupForRecord,
+    bestMetaGroupForRecords,
+    metaGroupColor,
+    metaGroupPriority,
     syncUltrawideSidecar,
     activateTab,
     colors: () => COLORS.slice(),

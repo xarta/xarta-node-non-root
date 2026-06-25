@@ -851,16 +851,28 @@ const CalendarPage = (() => {
     } else if (showSelected) {
       classes.push('calendar-day--selected');
     }
+    if (options.hasMetaGroup) classes.push('calendar-day--meta');
     return classes.join(' ');
+  }
+
+  function dayMetaGroup(events) {
+    if (!events.length || !window.PersonalFilters?.bestMetaGroupForRecords) return null;
+    return window.PersonalFilters.bestMetaGroupForRecords(events, 'calendar');
+  }
+
+  function dayMetaAttrs(metaGroup) {
+    if (!metaGroup?.id || !metaGroup?.color) return '';
+    const color = window.PersonalFilters?.metaGroupColor
+      ? window.PersonalFilters.metaGroupColor(metaGroup.id)
+      : metaGroup.color;
+    return ` style="--calendar-day-meta-color: ${escHtml(color)};" data-calendar-meta-group="${escHtml(metaGroup.id)}"`;
   }
 
   function dayEventSummary(events, compact = false) {
     if (!events.length) return '';
+    if (compact) return '';
     const categories = Array.from(new Set(events.map(eventCategory))).slice(0, 4);
     const bars = categories.map(category => `<span class="calendar-event-dot calendar-event-dot--${escHtml(category)}"></span>`).join('');
-    if (compact) {
-      return `<span class="calendar-day-count">${events.length}</span><span class="calendar-event-dots">${bars}</span>`;
-    }
     const chips = events.slice(0, 3).map(event => `
       <span class="calendar-event-chip calendar-event-chip--${escHtml(eventCategory(event))}">${escHtml(event.title || event.kind || 'Event')}</span>
     `).join('');
@@ -879,10 +891,11 @@ const CalendarPage = (() => {
     const days = monthGridDates(monthDate).map(date => {
       const dateText = localDateString(date);
       const events = dateEvents.get(dateText) || [];
+      const metaGroup = dayMetaGroup(events);
       return `
-        <button class="${dayClass(dateText, month, { rangeOutsideDays: false, selectedOutsideDays: false })} calendar-mini-day" type="button"
+        <button class="${dayClass(dateText, month, { rangeOutsideDays: false, selectedOutsideDays: false, hasMetaGroup: Boolean(metaGroup) })} calendar-mini-day" type="button"
                 data-calendar-action="select-day" data-calendar-date="${escHtml(dateText)}"
-                aria-label="${escHtml(monthLabel(dateText, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }))}">
+                aria-label="${escHtml(monthLabel(dateText, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }))}"${dayMetaAttrs(metaGroup)}>
           <span class="calendar-day-number">${date.getDate()}</span>
           <span class="calendar-mini-day__events">${dayEventSummary(events, true)}</span>
         </button>
@@ -914,10 +927,11 @@ const CalendarPage = (() => {
     const days = monthGridDates(monthStartDate()).map(date => {
       const dateText = localDateString(date);
       const events = dateEvents.get(dateText) || [];
+      const metaGroup = dayMetaGroup(events);
       return `
-        <button class="${dayClass(dateText, currentMonth)} calendar-month-day" type="button"
+        <button class="${dayClass(dateText, currentMonth, { hasMetaGroup: Boolean(metaGroup) })} calendar-month-day" type="button"
                 data-calendar-action="select-day" data-calendar-date="${escHtml(dateText)}"
-                aria-label="${escHtml(monthLabel(dateText, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }))}">
+                aria-label="${escHtml(monthLabel(dateText, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }))}"${dayMetaAttrs(metaGroup)}>
           <span class="calendar-day-number">${date.getDate()}</span>
           <span class="calendar-month-day__events">${dayEventSummary(events)}</span>
         </button>
@@ -2604,43 +2618,197 @@ const CalendarPage = (() => {
   }
 
   const CalendarContentViewMachine = (() => {
+    const doubleTapMs = 280;
+    const doubleTapPx = 24;
+    const longPressMs = 560;
+    const moveTolerance = 12;
     let machineState = 'IDLE';
+    let pendingTapTimer = null;
+    let pendingTapContext = null;
+    let longPressTimer = null;
+    let pressContext = null;
+    let ignoreClicksUntil = 0;
+    let lastDoubleAt = 0;
     const transitions = {
       IDLE: {
-        tap: { next: 'IDLE', actions: ['cycleView'] },
-        doubleTap: { next: 'MENU_OPEN', actions: ['openMenu'] },
-        longPress: { next: 'IDLE', actions: ['resetRefresh'] },
+        pointerDown: { next: 'PRESSING', actions: ['startLongPressTimer'] },
+        click: { next: 'TAP_PENDING', actions: ['startTapTimer'] },
+        doubleTap: { next: 'MENU_OPEN', actions: ['clearTapTimer', 'openMenu'] },
+        longPressTimeout: { next: 'IDLE', actions: ['markLongPress', 'clearTapTimer', 'resetRefresh'] },
+      },
+      TAP_PENDING: {
+        pointerDown: { next: 'PRESSING', actions: ['startLongPressTimer'] },
+        click: { next: 'TAP_PENDING', actions: ['startTapTimer'] },
+        doubleTap: { next: 'MENU_OPEN', actions: ['clearTapTimer', 'openMenu'] },
+        tapTimeout: { next: 'IDLE', actions: ['cycleView', 'clearTapContext'] },
+        longPressTimeout: { next: 'IDLE', actions: ['markLongPress', 'clearTapTimer', 'resetRefresh'] },
+      },
+      PRESSING: {
+        pointerMove: { next: 'PRESSING', actions: ['cancelLongPressIfMoved'] },
+        pointerUp: { next: 'IDLE', actions: ['clearLongPressTimer'] },
+        pointerCancel: { next: 'IDLE', actions: ['clearLongPressTimer'] },
+        longPressTimeout: { next: 'IDLE', actions: ['markLongPress', 'clearTapTimer', 'resetRefresh'] },
       },
       MENU_OPEN: {
-        tap: { next: 'IDLE', actions: ['closeMenu'] },
-        doubleTap: { next: 'IDLE', actions: ['closeMenu'] },
-        longPress: { next: 'IDLE', actions: ['closeMenu', 'resetRefresh'] },
+        pointerDown: { next: 'MENU_PRESSING', actions: ['startLongPressTimer'] },
+        click: { next: 'MENU_TAP_PENDING', actions: ['startTapTimer'] },
+        doubleTap: { next: 'IDLE', actions: ['clearTapTimer', 'closeMenu'] },
+        longPressTimeout: { next: 'IDLE', actions: ['markLongPress', 'clearTapTimer', 'closeMenu', 'resetRefresh'] },
+      },
+      MENU_TAP_PENDING: {
+        pointerDown: { next: 'MENU_PRESSING', actions: ['startLongPressTimer'] },
+        click: { next: 'MENU_TAP_PENDING', actions: ['startTapTimer'] },
+        doubleTap: { next: 'IDLE', actions: ['clearTapTimer', 'closeMenu'] },
+        tapTimeout: { next: 'IDLE', actions: ['closeMenu', 'clearTapContext'] },
+        longPressTimeout: { next: 'IDLE', actions: ['markLongPress', 'clearTapTimer', 'closeMenu', 'resetRefresh'] },
+      },
+      MENU_PRESSING: {
+        pointerMove: { next: 'MENU_PRESSING', actions: ['cancelLongPressIfMoved'] },
+        pointerUp: { next: 'MENU_OPEN', actions: ['clearLongPressTimer'] },
+        pointerCancel: { next: 'MENU_OPEN', actions: ['clearLongPressTimer'] },
+        longPressTimeout: { next: 'IDLE', actions: ['markLongPress', 'clearTapTimer', 'closeMenu', 'resetRefresh'] },
       },
     };
+
+    function isGestureState() {
+      return machineState === 'TAP_PENDING'
+        || machineState === 'PRESSING'
+        || machineState === 'MENU_TAP_PENDING'
+        || machineState === 'MENU_PRESSING';
+    }
 
     function syncState() {
       machineState = contentViewMenuHost ? 'MENU_OPEN' : 'IDLE';
     }
 
-    function runAction(action, anchor) {
+    function contextTime(context) {
+      return Number.isFinite(context?.time) ? context.time : eventNow();
+    }
+
+    function isSameTap(context, pending) {
+      if (!context?.anchor || !pending?.anchor) return false;
+      if (context.anchor !== pending.anchor) return false;
+      const elapsed = contextTime(context) - contextTime(pending);
+      const moved = Math.hypot((context.x || 0) - (pending.x || 0), (context.y || 0) - (pending.y || 0));
+      return elapsed <= doubleTapMs && moved <= doubleTapPx;
+    }
+
+    function clearTapTimer() {
+      if (pendingTapTimer) window.clearTimeout(pendingTapTimer);
+      pendingTapTimer = null;
+    }
+
+    function clearTapContext() {
+      pendingTapContext = null;
+    }
+
+    function startTapTimer(context) {
+      clearTapTimer();
+      pendingTapContext = context;
+      pendingTapTimer = window.setTimeout(() => {
+        dispatch('tapTimeout', pendingTapContext);
+      }, doubleTapMs);
+    }
+
+    function clearLongPressTimer() {
+      if (longPressTimer) window.clearTimeout(longPressTimer);
+      longPressTimer = null;
+      pressContext = null;
+    }
+
+    function startLongPressTimer(context) {
+      clearLongPressTimer();
+      pressContext = {
+        ...context,
+        startX: context?.x || 0,
+        startY: context?.y || 0,
+      };
+      longPressTimer = window.setTimeout(() => {
+        dispatch('longPressTimeout', pressContext);
+      }, longPressMs);
+    }
+
+    function cancelLongPressIfMoved(context) {
+      if (!longPressTimer || !pressContext) return;
+      const moved = Math.hypot((context?.x || 0) - pressContext.startX, (context?.y || 0) - pressContext.startY);
+      if (moved > moveTolerance) clearLongPressTimer();
+    }
+
+    function noteDoubleTap() {
+      const now = eventNow();
+      if (now - lastDoubleAt < 80) return false;
+      lastDoubleAt = now;
+      return true;
+    }
+
+    function runAction(action, context) {
+      const anchor = context?.anchor;
+      if (action === 'startTapTimer') {
+        startTapTimer(context);
+        return;
+      }
+      if (action === 'clearTapTimer') {
+        clearTapTimer();
+        clearTapContext();
+        return;
+      }
+      if (action === 'clearTapContext') {
+        clearTapContext();
+        return;
+      }
+      if (action === 'startLongPressTimer') {
+        startLongPressTimer(context);
+        return;
+      }
+      if (action === 'clearLongPressTimer') {
+        clearLongPressTimer();
+        return;
+      }
+      if (action === 'cancelLongPressIfMoved') {
+        cancelLongPressIfMoved(context);
+        return;
+      }
+      if (action === 'markLongPress') {
+        ignoreClicksUntil = eventNow() + 700;
+        clearLongPressTimer();
+        return;
+      }
       if (action === 'cycleView') cycleContentView();
       if (action === 'openMenu') openContentViewMenu(anchor);
       if (action === 'closeMenu') closeContentViewMenu();
       if (action === 'resetRefresh') resetContentViewAndRefresh();
     }
 
+    function gestureContext(anchor, event) {
+      return {
+        anchor,
+        detail: Number(event?.detail || 0),
+        time: eventNow(),
+        x: Number.isFinite(event?.clientX) ? event.clientX : 0,
+        y: Number.isFinite(event?.clientY) ? event.clientY : 0,
+      };
+    }
+
+    function dispatch(input, context = {}) {
+      if (input === 'click' && eventNow() < ignoreClicksUntil) return machineState;
+      if (input === 'click' && (context.detail >= 2 || isSameTap(context, pendingTapContext))) {
+        input = 'doubleTap';
+      }
+      if (input === 'doubleTap' && !noteDoubleTap()) return machineState;
+      if (!isGestureState()) syncState();
+      const transition = transitions[machineState]?.[input];
+      if (!transition) return machineState;
+      machineState = transition.next;
+      transition.actions.forEach(action => runAction(action, context));
+      if (!isGestureState()) syncState();
+      return machineState;
+    }
+
     return {
-      dispatch(input, anchor) {
-        syncState();
-        const transition = transitions[machineState]?.[input];
-        if (!transition) return machineState;
-        machineState = transition.next;
-        transition.actions.forEach(action => runAction(action, anchor));
-        syncState();
-        return machineState;
-      },
+      dispatch,
+      eventContext: gestureContext,
       getState() {
-        syncState();
+        if (!isGestureState()) syncState();
         return machineState;
       },
     };
@@ -2649,100 +2817,32 @@ const CalendarPage = (() => {
   function bindContentViewTrigger(btn) {
     if (!btn || btn.dataset.calendarViewTriggerBound === '1') return;
     btn.dataset.calendarViewTriggerBound = '1';
-    const doubleMs = 280;
-    const longPressMs = 560;
-    const moveTolerance = 12;
-    let pendingTapTimer = null;
-    let lastTapAt = 0;
-    let lastTapX = 0;
-    let lastTapY = 0;
-    let longPressTimer = null;
-    let longPressStartX = 0;
-    let longPressStartY = 0;
-    let longPressFired = false;
-    let ignoreClicksUntil = 0;
-    let lastDoubleAt = 0;
-
-    function clearPendingTap() {
-      if (!pendingTapTimer) return;
-      clearTimeout(pendingTapTimer);
-      pendingTapTimer = null;
-    }
-
-    function clearLongPress() {
-      if (!longPressTimer) return;
-      clearTimeout(longPressTimer);
-      longPressTimer = null;
-    }
-
-    function dispatch(input) {
-      CalendarContentViewMachine.dispatch(input, btn);
-    }
 
     btn.addEventListener('pointerdown', event => {
       if (event.button !== undefined && event.button !== 0) return;
-      longPressFired = false;
-      longPressStartX = event.clientX;
-      longPressStartY = event.clientY;
-      clearLongPress();
-      longPressTimer = window.setTimeout(() => {
-        longPressTimer = null;
-        longPressFired = true;
-        ignoreClicksUntil = Date.now() + 700;
-        clearPendingTap();
-        dispatch('longPress');
-      }, longPressMs);
+      CalendarContentViewMachine.dispatch('pointerDown', CalendarContentViewMachine.eventContext(btn, event));
     });
 
     btn.addEventListener('pointermove', event => {
-      if (!longPressTimer) return;
-      const dx = event.clientX - longPressStartX;
-      const dy = event.clientY - longPressStartY;
-      if (Math.sqrt(dx * dx + dy * dy) > moveTolerance) clearLongPress();
+      CalendarContentViewMachine.dispatch('pointerMove', CalendarContentViewMachine.eventContext(btn, event));
     });
 
     ['pointerup', 'pointercancel', 'pointerleave'].forEach(type => {
-      btn.addEventListener(type, clearLongPress);
+      btn.addEventListener(type, event => {
+        CalendarContentViewMachine.dispatch(type === 'pointerup' ? 'pointerUp' : 'pointerCancel', CalendarContentViewMachine.eventContext(btn, event));
+      });
     });
 
     btn.addEventListener('click', event => {
       event.preventDefault();
       event.stopPropagation();
-      const now = Date.now();
-      if (longPressFired || now < ignoreClicksUntil) {
-        longPressFired = false;
-        return;
-      }
-      const dx = event.clientX - lastTapX;
-      const dy = event.clientY - lastTapY;
-      const moved = Math.sqrt(dx * dx + dy * dy);
-      const isDouble = event.detail >= 2 || (lastTapAt && (now - lastTapAt) <= doubleMs && moved <= 24);
-      if (isDouble) {
-        clearPendingTap();
-        lastTapAt = 0;
-        lastDoubleAt = now;
-        dispatch('doubleTap');
-        return;
-      }
-      lastTapAt = now;
-      lastTapX = event.clientX;
-      lastTapY = event.clientY;
-      clearPendingTap();
-      pendingTapTimer = window.setTimeout(() => {
-        pendingTapTimer = null;
-        lastTapAt = 0;
-        dispatch('tap');
-      }, doubleMs);
+      CalendarContentViewMachine.dispatch('click', CalendarContentViewMachine.eventContext(btn, event));
     });
 
     btn.addEventListener('dblclick', event => {
       event.preventDefault();
       event.stopPropagation();
-      clearPendingTap();
-      const now = Date.now();
-      if (now - lastDoubleAt < 80) return;
-      lastDoubleAt = now;
-      dispatch('doubleTap');
+      CalendarContentViewMachine.dispatch('doubleTap', CalendarContentViewMachine.eventContext(btn, event));
     });
   }
 
