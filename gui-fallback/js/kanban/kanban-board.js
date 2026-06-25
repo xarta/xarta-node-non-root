@@ -405,6 +405,7 @@ const KanbanBoardPage = (() => {
       item?.priority_id,
       item?.source?.type,
       item?.status,
+      item?.goal_flag ? 'goal' : '',
       Number(rollup.issues?.open || 0) ? 'issues' : '',
       Number(rollup.todos?.open || 0) ? 'tasks' : '',
       Number(rollup.blockers?.open || 0) ? 'blocked' : '',
@@ -442,6 +443,15 @@ const KanbanBoardPage = (() => {
       return window.PersonalFilters.summaryHtml(surface, { prefix: 'Tags:', alwaysShowClear: true });
     }
     return '<span class="personal-filter-summary"><span class="personal-filter-summary__label">Tags:</span><span class="personal-filter-summary__empty">Kanban</span></span>';
+  }
+
+  function goalFlagCheckboxHtml(id, checked = false, attrs = '') {
+    const safeId = String(id || 'kanban-goal-flag').replace(/[^a-zA-Z0-9_-]/g, '-');
+    return `<label class="hub-checkbox kanban-goal-flag" for="${escHtml(safeId)}">
+      <input id="${escHtml(safeId)}" class="hub-checkbox__input" type="checkbox" ${checked ? 'checked' : ''} ${attrs}>
+      <span class="hub-checkbox__box" aria-hidden="true"></span>
+      <span class="hub-checkbox__label">Goal</span>
+    </label>`;
   }
 
   function renderItemTagSummaries() {
@@ -858,6 +868,7 @@ const KanbanBoardPage = (() => {
         </div>
         <div class="kanban-card__meta">
           ${typedLeaf ? `<span class="kanban-type-pill" data-item-type="${escHtml(type)}">${escHtml(itemTypeLabel(item))}</span>` : ''}
+          ${item.goal_flag ? '<span class="kanban-goal-pill">Goal</span>' : ''}
           <span class="kanban-state-pill" data-state="${escHtml(item.state_id || '')}">${escHtml(stateLabel(item.state_id))}</span>
           <span class="kanban-priority-pill" data-priority="${escHtml(item.priority_id || '')}">${escHtml(priorityLabel(item.priority_id))}</span>
           <span class="kanban-pill">d${escHtml(item.depth ?? 0)}</span>
@@ -1052,7 +1063,7 @@ const KanbanBoardPage = (() => {
     }
     const rollup = rollupFor(item);
     return [
-      detailRow(item.title || item.item_id, `${stateLabel(item.state_id)} - ${priorityLabel(item.priority_id)}`, markdownPreviewHtml(item.body_excerpt || '', 'kanban-detail-body', 'No description.', true), { bodyHtml: true }),
+      detailRow(item.title || item.item_id, `${stateLabel(item.state_id)} - ${priorityLabel(item.priority_id)}${item.goal_flag ? ' - Goal' : ''}`, markdownPreviewHtml(item.body_excerpt || '', 'kanban-detail-body', 'No description.', true), { bodyHtml: true }),
       detailRow('Rollup', `${rollup.items?.total || 0} scoped items`, `${rollup.issues?.open || 0} open issues - ${rollup.todos?.open || 0} open todos`),
       detailRow('Vector', item.vector?.index_key || '', item.search?.metadata?.vector?.index || ''),
       detailRow('Source', item.source?.ref || '', item.promoted_from_ref || ''),
@@ -1100,6 +1111,7 @@ const KanbanBoardPage = (() => {
   function embeddedItemFormHtml(prefix = 'kanban-inline-item') {
     const safePrefix = String(prefix || 'kanban-inline-item').replace(/[^a-zA-Z0-9_-]/g, '-');
     const valueFor = (key, fallback = '') => String(el(`${safePrefix}-${key}`)?.value || fallback);
+    const goalChecked = Boolean(el(`${safePrefix}-goal-flag`)?.checked);
     return `
       <section class="calendar-quick-event calendar-quick-event--embedded kanban-inline-item" aria-label="New Item">
         <div class="kanban-modal-form kanban-inline-item__form">
@@ -1112,6 +1124,7 @@ const KanbanBoardPage = (() => {
               <span>Priority</span>
               <select id="${escHtml(safePrefix)}-priority">${priorityOptions(valueFor('priority', 'medium'))}</select>
             </label>
+            ${goalFlagCheckboxHtml(`${safePrefix}-goal-flag`, goalChecked)}
             <div class="calendar-filter-strip calendar-event-tags-strip kanban-item-tags-strip" role="button" tabindex="0" data-kanban-item-tags-strip data-kanban-item-tags-surface="${escHtml(NEW_ITEM_TAG_SURFACE)}" data-personal-filter-open="${escHtml(NEW_ITEM_TAG_SURFACE)}" data-personal-filter-tab="filters">${itemTagsSummaryHtml(NEW_ITEM_TAG_SURFACE)}</div>
           </div>
           ${markdownFieldHtml(`${safePrefix}-body`, 'Description', valueFor('body'), { inline: true })}
@@ -1356,7 +1369,7 @@ const KanbanBoardPage = (() => {
     return true;
   }
 
-  function itemFormHtml(titleValue = '', bodyValue = '', priorityId = 'medium', depthInfo = null) {
+  function itemFormHtml(titleValue = '', bodyValue = '', priorityId = 'medium', depthInfo = null, goalFlag = false) {
     const depthLine = depthInfo
       ? `<div class="kanban-depth-note" data-depth-remaining="${escHtml(depthInfo.remaining)}">Parent: ${escHtml(depthInfo.label)} - remaining child depth ${escHtml(depthInfo.remaining)}</div>`
       : '';
@@ -1372,6 +1385,7 @@ const KanbanBoardPage = (() => {
             <span>Priority</span>
             <select id="kanban-modal-priority">${priorityOptions(priorityId)}</select>
           </label>
+          ${goalFlagCheckboxHtml('kanban-modal-goal-flag', goalFlag)}
           <div class="calendar-filter-strip calendar-event-tags-strip kanban-item-tags-strip" role="button" tabindex="0" data-kanban-item-tags-strip data-kanban-item-tags-surface="${escHtml(NEW_ITEM_TAG_SURFACE)}" data-personal-filter-open="${escHtml(NEW_ITEM_TAG_SURFACE)}" data-personal-filter-tab="filters">${itemTagsSummaryHtml(NEW_ITEM_TAG_SURFACE)}</div>
         </div>
         ${markdownFieldHtml('kanban-modal-body', 'Description', bodyValue)}
@@ -1399,6 +1413,7 @@ const KanbanBoardPage = (() => {
     const titleInput = dialog.querySelector('#kanban-modal-title');
     const bodyInput = dialog.querySelector('#kanban-modal-body');
     const priorityInput = dialog.querySelector('#kanban-modal-priority');
+    const goalFlagInput = dialog.querySelector('#kanban-modal-goal-flag');
     if (titleInput) titleInput.focus();
     renderItemTagSummaries();
     dialog.addEventListener('click', async event => {
@@ -1423,6 +1438,7 @@ const KanbanBoardPage = (() => {
         body: bodyInput?.value || '',
         state_id: stateId,
         priority_id: priorityInput?.value || 'medium',
+        goal_flag: Boolean(goalFlagInput?.checked),
         tags: itemTagIds(NEW_ITEM_TAG_SURFACE),
         actor: 'blueprints-ui',
         source_surface: 'kanban-page',
@@ -1443,6 +1459,7 @@ const KanbanBoardPage = (() => {
     const titleInput = el(`${prefix}-title`);
     const bodyInput = el(`${prefix}-body`);
     const priorityInput = el(`${prefix}-priority`);
+    const goalFlagInput = el(`${prefix}-goal-flag`);
     const status = el(`${prefix}-status`);
     const cleanTitle = String(titleInput?.value || '').trim();
     if (!cleanTitle) {
@@ -1458,6 +1475,7 @@ const KanbanBoardPage = (() => {
         body: bodyInput?.value || '',
         state_id: 'todo',
         priority_id: priorityInput?.value || 'medium',
+        goal_flag: Boolean(goalFlagInput?.checked),
         tags: itemTagIds(NEW_ITEM_TAG_SURFACE),
         actor: 'blueprints-ui',
         source_surface: 'kanban-inline-panel',
@@ -1468,6 +1486,7 @@ const KanbanBoardPage = (() => {
     if (status) status.textContent = `Saved ${resp.item?.item_id || ''}`;
     if (titleInput) titleInput.value = '';
     if (bodyInput) bodyInput.value = '';
+    if (goalFlagInput) goalFlagInput.checked = false;
     await load({ force: true });
     if (resp.item?.item_id) setSelection(resp.item.item_id);
     return true;
@@ -1586,6 +1605,7 @@ const KanbanBoardPage = (() => {
       title: item.title || '',
       stateId: item.state_id || 'todo',
       priorityId: item.priority_id || 'medium',
+      goalFlag: Boolean(item.goal_flag),
       tags: itemTagIds(EDIT_ITEM_TAG_SURFACE, item.tags || []),
       body: item.body_excerpt || '',
       detailBody: detail?.detail_document?.body || '',
@@ -1608,6 +1628,7 @@ const KanbanBoardPage = (() => {
     if (draft && String(key || '').startsWith('discussion:')) {
       return String(draft.discussions?.[String(key).slice('discussion:'.length)] ?? '');
     }
+    if (key === 'goalFlag') return Boolean(draft?.goalFlag);
     return draft ? String(draft[key] ?? '') : '';
   }
 
@@ -1616,7 +1637,7 @@ const KanbanBoardPage = (() => {
     const draft = ensureDetailDraft();
     if (!draft) return false;
     const key = field.dataset.kanbanDetailField;
-    return updateDetailDraftValue(key, field.value);
+    return updateDetailDraftValue(key, field.type === 'checkbox' ? Boolean(field.checked) : field.value);
   }
 
   function updateDetailDraftValue(key, value) {
@@ -1629,6 +1650,10 @@ const KanbanBoardPage = (() => {
       return true;
     }
     if (!Object.prototype.hasOwnProperty.call(draft, key)) return false;
+    if (key === 'goalFlag') {
+      draft.goalFlag = value === true || value === 'true' || value === 1 || value === '1';
+      return true;
+    }
     draft[key] = value;
     return true;
   }
@@ -1701,7 +1726,8 @@ const KanbanBoardPage = (() => {
     if (!key || !state.detailDraft) return;
     const value = detailDraftValue(key);
     document.querySelectorAll(`[data-kanban-detail-field="${key}"]`).forEach(field => {
-      if (field !== sourceField && 'value' in field) field.value = value;
+      if (field !== sourceField && field.type === 'checkbox') field.checked = Boolean(value);
+      else if (field !== sourceField && 'value' in field) field.value = value;
       refreshDetailFieldPreview(field, value);
     });
   }
@@ -1986,6 +2012,7 @@ const KanbanBoardPage = (() => {
               <span class="kanban-visually-hidden">Priority</span>
               <select id="${escHtml(prefix)}-priority-input" data-kanban-detail-field="priorityId" aria-label="Priority">${priorityOptions(draft.priorityId || item.priority_id || 'medium')}</select>
             </label>
+            ${goalFlagCheckboxHtml(`${prefix}-goal-flag-input`, Boolean(draft.goalFlag), 'data-kanban-detail-field="goalFlag"')}
             ${options.panel ? '<button class="kanban-icon-btn kanban-icon-btn--fullscreen kanban-detail-fullscreen-btn" type="button" data-kanban-detail-action="fullscreen" title="Full screen" aria-label="Open item full screen"></button>' : ''}
           </div>
           <div class="calendar-filter-strip calendar-event-tags-strip kanban-item-tags-strip kanban-detail-tags-field" role="button" tabindex="0" data-kanban-item-tags-strip data-kanban-item-tags-surface="${escHtml(EDIT_ITEM_TAG_SURFACE)}" data-personal-filter-open="${escHtml(EDIT_ITEM_TAG_SURFACE)}" data-personal-filter-tab="filters">${itemTagsSummaryHtml(EDIT_ITEM_TAG_SURFACE)}</div>
@@ -2025,6 +2052,7 @@ const KanbanBoardPage = (() => {
         body: draft.body || '',
         state_id: draft.stateId || 'todo',
         priority_id: draft.priorityId || 'medium',
+        goal_flag: Boolean(draft.goalFlag),
         tags: cleanTagList(draft.tags || []),
         actor: 'blueprints-ui',
         source_surface: 'kanban-detail',

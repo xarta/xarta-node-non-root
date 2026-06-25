@@ -469,6 +469,7 @@ body.is-resizing-kanban-lane * {
 .kanban-pill,
 .kanban-state-pill,
 .kanban-type-pill,
+.kanban-goal-pill,
 .kanban-priority-pill {
   display: inline-flex;
   align-items: center;
@@ -673,6 +674,12 @@ dialog.hub-modal#kanban-detail-modal[open] {
 .kanban-type-pill[data-item-type="todo"] {
   color: #9fcbff;
   border-color: rgba(159,203,255,.36);
+}
+
+.kanban-goal-pill {
+  color: #f4cf75;
+  border-color: rgba(244,207,117,.38);
+  background: rgba(244,207,117,.10);
 }
 
 .kanban-rollups {
@@ -1009,12 +1016,12 @@ dialog.hub-modal#kanban-detail-modal[open] {
 }
 
 .kanban-detail-primary-grid {
-  grid-template-columns: minmax(180px, 1fr) minmax(118px, 150px) minmax(118px, 150px);
+  grid-template-columns: minmax(180px, 1fr) minmax(118px, 150px) minmax(118px, 150px) minmax(84px, 112px);
   align-items: end;
 }
 
 .kanban-detail-primary-grid--panel {
-  grid-template-columns: minmax(180px, 1fr) minmax(118px, 150px) minmax(118px, 150px) 38px;
+  grid-template-columns: minmax(180px, 1fr) minmax(118px, 150px) minmax(118px, 150px) minmax(84px, 112px) 38px;
   align-items: center;
 }
 
@@ -1042,9 +1049,23 @@ dialog.hub-modal#kanban-detail-modal[open] {
   min-width: min(100%, 140px);
 }
 
+.kanban-item-primary-row > .kanban-goal-flag {
+  flex: 0 1 116px;
+  min-width: min(100%, 96px);
+}
+
 .kanban-item-primary-row > .kanban-item-tags-strip {
   flex: 999 1 280px;
   min-width: min(100%, 220px);
+}
+
+.kanban-goal-flag {
+  min-height: 34px;
+  align-self: end;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(0,0,0,.14);
+  padding: 7px 9px;
 }
 
 .kanban-item-tags-strip {
