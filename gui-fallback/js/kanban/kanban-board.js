@@ -1,4 +1,4 @@
-// Kanban board page - recursive work-management board over /personal/work APIs.
+// Kanban board page - recursive Kanban board over /personal/kanban APIs.
 
 'use strict';
 
@@ -81,6 +81,7 @@ const KanbanBoardPage = (() => {
       showTestEntries: true,
     },
     lastWrite: null,
+    lastExternalRefresh: null,
   };
 
   const escHtml = typeof esc === 'function'
@@ -368,6 +369,18 @@ const KanbanBoardPage = (() => {
     const selectedHidden = selectedId && (!visibleIds.has(selectedId) || itemHiddenByPreference(state.selection?.item));
     const detailHidden = detailId && (!visibleIds.has(detailId) || itemHiddenByPreference(state.detail?.item));
     if (selectedHidden || detailHidden) clearDetailSelectionState('hiddenSelectionCleared');
+    if (!selectedHidden && selectedId && visibleIds.has(selectedId)) {
+      const boardItem = findItem(selectedId);
+      if (boardItem) state.selection = { item: boardItem };
+    }
+    if (!detailHidden && detailId && visibleIds.has(detailId)) {
+      const boardItem = findItem(detailId);
+      const draftWasDirty = detailDraftDirty();
+      if (boardItem && state.detail?.item) {
+        state.detail = { ...state.detail, item: { ...state.detail.item, ...boardItem } };
+        if (!draftWasDirty) state.detailDraft = detailDraftFromDetail(state.detail);
+      }
+    }
   }
 
   function setRefreshFsm(nextState, eventName = '') {
@@ -402,11 +415,11 @@ const KanbanBoardPage = (() => {
       tags,
       source: {
         ...(item.source || {}),
-        type: item.source?.type || 'work-management',
+        type: item.source?.type || 'kanban',
       },
       related: {
         ...(item.related || {}),
-        work_items: [item.item_id],
+        kanban_items: [item.item_id],
       },
     };
   }
@@ -475,6 +488,26 @@ const KanbanBoardPage = (() => {
     return row ? row.label : (stateId || 'State');
   }
 
+  function itemType(item) {
+    return String(item?.item_type || 'item').toLowerCase();
+  }
+
+  function isTypedLeafCard(item) {
+    return ['issue', 'todo'].includes(itemType(item));
+  }
+
+  function itemTypeLabel(item) {
+    const type = itemType(item);
+    if (type === 'issue') return 'Issue';
+    if (type === 'todo') return 'ToDo';
+    return 'Item';
+  }
+
+  function cardShareKind(item) {
+    const type = itemType(item);
+    return type === 'issue' || type === 'todo' ? type : 'item';
+  }
+
   function scopedKindConfig(kind) {
     const clean = String(kind || '').toLowerCase();
     if (clean === 'issue' || clean === 'issues') {
@@ -484,7 +517,7 @@ const KanbanBoardPage = (() => {
         plural: 'Issues',
         badge: 'ISS',
         endpoint: 'issues',
-        sourcePrefix: 'work_issues',
+        sourcePrefix: 'kanban_items',
         idKey: 'issue_id',
         priorityLabel: 'Severity',
         createKind: 'issue',
@@ -496,7 +529,7 @@ const KanbanBoardPage = (() => {
       plural: 'ToDos',
       badge: 'TODO',
       endpoint: 'todos',
-      sourcePrefix: 'work_todos',
+      sourcePrefix: 'kanban_items',
       idKey: 'todo_id',
       priorityLabel: 'Priority',
       createKind: 'todo',
@@ -547,7 +580,7 @@ const KanbanBoardPage = (() => {
   async function detailForItem(itemId) {
     if (!itemId) return null;
     if (state.detail?.item?.item_id === itemId) return state.detail;
-    return requestJson(`/api/v1/personal/work/items/${encodeURIComponent(itemId)}`);
+    return requestJson(`/api/v1/personal/kanban/items/${encodeURIComponent(itemId)}`);
   }
 
   async function childCreateDepthInfo(parentItemId) {
@@ -789,6 +822,7 @@ const KanbanBoardPage = (() => {
   }
 
   function rollupRows(item) {
+    if (isTypedLeafCard(item)) return '';
     const rollup = rollupFor(item);
     const subitems = Math.max(0, Number(rollup.items?.total || 1) - 1);
     const issues = Number(rollup.issues?.open || 0);
@@ -815,13 +849,16 @@ const KanbanBoardPage = (() => {
     const pending = state.cardFsm.pendingItemId === item.item_id;
     const selected = state.selection?.item?.item_id === item.item_id;
     const routeTarget = state.routeHighlightItemId && item.item_id === state.routeHighlightItemId;
+    const typedLeaf = isTypedLeafCard(item);
+    const type = itemType(item);
     return `
-      <article class="kanban-card" data-kanban-item-id="${escHtml(item.item_id)}" tabindex="0" data-selected="${selected ? 'true' : 'false'}" data-pending="${pending ? 'true' : 'false'}" data-kanban-route-target="${routeTarget ? 'true' : 'false'}">
+      <article class="kanban-card" data-kanban-item-id="${escHtml(item.item_id)}" data-kanban-item-type="${escHtml(type)}" tabindex="0" data-selected="${selected ? 'true' : 'false'}" data-pending="${pending ? 'true' : 'false'}" data-kanban-route-target="${routeTarget ? 'true' : 'false'}">
         <div class="kanban-card__head">
           <div class="kanban-card__title">${escHtml(item.title || item.item_id)}</div>
           <button class="kanban-card-btn kanban-card-btn--share kanban-card__share" type="button" data-kanban-card-action="share" data-kanban-item-id="${escHtml(item.item_id)}" title="Copy share code" aria-label="Copy share code"></button>
         </div>
         <div class="kanban-card__meta">
+          ${typedLeaf ? `<span class="kanban-type-pill" data-item-type="${escHtml(type)}">${escHtml(itemTypeLabel(item))}</span>` : ''}
           <span class="kanban-state-pill" data-state="${escHtml(item.state_id || '')}">${escHtml(stateLabel(item.state_id))}</span>
           <span class="kanban-priority-pill" data-priority="${escHtml(item.priority_id || '')}">${escHtml(priorityLabel(item.priority_id))}</span>
           <span class="kanban-pill">d${escHtml(item.depth ?? 0)}</span>
@@ -834,7 +871,7 @@ const KanbanBoardPage = (() => {
           <button class="kanban-card-btn kanban-card-btn--left" type="button" data-kanban-card-action="move-left" data-kanban-item-id="${escHtml(item.item_id)}" title="Move left" aria-label="Move left"></button>
           <button class="kanban-card-btn kanban-card-btn--right" type="button" data-kanban-card-action="move-right" data-kanban-item-id="${escHtml(item.item_id)}" title="Move right" aria-label="Move right"></button>
           <button class="kanban-card-btn kanban-card-btn--detail" type="button" data-kanban-card-action="open-detail" data-kanban-item-id="${escHtml(item.item_id)}" title="Item detail" aria-label="Item detail"></button>
-          <button class="kanban-card-btn kanban-card-btn--child" type="button" data-kanban-card-action="open-child-board" data-kanban-item-id="${escHtml(item.item_id)}" title="Open child board" aria-label="Open child board"></button>
+          ${typedLeaf ? '' : `<button class="kanban-card-btn kanban-card-btn--child" type="button" data-kanban-card-action="open-child-board" data-kanban-item-id="${escHtml(item.item_id)}" title="Open child board" aria-label="Open child board"></button>`}
           <button class="kanban-card-btn kanban-card-btn--archive" type="button" data-kanban-card-action="archive" data-kanban-item-id="${escHtml(item.item_id)}" title="Archive item" aria-label="Archive item"></button>
         </div>
       </article>
@@ -911,7 +948,7 @@ const KanbanBoardPage = (() => {
     const priority = record.priority_id || record.severity_id || 'medium';
     const bodyId = `kanban-scoped-${config.kind}-${id}-body`.replace(/[^a-zA-Z0-9_-]/g, '-');
     return `
-      <article class="kanban-scoped-row" data-kanban-scoped-row="${escHtml(config.kind)}" data-kanban-scoped-id="${escHtml(id)}" data-kanban-scoped-item-id="${escHtml(record.item_id || '')}">
+      <article class="kanban-scoped-row" data-kanban-scoped-row="${escHtml(config.kind)}" data-kanban-scoped-id="${escHtml(id)}" data-kanban-scoped-item-id="${escHtml(record.item_id || '')}" data-kanban-scoped-parent-id="${escHtml(record.parent_item_id || '')}">
         <div class="kanban-scoped-row__main">
           <div class="kanban-detail-meta">${escHtml(scope.title || record.item_id || '')} - ${escHtml(scope.relation || 'local')} - d${escHtml(scope.depth_offset ?? 0)}</div>
           <label class="kanban-field kanban-scoped-title-field">
@@ -929,7 +966,7 @@ const KanbanBoardPage = (() => {
               domain: 'kanban',
               documentType: scopedDocumentType(config),
               documentId: id,
-              itemId: record.item_id || '',
+              itemId: id,
             },
           })}
           ${record.source_ref || record.related_task_id ? `<div class="kanban-detail-meta">${escHtml(record.source_ref || record.related_task_id || '')}</div>` : ''}
@@ -964,7 +1001,7 @@ const KanbanBoardPage = (() => {
         return `
           <section class="kanban-band kanban-scoped-group">
             <div class="kanban-section-head">
-              <h3>${escHtml(group.item?.title || group.item?.item_id || 'Work item')}</h3>
+              <h3>${escHtml(group.item?.title || group.item?.item_id || 'Kanban item')}</h3>
               <span class="kanban-pill">${escHtml(groupRows.length)}</span>
             </div>
             <div class="kanban-detail-meta">${escHtml(group.scope?.relation || 'local')} - depth offset ${escHtml(group.scope?.depth_offset ?? 0)}</div>
@@ -1031,8 +1068,8 @@ const KanbanBoardPage = (() => {
 
   function provenanceHtml() {
     return [
-      detailRow('Board API', state.currentParentId ? `/api/v1/personal/work/items/${state.currentParentId}/board` : '/api/v1/personal/work/board', 'DB-canonical work_items'),
-      detailRow('Config API', '/api/v1/personal/work/config', `${stateRows().length} states - ${priorityRows().length} priorities`),
+      detailRow('Board API', state.currentParentId ? `/api/v1/personal/kanban/items/${state.currentParentId}/board` : '/api/v1/personal/kanban/board', 'DB-canonical kanban_items'),
+      detailRow('Config API', '/api/v1/personal/kanban/config', `${stateRows().length} states - ${priorityRows().length} priorities`),
       detailRow('FSM', state.cardFsm.state, state.cardFsm.lastEvent),
       detailRow('Depth Limit', String(state.board?.rollup?.depth_limit || 12), state.currentParentId || 'root'),
     ].join('');
@@ -1065,7 +1102,7 @@ const KanbanBoardPage = (() => {
     const safePrefix = String(prefix || 'kanban-inline-item').replace(/[^a-zA-Z0-9_-]/g, '-');
     const valueFor = (key, fallback = '') => String(el(`${safePrefix}-${key}`)?.value || fallback);
     return `
-      <section class="calendar-quick-event calendar-quick-event--embedded kanban-inline-item" aria-label="New Work Item">
+      <section class="calendar-quick-event calendar-quick-event--embedded kanban-inline-item" aria-label="New Item">
         <div class="kanban-modal-form kanban-inline-item__form">
           <div class="kanban-item-primary-row">
             <label class="kanban-field kanban-field--title" for="${escHtml(safePrefix)}-title">
@@ -1155,7 +1192,7 @@ const KanbanBoardPage = (() => {
   async function loadRollups(items) {
     const entries = await Promise.all(items.slice(0, 40).map(async item => {
       try {
-        const payload = await requestJson(`/api/v1/personal/work/items/${encodeURIComponent(item.item_id)}/rollup`);
+        const payload = await requestJson(`/api/v1/personal/kanban/items/${encodeURIComponent(item.item_id)}/rollup`);
         return [item.item_id, payload.rollup || {}];
       } catch (_) {
         return [item.item_id, null];
@@ -1172,12 +1209,12 @@ const KanbanBoardPage = (() => {
     try {
       applyInitialRouteState();
       if (!state.config || options.forceConfig) {
-        state.config = await requestJson('/api/v1/personal/work/config');
+        state.config = await requestJson('/api/v1/personal/kanban/config');
         applyPreferences(state.config);
       }
       const path = state.currentParentId
-        ? `/api/v1/personal/work/items/${encodeURIComponent(state.currentParentId)}/board`
-        : '/api/v1/personal/work/board';
+        ? `/api/v1/personal/kanban/items/${encodeURIComponent(state.currentParentId)}/board`
+        : '/api/v1/personal/kanban/board';
       const payload = await requestJson(path);
       state.board = payload.board || {};
       applyPreferences(state.board);
@@ -1215,7 +1252,7 @@ const KanbanBoardPage = (() => {
     setRefreshFsm('saving', nextValue ? 'show-test-entries' : 'hide-test-entries');
     renderStatus(nextValue ? 'showing tests' : 'hiding tests');
     try {
-      const payload = await requestJson('/api/v1/personal/work/preferences', {
+      const payload = await requestJson('/api/v1/personal/kanban/preferences', {
         method: 'PUT',
         body: JSON.stringify({
           show_test_entries: nextValue,
@@ -1356,7 +1393,7 @@ const KanbanBoardPage = (() => {
       });
       return false;
     }
-    const dialog = openDialog(childOfSelection ? 'New Child Item' : 'New Work Item', itemFormHtml(title, '', 'medium', depthInfo), {
+    const dialog = openDialog(childOfSelection ? 'New Child Item' : 'New Item', itemFormHtml(title, '', 'medium', depthInfo), {
       badge: 'ITEM',
       id: childOfSelection ? 'kanban-child-item-modal' : 'kanban-item-modal',
     });
@@ -1392,7 +1429,7 @@ const KanbanBoardPage = (() => {
         source_surface: 'kanban-page',
         request_id: `ui-kanban-item-${Date.now()}`,
       };
-      const resp = await requestJson('/api/v1/personal/work/items', {
+      const resp = await requestJson('/api/v1/personal/kanban/items', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
@@ -1414,7 +1451,7 @@ const KanbanBoardPage = (() => {
       return false;
     }
     if (status) status.textContent = 'Saving item...';
-    const resp = await requestJson('/api/v1/personal/work/items', {
+    const resp = await requestJson('/api/v1/personal/kanban/items', {
       method: 'POST',
       body: JSON.stringify({
         parent_item_id: state.currentParentId || null,
@@ -1470,7 +1507,7 @@ const KanbanBoardPage = (() => {
         await HubDialogs.alert({ title: 'Kanban', message: 'Title is required.', tone: 'warning' });
         return;
       }
-      const endpoint = kind === 'issue' ? '/api/v1/personal/work/issues' : '/api/v1/personal/work/todos';
+      const endpoint = kind === 'issue' ? '/api/v1/personal/kanban/issues' : '/api/v1/personal/kanban/todos';
       const payload = {
         item_id: itemId,
         title: cleanTitle,
@@ -1594,6 +1631,61 @@ const KanbanBoardPage = (() => {
     }
     if (!Object.prototype.hasOwnProperty.call(draft, key)) return false;
     draft[key] = value;
+    return true;
+  }
+
+  function detailDraftDirty() {
+    if (!state.detailDraft?.itemId) return false;
+    const baseline = detailDraftFromDetail(state.detail || {});
+    if (!baseline.itemId || baseline.itemId !== state.detailDraft.itemId) return true;
+    return JSON.stringify(state.detailDraft) !== JSON.stringify(baseline);
+  }
+
+  function kanbanFocusedField() {
+    const active = document.activeElement;
+    if (!active || active === document.body || !active.closest) return false;
+    const editingField = active.matches?.('input, textarea, select, [contenteditable="true"]');
+    if (!editingField) return false;
+    return !!active.closest('[data-kanban-board], #kanban-filter-inline-panel, #ultrawide-sidecar-body, dialog[id^="kanban-"]');
+  }
+
+  function openKanbanEditorDialog() {
+    return Array.from(document.querySelectorAll('dialog[id^="kanban-"]')).some(dialog => dialog.open);
+  }
+
+  function externalRefreshSkipReason() {
+    if (state.loading) return 'loading';
+    if (document.body?.classList?.contains('is-resizing-kanban-lane')) return 'lane-resize';
+    if (state.scoped.open || el('kanban-scoped-modal')?.open) return 'scoped-modal';
+    if (openKanbanEditorDialog()) return 'dialog';
+    if (state.discussionEditMode) return 'discussion-edit';
+    if (detailDraftDirty()) return 'draft-dirty';
+    if (kanbanFocusedField()) return 'field-focus';
+    return '';
+  }
+
+  async function externalRefresh(options = {}) {
+    const reason = externalRefreshSkipReason();
+    if (reason) {
+      state.lastExternalRefresh = {
+        skipped: true,
+        reason,
+        itemId: String(options.itemId || ''),
+        parentItemId: String(options.parentItemId || ''),
+        stateId: String(options.stateId || ''),
+        at: Date.now(),
+      };
+      return false;
+    }
+    await load({ force: true, skipRouteDetail: true, skipRouteScoped: true });
+    state.lastExternalRefresh = {
+      skipped: false,
+      reason: '',
+      itemId: String(options.itemId || ''),
+      parentItemId: String(options.parentItemId || ''),
+      stateId: String(options.stateId || ''),
+      at: Date.now(),
+    };
     return true;
   }
 
@@ -1927,7 +2019,7 @@ const KanbanBoardPage = (() => {
       return false;
     }
     if (status) status.textContent = 'Saving item...';
-    const resp = await requestJson(`/api/v1/personal/work/items/${encodeURIComponent(cleanItemId)}`, {
+    const resp = await requestJson(`/api/v1/personal/kanban/items/${encodeURIComponent(cleanItemId)}`, {
       method: 'PATCH',
       body: JSON.stringify({
         title: cleanTitle,
@@ -1955,7 +2047,7 @@ const KanbanBoardPage = (() => {
     const status = options.statusEl || null;
     if (!cleanItemId || !draft) return false;
     if (status) status.textContent = 'Saving detail...';
-    const resp = await requestJson(`/api/v1/personal/work/items/${encodeURIComponent(cleanItemId)}/detail`, {
+    const resp = await requestJson(`/api/v1/personal/kanban/items/${encodeURIComponent(cleanItemId)}/detail`, {
       method: 'PUT',
       body: JSON.stringify({
         body: draft.detailBody || '',
@@ -1993,7 +2085,7 @@ const KanbanBoardPage = (() => {
     if (status) status.textContent = 'Saving discussions...';
     for (const row of changed) {
       const discussionId = row.discussion_id || '';
-      state.lastWrite = await requestJson(`/api/v1/personal/work/discussions/${encodeURIComponent(discussionId)}`, {
+      state.lastWrite = await requestJson(`/api/v1/personal/kanban/discussions/${encodeURIComponent(discussionId)}`, {
         method: 'PATCH',
         body: JSON.stringify({
           body: draft.discussions?.[discussionId] ?? '',
@@ -2004,7 +2096,7 @@ const KanbanBoardPage = (() => {
       });
     }
     if (newBody.trim()) {
-      state.lastWrite = await requestJson(`/api/v1/personal/work/items/${encodeURIComponent(cleanItemId)}/discussions`, {
+      state.lastWrite = await requestJson(`/api/v1/personal/kanban/items/${encodeURIComponent(cleanItemId)}/discussions`, {
         method: 'POST',
         body: JSON.stringify({
           body: newBody,
@@ -2042,7 +2134,7 @@ const KanbanBoardPage = (() => {
     if (status) status.textContent = 'Deleting discussions...';
     let itemId = state.detail?.item?.item_id || state.detailDraft?.itemId || '';
     for (const discussionId of discussionIds) {
-      state.lastWrite = await requestJson(`/api/v1/personal/work/discussions/${encodeURIComponent(discussionId)}`, {
+      state.lastWrite = await requestJson(`/api/v1/personal/kanban/discussions/${encodeURIComponent(discussionId)}`, {
         method: 'DELETE',
         body: JSON.stringify({
           actor: 'blueprints-ui',
@@ -2090,7 +2182,7 @@ const KanbanBoardPage = (() => {
         await HubDialogs.alert({ title: 'Kanban', message: 'Target item id is required.', tone: 'warning' });
         return;
       }
-      state.lastWrite = await requestJson(`/api/v1/personal/work/items/${encodeURIComponent(itemId)}/links`, {
+      state.lastWrite = await requestJson(`/api/v1/personal/kanban/items/${encodeURIComponent(itemId)}/links`, {
         method: 'POST',
         body: JSON.stringify({
           target_item_id: targetItemId,
@@ -2138,7 +2230,7 @@ const KanbanBoardPage = (() => {
         await HubDialogs.alert({ title: 'Kanban', message: 'Blocker title is required.', tone: 'warning' });
         return;
       }
-      state.lastWrite = await requestJson('/api/v1/personal/work/blockers', {
+      state.lastWrite = await requestJson('/api/v1/personal/kanban/blockers', {
         method: 'POST',
         body: JSON.stringify({
           item_id: itemId,
@@ -2162,7 +2254,7 @@ const KanbanBoardPage = (() => {
       await HubDialogs.alert({ title: 'Kanban', message: 'Select a card first.', tone: 'warning' });
       return null;
     }
-    const detail = await requestJson(`/api/v1/personal/work/items/${encodeURIComponent(itemId)}`);
+    const detail = await requestJson(`/api/v1/personal/kanban/items/${encodeURIComponent(itemId)}`);
     const item = detail.item || {};
     if (itemHiddenByPreference(item)) {
       clearDetailSelectionState('hiddenDetailSuppressed');
@@ -2267,7 +2359,20 @@ const KanbanBoardPage = (() => {
   async function loadScoped(kind, itemId, scope = 'descendants', view = 'grouped') {
     const config = scopedKindConfig(kind);
     const params = new URLSearchParams({ scope, view });
-    return requestJson(`/api/v1/personal/work/items/${encodeURIComponent(itemId)}/${config.endpoint}?${params.toString()}`);
+    return requestJson(`/api/v1/personal/kanban/items/${encodeURIComponent(itemId)}/${config.endpoint}?${params.toString()}`);
+  }
+
+  async function openFirstScopedCard(kind, itemId = state.selection?.item?.item_id) {
+    if (!itemId) return false;
+    const config = scopedKindConfig(kind);
+    const data = await loadScoped(config.kind, itemId, 'descendants', 'flat');
+    const rows = Array.isArray(data?.items) ? data.items : [];
+    const first = rows.find(row => scopedRecordId(row, config));
+    const firstCardId = first?.item_id || scopedRecordId(first, config);
+    if (!firstCardId) return false;
+    await navigateToBoard(first?.parent_item_id || data?.item?.item_id || '');
+    await setSelection(firstCardId, { routeTarget: true });
+    return true;
   }
 
   async function saveScopedRecord(config, record, row, statusOverride = '') {
@@ -2276,8 +2381,9 @@ const KanbanBoardPage = (() => {
     const priority = row.querySelector('[data-kanban-scoped-field="priority"]')?.value || record.priority_id || record.severity_id || 'medium';
     const title = String(row.querySelector('[data-kanban-scoped-field="title"]')?.value || record.title || id).trim();
     const body = row.querySelector('[data-kanban-scoped-field="body"]')?.value ?? record.body_excerpt ?? '';
+    const parentItemId = record.parent_item_id || record.scope?.item_id || state.scoped.itemId || state.currentParentId || '';
     const payload = {
-      item_id: record.item_id,
+      item_id: parentItemId,
       title: title || id,
       body,
       status,
@@ -2294,7 +2400,7 @@ const KanbanBoardPage = (() => {
       payload.due_at = record.due_at || null;
       payload.related_task_id = record.related_task_id || '';
     }
-    const resp = await requestJson(`/api/v1/personal/work/${config.endpoint}/${encodeURIComponent(id)}`, {
+    const resp = await requestJson(`/api/v1/personal/kanban/${config.endpoint}/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     });
@@ -2307,13 +2413,13 @@ const KanbanBoardPage = (() => {
 
   async function promoteScopedRecord(config, record) {
     const id = scopedRecordId(record, config);
-    const resp = await requestJson('/api/v1/personal/work/promote', {
+    const resp = await requestJson('/api/v1/personal/kanban/promote', {
       method: 'POST',
       body: JSON.stringify({
         source_ref: `${config.sourcePrefix}:${id}`,
         title: record.title || id,
         body: record.body_excerpt || '',
-        parent_item_id: record.item_id || state.scoped.itemId || state.currentParentId || null,
+        parent_item_id: record.parent_item_id || record.scope?.item_id || state.scoped.itemId || state.currentParentId || null,
         state_id: 'todo',
         priority_id: record.priority_id || record.severity_id || 'medium',
         actor: 'blueprints-ui',
@@ -2482,7 +2588,7 @@ const KanbanBoardPage = (() => {
     setFsm('pendingMove', 'move', itemId);
     renderAll();
     try {
-      const resp = await requestJson(`/api/v1/personal/work/items/${encodeURIComponent(itemId)}/move`, {
+      const resp = await requestJson(`/api/v1/personal/kanban/items/${encodeURIComponent(itemId)}/move`, {
         method: 'POST',
         body: JSON.stringify({
           parent_item_id: state.currentParentId || null,
@@ -2514,7 +2620,7 @@ const KanbanBoardPage = (() => {
     setFsm('pendingMove', `order-${cleanDirection}`, itemId);
     renderAll();
     try {
-      const resp = await requestJson(`/api/v1/personal/work/items/${encodeURIComponent(itemId)}/order`, {
+      const resp = await requestJson(`/api/v1/personal/kanban/items/${encodeURIComponent(itemId)}/order`, {
         method: 'POST',
         body: JSON.stringify({
           direction: cleanDirection,
@@ -2550,7 +2656,7 @@ const KanbanBoardPage = (() => {
       tone: 'warning',
     });
     if (!ok) return false;
-    const resp = await requestJson(`/api/v1/personal/work/items/${encodeURIComponent(item.item_id)}/archive`, {
+    const resp = await requestJson(`/api/v1/personal/kanban/items/${encodeURIComponent(item.item_id)}/archive`, {
       method: 'POST',
       body: JSON.stringify({
         actor: 'blueprints-ui',
@@ -2568,7 +2674,7 @@ const KanbanBoardPage = (() => {
   async function runStep18ProofWrite() {
     await load({ force: true });
     const stamp = Date.now();
-    const parentResp = await requestJson('/api/v1/personal/work/items', {
+    const parentResp = await requestJson('/api/v1/personal/kanban/items', {
       method: 'POST',
       body: JSON.stringify({
         item_id: `work-step18-parent-${stamp}`,
@@ -2584,7 +2690,7 @@ const KanbanBoardPage = (() => {
       }),
     });
     const parentId = parentResp.item?.item_id;
-    const childResp = await requestJson('/api/v1/personal/work/items', {
+    const childResp = await requestJson('/api/v1/personal/kanban/items', {
       method: 'POST',
       body: JSON.stringify({
         item_id: `work-step18-child-${stamp}`,
@@ -2599,7 +2705,7 @@ const KanbanBoardPage = (() => {
         request_id: `active-browser-step18-child-${stamp}`,
       }),
     });
-    const linkResp = await requestJson(`/api/v1/personal/work/items/${encodeURIComponent(parentId)}/links`, {
+    const linkResp = await requestJson(`/api/v1/personal/kanban/items/${encodeURIComponent(parentId)}/links`, {
       method: 'POST',
       body: JSON.stringify({
         target_item_id: childResp.item?.item_id,
@@ -2610,20 +2716,20 @@ const KanbanBoardPage = (() => {
         request_id: `active-browser-step18-link-${stamp}`,
       }),
     });
-    const blockerResp = await requestJson('/api/v1/personal/work/blockers', {
+    const blockerResp = await requestJson('/api/v1/personal/kanban/blockers', {
       method: 'POST',
       body: JSON.stringify({
         blocker_id: `blocker-step18-${stamp}`,
         item_id: parentId,
         title: `Step 18 Active Browser blocker ${stamp}`,
         body: 'Blocker proof row for the item detail blocker panel.',
-        blocked_by_ref: `work_items:${childResp.item?.item_id || ''}`,
+        blocked_by_ref: `kanban_items:${childResp.item?.item_id || ''}`,
         actor: 'active-browser',
         source_surface: 'kanban-active-browser-proof',
         request_id: `active-browser-step18-blocker-${stamp}`,
       }),
     });
-    const updatedResp = await requestJson(`/api/v1/personal/work/items/${encodeURIComponent(parentId)}`, {
+    const updatedResp = await requestJson(`/api/v1/personal/kanban/items/${encodeURIComponent(parentId)}`, {
       method: 'PATCH',
       body: JSON.stringify({
         title: `Step 18 Active Browser parent edited ${stamp}`,
@@ -2650,7 +2756,7 @@ const KanbanBoardPage = (() => {
   async function runStep19ProofWrite() {
     await load({ force: true });
     const stamp = Date.now();
-    const parentResp = await requestJson('/api/v1/personal/work/items', {
+    const parentResp = await requestJson('/api/v1/personal/kanban/items', {
       method: 'POST',
       body: JSON.stringify({
         item_id: `work-step19-parent-${stamp}`,
@@ -2666,7 +2772,7 @@ const KanbanBoardPage = (() => {
       }),
     });
     const parentId = parentResp.item?.item_id;
-    const childResp = await requestJson('/api/v1/personal/work/items', {
+    const childResp = await requestJson('/api/v1/personal/kanban/items', {
       method: 'POST',
       body: JSON.stringify({
         item_id: `work-step19-child-${stamp}`,
@@ -2682,7 +2788,7 @@ const KanbanBoardPage = (() => {
       }),
     });
     const childId = childResp.item?.item_id;
-    const grandchildResp = await requestJson('/api/v1/personal/work/items', {
+    const grandchildResp = await requestJson('/api/v1/personal/kanban/items', {
       method: 'POST',
       body: JSON.stringify({
         item_id: `work-step19-grandchild-${stamp}`,
@@ -2698,7 +2804,7 @@ const KanbanBoardPage = (() => {
       }),
     });
     const grandchildId = grandchildResp.item?.item_id;
-    const localIssueResp = await requestJson('/api/v1/personal/work/issues', {
+    const localIssueResp = await requestJson('/api/v1/personal/kanban/issues', {
       method: 'POST',
       body: JSON.stringify({
         issue_id: `issue-step19-local-${stamp}`,
@@ -2711,7 +2817,7 @@ const KanbanBoardPage = (() => {
         request_id: `active-browser-step19-local-issue-${stamp}`,
       }),
     });
-    const childIssueResp = await requestJson('/api/v1/personal/work/issues', {
+    const childIssueResp = await requestJson('/api/v1/personal/kanban/issues', {
       method: 'POST',
       body: JSON.stringify({
         issue_id: `issue-step19-child-${stamp}`,
@@ -2724,7 +2830,7 @@ const KanbanBoardPage = (() => {
         request_id: `active-browser-step19-child-issue-${stamp}`,
       }),
     });
-    const updatedIssueResp = await requestJson(`/api/v1/personal/work/issues/${encodeURIComponent(childIssueResp.issue?.issue_id || '')}`, {
+    const updatedIssueResp = await requestJson(`/api/v1/personal/kanban/issues/${encodeURIComponent(childIssueResp.issue?.issue_id || '')}`, {
       method: 'PATCH',
       body: JSON.stringify({
         item_id: childId,
@@ -2737,7 +2843,7 @@ const KanbanBoardPage = (() => {
         request_id: `active-browser-step19-child-issue-update-${stamp}`,
       }),
     });
-    const todoResp = await requestJson('/api/v1/personal/work/todos', {
+    const todoResp = await requestJson('/api/v1/personal/kanban/todos', {
       method: 'POST',
       body: JSON.stringify({
         todo_id: `todo-step19-grandchild-${stamp}`,
@@ -2751,7 +2857,7 @@ const KanbanBoardPage = (() => {
         request_id: `active-browser-step19-grandchild-todo-${stamp}`,
       }),
     });
-    const updatedTodoResp = await requestJson(`/api/v1/personal/work/todos/${encodeURIComponent(todoResp.todo?.todo_id || '')}`, {
+    const updatedTodoResp = await requestJson(`/api/v1/personal/kanban/todos/${encodeURIComponent(todoResp.todo?.todo_id || '')}`, {
       method: 'PATCH',
       body: JSON.stringify({
         item_id: grandchildId,
@@ -2765,10 +2871,10 @@ const KanbanBoardPage = (() => {
         request_id: `active-browser-step19-grandchild-todo-update-${stamp}`,
       }),
     });
-    const promotedIssueResp = await requestJson('/api/v1/personal/work/promote', {
+    const promotedIssueResp = await requestJson('/api/v1/personal/kanban/promote', {
       method: 'POST',
       body: JSON.stringify({
-        source_ref: `work_issues:${updatedIssueResp.issue?.issue_id || childIssueResp.issue?.issue_id}`,
+        source_ref: `kanban_items:${updatedIssueResp.issue?.issue_id || childIssueResp.issue?.issue_id}`,
         title: `Promoted Step 19 issue ${stamp}`,
         parent_item_id: childId,
         priority_id: 'critical',
@@ -2777,10 +2883,10 @@ const KanbanBoardPage = (() => {
         request_id: `active-browser-step19-promote-issue-${stamp}`,
       }),
     });
-    const promotedTodoResp = await requestJson('/api/v1/personal/work/promote', {
+    const promotedTodoResp = await requestJson('/api/v1/personal/kanban/promote', {
       method: 'POST',
       body: JSON.stringify({
-        source_ref: `work_todos:${updatedTodoResp.todo?.todo_id || todoResp.todo?.todo_id}`,
+        source_ref: `kanban_items:${updatedTodoResp.todo?.todo_id || todoResp.todo?.todo_id}`,
         title: `Promoted Step 19 todo ${stamp}`,
         parent_item_id: grandchildId,
         priority_id: 'high',
@@ -2914,7 +3020,7 @@ const KanbanBoardPage = (() => {
     if (action === 'add-todo') return openLeafForm('todo', itemId);
     if (action === 'share') {
       const item = findItem(itemId) || state.selection?.item || state.detail?.item || {};
-      return copyShareCode('item', itemId, { title: item.title || '' });
+      return copyShareCode(cardShareKind(item), itemId, { title: item.title || '' });
     }
     if (action === 'open-detail') {
       setSelection(itemId);
@@ -3032,7 +3138,8 @@ const KanbanBoardPage = (() => {
       return true;
     }
     if (action === 'share') {
-      await copyShareCode('item', itemId, { title: state.detail?.item?.title || state.selection?.item?.title || '' });
+      const detailItem = state.detail?.item || state.selection?.item || {};
+      await copyShareCode(cardShareKind(detailItem), itemId, { title: detailItem.title || '' });
       return true;
     }
     if (action === 'save') {
@@ -3161,7 +3268,7 @@ const KanbanBoardPage = (() => {
     el('kanban-board-shell')?.addEventListener('scroll', resetBoardVerticalOffset, { passive: true });
     root.addEventListener('input', handleDetailFieldEvent);
     root.addEventListener('change', handleDetailFieldEvent);
-    root.addEventListener('click', event => {
+    root.addEventListener('click', async event => {
       if (event.target.closest('[data-kanban-lane-width-handle]')) {
         event.preventDefault();
         event.stopPropagation();
@@ -3206,8 +3313,8 @@ const KanbanBoardPage = (() => {
         event.stopPropagation();
         const itemId = pill.dataset.kanbanItemId || '';
         if (pill.dataset.kanbanPill === 'subitems') openChildBoard(itemId);
-        if (pill.dataset.kanbanPill === 'issues') openScoped('issues', itemId);
-        if (pill.dataset.kanbanPill === 'todos') openScoped('todos', itemId);
+        if (pill.dataset.kanbanPill === 'issues') await openFirstScopedCard('issues', itemId);
+        if (pill.dataset.kanbanPill === 'todos') await openFirstScopedCard('todos', itemId);
         return;
       }
       const card = event.target.closest('[data-kanban-item-id]');
@@ -3285,8 +3392,13 @@ const KanbanBoardPage = (() => {
       route_detail_item_id: state.routeDetailItemId || '',
       route_highlight_item_id: state.routeHighlightItemId || '',
       detail_open: !!state.detailModalOpen,
+      detail_panel_open: !!state.detailPanelOpen,
       detail_item_id: detail.item?.item_id || '',
       detail_state: detail.item?.state_id || '',
+      editing: !!externalRefreshSkipReason(),
+      draft_dirty: detailDraftDirty(),
+      external_refresh_skipped: !!state.lastExternalRefresh?.skipped,
+      external_refresh_skipped_reason: state.lastExternalRefresh?.reason || '',
       depth_remaining: detail.remaining_depth ?? state.board?.remaining_depth ?? 0,
       child_count: detail.counts?.children ?? (detail.children || []).length ?? 0,
       link_count: detail.counts?.links ?? (detail.links || []).length ?? 0,
@@ -3340,6 +3452,7 @@ const KanbanBoardPage = (() => {
     showTestEntries: () => setTestEntriesVisible(true, { source_surface: 'kanban-automation' }),
     hideTestEntries: () => setTestEntriesVisible(false, { source_surface: 'kanban-automation' }),
     toggleTestEntriesVisibility,
+    externalRefresh,
     runStep18ProofWrite,
     runStep19ProofWrite,
     openScopedIssues: () => openScoped('issues'),

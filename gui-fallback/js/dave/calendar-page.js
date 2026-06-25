@@ -329,7 +329,7 @@ const CalendarPage = (() => {
     }
     if (value === 'calendar') return 'calendar';
     if (value === 'tasks') return 'tasks and reminders';
-    if (value === 'work') return 'work';
+    if (value === 'kanban') return 'kanban';
     if (value === 'imports') return 'imports';
     if (value === 'sources') return 'source records';
     if (value === 'git') return 'git activity';
@@ -498,8 +498,8 @@ const CalendarPage = (() => {
   }
 
   function isWorkLike(event) {
-    const relatedWork = event?.related?.work_items || [];
-    return sourceType(event) === 'work-management' || relatedWork.length > 0;
+    const relatedWork = event?.related?.kanban_items || [];
+    return ['kanban', 'manual-kanban'].includes(sourceType(event)) || relatedWork.length > 0;
   }
 
   function isImportLike(event) {
@@ -520,7 +520,7 @@ const CalendarPage = (() => {
   function eventCategory(event) {
     if (isHolidayLike(event)) return 'holiday';
     if (isTaskLike(event)) return 'task';
-    if (isWorkLike(event)) return 'work';
+    if (isWorkLike(event)) return 'kanban';
     if (isImportLike(event)) return 'import';
     if (isCalendarEvent(event)) return 'calendar';
     return 'source';
@@ -533,7 +533,7 @@ const CalendarPage = (() => {
     }
     if (state.sourceFilter === 'calendar') return isCalendarEvent(event);
     if (state.sourceFilter === 'tasks') return isTaskLike(event);
-    if (state.sourceFilter === 'work') return isWorkLike(event);
+    if (state.sourceFilter === 'kanban') return isWorkLike(event);
     if (state.sourceFilter === 'imports') return isImportLike(event);
     if (state.sourceFilter === 'sources') return !isCalendarEvent(event);
     if (state.sourceFilter === 'git') return isGitLike(event);
@@ -1391,7 +1391,7 @@ const CalendarPage = (() => {
   }
 
   function setSourceFilter(filter) {
-    const clean = ['all', 'calendar', 'tasks', 'work', 'imports', 'sources', 'git'].includes(filter) ? filter : 'all';
+    const clean = ['all', 'calendar', 'tasks', 'kanban', 'imports', 'sources', 'git'].includes(filter) ? filter : 'all';
     state.sourceFilter = clean;
     if (window.PersonalFilters?.setSelectedIds) {
       window.PersonalFilters.setSelectedIds('calendar', clean === 'all' ? [] : [clean]);
@@ -1408,7 +1408,7 @@ const CalendarPage = (() => {
       state.sourceFilter = 'all';
       return;
     }
-    if (selected.length === 1 && ['calendar', 'tasks', 'work', 'imports', 'sources', 'git'].includes(selected[0])) {
+    if (selected.length === 1 && ['calendar', 'tasks', 'kanban', 'imports', 'sources', 'git'].includes(selected[0])) {
       state.sourceFilter = selected[0];
       return;
     }
@@ -2532,47 +2532,47 @@ const CalendarPage = (() => {
     ]), 'Task event created in shared personal events.');
   }
 
-  async function linkWorkItem() {
+  async function linkKanbanItem() {
     const event = state.selection?.row;
     if (!event) {
-      return showActionModal('Link Work', '<p>Select a calendar row before linking a work item.</p>');
+      return showActionModal('Link Kanban', '<p>Select a calendar row before linking a Kanban item.</p>');
     }
-    return showActionModal('Link Work', `${kvHtml([
+    return showActionModal('Link Kanban', `${kvHtml([
       ['Event', event.event_id || ''],
-      ['Current links', (event.related?.work_items || []).join(', ') || 'none'],
+      ['Current links', (event.related?.kanban_items || []).join(', ') || 'none'],
     ])}
-      <label class="calendar-field" for="calendar-work-link-input">
-        <span>Work ref</span>
-        <input id="calendar-work-link-input" type="text" autocomplete="off" />
+      <label class="calendar-field" for="calendar-kanban-link-input">
+        <span>Kanban ref</span>
+        <input id="calendar-kanban-link-input" type="text" autocomplete="off" />
       </label>
-      <button class="calendar-command-btn" type="button" data-calendar-modal-action="submit-work-link">Link Work</button>`);
+      <button class="calendar-command-btn" type="button" data-calendar-modal-action="submit-kanban-link">Link Kanban</button>`);
   }
 
-  async function submitWorkLink() {
+  async function submitKanbanLink() {
     const event = state.selection?.row;
-    const input = el('calendar-work-link-input');
-    const workRef = String(input?.value || '').trim();
-    if (!event?.event_id || !workRef) return false;
+    const input = el('calendar-kanban-link-input');
+    const kanbanRef = String(input?.value || '').trim();
+    if (!event?.event_id || !kanbanRef) return false;
     const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
-    const resp = await fetcher(`/api/v1/personal/events/${encodeURIComponent(event.event_id)}/work-links`, {
+    const resp = await fetcher(`/api/v1/personal/events/${encodeURIComponent(event.event_id)}/kanban-links`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        work_item_ref: workRef,
+        kanban_item_ref: kanbanRef,
         actor: 'blueprints-ui',
         source_surface: 'calendar-page',
-        request_id: `ui-calendar-work-link-${Date.now()}`,
+        request_id: `ui-calendar-kanban-link-${Date.now()}`,
       }),
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) {
-      showActionModal('Link Work', `<p>${escHtml(responseErrorMessage(data, resp.status))}</p>`);
+      showActionModal('Link Kanban', `<p>${escHtml(responseErrorMessage(data, resp.status))}</p>`);
       return false;
     }
     await load({ force: true });
-    return showActionModal('Link Work', kvHtml([
+    return showActionModal('Link Kanban', kvHtml([
       ['Event', data.event?.event_id || event.event_id],
-      ['Work ref', workRef],
+      ['Kanban ref', kanbanRef],
       ['Audit', data.audit?.audit_id || ''],
     ]), 'Work link recorded.');
   }
@@ -2945,7 +2945,7 @@ const CalendarPage = (() => {
 	        if (!btn) return;
 	        if (btn.dataset.calendarModalAction === 'submit-edit') submitEdit();
 	        if (btn.dataset.calendarModalAction === 'delete-event') deleteSelectedEvent();
-		        if (btn.dataset.calendarModalAction === 'submit-work-link') submitWorkLink();
+		        if (btn.dataset.calendarModalAction === 'submit-kanban-link') submitKanbanLink();
 		        if (btn.dataset.calendarModalAction === 'edit-event-content') openSelectedEventContentEditor();
 		        if (btn.dataset.calendarModalAction === 'save-event-content') saveSelectedEventContent();
 		        if (btn.dataset.calendarModalAction === 'toggle-markdown-preview') toggleMarkdownPreview(btn, modalBody);
@@ -3018,7 +3018,7 @@ const CalendarPage = (() => {
     filterAll: () => setSourceFilter('all'),
     filterCalendar: () => setSourceFilter('calendar'),
     filterTasks: () => setSourceFilter('tasks'),
-    filterWork: () => setSourceFilter('work'),
+    filterKanban: () => setSourceFilter('kanban'),
     filterImports: () => setSourceFilter('imports'),
     filterSources: () => setSourceFilter('sources'),
     filterGit: () => setSourceFilter('git'),
@@ -3028,7 +3028,7 @@ const CalendarPage = (() => {
     openSource,
     linkDiary,
     createTask,
-    linkWorkItem,
+    linkKanbanItem,
     explainSelection,
     safeChecks,
     snapshot,
@@ -3058,7 +3058,7 @@ if (typeof DaveMenuConfig !== 'undefined') {
     'calendar.filterAll': () => CalendarPage.filterAll(),
     'calendar.filterCalendar': () => CalendarPage.filterCalendar(),
     'calendar.filterTasks': () => CalendarPage.filterTasks(),
-    'calendar.filterWork': () => CalendarPage.filterWork(),
+    'calendar.filterKanban': () => CalendarPage.filterKanban(),
     'calendar.filterImports': () => CalendarPage.filterImports(),
     'calendar.filterSources': () => CalendarPage.filterSources(),
     'calendar.filterGit': () => CalendarPage.filterGit(),
@@ -3067,7 +3067,7 @@ if (typeof DaveMenuConfig !== 'undefined') {
     'calendar.openSource': () => CalendarPage.openSource(),
     'calendar.linkDiary': () => CalendarPage.linkDiary(),
     'calendar.createTask': () => CalendarPage.createTask(),
-    'calendar.linkWorkItem': () => CalendarPage.linkWorkItem(),
+    'calendar.linkKanbanItem': () => CalendarPage.linkKanbanItem(),
     'calendar.explainSelection': () => CalendarPage.explainSelection(),
     'calendar.safeChecks': () => CalendarPage.safeChecks(),
   });

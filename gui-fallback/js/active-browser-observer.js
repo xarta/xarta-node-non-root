@@ -70,6 +70,12 @@ const BlueprintsActiveBrowserObserver = (() => {
     if (action === 'selector') return 'selector_action';
     if (action === 'body_shade' || action === 'shade' || action === 'shade_up') return 'set_body_shade';
     if (
+      action === 'kanban_refresh'
+      || action === 'kanban_lane_refresh'
+      || action === 'kanban_lane_update'
+      || action === 'lane_update'
+    ) return 'kanban_external_refresh';
+    if (
       action === 'diagnostic'
       || action === 'diagnostics'
       || action === 'diagnostic_snapshot'
@@ -341,6 +347,21 @@ const BlueprintsActiveBrowserObserver = (() => {
     return true;
   }
 
+  async function _refreshKanbanFromExternalChange(payload) {
+    const board = window.BlueprintsKanbanBoardPage || null;
+    if (!board || typeof board.externalRefresh !== 'function') {
+      throw new Error('Kanban refresh automation is unavailable.');
+    }
+    const result = await board.externalRefresh({
+      itemId: _cleanText(payload?.item_id),
+      parentItemId: _cleanText(payload?.parent_item_id),
+      stateId: _cleanText(payload?.state_id),
+      source: _cleanText(payload?.source_surface || 'active-browser-command'),
+    });
+    scheduleReport(result === false ? 'command-kanban-refresh-skipped' : 'command-kanban-refresh');
+    return result;
+  }
+
   function _openModal(payload) {
     if (payload?.fn || payload?.menu_item_id || payload?.menu_id) {
       return _runMenuFunction(payload);
@@ -501,6 +522,9 @@ const BlueprintsActiveBrowserObserver = (() => {
     }
     if (action === 'diagnostic_snapshot') {
       return _requestDiagnosticSnapshot(payload);
+    }
+    if (action === 'kanban_external_refresh') {
+      return await _refreshKanbanFromExternalChange(payload);
     }
   }
 

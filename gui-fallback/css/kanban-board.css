@@ -468,6 +468,7 @@ body.is-resizing-kanban-lane * {
 .kanban-column__count,
 .kanban-pill,
 .kanban-state-pill,
+.kanban-type-pill,
 .kanban-priority-pill {
   display: inline-flex;
   align-items: center;
@@ -657,6 +658,21 @@ dialog.hub-modal#kanban-detail-modal[open] {
 .kanban-state-pill[data-state="done"] {
   color: #73d8a5;
   border-color: rgba(115,216,165,.35);
+}
+
+.kanban-type-pill {
+  border-color: rgba(168,184,214,.32);
+  color: #d6dfef;
+}
+
+.kanban-type-pill[data-item-type="issue"] {
+  color: #ff9aa2;
+  border-color: rgba(255,154,162,.36);
+}
+
+.kanban-type-pill[data-item-type="todo"] {
+  color: #9fcbff;
+  border-color: rgba(159,203,255,.36);
 }
 
 .kanban-rollups {

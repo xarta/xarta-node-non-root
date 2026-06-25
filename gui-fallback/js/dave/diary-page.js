@@ -481,8 +481,8 @@ const DiaryPage = (() => {
   }
 
   function isWorkLike(event) {
-    const relatedWork = event?.related?.work_items || [];
-    return sourceType(event) === 'work-management' || relatedWork.length > 0;
+    const relatedWork = event?.related?.kanban_items || [];
+    return ['kanban', 'manual-kanban'].includes(sourceType(event)) || relatedWork.length > 0;
   }
 
   function isImportLike(event) {
@@ -498,7 +498,7 @@ const DiaryPage = (() => {
   function eventCategory(event) {
     if (isHolidayLike(event)) return 'holiday';
     if (isTaskLike(event)) return 'task';
-    if (isWorkLike(event)) return 'work';
+    if (isWorkLike(event)) return 'kanban';
     if (isImportLike(event)) return 'import';
     if (isDiaryEvent(event)) return 'diary';
     return 'source';
@@ -2243,47 +2243,47 @@ const DiaryPage = (() => {
     ]));
   }
 
-  async function linkWorkItem() {
+  async function linkKanbanItem() {
     const event = state.selection?.row;
     if (!event) {
-      return showActionModal('Link Work', '<p>Select a diary row before linking a work item.</p>');
+      return showActionModal('Link Kanban', '<p>Select a diary row before linking a Kanban item.</p>');
     }
-    return showActionModal('Link Work', `${kvHtml([
+    return showActionModal('Link Kanban', `${kvHtml([
       ['Event', event.event_id || ''],
-      ['Current links', (event.related?.work_items || []).join(', ') || 'none'],
+      ['Current links', (event.related?.kanban_items || []).join(', ') || 'none'],
     ])}
-      <label class="calendar-field" for="diary-work-link-input">
-        <span>Work ref</span>
-        <input id="diary-work-link-input" type="text" autocomplete="off" />
+      <label class="calendar-field" for="diary-kanban-link-input">
+        <span>Kanban ref</span>
+        <input id="diary-kanban-link-input" type="text" autocomplete="off" />
       </label>
-      <button class="calendar-command-btn diary-command-btn" type="button" data-diary-modal-action="submit-work-link">Link Work</button>`);
+      <button class="calendar-command-btn diary-command-btn" type="button" data-diary-modal-action="submit-kanban-link">Link Kanban</button>`);
   }
 
-  async function submitWorkLink() {
+  async function submitKanbanLink() {
     const event = state.selection?.row;
-    const input = el('diary-work-link-input');
-    const workRef = String(input?.value || '').trim();
-    if (!event?.event_id || !workRef) return false;
+    const input = el('diary-kanban-link-input');
+    const kanbanRef = String(input?.value || '').trim();
+    if (!event?.event_id || !kanbanRef) return false;
     const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
-    const resp = await fetcher(`/api/v1/personal/events/${encodeURIComponent(event.event_id)}/work-links`, {
+    const resp = await fetcher(`/api/v1/personal/events/${encodeURIComponent(event.event_id)}/kanban-links`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        work_item_ref: workRef,
+        kanban_item_ref: kanbanRef,
         actor: 'blueprints-ui',
         source_surface: 'diary-page',
-        request_id: `ui-diary-work-link-${Date.now()}`,
+        request_id: `ui-diary-kanban-link-${Date.now()}`,
       }),
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) {
-      showActionModal('Link Work', `<p>${escHtml(responseErrorMessage(data, resp.status))}</p>`);
+      showActionModal('Link Kanban', `<p>${escHtml(responseErrorMessage(data, resp.status))}</p>`);
       return false;
     }
     await load({ force: true });
-    return showActionModal('Link Work', kvHtml([
+    return showActionModal('Link Kanban', kvHtml([
       ['Event', data.event?.event_id || event.event_id],
-      ['Work ref', workRef],
+      ['Kanban ref', kanbanRef],
       ['Audit', data.audit?.audit_id || ''],
     ]), 'Work link recorded.');
   }
@@ -3137,7 +3137,7 @@ const DiaryPage = (() => {
         }
 	        const btn = event.target.closest('[data-diary-modal-action]');
 	        if (!btn) return;
-		        if (btn.dataset.diaryModalAction === 'submit-work-link') submitWorkLink();
+		        if (btn.dataset.diaryModalAction === 'submit-kanban-link') submitKanbanLink();
 		        if (btn.dataset.diaryModalAction === 'edit-entry-content') openSelectedEntryContentEditor();
 		        if (btn.dataset.diaryModalAction === 'toggle-entry-content-preview') toggleEntryContentPreview(btn);
 		        if (btn.dataset.diaryModalAction === 'save-entry-content') saveSelectedEntryContent();
@@ -3234,7 +3234,7 @@ const DiaryPage = (() => {
       ['Date', daySummaryTargetDate()],
       ['Privacy state', state.daySummary?.pin_hidden_count ? 'hidden by v1 privacy filter' : 'none hidden'],
     ])),
-    linkWorkItem,
+    linkKanbanItem,
     generateSummary,
     explainSelection,
     safeChecks,
@@ -3275,7 +3275,7 @@ if (typeof DaveMenuConfig !== 'undefined') {
     'diary.filterGit': () => DiaryPage.filterGit(),
     'diary.filterImports': () => DiaryPage.filterImports(),
     'diary.showPinPrivate': () => DiaryPage.showPinPrivate(),
-    'diary.linkWorkItem': () => DiaryPage.linkWorkItem(),
+    'diary.linkKanbanItem': () => DiaryPage.linkKanbanItem(),
     'diary.generateSummary': () => DiaryPage.generateSummary(),
     'diary.explainSelection': () => DiaryPage.explainSelection(),
     'diary.safeChecks': () => DiaryPage.safeChecks(),

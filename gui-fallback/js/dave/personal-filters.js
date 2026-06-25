@@ -527,9 +527,9 @@ const PersonalFilters = (() => {
   }
 
   function isWorkRecord(record) {
-    const relatedWork = record?.related?.work_items || [];
+    const relatedWork = record?.related?.kanban_items || [];
     const tags = recordTags(record);
-    return sourceType(record) === 'work-management' || relatedWork.length > 0 || tags.includes('kanban');
+    return ['kanban', 'manual-kanban'].includes(sourceType(record)) || relatedWork.length > 0 || tags.includes('kanban');
   }
 
   function isImportRecord(record) {

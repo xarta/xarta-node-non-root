@@ -42,13 +42,13 @@ const TodoPage = (() => {
     routeTaskRef: '',
     routeHighlightRef: '',
     lastWrite: null,
-    workPreferences: { show_test_entries: true },
-    testEntries: { show: true, hidden_work_todos: 0 },
+    kanbanPreferences: { show_test_entries: true },
+    testEntries: { show: true, hidden_kanban_todos: 0 },
     refreshFsm: { state: 'idle', lastEvent: '' },
   };
 
-  // Legacy API mode "work" means Kanban-backed tasks, not future job-work tags.
-  const modes = ['today', 'personal', 'work', 'blocked', 'review', 'done'];
+  // Kanban mode uses the Kanban task projection and does not reuse the ordinary user tag named "work".
+  const modes = ['today', 'personal', 'kanban', 'blocked', 'review', 'done'];
 
   const escHtml = typeof esc === 'function'
     ? esc
@@ -75,7 +75,7 @@ const TodoPage = (() => {
     const labels = {
       today: 'Today',
       personal: 'Personal',
-      work: 'Kanban',
+      kanban: 'Kanban',
       blocked: 'Blocked',
       review: 'Review',
       done: 'Done',
@@ -146,8 +146,8 @@ const TodoPage = (() => {
     return String(value || '').trim().replace(/[^a-zA-Z0-9_.:-]+/g, '-').slice(0, 180);
   }
 
-  function workRouteUrl(workRef) {
-    const clean = cleanWorkRef(workRef);
+  function kanbanRouteUrl(kanbanRef) {
+    const clean = cleanWorkRef(kanbanRef);
     if (!clean || !window.location) return '';
     if (window.BlueprintsKanbanBoardPage?.itemRouteUrl) return window.BlueprintsKanbanBoardPage.itemRouteUrl(clean);
     const url = new URL(window.location.href);
@@ -157,44 +157,44 @@ const TodoPage = (() => {
     return `${url.pathname}${url.search}${url.hash || ''}`;
   }
 
-  function workLinkHtml(workRef) {
-    const clean = cleanWorkRef(workRef);
-    const href = workRouteUrl(clean);
+  function kanbanLinkHtml(kanbanRef) {
+    const clean = cleanWorkRef(kanbanRef);
+    const href = kanbanRouteUrl(clean);
     if (!clean || !href) return '';
-    return `<a class="todo-related-link todo-related-link--work" href="${escHtml(href)}" data-todo-work-link="${escHtml(clean)}">${escHtml(clean)}</a>`;
+    return `<a class="todo-related-link todo-related-link--kanban" href="${escHtml(href)}" data-todo-kanban-link="${escHtml(clean)}">${escHtml(clean)}</a>`;
   }
 
-  function workTodoId(row) {
+  function kanbanTodoId(row) {
     const sourceRef = String(row?.source?.ref || '').trim();
-    if (sourceRef.startsWith('work_todos:')) return sourceRef.slice('work_todos:'.length);
-    const dbRef = (row?.db_refs || []).find(ref => String(ref || '').startsWith('work_todos:'));
-    return dbRef ? String(dbRef).slice('work_todos:'.length) : '';
+    if (sourceRef.startsWith('kanban_items:')) return sourceRef.slice('kanban_items:'.length);
+    const dbRef = (row?.db_refs || []).find(ref => String(ref || '').startsWith('kanban_items:'));
+    return dbRef ? String(dbRef).slice('kanban_items:'.length) : '';
   }
 
   function applyWorkPreferenceState(payload = {}) {
-    const prefs = payload.work_preferences || payload.preferences || {};
+    const prefs = payload.kanban_preferences || payload.preferences || {};
     if (Object.prototype.hasOwnProperty.call(prefs, 'show_test_entries')) {
-      state.workPreferences.show_test_entries = Boolean(prefs.show_test_entries);
+      state.kanbanPreferences.show_test_entries = Boolean(prefs.show_test_entries);
     }
     const entries = payload.test_entries || {};
     if (Object.prototype.hasOwnProperty.call(entries, 'show')) {
       state.testEntries.show = Boolean(entries.show);
     } else {
-      state.testEntries.show = Boolean(state.workPreferences.show_test_entries);
+      state.testEntries.show = Boolean(state.kanbanPreferences.show_test_entries);
     }
-    if (Object.prototype.hasOwnProperty.call(entries, 'hidden_work_todos')) {
-      const hidden = Number(entries.hidden_work_todos);
-      state.testEntries.hidden_work_todos = Number.isFinite(hidden) ? hidden : 0;
+    if (Object.prototype.hasOwnProperty.call(entries, 'hidden_kanban_todos')) {
+      const hidden = Number(entries.hidden_kanban_todos);
+      state.testEntries.hidden_kanban_todos = Number.isFinite(hidden) ? hidden : 0;
     }
     renderRefreshPreferenceState();
   }
 
   function showTestEntries() {
-    return Boolean(state.workPreferences.show_test_entries);
+    return Boolean(state.kanbanPreferences.show_test_entries);
   }
 
-  function hiddenWorkTodoCount() {
-    const hidden = Number(state.testEntries.hidden_work_todos || 0);
+  function hiddenKanbanTodoCount() {
+    const hidden = Number(state.testEntries.hidden_kanban_todos || 0);
     return Number.isFinite(hidden) ? Math.max(0, hidden) : 0;
   }
 
@@ -207,7 +207,7 @@ const TodoPage = (() => {
 
   function refreshButtonLabel() {
     return !showTestEntries()
-      ? 'Refresh ToDo - proof rows hidden'
+      ? 'Refresh ToDo - test entries hidden'
       : 'Refresh ToDo';
   }
 
@@ -243,7 +243,7 @@ const TodoPage = (() => {
   }
 
   async function shareKanbanTodo(row) {
-    const todoId = workTodoId(row);
+    const todoId = kanbanTodoId(row);
     if (!todoId) return false;
     const code = `xarta-kanban:todo:${todoId}`;
     await copyShareText(code);
@@ -261,14 +261,14 @@ const TodoPage = (() => {
     return true;
   }
 
-  function openWorkLink(workRef) {
-    const clean = cleanWorkRef(workRef);
+  function openKanbanLink(kanbanRef) {
+    const clean = cleanWorkRef(kanbanRef);
     if (!clean) return false;
     if (typeof switchGroup === 'function') switchGroup('kanban');
     if (typeof switchTab === 'function') switchTab('kanban');
     if (window.KanbanMenuConfig?.updateActiveTab) window.KanbanMenuConfig.updateActiveTab('kanban');
     if (window.BlueprintsKanbanBoardPage?.openItemById) return window.BlueprintsKanbanBoardPage.openItemById(clean);
-    window.location.href = workRouteUrl(clean);
+    window.location.href = kanbanRouteUrl(clean);
     return true;
   }
 
@@ -301,7 +301,7 @@ const TodoPage = (() => {
       row?.status,
       sourceType(row),
       sourceAuthority(row),
-      ...(row?.related?.work_items?.length ? ['kanban'] : []),
+      ...(row?.related?.kanban_items?.length ? ['kanban'] : []),
     ].filter(Boolean);
     return {
       ...row,
@@ -516,23 +516,23 @@ const TodoPage = (() => {
     if (!strip) return;
     const status = state.error ? 'error' : (state.loaded ? 'ready' : 'empty');
     const tone = statusTone(status);
-    const proofState = state.mode === 'work' && !showTestEntries()
-      ? '<span>proof rows hidden</span>'
+    const testEntryState = state.mode === 'kanban' && !showTestEntries()
+      ? '<span>test entries hidden</span>'
       : '';
     strip.innerHTML = `
       <span class="todo-status-dot todo-status-dot--${tone}" aria-hidden="true"></span>
       <span>${escHtml(status)}</span>
       <span>${escHtml(modeLabel(state.mode))}</span>
-      ${proofState}
+      ${testEntryState}
     `;
   }
 
   function renderMeta() {
     const rows = taskRows();
     const meta = el('todo-meta');
-    const hidden = hiddenWorkTodoCount();
-    const hiddenText = state.mode === 'work' && !showTestEntries()
-      ? ` - ${hidden} proof row${hidden === 1 ? '' : 's'} hidden`
+    const hidden = hiddenKanbanTodoCount();
+    const hiddenText = state.mode === 'kanban' && !showTestEntries()
+      ? ` - ${hidden} test entr${hidden === 1 ? 'y' : 'ies'} hidden`
       : '';
     if (meta) meta.textContent = `${modeLabel(state.mode)} - ${rows.length} visible task${rows.length === 1 ? '' : 's'}${hiddenText}`;
     const filter = el('todo-filter-strip');
@@ -574,7 +574,7 @@ const TodoPage = (() => {
       metric(taskRows().length, 'visible'),
       metric(counts.today || 0, 'today'),
       metric(counts.personal || 0, 'personal'),
-      metric(counts.work || 0, 'kanban'),
+      metric(counts.kanban || 0, 'kanban'),
       metric(counts.blocked || 0, 'blocked'),
       metric(counts.done || 0, 'done'),
     ].join('');
@@ -582,16 +582,16 @@ const TodoPage = (() => {
 
   function taskRowHtml(row, index) {
     const status = row.status || 'open';
-    const refs = row.related?.work_items || [];
+    const refs = row.related?.kanban_items || [];
     const writable = canWriteTask(row);
-    const shareTodoId = workTodoId(row);
+    const shareTodoId = kanbanTodoId(row);
     return `
       <article class="todo-task-row" data-todo-index="${index}" tabindex="0">
         <div class="todo-task-main">
           <div class="todo-task-title">${escHtml(taskLabel(row))}</div>
           <div class="todo-task-meta">${escHtml(taskTime(row) || 'no due time')} - ${escHtml(sourceType(row) || 'unknown')} - ${escHtml(modeLabel(row.mode || ''))}</div>
           ${markdownPreviewHtml(row.body_excerpt || '', 'todo-task-body', 'No task content.')}
-          ${refs.length ? `<div class="todo-task-meta todo-task-meta--links">kanban ${refs.map(workLinkHtml).join(' ')}</div>` : ''}
+          ${refs.length ? `<div class="todo-task-meta todo-task-meta--links">kanban ${refs.map(kanbanLinkHtml).join(' ')}</div>` : ''}
         </div>
         <span class="todo-task-status todo-task-status--${escHtml(status)}">${escHtml(status)}</span>
         <span class="todo-task-source">${escHtml(row.source?.authority || 'source')}</span>
@@ -641,7 +641,7 @@ const TodoPage = (() => {
       detailRow(row.title || row.task_id, `${row.status || ''} - ${row.mode || ''}`, markdownPreviewHtml(row.body_excerpt || '', 'todo-detail-body', 'No task content.', true), { bodyHtml: true }),
       detailRow('Due', taskTime(row) || 'none', row.timezone || ''),
       detailRow('Source', `${sourceType(row)} - ${row.source?.authority || ''}`, row.source?.ref || ''),
-      detailRow('Kanban Links', (row.related?.work_items || []).join(', ') || 'none'),
+      detailRow('Kanban Links', (row.related?.kanban_items || []).join(', ') || 'none'),
     ].join('');
   }
 
@@ -740,7 +740,7 @@ const TodoPage = (() => {
             <span>Mode</span>
             <select id="${escHtml(safePrefix)}-mode">
               <option value="personal" ${valueFor('mode', state.mode) === 'personal' ? 'selected' : ''}>Personal</option>
-              <option value="work" ${valueFor('mode', state.mode) === 'work' ? 'selected' : ''}>Kanban</option>
+              <option value="kanban" ${valueFor('mode', state.mode) === 'kanban' ? 'selected' : ''}>Kanban</option>
               <option value="review" ${valueFor('mode', state.mode) === 'review' ? 'selected' : ''}>Review</option>
             </select>
           </label>
@@ -754,9 +754,9 @@ const TodoPage = (() => {
             </select>
           </label>
           ${markdownFieldHtml(safePrefix, 'Notes', valueFor('body'), { modal: !!options.modal, task: { task_id: safePrefix, local_date: valueFor('date', localDateString(new Date())) } })}
-          <label class="todo-field todo-field--wide" for="${escHtml(safePrefix)}-work">
+          <label class="todo-field todo-field--wide" for="${escHtml(safePrefix)}-kanban">
             <span>Kanban refs</span>
-            <input id="${escHtml(safePrefix)}-work" type="text" autocomplete="off" value="${escHtml(valueFor('work'))}" />
+            <input id="${escHtml(safePrefix)}-kanban" type="text" autocomplete="off" value="${escHtml(valueFor('kanban'))}" />
           </label>
         </div>
         <div class="todo-quick-task__footer">
@@ -807,7 +807,7 @@ const TodoPage = (() => {
             <span>Mode</span>
             <select id="${escHtml(safePrefix)}-mode"${disabledAttr}>
               <option value="personal" ${valueFor('mode', task?.mode || state.mode) === 'personal' ? 'selected' : ''}>Personal</option>
-              <option value="work" ${valueFor('mode', task?.mode || state.mode) === 'work' ? 'selected' : ''}>Kanban</option>
+              <option value="kanban" ${valueFor('mode', task?.mode || state.mode) === 'kanban' ? 'selected' : ''}>Kanban</option>
               <option value="review" ${valueFor('mode', task?.mode || state.mode) === 'review' ? 'selected' : ''}>Review</option>
             </select>
           </label>
@@ -821,9 +821,9 @@ const TodoPage = (() => {
             </select>
           </label>
           ${markdownFieldHtml(safePrefix, 'Notes', valueFor('body', task?.body_excerpt || ''), { modal: !!options.modal, rows: options.modal ? 4 : 3, task, disabled: !writable })}
-          <label class="todo-field todo-field--work" for="${escHtml(safePrefix)}-work">
+          <label class="todo-field todo-field--kanban" for="${escHtml(safePrefix)}-kanban">
             <span>Kanban refs</span>
-            <input id="${escHtml(safePrefix)}-work" type="text" autocomplete="off" value="${escHtml(valueFor('work', (task?.related?.work_items || []).join(' ')))}"${disabledAttr} />
+            <input id="${escHtml(safePrefix)}-kanban" type="text" autocomplete="off" value="${escHtml(valueFor('kanban', (task?.related?.kanban_items || []).join(' ')))}"${disabledAttr} />
           </label>
         </div>
         <div class="todo-quick-task__footer todo-edit-task__footer">
@@ -924,7 +924,7 @@ const TodoPage = (() => {
   async function setTestEntriesVisible(show, options = {}) {
     const nextValue = Boolean(show);
     const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
-    const resp = await fetcher('/api/v1/personal/work/preferences', {
+    const resp = await fetcher('/api/v1/personal/kanban/preferences', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1035,7 +1035,7 @@ const TodoPage = (() => {
     const date = el(`${prefix}-date`);
     if (date && !date.value) date.value = localDateString(new Date());
     const mode = el(`${prefix}-mode`);
-    if (mode && ['personal', 'work', 'review'].includes(state.mode)) mode.value = state.mode;
+    if (mode && ['personal', 'kanban', 'review'].includes(state.mode)) mode.value = state.mode;
   }
 
   function todoPanelHostVisible(host) {
@@ -1078,7 +1078,7 @@ const TodoPage = (() => {
       priority: String(el(`${prefix}-priority`)?.value || '').trim() || null,
       due_date: String(el(`${prefix}-date`)?.value || '').trim() || null,
       due_time: String(el(`${prefix}-time`)?.value || '').trim() || null,
-      related_work_items: splitRefs(el(`${prefix}-work`)?.value || ''),
+      related_kanban_items: splitRefs(el(`${prefix}-kanban`)?.value || ''),
       actor: 'blueprints-ui',
       source_surface: 'todo-page',
       request_id: `ui-todo-${Date.now()}`,
@@ -1104,7 +1104,7 @@ const TodoPage = (() => {
       if (status) status.textContent = data.detail || `HTTP ${resp.status}`;
       return false;
     }
-    ['title', 'body', 'time', 'work'].forEach(key => {
+    ['title', 'body', 'time', 'kanban'].forEach(key => {
       const field = el(`${prefix}-${key}`);
       if (field) field.value = '';
     });
@@ -1227,38 +1227,38 @@ const TodoPage = (() => {
     ])}<pre style="white-space:pre-wrap;overflow-wrap:anywhere;margin:0">${escHtml(JSON.stringify(task.provenance || {}, null, 2))}</pre>`);
   }
 
-  function linkWorkItem() {
+  function linkKanbanItem() {
     const task = state.selection?.row;
     if (!task) return showActionModal('Link Kanban', '<p>Select a task before linking a Kanban item.</p>');
     return showActionModal('Link Kanban', `${kvHtml([
       ['Task', task.task_id || ''],
-      ['Current links', (task.related?.work_items || []).join(', ') || 'none'],
+      ['Current links', (task.related?.kanban_items || []).join(', ') || 'none'],
     ])}
-      <label class="todo-field" for="todo-work-link-input">
+      <label class="todo-field" for="todo-kanban-link-input">
         <span>Kanban ref</span>
-        <input id="todo-work-link-input" type="text" autocomplete="off" />
+        <input id="todo-kanban-link-input" type="text" autocomplete="off" />
       </label>
-      <button class="todo-command-btn" type="button" data-todo-modal-action="submit-work-link">Link Kanban</button>`);
+      <button class="todo-command-btn" type="button" data-todo-modal-action="submit-kanban-link">Link Kanban</button>`);
   }
 
-  async function submitWorkLink() {
+  async function submitKanbanLink() {
     const task = state.selection?.row;
-    const workRef = String(el('todo-work-link-input')?.value || '').trim();
-    if (!task || !workRef) return false;
+    const kanbanRef = String(el('todo-kanban-link-input')?.value || '').trim();
+    if (!task || !kanbanRef) return false;
     const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
     let resp;
     if (canWriteTask(task)) {
       const payload = {
         title: task.title,
         body: task.body_excerpt || '',
-        mode: 'work',
+        mode: 'kanban',
         priority: task.priority || null,
         due_date: task.local_date || null,
         due_time: task.provenance?.task?.due_time || null,
-        related_work_items: [...(task.related?.work_items || []), workRef],
+        related_kanban_items: [...(task.related?.kanban_items || []), kanbanRef],
         actor: 'blueprints-ui',
         source_surface: 'todo-page',
-        request_id: `ui-todo-work-link-${Date.now()}`,
+        request_id: `ui-todo-kanban-link-${Date.now()}`,
       };
       resp = await fetcher(`/api/v1/personal/tasks/${encodeURIComponent(task.task_id)}`, {
         method: 'PATCH',
@@ -1266,14 +1266,14 @@ const TodoPage = (() => {
         body: JSON.stringify(payload),
       });
     } else {
-      resp = await fetcher(`/api/v1/personal/events/${encodeURIComponent(task.event_id || task.task_id)}/work-links`, {
+      resp = await fetcher(`/api/v1/personal/events/${encodeURIComponent(task.event_id || task.task_id)}/kanban-links`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          work_item_ref: workRef,
+          kanban_item_ref: kanbanRef,
           actor: 'blueprints-ui',
           source_surface: 'todo-page',
-          request_id: `ui-todo-event-work-link-${Date.now()}`,
+          request_id: `ui-todo-event-kanban-link-${Date.now()}`,
         }),
       });
     }
@@ -1284,7 +1284,7 @@ const TodoPage = (() => {
     await load({ force: true });
     return showActionModal('Link Kanban', kvHtml([
       ['Task', task.task_id || ''],
-      ['Kanban ref', workRef],
+      ['Kanban ref', kanbanRef],
       ['Audit', data.audit?.audit_id || ''],
     ]), 'Kanban link recorded.');
   }
@@ -1394,11 +1394,11 @@ const TodoPage = (() => {
       }
     });
     root.addEventListener('click', event => {
-      const workLink = event.target.closest('[data-todo-work-link]');
-      if (workLink) {
+      const kanbanLink = event.target.closest('[data-todo-kanban-link]');
+      if (kanbanLink) {
         event.preventDefault();
         event.stopPropagation();
-        openWorkLink(workLink.dataset.todoWorkLink);
+        openKanbanLink(kanbanLink.dataset.todoKanbanLink);
         return;
       }
       const rowAction = event.target.closest('[data-todo-row-action]');
@@ -1465,7 +1465,7 @@ const TodoPage = (() => {
         const btn = event.target.closest('[data-todo-modal-action]');
         if (!btn) return;
         if (btn.dataset.todoModalAction === 'submit-edit') submitEdit(btn.dataset.todoTaskPrefix || 'todo-modal-edit-task');
-        if (btn.dataset.todoModalAction === 'submit-work-link') submitWorkLink();
+        if (btn.dataset.todoModalAction === 'submit-kanban-link') submitKanbanLink();
         if (btn.dataset.todoModalAction === 'submit-task') submitTask(btn.dataset.todoTaskPrefix || 'todo-modal-task');
         if (btn.dataset.todoModalAction === 'toggle-markdown-preview') toggleMarkdownPreview(btn, modalBody);
       });
@@ -1531,7 +1531,7 @@ const TodoPage = (() => {
     submitTask,
     modeToday: () => setMode('today'),
     modePersonal: () => setMode('personal'),
-    modeWork: () => setMode('work'),
+    modeKanban: () => setMode('kanban'),
     modeBlocked: () => setMode('blocked'),
     modeReview: () => setMode('review'),
     modeDone: () => setMode('done'),
@@ -1544,8 +1544,8 @@ const TodoPage = (() => {
     completeSelected: () => runTaskAction('complete'),
     archiveSelected: () => runTaskAction('archive'),
     openSource,
-    linkWorkItem,
-    promoteToWork: linkWorkItem,
+    linkKanbanItem,
+    promoteToKanban: linkKanbanItem,
     explainSelection,
     safeChecks,
     openTask,
@@ -1566,7 +1566,7 @@ if (typeof DaveMenuConfig !== 'undefined') {
     'todo.showProvenance': () => TodoPage.showProvenance(),
     'todo.modeToday': () => TodoPage.modeToday(),
     'todo.modePersonal': () => TodoPage.modePersonal(),
-    'todo.modeWork': () => TodoPage.modeWork(),
+    'todo.modeKanban': () => TodoPage.modeKanban(),
     'todo.modeBlocked': () => TodoPage.modeBlocked(),
     'todo.modeReview': () => TodoPage.modeReview(),
     'todo.modeDone': () => TodoPage.modeDone(),
@@ -1574,8 +1574,8 @@ if (typeof DaveMenuConfig !== 'undefined') {
     'todo.completeSelected': () => TodoPage.completeSelected(),
     'todo.archiveSelected': () => TodoPage.archiveSelected(),
     'todo.openSource': () => TodoPage.openSource(),
-    'todo.linkWorkItem': () => TodoPage.linkWorkItem(),
-    'todo.promoteToWork': () => TodoPage.promoteToWork(),
+    'todo.linkKanbanItem': () => TodoPage.linkKanbanItem(),
+    'todo.promoteToKanban': () => TodoPage.promoteToKanban(),
     'todo.explainSelection': () => TodoPage.explainSelection(),
     'todo.safeChecks': () => TodoPage.safeChecks(),
   });

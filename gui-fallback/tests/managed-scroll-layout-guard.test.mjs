@@ -660,7 +660,7 @@ for (const label of [
   'Generate Summary',
   'Open Day Folder',
   'Open Source',
-  'Link Work',
+  'Link Kanban',
   'Mode Year',
   'Mode Month',
   'Mode Day',
@@ -1046,7 +1046,7 @@ assert.match(
 );
 assert.match(
   kanbanBoardJs,
-  /\/api\/v1\/personal\/work\/preferences[\s\S]*show_test_entries/,
+  /\/api\/v1\/personal\/kanban\/preferences[\s\S]*show_test_entries/,
   'Kanban automation must be able to override test-entry visibility through the server preference API.',
 );
 assert.match(
@@ -1086,8 +1086,8 @@ assert.match(
 );
 assert.match(
   daveTodoJs,
-  /work:\s*'Kanban'[\s\S]*Array\.isArray\(row\?\.tags\)[\s\S]*\.\.\.\(row\?\.related\?\.work_items\?\.length\s*\?\s*\['kanban'\]\s*:\s*\[\]\)/,
-  'ToDo must display the legacy project mode as Kanban and filter linked project tasks with the kanban token, not a user work tag.',
+  /kanban:\s*'Kanban'[\s\S]*Array\.isArray\(row\?\.tags\)[\s\S]*\.\.\.\(row\?\.related\?\.kanban_items\?\.length\s*\?\s*\['kanban'\]\s*:\s*\[\]\)/,
+  'ToDo must display Kanban mode as Kanban and filter linked project tasks with the kanban token, not a user work tag.',
 );
 assert.match(
   kanbanBoardCss,

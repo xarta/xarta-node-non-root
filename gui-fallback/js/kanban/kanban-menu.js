@@ -1,4 +1,4 @@
-// kanban-menu.js — Split-dropdown navigation for the Kanban work-management group
+// kanban-menu.js - Split-dropdown navigation for the Kanban group
 // xarta-node Blueprints GUI
 //
 // Thin wrapper around createHubMenu() (hub-menu.js).

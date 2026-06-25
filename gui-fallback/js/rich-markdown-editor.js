@@ -12,6 +12,7 @@
     filterTimer: null,
     listenersInstalled: false,
     inFlightUploads: new Set(),
+    recentUploads: new Map(),
     recentInsertions: new Map(),
   };
   const SUPPORTED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif']);
@@ -222,6 +223,13 @@
   function filenameWithExtension(stem, extension) {
     const cleanExt = String(extension || 'png').replace(/[^a-z0-9]+/gi, '').toLowerCase() || 'png';
     return `${stemWithTimestamp(stem)}.${cleanExt}`;
+  }
+
+  function uploadDedupeName(file, prepared) {
+    const raw = String(prepared?.name || file?.name || 'image.png');
+    const suffix = raw.match(/(\.[a-z0-9]+)$/i)?.[1]?.toLowerCase() || '';
+    const stem = filenameStem(raw, 'image').replace(/-\d{8}-\d{6}$/i, '');
+    return `${stem || 'image'}${suffix}`;
   }
 
   function imageNameInputValue() {
@@ -658,6 +666,27 @@
     return true;
   }
 
+  function pruneRecentUploads(now = Date.now()) {
+    for (const [recentKey, timestamp] of state.recentUploads.entries()) {
+      if (now - timestamp > 10000) state.recentUploads.delete(recentKey);
+    }
+  }
+
+  function recentlyProcessedUpload(key) {
+    if (!key) return false;
+    const now = Date.now();
+    const last = state.recentUploads.get(key) || 0;
+    pruneRecentUploads(now);
+    return now - last < 5000;
+  }
+
+  function rememberProcessedUpload(key) {
+    if (!key) return;
+    const now = Date.now();
+    state.recentUploads.set(key, now);
+    pruneRecentUploads(now);
+  }
+
   function closeContextMenu() {
     state.contextMenu?.remove();
     state.contextMenu = null;
@@ -772,17 +801,20 @@
       context.document_type,
       context.document_id,
       context.item_id,
-      prepared.name,
+      context.discussion_id,
+      options.source || 'upload',
+      uploadDedupeName(file, prepared),
       prepared.size,
-      prepared.lastModified,
+      prepared.type || file.type || '',
     ].join(':');
-    if (state.inFlightUploads.has(uploadKey)) return null;
+    if (state.inFlightUploads.has(uploadKey) || recentlyProcessedUpload(uploadKey)) return null;
     state.inFlightUploads.add(uploadKey);
     try {
       const image = await uploadPicture(prepared);
       if (!image) return null;
       const markdown = markdownForImage(image.domain, image.path, PathName(image.filename));
-      insertAtActiveField(markdown, { dedupeKey: image.uri || image.path || prepared.name });
+      insertAtActiveField(markdown, { dedupeKey: uploadKey });
+      rememberProcessedUpload(uploadKey);
       return image;
     } finally {
       state.inFlightUploads.delete(uploadKey);

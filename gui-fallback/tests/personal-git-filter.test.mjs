@@ -20,7 +20,7 @@ assert.match(
 );
 assert.match(
   daveCalendarJs,
-  /\['all',\s*'calendar',\s*'tasks',\s*'work',\s*'imports',\s*'sources',\s*'git'\]/,
+  /\['all',\s*'calendar',\s*'tasks',\s*'kanban',\s*'imports',\s*'sources',\s*'git'\]/,
   'Calendar source filter allowlist must include Git.',
 );
 assert.match(
