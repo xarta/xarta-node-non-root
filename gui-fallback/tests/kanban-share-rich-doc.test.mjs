@@ -17,6 +17,26 @@ assert.match(
 );
 assert.match(
   kanbanJs,
+  /function\s+kanbanItemIdFromShareRef\(value\)[\s\S]*xarta-kanban:[\s\S]*kanban_items:/,
+  'Kanban link forms must accept pasted xarta-kanban share codes and legacy kanban_items refs.',
+);
+assert.match(
+  kanbanJs,
+  /function\s+kanbanGraphRefFromShareRef\(value\)[\s\S]*kanban_items:\$\{itemId\}/,
+  'Kanban blocker forms must normalize pasted share codes into graph refs.',
+);
+assert.match(
+  kanbanJs,
+  /function\s+renderEditorMarkdown\(md,[\s\S]*BlueprintsRichMarkdown\?\.render[\s\S]*renderMarkdown\(md,\s*emptyText\)/,
+  'Kanban rich editor preview sync must prefer the Rich Markdown renderer over the generic docs renderer.',
+);
+assert.match(
+  kanbanJs,
+  /function\s+refreshDetailFieldPreview\(field,\s*value\)[\s\S]*preview\.innerHTML\s*=\s*renderEditorMarkdown\(value/,
+  'Kanban mirrored detail previews must keep rich-doc image URLs renderable during edits.',
+);
+assert.match(
+  kanbanJs,
   /data-kanban-card-action="share"/,
   'Kanban lane cards must expose a share action for item codes.',
 );

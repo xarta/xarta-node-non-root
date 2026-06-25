@@ -871,7 +871,39 @@ dialog.hub-modal#kanban-detail-modal[open] {
   padding-right: 2px;
 }
 
-#tab-kanban.active .kanban-filter-under-panel .kanban-detail-workspace,
+#tab-kanban.active .kanban-filter-under-panel .kanban-detail-workspace {
+  height: auto;
+  overflow: visible;
+  align-content: stretch;
+}
+
+#tab-kanban.active .kanban-filter-under-panel .kanban-detail-related--tabs,
+#tab-kanban.active .kanban-filter-under-panel .kanban-detail-section,
+#tab-kanban.active .kanban-filter-under-panel .kanban-detail-doc,
+#tab-kanban.active .kanban-filter-under-panel .kanban-detail-doc .calendar-markdown-field {
+  min-height: 0;
+}
+
+#tab-kanban.active .kanban-filter-under-panel .kanban-detail-section {
+  overflow: visible;
+  align-content: stretch;
+}
+
+#tab-kanban.active .kanban-filter-under-panel .kanban-detail-doc {
+  grid-template-rows: auto auto;
+}
+
+#tab-kanban.active .kanban-filter-under-panel .kanban-detail-doc .calendar-markdown-field {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: clamp(260px, 34dvh, 560px);
+}
+
+#tab-kanban.active .kanban-filter-under-panel .kanban-detail-doc .rich-md-textarea,
+#tab-kanban.active .kanban-filter-under-panel .kanban-detail-doc .calendar-markdown-preview {
+  min-height: clamp(220px, 30dvh, 500px);
+}
+
 #ultrawide-sidecar-body .kanban-detail-workspace {
   height: auto;
   overflow: visible;

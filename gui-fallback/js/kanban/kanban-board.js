@@ -137,6 +137,13 @@ const KanbanBoardPage = (() => {
     }).join('');
   }
 
+  function renderEditorMarkdown(md, emptyText = 'No content.') {
+    if (window.BlueprintsRichMarkdown?.render) {
+      return window.BlueprintsRichMarkdown.render(md, { emptyText });
+    }
+    return renderMarkdown(md, emptyText);
+  }
+
   function markdownPreviewHtml(body, className = '', emptyText = 'No description.', showEmpty = false) {
     const clean = stripFrontmatter(body).trim();
     if (!clean && !showEmpty) return '';
@@ -742,6 +749,29 @@ const KanbanBoardPage = (() => {
   function shareCode(kind, id) {
     const cleanId = String(id || '').trim();
     return cleanId ? `xarta-kanban:${shareKindLabel(kind)}:${cleanId}` : '';
+  }
+
+  function kanbanItemIdFromShareRef(value) {
+    const clean = String(value || '').trim();
+    if (!clean) return '';
+    if (clean.startsWith('xarta-kanban:')) {
+      const parts = clean.split(':');
+      if (parts.length >= 3 && ['item', 'issue', 'todo'].includes(parts[1])) {
+        return parts.slice(2).join(':').trim();
+      }
+    }
+    if (clean.startsWith('kanban_items:')) return clean.slice('kanban_items:'.length).trim();
+    return clean;
+  }
+
+  function kanbanGraphRefFromShareRef(value) {
+    const clean = String(value || '').trim();
+    const itemId = kanbanItemIdFromShareRef(clean);
+    if (!itemId) return '';
+    if (clean.startsWith('xarta-kanban:') || clean.startsWith('kanban_items:')) {
+      return `kanban_items:${itemId}`;
+    }
+    return clean;
   }
 
   async function writeClipboardText(text) {
@@ -1719,7 +1749,7 @@ const KanbanBoardPage = (() => {
     const preview = previewId ? el(previewId) : field.closest?.('.calendar-markdown-field')?.querySelector?.('.calendar-markdown-preview');
     if (!preview || preview.hidden) return;
     const shell = field.closest?.('[data-rme-field-shell]');
-    preview.innerHTML = renderMarkdown(value, shell?.dataset?.rmeEmptyText || 'No content.');
+    preview.innerHTML = renderEditorMarkdown(value, shell?.dataset?.rmeEmptyText || 'No content.');
   }
 
   function syncDetailDraftFieldByKey(key, sourceField = null) {
@@ -2182,7 +2212,7 @@ const KanbanBoardPage = (() => {
   async function openLinkForm(itemId) {
     const dialog = openDialog('Add Item Link', `
       <div class="kanban-modal-form">
-        <label class="kanban-field" for="kanban-link-target"><span>Target Item ID</span><input id="kanban-link-target" type="text" maxlength="180" /></label>
+        <label class="kanban-field" for="kanban-link-target"><span>Target Share Code / Item ID</span><input id="kanban-link-target" type="text" maxlength="220" /></label>
         <label class="kanban-field" for="kanban-link-type"><span>Link Type</span><select id="kanban-link-type">
           <option value="related">Related</option>
           <option value="depends_on">Depends On</option>
@@ -2204,9 +2234,9 @@ const KanbanBoardPage = (() => {
         closeDialog(dialog);
         return;
       }
-      const targetItemId = String(targetInput?.value || '').trim();
+      const targetItemId = kanbanItemIdFromShareRef(targetInput?.value);
       if (!targetItemId) {
-        await HubDialogs.alert({ title: 'Kanban', message: 'Target item id is required.', tone: 'warning' });
+        await HubDialogs.alert({ title: 'Kanban', message: 'Target share code or item id is required.', tone: 'warning' });
         return;
       }
       state.lastWrite = await requestJson(`/api/v1/personal/kanban/items/${encodeURIComponent(itemId)}/links`, {
@@ -2230,7 +2260,7 @@ const KanbanBoardPage = (() => {
     const dialog = openDialog('Add Blocker', `
       <div class="kanban-modal-form">
         <label class="kanban-field" for="kanban-blocker-title"><span>Title</span><input id="kanban-blocker-title" type="text" maxlength="180" /></label>
-        <label class="kanban-field" for="kanban-blocker-ref"><span>Blocked By Ref</span><input id="kanban-blocker-ref" type="text" maxlength="220" /></label>
+        <label class="kanban-field" for="kanban-blocker-ref"><span>Blocked By Share Code / Ref</span><input id="kanban-blocker-ref" type="text" maxlength="260" /></label>
         ${markdownFieldHtml('kanban-blocker-body', 'Details', '')}
         <div class="kanban-modal-actions">
           <button class="kanban-command-btn" type="button" data-kanban-modal-action="cancel">Cancel</button>
@@ -2263,7 +2293,7 @@ const KanbanBoardPage = (() => {
           item_id: itemId,
           title: cleanTitle,
           body: bodyInput?.value || '',
-          blocked_by_ref: refInput?.value || '',
+          blocked_by_ref: kanbanGraphRefFromShareRef(refInput?.value),
           actor: 'blueprints-ui',
           source_surface: 'kanban-detail',
           request_id: `ui-kanban-blocker-${Date.now()}`,

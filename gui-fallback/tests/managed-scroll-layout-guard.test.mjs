@@ -1096,6 +1096,21 @@ assert.match(
 );
 assert.match(
   kanbanBoardCss,
-  /#tab-kanban\.active\s+\.kanban-filter-under-panel\s+\.kanban-detail-workspace,\s*#ultrawide-sidecar-body\s+\.kanban-detail-workspace\s*\{[\s\S]*overflow:\s*visible/,
-  'Kanban inline and sidecar Edit Item panels must leave vertical scrolling to the parent panel so section backgrounds stretch with their content.',
+  /#tab-kanban\.active\s+\.kanban-filter-under-panel\s+\.kanban-detail-workspace\s*\{[\s\S]*height:\s*auto[\s\S]*overflow:\s*visible/,
+  'Kanban bottom-panel Edit Item detail workspaces must leave vertical scrolling to the parent panel.',
+);
+assert.match(
+  kanbanBoardCss,
+  /#tab-kanban\.active\s+\.kanban-filter-under-panel\s+\.kanban-detail-doc\s+\.calendar-markdown-field\s*\{[\s\S]*display:\s*grid[\s\S]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)[\s\S]*min-height:\s*clamp\(260px,\s*34dvh,\s*560px\)/,
+  'Kanban bottom-panel item detail markdown fields must have a responsive useful editing height.',
+);
+assert.match(
+  kanbanBoardCss,
+  /#tab-kanban\.active\s+\.kanban-filter-under-panel\s+\.kanban-detail-doc\s+\.rich-md-textarea,\s*#tab-kanban\.active\s+\.kanban-filter-under-panel\s+\.kanban-detail-doc\s+\.calendar-markdown-preview\s*\{[\s\S]*min-height:\s*clamp\(220px,\s*30dvh,\s*500px\)/,
+  'Kanban bottom-panel Detail Edit and Preview surfaces must not collapse to their intrinsic row height.',
+);
+assert.match(
+  kanbanBoardCss,
+  /#ultrawide-sidecar-body\s+\.kanban-detail-workspace\s*\{[\s\S]*height:\s*auto[\s\S]*overflow:\s*visible/,
+  'Kanban ultrawide sidecar Edit Item panels must leave vertical scrolling to the parent panel so section backgrounds stretch with their content.',
 );
