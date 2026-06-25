@@ -10,13 +10,13 @@ const daveMenuJs = fs.readFileSync(path.resolve(here, '../js/dave/dave-menu.js')
 
 assert.match(
   personalFiltersJs,
-  /git:\s*\{\s*label:\s*'Git'/,
-  'Shared Personal filters must keep a built-in Git tag/filter.',
+  /github:\s*\{\s*label:\s*'GitHub activity'/,
+  'Shared Personal filters must keep a single built-in GitHub activity tag/filter.',
 );
 assert.match(
   personalFiltersJs,
-  /sourceType\(record\)\s*===\s*'git'[\s\S]*tokens\.add\('git'\)/,
-  'Shared Personal filters must tokenize source_type=git records.',
+  /sourceType\(record\)\s*===\s*'git'[\s\S]*tokens\.add\('github'\)/,
+  'Shared Personal filters must tokenize source_type=git records as GitHub activity.',
 );
 assert.match(
   daveCalendarJs,
@@ -26,7 +26,7 @@ assert.match(
 assert.match(
   daveCalendarJs,
   /filterGit:\s*\(\)\s*=>\s*setSourceFilter\('git'\)/,
-  'Calendar must expose a Git filter action.',
+  'Calendar must expose a GitHub activity filter action through the legacy command id.',
 );
 assert.match(
   daveCalendarJs,
@@ -35,6 +35,11 @@ assert.match(
 );
 assert.match(
   daveMenuJs,
-  /calendar-filter-git[\s\S]*fn:\s*'calendar\.filterGit'/,
-  'Dave calendar menu must include the Git filter action.',
+  /calendar-filter-git[\s\S]*label:\s*'Filter GitHub'[\s\S]*fn:\s*'calendar\.filterGit'/,
+  'Dave calendar menu must label the dedicated GitHub activity filter clearly.',
+);
+assert.doesNotMatch(
+  personalFiltersJs,
+  /isImportRecord[\s\S]*\['interests-ingestion',\s*'git'\]/,
+  'Shared Personal filters must not classify GitHub activity as generic Imports.',
 );

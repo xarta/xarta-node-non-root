@@ -7,6 +7,7 @@ const PersonalFilters = (() => {
   const CUSTOM_KEY = 'blueprints.personalFilters.custom.v1';
   const META_KEY = 'blueprints.personalFilters.meta.v1';
   const SELECTION_PREFIX = 'blueprints.personalFilters.selection.';
+  const ASSIGNMENT_WIDTH_PREFIX = 'blueprints.personalFilters.assignmentWidth.';
   const PRETEXT_IMPORT_VERSION = '2026-06-22-filter-shapes';
   const CHIP_FONT = '700 13px Segoe UI, system-ui, sans-serif';
   const CHIP_LINE_HEIGHT = 16;
@@ -14,7 +15,7 @@ const PersonalFilters = (() => {
   const BADGE_HEIGHT = 18;
   const BADGE_PAD_X = 10;
   const BADGE_LABEL_GAP = 2;
-  const BUILTIN_IDS = new Set(['calendar', 'tasks', 'kanban', 'imports', 'sources', 'git', 'holiday', 'personal-holiday', 'national-holiday', 'all-day', 'blocked', 'review', 'uncategorized']);
+  const BUILTIN_IDS = new Set(['calendar', 'tasks', 'kanban', 'imports', 'sources', 'github', 'holiday', 'personal-holiday', 'national-holiday', 'all-day', 'blocked', 'review', 'uncategorized']);
 
   const COLORS = [
     ['red', '#ef4444'],
@@ -41,7 +42,7 @@ const PersonalFilters = (() => {
     kanban: { label: 'Kanban', color: 'gold', shape: 'rectangle', fill: 'outline' },
     imports: { label: 'Imports', color: 'purple', shape: 'rhombus', fill: 'outline' },
     sources: { label: 'Source records', color: 'grey', shape: 'pentagon', fill: 'outline' },
-    git: { label: 'Git', color: 'gold', shape: 'rhombus', fill: 'filled' },
+    github: { label: 'GitHub activity', color: 'gold', shape: 'rhombus', fill: 'filled' },
     holiday: { label: 'Holiday', color: 'orange', shape: 'star', fill: 'filled' },
     'personal-holiday': { label: 'Personal holiday', color: 'pink', shape: 'circle', fill: 'filled' },
     'national-holiday': { label: 'National holiday', color: 'red', shape: 'star', fill: 'outline' },
@@ -97,6 +98,24 @@ const PersonalFilters = (() => {
       localStorage.setItem(key, JSON.stringify(value));
     } catch (_) {
       // Browser-local preferences are optional.
+    }
+  }
+
+  function readStoredNumber(key, fallback = 0) {
+    try {
+      const raw = localStorage.getItem(key);
+      const value = Number(raw);
+      return Number.isFinite(value) && value > 0 ? value : fallback;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  function writeStoredNumber(key, value) {
+    try {
+      localStorage.setItem(key, String(Math.round(value)));
+    } catch (_) {
+      // Ephemeral UI preferences are optional.
     }
   }
 
@@ -844,7 +863,7 @@ const PersonalFilters = (() => {
     const relatedImports = record?.related?.import_batches || [];
     const type = sourceType(record);
     const tags = recordTags(record);
-    return ['interests-ingestion', 'git'].includes(type) || relatedImports.length > 0 || tags.includes('imports') || tags.includes('import');
+    return type === 'interests-ingestion' || relatedImports.length > 0 || tags.includes('imports') || tags.includes('import');
   }
 
   function isReviewRecord(record) {
@@ -876,7 +895,7 @@ const PersonalFilters = (() => {
       tokens.add('imports');
       tokens.add('import');
     }
-    if (sourceType(record) === 'git' || tags.includes('git') || tags.includes('github')) tokens.add('git');
+    if (sourceType(record) === 'git' || tags.includes('github')) tokens.add('github');
     if (!isCalendarRecord(record)) tokens.add('sources');
     if (isBlockedRecord(record)) tokens.add('blocked');
     if (isReviewRecord(record)) tokens.add('review');
@@ -1110,8 +1129,7 @@ const PersonalFilters = (() => {
 
   function filterSearchHtml(surface, host) {
     return `<div class="personal-filter-search">
-      <label class="personal-filter-field">
-        <span>Filter Tags</span>
+      <label class="personal-filter-field personal-filter-field--search">
         <input type="search" data-personal-filter-search="${escHtml(surface)}" maxlength="80" autocomplete="off" aria-label="Filter filters" placeholder="Filter filters" value="${escHtml(filterQueryForHost(host))}" />
       </label>
     </div>`;
@@ -1183,26 +1201,121 @@ const PersonalFilters = (() => {
     </div>`;
   }
 
+  function assignmentWidthKey(surface) {
+    return `${ASSIGNMENT_WIDTH_PREFIX}${surface || 'calendar'}`;
+  }
+
+  function savedAssignmentWidth(surface) {
+    return readStoredNumber(assignmentWidthKey(surface), 0);
+  }
+
+  function assignmentWidthStyle(surface) {
+    const width = savedAssignmentWidth(surface);
+    return width ? ` style="--personal-filter-assigned-width: ${escHtml(width)}px;"` : '';
+  }
+
+  function clampAssignmentWidth(assignment, width) {
+    const rect = assignment?.getBoundingClientRect?.();
+    if (!rect || rect.width <= 0) return Math.max(180, Math.round(width));
+    const min = Math.min(220, Math.max(160, Math.floor(rect.width * 0.24)));
+    const max = Math.max(min, Math.floor(rect.width - Math.min(260, Math.max(180, rect.width * 0.36))));
+    return Math.max(min, Math.min(max, Math.round(width)));
+  }
+
+  function currentAssignmentWidth(assignment, surface) {
+    const saved = savedAssignmentWidth(surface);
+    if (saved) return saved;
+    const selected = assignment?.querySelector?.('.personal-filter-assignment__selected');
+    const rect = selected?.getBoundingClientRect?.();
+    if (rect?.width) return rect.width;
+    const assignmentRect = assignment?.getBoundingClientRect?.();
+    return assignmentRect?.width ? assignmentRect.width * 0.42 : 260;
+  }
+
+  function setAssignmentWidth(assignment, surface, width) {
+    const next = clampAssignmentWidth(assignment, width);
+    assignment?.style?.setProperty('--personal-filter-assigned-width', `${next}px`);
+    writeStoredNumber(assignmentWidthKey(surface), next);
+    return next;
+  }
+
+  function assignmentWidthFromPointer(assignment, event) {
+    const rect = assignment?.getBoundingClientRect?.();
+    if (!rect) return 0;
+    return event.clientX - rect.left;
+  }
+
+  function startAssignmentResize(handle, event) {
+    if (!handle || !event || (event.button !== undefined && event.button !== 0)) return;
+    const assignment = handle.closest('.personal-filter-assignment');
+    if (!assignment) return;
+    const surface = handle.dataset.personalFilterAssignmentDivider || assignment.closest('[data-personal-filter-host]')?.dataset?.personalFilterSurface || 'calendar';
+    event.preventDefault();
+    handle.classList.add('is-dragging');
+    if (handle.setPointerCapture && event.pointerId !== undefined) {
+      try {
+        handle.setPointerCapture(event.pointerId);
+      } catch (_) {
+        // Pointer capture is a convenience for dragging, not required.
+      }
+    }
+    const move = moveEvent => {
+      moveEvent.preventDefault();
+      setAssignmentWidth(assignment, surface, assignmentWidthFromPointer(assignment, moveEvent));
+    };
+    const stop = stopEvent => {
+      if (stopEvent) stopEvent.preventDefault();
+      handle.classList.remove('is-dragging');
+      document.removeEventListener('pointermove', move, true);
+      document.removeEventListener('pointerup', stop, true);
+      document.removeEventListener('pointercancel', stop, true);
+    };
+    setAssignmentWidth(assignment, surface, assignmentWidthFromPointer(assignment, event));
+    document.addEventListener('pointermove', move, true);
+    document.addEventListener('pointerup', stop, true);
+    document.addEventListener('pointercancel', stop, true);
+  }
+
+  function nudgeAssignmentResize(handle, event) {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const assignment = handle.closest('.personal-filter-assignment');
+    if (!assignment) return;
+    const surface = handle.dataset.personalFilterAssignmentDivider || assignment.closest('[data-personal-filter-host]')?.dataset?.personalFilterSurface || 'calendar';
+    const rect = assignment.getBoundingClientRect();
+    event.preventDefault();
+    if (event.key === 'Home') {
+      setAssignmentWidth(assignment, surface, 180);
+      return;
+    }
+    if (event.key === 'End') {
+      setAssignmentWidth(assignment, surface, rect.width - 260);
+      return;
+    }
+    const delta = event.key === 'ArrowLeft' ? -24 : 24;
+    setAssignmentWidth(assignment, surface, currentAssignmentWidth(assignment, surface) + delta);
+  }
+
+  function assignmentSurfaceForHost(host) {
+    return host?.dataset?.personalFilterAssignmentSurface || host?.dataset?.personalFilterSurface || 'calendar';
+  }
+
   function filtersBodyHtml(surface, host) {
     const selected = new Set(getSelectedIds(surface));
     const groupedIds = idsForMetaGroup(surface, filterGroupForHost(host));
     const ids = filteredFilterIds(surface, filterQueryForHost(host), groupedIds)
       .filter(id => !selected.has(id));
-    const labels = surfaceLabels(surface);
-    return `<div class="personal-filter-picker personal-filter-assignment">
+    return `<div class="personal-filter-picker personal-filter-assignment"${assignmentWidthStyle(surface)}>
       <section class="personal-filter-assignment__selected" data-personal-filter-drop-selected="${escHtml(surface)}">
-        <div class="personal-filter-assignment__head">
-          <span>${escHtml(labels.activePrefix)}</span>
-          ${summaryHtml(surface, { prefix: '', emptyLabel: labels.emptyLabel })}
-        </div>
         <div class="personal-filter-grid personal-filter-grid--selected" role="listbox" aria-multiselectable="true">
           ${selectedFilterGridHtml(surface)}
         </div>
       </section>
-      <div class="personal-filter-assignment__divider" aria-hidden="true"></div>
+      <div class="personal-filter-assignment__divider" role="separator" tabindex="0" aria-orientation="vertical" aria-label="Resize filter panes" data-personal-filter-assignment-divider="${escHtml(surface)}"></div>
       <section class="personal-filter-assignment__available" data-personal-filter-drop-available="${escHtml(surface)}">
-        ${filterSearchHtml(surface, host)}
-        ${groupTabsHtml(surface, host)}
+        <div class="personal-filter-assignment__filter-row">
+          ${filterSearchHtml(surface, host)}
+          ${groupTabsHtml(surface, host)}
+        </div>
         <div class="personal-filter-grid" role="listbox" aria-multiselectable="true">
           ${filterGridHtml(surface, ids)}
         </div>
@@ -1346,13 +1459,14 @@ const PersonalFilters = (() => {
           ${tabDefs.map(tab => `<button class="personal-filter-tab${tab.disabled ? ' is-disabled' : ''}" type="button" role="tab" aria-selected="${active === tab.id ? 'true' : 'false'}" aria-disabled="${tab.disabled ? 'true' : 'false'}" data-personal-filter-tab="${escHtml(tab.id)}"${tab.disabled ? ' disabled' : ''}>${escHtml(tab.label)}</button>`).join('')}
         </div>`
       : '';
+    const assignmentSurface = active === 'filters' ? assignmentSurfaceForHost(host) : surface;
     const body = active === 'settings'
       ? settingsBodyHtml(surface, host)
       : (active === 'meta-filters' ? metaFiltersBodyHtml(surface, host)
-        : (active === 'filters' ? filtersBodyHtml(surface, host) : extraTabBody(surface, active, host)));
+        : (active === 'filters' ? filtersBodyHtml(assignmentSurface, host) : extraTabBody(surface, active, host)));
     host.innerHTML = `<div class="personal-filter-panel${framed}" data-personal-filter-panel="${escHtml(surface)}">
       ${tabs}
-      <div class="personal-filter-panel__body">${body}</div>
+      <div class="personal-filter-panel__body" data-personal-filter-body="${escHtml(active)}" data-personal-filter-body-surface="${escHtml(assignmentSurface)}">${body}</div>
     </div>`;
     wireHost(host);
     bindHostControls(host);
@@ -1377,6 +1491,9 @@ const PersonalFilters = (() => {
   function activateTab(surface = 'calendar', tabId = 'filters', options = {}) {
     const cleanSurface = surface || 'calendar';
     const cleanTab = tabId || 'filters';
+    const assignmentSurface = cleanTab === 'filters' && options.assignmentSurface && options.assignmentSurface !== cleanSurface
+      ? String(options.assignmentSurface)
+      : '';
     const scopedHost = options.host || null;
     const hosts = scopedHost
       ? [scopedHost]
@@ -1392,6 +1509,8 @@ const PersonalFilters = (() => {
         { id: 'meta-filters', disabled: false },
       ].find(item => item.id === cleanTab);
       if (!tab || tab.disabled) return;
+      if (assignmentSurface) host.dataset.personalFilterAssignmentSurface = assignmentSurface;
+      else delete host.dataset.personalFilterAssignmentSurface;
       host.dataset.personalFilterTab = cleanTab;
       renderHost(host);
       activated = true;
@@ -1601,6 +1720,34 @@ const PersonalFilters = (() => {
     return '';
   }
 
+  function pageSurfaceForAssignmentSurface(surface) {
+    const clean = String(surface || '');
+    if (clean === 'calendar' || clean.startsWith('calendar-')) return 'calendar';
+    if (clean === 'diary' || clean.startsWith('diary-')) return 'diary';
+    if (clean === 'todo' || clean.startsWith('todo-')) return 'todo';
+    if (clean === 'kanban' || clean.startsWith('kanban-')) return 'kanban';
+    return clean || 'calendar';
+  }
+
+  function openFilterTrigger(trigger) {
+    const targetSurface = trigger?.dataset?.personalFilterOpen || 'calendar';
+    const tab = trigger?.dataset?.personalFilterTab || 'filters';
+    if (tab === 'filters') {
+      const closestHost = trigger.closest?.('[data-personal-filter-host]');
+      const closestSurface = closestHost?.dataset?.personalFilterSurface || pageSurfaceForAssignmentSurface(targetSurface);
+      if (closestHost && activateTab(closestSurface, 'filters', {
+        host: closestHost,
+        visibleOnly: true,
+        assignmentSurface: targetSurface,
+      })) return true;
+      if (activateTab(pageSurfaceForAssignmentSurface(targetSurface), 'filters', {
+        visibleOnly: true,
+        assignmentSurface: targetSurface,
+      })) return true;
+    }
+    return openModal(targetSurface, tab);
+  }
+
   function syncUltrawideSidecar(page) {
     if (!window.UltrawideSidecar || typeof window.UltrawideSidecar.isVisible !== 'function') return false;
     if (!window.UltrawideSidecar.isVisible()) return false;
@@ -1610,7 +1757,7 @@ const PersonalFilters = (() => {
     const title = `${surface === 'todo' ? 'ToDo' : titleCase(surface)} Filters`;
     const existingHost = document.querySelector('#ultrawide-sidecar-body [data-personal-filter-host]');
     const existingSurface = existingHost?.dataset.personalFilterSurface || '';
-    const selectedTab = existingHost?.querySelector?.('[data-personal-filter-tab][aria-selected="true"]')?.dataset.personalFilterTab || '';
+    const selectedTab = existingHost?.querySelector?.('.personal-filter-panel__tabs [data-personal-filter-tab][aria-selected="true"]')?.dataset.personalFilterTab || '';
     const activeTab = existingSurface === surface
       ? (existingHost?.dataset.personalFilterTab || selectedTab || '')
       : '';
@@ -1637,7 +1784,9 @@ const PersonalFilters = (() => {
 
   function renderFilteredLists(host) {
     if (!host) return;
-    const surface = host.dataset.personalFilterSurface || 'calendar';
+    const surface = activeFilterTab(host) === 'filters'
+      ? assignmentSurfaceForHost(host)
+      : (host.dataset.personalFilterSurface || 'calendar');
     const query = filterQueryForHost(host);
     if (activeFilterTab(host) === 'settings') {
       const rows = host.querySelector('.personal-filter-settings__rows');
@@ -1706,7 +1855,7 @@ const PersonalFilters = (() => {
   }
 
   function bindHostControls(host) {
-    host.querySelectorAll('[data-personal-filter-tab]').forEach(tab => {
+    host.querySelectorAll('.personal-filter-panel__tabs [data-personal-filter-tab]').forEach(tab => {
       if (tab.dataset.personalFilterBound === '1') return;
       tab.dataset.personalFilterBound = '1';
       tab.addEventListener('click', event => {
@@ -1714,6 +1863,7 @@ const PersonalFilters = (() => {
         event.stopPropagation();
         const nextTab = String(tab.dataset.personalFilterTab || 'filters');
         if (host.dataset.personalFilterTab !== nextTab) resetSettingsOrderForHost(host);
+        delete host.dataset.personalFilterAssignmentSurface;
         host.dataset.personalFilterTab = nextTab;
         renderHost(host);
       }, true);
@@ -1807,6 +1957,12 @@ const PersonalFilters = (() => {
         removeMetaGroup(row?.dataset?.personalFilterSurface || host.dataset.personalFilterSurface || 'calendar', remove.dataset.personalFilterRemoveMeta);
       }, true);
     });
+    host.querySelectorAll('[data-personal-filter-assignment-divider]').forEach(handle => {
+      if (handle.dataset.personalFilterBound === '1') return;
+      handle.dataset.personalFilterBound = '1';
+      handle.addEventListener('pointerdown', event => startAssignmentResize(handle, event), true);
+      handle.addEventListener('keydown', event => nudgeAssignmentResize(handle, event), true);
+    });
     host.querySelectorAll('[data-personal-filter-drag-id], [data-personal-filter-selected-id]').forEach(chip => {
       if (chip.dataset.personalFilterDragBound === '1') return;
       chip.dataset.personalFilterDragBound = '1';
@@ -1893,7 +2049,7 @@ const PersonalFilters = (() => {
       const trigger = event.target.closest('[data-personal-filter-open]');
       if (trigger) {
         event.preventDefault();
-        openModal(trigger.dataset.personalFilterOpen || 'calendar', trigger.dataset.personalFilterTab || 'filters');
+        openFilterTrigger(trigger);
         return;
       }
     }, true);
@@ -1909,7 +2065,7 @@ const PersonalFilters = (() => {
       const trigger = event.target.closest('[data-personal-filter-open]');
       if (!trigger) return;
       event.preventDefault();
-      openModal(trigger.dataset.personalFilterOpen || 'calendar', trigger.dataset.personalFilterTab || 'filters');
+      openFilterTrigger(trigger);
     });
     document.addEventListener('blueprints:page-state-changed', event => {
       syncUltrawideSidecar(event.detail?.page);

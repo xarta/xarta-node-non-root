@@ -810,7 +810,6 @@ assert.match(
   /localStorage\.setItem\(storageKey\(handle\),\s*String\(height\)\)/,
   'Local shade handle heights must persist per viewport key.',
 );
-
 for (const { tabId, surface, key, cssVar, rootId, panelClass, handleClass, css } of [
   {
     tabId: 'tab-diary',
@@ -1147,6 +1146,26 @@ assert.match(
 );
 assert.match(
   daveDiaryJs,
+  /preserveExistingValues[\s\S]*editingForm\?\.dataset\.diaryEditingEntryId\s*===\s*eventId[\s\S]*const\s+valueFor\s*=[\s\S]*data-diary-editing-entry-id/,
+  'Diary edit-entry forms must reset from the newly selected event when double-clicking between different entries.',
+);
+assert.match(
+  personalFiltersJs + daveDiaryCss,
+  /data-personal-filter-body="\$\{escHtml\(active\)\}"[\s\S]*data-personal-filter-body="edit-entry"[\s\S]*overflow:\s*hidden/,
+  'Personal Filters must expose the active body tab so Diary edit/new entry panels can be bounded independently from scrolling filter grids.',
+);
+assert.match(
+  daveDiaryJs + daveDiaryCss,
+  /data-diary-entry-form-mode="\$\{escHtml\(mode\)\}"[\s\S]*\.diary-quick-entry--embedded\[data-diary-entry-form-mode\][\s\S]*grid-template-rows:\s*minmax\(0,\s*1fr\)\s+auto[\s\S]*\.diary-entry-form-grid\s*>\s*\.calendar-field--notes:last-child[\s\S]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)/,
+  'Diary embedded entry forms must stretch a final Notes field to the bottom of the existing panel while leaving buttons in an auto footer row.',
+);
+assert.match(
+  daveDiaryJs,
+  /function\s+scheduleDiaryPanelLayout\(\)[\s\S]*BodyShade\.scheduleSizeFillTable[\s\S]*BlueprintsLocalShade\.refresh[\s\S]*requestAnimationFrame[\s\S]*activateInlineDiaryTab[\s\S]*scheduleDiaryPanelLayout\(\)[\s\S]*prepareInlineEditEntryForms[\s\S]*scheduleDiaryPanelLayout\(\)/,
+  'Diary inline New/Edit Entry activation must force body/local shade sizing passes immediately, without requiring a manual fullscreen/back recalculation.',
+);
+assert.match(
+  daveDiaryJs,
   /root\.addEventListener\('pointerdown',\s*beginEntryLongPress\)[\s\S]*root\.addEventListener\('pointermove',\s*moveEntryLongPress\)/,
   'Diary entry long-press preview must be delegated across week/day entry surfaces.',
 );
@@ -1187,8 +1206,43 @@ assert.match(
 );
 assert.match(
   personalFiltersCss,
-  /\.personal-filter-assignment\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*\.9fr\)\s+12px\s+minmax\(0,\s*1\.1fr\)[\s\S]*\.personal-filter-group-tab\.has-filter-match/,
-  'Personal Filters grouped picker must keep a stable split layout and highlight matching meta-group tabs.',
+  /\.personal-filter-assignment\s*\{[\s\S]*grid-template-columns:\s*minmax\(180px,\s*var\(--personal-filter-assigned-width,\s*42%\)\)\s+14px\s+minmax\(0,\s*1fr\)[\s\S]*\.personal-filter-group-tab\.has-filter-match/,
+  'Personal Filters grouped picker must keep an adjustable split layout and highlight matching meta-group tabs.',
+);
+assert.match(
+  personalFiltersJs,
+  /role="separator"[\s\S]*data-personal-filter-assignment-divider[\s\S]*startAssignmentResize[\s\S]*nudgeAssignmentResize/,
+  'Personal Filters must expose a keyboard and pointer adjustable divider between assigned and grouped tags.',
+);
+assert.match(
+  personalFiltersJs,
+  /personal-filter-assignment__filter-row[\s\S]*filterSearchHtml\(surface,\s*host\)[\s\S]*groupTabsHtml\(surface,\s*host\)/,
+  'Personal Filters must render the filter input and meta-group tabs on the same row.',
+);
+assert.match(
+  personalFiltersCss,
+  /\.personal-filter-assignment__filter-row\s*\{[\s\S]*display:\s*flex[\s\S]*flex-wrap:\s*wrap[\s\S]*\.personal-filter-assignment__filter-row\s+\.personal-filter-search\s*\{[\s\S]*flex:\s*0\s+1\s+200px[\s\S]*\.personal-filter-assignment__filter-row\s+\.personal-filter-group-tabs\s*\{[\s\S]*display:\s*contents/,
+  'Personal Filters available-side search and meta-group tabs must share one wrapping row so wrapped tabs restart at the left edge.',
+);
+assert.match(
+  personalFiltersJs,
+  /querySelectorAll\('\.personal-filter-panel__tabs\s+\[data-personal-filter-tab\]'\)/,
+  'Personal Filters must bind tab switching only to real tab-bar buttons, not tag strips that request the Filters tab.',
+);
+assert.match(
+  personalFiltersJs,
+  /function\s+assignmentSurfaceForHost[\s\S]*personalFilterAssignmentSurface[\s\S]*function\s+openFilterTrigger[\s\S]*personalFilterOpen[\s\S]*assignmentSurface:\s*targetSurface[\s\S]*openModal\(targetSurface,\s*tab\)/,
+  'Personal Filter tag boxes must edit their own assignment surface in a visible inline/sidecar Filters tab before falling back to the modal.',
+);
+assert.doesNotMatch(
+  personalFiltersJs,
+  /personal-filter-assignment__head[\s\S]*summaryHtml\(surface,\s*\{\s*prefix:\s*''/,
+  'Personal Filters assigned pane must not duplicate selected tags in an Active summary header.',
+);
+assert.doesNotMatch(
+  personalFiltersCss,
+  /\.personal-filter-tab\s*\{[\s\S]*min-width:\s*104px/,
+  'Personal Filter tabs must fit their content instead of using the old fixed desktop width.',
 );
 assert.match(
   daveCalendarJs + daveCalendarCss,

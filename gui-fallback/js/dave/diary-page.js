@@ -489,7 +489,7 @@ const DiaryPage = (() => {
 
   function isImportLike(event) {
     const relatedImports = event?.related?.import_batches || [];
-    return ['interests-ingestion', 'git'].includes(sourceType(event)) || relatedImports.length > 0;
+    return sourceType(event) === 'interests-ingestion' || relatedImports.length > 0;
   }
 
   function isHolidayLike(event) {
@@ -654,6 +654,23 @@ const DiaryPage = (() => {
     return !rect || (rect.width > 0 && rect.height > 0);
   }
 
+  function scheduleDiaryPanelLayout() {
+    const refresh = () => {
+      if (window.BodyShade && typeof window.BodyShade.scheduleSizeFillTable === 'function') {
+        window.BodyShade.scheduleSizeFillTable();
+      }
+      if (window.BlueprintsLocalShade && typeof window.BlueprintsLocalShade.refresh === 'function') {
+        window.BlueprintsLocalShade.refresh();
+      }
+    };
+    refresh();
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(refresh);
+      window.requestAnimationFrame(() => window.requestAnimationFrame(refresh));
+    }
+    [80, 220, 520].forEach(delay => window.setTimeout(refresh, delay));
+  }
+
   function activateInlineDiaryTab(tabId) {
     if (!window.PersonalFilters?.activateTab) return false;
     const hosts = [
@@ -662,7 +679,10 @@ const DiaryPage = (() => {
     ].filter(Boolean);
     for (const host of hosts) {
       if (!diaryTabHostVisible(host)) continue;
-      if (window.PersonalFilters.activateTab('diary', tabId, { host, visibleOnly: true })) return true;
+      if (window.PersonalFilters.activateTab('diary', tabId, { host, visibleOnly: true })) {
+        scheduleDiaryPanelLayout();
+        return true;
+      }
     }
     return false;
   }
@@ -1874,8 +1894,15 @@ const DiaryPage = (() => {
     const formDisabled = mode === 'edit' && !editability.editable;
     const formDisabledAttr = formDisabled ? ' disabled' : '';
     const defaults = entryFormDefaults(mode);
-    const valueFor = (key, fallback = '') => String(el(`${safePrefix}-${key}`)?.value || fallback);
-    const allDay = el(`${safePrefix}-all-day`) ? !!el(`${safePrefix}-all-day`)?.checked : defaults.allDay;
+    const eventId = mode === 'edit' ? entryIdentity(event) : '';
+    const editingForm = mode === 'edit'
+      ? el(`${safePrefix}-title`)?.closest('[data-diary-editing-entry-id]')
+      : null;
+    const preserveExistingValues = mode !== 'edit'
+      || !eventId
+      || editingForm?.dataset.diaryEditingEntryId === eventId;
+    const valueFor = (key, fallback = '') => String(preserveExistingValues ? (el(`${safePrefix}-${key}`)?.value || fallback) : fallback);
+    const allDay = preserveExistingValues && el(`${safePrefix}-all-day`) ? !!el(`${safePrefix}-all-day`)?.checked : defaults.allDay;
     const disabled = (allDay || formDisabled) ? ' disabled' : '';
     const title = mode === 'edit' ? 'Edit Entry' : 'New Entry';
     const tagAttr = formDisabled
@@ -1885,9 +1912,8 @@ const DiaryPage = (() => {
       : `data-diary-entry-tags-strip data-diary-entry-tags-surface="${escHtml(ENTRY_TAG_SURFACE)}" data-personal-filter-open="${escHtml(ENTRY_TAG_SURFACE)}"`);
     const tagSummary = entryTagsSummaryHtml(mode === 'edit' ? EDIT_TAG_SURFACE : ENTRY_TAG_SURFACE);
     const action = mode === 'edit' ? 'submit-edit-entry' : 'submit-entry';
-    const eventId = mode === 'edit' ? entryIdentity(event) : '';
     return `
-      <section class="calendar-quick-event calendar-quick-event--embedded diary-quick-entry diary-quick-entry--embedded" aria-label="${escHtml(title)}"${eventId ? ` data-diary-editing-entry-id="${escHtml(eventId)}"` : ''}>
+      <section class="calendar-quick-event calendar-quick-event--embedded diary-quick-entry diary-quick-entry--embedded" aria-label="${escHtml(title)}" data-diary-entry-form-mode="${escHtml(mode)}"${eventId ? ` data-diary-editing-entry-id="${escHtml(eventId)}"` : ''}>
         <div class="calendar-form-grid calendar-event-form-grid diary-entry-form-grid">
           <label class="calendar-field calendar-field--wide" for="${escHtml(safePrefix)}-title">
             <span>Title</span>
@@ -2638,6 +2664,7 @@ const DiaryPage = (() => {
         window.setTimeout(() => el(`${prefix}-title`)?.focus(), 0);
       }
     });
+    scheduleDiaryPanelLayout();
   }
 
   function openEditEntryForSelected() {
@@ -3531,7 +3558,7 @@ const DiaryPage = (() => {
       render();
     },
     filterGit: () => {
-      if (window.PersonalFilters?.setSelectedIds) window.PersonalFilters.setSelectedIds('diary', ['git']);
+      if (window.PersonalFilters?.setSelectedIds) window.PersonalFilters.setSelectedIds('diary', ['github']);
       state.sourceFilter = 'custom';
       render();
     },

@@ -568,10 +568,64 @@
   #tab-diary.active .diary-filter-under-panel [data-personal-filter-host],
   #tab-diary.active .diary-filter-under-panel .personal-filter-panel {
     height: 100%;
+    min-height: 0;
+    overflow: hidden;
   }
 
   #tab-diary.active .diary-filter-under-panel .personal-filter-panel__body {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    box-sizing: border-box;
+    min-height: 0;
+    max-height: 100%;
+  }
+
+  #tab-diary.active .diary-filter-under-panel .personal-filter-panel__body[data-personal-filter-body="edit-entry"],
+  #tab-diary.active .diary-filter-under-panel .personal-filter-panel__body[data-personal-filter-body="new-entry"] {
+    overflow: hidden;
+  }
+
+  #tab-diary.active .diary-filter-under-panel .diary-quick-entry--embedded[data-diary-entry-form-mode] {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
     flex: 1 1 auto;
+    height: 100%;
+    max-height: none;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  #tab-diary.active .diary-filter-under-panel .diary-quick-entry--embedded[data-diary-entry-form-mode] .diary-entry-form-grid {
+    display: grid;
+    grid-template-columns: minmax(220px, 2fr) repeat(4, minmax(118px, 1fr));
+    grid-template-rows: auto auto minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  #tab-diary.active .diary-filter-under-panel .diary-entry-form-grid > .calendar-field--wide {
+    grid-column: auto;
+  }
+
+  #tab-diary.active .diary-filter-under-panel .diary-entry-form-grid > .diary-entry-options-row,
+  #tab-diary.active .diary-filter-under-panel .diary-entry-form-grid > .calendar-field--notes {
+    grid-column: 1 / -1;
+  }
+
+  #tab-diary.active .diary-filter-under-panel .diary-entry-form-grid > .calendar-field--notes:last-child {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  #tab-diary.active .diary-filter-under-panel .diary-entry-form-grid > .calendar-field--notes:last-child .rich-md-textarea,
+  #tab-diary.active .diary-filter-under-panel .diary-entry-form-grid > .calendar-field--notes:last-child textarea,
+  #tab-diary.active .diary-filter-under-panel .diary-entry-form-grid > .calendar-field--notes:last-child .calendar-markdown-preview {
+    min-height: 0;
+    height: 100%;
   }
 }
 

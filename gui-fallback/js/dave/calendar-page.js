@@ -335,7 +335,7 @@ const CalendarPage = (() => {
     if (value === 'kanban') return 'kanban';
     if (value === 'imports') return 'imports';
     if (value === 'sources') return 'source records';
-    if (value === 'git') return 'git activity';
+    if (value === 'git') return 'GitHub activity';
     return 'all sources';
   }
 
@@ -507,12 +507,12 @@ const CalendarPage = (() => {
 
   function isImportLike(event) {
     const relatedImports = event?.related?.import_batches || [];
-    return ['interests-ingestion', 'git'].includes(sourceType(event)) || relatedImports.length > 0;
+    return sourceType(event) === 'interests-ingestion' || relatedImports.length > 0;
   }
 
   function isGitLike(event) {
     const tags = eventTags(event);
-    return sourceType(event) === 'git' || tags.includes('git') || tags.includes('github');
+    return sourceType(event) === 'git' || tags.includes('github');
   }
 
   function isHolidayLike(event) {
@@ -1472,7 +1472,7 @@ const CalendarPage = (() => {
     const clean = ['all', 'calendar', 'tasks', 'kanban', 'imports', 'sources', 'git'].includes(filter) ? filter : 'all';
     state.sourceFilter = clean;
     if (window.PersonalFilters?.setSelectedIds) {
-      window.PersonalFilters.setSelectedIds('calendar', clean === 'all' ? [] : [clean]);
+      window.PersonalFilters.setSelectedIds('calendar', clean === 'all' ? [] : [clean === 'git' ? 'github' : clean]);
     }
     state.selection = null;
     render();
@@ -1486,8 +1486,8 @@ const CalendarPage = (() => {
       state.sourceFilter = 'all';
       return;
     }
-    if (selected.length === 1 && ['calendar', 'tasks', 'kanban', 'imports', 'sources', 'git'].includes(selected[0])) {
-      state.sourceFilter = selected[0];
+    if (selected.length === 1 && ['calendar', 'tasks', 'kanban', 'imports', 'sources', 'github'].includes(selected[0])) {
+      state.sourceFilter = selected[0] === 'github' ? 'git' : selected[0];
       return;
     }
     state.sourceFilter = 'custom';
