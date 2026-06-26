@@ -453,6 +453,45 @@ button.table-icon-btn--speaker::before {
   gap: 10px;
 }
 
+#table-row-actions-modal .hub-modal-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+}
+
+#table-row-actions-modal .hub-modal-title {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 2px;
+}
+
+#table-row-actions-modal .hub-dialog-title-text {
+  min-width: 0;
+  line-height: 1.2;
+}
+
+#table-row-actions-subtitle {
+  display: block;
+  grid-column: 2;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+#table-row-actions-subtitle[hidden] {
+  display: none;
+}
+
+#table-row-actions-modal .hub-dialog-close {
+  align-self: start;
+}
+
 .table-row-actions-btn {
   display: flex;
   flex-direction: column;

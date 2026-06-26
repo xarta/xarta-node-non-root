@@ -4,11 +4,12 @@
 
 const KanbanBoardPage = (() => {
   const CONTENT_VIEW_STORAGE_KEY = 'blueprints.kanban.contentView.v1';
-  const CONTENT_VIEW_IDS = ['board', 'search', 'selection', 'provenance'];
+  const CONTENT_VIEW_IDS = ['board', 'search', 'selection', 'backups', 'provenance'];
   const CONTENT_VIEW_LABELS = {
     board: 'Board',
     search: 'Search',
     selection: 'Selection',
+    backups: 'Backups',
     provenance: 'Provenance',
   };
   const LANE_WIDTH_STORAGE_PREFIX = 'blueprints.kanbanLaneWidth.v1';
@@ -60,6 +61,14 @@ const KanbanBoardPage = (() => {
       scope: 'descendants',
       view: 'grouped',
       data: null,
+    },
+    backups: {
+      loading: false,
+      error: '',
+      data: null,
+      lastResult: null,
+      busyAction: '',
+      applyingFilename: '',
     },
     routeApplied: false,
     routeDetailItemId: '',
@@ -1226,6 +1235,239 @@ const KanbanBoardPage = (() => {
     </section>`;
   }
 
+  function backupEntries() {
+    return Array.isArray(state.backups.data?.backups) ? state.backups.data.backups : [];
+  }
+
+  function formatBackupBytes(value) {
+    const bytes = Number(value) || 0;
+    if (!bytes) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let size = bytes;
+    let unit = 0;
+    while (size >= 1024 && unit < units.length - 1) {
+      size /= 1024;
+      unit += 1;
+    }
+    return `${size >= 10 || unit === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[unit]}`;
+  }
+
+  function formatBackupDate(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString(undefined, {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  function backupKindLabel(value) {
+    if (value === 'pre-import') return 'Pre-import';
+    if (value === 'manual') return 'Manual';
+    return value ? String(value) : 'Backup';
+  }
+
+  function backupRowCount(entry) {
+    const counts = entry?.table_counts || {};
+    return Number(counts.kanban_items || 0);
+  }
+
+  function backupBusyFor(filename = '') {
+    if (state.backups.loading) return true;
+    if (state.backups.busyAction && state.backups.busyAction !== 'apply') return true;
+    if (state.backups.applyingFilename) return state.backups.applyingFilename !== filename || !!filename;
+    return false;
+  }
+
+  function backupResultHtml() {
+    const result = state.backups.lastResult;
+    if (!result) return '';
+    const tone = result.tone || (result.ok === false ? 'err' : 'ok');
+    const payload = result.payload || {};
+    const lines = [];
+    if (payload.filename) lines.push(`File: ${payload.filename}`);
+    if (payload.backup?.filename) lines.push(`File: ${payload.backup.filename}`);
+    if (payload.pre_import_backup) lines.push(`Pre-import: ${payload.pre_import_backup}`);
+    if (typeof payload.applied === 'boolean') lines.push(`Applied: ${payload.applied ? 'yes' : 'no'}`);
+    if (typeof payload.restored_files === 'boolean') lines.push(`Files restored: ${payload.restored_files ? 'yes' : 'no'}`);
+    if (typeof payload.gen_before !== 'undefined' && typeof payload.gen_after !== 'undefined') {
+      lines.push(`Generation: ${payload.gen_before} -> ${payload.gen_after}`);
+    }
+    if (Array.isArray(payload.warnings) && payload.warnings.length) {
+      lines.push(`Warnings: ${payload.warnings.join('; ')}`);
+    }
+    return `<div class="kanban-backup-result" data-tone="${escHtml(tone)}" role="status">
+      <strong>${escHtml(result.message || 'Backup action completed.')}</strong>
+      ${lines.length ? `<span>${escHtml(lines.join(' · '))}</span>` : ''}
+    </div>`;
+  }
+
+  function backupDownloadUrl(filename) {
+    return `/api/v1/personal/kanban/backups/${encodeURIComponent(filename)}`;
+  }
+
+  function downloadBackupFromPanel(filename) {
+    const clean = String(filename || '');
+    if (!clean) return null;
+    const link = document.createElement('a');
+    link.href = backupDownloadUrl(clean);
+    link.download = clean;
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setBackupResult('Backup download started.', { filename: clean }, { tone: 'ok' });
+    refreshBackupPanels();
+    return true;
+  }
+
+  function openBackupRowActions(filename) {
+    const clean = String(filename || '');
+    if (!clean) return false;
+    if (!window.TableRowActions?.open) {
+      setBackupResult('Backup action menu unavailable.', { ok: false, filename: clean }, { tone: 'err' });
+      return false;
+    }
+    window.TableRowActions.open({
+      title: 'Backup actions',
+      subtitle: clean,
+      actions: [
+        {
+          label: 'Download',
+          detail: 'Save this backup package.',
+          onClick: () => downloadBackupFromPanel(clean),
+        },
+        {
+          label: 'Validate',
+          detail: 'Check backup metadata and bundled files.',
+          onClick: () => validateBackupFromPanel(clean),
+        },
+        {
+          label: 'Dry Run',
+          detail: 'Preview the import without applying changes.',
+          onClick: () => dryRunImportBackupFromPanel(clean),
+        },
+        {
+          label: 'Import',
+          detail: 'Restore from this backup after confirmation.',
+          tone: 'danger',
+          onClick: () => applyImportBackupFromPanel(clean),
+        },
+      ],
+    });
+    return true;
+  }
+
+  function backupTableHtml() {
+    const rows = backupEntries();
+    if (state.backups.loading && !rows.length) {
+      return '<div class="kanban-empty">Loading backups...</div>';
+    }
+    if (state.backups.error) {
+      return `<div class="kanban-empty kanban-backup-error">${escHtml(state.backups.error)}</div>`;
+    }
+    if (!rows.length) {
+      return '<div class="kanban-empty">No Kanban backups found.</div>';
+    }
+    const busyAction = state.backups.busyAction;
+    return `<div class="kanban-backups-table" role="table" aria-label="Kanban import/export backups">
+      <div class="kanban-backup-row kanban-backup-row--head" role="row">
+        <span class="kanban-backup-head-cell" role="columnheader">Backup</span>
+        <span class="kanban-backup-head-cell" role="columnheader">Kind</span>
+        <span class="kanban-backup-head-cell kanban-backup-head-cell--metric" role="columnheader">Items</span>
+        <span class="kanban-backup-head-cell kanban-backup-head-cell--metric" role="columnheader">Files</span>
+        <span class="kanban-backup-head-cell kanban-backup-head-cell--metric" role="columnheader">Size</span>
+        <span class="kanban-backup-head-cell kanban-backup-head-cell--actions" role="columnheader">Actions</span>
+      </div>
+      ${rows.map(entry => {
+        const filename = String(entry.filename || '');
+        const downloadUrl = backupDownloadUrl(filename);
+        const disabled = backupBusyFor(filename) ? ' disabled' : '';
+        const applying = state.backups.applyingFilename === filename;
+        const hash = String(entry.sha256 || '');
+        return `<article class="kanban-backup-row" role="row" data-kanban-backup-file="${escHtml(filename)}">
+          <div class="kanban-backup-file" role="cell">
+            <strong title="${escHtml(filename)}">${escHtml(filename)}</strong>
+            <span>${escHtml(formatBackupDate(entry.created_at))}${hash ? ` · ${escHtml(hash.slice(0, 12))}` : ''}</span>
+          </div>
+          <span class="kanban-backup-cell" role="cell" data-label="Kind">${escHtml(backupKindLabel(entry.kind))}</span>
+          <span class="kanban-backup-cell kanban-backup-metric" role="cell" data-label="Items">${escHtml(String(backupRowCount(entry)))}</span>
+          <span class="kanban-backup-cell kanban-backup-metric" role="cell" data-label="Files">${escHtml(String(entry.file_count ?? ''))}</span>
+          <span class="kanban-backup-cell kanban-backup-metric" role="cell" data-label="Size">${escHtml(formatBackupBytes(entry.size_bytes))}</span>
+          <div class="kanban-backup-actions" role="cell" data-label="Actions">
+            <div class="kanban-backup-actions-inline">
+              <a class="kanban-command-btn kanban-backup-download" href="${downloadUrl}" download="${escHtml(filename)}">Download</a>
+              <button class="kanban-command-btn" type="button" data-kanban-backup-action="validate" data-kanban-backup-file="${escHtml(filename)}"${disabled}>Validate</button>
+              <button class="kanban-command-btn" type="button" data-kanban-backup-action="dry-run" data-kanban-backup-file="${escHtml(filename)}"${disabled}>Dry Run</button>
+              <button class="kanban-command-btn kanban-command-btn--danger" type="button" data-kanban-backup-action="apply" data-kanban-backup-file="${escHtml(filename)}"${disabled}>${applying || (busyAction === 'apply' && applying) ? 'Importing...' : 'Import'}</button>
+            </div>
+            <button class="kanban-command-btn table-row-action-trigger kanban-backup-actions-trigger" type="button" data-kanban-backup-row-actions="${escHtml(filename)}" aria-label="Backup actions for ${escHtml(filename)}" title="Backup actions"${disabled}>⋮</button>
+          </div>
+        </article>`;
+      }).join('')}
+    </div>`;
+  }
+
+  function embeddedBackupsHtml() {
+    if (!state.backups.data && !state.backups.loading && !state.backups.error) {
+      setTimeout(() => loadBackupsPanel({ force: true }), 0);
+    }
+    const data = state.backups.data || {};
+    const busy = state.backups.loading || !!state.backups.busyAction;
+    const backupDir = data.backup_dir ? `<span title="${escHtml(data.backup_dir)}">Backups: ${escHtml(data.backup_dir)}</span>` : '';
+    const kanbanRoot = data.kanban_root ? `<span title="${escHtml(data.kanban_root)}">Files: ${escHtml(data.kanban_root)}</span>` : '';
+    return `<section class="calendar-band kanban-band kanban-backups-panel" aria-label="Kanban Import/Export/Backups">
+      <div class="calendar-section-head kanban-section-head">
+        <h3>Backups</h3>
+        <div class="kanban-backups-toolbar">
+          <button class="kanban-command-btn" type="button" data-kanban-backup-action="refresh"${busy ? ' disabled' : ''}>Refresh</button>
+          <button class="kanban-command-btn" type="button" data-kanban-backup-action="create"${busy ? ' disabled' : ''}>Export Backup</button>
+        </div>
+      </div>
+      ${(backupDir || kanbanRoot) ? `<div class="kanban-backup-paths">${backupDir}${kanbanRoot}</div>` : ''}
+      ${state.backups.loading ? '<div class="kanban-backup-result" data-tone="info" role="status"><strong>Loading backups...</strong></div>' : ''}
+      ${backupResultHtml()}
+      ${backupTableHtml()}
+    </section>`;
+  }
+
+  function refreshBackupModal() {
+    const body = document.querySelector('#kanban-backups-modal [data-kanban-backups-modal-body]');
+    if (!body) return;
+    body.innerHTML = embeddedBackupsHtml();
+  }
+
+  function openBackupsModal() {
+    const dialog = openDialog('Kanban Import/Export/Backups', `<div data-kanban-backups-modal-body>${embeddedBackupsHtml()}</div>`, {
+      badge: 'BKP',
+      id: 'kanban-backups-modal',
+      width: 'min(1560px, calc(100vw - 28px))',
+    });
+    dialog.addEventListener('click', event => {
+      const rowActionsButton = event.target.closest('[data-kanban-backup-row-actions]');
+      if (rowActionsButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        openBackupRowActions(rowActionsButton.dataset.kanbanBackupRowActions || '');
+        return;
+      }
+      const backupButton = event.target.closest('[data-kanban-backup-action]');
+      if (!backupButton) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const result = handleBackupAction(backupButton);
+      refreshBackupModal();
+      if (result && typeof result.finally === 'function') {
+        result.finally(() => refreshBackupModal());
+      }
+    });
+    return dialog;
+  }
+
   function detailPrefixForHost(host) {
     if (host?.id === 'kanban-filter-inline-panel') return 'kanban-inline-detail';
     if (host?.closest?.('#ultrawide-sidecar-body')) return 'kanban-sidecar-detail';
@@ -1257,6 +1499,155 @@ const KanbanBoardPage = (() => {
       if (window.PersonalFilters.activateTab('kanban', tabId, { host, visibleOnly: true })) return true;
     }
     return false;
+  }
+
+  function refreshBackupPanels() {
+    if (!window.PersonalFilters?.activateTab) return;
+    document.querySelectorAll('[data-personal-filter-host][data-personal-filter-surface="kanban"]').forEach(host => {
+      if (host.dataset.personalFilterTab !== 'backups') return;
+      if (!hostIsVisible(host)) return;
+      window.PersonalFilters.activateTab('kanban', 'backups', { host, visibleOnly: false });
+    });
+  }
+
+  async function loadBackupsPanel(options = {}) {
+    if (state.backups.loading && !options.force) return state.backups.data;
+    state.backups.loading = true;
+    state.backups.error = '';
+    refreshBackupPanels();
+    try {
+      state.backups.data = await requestJson('/api/v1/personal/kanban/backups');
+      return state.backups.data;
+    } catch (err) {
+      state.backups.error = err?.message || String(err);
+      return null;
+    } finally {
+      state.backups.loading = false;
+      refreshBackupPanels();
+      refreshBackupModal();
+    }
+  }
+
+  function setBackupResult(message, payload = {}, options = {}) {
+    state.backups.lastResult = {
+      message,
+      payload,
+      tone: options.tone || (payload?.ok === false ? 'err' : 'ok'),
+      ok: payload?.ok !== false,
+    };
+    refreshBackupModal();
+  }
+
+  async function createBackupFromPanel() {
+    state.backups.busyAction = 'create';
+    setBackupResult('Creating Kanban backup...', {}, { tone: 'info' });
+    refreshBackupPanels();
+    try {
+      const payload = await requestJson('/api/v1/personal/kanban/backups?kind=manual', { method: 'POST' });
+      setBackupResult('Backup created.', payload);
+      await loadBackupsPanel({ force: true });
+      return payload;
+    } catch (err) {
+      state.backups.error = err?.message || String(err);
+      setBackupResult('Backup failed.', { ok: false, error: state.backups.error }, { tone: 'err' });
+      return null;
+    } finally {
+      state.backups.busyAction = '';
+      refreshBackupPanels();
+    }
+  }
+
+  async function validateBackupFromPanel(filename) {
+    const clean = String(filename || '');
+    if (!clean) return null;
+    state.backups.busyAction = 'validate';
+    setBackupResult(`Validating ${clean}...`, {}, { tone: 'info' });
+    refreshBackupPanels();
+    try {
+      const payload = await requestJson(`/api/v1/personal/kanban/backups/${encodeURIComponent(clean)}/validate`);
+      setBackupResult(payload.ok ? 'Backup package validated.' : 'Backup package validated with warnings.', payload, { tone: payload.ok ? 'ok' : 'warn' });
+      return payload;
+    } catch (err) {
+      const message = err?.message || String(err);
+      setBackupResult('Validation failed.', { ok: false, filename: clean, error: message }, { tone: 'err' });
+      return null;
+    } finally {
+      state.backups.busyAction = '';
+      refreshBackupPanels();
+    }
+  }
+
+  async function dryRunImportBackupFromPanel(filename) {
+    const clean = String(filename || '');
+    if (!clean) return null;
+    state.backups.busyAction = 'dry-run';
+    setBackupResult(`Dry-running ${clean}...`, {}, { tone: 'info' });
+    refreshBackupPanels();
+    try {
+      const payload = await requestJson(`/api/v1/personal/kanban/backups/${encodeURIComponent(clean)}/import?apply=false&restore_files=true&backup_before_import=true`, { method: 'POST' });
+      setBackupResult(payload.ok ? 'Import dry run completed.' : 'Import dry run returned warnings.', payload, { tone: payload.ok ? 'ok' : 'warn' });
+      return payload;
+    } catch (err) {
+      const message = err?.message || String(err);
+      setBackupResult('Import dry run failed.', { ok: false, filename: clean, error: message }, { tone: 'err' });
+      return null;
+    } finally {
+      state.backups.busyAction = '';
+      refreshBackupPanels();
+    }
+  }
+
+  async function applyImportBackupFromPanel(filename) {
+    const clean = String(filename || '');
+    if (!clean) return null;
+    const ok = await HubDialogs.confirm({
+      title: 'Import Kanban Backup',
+      message: `Import "${clean}"? This restores Kanban rows and file-backed Kanban documents from the backup package. A pre-import backup will be created first.`,
+      confirmText: 'Import Backup',
+      tone: 'danger',
+    });
+    if (!ok) return null;
+    state.backups.busyAction = 'apply';
+    state.backups.applyingFilename = clean;
+    setBackupResult(`Importing ${clean}...`, {}, { tone: 'info' });
+    refreshBackupPanels();
+    try {
+      const payload = await requestJson(`/api/v1/personal/kanban/backups/${encodeURIComponent(clean)}/import?apply=true&restore_files=true&backup_before_import=true`, { method: 'POST' });
+      setBackupResult('Backup imported.', payload);
+      state.detail = null;
+      state.detailDraft = null;
+      state.selection = null;
+      await load({ force: true, forceConfig: true, skipRouteDetail: true, skipRouteScoped: true });
+      await loadBackupsPanel({ force: true });
+      return payload;
+    } catch (err) {
+      const message = err?.message || String(err);
+      setBackupResult('Backup import failed.', { ok: false, filename: clean, error: message }, { tone: 'err' });
+      return null;
+    } finally {
+      state.backups.busyAction = '';
+      state.backups.applyingFilename = '';
+      refreshBackupPanels();
+    }
+  }
+
+  async function openBackupsPanel() {
+    const activated = activateKanbanPanelTab('backups');
+    if (!activated) openBackupsModal();
+    await loadBackupsPanel({ force: true });
+    refreshBackupModal();
+    return true;
+  }
+
+  function handleBackupAction(button) {
+    const action = button?.dataset?.kanbanBackupAction || '';
+    const filename = button?.dataset?.kanbanBackupFile || '';
+    if (action === 'refresh') return loadBackupsPanel({ force: true });
+    if (action === 'create') return createBackupFromPanel();
+    if (action === 'validate') return validateBackupFromPanel(filename);
+    if (action === 'dry-run') return dryRunImportBackupFromPanel(filename);
+    if (action === 'apply') return applyImportBackupFromPanel(filename);
+    return null;
   }
 
   function refreshActiveDetailPanels() {
@@ -3098,6 +3489,7 @@ const KanbanBoardPage = (() => {
           { id: 'search', label: 'Search' },
           { id: 'new-item', label: 'New Item' },
           { id: 'edit-item', label: 'Edit Item', disabled: () => !detailItemAvailable() },
+          { id: 'backups', label: 'Backups' },
           { id: 'provenance', label: 'Provenance' },
         ],
         renderTab: (tab, host) => {
@@ -3105,6 +3497,7 @@ const KanbanBoardPage = (() => {
           if (tab === 'search') return embeddedSearchHtml(host);
           if (tab === 'new-item') return embeddedItemFormHtml(host?.id === 'kanban-filter-inline-panel' ? 'kanban-inline-item' : 'kanban-panel-item');
           if (tab === 'edit-item') return embeddedItemDetailHtml(host);
+          if (tab === 'backups') return embeddedBackupsHtml(host);
           if (tab === 'provenance') return embeddedProvenanceHtml(host);
           return '';
         },
@@ -3437,6 +3830,20 @@ const KanbanBoardPage = (() => {
         event.stopPropagation();
         return;
       }
+      const backupButton = event.target.closest('[data-kanban-backup-action]');
+      if (backupButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleBackupAction(backupButton);
+        return;
+      }
+      const backupRowActionsButton = event.target.closest('[data-kanban-backup-row-actions]');
+      if (backupRowActionsButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        openBackupRowActions(backupRowActionsButton.dataset.kanbanBackupRowActions || '');
+        return;
+      }
       const button = event.target.closest('[data-kanban-action]');
       if (button) {
         const action = button.dataset.kanbanAction;
@@ -3448,6 +3855,7 @@ const KanbanBoardPage = (() => {
         if (action === 'up-board') openUpBoard();
         if (action === 'root-board') openRootBoard();
         if (action === 'new-root-item') newRootItem();
+        if (action === 'backups') openBackupsPanel();
         if (action === 'add-item-state') handleCardAction('add-item-state', '', button.dataset.kanbanStateId || 'todo');
         if (action === 'submit-inline-item') submitInlineItem(button.dataset.kanbanItemPrefix || 'kanban-inline-item');
         if (action === 'toggle-markdown-preview') toggleMarkdownPreview(button, root);
@@ -3505,6 +3913,18 @@ const KanbanBoardPage = (() => {
       const btn = event.target.closest('[data-kanban-action="submit-inline-item"]');
       if (!btn || root.contains(btn)) return;
       submitInlineItem(btn.dataset.kanbanItemPrefix || 'kanban-panel-item');
+    });
+    document.addEventListener('click', event => {
+      const btn = event.target.closest('[data-kanban-backup-action]');
+      if (!btn || root.contains(btn)) return;
+      event.preventDefault();
+      handleBackupAction(btn);
+    });
+    document.addEventListener('click', event => {
+      const btn = event.target.closest('[data-kanban-backup-row-actions]');
+      if (!btn || root.contains(btn)) return;
+      event.preventDefault();
+      openBackupRowActions(btn.dataset.kanbanBackupRowActions || '');
     });
     document.addEventListener('click', event => {
       const btn = event.target.closest('[data-kanban-action="toggle-markdown-preview"]');
@@ -3588,6 +4008,13 @@ const KanbanBoardPage = (() => {
       rollup_total: state.board?.rollup?.items?.total || 0,
       issue_count: state.board?.rollup?.issues?.open || 0,
       todo_count: state.board?.rollup?.todos?.open || 0,
+      backups_loaded: !!state.backups.data,
+      backup_count: backupEntries().length,
+      backups_loading: !!state.backups.loading,
+      backups_error: state.backups.error || '',
+      backup_busy_action: state.backups.busyAction || '',
+      backup_importing_filename: state.backups.applyingFilename || '',
+      backup_last_result: state.backups.lastResult?.message || '',
       error: state.error,
     };
   }
@@ -3604,6 +4031,7 @@ const KanbanBoardPage = (() => {
     openSelectedDetail: () => openItemDetail(),
     openItemById,
     itemRouteUrl,
+    openBackupsPanel,
     addChildToSelected: () => openItemForm({ parentItemId: state.selection?.item?.item_id, childOfSelection: true }),
     addIssueToSelected: () => state.selection?.item?.item_id ? openLeafForm('issue', state.selection.item.item_id) : false,
     addTodoToSelected: () => state.selection?.item?.item_id ? openLeafForm('todo', state.selection.item.item_id) : false,
@@ -3644,6 +4072,7 @@ if (typeof KanbanMenuConfig !== 'undefined') {
     'kanban.moveLeft': () => KanbanBoardPage.moveSelectedLeft(),
     'kanban.moveRight': () => KanbanBoardPage.moveSelectedRight(),
     'kanban.archive': () => KanbanBoardPage.archiveSelected(),
+    'kanban.backups': () => KanbanBoardPage.openBackupsPanel(),
     'kanban.toggleTestEntries': () => KanbanBoardPage.toggleTestEntriesVisibility({ source_surface: 'kanban-menu' }),
     'kanban.showTestEntries': () => KanbanBoardPage.showTestEntries(),
     'kanban.hideTestEntries': () => KanbanBoardPage.hideTestEntries(),
