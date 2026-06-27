@@ -3309,6 +3309,19 @@ const KanbanBoardPage = (() => {
     return requestJson(`/api/v1/personal/kanban/items/${encodeURIComponent(itemId)}/${config.endpoint}?${params.toString()}`);
   }
 
+  async function openFirstScopedCard(kind, itemId = state.selection?.item?.item_id) {
+    if (!itemId) return false;
+    const config = scopedKindConfig(kind);
+    const data = await loadScoped(config.kind, itemId, 'descendants', 'flat');
+    const rows = Array.isArray(data?.items) ? data.items : [];
+    const first = rows.find(row => scopedRecordId(row, config));
+    const firstCardId = first?.item_id || scopedRecordId(first, config);
+    if (!firstCardId) return false;
+    await navigateToBoard(first?.parent_item_id || data?.item?.item_id || '');
+    await setSelection(firstCardId, { routeTarget: true });
+    return true;
+  }
+
   async function saveScopedRecord(config, record, row, statusOverride = '') {
     const id = scopedRecordId(record, config);
     const status = statusOverride || row.querySelector('[data-kanban-scoped-field="status"]')?.value || record.status || 'open';
@@ -4281,8 +4294,8 @@ const KanbanBoardPage = (() => {
         event.stopPropagation();
         const itemId = pill.dataset.kanbanItemId || '';
         if (pill.dataset.kanbanPill === 'subitems') openChildBoard(itemId);
-        if (pill.dataset.kanbanPill === 'issues') await openScoped('issues', itemId, { scope: 'descendants', view: 'flat' });
-        if (pill.dataset.kanbanPill === 'todos') await openScoped('todos', itemId, { scope: 'descendants', view: 'flat' });
+        if (pill.dataset.kanbanPill === 'issues') await openFirstScopedCard('issues', itemId);
+        if (pill.dataset.kanbanPill === 'todos') await openFirstScopedCard('todos', itemId);
         return;
       }
       const card = event.target.closest('[data-kanban-item-id]');

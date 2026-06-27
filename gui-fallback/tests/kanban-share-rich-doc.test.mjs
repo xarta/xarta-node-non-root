@@ -62,13 +62,13 @@ assert.match(
 );
 assert.match(
   kanbanJs,
-  /function\s+openScoped\(kind,[\s\S]*loadScoped\(config\.kind,\s*itemId,\s*scope,\s*view\)[\s\S]*writeRouteState\(state\.currentParentId,\s*'',\s*\{[\s\S]*kind:\s*config\.kind[\s\S]*view:\s*data\.view\s*\|\|\s*view/,
-  'Issue and ToDo rollup trace views must load and route the scoped list.',
+  /function\s+openFirstScopedCard\(kind,[\s\S]*loadScoped\(config\.kind,\s*itemId,\s*'descendants',\s*'flat'\)[\s\S]*navigateToBoard\(first\?\.parent_item_id[\s\S]*setSelection\(firstCardId,\s*\{\s*routeTarget:\s*true\s*\}\)/,
+  'Issue and ToDo rollup drill-down must open the first matching descendant lane card.',
 );
 assert.match(
   kanbanJs,
-  /kanbanPill === 'issues'[\s\S]*openScoped\('issues',\s*itemId,\s*\{\s*scope:\s*'descendants',\s*view:\s*'flat'\s*\}\)[\s\S]*kanbanPill === 'todos'[\s\S]*openScoped\('todos',\s*itemId,\s*\{\s*scope:\s*'descendants',\s*view:\s*'flat'\s*\}\)/,
-  'Ancestor Issues and ToDos rollup pills must open the full descendant trace list.',
+  /kanbanPill === 'issues'[\s\S]*openFirstScopedCard\('issues',\s*itemId\)[\s\S]*kanbanPill === 'todos'[\s\S]*openFirstScopedCard\('todos',\s*itemId\)/,
+  'Ancestor Issues and ToDos rollup pills must drill to matching lane cards.',
 );
 assert.match(
   kanbanJs,
