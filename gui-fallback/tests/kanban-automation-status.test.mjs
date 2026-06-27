@@ -45,8 +45,20 @@ assert.match(
 
 assert.match(
   kanbanJs,
+  /function\s+embeddedAutomationStatusHtml\(\)[\s\S]*processing_policy[\s\S]*automationProcessingPolicyHtml\(\)/,
+  'Automation panel must render the Review Processor processing policy.',
+);
+
+assert.match(
+  kanbanJs,
   /function\s+automationOutputContractHtml\(\)[\s\S]*output_types[\s\S]*kanban-automation-contract-type/,
   'Automation panel must expose output contract types.',
+);
+
+assert.match(
+  kanbanJs,
+  /function\s+automationProcessingPolicyHtml\(\)[\s\S]*local_processing[\s\S]*No automatic switch/,
+  'Automation panel must expose the cloud-first processing policy gate.',
 );
 
 assert.match(
@@ -81,7 +93,7 @@ assert.match(
 
 assert.match(
   kanbanJs,
-  /automation_status_loaded:[\s\S]*automation_review_processor_status:[\s\S]*automation_commit_link_health_ok:[\s\S]*automation_output_contract_schema:[\s\S]*automation_output_contract_types:/,
+  /automation_status_loaded:[\s\S]*automation_review_processor_status:[\s\S]*automation_commit_link_health_ok:[\s\S]*automation_output_contract_schema:[\s\S]*automation_output_contract_types:[\s\S]*automation_processing_policy_schema:[\s\S]*automation_processing_policy_active_mode:[\s\S]*automation_processing_policy_local_gate:/,
   'Kanban snapshots must expose automation status proof fields.',
 );
 
@@ -93,8 +105,8 @@ assert.match(
 
 assert.match(
   kanbanCss,
-  /\.kanban-icon-btn--automation::before[\s\S]*\.kanban-automation-grid[\s\S]*\.kanban-automation-contract[\s\S]*#kanban-automation-status-modal/,
-  'Automation status icon, metric grid, contract strip, and modal styles must be present.',
+  /\.kanban-icon-btn--automation::before[\s\S]*\.kanban-automation-grid[\s\S]*\.kanban-automation-contract[\s\S]*\.kanban-automation-policy[\s\S]*#kanban-automation-status-modal/,
+  'Automation status icon, metric grid, contract/policy strips, and modal styles must be present.',
 );
 
 assert.match(

@@ -1089,7 +1089,8 @@ dialog.hub-modal#kanban-detail-modal[open] {
   background: rgba(125, 183, 255, .1);
 }
 
-.kanban-automation-contract {
+.kanban-automation-contract,
+.kanban-automation-policy {
   display: grid;
   gap: 8px;
   min-width: 0;
@@ -1099,7 +1100,8 @@ dialog.hub-modal#kanban-detail-modal[open] {
   padding: 10px 12px;
 }
 
-.kanban-automation-contract-main {
+.kanban-automation-contract-main,
+.kanban-automation-policy-main {
   display: grid;
   grid-template-columns: minmax(124px, auto) minmax(80px, auto) minmax(0, 1fr);
   gap: 10px;
@@ -1109,7 +1111,10 @@ dialog.hub-modal#kanban-detail-modal[open] {
 
 .kanban-automation-contract-main span,
 .kanban-automation-contract-main em,
-.kanban-automation-contract-gate {
+.kanban-automation-contract-gate,
+.kanban-automation-policy-main span,
+.kanban-automation-policy-main em,
+.kanban-automation-policy-gate {
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--text-dim);
@@ -1117,21 +1122,26 @@ dialog.hub-modal#kanban-detail-modal[open] {
   font-style: normal;
 }
 
-.kanban-automation-contract-main strong {
+.kanban-automation-contract-main strong,
+.kanban-automation-policy-main strong {
   min-width: 0;
   overflow-wrap: anywhere;
   font-size: 14px;
   line-height: 1.2;
 }
 
-.kanban-automation-contract-types {
+.kanban-automation-contract-types,
+.kanban-automation-policy-chips,
+.kanban-automation-policy-gate {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
 }
 
-.kanban-automation-contract-type {
+.kanban-automation-contract-type,
+.kanban-automation-policy-chip,
+.kanban-automation-policy-gate span {
   max-width: 100%;
   border: 1px solid rgba(125, 183, 255, .28);
   border-radius: 8px;
@@ -1141,6 +1151,17 @@ dialog.hub-modal#kanban-detail-modal[open] {
   line-height: 1.2;
   overflow-wrap: anywhere;
   padding: 4px 8px;
+}
+
+.kanban-automation-policy {
+  border-color: rgba(105, 190, 132, .3);
+  background: rgba(105, 190, 132, .08);
+}
+
+.kanban-automation-policy-chip,
+.kanban-automation-policy-gate span {
+  border-color: rgba(105, 190, 132, .34);
+  background: rgba(105, 190, 132, .1);
 }
 
 .kanban-automation-section-head {

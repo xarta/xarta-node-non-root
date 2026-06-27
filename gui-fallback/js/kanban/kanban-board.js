@@ -1691,6 +1691,30 @@ const KanbanBoardPage = (() => {
     </div>`;
   }
 
+  function automationProcessingPolicyHtml() {
+    const policy = state.automationStatus.data?.processing_policy || {};
+    if (!policy.schema) return '';
+    const local = policy.local_processing || {};
+    const appliesTo = Array.isArray(policy.applies_to) ? policy.applies_to : [];
+    const appliesHtml = appliesTo.map(entry => (
+      `<span class="kanban-automation-policy-chip">${escHtml(String(entry).replace(/_/g, ' '))}</span>`
+    )).join('');
+    const switchState = local.automatic_switch === false ? 'No automatic switch' : 'Explicit switch required';
+    return `<div class="kanban-automation-policy">
+      <div class="kanban-automation-policy-main">
+        <span>Processing Policy</span>
+        <strong>${escHtml(policy.active_mode || 'cloud-first')}</strong>
+        <em>${escHtml(policy.schema || '')}</em>
+      </div>
+      ${appliesHtml ? `<div class="kanban-automation-policy-chips" aria-label="Policy applies to">${appliesHtml}</div>` : ''}
+      <div class="kanban-automation-policy-gate">
+        <span>${escHtml(local.state || 'planned-gated')}</span>
+        <span>${escHtml(local.gate || 'structured-job-packets-required')}</span>
+        <span>${escHtml(switchState)}</span>
+      </div>
+    </div>`;
+  }
+
   function automationDecisionRowsHtml() {
     const rows = automationRecentDecisions();
     if (state.automationStatus.loading && !rows.length) {
@@ -1736,6 +1760,7 @@ const KanbanBoardPage = (() => {
     const provider = data.provider_mode || {};
     const pre = data.preprocessing || {};
     const outputContract = data.output_contract || {};
+    const processingPolicy = data.processing_policy || {};
     const outputTypeCount = Array.isArray(outputContract.output_types) ? outputContract.output_types.length : 0;
     const queueLength = Number(processor.queue_length || 0);
     const decisionCount = Number(decisions.count ?? decisions.total ?? 0);
@@ -1759,9 +1784,11 @@ const KanbanBoardPage = (() => {
         ${automationMetricHtml('Hook Failures', String(health.hook_failure_count ?? 0), `${health.missing_commit_link_count ?? 0} missing commit links`, Number(health.hook_failure_count || health.missing_commit_link_count || 0) ? 'warn' : 'ok')}
         ${automationMetricHtml('Preprocessing', pre.status || 'contract-pending', pre.job_packet_contract || '', pre.status === 'ready' ? 'ok' : 'info')}
         ${automationMetricHtml('Output Contract', outputContract.status || 'not loaded', `${outputTypeCount} output types`, outputContract.status === 'active' ? 'ok' : 'info')}
+        ${automationMetricHtml('Policy', processingPolicy.active_mode || 'cloud-first', processingPolicy.local_processing?.gate || provider.local_processing_gate || '', 'info')}
       </div>
       ${loadedAt ? `<div class="kanban-backup-paths"><span>Loaded: ${escHtml(loadedAt)}</span></div>` : ''}
       ${state.automationStatus.loading ? '<div class="kanban-backup-result" data-tone="info" role="status"><strong>Loading automation status...</strong></div>' : ''}
+      ${automationProcessingPolicyHtml()}
       ${automationOutputContractHtml()}
       <div class="kanban-automation-section-head">Recent Decisions</div>
       ${automationDecisionRowsHtml()}
@@ -4227,6 +4254,10 @@ const KanbanBoardPage = (() => {
       automation_output_contract_types: Array.isArray(state.automationStatus.data?.output_contract?.output_types)
         ? state.automationStatus.data.output_contract.output_types.length
         : 0,
+      automation_processing_policy_schema: state.automationStatus.data?.processing_policy?.schema || '',
+      automation_processing_policy_active_mode: state.automationStatus.data?.processing_policy?.active_mode || '',
+      automation_processing_policy_local_gate:
+        state.automationStatus.data?.processing_policy?.local_processing?.gate || '',
       error: state.error,
     };
   }
