@@ -18,6 +18,9 @@ const KanbanBoardPage = (() => {
   const LANE_WIDTH_MAX = 560;
   const LANE_WIDTH_STEP = 18;
   const REFRESH_LONG_PRESS_MS = 700;
+  const CARD_DRAG_START_PX = 6;
+  const CARD_DRAG_EDGE_PX = 22;
+  const CARD_SHARE_CLICK_DELAY_MS = 220;
   const NEW_ITEM_TAG_SURFACE = 'kanban-new-item';
   const EDIT_ITEM_TAG_SURFACE = 'kanban-edit-item';
   const ITEM_REQUIRED_TAGS = ['kanban'];
@@ -25,6 +28,20 @@ const KanbanBoardPage = (() => {
   let refreshLongPressTimer = null;
   let refreshLongPressButton = null;
   let refreshSuppressClickUntil = 0;
+  let cardShareClickTimer = null;
+  const cardDrag = {
+    pointerId: null,
+    itemId: '',
+    startX: 0,
+    startY: 0,
+    active: false,
+    sourceButton: null,
+    ghost: null,
+    target: { kind: '' },
+    suppressClickUntil: 0,
+    moveListener: null,
+    endListener: null,
+  };
 
   function normalizeContentView(value) {
     const clean = String(value || '').trim();
@@ -1020,6 +1037,222 @@ const KanbanBoardPage = (() => {
     restoreLaneWidths();
     resetBoardVerticalOffset();
     window.requestAnimationFrame(resetBoardVerticalOffset);
+  }
+
+  function columnForState(stateId) {
+    const cleanStateId = String(stateId || '');
+    return (state.board?.columns || []).find(column => (column.state?.state_id || '') === cleanStateId) || null;
+  }
+
+  function visibleItemsForState(stateId) {
+    return visibleColumnItems(columnForState(stateId));
+  }
+
+  function cardElementForItem(itemId) {
+    const cleanItemId = String(itemId || '');
+    if (!cleanItemId) return null;
+    return Array.from(document.querySelectorAll('#tab-kanban .kanban-card[data-kanban-item-id]'))
+      .find(node => node.dataset.kanbanItemId === cleanItemId) || null;
+  }
+
+  function clearCardDragHighlights() {
+    document.querySelectorAll('#tab-kanban [data-kanban-drop-target]').forEach(node => {
+      node.removeAttribute('data-kanban-drop-target');
+    });
+    document.querySelectorAll('#tab-kanban [data-kanban-drag-source]').forEach(node => {
+      node.removeAttribute('data-kanban-drag-source');
+    });
+  }
+
+  function cardDragTargetLabel(target = cardDrag.target) {
+    if (target.kind === 'lane') return `Drop to move to ${stateLabel(target.stateId)}.`;
+    if (target.kind === 'child') return 'Drop to make this a child item.';
+    if (target.kind === 'order') return `Drop to move ${target.before ? 'above' : 'below'} this card.`;
+    return 'Drag over a lane, card, or between-card edge.';
+  }
+
+  function sameCardDragTarget(a = {}, b = {}) {
+    return String(a.kind || '') === String(b.kind || '')
+      && String(a.itemId || '') === String(b.itemId || '')
+      && String(a.stateId || '') === String(b.stateId || '')
+      && String(a.parentItemId || '') === String(b.parentItemId || '')
+      && Boolean(a.before) === Boolean(b.before);
+  }
+
+  function setCardDragTarget(target) {
+    const nextTarget = target?.kind ? target : { kind: '' };
+    if (sameCardDragTarget(cardDrag.target, nextTarget)) return;
+    cardDrag.target = nextTarget;
+    clearCardDragHighlights();
+    cardElementForItem(cardDrag.itemId)?.setAttribute('data-kanban-drag-source', 'true');
+    if (nextTarget.kind === 'lane') {
+      document
+        .querySelector(`#tab-kanban .kanban-column[data-kanban-state-id="${cssEscape(nextTarget.stateId)}"]`)
+        ?.setAttribute('data-kanban-drop-target', 'lane');
+    } else if (nextTarget.kind === 'child') {
+      cardElementForItem(nextTarget.parentItemId)?.setAttribute('data-kanban-drop-target', 'child');
+    } else if (nextTarget.kind === 'order') {
+      cardElementForItem(nextTarget.itemId)
+        ?.setAttribute('data-kanban-drop-target', nextTarget.before ? 'order-before' : 'order-after');
+    }
+    renderStatus(cardDragTargetLabel(nextTarget));
+  }
+
+  function ensureCardDragGhost() {
+    if (cardDrag.ghost) return cardDrag.ghost;
+    const source = findItem(cardDrag.itemId);
+    const ghost = document.createElement('div');
+    ghost.className = 'kanban-card-drag-ghost';
+    ghost.textContent = source?.title || source?.item_id || 'Kanban card';
+    document.body.appendChild(ghost);
+    cardDrag.ghost = ghost;
+    return ghost;
+  }
+
+  function positionCardDragGhost(clientX, clientY) {
+    const ghost = ensureCardDragGhost();
+    ghost.style.transform = `translate(${Math.round(clientX + 14)}px, ${Math.round(clientY + 14)}px)`;
+  }
+
+  function removeCardDragGhost() {
+    cardDrag.ghost?.remove?.();
+    cardDrag.ghost = null;
+  }
+
+  function orderDropTargetForCard(source, target, cardElement, clientY) {
+    if (!source || !target || !cardElement) return null;
+    const sameLane = (source.parent_item_id || '') === (target.parent_item_id || '')
+      && String(source.state_id || '') === String(target.state_id || '')
+      && String(source.priority_id || '') === String(target.priority_id || '');
+    if (!sameLane) return null;
+    const rect = cardElement.getBoundingClientRect();
+    const edgeHeight = Math.min(Math.max(CARD_DRAG_EDGE_PX, rect.height * 0.28), rect.height / 2);
+    if (clientY <= rect.top + edgeHeight) {
+      return { kind: 'order', itemId: target.item_id, before: true };
+    }
+    if (clientY >= rect.bottom - edgeHeight) {
+      return { kind: 'order', itemId: target.item_id, before: false };
+    }
+    return null;
+  }
+
+  function cardDragTargetFromPoint(clientX, clientY) {
+    const source = findItem(cardDrag.itemId);
+    if (!source) return { kind: '' };
+    const element = document.elementFromPoint(clientX, clientY);
+    const cardElement = element?.closest?.('.kanban-card[data-kanban-item-id]');
+    if (cardElement) {
+      const targetId = cardElement.dataset.kanbanItemId || '';
+      const target = findItem(targetId);
+      if (target && target.item_id !== source.item_id) {
+        const orderTarget = orderDropTargetForCard(source, target, cardElement, clientY);
+        if (orderTarget) return orderTarget;
+        if (!isTypedLeafCard(target)) {
+          return { kind: 'child', parentItemId: target.item_id, stateId: source.state_id || 'todo' };
+        }
+      }
+    }
+    const column = element?.closest?.('.kanban-column[data-kanban-state-id]');
+    const stateId = column?.dataset?.kanbanStateId || '';
+    if (stateId && stateId !== source.state_id) {
+      return { kind: 'lane', stateId, parentItemId: state.currentParentId || '' };
+    }
+    return { kind: '' };
+  }
+
+  function startCardDrag(event) {
+    cardDrag.active = true;
+    document.body.classList.add('is-dragging-kanban-card');
+    cardElementForItem(cardDrag.itemId)?.setAttribute('data-kanban-drag-source', 'true');
+    positionCardDragGhost(event.clientX, event.clientY);
+    setCardDragTarget(cardDragTargetFromPoint(event.clientX, event.clientY));
+  }
+
+  function resetCardDrag() {
+    document.body.classList.remove('is-dragging-kanban-card');
+    clearCardDragHighlights();
+    removeCardDragGhost();
+    cardDrag.pointerId = null;
+    cardDrag.itemId = '';
+    cardDrag.startX = 0;
+    cardDrag.startY = 0;
+    cardDrag.active = false;
+    cardDrag.sourceButton = null;
+    cardDrag.target = { kind: '' };
+    cardDrag.moveListener = null;
+    cardDrag.endListener = null;
+  }
+
+  async function orderItemToDropTarget(itemId, targetItemId, beforeTarget) {
+    const source = findItem(itemId);
+    const target = findItem(targetItemId);
+    if (!source || !target) return false;
+    const rows = visibleItemsForState(source.state_id).filter(item => (
+      (item.parent_item_id || '') === (source.parent_item_id || '')
+      && String(item.priority_id || '') === String(source.priority_id || '')
+    ));
+    const ids = rows.map(item => item.item_id);
+    const fromIndex = ids.indexOf(itemId);
+    const targetIndex = ids.indexOf(targetItemId);
+    if (fromIndex < 0 || targetIndex < 0 || itemId === targetItemId) return false;
+    ids.splice(fromIndex, 1);
+    const adjustedTargetIndex = fromIndex < targetIndex ? targetIndex - 1 : targetIndex;
+    const insertIndex = Math.max(0, Math.min(
+      beforeTarget ? adjustedTargetIndex : adjustedTargetIndex + 1,
+      ids.length,
+    ));
+    ids.splice(insertIndex, 0, itemId);
+    const toIndex = ids.indexOf(itemId);
+    const steps = toIndex - fromIndex;
+    if (!steps) return false;
+    const direction = steps < 0 ? 'up' : 'down';
+    setFsm('pendingMove', `drag-order-${direction}`, itemId);
+    renderAll();
+    try {
+      for (let index = 0; index < Math.abs(steps); index += 1) {
+        await requestJson(`/api/v1/personal/kanban/items/${encodeURIComponent(itemId)}/order`, {
+          method: 'POST',
+          body: JSON.stringify({
+            direction,
+            actor: 'blueprints-ui',
+            source_surface: 'kanban-page',
+            request_id: `ui-kanban-drag-order-${direction}-${Date.now()}-${index}`,
+          }),
+        });
+      }
+      setFsm('selected', 'dragOrderAccepted', itemId);
+      await load({ force: true });
+      if (findItem(itemId)) await setSelection(itemId);
+      return true;
+    } catch (error) {
+      setFsm('selected', 'dragOrderRejected', itemId);
+      state.error = error.message || String(error);
+      renderAll();
+      await HubDialogs.alert({ title: 'Order rejected', message: state.error, tone: 'danger' });
+      return false;
+    }
+  }
+
+  async function applyCardDragTarget(target) {
+    if (!target?.kind || !cardDrag.itemId) return false;
+    const item = findItem(cardDrag.itemId);
+    if (!item) return false;
+    if (target.kind === 'order') {
+      return orderItemToDropTarget(item.item_id, target.itemId, Boolean(target.before));
+    }
+    if (target.kind === 'child') {
+      return moveItem(item.item_id, item.state_id || 'todo', {
+        parentItemId: target.parentItemId,
+        requestKind: 'drag-child',
+      });
+    }
+    if (target.kind === 'lane') {
+      return moveItem(item.item_id, target.stateId, {
+        parentItemId: target.parentItemId || null,
+        requestKind: 'drag-lane',
+      });
+    }
+    return false;
   }
 
   function detailRow(title, meta, body = '', options = {}) {
@@ -2552,6 +2785,7 @@ const KanbanBoardPage = (() => {
 
   function externalRefreshSkipReason() {
     if (state.loading) return 'loading';
+    if (document.body?.classList?.contains('is-dragging-kanban-card')) return 'card-drag';
     if (document.body?.classList?.contains('is-resizing-kanban-lane')) return 'lane-resize';
     if (state.scoped.open || el('kanban-scoped-modal')?.open) return 'scoped-modal';
     if (openKanbanEditorDialog()) return 'dialog';
@@ -3736,30 +3970,34 @@ const KanbanBoardPage = (() => {
     return true;
   }
 
-  async function moveItem(itemId, targetState) {
+  async function moveItem(itemId, targetState, options = {}) {
     const item = findItem(itemId);
     if (!item || !targetState) return false;
-    setFsm('pendingMove', 'move', itemId);
+    const parentItemId = Object.prototype.hasOwnProperty.call(options, 'parentItemId')
+      ? options.parentItemId
+      : (state.currentParentId || null);
+    const requestKind = options.requestKind || 'move';
+    setFsm('pendingMove', requestKind, itemId);
     renderAll();
     try {
       const resp = await requestJson(`/api/v1/personal/kanban/items/${encodeURIComponent(itemId)}/move`, {
         method: 'POST',
         body: JSON.stringify({
-          parent_item_id: state.currentParentId || null,
+          parent_item_id: parentItemId || null,
           state_id: targetState,
           sort_order: item.sort_order || 0,
           actor: 'blueprints-ui',
           source_surface: 'kanban-page',
-          request_id: `ui-kanban-move-${Date.now()}`,
+          request_id: `ui-kanban-${requestKind}-${Date.now()}`,
         }),
       });
       state.lastWrite = resp;
-      setFsm('selected', 'moveAccepted', itemId);
+      setFsm('selected', `${requestKind}Accepted`, itemId);
       await load({ force: true });
-      setSelection(itemId);
+      if (findItem(itemId)) await setSelection(itemId);
       return true;
     } catch (error) {
-      setFsm('selected', 'moveRejected', itemId);
+      setFsm('selected', `${requestKind}Rejected`, itemId);
       state.error = error.message || String(error);
       renderAll();
       await HubDialogs.alert({ title: 'Move rejected', message: state.error, tone: 'danger' });
@@ -3823,6 +4061,51 @@ const KanbanBoardPage = (() => {
     setFsm('idle', 'archiveAccepted');
     await load({ force: true });
     return true;
+  }
+
+  function cancelPendingCardShareClick() {
+    if (cardShareClickTimer) window.clearTimeout(cardShareClickTimer);
+    cardShareClickTimer = null;
+  }
+
+  function scheduleCardShareClick(itemId) {
+    cancelPendingCardShareClick();
+    cardShareClickTimer = window.setTimeout(() => {
+      cardShareClickTimer = null;
+      handleCardAction('share', itemId);
+    }, CARD_SHARE_CLICK_DELAY_MS);
+  }
+
+  async function promoteItemUp(itemId) {
+    const item = findItem(itemId);
+    if (!item) return false;
+    const parentId = item.parent_item_id || state.currentParentId || '';
+    if (!parentId) {
+      await HubDialogs.alert({ title: 'Kanban', message: 'This card is already on the root board.', tone: 'warning' });
+      return false;
+    }
+    const parentDetail = await detailForItem(parentId);
+    const parentItem = parentDetail?.item || null;
+    const nextParentId = parentItem?.parent_item_id || '';
+    const destination = nextParentId
+      ? ((parentDetail?.breadcrumbs || []).find(row => row.item_id === nextParentId)?.title || nextParentId)
+      : 'Root board';
+    const ok = await HubDialogs.confirm({
+      title: 'Promote Kanban Card',
+      message: `Move "${item.title || item.item_id}" up to ${destination}?`,
+      confirmText: 'Promote',
+      tone: 'warning',
+    });
+    if (!ok) return false;
+    const moved = await moveItem(item.item_id, item.state_id || 'todo', {
+      parentItemId: nextParentId || null,
+      requestKind: 'promote',
+    });
+    if (moved) {
+      await navigateToBoard(nextParentId || '');
+      await setSelection(item.item_id);
+    }
+    return moved;
   }
 
   async function runStep18ProofWrite() {
@@ -4425,6 +4708,65 @@ const KanbanBoardPage = (() => {
     return true;
   }
 
+  function beginCardShareDrag(event, button) {
+    if (!button || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    const itemId = button.dataset.kanbanItemId || '';
+    if (!findItem(itemId)) return;
+    cardDrag.pointerId = event.pointerId;
+    cardDrag.itemId = itemId;
+    cardDrag.startX = event.clientX;
+    cardDrag.startY = event.clientY;
+    cardDrag.active = false;
+    cardDrag.sourceButton = button;
+    cardDrag.target = { kind: '' };
+    button.setPointerCapture?.(event.pointerId);
+
+    cardDrag.moveListener = moveEvent => {
+      if (moveEvent.pointerId !== cardDrag.pointerId) return;
+      const dx = moveEvent.clientX - cardDrag.startX;
+      const dy = moveEvent.clientY - cardDrag.startY;
+      if (!cardDrag.active && Math.hypot(dx, dy) >= CARD_DRAG_START_PX) {
+        cancelPendingCardShareClick();
+        startCardDrag(moveEvent);
+      }
+      if (!cardDrag.active) return;
+      moveEvent.preventDefault();
+      positionCardDragGhost(moveEvent.clientX, moveEvent.clientY);
+      setCardDragTarget(cardDragTargetFromPoint(moveEvent.clientX, moveEvent.clientY));
+    };
+
+    cardDrag.endListener = async endEvent => {
+      if (endEvent.pointerId !== cardDrag.pointerId) return;
+      const wasActive = cardDrag.active;
+      const target = { ...cardDrag.target };
+      window.removeEventListener('pointermove', cardDrag.moveListener);
+      window.removeEventListener('pointerup', cardDrag.endListener);
+      window.removeEventListener('pointercancel', cardDrag.endListener);
+      try {
+        button.releasePointerCapture?.(event.pointerId);
+      } catch (_) {
+        // Pointer capture can already be gone after browser-level cancellation.
+      }
+      if (wasActive) {
+        endEvent.preventDefault();
+        cardDrag.suppressClickUntil = Date.now() + 650;
+      }
+      try {
+        if (wasActive && endEvent.type !== 'pointercancel' && target.kind) {
+          await applyCardDragTarget(target);
+        } else if (wasActive) {
+          renderStatus('Drag cancelled.');
+        }
+      } finally {
+        resetCardDrag();
+      }
+    };
+
+    window.addEventListener('pointermove', cardDrag.moveListener);
+    window.addEventListener('pointerup', cardDrag.endListener);
+    window.addEventListener('pointercancel', cardDrag.endListener);
+  }
+
   function bind() {
     const root = document.querySelector('[data-kanban-board]');
     if (!root || root.dataset.kanbanBound === '1') return;
@@ -4435,6 +4777,8 @@ const KanbanBoardPage = (() => {
       if (refreshButton) startRefreshLongPress(event, refreshButton);
       const handle = event.target.closest('[data-kanban-lane-width-handle]');
       if (handle) startLaneResize(event, handle);
+      const dragButton = event.target.closest('[data-kanban-card-action="share"]');
+      if (dragButton) beginCardShareDrag(event, dragButton);
     });
     root.addEventListener('pointerup', () => cancelRefreshLongPress('pointerup'));
     root.addEventListener('pointercancel', () => cancelRefreshLongPress('pointercancel'));
@@ -4500,8 +4844,16 @@ const KanbanBoardPage = (() => {
       }
       const cardButton = event.target.closest('[data-kanban-card-action]');
       if (cardButton) {
+        event.preventDefault();
         event.stopPropagation();
-        handleCardAction(cardButton.dataset.kanbanCardAction, cardButton.dataset.kanbanItemId || '');
+        const action = cardButton.dataset.kanbanCardAction || '';
+        const itemId = cardButton.dataset.kanbanItemId || '';
+        if (action === 'share') {
+          if (Date.now() < cardDrag.suppressClickUntil || event.detail > 1) return;
+          scheduleCardShareClick(itemId);
+          return;
+        }
+        handleCardAction(action, itemId);
         return;
       }
       const pill = event.target.closest('[data-kanban-pill]');
@@ -4515,6 +4867,14 @@ const KanbanBoardPage = (() => {
       }
       const card = event.target.closest('[data-kanban-item-id]');
       if (card) setSelection(card.dataset.kanbanItemId, { openDetail: true });
+    });
+    root.addEventListener('dblclick', event => {
+      const cardButton = event.target.closest('[data-kanban-card-action="share"]');
+      if (!cardButton) return;
+      event.preventDefault();
+      event.stopPropagation();
+      cancelPendingCardShareClick();
+      promoteItemUp(cardButton.dataset.kanbanItemId || '');
     });
     root.addEventListener('keydown', event => {
       const handle = event.target.closest('[data-kanban-lane-width-handle]');
