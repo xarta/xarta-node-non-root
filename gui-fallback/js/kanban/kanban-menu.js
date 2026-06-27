@@ -21,7 +21,41 @@ const KanbanActionIcons = {
     shield: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3zm-1 14-4-4 1.4-1.4 2.6 2.6 5.6-5.6L18 9l-7 7z%22/%3E%3C/svg%3E',
     issue: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z%22/%3E%3C/svg%3E',
     todo: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22m9 16.2-3.5-3.5L4 14.2 9 19 20.5 7.5 19 6z%22/%3E%3C/svg%3E',
+    search: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M10 4a6 6 0 0 1 4.74 9.67l4.3 4.3-1.42 1.42-4.3-4.3A6 6 0 1 1 10 4zm0 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8z%22/%3E%3C/svg%3E',
 };
+
+function flashKanbanClipboardInvalid(button) {
+    if (!button) return;
+    (button._kanbanInvalidTimers || []).forEach(timer => window.clearTimeout(timer));
+    button._kanbanInvalidTimers = [];
+    button.classList.remove('is-invalid-fading');
+    button.classList.add('is-invalid');
+    button._kanbanInvalidTimers.push(window.setTimeout(() => {
+        button.classList.add('is-invalid-fading');
+    }, 2000));
+    button._kanbanInvalidTimers.push(window.setTimeout(() => {
+        button.classList.remove('is-invalid', 'is-invalid-fading');
+        button._kanbanInvalidTimers = [];
+    }, 3000));
+}
+
+async function openKanbanClipboardLink(button, context) {
+    try {
+        const text = await navigator.clipboard?.readText?.();
+        const opener = window.BlueprintsKanbanBoardPage?.openKanbanLinkFromText;
+        const opened = typeof opener === 'function' ? await opener(text) : false;
+        if (opened) {
+            if (context && typeof context.playItemSound === 'function') {
+                context.playItemSound('kanban-open-clipboard-link');
+            }
+            if (context && typeof context.closeContextMenu === 'function') {
+                context.closeContextMenu();
+            }
+            return;
+        }
+    } catch (_) {}
+    flashKanbanClipboardInvalid(button);
+}
 
 const KanbanMenuConfig = createHubMenu({
     storageKey:      'blueprintsKanbanMenuConfig',
@@ -37,6 +71,69 @@ const KanbanMenuConfig = createHubMenu({
     mobilePinnedId:  'kanban-layout',
     pinnedTabsId:    'kanbanHubTabsPinned',
     syncDefaultItemText: true,
+    contextMenuColumns(activeId, items) {
+        if (activeId !== 'kanban') return null;
+        const byId = new Map((items || []).map(item => [item.id, item]));
+        const groupedIds = [
+            [
+                'kanban-root-board',
+                'kanban-up-board',
+                'kanban-child-board',
+                'kanban-detail',
+                'kanban-move-left',
+                'kanban-move-right',
+                'kanban-order-up',
+                'kanban-order-down',
+            ],
+            [
+                'kanban-new-item',
+                'kanban-add-child',
+                'kanban-add-issue',
+                'kanban-add-todo',
+                'kanban-scoped-issues',
+                'kanban-scoped-todos',
+                'kanban-archive',
+            ],
+            [
+                'kanban-refresh',
+                'kanban-automation-status',
+                'kanban-backups',
+                'kanban-safe-checks',
+                'kanban-toggle-tests',
+                'kanban-step18-proof',
+                'kanban-step19-proof',
+            ],
+        ];
+        const columns = groupedIds.map(ids => ids.map(id => byId.get(id)).filter(Boolean));
+        columns[0].unshift({
+            id: 'kanban-open-clipboard-link',
+            label: 'Paste Kanban link',
+            icon: KanbanActionIcons.search,
+            contextMenuControl: 'kanban-clipboard-link',
+        });
+        const used = new Set(columns.flat().map(item => item.id));
+        const leftovers = (items || []).filter(item => !used.has(item.id));
+        if (leftovers.length) columns[columns.length - 1].push(...leftovers);
+        return columns;
+    },
+    renderContextMenuItem(item, context) {
+        if (!item || item.contextMenuControl !== 'kanban-clipboard-link') return null;
+        const button = document.createElement('button');
+        button.className = 'hub-context-link-opener';
+        button.type = 'button';
+        button.dataset.contextControl = item.contextMenuControl;
+        button.setAttribute('aria-label', 'Open Kanban link from clipboard');
+        button.innerHTML = `
+            ${context.iconHtml(item.id, item.icon)}
+            <span class="hub-context-link-opener__placeholder">${context.displayLabel(item)}</span>
+        `;
+        button.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            openKanbanClipboardLink(button, context);
+        });
+        return button;
+    },
     defaultMenu: [
         { id: 'kanban',        label: 'Kanban', icon: 'icons/ui/kanban-blue.svg', pageLabel: 'Kanban',        parent: null, order: 0 },
         { id: 'kanban-layout', label: '☰',      icon: 'icons/hieroglyphs/kheper-gold.svg', pageLabel: 'Navbar Layout', parent: null, order: 1 },

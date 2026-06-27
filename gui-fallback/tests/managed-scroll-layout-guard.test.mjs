@@ -8,6 +8,7 @@ const bodyShadeJs = fs.readFileSync(path.resolve(here, '../js/body-shade.js'), '
 const bodyShadeCss = fs.readFileSync(path.resolve(here, '../css/body-shade.css'), 'utf8');
 const layoutNavCss = fs.readFileSync(path.resolve(here, '../css/layout-nav.css'), 'utf8');
 const hubMenuJs = fs.readFileSync(path.resolve(here, '../js/hub-menu.js'), 'utf8');
+const hubMenuCss = fs.readFileSync(path.resolve(here, '../css/hub-menu.css'), 'utf8');
 const menuActionOrderJs = fs.readFileSync(path.resolve(here, '../js/menu-action-order.js'), 'utf8');
 const indexHtml = fs.readFileSync(path.resolve(here, '../index.html'), 'utf8');
 const daveCalendarCss = fs.readFileSync(path.resolve(here, '../css/dave-calendar.css'), 'utf8');
@@ -686,6 +687,31 @@ assert.match(
   kanbanMenuJs,
   /syncDefaultItemText:\s*true/,
   'Kanban menu must sync shipped action labels over stale saved layout state.',
+);
+assert.match(
+  hubMenuJs,
+  /renderContextMenuItem[\s\S]*closeContextMenu[\s\S]*iconHtml/,
+  'Shared menu engine must allow Kanban to render a non-closing custom clipboard menu item.',
+);
+assert.match(
+  kanbanMenuJs,
+  /contextMenuColumns\(activeId,\s*items\)[\s\S]*kanban-open-clipboard-link[\s\S]*kanban-root-board[\s\S]*kanban-add-child[\s\S]*kanban-automation-status/,
+  'Kanban body-shade context menu must use grouped columns with the clipboard opener.',
+);
+assert.match(
+  kanbanBoardJs,
+  /openKanbanLinkFromText[\s\S]*kanbanItemIdFromLinkText[\s\S]*openItemById\(itemId\)/,
+  'Kanban clipboard links must route through the same direct item opener used by Search Open.',
+);
+assert.match(
+  hubMenuCss,
+  /data-hub-menu-group="kanban"[\s\S]*width:\s*min\(760px,[\s\S]*grid-template-columns:\s*repeat\(2,/,
+  'Only the Kanban context menu should get the wider responsive grouped layout.',
+);
+assert.match(
+  hubMenuCss,
+  /hub-context-link-opener\.is-invalid[\s\S]*hub-context-link-opener\.is-invalid\.is-invalid-fading/,
+  'The clipboard opener must expose the requested invalid-link red border and fade affordance.',
 );
 for (const label of [
   'Generate Summary',

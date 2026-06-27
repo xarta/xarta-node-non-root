@@ -1050,6 +1050,7 @@ function createHubMenu(cfg) {
             const host = document.createElement('div');
             host.className = 'hub-tab-dropdown open hub-context-menu-floating';
             host.dataset.hubContextMenu = '1';
+            host.dataset.hubMenuGroup = cfg.group || '';
             host.style.position = 'fixed';
             host.style.zIndex = '12000';
 
@@ -1073,6 +1074,19 @@ function createHubMenu(cfg) {
                 });
                 return btn;
             };
+            const renderMenuEntry = item => {
+                if (typeof cfg.renderContextMenuItem === 'function') {
+                    const custom = cfg.renderContextMenuItem(item, {
+                        activeId,
+                        closeContextMenu: () => this._removeFloatingContextMenu(),
+                        displayLabel: entry => this._displayLabel(entry),
+                        iconHtml: (itemId, icon) => this._iconHtml(itemId, icon),
+                        playItemSound: itemId => this._playItemSound(itemId),
+                    });
+                    if (custom && custom.nodeType === 1) return custom;
+                }
+                return renderFnButton(item);
+            };
 
             const columns = typeof cfg.contextMenuColumns === 'function'
                 ? cfg.contextMenuColumns(activeId, fnItems)
@@ -1084,12 +1098,12 @@ function createHubMenu(cfg) {
                     const column = document.createElement('div');
                     column.className = 'hub-context-menu-floating__column';
                     (Array.isArray(columnItems) ? columnItems : []).forEach(item => {
-                        if (item) column.appendChild(renderFnButton(item));
+                        if (item) column.appendChild(renderMenuEntry(item));
                     });
                     if (column.children.length) menu.appendChild(column);
                 });
             } else {
-                fnItems.forEach(item => menu.appendChild(renderFnButton(item)));
+                fnItems.forEach(item => menu.appendChild(renderMenuEntry(item)));
             }
 
             host.appendChild(menu);

@@ -133,6 +133,11 @@ const KanbanBoardPage = (() => {
     return String(value || '').trim().replace(/[^a-zA-Z0-9_.:-]+/g, '-').slice(0, 180);
   }
 
+  function cleanStrictKanbanItemId(value) {
+    const text = String(value || '').trim();
+    return /^[a-zA-Z0-9_.:-]{1,180}$/.test(text) ? cleanRouteId(text) : '';
+  }
+
   function stripFrontmatter(md) {
     if (window.BlueprintsMarkdown?.stripFrontmatter) return window.BlueprintsMarkdown.stripFrontmatter(md);
     return String(md || '').replace(/^---\s*\n[\s\S]*?\n---\s*(\n|$)/, '');
@@ -3323,6 +3328,37 @@ const KanbanBoardPage = (() => {
     return '';
   }
 
+  function kanbanItemIdFromLinkText(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    const shareCode = text.match(/^xarta-kanban:item:([a-zA-Z0-9_.:-]+)$/);
+    if (shareCode?.[1]) return cleanStrictKanbanItemId(shareCode[1]);
+    const internalLink = text.match(/^blueprints:\/\/kanban\/items\/([^/?#]+)(?:[?#].*)?$/i);
+    if (internalLink?.[1]) {
+      try {
+        return cleanStrictKanbanItemId(decodeURIComponent(internalLink[1]));
+      } catch (_) {
+        return cleanStrictKanbanItemId(internalLink[1]);
+      }
+    }
+    try {
+      const url = new URL(text, window.location?.href || document.baseURI);
+      const isFallback = /\/fallback-ui\/?$/.test(url.pathname || '');
+      const isKanbanRoute = (url.searchParams.get('group') || '') === 'kanban'
+        || (url.searchParams.get('tab') || '') === 'kanban';
+      if (!isFallback || !isKanbanRoute) return '';
+      return cleanStrictKanbanItemId(url.searchParams.get('detail_item_id') || url.searchParams.get('work_item_id'));
+    } catch (_) {
+      return '';
+    }
+  }
+
+  async function openKanbanLinkFromText(value) {
+    const itemId = kanbanItemIdFromLinkText(value);
+    if (!itemId) return false;
+    return openItemById(itemId);
+  }
+
   async function loadScoped(kind, itemId, scope = 'descendants', view = 'grouped') {
     const config = scopedKindConfig(kind);
     const params = new URLSearchParams({ scope, view });
@@ -4497,6 +4533,7 @@ const KanbanBoardPage = (() => {
     openSelectedChildBoard: () => openChildBoard(),
     openSelectedDetail: () => openItemDetail(),
     openItemById,
+    openKanbanLinkFromText,
     itemRouteUrl,
     openBackupsPanel,
     openAutomationStatusPanel,
