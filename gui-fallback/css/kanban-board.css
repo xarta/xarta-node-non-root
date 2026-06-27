@@ -1089,6 +1089,60 @@ dialog.hub-modal#kanban-detail-modal[open] {
   background: rgba(125, 183, 255, .1);
 }
 
+.kanban-automation-contract {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255,255,255,.035);
+  padding: 10px 12px;
+}
+
+.kanban-automation-contract-main {
+  display: grid;
+  grid-template-columns: minmax(124px, auto) minmax(80px, auto) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.kanban-automation-contract-main span,
+.kanban-automation-contract-main em,
+.kanban-automation-contract-gate {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.kanban-automation-contract-main strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.kanban-automation-contract-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.kanban-automation-contract-type {
+  max-width: 100%;
+  border: 1px solid rgba(125, 183, 255, .28);
+  border-radius: 8px;
+  background: rgba(125, 183, 255, .1);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  padding: 4px 8px;
+}
+
 .kanban-automation-section-head {
   color: var(--text-dim);
   font-size: 11px;

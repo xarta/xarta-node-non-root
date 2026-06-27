@@ -1670,6 +1670,27 @@ const KanbanBoardPage = (() => {
     </div>`;
   }
 
+  function automationOutputContractHtml() {
+    const contract = state.automationStatus.data?.output_contract || {};
+    const outputTypes = Array.isArray(contract.output_types) ? contract.output_types : [];
+    if (!contract.schema && !outputTypes.length) return '';
+    const provider = contract.provider_mode || {};
+    const gate = provider.local_processing_gate || '';
+    const typesHtml = outputTypes.map(output => {
+      const label = output.label || output.type || output.decision_type || '';
+      return `<span class="kanban-automation-contract-type">${escHtml(label)}</span>`;
+    }).join('');
+    return `<div class="kanban-automation-contract">
+      <div class="kanban-automation-contract-main">
+        <span>Output Contract</span>
+        <strong>${escHtml(contract.status || 'active')}</strong>
+        <em>${escHtml(contract.schema || '')}</em>
+      </div>
+      ${typesHtml ? `<div class="kanban-automation-contract-types" aria-label="Review Processor output types">${typesHtml}</div>` : ''}
+      ${gate ? `<div class="kanban-automation-contract-gate">${escHtml(gate)}</div>` : ''}
+    </div>`;
+  }
+
   function automationDecisionRowsHtml() {
     const rows = automationRecentDecisions();
     if (state.automationStatus.loading && !rows.length) {
@@ -1714,6 +1735,8 @@ const KanbanBoardPage = (() => {
     const health = data.commit_link_health || {};
     const provider = data.provider_mode || {};
     const pre = data.preprocessing || {};
+    const outputContract = data.output_contract || {};
+    const outputTypeCount = Array.isArray(outputContract.output_types) ? outputContract.output_types.length : 0;
     const queueLength = Number(processor.queue_length || 0);
     const decisionCount = Number(decisions.count ?? decisions.total ?? 0);
     const healthDecisionCount = Number(health.decision_count ?? health.decisions ?? 0);
@@ -1730,14 +1753,16 @@ const KanbanBoardPage = (() => {
       </div>
       <div class="kanban-automation-grid">
         ${automationMetricHtml('Review Processor', processor.status || 'not loaded', `queue ${queueLength} · active ${activeItem}`, queueLength ? 'warn' : 'ok')}
-        ${automationMetricHtml('Provider', provider.active || 'cloud-first', provider.local_processing || 'local later', 'info')}
+        ${automationMetricHtml('Provider', provider.active || 'cloud-first', provider.planned || provider.local_processing || 'local later', 'info')}
         ${automationMetricHtml('Decisions', String(decisionCount), `recent ${automationRecentDecisions().length}`, decisionCount ? 'ok' : 'info')}
         ${automationMetricHtml('Commit Links', healthOk ? 'ok' : 'needs review', `${health.decisions_with_commits ?? 0}/${healthDecisionCount} with commits`, healthOk ? 'ok' : 'warn')}
         ${automationMetricHtml('Hook Failures', String(health.hook_failure_count ?? 0), `${health.missing_commit_link_count ?? 0} missing commit links`, Number(health.hook_failure_count || health.missing_commit_link_count || 0) ? 'warn' : 'ok')}
         ${automationMetricHtml('Preprocessing', pre.status || 'contract-pending', pre.job_packet_contract || '', pre.status === 'ready' ? 'ok' : 'info')}
+        ${automationMetricHtml('Output Contract', outputContract.status || 'not loaded', `${outputTypeCount} output types`, outputContract.status === 'active' ? 'ok' : 'info')}
       </div>
       ${loadedAt ? `<div class="kanban-backup-paths"><span>Loaded: ${escHtml(loadedAt)}</span></div>` : ''}
       ${state.automationStatus.loading ? '<div class="kanban-backup-result" data-tone="info" role="status"><strong>Loading automation status...</strong></div>' : ''}
+      ${automationOutputContractHtml()}
       <div class="kanban-automation-section-head">Recent Decisions</div>
       ${automationDecisionRowsHtml()}
     </section>`;
@@ -4198,6 +4223,10 @@ const KanbanBoardPage = (() => {
       automation_recent_decisions: automationRecentDecisions().length,
       automation_review_processor_status: state.automationStatus.data?.review_processor?.status || '',
       automation_commit_link_health_ok: state.automationStatus.data?.commit_link_health?.ok !== false,
+      automation_output_contract_schema: state.automationStatus.data?.output_contract?.schema || '',
+      automation_output_contract_types: Array.isArray(state.automationStatus.data?.output_contract?.output_types)
+        ? state.automationStatus.data.output_contract.output_types.length
+        : 0,
       error: state.error,
     };
   }
