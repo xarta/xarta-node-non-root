@@ -3341,6 +3341,8 @@ const KanbanBoardPage = (() => {
         return cleanStrictKanbanItemId(internalLink[1]);
       }
     }
+    const bareItemId = cleanStrictKanbanItemId(text);
+    if (bareItemId === text) return bareItemId;
     try {
       const url = new URL(text, window.location?.href || document.baseURI);
       const isFallback = /\/fallback-ui\/?$/.test(url.pathname || '');

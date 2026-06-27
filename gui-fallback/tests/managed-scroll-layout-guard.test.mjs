@@ -704,6 +704,11 @@ assert.match(
   'Kanban clipboard links must route through the same direct item opener used by Search Open.',
 );
 assert.match(
+  kanbanBoardJs,
+  /kanbanItemIdFromLinkText[\s\S]*shareCode[\s\S]*bareItemId[\s\S]*bareItemId === text/,
+  'Kanban clipboard links must accept a bare copied Kanban item id as well as prefixed share links.',
+);
+assert.match(
   hubMenuCss,
   /data-hub-menu-group="kanban"[\s\S]*width:\s*min\(760px,[\s\S]*grid-template-columns:\s*repeat\(2,/,
   'Only the Kanban context menu should get the wider responsive grouped layout.',
