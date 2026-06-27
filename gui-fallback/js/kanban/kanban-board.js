@@ -76,6 +76,8 @@ const KanbanBoardPage = (() => {
       error: '',
       data: null,
       lastLoadedAt: 0,
+      lastResult: null,
+      busyAction: '',
     },
     routeApplied: false,
     routeDetailItemId: '',
@@ -1662,12 +1664,132 @@ const KanbanBoardPage = (() => {
     return Array.isArray(decisions) ? decisions : [];
   }
 
+  function automationReviewScheduler() {
+    const scheduler = state.automationStatus.data?.review_processor?.scheduler;
+    return scheduler && typeof scheduler === 'object' ? scheduler : {};
+  }
+
+  function automationReviewMarkers() {
+    const schedulerMarkers = automationReviewScheduler().recent_markers;
+    if (Array.isArray(schedulerMarkers) && schedulerMarkers.length) return schedulerMarkers;
+    const directMarkers = state.automationStatus.data?.review_processor?.review_markers;
+    return Array.isArray(directMarkers) ? directMarkers : [];
+  }
+
   function automationMetricHtml(label, value, meta = '', tone = '') {
     return `<div class="kanban-automation-metric${tone ? ` kanban-automation-metric--${escHtml(tone)}` : ''}">
       <span>${escHtml(label)}</span>
       <strong>${escHtml(value ?? '')}</strong>
       ${meta ? `<em>${escHtml(meta)}</em>` : ''}
     </div>`;
+  }
+
+  function automationStatusPayloadSummary(payload) {
+    if (!payload || typeof payload !== 'object') return '';
+    if ('queued_count' in payload) {
+      return `scanned ${Number(payload.scanned_count || 0)} · eligible ${Number(payload.eligible_review_count || 0)} · queued ${Number(payload.queued_count || 0)}`;
+    }
+    if ('requeued_count' in payload) {
+      return `requeued ${Number(payload.requeued_count || 0)} · timeouts ${Number(payload.scheduler?.timeout_count || 0)}`;
+    }
+    return '';
+  }
+
+  function setAutomationStatusResult(message, payload = {}, options = {}) {
+    state.automationStatus.lastResult = {
+      message,
+      detail: options.detail || automationStatusPayloadSummary(payload),
+      tone: options.tone || 'info',
+      at: Date.now(),
+    };
+  }
+
+  function automationStatusResultHtml() {
+    const result = state.automationStatus.lastResult;
+    if (!result?.message) return '';
+    return `<div class="kanban-backup-result" data-tone="${escHtml(result.tone || 'info')}" role="status">
+      <strong>${escHtml(result.message)}</strong>
+      ${result.detail ? `<span>${escHtml(result.detail)}</span>` : ''}
+    </div>`;
+  }
+
+  function automationMarkerDisplayStatus(marker) {
+    const status = String(marker?.status || '').toLowerCase();
+    const expiresAt = marker?.processing_expires_at || '';
+    const expiry = expiresAt ? Date.parse(expiresAt) : NaN;
+    if (status === 'processing' && Number.isFinite(expiry) && expiry <= Date.now()) return 'timed-out';
+    if (status === 'queued') return 'pending';
+    if (status === 'processing') return 'running';
+    return status || 'unknown';
+  }
+
+  function automationMarkerTimingHtml(marker) {
+    const parts = [
+      marker.document_updated_at ? `review ${formatBackupDate(marker.document_updated_at)}` : '',
+      marker.queued_at ? `queued ${formatBackupDate(marker.queued_at)}` : '',
+      marker.processing_started_at ? `started ${formatBackupDate(marker.processing_started_at)}` : '',
+      marker.processing_expires_at ? `expires ${formatBackupDate(marker.processing_expires_at)}` : '',
+      marker.processed_at ? `processed ${formatBackupDate(marker.processed_at)}` : '',
+      marker.superseded_at ? `superseded ${formatBackupDate(marker.superseded_at)}` : '',
+    ].filter(Boolean);
+    return parts.map(part => `<span>${escHtml(part)}</span>`).join('');
+  }
+
+  function automationMarkerContextHtml(marker) {
+    const error = marker.last_error || '';
+    const decision = marker.decision_id || '';
+    const hash = marker.document_source_hash || marker.processed_source_hash || '';
+    if (error) return `<span>${escHtml(error)}</span>`;
+    if (decision) return `<span>${escHtml(decision)}</span>`;
+    if (hash) return `<span>${escHtml(hash.slice(0, 19))}</span>`;
+    return '<span>no marker note</span>';
+  }
+
+  function automationReviewMarkersHtml() {
+    const scheduler = automationReviewScheduler();
+    const byStatus = scheduler.by_status && typeof scheduler.by_status === 'object' ? scheduler.by_status : {};
+    const markers = automationReviewMarkers();
+    const queueLength = Number(scheduler.queue_length ?? state.automationStatus.data?.review_processor?.queue_length ?? 0);
+    const counts = [
+      ['Pending', queueLength],
+      ['Running', Number(scheduler.active_count || byStatus.processing || 0)],
+      ['Timed out', Number(scheduler.timeout_count || 0)],
+      ['Cancelled', Number(byStatus.cancelled || 0)],
+      ['Processed', Number(byStatus.processed || 0)],
+      ['Failed', Number(byStatus.failed || 0)],
+      ['Skipped', Number(byStatus.skipped || 0)],
+      ['Superseded', Number(scheduler.superseded_count || 0)],
+    ];
+    const chips = counts.map(([label, value]) => (
+      `<span class="kanban-automation-queue-chip"><strong>${escHtml(String(value))}</strong>${escHtml(label)}</span>`
+    )).join('');
+    const rows = markers.map(marker => (
+      `<article class="kanban-automation-marker" role="row" data-kanban-review-marker-id="${escHtml(marker.marker_id || '')}" data-status="${escHtml(marker.status || '')}">
+        <div class="kanban-automation-marker-title" role="cell">
+          <strong>${escHtml(marker.item_id || marker.marker_id || 'Review marker')}</strong>
+          <span>${escHtml(marker.document_type || 'review')} · ${escHtml(marker.provider_mode || 'cloud-first')}</span>
+        </div>
+        <div class="kanban-automation-marker-status" role="cell">
+          <strong>${escHtml(automationMarkerDisplayStatus(marker))}</strong>
+          <span>${escHtml(marker.status || '')}</span>
+        </div>
+        <span role="cell">${escHtml(String(marker.attempt_count ?? 0))}</span>
+        <div class="kanban-automation-marker-time" role="cell">${automationMarkerTimingHtml(marker)}</div>
+        <div class="kanban-automation-marker-note" role="cell">${automationMarkerContextHtml(marker)}</div>
+      </article>`
+    )).join('');
+    return `<div class="kanban-automation-section-head">Review Queue</div>
+      <div class="kanban-automation-queue-summary" aria-label="Review Processor queue counts">${chips}</div>
+      <div class="kanban-automation-markers" role="table" aria-label="Review Processor markers">
+        <div class="kanban-automation-marker kanban-automation-marker--head" role="row">
+          <span role="columnheader">Item</span>
+          <span role="columnheader">State</span>
+          <span role="columnheader">Attempts</span>
+          <span role="columnheader">Timing</span>
+          <span role="columnheader">Note</span>
+        </div>
+        ${rows || '<div class="kanban-empty">No Review Processor markers recorded.</div>'}
+      </div>`;
   }
 
   function automationOutputContractHtml() {
@@ -1761,23 +1883,31 @@ const KanbanBoardPage = (() => {
     const pre = data.preprocessing || {};
     const outputContract = data.output_contract || {};
     const processingPolicy = data.processing_policy || {};
+    const scheduler = automationReviewScheduler();
     const outputTypeCount = Array.isArray(outputContract.output_types) ? outputContract.output_types.length : 0;
-    const queueLength = Number(processor.queue_length || 0);
+    const queueLength = Number(scheduler.queue_length ?? processor.queue_length ?? 0);
+    const activeCount = Number(scheduler.active_count || 0);
+    const timeoutCount = Number(scheduler.timeout_count || 0);
     const decisionCount = Number(decisions.count ?? decisions.total ?? 0);
     const healthDecisionCount = Number(health.decision_count ?? health.decisions ?? 0);
     const activeItem = processor.active_item_id || 'none';
     const healthOk = health.ok !== false;
     const busy = state.automationStatus.loading;
+    const scanBusy = state.automationStatus.busyAction === 'scan-reviews';
+    const requeueBusy = state.automationStatus.busyAction === 'requeue-timeouts';
     const loadedAt = state.automationStatus.lastLoadedAt ? formatBackupDate(state.automationStatus.lastLoadedAt) : '';
     return `<section class="calendar-band kanban-band kanban-automation-panel" aria-label="Kanban Automation Status">
       <div class="calendar-section-head kanban-section-head">
         <h3>Automation Status</h3>
-        <div class="kanban-backups-toolbar">
+        <div class="kanban-backups-toolbar kanban-automation-controls">
+          <button class="kanban-command-btn" type="button" data-kanban-automation-action="scan-reviews"${busy ? ' disabled' : ''}>${scanBusy ? 'Scanning...' : 'Scan Review Docs'}</button>
+          <button class="kanban-command-btn" type="button" data-kanban-automation-action="requeue-timeouts"${busy ? ' disabled' : ''}>${requeueBusy ? 'Requeueing...' : 'Requeue Timeouts'}</button>
           <button class="kanban-command-btn" type="button" data-kanban-automation-action="refresh"${busy ? ' disabled' : ''}>Refresh</button>
         </div>
       </div>
       <div class="kanban-automation-grid">
         ${automationMetricHtml('Review Processor', processor.status || 'not loaded', `queue ${queueLength} · active ${activeItem}`, queueLength ? 'warn' : 'ok')}
+        ${automationMetricHtml('Queue Work', `${queueLength} pending`, `running ${activeCount} · timed out ${timeoutCount}`, timeoutCount ? 'warn' : (queueLength ? 'info' : 'ok'))}
         ${automationMetricHtml('Provider', provider.active || 'cloud-first', provider.planned || provider.local_processing || 'local later', 'info')}
         ${automationMetricHtml('Decisions', String(decisionCount), `recent ${automationRecentDecisions().length}`, decisionCount ? 'ok' : 'info')}
         ${automationMetricHtml('Commit Links', healthOk ? 'ok' : 'needs review', `${health.decisions_with_commits ?? 0}/${healthDecisionCount} with commits`, healthOk ? 'ok' : 'warn')}
@@ -1788,6 +1918,8 @@ const KanbanBoardPage = (() => {
       </div>
       ${loadedAt ? `<div class="kanban-backup-paths"><span>Loaded: ${escHtml(loadedAt)}</span></div>` : ''}
       ${state.automationStatus.loading ? '<div class="kanban-backup-result" data-tone="info" role="status"><strong>Loading automation status...</strong></div>' : ''}
+      ${automationStatusResultHtml()}
+      ${automationReviewMarkersHtml()}
       ${automationProcessingPolicyHtml()}
       ${automationOutputContractHtml()}
       <div class="kanban-automation-section-head">Recent Decisions</div>
@@ -1860,7 +1992,62 @@ const KanbanBoardPage = (() => {
   function handleAutomationStatusAction(button) {
     const action = button?.dataset?.kanbanAutomationAction || '';
     if (action === 'refresh') return loadAutomationStatusPanel({ force: true });
+    if (action === 'scan-reviews') return runAutomationStatusControl('scan-reviews');
+    if (action === 'requeue-timeouts') return runAutomationStatusControl('requeue-timeouts');
     return null;
+  }
+
+  async function runAutomationStatusControl(action) {
+    if (state.automationStatus.busyAction) return null;
+    const requestId = `kanban-automation-${action}-${Date.now()}`;
+    const body = {
+      actor: 'blueprints-ui',
+      source_surface: 'kanban-automation-status',
+      request_id: requestId,
+      run_id: requestId,
+      metadata: {
+        action,
+        surface: 'kanban-automation-status',
+      },
+    };
+    let path = '';
+    if (action === 'scan-reviews') {
+      path = '/api/v1/personal/kanban/automation/review-processor/idle-scan';
+      body.max_items = 150;
+      setAutomationStatusResult('Scanning Review documents...', {}, { tone: 'info' });
+    } else if (action === 'requeue-timeouts') {
+      path = '/api/v1/personal/kanban/automation/review-processor/requeue-timeouts';
+      setAutomationStatusResult('Requeueing timed-out Review work...', {}, { tone: 'info' });
+    } else {
+      return null;
+    }
+    state.automationStatus.busyAction = action;
+    state.automationStatus.loading = true;
+    state.automationStatus.error = '';
+    refreshAutomationStatusPanels();
+    refreshAutomationStatusModal();
+    try {
+      const payload = await requestJson(path, { method: 'POST', body: JSON.stringify(body) });
+      if (action === 'scan-reviews') {
+        setAutomationStatusResult('Review scan complete.', payload, { tone: payload.queued_count ? 'ok' : 'info' });
+      } else {
+        setAutomationStatusResult('Timeout requeue complete.', payload, { tone: payload.requeued_count ? 'ok' : 'info' });
+      }
+      await loadAutomationStatusPanel({ force: true });
+      return payload;
+    } catch (err) {
+      const message = err?.message || String(err);
+      setAutomationStatusResult(action === 'scan-reviews' ? 'Review scan failed.' : 'Timeout requeue failed.', {}, {
+        detail: message,
+        tone: 'err',
+      });
+      return null;
+    } finally {
+      state.automationStatus.loading = false;
+      state.automationStatus.busyAction = '';
+      refreshAutomationStatusPanels();
+      refreshAutomationStatusModal();
+    }
   }
 
   function refreshActiveDetailPanels() {
@@ -4249,6 +4436,15 @@ const KanbanBoardPage = (() => {
       automation_status_error: state.automationStatus.error || '',
       automation_recent_decisions: automationRecentDecisions().length,
       automation_review_processor_status: state.automationStatus.data?.review_processor?.status || '',
+      automation_review_queue_length: Number(
+        automationReviewScheduler().queue_length ?? state.automationStatus.data?.review_processor?.queue_length ?? 0
+      ),
+      automation_review_active_count: Number(automationReviewScheduler().active_count || 0),
+      automation_review_timeout_count: Number(automationReviewScheduler().timeout_count || 0),
+      automation_review_superseded_count: Number(automationReviewScheduler().superseded_count || 0),
+      automation_review_marker_count: automationReviewMarkers().length,
+      automation_busy_action: state.automationStatus.busyAction || '',
+      automation_last_result: state.automationStatus.lastResult?.message || '',
       automation_commit_link_health_ok: state.automationStatus.data?.commit_link_health?.ok !== false,
       automation_output_contract_schema: state.automationStatus.data?.output_contract?.schema || '',
       automation_output_contract_types: Array.isArray(state.automationStatus.data?.output_contract?.output_types)

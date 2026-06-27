@@ -39,6 +39,24 @@ assert.match(
 
 assert.match(
   kanbanJs,
+  /data-kanban-automation-action="scan-reviews"[\s\S]*data-kanban-automation-action="requeue-timeouts"/,
+  'Automation panel must expose Review scan and timeout requeue controls.',
+);
+
+assert.match(
+  kanbanJs,
+  /function\s+automationReviewMarkers\(\)[\s\S]*recent_markers[\s\S]*function\s+automationReviewMarkersHtml\(\)[\s\S]*attempt_count[\s\S]*timeout_count[\s\S]*superseded_count/,
+  'Automation panel must render Review Processor marker rows and queue lifecycle counts.',
+);
+
+assert.match(
+  kanbanJs,
+  /function\s+runAutomationStatusControl\(action\)[\s\S]*review-processor\/idle-scan[\s\S]*review-processor\/requeue-timeouts/,
+  'Automation controls must call the Review Processor scan and timeout endpoints.',
+);
+
+assert.match(
+  kanbanJs,
   /function\s+embeddedAutomationStatusHtml\(\)[\s\S]*output_contract[\s\S]*Output Contract/,
   'Automation panel must render the Review Processor output contract.',
 );
@@ -93,8 +111,8 @@ assert.match(
 
 assert.match(
   kanbanJs,
-  /automation_status_loaded:[\s\S]*automation_review_processor_status:[\s\S]*automation_commit_link_health_ok:[\s\S]*automation_output_contract_schema:[\s\S]*automation_output_contract_types:[\s\S]*automation_processing_policy_schema:[\s\S]*automation_processing_policy_active_mode:[\s\S]*automation_processing_policy_local_gate:/,
-  'Kanban snapshots must expose automation status proof fields.',
+  /automation_status_loaded:[\s\S]*automation_review_processor_status:[\s\S]*automation_review_queue_length:[\s\S]*automation_review_active_count:[\s\S]*automation_review_timeout_count:[\s\S]*automation_review_superseded_count:[\s\S]*automation_review_marker_count:[\s\S]*automation_busy_action:[\s\S]*automation_last_result:[\s\S]*automation_commit_link_health_ok:[\s\S]*automation_output_contract_schema:[\s\S]*automation_output_contract_types:[\s\S]*automation_processing_policy_schema:[\s\S]*automation_processing_policy_active_mode:[\s\S]*automation_processing_policy_local_gate:/,
+  'Kanban snapshots must expose automation status and queue proof fields.',
 );
 
 assert.match(
@@ -105,8 +123,8 @@ assert.match(
 
 assert.match(
   kanbanCss,
-  /\.kanban-icon-btn--automation::before[\s\S]*\.kanban-automation-grid[\s\S]*\.kanban-automation-contract[\s\S]*\.kanban-automation-policy[\s\S]*#kanban-automation-status-modal/,
-  'Automation status icon, metric grid, contract/policy strips, and modal styles must be present.',
+  /\.kanban-icon-btn--automation::before[\s\S]*\.kanban-automation-controls[\s\S]*\.kanban-automation-grid[\s\S]*\.kanban-automation-contract[\s\S]*\.kanban-automation-policy[\s\S]*\.kanban-automation-markers[\s\S]*#kanban-automation-status-modal/,
+  'Automation status icon, metric grid, controls, marker rows, contract/policy strips, and modal styles must be present.',
 );
 
 assert.match(
