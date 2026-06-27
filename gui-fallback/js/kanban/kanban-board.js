@@ -3303,6 +3303,26 @@ const KanbanBoardPage = (() => {
     return `${url.pathname}${url.search}${url.hash || ''}`;
   }
 
+  function kanbanItemIdFromSearchResult(result = {}) {
+    const page = result.page_ref || {};
+    const direct = page.item_id || result.item_id || result.record_id || '';
+    const cleanDirect = cleanRouteId(direct);
+    if (cleanDirect) return cleanDirect;
+    const refs = [
+      result.document_id,
+      result.source_ref,
+      ...(Array.isArray(result.source_refs) ? result.source_refs : []),
+    ].filter(Boolean);
+    for (const ref of refs) {
+      const text = String(ref || '');
+      const xartaMatch = text.match(/xarta-kanban:item:([a-zA-Z0-9_.:-]+)/);
+      if (xartaMatch?.[1]) return cleanRouteId(xartaMatch[1]);
+      const kanbanMatch = text.match(/(?:^|[/:\s])(kanban-[a-zA-Z0-9_.:-]+)/);
+      if (kanbanMatch?.[1]) return cleanRouteId(kanbanMatch[1]);
+    }
+    return '';
+  }
+
   async function loadScoped(kind, itemId, scope = 'descendants', view = 'grouped') {
     const config = scopedKindConfig(kind);
     const params = new URLSearchParams({ scope, view });
@@ -3943,6 +3963,14 @@ const KanbanBoardPage = (() => {
       window.BlueprintsPersonalSearch.registerSurface('kanban', {
         filterSurface: 'kanban-search',
         rangeControls: true,
+        openResult: result => {
+          const itemId = kanbanItemIdFromSearchResult(result);
+          if (!itemId) return false;
+          if (typeof KanbanMenuConfig !== 'undefined') KanbanMenuConfig.showGroup();
+          if (typeof switchTab === 'function') switchTab('kanban');
+          if (typeof KanbanMenuConfig !== 'undefined') KanbanMenuConfig.updateActiveTab('kanban');
+          return openItemById(itemId);
+        },
       });
     }
   }

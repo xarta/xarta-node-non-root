@@ -505,9 +505,23 @@ const BlueprintsPersonalSearch = (() => {
     `;
   }
 
-  function openResult(surface, index) {
+  async function openResult(surface, index) {
     const result = surfaceState(surface).results[Number(index)];
     if (!result) return;
+    const adapter = adapterFor(surface);
+    if (typeof adapter.openResult === 'function') {
+      try {
+        const handled = await adapter.openResult(result, {
+          surface,
+          index: Number(index),
+        });
+        if (handled !== false) return;
+      } catch (error) {
+        surfaceState(surface).error = error.message || String(error);
+        setStatus(surface, surfaceState(surface).error, 'error');
+        return;
+      }
+    }
     const page = result.page_ref || {};
     const group = page.group || (result.mode === 'work' ? 'kanban' : 'dave');
     const tab = page.tab || (group === 'kanban' ? 'kanban' : 'diary');

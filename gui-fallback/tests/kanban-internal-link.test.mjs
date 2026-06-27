@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 
 const appSource = readFileSync('/workspace/gui-fallback/js/app.js', 'utf8');
 const kanbanSource = readFileSync('/workspace/gui-fallback/js/kanban/kanban-board.js', 'utf8');
+const personalSearchSource = readFileSync('/workspace/gui-fallback/js/dave/personal-search.js', 'utf8');
 
 assert.match(
   appSource,
@@ -32,4 +33,16 @@ assert.match(
   kanbanSource,
   /function itemRouteUrl\(itemId\)[\s\S]*group', 'kanban'[\s\S]*detail_item_id/,
   'Kanban page must expose a durable URL route for work item detail links.',
+);
+
+assert.match(
+  personalSearchSource,
+  /adapter\.openResult[\s\S]*await adapter\.openResult\(result/,
+  'Personal Search Open must allow surfaces to handle result navigation.',
+);
+
+assert.match(
+  kanbanSource,
+  /BlueprintsPersonalSearch\.registerSurface\('kanban'[\s\S]*openResult:\s*result\s*=>[\s\S]*kanbanItemIdFromSearchResult\(result\)[\s\S]*openItemById\(itemId\)/,
+  'Kanban search Open must navigate to the target card by item id.',
 );
