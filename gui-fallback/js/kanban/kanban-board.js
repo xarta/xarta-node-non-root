@@ -915,7 +915,7 @@ const KanbanBoardPage = (() => {
     const blockedCount = Number(options.blockedCount ?? metrics.blocked ?? 0);
     const tone = leafMetricsTone(metrics, blockedCount);
     const activeLabel = `${metrics.active || 0} backlog, todo, or doing leaf ${Number(metrics.active || 0) === 1 ? 'item' : 'items'}`;
-    const blockedLabel = `${blockedCount} blocked leaf or blocker ${blockedCount === 1 ? 'item' : 'items'}`;
+    const blockedLabel = `${blockedCount} blocked leaf ${blockedCount === 1 ? 'item' : 'items'}`;
     const doneLabel = `${metrics.done || 0} done leaf ${Number(metrics.done || 0) === 1 ? 'item' : 'items'}`;
     return `<button class="kanban-pill-btn kanban-pill-btn--multi" type="button" data-kanban-pill="${kind}" data-kanban-item-id="${escHtml(itemId)}" data-tone="${escHtml(tone)}" title="${escHtml(`${label}: ${activeLabel}, ${blockedLabel}, ${doneLabel}`)}">
       <span class="kanban-pill-label">${escHtml(label)}</span>
@@ -935,14 +935,10 @@ const KanbanBoardPage = (() => {
     const todos = Number(rollup.todos?.open || 0);
     const itemLeafMetrics = leafMetricsFor(rollup, 'items', subitems);
     const issueLeafMetrics = leafMetricsFor(rollup, 'issues', issues);
-    const subitemBlocked = Math.max(
-      Number(itemLeafMetrics.blocked || 0),
-      Number(rollup.blockers?.open || 0),
-    );
     return `
       <div class="kanban-rollups">
         <div class="kanban-rollup-row">
-          ${leafMetricsPillHtml('subitems', 'SubItems', itemLeafMetrics, item.item_id, { blockedCount: subitemBlocked })}
+          ${leafMetricsPillHtml('subitems', 'SubItems', itemLeafMetrics, item.item_id)}
           <button class="kanban-add-btn" type="button" data-kanban-card-action="add-child" data-kanban-item-id="${escHtml(item.item_id)}" title="Add child item" aria-label="Add child item"></button>
         </div>
         <div class="kanban-rollup-row">

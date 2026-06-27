@@ -80,6 +80,28 @@ else
   exit 1
 fi
 
+run_kanban_rollup_contract_guard() {
+  local staged_pattern='^(gui-fallback/js/kanban/kanban-board\.js|gui-fallback/tests/kanban-rollup-row-contract\.test\.mjs|\.githooks/pre-commit)$'
+  local runner="/xarta-node/.lone-wolf/stacks/tooling-runtime/.claude/skills/dockge-stack-tooling-runtime/scripts/run.sh"
+  local test_path="/workspace/gui-fallback/tests/kanban-rollup-row-contract.test.mjs"
+
+  if ! git diff --cached --name-only --diff-filter=ACMR | grep -Eq "$staged_pattern"; then
+    echo "[pre-commit] Kanban rollup row contract unchanged; skipping guard."
+    return 0
+  fi
+
+  if [[ ! -x "$runner" ]]; then
+    echo "ERROR: tooling runtime runner not found at $runner" >&2
+    echo "Install/update the tooling-runtime stack before committing Kanban rollup changes." >&2
+    exit 1
+  fi
+
+  echo "[pre-commit] Running Kanban rollup row contract guard..."
+  bash "$runner" node --test "$test_path"
+}
+
+run_kanban_rollup_contract_guard
+
 run_active_browser_live_checks() {
   local runner="/root/xarta-node/.xarta/.claude/skills/xarta-blueprints-browser-automation/scripts/active_browser_precommit_test.py"
   local staged_pattern='^(gui-fallback/|gui-embed/|\.githooks/pre-commit)$'
