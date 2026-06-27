@@ -501,6 +501,7 @@ body.is-dragging-kanban-card * {
 .kanban-state-pill,
 .kanban-type-pill,
 .kanban-goal-pill,
+.kanban-automation-excluded-pill,
 .kanban-priority-pill {
   display: inline-flex;
   align-items: center;
@@ -766,6 +767,12 @@ dialog.hub-modal#kanban-detail-modal[open] {
   color: #f4cf75;
   border-color: rgba(244,207,117,.38);
   background: rgba(244,207,117,.10);
+}
+
+.kanban-automation-excluded-pill {
+  color: #8ee2d0;
+  border-color: rgba(142,226,208,.36);
+  background: rgba(142,226,208,.10);
 }
 
 .kanban-rollups {
@@ -1991,12 +1998,12 @@ dialog.hub-modal#kanban-detail-modal[open] {
 }
 
 .kanban-detail-primary-grid {
-  grid-template-columns: minmax(180px, 1fr) minmax(118px, 150px) minmax(118px, 150px) minmax(84px, 112px);
+  grid-template-columns: minmax(180px, 1fr) minmax(118px, 150px) minmax(118px, 150px) minmax(84px, 112px) minmax(128px, 168px);
   align-items: end;
 }
 
 .kanban-detail-primary-grid--panel {
-  grid-template-columns: minmax(180px, 1fr) minmax(118px, 150px) minmax(118px, 150px) minmax(84px, 112px) 38px;
+  grid-template-columns: minmax(180px, 1fr) minmax(118px, 150px) minmax(118px, 150px) minmax(84px, 112px) minmax(128px, 168px) 38px;
   align-items: center;
 }
 
@@ -2029,12 +2036,18 @@ dialog.hub-modal#kanban-detail-modal[open] {
   min-width: min(100%, 96px);
 }
 
+.kanban-item-primary-row > .kanban-automation-excluded-flag {
+  flex: 0 1 166px;
+  min-width: min(100%, 132px);
+}
+
 .kanban-item-primary-row > .kanban-item-tags-strip {
   flex: 999 1 280px;
   min-width: min(100%, 220px);
 }
 
-.kanban-goal-flag {
+.kanban-goal-flag,
+.kanban-automation-excluded-flag {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -2050,7 +2063,8 @@ dialog.hub-modal#kanban-detail-modal[open] {
   white-space: nowrap;
 }
 
-.kanban-goal-flag .hub-checkbox__label {
+.kanban-goal-flag .hub-checkbox__label,
+.kanban-automation-excluded-flag .hub-checkbox__label {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -2328,23 +2342,24 @@ dialog.hub-modal#kanban-scoped-modal[open] {
 }
 
 #ultrawide-sidecar-body .kanban-detail-primary-grid {
-  grid-template-columns: minmax(118px, 1fr) minmax(92px, 118px) minmax(92px, 118px) minmax(78px, 88px);
+  grid-template-columns: minmax(118px, 1fr) minmax(92px, 118px) minmax(92px, 118px) minmax(78px, 88px) minmax(110px, 132px);
 }
 
 #ultrawide-sidecar-body .kanban-detail-primary-grid--panel {
-  grid-template-columns: minmax(118px, 1fr) minmax(92px, 118px) minmax(92px, 118px) minmax(78px, 88px) 38px;
+  grid-template-columns: minmax(118px, 1fr) minmax(92px, 118px) minmax(92px, 118px) minmax(78px, 88px) minmax(110px, 132px) 38px;
 }
 
-#ultrawide-sidecar-body .kanban-detail-primary-grid--panel .kanban-goal-flag {
+#ultrawide-sidecar-body .kanban-detail-primary-grid--panel .kanban-goal-flag,
+#ultrawide-sidecar-body .kanban-detail-primary-grid--panel .kanban-automation-excluded-flag {
   gap: 5px;
   justify-content: flex-start;
   padding-inline: 6px;
 }
 
-#ultrawide-sidecar-body .kanban-detail-primary-grid--panel .kanban-goal-flag .hub-checkbox__label {
+#ultrawide-sidecar-body .kanban-detail-primary-grid--panel .kanban-goal-flag .hub-checkbox__label,
+#ultrawide-sidecar-body .kanban-detail-primary-grid--panel .kanban-automation-excluded-flag .hub-checkbox__label {
   flex: 0 0 auto;
-  overflow: visible;
-  text-overflow: clip;
+  min-width: 0;
 }
 
 #ultrawide-sidecar-body .kanban-detail-edit-grid {
@@ -2354,6 +2369,12 @@ dialog.hub-modal#kanban-scoped-modal[open] {
 #ultrawide-sidecar-body .kanban-item-primary-row > .kanban-goal-flag {
   flex: 0 0 76px;
   min-width: 76px;
+  padding-inline: 8px;
+}
+
+#ultrawide-sidecar-body .kanban-item-primary-row > .kanban-automation-excluded-flag {
+  flex: 0 0 126px;
+  min-width: 126px;
   padding-inline: 8px;
 }
 

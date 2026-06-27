@@ -453,6 +453,7 @@ const KanbanBoardPage = (() => {
       item?.source?.type,
       item?.status,
       item?.goal_flag ? 'goal' : '',
+      item?.automation_excluded ? 'automation-excluded' : '',
       Number(rollup.issues?.open || 0) ? 'issues' : '',
       Number(rollup.todos?.open || 0) ? 'tasks' : '',
       Number(rollup.blockers?.open || 0) ? 'blocked' : '',
@@ -498,6 +499,15 @@ const KanbanBoardPage = (() => {
       <input id="${escHtml(safeId)}" class="hub-checkbox__input" type="checkbox" ${checked ? 'checked' : ''} ${attrs}>
       <span class="hub-checkbox__box" aria-hidden="true"></span>
       <span class="hub-checkbox__label">Goal</span>
+    </label>`;
+  }
+
+  function automationExcludedCheckboxHtml(id, checked = false, attrs = '') {
+    const safeId = String(id || 'kanban-automation-excluded').replace(/[^a-zA-Z0-9_-]/g, '-');
+    return `<label class="hub-checkbox kanban-automation-excluded-flag" for="${escHtml(safeId)}">
+      <input id="${escHtml(safeId)}" class="hub-checkbox__input" type="checkbox" ${checked ? 'checked' : ''} ${attrs}>
+      <span class="hub-checkbox__box" aria-hidden="true"></span>
+      <span class="hub-checkbox__label">Skip Automation</span>
     </label>`;
   }
 
@@ -985,6 +995,7 @@ const KanbanBoardPage = (() => {
         <div class="kanban-card__meta">
           ${typedLeaf ? `<span class="kanban-type-pill" data-item-type="${escHtml(type)}">${escHtml(itemTypeLabel(item))}</span>` : ''}
           ${item.goal_flag ? '<span class="kanban-goal-pill">Goal</span>' : ''}
+          ${item.automation_excluded ? '<span class="kanban-automation-excluded-pill">Automation Off</span>' : ''}
           <span class="kanban-state-pill" data-state="${escHtml(item.state_id || '')}">${escHtml(stateLabel(item.state_id))}</span>
           <span class="kanban-priority-pill" data-priority="${escHtml(item.priority_id || '')}">${escHtml(priorityLabel(item.priority_id))}</span>
           <span class="kanban-pill">d${escHtml(item.depth ?? 0)}</span>
@@ -1444,6 +1455,7 @@ const KanbanBoardPage = (() => {
     const safePrefix = String(prefix || 'kanban-inline-item').replace(/[^a-zA-Z0-9_-]/g, '-');
     const valueFor = (key, fallback = '') => String(el(`${safePrefix}-${key}`)?.value || fallback);
     const goalChecked = Boolean(el(`${safePrefix}-goal-flag`)?.checked);
+    const automationExcludedChecked = Boolean(el(`${safePrefix}-automation-excluded`)?.checked);
     return `
       <section class="calendar-quick-event calendar-quick-event--embedded kanban-inline-item" aria-label="New Item">
         <div class="kanban-modal-form kanban-inline-item__form">
@@ -1457,6 +1469,7 @@ const KanbanBoardPage = (() => {
               <select id="${escHtml(safePrefix)}-priority">${priorityOptions(valueFor('priority', 'medium'))}</select>
             </label>
             ${goalFlagCheckboxHtml(`${safePrefix}-goal-flag`, goalChecked)}
+            ${automationExcludedCheckboxHtml(`${safePrefix}-automation-excluded`, automationExcludedChecked)}
             <div class="calendar-filter-strip calendar-event-tags-strip kanban-item-tags-strip" role="button" tabindex="0" data-kanban-item-tags-strip data-kanban-item-tags-surface="${escHtml(NEW_ITEM_TAG_SURFACE)}" data-personal-filter-open="${escHtml(NEW_ITEM_TAG_SURFACE)}" data-personal-filter-tab="filters">${itemTagsSummaryHtml(NEW_ITEM_TAG_SURFACE)}</div>
           </div>
           ${markdownFieldHtml(`${safePrefix}-body`, 'Description', valueFor('body'), { inline: true })}
@@ -2115,6 +2128,7 @@ const KanbanBoardPage = (() => {
     const health = data.commit_link_health || {};
     const provider = data.provider_mode || {};
     const pre = data.preprocessing || {};
+    const exclusions = data.automation_exclusions || {};
     const outputContract = data.output_contract || {};
     const processingPolicy = data.processing_policy || {};
     const scheduler = automationReviewScheduler();
@@ -2123,6 +2137,7 @@ const KanbanBoardPage = (() => {
     const activeCount = Number(scheduler.active_count || 0);
     const timeoutCount = Number(scheduler.timeout_count || 0);
     const decisionCount = Number(decisions.count ?? decisions.total ?? 0);
+    const exclusionCount = Number(exclusions.count ?? 0);
     const healthDecisionCount = Number(health.decision_count ?? health.decisions ?? 0);
     const activeItem = processor.active_item_id || 'none';
     const healthOk = health.ok !== false;
@@ -2147,6 +2162,7 @@ const KanbanBoardPage = (() => {
         ${automationMetricHtml('Commit Links', healthOk ? 'ok' : 'needs review', `${health.decisions_with_commits ?? 0}/${healthDecisionCount} with commits`, healthOk ? 'ok' : 'warn')}
         ${automationMetricHtml('Hook Failures', String(health.hook_failure_count ?? 0), `${health.missing_commit_link_count ?? 0} missing commit links`, Number(health.hook_failure_count || health.missing_commit_link_count || 0) ? 'warn' : 'ok')}
         ${automationMetricHtml('Preprocessing', pre.status || 'contract-pending', pre.job_packet_contract || '', pre.status === 'ready' ? 'ok' : 'info')}
+        ${automationMetricHtml('Excluded Branches', String(exclusionCount), `${(exclusions.recent_items || []).length} visible`, exclusionCount ? 'info' : 'ok')}
         ${automationMetricHtml('Output Contract', outputContract.status || 'not loaded', `${outputTypeCount} output types`, outputContract.status === 'active' ? 'ok' : 'info')}
         ${automationMetricHtml('Policy', processingPolicy.active_mode || 'cloud-first', processingPolicy.local_processing?.gate || provider.local_processing_gate || '', 'info')}
       </div>
@@ -2474,7 +2490,7 @@ const KanbanBoardPage = (() => {
     return true;
   }
 
-  function itemFormHtml(titleValue = '', bodyValue = '', priorityId = 'medium', depthInfo = null, goalFlag = false) {
+  function itemFormHtml(titleValue = '', bodyValue = '', priorityId = 'medium', depthInfo = null, goalFlag = false, automationExcluded = false) {
     const depthLine = depthInfo
       ? `<div class="kanban-depth-note" data-depth-remaining="${escHtml(depthInfo.remaining)}">Parent: ${escHtml(depthInfo.label)} - remaining child depth ${escHtml(depthInfo.remaining)}</div>`
       : '';
@@ -2491,6 +2507,7 @@ const KanbanBoardPage = (() => {
             <select id="kanban-modal-priority">${priorityOptions(priorityId)}</select>
           </label>
           ${goalFlagCheckboxHtml('kanban-modal-goal-flag', goalFlag)}
+          ${automationExcludedCheckboxHtml('kanban-modal-automation-excluded', automationExcluded)}
           <div class="calendar-filter-strip calendar-event-tags-strip kanban-item-tags-strip" role="button" tabindex="0" data-kanban-item-tags-strip data-kanban-item-tags-surface="${escHtml(NEW_ITEM_TAG_SURFACE)}" data-personal-filter-open="${escHtml(NEW_ITEM_TAG_SURFACE)}" data-personal-filter-tab="filters">${itemTagsSummaryHtml(NEW_ITEM_TAG_SURFACE)}</div>
         </div>
         ${markdownFieldHtml('kanban-modal-body', 'Description', bodyValue)}
@@ -2519,6 +2536,7 @@ const KanbanBoardPage = (() => {
     const bodyInput = dialog.querySelector('#kanban-modal-body');
     const priorityInput = dialog.querySelector('#kanban-modal-priority');
     const goalFlagInput = dialog.querySelector('#kanban-modal-goal-flag');
+    const automationExcludedInput = dialog.querySelector('#kanban-modal-automation-excluded');
     if (titleInput) titleInput.focus();
     renderItemTagSummaries();
     dialog.addEventListener('click', async event => {
@@ -2544,6 +2562,7 @@ const KanbanBoardPage = (() => {
         state_id: stateId,
         priority_id: priorityInput?.value || 'medium',
         goal_flag: Boolean(goalFlagInput?.checked),
+        automation_excluded: Boolean(automationExcludedInput?.checked),
         tags: itemTagIds(NEW_ITEM_TAG_SURFACE),
         actor: 'blueprints-ui',
         source_surface: 'kanban-page',
@@ -2565,6 +2584,7 @@ const KanbanBoardPage = (() => {
     const bodyInput = el(`${prefix}-body`);
     const priorityInput = el(`${prefix}-priority`);
     const goalFlagInput = el(`${prefix}-goal-flag`);
+    const automationExcludedInput = el(`${prefix}-automation-excluded`);
     const status = el(`${prefix}-status`);
     const cleanTitle = String(titleInput?.value || '').trim();
     if (!cleanTitle) {
@@ -2581,6 +2601,7 @@ const KanbanBoardPage = (() => {
         state_id: 'todo',
         priority_id: priorityInput?.value || 'medium',
         goal_flag: Boolean(goalFlagInput?.checked),
+        automation_excluded: Boolean(automationExcludedInput?.checked),
         tags: itemTagIds(NEW_ITEM_TAG_SURFACE),
         actor: 'blueprints-ui',
         source_surface: 'kanban-inline-panel',
@@ -2592,6 +2613,7 @@ const KanbanBoardPage = (() => {
     if (titleInput) titleInput.value = '';
     if (bodyInput) bodyInput.value = '';
     if (goalFlagInput) goalFlagInput.checked = false;
+    if (automationExcludedInput) automationExcludedInput.checked = false;
     await load({ force: true });
     if (resp.item?.item_id) setSelection(resp.item.item_id);
     return true;
@@ -2711,6 +2733,7 @@ const KanbanBoardPage = (() => {
       stateId: item.state_id || 'todo',
       priorityId: item.priority_id || 'medium',
       goalFlag: Boolean(item.goal_flag),
+      automationExcluded: Boolean(item.automation_excluded),
       tags: itemTagIds(EDIT_ITEM_TAG_SURFACE, item.tags || []),
       body: item.body_excerpt || '',
       detailBody: detail?.detail_document?.body || '',
@@ -2735,6 +2758,7 @@ const KanbanBoardPage = (() => {
       return String(draft.discussions?.[String(key).slice('discussion:'.length)] ?? '');
     }
     if (key === 'goalFlag') return Boolean(draft?.goalFlag);
+    if (key === 'automationExcluded') return Boolean(draft?.automationExcluded);
     return draft ? String(draft[key] ?? '') : '';
   }
 
@@ -2756,8 +2780,8 @@ const KanbanBoardPage = (() => {
       return true;
     }
     if (!Object.prototype.hasOwnProperty.call(draft, key)) return false;
-    if (key === 'goalFlag') {
-      draft.goalFlag = value === true || value === 'true' || value === 1 || value === '1';
+    if (key === 'goalFlag' || key === 'automationExcluded') {
+      draft[key] = value === true || value === 'true' || value === 1 || value === '1';
       return true;
     }
     draft[key] = value;
@@ -3268,6 +3292,7 @@ const KanbanBoardPage = (() => {
               <select id="${escHtml(prefix)}-priority-input" data-kanban-detail-field="priorityId" aria-label="Priority">${priorityOptions(draft.priorityId || item.priority_id || 'medium')}</select>
             </label>
             ${goalFlagCheckboxHtml(`${prefix}-goal-flag-input`, Boolean(draft.goalFlag), 'data-kanban-detail-field="goalFlag"')}
+            ${automationExcludedCheckboxHtml(`${prefix}-automation-excluded-input`, Boolean(draft.automationExcluded), 'data-kanban-detail-field="automationExcluded"')}
             ${options.panel ? '<button class="kanban-icon-btn kanban-icon-btn--fullscreen kanban-detail-fullscreen-btn" type="button" data-kanban-detail-action="fullscreen" title="Full screen" aria-label="Open item full screen"></button>' : ''}
           </div>
           <div class="calendar-filter-strip calendar-event-tags-strip kanban-item-tags-strip kanban-detail-tags-field" role="button" tabindex="0" data-kanban-item-tags-strip data-kanban-item-tags-surface="${escHtml(EDIT_ITEM_TAG_SURFACE)}" data-personal-filter-open="${escHtml(EDIT_ITEM_TAG_SURFACE)}" data-personal-filter-tab="filters">${itemTagsSummaryHtml(EDIT_ITEM_TAG_SURFACE)}</div>
@@ -3308,6 +3333,7 @@ const KanbanBoardPage = (() => {
         state_id: draft.stateId || 'todo',
         priority_id: draft.priorityId || 'medium',
         goal_flag: Boolean(draft.goalFlag),
+        automation_excluded: Boolean(draft.automationExcluded),
         tags: cleanTagList(draft.tags || []),
         actor: 'blueprints-ui',
         source_surface: 'kanban-detail',
