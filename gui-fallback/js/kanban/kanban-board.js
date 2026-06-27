@@ -2650,6 +2650,122 @@ const KanbanBoardPage = (() => {
     return `<span class="kanban-detail-count">${escHtml(value)}</span>`;
   }
 
+  function itemAiDecisionRows(detail) {
+    const rows = detail?.ai_decisions || detail?.decisions;
+    return Array.isArray(rows) ? rows : [];
+  }
+
+  function itemAiDecisionCount(detail) {
+    const explicit = Number(detail?.ai_decision_count ?? detail?.decision_count ?? detail?.counts?.decisions);
+    return Number.isFinite(explicit) ? explicit : itemAiDecisionRows(detail).length;
+  }
+
+  function itemAiDecisionHealth(detail) {
+    const health = detail?.ai_decision_commit_link_health || detail?.commit_link_health || {};
+    return health && typeof health === 'object' ? health : {};
+  }
+
+  function aiDecisionMetricHtml(label, value, meta = '', tone = '') {
+    return `<div class="kanban-ai-decision-metric${tone ? ` kanban-ai-decision-metric--${escHtml(tone)}` : ''}">
+      <span>${escHtml(label)}</span>
+      <strong>${escHtml(value ?? '')}</strong>
+      ${meta ? `<em>${escHtml(meta)}</em>` : ''}
+    </div>`;
+  }
+
+  function aiDecisionTextBlock(label, value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    return `<div class="kanban-ai-decision-text">
+      <span>${escHtml(label)}</span>
+      <p>${escHtml(text)}</p>
+    </div>`;
+  }
+
+  function aiDecisionRefsHtml(label, refs) {
+    const list = Array.isArray(refs) ? refs.filter(Boolean).slice(0, 12) : [];
+    if (!list.length) return '';
+    return `<div class="kanban-ai-decision-refs" aria-label="${escHtml(label)}">
+      <span>${escHtml(label)}</span>
+      <div>${list.map(ref => `<code>${escHtml(ref)}</code>`).join('')}</div>
+    </div>`;
+  }
+
+  function aiDecisionCommitsHtml(decision) {
+    const commits = Array.isArray(decision?.commits) ? decision.commits : [];
+    const commitIds = Array.isArray(decision?.commit_link_ids) ? decision.commit_link_ids : [];
+    const commitCount = Number(decision?.commit_count ?? commits.length ?? commitIds.length ?? 0);
+    if (!commits.length && !commitIds.length && !commitCount) {
+      return `<div class="kanban-ai-decision-commits" data-tone="warn"><span>Commit Links</span><strong>none recorded</strong></div>`;
+    }
+    const commitRows = commits.slice(0, 4).map(commit => {
+      const label = commit.message_subject || commit.short_sha || commit.sha || commit.commit_link_id || 'Commit';
+      const meta = [commit.repo_full_name || '', commit.short_sha || String(commit.sha || '').slice(0, 7)].filter(Boolean).join(' · ');
+      const href = String(commit.html_url || '').trim();
+      const title = href
+        ? `<a href="${escHtml(href)}" target="_blank" rel="noopener noreferrer">${escHtml(label)}</a>`
+        : `<strong>${escHtml(label)}</strong>`;
+      return `<li>${title}${meta ? `<span>${escHtml(meta)}</span>` : ''}</li>`;
+    }).join('');
+    const fallbackIds = !commitRows && commitIds.length
+      ? commitIds.slice(0, 6).map(id => `<code>${escHtml(id)}</code>`).join('')
+      : '';
+    return `<div class="kanban-ai-decision-commits" data-tone="ok">
+      <span>Commit Links</span>
+      <strong>${escHtml(String(commitCount || commits.length || commitIds.length))} attached</strong>
+      ${commitRows ? `<ul>${commitRows}</ul>` : `<div class="kanban-ai-decision-commit-ids">${fallbackIds}</div>`}
+    </div>`;
+  }
+
+  function aiDecisionCardHtml(decision) {
+    const status = decision?.status || 'recorded';
+    const provider = decision?.provider_mode || 'provider unknown';
+    const confidence = decision?.confidence || '';
+    const updated = formatBackupDate(decision?.updated_at || decision?.created_at);
+    return `<article class="kanban-ai-decision-card" data-kanban-ai-decision-id="${escHtml(decision?.decision_id || '')}">
+      <div class="kanban-ai-decision-card__head">
+        <div>
+          <strong>${escHtml(decision?.title || decision?.summary || decision?.decision_id || 'AI Decision')}</strong>
+          <span>${escHtml(decision?.decision_type || decision?.processor_kind || '')}</span>
+        </div>
+        <div class="kanban-ai-decision-chips" aria-label="AI decision status">
+          <span>${escHtml(status)}</span>
+          <span>${escHtml(provider)}</span>
+          ${confidence ? `<span>${escHtml(confidence)}</span>` : ''}
+          ${updated ? `<span>${escHtml(updated)}</span>` : ''}
+        </div>
+      </div>
+      ${aiDecisionTextBlock('Summary', decision?.summary)}
+      ${aiDecisionTextBlock('Rationale', decision?.rationale)}
+      ${aiDecisionTextBlock('Uncertainty', decision?.uncertainty)}
+      ${aiDecisionRefsHtml('Affected Refs', decision?.affected_refs)}
+      ${aiDecisionRefsHtml('Proof Refs', decision?.proof_refs)}
+      ${aiDecisionCommitsHtml(decision)}
+    </article>`;
+  }
+
+  function aiDecisionsSectionHtml(detail) {
+    const rows = itemAiDecisionRows(detail);
+    const count = itemAiDecisionCount(detail);
+    const health = itemAiDecisionHealth(detail);
+    const healthDecisionCount = Number(health.decision_count ?? count ?? 0);
+    const healthOk = health.ok !== false;
+    const missingCount = Number(health.missing_commit_link_count || 0);
+    const hookFailures = Number(health.hook_failure_count || 0);
+    const healthTone = !healthDecisionCount ? 'info' : (healthOk ? 'ok' : 'warn');
+    const error = String(detail?.ai_decision_error || '').trim();
+    return `<div class="kanban-ai-decisions">
+      <div class="kanban-ai-decision-summary">
+        ${aiDecisionMetricHtml('AI Decisions', String(count), 'card-scoped ledger rows', count ? 'ok' : 'info')}
+        ${aiDecisionMetricHtml('Commit Link Health', healthOk ? 'ok' : 'needs review', `${health.decisions_with_commits ?? 0}/${healthDecisionCount} with commits`, healthTone)}
+        ${aiDecisionMetricHtml('Link Gaps', String(missingCount + hookFailures), `${missingCount} missing · ${hookFailures} hook failures`, missingCount || hookFailures ? 'warn' : 'ok')}
+      </div>
+      ${error ? `<div class="kanban-empty kanban-backup-error">AI Decisions could not be loaded: ${escHtml(error)}</div>` : ''}
+      ${!error && !rows.length ? '<div class="kanban-empty">No AI Decisions recorded for this card.</div>' : ''}
+      ${rows.map(aiDecisionCardHtml).join('')}
+    </div>`;
+  }
+
   function detailSectionRowsHtml(detail) {
     const item = detail?.item || {};
     const parentLabel = item.parent_item_id || 'root';
@@ -2787,6 +2903,7 @@ const KanbanBoardPage = (() => {
     const todos = detail?.todos || [];
     const discussions = detail?.discussions || [];
     const reviewCount = detail?.counts?.review ?? (String(detail?.review_document?.body || '').trim() ? 1 : 0);
+    const decisionCount = itemAiDecisionCount(detail);
     return [
       {
         id: 'detail',
@@ -2804,6 +2921,12 @@ const KanbanBoardPage = (() => {
         label: 'Review',
         count: reviewCount,
         html: reviewDocumentSectionHtml(detail),
+      },
+      {
+        id: 'ai-decisions',
+        label: 'AI Decisions',
+        count: decisionCount,
+        html: aiDecisionsSectionHtml(detail),
       },
       {
         id: 'info',
@@ -3200,6 +3323,35 @@ const KanbanBoardPage = (() => {
     });
   }
 
+  async function loadItemDecisionLedger(itemId) {
+    const cleanItemId = cleanRouteId(itemId);
+    if (!cleanItemId) {
+      return {
+        ai_decisions: [],
+        ai_decision_count: 0,
+        ai_decision_commit_link_health: {},
+        ai_decision_error: '',
+      };
+    }
+    try {
+      const payload = await requestJson(`/api/v1/personal/kanban/items/${encodeURIComponent(cleanItemId)}/decisions?limit=50`);
+      const rows = Array.isArray(payload?.decisions) ? payload.decisions : [];
+      return {
+        ai_decisions: rows,
+        ai_decision_count: Number(payload?.count ?? rows.length ?? 0),
+        ai_decision_commit_link_health: payload?.commit_link_health || {},
+        ai_decision_error: '',
+      };
+    } catch (err) {
+      return {
+        ai_decisions: [],
+        ai_decision_count: 0,
+        ai_decision_commit_link_health: {},
+        ai_decision_error: err?.message || String(err),
+      };
+    }
+  }
+
   async function loadItemDetail(itemId = state.selection?.item?.item_id, options = {}) {
     itemId = itemId || selectFirstItemIfNeeded();
     if (!itemId) {
@@ -3213,6 +3365,7 @@ const KanbanBoardPage = (() => {
       renderAll();
       return null;
     }
+    Object.assign(detail, await loadItemDecisionLedger(item.item_id || itemId));
     if (item.item_id) {
       const targetParentId = item.parent_item_id || '';
       if ((state.currentParentId || '') !== targetParentId) {
@@ -4469,6 +4622,9 @@ const KanbanBoardPage = (() => {
       link_count: detail.counts?.links ?? (detail.links || []).length ?? 0,
       blocker_count: detail.counts?.blockers ?? (detail.blockers || []).length ?? 0,
       review_count: detail.counts?.review ?? (String(detail.review_document?.body || '').trim() ? 1 : 0),
+      ai_decision_count: itemAiDecisionCount(detail),
+      ai_decision_commit_link_health_ok: itemAiDecisionHealth(detail).ok !== false,
+      ai_decision_error: detail.ai_decision_error || '',
       scoped_open: !!state.scoped.open,
       scoped_kind: state.scoped.kind || '',
       scoped_scope: state.scoped.scope || '',

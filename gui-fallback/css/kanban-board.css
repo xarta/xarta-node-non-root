@@ -1313,6 +1313,183 @@ dialog.hub-modal#kanban-detail-modal[open] {
   font-size: 12px;
 }
 
+.kanban-ai-decisions {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.kanban-ai-decision-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.kanban-ai-decision-metric,
+.kanban-ai-decision-card {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255,255,255,.035);
+}
+
+.kanban-ai-decision-metric {
+  display: grid;
+  gap: 4px;
+  min-height: 72px;
+  padding: 9px 10px;
+}
+
+.kanban-ai-decision-metric span,
+.kanban-ai-decision-metric em {
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-style: normal;
+  overflow-wrap: anywhere;
+}
+
+.kanban-ai-decision-metric strong {
+  min-width: 0;
+  font-size: 16px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.kanban-ai-decision-metric--ok {
+  border-color: rgba(105, 190, 132, .34);
+  background: rgba(105, 190, 132, .1);
+}
+
+.kanban-ai-decision-metric--warn {
+  border-color: rgba(217, 170, 50, .42);
+  background: rgba(217, 170, 50, .12);
+}
+
+.kanban-ai-decision-metric--info {
+  border-color: rgba(125, 183, 255, .28);
+  background: rgba(125, 183, 255, .1);
+}
+
+.kanban-ai-decision-card {
+  display: grid;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.kanban-ai-decision-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.kanban-ai-decision-card__head > div:first-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.kanban-ai-decision-card__head strong,
+.kanban-ai-decision-card__head span,
+.kanban-ai-decision-text p,
+.kanban-ai-decision-refs code,
+.kanban-ai-decision-commits,
+.kanban-ai-decision-commits li,
+.kanban-ai-decision-commit-ids code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kanban-ai-decision-card__head > div:first-child > span,
+.kanban-ai-decision-text span,
+.kanban-ai-decision-refs > span,
+.kanban-ai-decision-commits > span,
+.kanban-ai-decision-commits li span {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.kanban-ai-decision-chips,
+.kanban-ai-decision-refs > div,
+.kanban-ai-decision-commit-ids {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.kanban-ai-decision-chips span,
+.kanban-ai-decision-refs code,
+.kanban-ai-decision-commit-ids code {
+  max-width: 100%;
+  border: 1px solid rgba(125, 183, 255, .28);
+  border-radius: 8px;
+  background: rgba(125, 183, 255, .1);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 4px 8px;
+}
+
+.kanban-ai-decision-text,
+.kanban-ai-decision-refs,
+.kanban-ai-decision-commits {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.kanban-ai-decision-text p {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.42;
+}
+
+.kanban-ai-decision-commits {
+  border: 1px solid rgba(105, 190, 132, .28);
+  border-radius: 8px;
+  background: rgba(105, 190, 132, .08);
+  padding: 8px 10px;
+}
+
+.kanban-ai-decision-commits[data-tone="warn"] {
+  border-color: rgba(217, 170, 50, .36);
+  background: rgba(217, 170, 50, .1);
+}
+
+.kanban-ai-decision-commits strong {
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.kanban-ai-decision-commits ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kanban-ai-decision-commits li {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.kanban-ai-decision-commits a {
+  color: var(--accent, #7db7ff);
+  text-decoration: none;
+}
+
+.kanban-ai-decision-commits a:hover,
+.kanban-ai-decision-commits a:focus-visible {
+  text-decoration: underline;
+}
+
 #kanban-automation-status-modal {
   width: min(1220px, calc(100vw - 28px));
   max-width: min(1220px, calc(100vw - 28px));
@@ -1379,6 +1556,10 @@ dialog.hub-modal#kanban-detail-modal[open] {
     display: none;
   }
 
+  .kanban-ai-decision-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   #kanban-backups-modal .kanban-backup-row {
     grid-template-columns:
       minmax(320px, 2fr)
@@ -1399,7 +1580,8 @@ dialog.hub-modal#kanban-detail-modal[open] {
 }
 
 @media (max-width: 760px) {
-  .kanban-automation-grid {
+  .kanban-automation-grid,
+  .kanban-ai-decision-summary {
     grid-template-columns: 1fr;
   }
 
@@ -1414,6 +1596,14 @@ dialog.hub-modal#kanban-detail-modal[open] {
   .kanban-automation-decision--head,
   .kanban-automation-marker--head {
     display: none;
+  }
+
+  .kanban-ai-decision-card__head {
+    display: grid;
+  }
+
+  .kanban-ai-decision-chips {
+    justify-content: flex-start;
   }
 }
 
@@ -1691,6 +1881,10 @@ dialog.hub-modal#kanban-detail-modal[open] {
   overflow: hidden;
 }
 
+.kanban-detail-accordion[open] {
+  overflow: visible;
+}
+
 .kanban-detail-accordion summary {
   min-height: 38px;
   display: flex;
@@ -1705,6 +1899,14 @@ dialog.hub-modal#kanban-detail-modal[open] {
 .kanban-detail-accordion__body {
   border-top: 1px solid var(--border);
   padding: 10px;
+}
+
+.kanban-detail-accordion:not([open]) > .kanban-detail-accordion__body {
+  display: none;
+}
+
+.kanban-detail-accordion[open] > .kanban-detail-accordion__body {
+  display: block;
 }
 
 .kanban-detail-primary-grid,
