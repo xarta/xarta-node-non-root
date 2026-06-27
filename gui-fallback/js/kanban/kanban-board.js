@@ -4,12 +4,13 @@
 
 const KanbanBoardPage = (() => {
   const CONTENT_VIEW_STORAGE_KEY = 'blueprints.kanban.contentView.v1';
-  const CONTENT_VIEW_IDS = ['board', 'search', 'selection', 'backups', 'provenance'];
+  const CONTENT_VIEW_IDS = ['board', 'search', 'selection', 'backups', 'automation', 'provenance'];
   const CONTENT_VIEW_LABELS = {
     board: 'Board',
     search: 'Search',
     selection: 'Selection',
     backups: 'Backups',
+    automation: 'Automation',
     provenance: 'Provenance',
   };
   const LANE_WIDTH_STORAGE_PREFIX = 'blueprints.kanbanLaneWidth.v1';
@@ -69,6 +70,12 @@ const KanbanBoardPage = (() => {
       lastResult: null,
       busyAction: '',
       applyingFilename: '',
+    },
+    automationStatus: {
+      loading: false,
+      error: '',
+      data: null,
+      lastLoadedAt: 0,
     },
     routeApplied: false,
     routeDetailItemId: '',
@@ -1647,6 +1654,160 @@ const KanbanBoardPage = (() => {
     if (action === 'validate') return validateBackupFromPanel(filename);
     if (action === 'dry-run') return dryRunImportBackupFromPanel(filename);
     if (action === 'apply') return applyImportBackupFromPanel(filename);
+    return null;
+  }
+
+  function automationRecentDecisions() {
+    const decisions = state.automationStatus.data?.decisions?.recent;
+    return Array.isArray(decisions) ? decisions : [];
+  }
+
+  function automationMetricHtml(label, value, meta = '', tone = '') {
+    return `<div class="kanban-automation-metric${tone ? ` kanban-automation-metric--${escHtml(tone)}` : ''}">
+      <span>${escHtml(label)}</span>
+      <strong>${escHtml(value ?? '')}</strong>
+      ${meta ? `<em>${escHtml(meta)}</em>` : ''}
+    </div>`;
+  }
+
+  function automationDecisionRowsHtml() {
+    const rows = automationRecentDecisions();
+    if (state.automationStatus.loading && !rows.length) {
+      return '<div class="kanban-empty">Loading automation status...</div>';
+    }
+    if (state.automationStatus.error) {
+      return `<div class="kanban-empty kanban-backup-error">${escHtml(state.automationStatus.error)}</div>`;
+    }
+    if (!rows.length) {
+      return '<div class="kanban-empty">No Review Processor decisions recorded.</div>';
+    }
+    return `<div class="kanban-automation-decisions" role="table" aria-label="Recent Review Processor decisions">
+      <div class="kanban-automation-decision kanban-automation-decision--head" role="row">
+        <span role="columnheader">Decision</span>
+        <span role="columnheader">Status</span>
+        <span role="columnheader">Commits</span>
+        <span role="columnheader">Updated</span>
+      </div>
+      ${rows.map(row => {
+        const commitCount = Number(row.commit_count || row.commit_link_ids?.length || 0);
+        const confidence = row.confidence ? ` · ${row.confidence}` : '';
+        return `<article class="kanban-automation-decision" role="row" data-kanban-decision-id="${escHtml(row.decision_id || '')}">
+          <div class="kanban-automation-decision-title" role="cell">
+            <strong>${escHtml(row.title || row.summary || row.decision_id || 'Decision')}</strong>
+            <span>${escHtml(row.summary || row.rationale || row.decision_type || '')}${escHtml(confidence)}</span>
+          </div>
+          <span role="cell">${escHtml(row.status || 'recorded')}</span>
+          <span role="cell">${escHtml(String(commitCount))}</span>
+          <span role="cell">${escHtml(formatBackupDate(row.updated_at || row.created_at))}</span>
+        </article>`;
+      }).join('')}
+    </div>`;
+  }
+
+  function embeddedAutomationStatusHtml() {
+    if (!state.automationStatus.data && !state.automationStatus.loading && !state.automationStatus.error) {
+      setTimeout(() => loadAutomationStatusPanel({ force: true }), 0);
+    }
+    const data = state.automationStatus.data || {};
+    const processor = data.review_processor || {};
+    const decisions = data.decisions || {};
+    const health = data.commit_link_health || {};
+    const provider = data.provider_mode || {};
+    const pre = data.preprocessing || {};
+    const queueLength = Number(processor.queue_length || 0);
+    const decisionCount = Number(decisions.count ?? decisions.total ?? 0);
+    const healthDecisionCount = Number(health.decision_count ?? health.decisions ?? 0);
+    const activeItem = processor.active_item_id || 'none';
+    const healthOk = health.ok !== false;
+    const busy = state.automationStatus.loading;
+    const loadedAt = state.automationStatus.lastLoadedAt ? formatBackupDate(state.automationStatus.lastLoadedAt) : '';
+    return `<section class="calendar-band kanban-band kanban-automation-panel" aria-label="Kanban Automation Status">
+      <div class="calendar-section-head kanban-section-head">
+        <h3>Automation Status</h3>
+        <div class="kanban-backups-toolbar">
+          <button class="kanban-command-btn" type="button" data-kanban-automation-action="refresh"${busy ? ' disabled' : ''}>Refresh</button>
+        </div>
+      </div>
+      <div class="kanban-automation-grid">
+        ${automationMetricHtml('Review Processor', processor.status || 'not loaded', `queue ${queueLength} · active ${activeItem}`, queueLength ? 'warn' : 'ok')}
+        ${automationMetricHtml('Provider', provider.active || 'cloud-first', provider.local_processing || 'local later', 'info')}
+        ${automationMetricHtml('Decisions', String(decisionCount), `recent ${automationRecentDecisions().length}`, decisionCount ? 'ok' : 'info')}
+        ${automationMetricHtml('Commit Links', healthOk ? 'ok' : 'needs review', `${health.decisions_with_commits ?? 0}/${healthDecisionCount} with commits`, healthOk ? 'ok' : 'warn')}
+        ${automationMetricHtml('Hook Failures', String(health.hook_failure_count ?? 0), `${health.missing_commit_link_count ?? 0} missing commit links`, Number(health.hook_failure_count || health.missing_commit_link_count || 0) ? 'warn' : 'ok')}
+        ${automationMetricHtml('Preprocessing', pre.status || 'contract-pending', pre.job_packet_contract || '', pre.status === 'ready' ? 'ok' : 'info')}
+      </div>
+      ${loadedAt ? `<div class="kanban-backup-paths"><span>Loaded: ${escHtml(loadedAt)}</span></div>` : ''}
+      ${state.automationStatus.loading ? '<div class="kanban-backup-result" data-tone="info" role="status"><strong>Loading automation status...</strong></div>' : ''}
+      <div class="kanban-automation-section-head">Recent Decisions</div>
+      ${automationDecisionRowsHtml()}
+    </section>`;
+  }
+
+  function refreshAutomationStatusModal() {
+    const body = document.querySelector('#kanban-automation-status-modal [data-kanban-automation-modal-body]');
+    if (!body) return;
+    body.innerHTML = embeddedAutomationStatusHtml();
+  }
+
+  function refreshAutomationStatusPanels() {
+    if (!window.PersonalFilters?.activateTab) return;
+    document.querySelectorAll('[data-personal-filter-host][data-personal-filter-surface="kanban"]').forEach(host => {
+      if (host.dataset.personalFilterTab !== 'automation') return;
+      if (!hostIsVisible(host)) return;
+      window.PersonalFilters.activateTab('kanban', 'automation', { host, visibleOnly: false });
+    });
+  }
+
+  async function loadAutomationStatusPanel(options = {}) {
+    if (state.automationStatus.loading && !options.force) return state.automationStatus.data;
+    state.automationStatus.loading = true;
+    state.automationStatus.error = '';
+    refreshAutomationStatusPanels();
+    try {
+      state.automationStatus.data = await requestJson('/api/v1/personal/kanban/automation/status');
+      state.automationStatus.lastLoadedAt = Date.now();
+      return state.automationStatus.data;
+    } catch (err) {
+      state.automationStatus.error = err?.message || String(err);
+      return null;
+    } finally {
+      state.automationStatus.loading = false;
+      refreshAutomationStatusPanels();
+      refreshAutomationStatusModal();
+    }
+  }
+
+  function openAutomationStatusModal() {
+    const dialog = openDialog('Kanban Automation Status', `<div data-kanban-automation-modal-body>${embeddedAutomationStatusHtml()}</div>`, {
+      badge: 'AUTO',
+      id: 'kanban-automation-status-modal',
+      width: 'min(1220px, calc(100vw - 28px))',
+    });
+    dialog.addEventListener('click', event => {
+      const button = event.target.closest('[data-kanban-automation-action]');
+      if (!button) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const result = handleAutomationStatusAction(button);
+      refreshAutomationStatusModal();
+      if (result && typeof result.finally === 'function') {
+        result.finally(() => refreshAutomationStatusModal());
+      }
+    });
+    return dialog;
+  }
+
+  async function openAutomationStatusPanel() {
+    const activated = activateKanbanPanelTab('automation');
+    if (!activated) openAutomationStatusModal();
+    await loadAutomationStatusPanel({ force: true });
+    refreshAutomationStatusModal();
+    return true;
+  }
+
+  function handleAutomationStatusAction(button) {
+    const action = button?.dataset?.kanbanAutomationAction || '';
+    if (action === 'refresh') return loadAutomationStatusPanel({ force: true });
     return null;
   }
 
@@ -3490,6 +3651,7 @@ const KanbanBoardPage = (() => {
           { id: 'new-item', label: 'New Item' },
           { id: 'edit-item', label: 'Edit Item', disabled: () => !detailItemAvailable() },
           { id: 'backups', label: 'Backups' },
+          { id: 'automation', label: 'Automation' },
           { id: 'provenance', label: 'Provenance' },
         ],
         renderTab: (tab, host) => {
@@ -3498,6 +3660,7 @@ const KanbanBoardPage = (() => {
           if (tab === 'new-item') return embeddedItemFormHtml(host?.id === 'kanban-filter-inline-panel' ? 'kanban-inline-item' : 'kanban-panel-item');
           if (tab === 'edit-item') return embeddedItemDetailHtml(host);
           if (tab === 'backups') return embeddedBackupsHtml(host);
+          if (tab === 'automation') return embeddedAutomationStatusHtml(host);
           if (tab === 'provenance') return embeddedProvenanceHtml(host);
           return '';
         },
@@ -3844,6 +4007,13 @@ const KanbanBoardPage = (() => {
         openBackupRowActions(backupRowActionsButton.dataset.kanbanBackupRowActions || '');
         return;
       }
+      const automationButton = event.target.closest('[data-kanban-automation-action]');
+      if (automationButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleAutomationStatusAction(automationButton);
+        return;
+      }
       const button = event.target.closest('[data-kanban-action]');
       if (button) {
         const action = button.dataset.kanbanAction;
@@ -3856,6 +4026,7 @@ const KanbanBoardPage = (() => {
         if (action === 'root-board') openRootBoard();
         if (action === 'new-root-item') newRootItem();
         if (action === 'backups') openBackupsPanel();
+        if (action === 'automation-status') openAutomationStatusPanel();
         if (action === 'add-item-state') handleCardAction('add-item-state', '', button.dataset.kanbanStateId || 'todo');
         if (action === 'submit-inline-item') submitInlineItem(button.dataset.kanbanItemPrefix || 'kanban-inline-item');
         if (action === 'toggle-markdown-preview') toggleMarkdownPreview(button, root);
@@ -3925,6 +4096,12 @@ const KanbanBoardPage = (() => {
       if (!btn || root.contains(btn)) return;
       event.preventDefault();
       openBackupRowActions(btn.dataset.kanbanBackupRowActions || '');
+    });
+    document.addEventListener('click', event => {
+      const btn = event.target.closest('[data-kanban-automation-action]');
+      if (!btn || root.contains(btn)) return;
+      event.preventDefault();
+      handleAutomationStatusAction(btn);
     });
     document.addEventListener('click', event => {
       const btn = event.target.closest('[data-kanban-action="toggle-markdown-preview"]');
@@ -4015,6 +4192,12 @@ const KanbanBoardPage = (() => {
       backup_busy_action: state.backups.busyAction || '',
       backup_importing_filename: state.backups.applyingFilename || '',
       backup_last_result: state.backups.lastResult?.message || '',
+      automation_status_loaded: !!state.automationStatus.data,
+      automation_status_loading: !!state.automationStatus.loading,
+      automation_status_error: state.automationStatus.error || '',
+      automation_recent_decisions: automationRecentDecisions().length,
+      automation_review_processor_status: state.automationStatus.data?.review_processor?.status || '',
+      automation_commit_link_health_ok: state.automationStatus.data?.commit_link_health?.ok !== false,
       error: state.error,
     };
   }
@@ -4032,6 +4215,7 @@ const KanbanBoardPage = (() => {
     openItemById,
     itemRouteUrl,
     openBackupsPanel,
+    openAutomationStatusPanel,
     addChildToSelected: () => openItemForm({ parentItemId: state.selection?.item?.item_id, childOfSelection: true }),
     addIssueToSelected: () => state.selection?.item?.item_id ? openLeafForm('issue', state.selection.item.item_id) : false,
     addTodoToSelected: () => state.selection?.item?.item_id ? openLeafForm('todo', state.selection.item.item_id) : false,
@@ -4073,6 +4257,7 @@ if (typeof KanbanMenuConfig !== 'undefined') {
     'kanban.moveRight': () => KanbanBoardPage.moveSelectedRight(),
     'kanban.archive': () => KanbanBoardPage.archiveSelected(),
     'kanban.backups': () => KanbanBoardPage.openBackupsPanel(),
+    'kanban.automationStatus': () => KanbanBoardPage.openAutomationStatusPanel(),
     'kanban.toggleTestEntries': () => KanbanBoardPage.toggleTestEntriesVisibility({ source_surface: 'kanban-menu' }),
     'kanban.showTestEntries': () => KanbanBoardPage.showTestEntries(),
     'kanban.hideTestEntries': () => KanbanBoardPage.hideTestEntries(),

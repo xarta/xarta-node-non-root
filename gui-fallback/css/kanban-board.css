@@ -195,6 +195,11 @@
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M5 3h11l3 3v15H5V3zm2 2v5h9V7.2L13.8 5H7zm0 14h10v-6H7v6zm2-4h6v2H9v-2z'/%3E%3C/svg%3E");
 }
 
+.kanban-icon-btn--automation::before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M4 19h16v2H4v-2zm2-8h3v6H6v-6zm5-5h3v11h-3V6zm5 8h3v3h-3v-3zM8.2 8.4 7 7.2 12 2l3.2 3.2L19.1 1 20.5 2.4l-5.3 5.4L12 4.6 8.2 8.4z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M4 19h16v2H4v-2zm2-8h3v6H6v-6zm5-5h3v11h-3V6zm5 8h3v3h-3v-3zM8.2 8.4 7 7.2 12 2l3.2 3.2L19.1 1 20.5 2.4l-5.3 5.4L12 4.6 8.2 8.4z'/%3E%3C/svg%3E");
+}
+
 .kanban-card-btn--archive::before {
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M4 4h16v5H4V4zm2 7h12v9H6v-9zm3 2v2h6v-2H9zM6 6v1h12V6H6z'/%3E%3C/svg%3E");
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M4 4h16v5H4V4zm2 7h12v9H6v-9zm3 2v2h6v-2H9zM6 6v1h12V6H6z'/%3E%3C/svg%3E");
@@ -1028,6 +1033,128 @@ dialog.hub-modal#kanban-detail-modal[open] {
   color: #ff9aa1;
 }
 
+.kanban-automation-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.kanban-automation-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.kanban-automation-metric {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  min-height: 86px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255,255,255,.035);
+  padding: 10px 12px;
+}
+
+.kanban-automation-metric span,
+.kanban-automation-metric em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.kanban-automation-metric strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 18px;
+  line-height: 1.15;
+  font-weight: 760;
+}
+
+.kanban-automation-metric--ok {
+  border-color: rgba(105, 190, 132, .34);
+  background: rgba(105, 190, 132, .1);
+}
+
+.kanban-automation-metric--warn {
+  border-color: rgba(217, 170, 50, .42);
+  background: rgba(217, 170, 50, .12);
+}
+
+.kanban-automation-metric--info {
+  border-color: rgba(125, 183, 255, .28);
+  background: rgba(125, 183, 255, .1);
+}
+
+.kanban-automation-section-head {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 720;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.kanban-automation-decisions {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.kanban-automation-decision {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(90px, .32fr) minmax(72px, .24fr) minmax(150px, .45fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255,255,255,.035);
+  padding: 10px 12px;
+}
+
+.kanban-automation-decision--head {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 700;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.kanban-automation-decision-title {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.kanban-automation-decision-title strong,
+.kanban-automation-decision-title span,
+.kanban-automation-decision > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kanban-automation-decision-title span,
+.kanban-automation-decision > span {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+#kanban-automation-status-modal {
+  width: min(1220px, calc(100vw - 28px));
+  max-width: min(1220px, calc(100vw - 28px));
+}
+
+#kanban-automation-status-modal .hub-modal-body {
+  overflow-x: hidden;
+  overflow-y: auto;
+  max-height: calc(100dvh - 104px);
+}
+
 #kanban-backups-modal {
   width: min(1560px, calc(100vw - 28px));
   max-width: min(1560px, calc(100vw - 28px));
@@ -1061,6 +1188,19 @@ dialog.hub-modal#kanban-detail-modal[open] {
 }
 
 @media (max-width: 1180px) {
+  .kanban-automation-grid {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+
+  .kanban-automation-decision {
+    grid-template-columns: minmax(220px, 1fr) minmax(84px, .34fr) minmax(64px, .24fr);
+  }
+
+  .kanban-automation-decision > span:last-child,
+  .kanban-automation-decision--head > span:last-child {
+    display: none;
+  }
+
   #kanban-backups-modal .kanban-backup-row {
     grid-template-columns:
       minmax(320px, 2fr)
@@ -1077,6 +1217,22 @@ dialog.hub-modal#kanban-detail-modal[open] {
 
   #kanban-backups-modal .kanban-backup-actions-trigger {
     display: inline-flex;
+  }
+}
+
+@media (max-width: 760px) {
+  .kanban-automation-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .kanban-automation-decision,
+  .kanban-automation-decision--head {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .kanban-automation-decision--head {
+    display: none;
   }
 }
 
