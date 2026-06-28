@@ -57,6 +57,11 @@ assert.match(
   /setScrollStateClass\('has-managed-scroll-tab',\s*shouldLockBody\)/,
   'Managed-scroll tabs must lock root scroll through the shared state helper.',
 );
+assert.match(
+  bodyShadeJs,
+  /function\s+alignManagedScrollShell\s*\([^)]*panel[^)]*shell[^)]*\)[\s\S]*shell\.style\.transform\s*=\s*''[\s\S]*panelRect\.left\s*-\s*shellRect\.left[\s\S]*translateX/,
+  'Managed-scroll shells must realign to their active panel when full-bleed controls shift them left.',
+);
 {
   const sizeManagedScrollShell = functionSlice(bodyShadeJs, 'sizeManagedScrollShell');
   assert.match(
@@ -78,6 +83,11 @@ assert.match(
     sizeManagedScrollShell,
     /panel\.style\.overflowY\s*=\s*'hidden'/,
     'Managed-scroll active panels must not become a second vertical scroll owner.',
+  );
+  assert.match(
+    sizeManagedScrollShell,
+    /alignManagedScrollShell\(panel,\s*shell\)/,
+    'Managed-scroll sizing must realign each shell before measuring its viewport height.',
   );
   assert.match(
     sizeManagedScrollShell,
@@ -1209,6 +1219,16 @@ assert.match(
   personalFiltersJs,
   /id:\s*'meta-filters'[\s\S]*metaFiltersBodyHtml|metaFiltersBodyHtml[\s\S]*id:\s*'meta-filters'/,
   'Personal Filters must expose a first-class Meta Filters tab.',
+);
+assert.match(
+  personalFiltersJs + personalFiltersCss,
+  /const\s+PRIMARY_TABS\s*=\s*\[[\s\S]*id:\s*'filters'[\s\S]*id:\s*'settings'[\s\S]*id:\s*'meta-filters'[\s\S]*function\s+primaryTabDropdownHtml[\s\S]*data-personal-filter-tab-menu-toggle[\s\S]*data-personal-filter-menu-tab[\s\S]*\.personal-filter-tab-dropdown[\s\S]*\.personal-filter-tab-caret[\s\S]*\.personal-filter-tab-menu/,
+  'Personal Filters must collapse Filters, Filter Settings, and Meta Filters into one split dropdown tab.',
+);
+assert.match(
+  personalFiltersJs + personalFiltersCss,
+  /function\s+fixedContainingBlockRect[\s\S]*createsContainingBlock[\s\S]*function\s+positionPrimaryTabMenu[\s\S]*fixedContainingBlockRect\(menu\)[\s\S]*viewportLeft\s*-\s*Math\.round\(containingRect\.left[\s\S]*\.personal-filter-tab-menu\s*\{[\s\S]*position:\s*fixed/,
+  'Personal Filters dropdown tab menu must render as a fixed overlay and correct for transformed body-shade containing blocks.',
 );
 assert.match(
   personalFiltersJs,

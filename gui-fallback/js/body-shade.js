@@ -703,6 +703,17 @@
     return !!shell;
   }
 
+  function alignManagedScrollShell(panel, shell) {
+    if (!panel || !shell) return;
+    shell.style.transform = '';
+    var panelRect = panel.getBoundingClientRect();
+    var shellRect = shell.getBoundingClientRect();
+    var delta = Math.round((panelRect.left - shellRect.left) * 100) / 100;
+    if (delta > 0.5 && delta <= 64) {
+      shell.style.transform = 'translateX(' + delta + 'px)';
+    }
+  }
+
   function sizeManagedScrollShell() {
     var panel = shade ? shade.querySelector('.tab-panel--managed-scroll.active') : null;
     var shouldLockBody = shouldLockManagedScrollBody(panel);
@@ -720,6 +731,7 @@
     panel.style.overflowY = 'hidden';
     panel.style.overscrollBehavior = 'contain';
     panel.querySelectorAll('.tab-scroll-shell').forEach(function (shell) {
+      alignManagedScrollShell(panel, shell);
       var top = Math.max(0, shell.getBoundingClientRect().top);
       var height = top >= (viewportH - 50)
         ? Math.max(120, panelHeight - 20)

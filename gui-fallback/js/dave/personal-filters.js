@@ -33,6 +33,11 @@ const PersonalFilters = (() => {
   ];
   const SHAPES = ['circle', 'square', 'triangle', 'star', 'pentagon', 'rectangle', 'rhombus', 'semicircle', 'crescent'];
   const FILLS = ['filled', 'outline'];
+  const PRIMARY_TABS = [
+    { id: 'filters', label: 'Filters' },
+    { id: 'settings', label: 'Filter Settings' },
+    { id: 'meta-filters', label: 'Meta Filters' },
+  ];
 
   const DEFAULT_META_GROUPS = {};
 
@@ -1423,6 +1428,14 @@ const PersonalFilters = (() => {
     </div>`;
   }
 
+  function isPrimaryTab(tabId) {
+    return PRIMARY_TABS.some(tab => tab.id === tabId);
+  }
+
+  function tabLabel(tabId) {
+    return PRIMARY_TABS.find(tab => tab.id === tabId)?.label || titleCase(tabId);
+  }
+
   function extraTabsFor(surface, host) {
     const allowed = new Set(String(host?.dataset?.personalFilterExtraTabs || '')
       .split(',')
@@ -1452,6 +1465,22 @@ const PersonalFilters = (() => {
     return adapter.renderTab(tabId, host) || '';
   }
 
+  function primaryTabDropdownHtml(active) {
+    const shown = PRIMARY_TABS.find(tab => tab.id === active) || PRIMARY_TABS[0];
+    const primaryActive = isPrimaryTab(active);
+    return `<div class="personal-filter-tab-dropdown${primaryActive ? ' is-active' : ''}" data-personal-filter-tab-dropdown>
+      <div class="personal-filter-tab-split">
+        <button class="personal-filter-tab personal-filter-tab--primary" type="button" role="tab" aria-selected="${primaryActive ? 'true' : 'false'}" data-personal-filter-tab="${escHtml(shown.id)}">${escHtml(shown.label)}</button>
+        <button class="personal-filter-tab-caret" type="button" aria-label="Choose filter tab" aria-haspopup="menu" aria-expanded="false" data-personal-filter-tab-menu-toggle>
+          <span class="menu-editor-icon menu-editor-icon--chevron-down" aria-hidden="true"></span>
+        </button>
+      </div>
+      <div class="personal-filter-tab-menu" role="menu">
+        ${PRIMARY_TABS.map(tab => `<button class="personal-filter-tab-menu__item" type="button" role="menuitemradio" aria-checked="${active === tab.id ? 'true' : 'false'}" data-personal-filter-menu-tab="${escHtml(tab.id)}">${escHtml(tab.label)}</button>`).join('')}
+      </div>
+    </div>`;
+  }
+
   function renderHost(host) {
     if (!host) return;
     const surface = host.dataset.personalFilterSurface || 'calendar';
@@ -1459,18 +1488,18 @@ const PersonalFilters = (() => {
     let active = host.dataset.personalFilterTab || 'filters';
     if (layout === 'filters') active = 'filters';
     if (layout === 'settings') active = 'settings';
+    const extraTabs = extraTabsFor(surface, host);
     const tabDefs = [
-      { id: 'filters', label: 'Filters' },
-      { id: 'settings', label: 'Filter Settings' },
-      { id: 'meta-filters', label: 'Meta Filters' },
-      ...extraTabsFor(surface, host),
+      ...PRIMARY_TABS,
+      ...extraTabs,
     ];
     if (!tabDefs.some(tab => tab.id === active && !tab.disabled)) active = tabDefs.some(tab => tab.id === 'new-entry' && !tab.disabled) ? 'new-entry' : 'filters';
     if (active !== 'settings' && active !== 'meta-filters') resetSettingsOrderForHost(host);
     const framed = host.dataset.personalFilterFramed === 'false' ? '' : ' personal-filter-panel--framed';
     const tabs = layout === 'tabs'
       ? `<div class="personal-filter-panel__tabs" role="tablist">
-          ${tabDefs.map(tab => `<button class="personal-filter-tab${tab.disabled ? ' is-disabled' : ''}" type="button" role="tab" aria-selected="${active === tab.id ? 'true' : 'false'}" aria-disabled="${tab.disabled ? 'true' : 'false'}" data-personal-filter-tab="${escHtml(tab.id)}"${tab.disabled ? ' disabled' : ''}>${escHtml(tab.label)}</button>`).join('')}
+          ${primaryTabDropdownHtml(active)}
+          ${extraTabs.map(tab => `<button class="personal-filter-tab${tab.disabled ? ' is-disabled' : ''}" type="button" role="tab" aria-selected="${active === tab.id ? 'true' : 'false'}" aria-disabled="${tab.disabled ? 'true' : 'false'}" data-personal-filter-tab="${escHtml(tab.id)}"${tab.disabled ? ' disabled' : ''}>${escHtml(tab.label)}</button>`).join('')}
         </div>`
       : '';
     const assignmentSurface = active === 'filters' ? assignmentSurfaceForHost(host) : surface;
@@ -1484,6 +1513,95 @@ const PersonalFilters = (() => {
     </div>`;
     wireHost(host);
     bindHostControls(host);
+  }
+
+  function updateModalTitleForHost(host, tabId) {
+    if (host?.id !== 'personal-filter-modal-root') return;
+    const title = document.getElementById('personal-filter-modal-title-text');
+    if (!title) return;
+    title.textContent = tabLabel(tabId);
+  }
+
+  function activateHostTab(host, tabId) {
+    const nextTab = String(tabId || 'filters');
+    if (host.dataset.personalFilterTab !== nextTab) resetSettingsOrderForHost(host);
+    delete host.dataset.personalFilterAssignmentSurface;
+    host.dataset.personalFilterTab = nextTab;
+    updateModalTitleForHost(host, nextTab);
+    renderHost(host);
+  }
+
+  function closePrimaryTabDropdown(dropdown) {
+    if (!dropdown) return;
+    dropdown.classList.remove('open');
+    const toggle = dropdown.querySelector('[data-personal-filter-tab-menu-toggle]');
+    if (toggle) toggle.setAttribute('aria-expanded', 'false');
+    const menu = dropdown.querySelector('.personal-filter-tab-menu');
+    if (menu) {
+      menu.style.removeProperty('--personal-filter-tab-menu-left');
+      menu.style.removeProperty('--personal-filter-tab-menu-top');
+      menu.style.removeProperty('--personal-filter-tab-menu-min-width');
+    }
+    clampDocumentHorizontalScroll();
+  }
+
+  function closePrimaryTabDropdowns(root = document) {
+    root.querySelectorAll?.('[data-personal-filter-tab-dropdown].open').forEach(closePrimaryTabDropdown);
+  }
+
+  function clampDocumentHorizontalScroll() {
+    const scrollY = window.scrollY || 0;
+    if (window.scrollX) window.scrollTo(0, scrollY);
+    [document.scrollingElement, document.documentElement, document.body].forEach(node => {
+      if (node && node.scrollLeft) node.scrollLeft = 0;
+    });
+  }
+
+  function fixedContainingBlockRect(node) {
+    let parent = node?.parentElement || null;
+    while (parent && parent !== document.documentElement) {
+      const style = window.getComputedStyle ? window.getComputedStyle(parent) : null;
+      const transform = style?.transform || 'none';
+      const perspective = style?.perspective || 'none';
+      const filter = style?.filter || 'none';
+      const backdropFilter = style?.backdropFilter || style?.webkitBackdropFilter || 'none';
+      const contain = style?.contain || '';
+      const willChange = style?.willChange || '';
+      const createsContainingBlock = transform !== 'none'
+        || perspective !== 'none'
+        || filter !== 'none'
+        || backdropFilter !== 'none'
+        || /\b(layout|paint|strict|content)\b/.test(contain)
+        || /\b(transform|perspective|filter)\b/.test(willChange);
+      if (createsContainingBlock) return parent.getBoundingClientRect();
+      parent = parent.parentElement;
+    }
+    return { left: 0, top: 0 };
+  }
+
+  function positionPrimaryTabMenu(dropdown) {
+    if (!dropdown) return;
+    const menu = dropdown.querySelector('.personal-filter-tab-menu');
+    const anchor = dropdown.querySelector('.personal-filter-tab-split') || dropdown;
+    if (!menu || !anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    const viewportW = document.documentElement.clientWidth || window.innerWidth || 0;
+    const viewportH = document.documentElement.clientHeight || window.innerHeight || 0;
+    const maxMenuW = Math.max(120, viewportW - 24);
+    const minWidth = Math.min(maxMenuW, Math.max(120, Math.round(rect.width)));
+    menu.style.setProperty('--personal-filter-tab-menu-min-width', `${minWidth}px`);
+    const menuW = Math.min(maxMenuW, Math.max(minWidth, Math.ceil(menu.getBoundingClientRect().width || menu.scrollWidth || minWidth)));
+    const menuH = Math.min(Math.max(32, Math.ceil(menu.getBoundingClientRect().height || menu.scrollHeight || 120)), Math.max(80, viewportH - 24));
+    const viewportLeft = Math.max(12, Math.min(Math.round(rect.left), viewportW - menuW - 12));
+    const belowTop = Math.round(rect.bottom + 4);
+    const aboveTop = Math.round(rect.top - menuH - 4);
+    const viewportTop = belowTop + menuH <= viewportH - 12 ? belowTop : Math.max(12, aboveTop);
+    const containingRect = fixedContainingBlockRect(menu);
+    const left = viewportLeft - Math.round(containingRect.left || 0);
+    const top = viewportTop - Math.round(containingRect.top || 0);
+    menu.style.setProperty('--personal-filter-tab-menu-left', `${left}px`);
+    menu.style.setProperty('--personal-filter-tab-menu-top', `${top}px`);
+    clampDocumentHorizontalScroll();
   }
 
   function renderAll() {
@@ -1517,15 +1635,14 @@ const PersonalFilters = (() => {
       if (!host || (options.visibleOnly !== false && !hostIsVisible(host))) return;
       if ((host.dataset.personalFilterLayout || 'tabs') !== 'tabs') return;
       const tab = [
-        { id: 'filters', disabled: false },
-        { id: 'settings', disabled: false },
+        ...PRIMARY_TABS.map(item => ({ ...item, disabled: false })),
         ...extraTabsFor(cleanSurface, host),
-        { id: 'meta-filters', disabled: false },
       ].find(item => item.id === cleanTab);
       if (!tab || tab.disabled) return;
       if (assignmentSurface) host.dataset.personalFilterAssignmentSurface = assignmentSurface;
       else delete host.dataset.personalFilterAssignmentSurface;
       host.dataset.personalFilterTab = cleanTab;
+      updateModalTitleForHost(host, cleanTab);
       renderHost(host);
       activated = true;
     });
@@ -1718,9 +1835,7 @@ const PersonalFilters = (() => {
     else delete root.dataset.personalFilterExtraTabs;
     root.dataset.personalFilterTab = tab === 'filter-settings' ? 'settings' : (tab || 'filters');
     resetSettingsOrderForHost(root);
-    if (title) title.textContent = tab === 'settings' || tab === 'filter-settings'
-      ? 'Filter Settings'
-      : (tab === 'meta-filters' ? 'Meta Filters' : 'Filters');
+    if (title) title.textContent = tabLabel(root.dataset.personalFilterTab);
     renderHost(root);
     if (typeof HubModal !== 'undefined') HubModal.open(modal);
     else if (typeof modal.showModal === 'function' && !modal.open) modal.showModal();
@@ -1875,11 +1990,32 @@ const PersonalFilters = (() => {
       tab.addEventListener('click', event => {
         event.preventDefault();
         event.stopPropagation();
-        const nextTab = String(tab.dataset.personalFilterTab || 'filters');
-        if (host.dataset.personalFilterTab !== nextTab) resetSettingsOrderForHost(host);
-        delete host.dataset.personalFilterAssignmentSurface;
-        host.dataset.personalFilterTab = nextTab;
-        renderHost(host);
+        activateHostTab(host, tab.dataset.personalFilterTab || 'filters');
+      }, true);
+    });
+    host.querySelectorAll('[data-personal-filter-tab-menu-toggle]').forEach(toggle => {
+      if (toggle.dataset.personalFilterBound === '1') return;
+      toggle.dataset.personalFilterBound = '1';
+      toggle.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const dropdown = toggle.closest('[data-personal-filter-tab-dropdown]');
+        const wasOpen = dropdown?.classList.contains('open');
+        closePrimaryTabDropdowns(host);
+        if (dropdown && !wasOpen) {
+          dropdown.classList.add('open');
+          toggle.setAttribute('aria-expanded', 'true');
+          positionPrimaryTabMenu(dropdown);
+        }
+      }, true);
+    });
+    host.querySelectorAll('[data-personal-filter-menu-tab]').forEach(tab => {
+      if (tab.dataset.personalFilterBound === '1') return;
+      tab.dataset.personalFilterBound = '1';
+      tab.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        activateHostTab(host, tab.dataset.personalFilterMenuTab || 'filters');
       }, true);
     });
     host.querySelectorAll('[data-personal-filter-search]').forEach(input => {
@@ -2053,6 +2189,10 @@ const PersonalFilters = (() => {
       setSelectedIds(surface, clearSelectedIds(surface));
     }
     document.addEventListener('click', event => {
+      const dropdown = event.target.closest?.('[data-personal-filter-tab-dropdown]');
+      document.querySelectorAll('[data-personal-filter-tab-dropdown].open').forEach(openDropdown => {
+        if (!dropdown || !openDropdown.contains(event.target)) closePrimaryTabDropdown(openDropdown);
+      });
       const clear = event.target.closest('[data-personal-filter-clear]');
       if (clear) {
         event.preventDefault();
@@ -2068,6 +2208,15 @@ const PersonalFilters = (() => {
       }
     }, true);
     document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        const hadOpenDropdown = Boolean(document.querySelector('[data-personal-filter-tab-dropdown].open'));
+        closePrimaryTabDropdowns(document);
+        if (hadOpenDropdown) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        return;
+      }
       if (event.key !== 'Enter' && event.key !== ' ') return;
       const clear = event.target.closest('[data-personal-filter-clear]');
       if (clear) {
@@ -2085,7 +2234,13 @@ const PersonalFilters = (() => {
       syncUltrawideSidecar(event.detail?.page);
     });
     window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('resize', () => syncUltrawideSidecar(), { passive: true });
+    window.addEventListener('resize', () => {
+      syncUltrawideSidecar();
+      document.querySelectorAll('[data-personal-filter-tab-dropdown].open').forEach(positionPrimaryTabMenu);
+    }, { passive: true });
+    window.addEventListener('scroll', () => {
+      document.querySelectorAll('[data-personal-filter-tab-dropdown].open').forEach(positionPrimaryTabMenu);
+    }, { passive: true });
     window.setTimeout(() => syncUltrawideSidecar(), 250);
     window.setTimeout(() => syncUltrawideSidecar(), 900);
     loadPretext();
