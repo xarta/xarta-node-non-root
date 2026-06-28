@@ -45,8 +45,8 @@ assert.match(
 
 assert.match(
   kanbanJs,
-  /function\s+automationReviewMarkers\(\)[\s\S]*recent_markers[\s\S]*function\s+automationFailureAggregates\(\)[\s\S]*failure_aggregates[\s\S]*function\s+automationReviewMarkersHtml\(\)[\s\S]*timeout_count[\s\S]*retry_waiting_count[\s\S]*retry_due_count[\s\S]*superseded_count/,
-  'Automation panel must render retry state and queue lifecycle counts.',
+  /function\s+automationReviewMarkers\(\)[\s\S]*recent_markers[\s\S]*function\s+automationFailureAggregates\(\)[\s\S]*failure_aggregates[\s\S]*function\s+automationReviewMarkersHtml\(\)[\s\S]*Review queued[\s\S]*Preprocess queued[\s\S]*timeout_count[\s\S]*retry_waiting_count[\s\S]*retry_due_count[\s\S]*superseded_count/,
+  'Automation panel must render retry state and review/preprocessing queue lifecycle counts.',
 );
 
 assert.match(
@@ -71,6 +71,12 @@ assert.match(
   kanbanJs,
   /Active Retries[\s\S]*retryWaitingCount[\s\S]*history \$\{failureCount\} events/,
   'Automation panel must headline active retry waits separately from historical failure events.',
+);
+
+assert.match(
+  kanbanJs,
+  /Queue Work[\s\S]*totalQueueLength[\s\S]*review \$\{queueLength\}[\s\S]*preprocessing \$\{preprocessingQueueLength\}/,
+  'Automation panel Queue Work metric must count review and preprocessing queues together.',
 );
 
 assert.match(

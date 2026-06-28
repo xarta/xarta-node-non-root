@@ -2039,10 +2039,10 @@ const KanbanBoardPage = (() => {
     const queueLength = Number(scheduler.queue_length ?? state.automationStatus.data?.review_processor?.queue_length ?? 0);
     const preprocessingQueueLength = Number(preprocessingScheduler.queue_length ?? state.automationStatus.data?.preprocessing?.queue_length ?? 0);
     const counts = [
-      ['Pending', queueLength],
-      ['Preprocess', preprocessingQueueLength],
-      ['Running', Number(scheduler.active_count || byStatus.processing || 0)],
-      ['Timed out', Number(scheduler.timeout_count || 0)],
+      ['Review queued', queueLength],
+      ['Preprocess queued', preprocessingQueueLength],
+      ['Running', Number(scheduler.active_count || byStatus.processing || 0) + Number(preprocessingScheduler.active_count || preprocessingByStatus.processing || 0)],
+      ['Timed out', Number(scheduler.timeout_count || 0) + Number(preprocessingScheduler.timeout_count || 0)],
       ['Retry waiting', Number(scheduler.retry_waiting_count || 0) + Number(preprocessingScheduler.retry_waiting_count || 0)],
       ['Retry due', Number(scheduler.retry_due_count || 0) + Number(preprocessingScheduler.retry_due_count || 0)],
       ['Cancelled', Number(byStatus.cancelled || 0) + Number(preprocessingByStatus.cancelled || 0)],
@@ -2235,16 +2235,18 @@ const KanbanBoardPage = (() => {
     const outputContract = data.output_contract || {};
     const processingPolicy = data.processing_policy || {};
     const scheduler = automationReviewScheduler();
+    const preprocessingScheduler = automationPreprocessingScheduler();
     const outputTypeCount = Array.isArray(outputContract.output_types) ? outputContract.output_types.length : 0;
     const queueLength = Number(scheduler.queue_length ?? processor.queue_length ?? 0);
-    const activeCount = Number(scheduler.active_count || 0);
-    const timeoutCount = Number(scheduler.timeout_count || 0);
+    const preprocessingQueueLength = Number(preprocessingScheduler.queue_length ?? pre.queue_length ?? 0);
+    const totalQueueLength = queueLength + preprocessingQueueLength;
+    const activeCount = Number(scheduler.active_count || 0) + Number(preprocessingScheduler.active_count || 0);
+    const timeoutCount = Number(scheduler.timeout_count || 0) + Number(preprocessingScheduler.timeout_count || 0);
     const failures = automationFailureAggregates();
     const failureEvents = automationFailureEvents();
     const failureCount = Number(data.failures?.event_count ?? failureEvents.length ?? 0);
     const repeatedFailureCount = Number(data.failures?.repeated_failure_count ?? failures.filter(row => Number(row.attempt_count || 0) > 1).length);
     const retryWaitingCount = Number(data.failures?.retry_waiting_count ?? failures.filter(row => row.retry_waiting).length);
-    const preprocessingScheduler = automationPreprocessingScheduler();
     const retryDueCount = Number(scheduler.retry_due_count || 0) + Number(preprocessingScheduler.retry_due_count || 0);
     const decisionCount = Number(decisions.count ?? decisions.total ?? 0);
     const exclusionCount = Number(exclusions.count ?? 0);
@@ -2276,7 +2278,7 @@ const KanbanBoardPage = (() => {
       </div>
       <div class="kanban-automation-grid">
         ${automationMetricHtml('Review Processor', processor.status || 'not loaded', `queue ${queueLength} · active ${activeItem}`, queueLength ? 'warn' : 'ok')}
-        ${automationMetricHtml('Queue Work', `${queueLength} pending`, `running ${activeCount} · timed out ${timeoutCount}`, timeoutCount ? 'warn' : (queueLength ? 'info' : 'ok'))}
+        ${automationMetricHtml('Queue Work', `${totalQueueLength} queued`, `review ${queueLength} · preprocessing ${preprocessingQueueLength} · running ${activeCount} · timed out ${timeoutCount}`, timeoutCount ? 'warn' : (totalQueueLength ? 'info' : 'ok'))}
         ${automationMetricHtml('Active Retries', `${retryWaitingCount} waiting`, `due ${retryDueCount} · repeated ${repeatedFailureCount} · history ${failureCount} events`, (retryWaitingCount || retryDueCount) ? 'warn' : (failureCount ? 'info' : 'ok'))}
         ${automationMetricHtml('Worker Node', workerNodeState, workerNodeDetail, workerNodeTone)}
         ${automationMetricHtml('Provider', provider.active || 'cloud-first', provider.planned || provider.local_processing || 'local later', 'info')}
