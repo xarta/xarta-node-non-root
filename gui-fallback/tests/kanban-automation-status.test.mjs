@@ -63,8 +63,14 @@ assert.match(
 
 assert.match(
   kanbanJs,
-  /function\s+automationFailureAggregatesHtml\(\)[\s\S]*retry-waiting[\s\S]*Repeated Failures[\s\S]*Last Error/,
-  'Automation panel must render repeated automation failures with retry state and last error.',
+  /function\s+automationFailureAggregatesHtml\(\)[\s\S]*Historical groups[\s\S]*retry-waiting[\s\S]*Retry Failure History[\s\S]*Last Error/,
+  'Automation panel must render retry failure history with retry state, historical grouping, and last error.',
+);
+
+assert.match(
+  kanbanJs,
+  /Active Retries[\s\S]*retryWaitingCount[\s\S]*history \$\{failureCount\} events/,
+  'Automation panel must headline active retry waits separately from historical failure events.',
 );
 
 assert.match(
@@ -129,7 +135,7 @@ assert.match(
 
 assert.match(
   kanbanJs,
-  /automation_status_loaded:[\s\S]*automation_review_processor_status:[\s\S]*automation_review_queue_length:[\s\S]*automation_review_active_count:[\s\S]*automation_review_timeout_count:[\s\S]*automation_review_superseded_count:[\s\S]*automation_review_marker_count:[\s\S]*automation_failure_event_count:[\s\S]*automation_repeated_failure_count:[\s\S]*automation_retry_waiting_count:[\s\S]*automation_failure_group_count:[\s\S]*automation_idle_worker_current_node:[\s\S]*automation_idle_worker_owner_node:[\s\S]*automation_idle_worker_runs_on_this_node:[\s\S]*automation_idle_worker_effective_enabled:[\s\S]*automation_busy_action:[\s\S]*automation_last_result:[\s\S]*automation_commit_link_health_ok:[\s\S]*automation_output_contract_schema:[\s\S]*automation_output_contract_types:[\s\S]*automation_processing_policy_schema:[\s\S]*automation_processing_policy_active_mode:[\s\S]*automation_processing_policy_local_gate:/,
+  /automation_status_loaded:[\s\S]*automation_review_processor_status:[\s\S]*automation_review_queue_length:[\s\S]*automation_review_active_count:[\s\S]*automation_review_timeout_count:[\s\S]*automation_review_superseded_count:[\s\S]*automation_review_marker_count:[\s\S]*automation_failure_event_count:[\s\S]*automation_repeated_failure_count:[\s\S]*automation_retry_waiting_count:[\s\S]*automation_retry_due_count:[\s\S]*automation_failure_group_count:[\s\S]*automation_idle_worker_current_node:[\s\S]*automation_idle_worker_owner_node:[\s\S]*automation_idle_worker_runs_on_this_node:[\s\S]*automation_idle_worker_effective_enabled:[\s\S]*automation_busy_action:[\s\S]*automation_last_result:[\s\S]*automation_commit_link_health_ok:[\s\S]*automation_output_contract_schema:[\s\S]*automation_output_contract_types:[\s\S]*automation_processing_policy_schema:[\s\S]*automation_processing_policy_active_mode:[\s\S]*automation_processing_policy_local_gate:/,
   'Kanban snapshots must expose automation status, retry failures, and queue proof fields.',
 );
 

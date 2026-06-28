@@ -2087,18 +2087,27 @@ const KanbanBoardPage = (() => {
     const failures = automationFailureAggregates();
     const events = automationFailureEvents();
     const repeated = failures.filter(row => Number(row.attempt_count || 0) > 1).length;
+    const waiting = failures.filter(row => row.retry_waiting).length;
+    const historical = failures.filter(row => {
+      const state = String(row.retry_state || row.marker_status || row.status || '').toLowerCase();
+      return !row.retry_waiting && state !== 'retry_due' && state !== 'failed';
+    }).length;
     const chips = [
-      ['Groups', failures.length],
-      ['Repeated', repeated],
-      ['Events', events.length],
-      ['Retry waiting', failures.filter(row => row.retry_waiting).length],
+      ['Active waiting', waiting],
+      ['Repeated groups', repeated],
+      ['Historical groups', historical],
+      ['History events', events.length],
+      ['Visible groups', failures.length],
     ].map(([label, value]) => (
       `<span class="kanban-automation-queue-chip"><strong>${escHtml(String(value))}</strong>${escHtml(label)}</span>`
     )).join('');
     const rows = failures.map(row => {
       const item = row.item_title || row.item_ref || row.item_id || row.marker_id || 'Automation failure';
       const lastError = row.last_error || row.error_message || '';
-      const retryState = row.retry_waiting ? 'retry-waiting' : (row.retry_state || row.marker_status || row.status || '');
+      const rawState = String(row.retry_state || row.marker_status || row.status || '').toLowerCase();
+      const retryState = row.retry_waiting
+        ? 'retry-waiting'
+        : ((rawState && rawState !== 'failed' && rawState !== 'retry_due') ? 'historical' : (rawState || 'historical'));
       return `<article class="kanban-automation-failure" role="row" data-kanban-failure-marker-id="${escHtml(row.marker_id || '')}" data-retry-state="${escHtml(retryState)}">
         <div class="kanban-automation-marker-title" role="cell">
           <strong>${escHtml(item)}</strong>
@@ -2118,7 +2127,7 @@ const KanbanBoardPage = (() => {
         </div>
       </article>`;
     }).join('');
-    return `<div class="kanban-automation-section-head">Repeated Failures</div>
+    return `<div class="kanban-automation-section-head">Retry Failure History</div>
       <div class="kanban-automation-queue-summary" aria-label="Automation failure counts">${chips}</div>
       <div class="kanban-automation-failures" role="table" aria-label="Automation repeated failures">
         <div class="kanban-automation-failure kanban-automation-marker--head" role="row">
@@ -2235,6 +2244,8 @@ const KanbanBoardPage = (() => {
     const failureCount = Number(data.failures?.event_count ?? failureEvents.length ?? 0);
     const repeatedFailureCount = Number(data.failures?.repeated_failure_count ?? failures.filter(row => Number(row.attempt_count || 0) > 1).length);
     const retryWaitingCount = Number(data.failures?.retry_waiting_count ?? failures.filter(row => row.retry_waiting).length);
+    const preprocessingScheduler = automationPreprocessingScheduler();
+    const retryDueCount = Number(scheduler.retry_due_count || 0) + Number(preprocessingScheduler.retry_due_count || 0);
     const decisionCount = Number(decisions.count ?? decisions.total ?? 0);
     const exclusionCount = Number(exclusions.count ?? 0);
     const healthDecisionCount = Number(health.decision_count ?? health.decisions ?? 0);
@@ -2266,7 +2277,7 @@ const KanbanBoardPage = (() => {
       <div class="kanban-automation-grid">
         ${automationMetricHtml('Review Processor', processor.status || 'not loaded', `queue ${queueLength} · active ${activeItem}`, queueLength ? 'warn' : 'ok')}
         ${automationMetricHtml('Queue Work', `${queueLength} pending`, `running ${activeCount} · timed out ${timeoutCount}`, timeoutCount ? 'warn' : (queueLength ? 'info' : 'ok'))}
-        ${automationMetricHtml('Retry Failures', String(failureCount), `repeated ${repeatedFailureCount} · waiting ${retryWaitingCount}`, failureCount ? 'warn' : 'ok')}
+        ${automationMetricHtml('Active Retries', `${retryWaitingCount} waiting`, `due ${retryDueCount} · repeated ${repeatedFailureCount} · history ${failureCount} events`, (retryWaitingCount || retryDueCount) ? 'warn' : (failureCount ? 'info' : 'ok'))}
         ${automationMetricHtml('Worker Node', workerNodeState, workerNodeDetail, workerNodeTone)}
         ${automationMetricHtml('Provider', provider.active || 'cloud-first', provider.planned || provider.local_processing || 'local later', 'info')}
         ${automationMetricHtml('Decisions', String(decisionCount), `recent ${automationRecentDecisions().length}`, decisionCount ? 'ok' : 'info')}
@@ -5174,6 +5185,8 @@ const KanbanBoardPage = (() => {
       automation_failure_event_count: Number(state.automationStatus.data?.failures?.event_count || 0),
       automation_repeated_failure_count: Number(state.automationStatus.data?.failures?.repeated_failure_count || 0),
       automation_retry_waiting_count: Number(state.automationStatus.data?.failures?.retry_waiting_count || 0),
+      automation_retry_due_count: Number(automationReviewScheduler().retry_due_count || 0)
+        + Number(automationPreprocessingScheduler().retry_due_count || 0),
       automation_failure_group_count: automationFailureAggregates().length,
       automation_idle_worker_current_node: state.automationStatus.data?.idle_worker?.current_node_id || '',
       automation_idle_worker_owner_node: state.automationStatus.data?.idle_worker?.owner_node_id || '',
