@@ -1286,13 +1286,15 @@ dialog.hub-modal#kanban-detail-modal[open] {
   line-height: 1;
 }
 
-.kanban-automation-markers {
+.kanban-automation-markers,
+.kanban-automation-failures {
   display: grid;
   gap: 6px;
   min-width: 0;
 }
 
-.kanban-automation-marker {
+.kanban-automation-marker,
+.kanban-automation-failure {
   display: grid;
   grid-template-columns:
     minmax(220px, 1.15fr)
@@ -1334,7 +1336,8 @@ dialog.hub-modal#kanban-detail-modal[open] {
 .kanban-automation-marker-status span,
 .kanban-automation-marker-time span,
 .kanban-automation-marker-note span,
-.kanban-automation-marker > span {
+.kanban-automation-marker > span,
+.kanban-automation-failure > span {
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -1343,7 +1346,8 @@ dialog.hub-modal#kanban-detail-modal[open] {
 .kanban-automation-marker-status span,
 .kanban-automation-marker-time span,
 .kanban-automation-marker-note span,
-.kanban-automation-marker > span {
+.kanban-automation-marker > span,
+.kanban-automation-failure > span {
   color: var(--text-dim);
   font-size: 12px;
 }
@@ -1629,12 +1633,15 @@ dialog.hub-modal#kanban-detail-modal[open] {
     display: none;
   }
 
-  .kanban-automation-marker {
+  .kanban-automation-marker,
+  .kanban-automation-failure {
     grid-template-columns: minmax(220px, 1fr) minmax(88px, .32fr) minmax(62px, .22fr);
   }
 
   .kanban-automation-marker > :nth-child(4),
-  .kanban-automation-marker > :nth-child(5) {
+  .kanban-automation-marker > :nth-child(5),
+  .kanban-automation-failure > :nth-child(4),
+  .kanban-automation-failure > :nth-child(5) {
     display: none;
   }
 
@@ -1670,6 +1677,7 @@ dialog.hub-modal#kanban-detail-modal[open] {
   .kanban-automation-decision,
   .kanban-automation-decision--head,
   .kanban-automation-marker,
+  .kanban-automation-failure,
   .kanban-automation-marker--head {
     grid-template-columns: 1fr;
     align-items: start;

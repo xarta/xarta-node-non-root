@@ -1916,11 +1916,41 @@ const KanbanBoardPage = (() => {
     return scheduler && typeof scheduler === 'object' ? scheduler : {};
   }
 
+  function automationPreprocessingScheduler() {
+    const scheduler = state.automationStatus.data?.preprocessing?.scheduler;
+    return scheduler && typeof scheduler === 'object' ? scheduler : {};
+  }
+
   function automationReviewMarkers() {
     const schedulerMarkers = automationReviewScheduler().recent_markers;
     if (Array.isArray(schedulerMarkers) && schedulerMarkers.length) return schedulerMarkers;
     const directMarkers = state.automationStatus.data?.review_processor?.review_markers;
     return Array.isArray(directMarkers) ? directMarkers : [];
+  }
+
+  function automationPreprocessingMarkers() {
+    const schedulerMarkers = automationPreprocessingScheduler().recent_markers;
+    if (Array.isArray(schedulerMarkers) && schedulerMarkers.length) return schedulerMarkers;
+    const directMarkers = state.automationStatus.data?.preprocessing?.markers;
+    return Array.isArray(directMarkers) ? directMarkers : [];
+  }
+
+  function automationFailureAggregates() {
+    const combined = state.automationStatus.data?.failures?.aggregates;
+    if (Array.isArray(combined) && combined.length) return combined;
+    return [
+      ...(Array.isArray(automationReviewScheduler().failure_aggregates) ? automationReviewScheduler().failure_aggregates : []),
+      ...(Array.isArray(automationPreprocessingScheduler().failure_aggregates) ? automationPreprocessingScheduler().failure_aggregates : []),
+    ];
+  }
+
+  function automationFailureEvents() {
+    const combined = state.automationStatus.data?.failures?.recent_events;
+    if (Array.isArray(combined) && combined.length) return combined;
+    return [
+      ...(Array.isArray(automationReviewScheduler().failure_events) ? automationReviewScheduler().failure_events : []),
+      ...(Array.isArray(automationPreprocessingScheduler().failure_events) ? automationPreprocessingScheduler().failure_events : []),
+    ];
   }
 
   function automationMetricHtml(label, value, meta = '', tone = '') {
@@ -1938,6 +1968,9 @@ const KanbanBoardPage = (() => {
     }
     if ('requeued_count' in payload) {
       return `requeued ${Number(payload.requeued_count || 0)} · timeouts ${Number(payload.scheduler?.timeout_count || 0)}`;
+    }
+    if ('processed_count' in payload) {
+      return `eligible ${Number(payload.eligible_marker_count || 0)} · processed ${Number(payload.processed_count || 0)}`;
     }
     return '';
   }
@@ -1962,6 +1995,9 @@ const KanbanBoardPage = (() => {
 
   function automationMarkerDisplayStatus(marker) {
     const status = String(marker?.status || '').toLowerCase();
+    const retryState = String(marker?.retry_state || '').toLowerCase();
+    if (retryState === 'retry_waiting') return 'retry waiting';
+    if (retryState === 'retry_due') return 'retry due';
     const expiresAt = marker?.processing_expires_at || '';
     const expiry = expiresAt ? Date.parse(expiresAt) : NaN;
     if (status === 'processing' && Number.isFinite(expiry) && expiry <= Date.now()) return 'timed-out';
@@ -1976,6 +2012,7 @@ const KanbanBoardPage = (() => {
       marker.queued_at ? `queued ${formatBackupDate(marker.queued_at)}` : '',
       marker.processing_started_at ? `started ${formatBackupDate(marker.processing_started_at)}` : '',
       marker.processing_expires_at ? `expires ${formatBackupDate(marker.processing_expires_at)}` : '',
+      marker.next_retry_at ? `retry ${formatBackupDate(marker.next_retry_at)}` : '',
       marker.processed_at ? `processed ${formatBackupDate(marker.processed_at)}` : '',
       marker.superseded_at ? `superseded ${formatBackupDate(marker.superseded_at)}` : '',
     ].filter(Boolean);
@@ -1984,9 +2021,10 @@ const KanbanBoardPage = (() => {
 
   function automationMarkerContextHtml(marker) {
     const error = marker.last_error || '';
+    const errorClass = marker.last_error_class || '';
     const decision = marker.decision_id || '';
     const hash = marker.document_source_hash || marker.processed_source_hash || '';
-    if (error) return `<span>${escHtml(error)}</span>`;
+    if (error) return `<span>${escHtml(errorClass ? `${errorClass}: ${error}` : error)}</span>`;
     if (decision) return `<span>${escHtml(decision)}</span>`;
     if (hash) return `<span>${escHtml(hash.slice(0, 19))}</span>`;
     return '<span>no marker note</span>';
@@ -1994,17 +2032,23 @@ const KanbanBoardPage = (() => {
 
   function automationReviewMarkersHtml() {
     const scheduler = automationReviewScheduler();
+    const preprocessingScheduler = automationPreprocessingScheduler();
     const byStatus = scheduler.by_status && typeof scheduler.by_status === 'object' ? scheduler.by_status : {};
-    const markers = automationReviewMarkers();
+    const preprocessingByStatus = preprocessingScheduler.by_status && typeof preprocessingScheduler.by_status === 'object' ? preprocessingScheduler.by_status : {};
+    const markers = [...automationReviewMarkers(), ...automationPreprocessingMarkers()];
     const queueLength = Number(scheduler.queue_length ?? state.automationStatus.data?.review_processor?.queue_length ?? 0);
+    const preprocessingQueueLength = Number(preprocessingScheduler.queue_length ?? state.automationStatus.data?.preprocessing?.queue_length ?? 0);
     const counts = [
       ['Pending', queueLength],
+      ['Preprocess', preprocessingQueueLength],
       ['Running', Number(scheduler.active_count || byStatus.processing || 0)],
       ['Timed out', Number(scheduler.timeout_count || 0)],
-      ['Cancelled', Number(byStatus.cancelled || 0)],
-      ['Processed', Number(byStatus.processed || 0)],
-      ['Failed', Number(byStatus.failed || 0)],
-      ['Skipped', Number(byStatus.skipped || 0)],
+      ['Retry waiting', Number(scheduler.retry_waiting_count || 0) + Number(preprocessingScheduler.retry_waiting_count || 0)],
+      ['Retry due', Number(scheduler.retry_due_count || 0) + Number(preprocessingScheduler.retry_due_count || 0)],
+      ['Cancelled', Number(byStatus.cancelled || 0) + Number(preprocessingByStatus.cancelled || 0)],
+      ['Processed', Number(byStatus.processed || 0) + Number(preprocessingByStatus.processed || 0)],
+      ['Failed', Number(byStatus.failed || 0) + Number(preprocessingByStatus.failed || 0)],
+      ['Skipped', Number(byStatus.skipped || 0) + Number(preprocessingByStatus.skipped || 0)],
       ['Superseded', Number(scheduler.superseded_count || 0)],
     ];
     const chips = counts.map(([label, value]) => (
@@ -2014,7 +2058,7 @@ const KanbanBoardPage = (() => {
       `<article class="kanban-automation-marker" role="row" data-kanban-review-marker-id="${escHtml(marker.marker_id || '')}" data-status="${escHtml(marker.status || '')}">
         <div class="kanban-automation-marker-title" role="cell">
           <strong>${escHtml(marker.item_id || marker.marker_id || 'Review marker')}</strong>
-          <span>${escHtml(marker.document_type || 'review')} · ${escHtml(marker.provider_mode || 'cloud-first')}</span>
+          <span>${escHtml(marker.processor_kind || 'review')} · ${escHtml(marker.document_type || 'review')} · ${escHtml(marker.provider_mode || 'cloud-first')}</span>
         </div>
         <div class="kanban-automation-marker-status" role="cell">
           <strong>${escHtml(automationMarkerDisplayStatus(marker))}</strong>
@@ -2025,9 +2069,9 @@ const KanbanBoardPage = (() => {
         <div class="kanban-automation-marker-note" role="cell">${automationMarkerContextHtml(marker)}</div>
       </article>`
     )).join('');
-    return `<div class="kanban-automation-section-head">Review Queue</div>
-      <div class="kanban-automation-queue-summary" aria-label="Review Processor queue counts">${chips}</div>
-      <div class="kanban-automation-markers" role="table" aria-label="Review Processor markers">
+    return `<div class="kanban-automation-section-head">Automation Markers</div>
+      <div class="kanban-automation-queue-summary" aria-label="Automation queue counts">${chips}</div>
+      <div class="kanban-automation-markers" role="table" aria-label="Automation markers">
         <div class="kanban-automation-marker kanban-automation-marker--head" role="row">
           <span role="columnheader">Item</span>
           <span role="columnheader">State</span>
@@ -2035,7 +2079,56 @@ const KanbanBoardPage = (() => {
           <span role="columnheader">Timing</span>
           <span role="columnheader">Note</span>
         </div>
-        ${rows || '<div class="kanban-empty">No Review Processor markers recorded.</div>'}
+        ${rows || '<div class="kanban-empty">No automation markers recorded.</div>'}
+      </div>`;
+  }
+
+  function automationFailureAggregatesHtml() {
+    const failures = automationFailureAggregates();
+    const events = automationFailureEvents();
+    const repeated = failures.filter(row => Number(row.attempt_count || 0) > 1).length;
+    const chips = [
+      ['Groups', failures.length],
+      ['Repeated', repeated],
+      ['Events', events.length],
+      ['Retry waiting', failures.filter(row => row.retry_waiting).length],
+    ].map(([label, value]) => (
+      `<span class="kanban-automation-queue-chip"><strong>${escHtml(String(value))}</strong>${escHtml(label)}</span>`
+    )).join('');
+    const rows = failures.map(row => {
+      const item = row.item_title || row.item_ref || row.item_id || row.marker_id || 'Automation failure';
+      const lastError = row.last_error || row.error_message || '';
+      const retryState = row.retry_waiting ? 'retry-waiting' : (row.retry_state || row.marker_status || row.status || '');
+      return `<article class="kanban-automation-failure" role="row" data-kanban-failure-marker-id="${escHtml(row.marker_id || '')}" data-retry-state="${escHtml(retryState)}">
+        <div class="kanban-automation-marker-title" role="cell">
+          <strong>${escHtml(item)}</strong>
+          <span>${escHtml(row.item_ref || row.item_id || '')}</span>
+        </div>
+        <div class="kanban-automation-marker-status" role="cell">
+          <strong>${escHtml(row.processor_kind || '')}</strong>
+          <span>${escHtml(retryState)}</span>
+        </div>
+        <span role="cell">${escHtml(String(row.attempt_count ?? row.attempt_number ?? 0))}</span>
+        <div class="kanban-automation-marker-time" role="cell">
+          ${row.last_failed_at ? `<span>failed ${escHtml(formatBackupDate(row.last_failed_at))}</span>` : ''}
+          ${row.next_retry_at ? `<span>retry ${escHtml(formatBackupDate(row.next_retry_at))}</span>` : ''}
+        </div>
+        <div class="kanban-automation-marker-note" role="cell">
+          <span>${escHtml(row.error_class ? `${row.error_class}: ${lastError}` : lastError)}</span>
+        </div>
+      </article>`;
+    }).join('');
+    return `<div class="kanban-automation-section-head">Repeated Failures</div>
+      <div class="kanban-automation-queue-summary" aria-label="Automation failure counts">${chips}</div>
+      <div class="kanban-automation-failures" role="table" aria-label="Automation repeated failures">
+        <div class="kanban-automation-failure kanban-automation-marker--head" role="row">
+          <span role="columnheader">Item</span>
+          <span role="columnheader">Processor</span>
+          <span role="columnheader">Attempts</span>
+          <span role="columnheader">Retry</span>
+          <span role="columnheader">Last Error</span>
+        </div>
+        ${rows || '<div class="kanban-empty">No retryable automation failures recorded.</div>'}
       </div>`;
   }
 
@@ -2136,6 +2229,11 @@ const KanbanBoardPage = (() => {
     const queueLength = Number(scheduler.queue_length ?? processor.queue_length ?? 0);
     const activeCount = Number(scheduler.active_count || 0);
     const timeoutCount = Number(scheduler.timeout_count || 0);
+    const failures = automationFailureAggregates();
+    const failureEvents = automationFailureEvents();
+    const failureCount = Number(data.failures?.event_count ?? failureEvents.length ?? 0);
+    const repeatedFailureCount = Number(data.failures?.repeated_failure_count ?? failures.filter(row => Number(row.attempt_count || 0) > 1).length);
+    const retryWaitingCount = Number(data.failures?.retry_waiting_count ?? failures.filter(row => row.retry_waiting).length);
     const decisionCount = Number(decisions.count ?? decisions.total ?? 0);
     const exclusionCount = Number(exclusions.count ?? 0);
     const healthDecisionCount = Number(health.decision_count ?? health.decisions ?? 0);
@@ -2144,12 +2242,14 @@ const KanbanBoardPage = (() => {
     const busy = state.automationStatus.loading;
     const scanBusy = state.automationStatus.busyAction === 'scan-reviews';
     const requeueBusy = state.automationStatus.busyAction === 'requeue-timeouts';
+    const tickBusy = state.automationStatus.busyAction === 'run-idle-tick';
     const loadedAt = state.automationStatus.lastLoadedAt ? formatBackupDate(state.automationStatus.lastLoadedAt) : '';
     return `<section class="calendar-band kanban-band kanban-automation-panel" aria-label="Kanban Automation Status">
       <div class="calendar-section-head kanban-section-head">
         <h3>Automation Status</h3>
         <div class="kanban-backups-toolbar kanban-automation-controls">
           <button class="kanban-command-btn" type="button" data-kanban-automation-action="scan-reviews"${busy ? ' disabled' : ''}>${scanBusy ? 'Scanning...' : 'Scan Review Docs'}</button>
+          <button class="kanban-command-btn" type="button" data-kanban-automation-action="run-idle-tick"${busy ? ' disabled' : ''}>${tickBusy ? 'Running...' : 'Run Due Work'}</button>
           <button class="kanban-command-btn" type="button" data-kanban-automation-action="requeue-timeouts"${busy ? ' disabled' : ''}>${requeueBusy ? 'Requeueing...' : 'Requeue Timeouts'}</button>
           <button class="kanban-command-btn" type="button" data-kanban-automation-action="refresh"${busy ? ' disabled' : ''}>Refresh</button>
         </div>
@@ -2157,6 +2257,7 @@ const KanbanBoardPage = (() => {
       <div class="kanban-automation-grid">
         ${automationMetricHtml('Review Processor', processor.status || 'not loaded', `queue ${queueLength} · active ${activeItem}`, queueLength ? 'warn' : 'ok')}
         ${automationMetricHtml('Queue Work', `${queueLength} pending`, `running ${activeCount} · timed out ${timeoutCount}`, timeoutCount ? 'warn' : (queueLength ? 'info' : 'ok'))}
+        ${automationMetricHtml('Retry Failures', String(failureCount), `repeated ${repeatedFailureCount} · waiting ${retryWaitingCount}`, failureCount ? 'warn' : 'ok')}
         ${automationMetricHtml('Provider', provider.active || 'cloud-first', provider.planned || provider.local_processing || 'local later', 'info')}
         ${automationMetricHtml('Decisions', String(decisionCount), `recent ${automationRecentDecisions().length}`, decisionCount ? 'ok' : 'info')}
         ${automationMetricHtml('Commit Links', healthOk ? 'ok' : 'needs review', `${health.decisions_with_commits ?? 0}/${healthDecisionCount} with commits`, healthOk ? 'ok' : 'warn')}
@@ -2170,6 +2271,7 @@ const KanbanBoardPage = (() => {
       ${state.automationStatus.loading ? '<div class="kanban-backup-result" data-tone="info" role="status"><strong>Loading automation status...</strong></div>' : ''}
       ${automationStatusResultHtml()}
       ${automationReviewMarkersHtml()}
+      ${automationFailureAggregatesHtml()}
       ${automationProcessingPolicyHtml()}
       ${automationOutputContractHtml()}
       <div class="kanban-automation-section-head">Recent Decisions</div>
@@ -2244,6 +2346,7 @@ const KanbanBoardPage = (() => {
     if (action === 'refresh') return loadAutomationStatusPanel({ force: true });
     if (action === 'scan-reviews') return runAutomationStatusControl('scan-reviews');
     if (action === 'requeue-timeouts') return runAutomationStatusControl('requeue-timeouts');
+    if (action === 'run-idle-tick') return runAutomationStatusControl('run-idle-tick');
     return null;
   }
 
@@ -2268,6 +2371,12 @@ const KanbanBoardPage = (() => {
     } else if (action === 'requeue-timeouts') {
       path = '/api/v1/personal/kanban/automation/review-processor/requeue-timeouts';
       setAutomationStatusResult('Requeueing timed-out Review work...', {}, { tone: 'info' });
+    } else if (action === 'run-idle-tick') {
+      path = '/api/v1/personal/kanban/automation/idle-worker/tick';
+      body.max_scan_items = 150;
+      body.max_process_items = 5;
+      body.holder_id = 'kanban-automation-status';
+      setAutomationStatusResult('Running due automation work...', {}, { tone: 'info' });
     } else {
       return null;
     }
@@ -2280,6 +2389,8 @@ const KanbanBoardPage = (() => {
       const payload = await requestJson(path, { method: 'POST', body: JSON.stringify(body) });
       if (action === 'scan-reviews') {
         setAutomationStatusResult('Review scan complete.', payload, { tone: payload.queued_count ? 'ok' : 'info' });
+      } else if (action === 'run-idle-tick') {
+        setAutomationStatusResult('Due automation run complete.', payload, { tone: payload.processed_count ? 'ok' : 'info' });
       } else {
         setAutomationStatusResult('Timeout requeue complete.', payload, { tone: payload.requeued_count ? 'ok' : 'info' });
       }
@@ -2287,7 +2398,10 @@ const KanbanBoardPage = (() => {
       return payload;
     } catch (err) {
       const message = err?.message || String(err);
-      setAutomationStatusResult(action === 'scan-reviews' ? 'Review scan failed.' : 'Timeout requeue failed.', {}, {
+      const failedLabel = action === 'scan-reviews'
+        ? 'Review scan failed.'
+        : (action === 'run-idle-tick' ? 'Due automation run failed.' : 'Timeout requeue failed.');
+      setAutomationStatusResult(failedLabel, {}, {
         detail: message,
         tone: 'err',
       });
@@ -5047,6 +5161,10 @@ const KanbanBoardPage = (() => {
       automation_review_timeout_count: Number(automationReviewScheduler().timeout_count || 0),
       automation_review_superseded_count: Number(automationReviewScheduler().superseded_count || 0),
       automation_review_marker_count: automationReviewMarkers().length,
+      automation_failure_event_count: Number(state.automationStatus.data?.failures?.event_count || 0),
+      automation_repeated_failure_count: Number(state.automationStatus.data?.failures?.repeated_failure_count || 0),
+      automation_retry_waiting_count: Number(state.automationStatus.data?.failures?.retry_waiting_count || 0),
+      automation_failure_group_count: automationFailureAggregates().length,
       automation_busy_action: state.automationStatus.busyAction || '',
       automation_last_result: state.automationStatus.lastResult?.message || '',
       automation_commit_link_health_ok: state.automationStatus.data?.commit_link_health?.ok !== false,
