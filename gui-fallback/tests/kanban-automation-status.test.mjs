@@ -69,6 +69,12 @@ assert.match(
 
 assert.match(
   kanbanJs,
+  /function\s+embeddedAutomationStatusHtml\(\)[\s\S]*idle_worker[\s\S]*owner \$\{idleWorker\.owner_node_id[\s\S]*Worker Node/,
+  'Automation panel must render the Kanban idle worker singleton owner node state.',
+);
+
+assert.match(
+  kanbanJs,
   /function\s+embeddedAutomationStatusHtml\(\)[\s\S]*output_contract[\s\S]*Output Contract/,
   'Automation panel must render the Review Processor output contract.',
 );
@@ -123,7 +129,7 @@ assert.match(
 
 assert.match(
   kanbanJs,
-  /automation_status_loaded:[\s\S]*automation_review_processor_status:[\s\S]*automation_review_queue_length:[\s\S]*automation_review_active_count:[\s\S]*automation_review_timeout_count:[\s\S]*automation_review_superseded_count:[\s\S]*automation_review_marker_count:[\s\S]*automation_failure_event_count:[\s\S]*automation_repeated_failure_count:[\s\S]*automation_retry_waiting_count:[\s\S]*automation_failure_group_count:[\s\S]*automation_busy_action:[\s\S]*automation_last_result:[\s\S]*automation_commit_link_health_ok:[\s\S]*automation_output_contract_schema:[\s\S]*automation_output_contract_types:[\s\S]*automation_processing_policy_schema:[\s\S]*automation_processing_policy_active_mode:[\s\S]*automation_processing_policy_local_gate:/,
+  /automation_status_loaded:[\s\S]*automation_review_processor_status:[\s\S]*automation_review_queue_length:[\s\S]*automation_review_active_count:[\s\S]*automation_review_timeout_count:[\s\S]*automation_review_superseded_count:[\s\S]*automation_review_marker_count:[\s\S]*automation_failure_event_count:[\s\S]*automation_repeated_failure_count:[\s\S]*automation_retry_waiting_count:[\s\S]*automation_failure_group_count:[\s\S]*automation_idle_worker_current_node:[\s\S]*automation_idle_worker_owner_node:[\s\S]*automation_idle_worker_runs_on_this_node:[\s\S]*automation_idle_worker_effective_enabled:[\s\S]*automation_busy_action:[\s\S]*automation_last_result:[\s\S]*automation_commit_link_health_ok:[\s\S]*automation_output_contract_schema:[\s\S]*automation_output_contract_types:[\s\S]*automation_processing_policy_schema:[\s\S]*automation_processing_policy_active_mode:[\s\S]*automation_processing_policy_local_gate:/,
   'Kanban snapshots must expose automation status, retry failures, and queue proof fields.',
 );
 

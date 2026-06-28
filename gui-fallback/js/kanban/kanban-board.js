@@ -2220,6 +2220,7 @@ const KanbanBoardPage = (() => {
     const decisions = data.decisions || {};
     const health = data.commit_link_health || {};
     const provider = data.provider_mode || {};
+    const idleWorker = data.idle_worker || {};
     const pre = data.preprocessing || {};
     const exclusions = data.automation_exclusions || {};
     const outputContract = data.output_contract || {};
@@ -2244,6 +2245,14 @@ const KanbanBoardPage = (() => {
     const requeueBusy = state.automationStatus.busyAction === 'requeue-timeouts';
     const tickBusy = state.automationStatus.busyAction === 'run-idle-tick';
     const loadedAt = state.automationStatus.lastLoadedAt ? formatBackupDate(state.automationStatus.lastLoadedAt) : '';
+    const workerNodeLoaded = !!(idleWorker.schema || idleWorker.current_node_id || idleWorker.owner_node_id);
+    const workerNodeState = workerNodeLoaded
+      ? (idleWorker.runs_on_this_node ? 'active here' : 'standby')
+      : 'not loaded';
+    const workerNodeDetail = workerNodeLoaded
+      ? `owner ${idleWorker.owner_node_id || 'unknown'} · this ${idleWorker.current_node_id || 'unknown'}`
+      : '';
+    const workerNodeTone = workerNodeLoaded ? (idleWorker.effective_enabled === false ? 'warn' : 'ok') : 'info';
     return `<section class="calendar-band kanban-band kanban-automation-panel" aria-label="Kanban Automation Status">
       <div class="calendar-section-head kanban-section-head">
         <h3>Automation Status</h3>
@@ -2258,6 +2267,7 @@ const KanbanBoardPage = (() => {
         ${automationMetricHtml('Review Processor', processor.status || 'not loaded', `queue ${queueLength} · active ${activeItem}`, queueLength ? 'warn' : 'ok')}
         ${automationMetricHtml('Queue Work', `${queueLength} pending`, `running ${activeCount} · timed out ${timeoutCount}`, timeoutCount ? 'warn' : (queueLength ? 'info' : 'ok'))}
         ${automationMetricHtml('Retry Failures', String(failureCount), `repeated ${repeatedFailureCount} · waiting ${retryWaitingCount}`, failureCount ? 'warn' : 'ok')}
+        ${automationMetricHtml('Worker Node', workerNodeState, workerNodeDetail, workerNodeTone)}
         ${automationMetricHtml('Provider', provider.active || 'cloud-first', provider.planned || provider.local_processing || 'local later', 'info')}
         ${automationMetricHtml('Decisions', String(decisionCount), `recent ${automationRecentDecisions().length}`, decisionCount ? 'ok' : 'info')}
         ${automationMetricHtml('Commit Links', healthOk ? 'ok' : 'needs review', `${health.decisions_with_commits ?? 0}/${healthDecisionCount} with commits`, healthOk ? 'ok' : 'warn')}
@@ -5165,6 +5175,12 @@ const KanbanBoardPage = (() => {
       automation_repeated_failure_count: Number(state.automationStatus.data?.failures?.repeated_failure_count || 0),
       automation_retry_waiting_count: Number(state.automationStatus.data?.failures?.retry_waiting_count || 0),
       automation_failure_group_count: automationFailureAggregates().length,
+      automation_idle_worker_current_node: state.automationStatus.data?.idle_worker?.current_node_id || '',
+      automation_idle_worker_owner_node: state.automationStatus.data?.idle_worker?.owner_node_id || '',
+      automation_idle_worker_runs_on_this_node:
+        state.automationStatus.data?.idle_worker?.runs_on_this_node === true,
+      automation_idle_worker_effective_enabled:
+        state.automationStatus.data?.idle_worker?.effective_enabled === true,
       automation_busy_action: state.automationStatus.busyAction || '',
       automation_last_result: state.automationStatus.lastResult?.message || '',
       automation_commit_link_health_ok: state.automationStatus.data?.commit_link_health?.ok !== false,
