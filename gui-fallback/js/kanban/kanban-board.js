@@ -4544,6 +4544,7 @@ const KanbanBoardPage = (() => {
           { id: 'edit-item', label: 'Edit Item', disabled: () => !detailItemAvailable() },
           { id: 'backups', label: 'Backups' },
           { id: 'automation', label: 'Automation' },
+          { id: 'prompts', label: 'Prompts' },
           { id: 'provenance', label: 'Provenance' },
         ],
         renderTab: (tab, host) => {
@@ -4553,6 +4554,7 @@ const KanbanBoardPage = (() => {
           if (tab === 'edit-item') return embeddedItemDetailHtml(host);
           if (tab === 'backups') return embeddedBackupsHtml(host);
           if (tab === 'automation') return embeddedAutomationStatusHtml(host);
+          if (tab === 'prompts') return window.PersonalPrompts?.renderTab?.('kanban', host) || '';
           if (tab === 'provenance') return embeddedProvenanceHtml(host);
           return '';
         },

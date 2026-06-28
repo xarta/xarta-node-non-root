@@ -1426,6 +1426,7 @@ const TodoPage = (() => {
           { id: 'new-task', label: 'New Task' },
           { id: 'edit-task', label: 'Edit Task', disabled: () => !editTaskAvailable() },
           { id: 'sources', label: 'Sources' },
+          { id: 'prompts', label: 'Prompts' },
           { id: 'provenance', label: 'Provenance' },
         ],
         renderTab: (tab, host) => {
@@ -1434,6 +1435,7 @@ const TodoPage = (() => {
           if (tab === 'new-task') return embeddedTaskFormHtml(host?.id === 'todo-filter-inline-panel' ? 'todo-inline-task' : 'todo-panel-task');
           if (tab === 'edit-task') return embeddedEditTaskFormHtml(editPrefixForHost(host));
           if (tab === 'sources') return embeddedSourcesHtml(host);
+          if (tab === 'prompts') return window.PersonalPrompts?.renderTab?.('todo', host) || '';
           if (tab === 'provenance') return embeddedProvenanceHtml(host);
           return '';
         },

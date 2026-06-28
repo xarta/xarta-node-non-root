@@ -728,6 +728,114 @@
   cursor: default;
 }
 
+.personal-prompts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.personal-prompts__toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.personal-prompts__source {
+  min-width: 0;
+}
+
+.personal-prompts__apply {
+  border-color: rgba(217, 170, 50, .42);
+  background: rgba(217, 170, 50, .08);
+}
+
+.personal-prompts__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.personal-prompts__meta span {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personal-prompts__meta span:not(:last-child)::after {
+  content: '/';
+  color: rgba(255, 255, 255, .24);
+  padding-left: 6px;
+}
+
+.personal-prompts__editor {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: clamp(220px, 42vh, 620px);
+  resize: vertical;
+  border: 1px solid rgba(91, 156, 246, .24);
+  border-radius: 8px;
+  background-color: rgba(0, 0, 0, .24);
+  color: var(--text);
+  color-scheme: dark;
+  font: 13px/1.48 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  padding: 10px;
+  tab-size: 2;
+}
+
+.personal-prompts__editor:focus {
+  border-color: rgba(91, 156, 246, .58);
+  outline: none;
+  box-shadow: 0 0 0 1px rgba(91, 156, 246, .18);
+}
+
+.personal-prompts__editor[readonly] {
+  color: rgba(226, 232, 240, .68);
+}
+
+.personal-prompts__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.personal-prompts__dirty {
+  color: #d9aa32;
+  font-weight: 700;
+}
+
+.personal-prompts__status {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.personal-prompts__status.is-ok {
+  color: #7bd88f;
+}
+
+.personal-prompts__status.is-error {
+  color: #ff8a8a;
+}
+
+.personal-prompts__status.is-loading {
+  color: #8bbcff;
+}
+
 dialog.hub-modal.personal-filter-modal {
   position: fixed;
   inset: 0;
@@ -949,6 +1057,10 @@ dialog.hub-modal.personal-filter-modal[open] {
   .personal-filter-meta-row > .personal-filter-field:nth-of-type(3) {
     grid-area: priority;
   }
+
+  .personal-prompts__toolbar {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
 }
 
 @media (max-width: 700px) and (orientation: portrait) {
@@ -961,5 +1073,13 @@ dialog.hub-modal.personal-filter-modal[open] {
   .personal-filter-settings__new .personal-filter-field input,
   .personal-filter-settings__new .personal-filter-command {
     height: 34px;
+  }
+
+  .personal-prompts__toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .personal-prompts__toolbar .personal-filter-command {
+    width: 100%;
   }
 }

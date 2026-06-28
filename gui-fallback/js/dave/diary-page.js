@@ -3234,6 +3234,7 @@ const DiaryPage = (() => {
           { id: 'new-entry', label: 'New Entry' },
           { id: 'edit-entry', label: 'Edit Entry', disabled: () => !editEntryAvailable() },
           { id: 'upcoming', label: 'Upcoming' },
+          { id: 'prompts', label: 'Prompts' },
           { id: 'provenance', label: 'Provenance' },
         ],
         renderTab: (tab, host) => {
@@ -3243,6 +3244,7 @@ const DiaryPage = (() => {
           if (tab === 'new-entry') return embeddedEntryFormHtml(embeddedEntryPrefixForHost(host));
           if (tab === 'edit-entry') return embeddedEntryFormHtml(embeddedEditPrefixForHost(host), { mode: 'edit' });
           if (tab === 'upcoming') return embeddedUpcomingHtml(host);
+          if (tab === 'prompts') return window.PersonalPrompts?.renderTab?.('diary', host) || '';
           if (tab === 'provenance') return embeddedProvenanceHtml(host);
           return '';
         },

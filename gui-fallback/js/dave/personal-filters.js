@@ -1513,6 +1513,7 @@ const PersonalFilters = (() => {
     </div>`;
     wireHost(host);
     bindHostControls(host);
+    window.PersonalPrompts?.bind?.(host);
   }
 
   function updateModalTitleForHost(host, tabId) {
@@ -1828,8 +1829,10 @@ const PersonalFilters = (() => {
     root.dataset.personalFilterSurface = surface;
     root.dataset.personalFilterLayout = 'tabs';
     const modalExtraTabsBySurface = {
-      todo: 'selected,search,new-task,edit-task,sources,provenance',
-      kanban: 'selected,search,new-item,edit-item,provenance',
+      calendar: 'selected,milestones,search,new-event,upcoming,prompts,provenance',
+      diary: 'selected,day,search,new-entry,edit-entry,upcoming,prompts,provenance',
+      todo: 'selected,search,new-task,edit-task,sources,prompts,provenance',
+      kanban: 'selected,search,new-item,edit-item,backups,automation,prompts,provenance',
     };
     if (modalExtraTabsBySurface[surface]) root.dataset.personalFilterExtraTabs = modalExtraTabsBySurface[surface];
     else delete root.dataset.personalFilterExtraTabs;
@@ -1891,10 +1894,10 @@ const PersonalFilters = (() => {
       ? (existingHost?.dataset.personalFilterTab || selectedTab || '')
       : '';
     const extraTabsBySurface = {
-      calendar: 'selected,milestones,search,new-event,upcoming,provenance',
-      diary: 'selected,day,search,new-entry,edit-entry,upcoming,provenance',
-      todo: 'selected,search,new-task,edit-task,sources,provenance',
-      kanban: 'selected,search,new-item,edit-item,provenance',
+      calendar: 'selected,milestones,search,new-event,upcoming,prompts,provenance',
+      diary: 'selected,day,search,new-entry,edit-entry,upcoming,prompts,provenance',
+      todo: 'selected,search,new-task,edit-task,sources,prompts,provenance',
+      kanban: 'selected,search,new-item,edit-item,backups,automation,prompts,provenance',
     };
     const extraTabs = extraTabsBySurface[surface] ? ` data-personal-filter-extra-tabs="${escHtml(extraTabsBySurface[surface])}"` : '';
     const activeTabAttr = activeTab ? ` data-personal-filter-tab="${escHtml(activeTab)}"` : '';

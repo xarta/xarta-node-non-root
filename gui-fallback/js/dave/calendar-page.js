@@ -3221,6 +3221,7 @@ const CalendarPage = (() => {
           { id: 'search', label: 'Search' },
           { id: 'new-event', label: 'New Event' },
           { id: 'upcoming', label: 'Upcoming' },
+          { id: 'prompts', label: 'Prompts' },
           { id: 'provenance', label: 'Provenance' },
         ],
         renderTab: (tab, host) => {
@@ -3229,6 +3230,7 @@ const CalendarPage = (() => {
           if (tab === 'search') return embeddedSearchHtml(host);
           if (tab === 'new-event') return embeddedEventFormHtml(embeddedEventPrefixForHost(host));
           if (tab === 'upcoming') return embeddedUpcomingHtml(host);
+          if (tab === 'prompts') return window.PersonalPrompts?.renderTab?.('calendar', host) || '';
           if (tab === 'provenance') return embeddedProvenanceHtml(host);
           return '';
         },
