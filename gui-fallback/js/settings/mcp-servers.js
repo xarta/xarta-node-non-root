@@ -1138,12 +1138,15 @@ async function _playwrightLoadSection() {
 
 function _playwrightRenderCard(data) {
   const reachable = data.reachable === true;
+  const canTest = reachable || data.autostart_available === true;
   const mcpUrl = data.mcp_url || 'http://localhost:18931/mcp';
   const statusBadge = reachable
     ? '<span class="badge badge--green" style="margin-left:6px">Online</span>'
+    : canTest
+      ? '<span class="badge badge--warn" style="margin-left:6px">Idle</span>'
     : '<span class="badge badge--red" style="margin-left:6px">Offline</span>';
   const version = data.server_info?.version ? ` v${esc(data.server_info.version)}` : '';
-  const errorNote = !reachable && data.error
+  const errorNote = !reachable && data.error && !canTest
     ? `<div style="font-size:11px;color:var(--accent-warn);margin-top:4px">${esc(data.error)}</div>`
     : '';
 
@@ -1156,7 +1159,7 @@ function _playwrightRenderCard(data) {
         <div style="font-size:11px;color:var(--text-dim);margin-top:3px">transport: <code>http</code> &nbsp;&middot;&nbsp; tools: browser_navigate, browser_snapshot, browser_click, browser_take_screenshot</div>
         ${errorNote}
       </div>
-      <button type="button" class="secondary playwright-test-open-btn" style="justify-self:end;align-self:start;font-size:12px"${reachable ? '' : ' disabled'}>&#9654; Test</button>
+      <button type="button" class="secondary playwright-test-open-btn" style="justify-self:end;align-self:start;font-size:12px"${canTest ? '' : ' disabled'}>&#9654; Test</button>
     </div>
   `;
 }
@@ -1216,6 +1219,9 @@ async function _playwrightCheckHealth() {
       const ver = data.server_info?.version ? ` — v${data.server_info.version}` : '';
       badge.textContent = `OK${ver}`;
       badge.className = 'badge badge--green';
+    } else if (data.autostart_available) {
+      badge.textContent = 'Idle';
+      badge.className = 'badge badge--warn';
     } else {
       badge.textContent = `Unreachable: ${data.error || 'unknown'}`;
       badge.className = 'badge badge--red';
