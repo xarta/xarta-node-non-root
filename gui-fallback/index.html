@@ -84,6 +84,9 @@
         <span id="header-host" class="brand bp-font-role-host-label"><span class="node-sigil" aria-hidden="true"></span><span class="node-host-text">—</span></span>
         <div class="node-meta">
           <span class="nm-item nm-item--gen"><span class="nm-label">Gen</span>&thinsp;<span class="nm-val" id="nn-gen">—</span></span>
+          <span class="nm-item nm-item--led-clock" id="header-local-time" role="timer" aria-label="Local time" title="Local time">
+            <span class="led-watch-display" aria-hidden="true"></span>
+          </span>
           <span class="nm-item nm-item--integrity" id="nn-integrity"><span class="badge">—</span></span>
           <span class="nm-item nm-item--keys" id="nn-keys"><button class="badge badge-btn" id="keys-badge" onclick="switchGroup('settings');switchTab('keys');SettingsMenuConfig.updateActiveTab('keys')" style="display:none">&#9871; —</button></span>
           <span class="nm-item nm-item--peers"><span class="nm-label">Peers</span>&thinsp;<span class="nm-val" id="nn-peers">—</span></span>
@@ -6270,6 +6273,7 @@
 <script src="js/state.js?v={{$assetVersion}}"></script>
 <script src="js/connectivity.js?v={{$assetVersion}}"></script>
 <script src="js/health.js?v={{$assetVersion}}"></script>
+<script src="js/header-clock.js?v={{$assetVersion}}"></script>
 <script src="js/sync.js?v={{$assetVersion}}"></script>
 <script src="js/backups.js?v={{$assetVersion}}"></script>
 <script src="js/synthesis/manual-links.js?v={{$assetVersion}}"></script>

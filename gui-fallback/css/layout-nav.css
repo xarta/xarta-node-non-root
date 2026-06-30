@@ -234,6 +234,110 @@ html[data-node-integrity="fail"] .node-sigil {
   box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.035);
   white-space: nowrap;
 }
+
+.nm-item--led-clock {
+  display: none;
+  justify-content: center;
+  min-width: 58px;
+  padding: 2px 6px;
+  border-color: rgba(224, 92, 92, 0.24);
+  background:
+    linear-gradient(180deg, rgba(28, 5, 7, 0.78), rgba(5, 8, 13, 0.64)),
+    rgba(7, 11, 18, 0.42);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    inset 0 -1px 4px rgba(0, 0, 0, 0.42),
+    0 0 9px rgba(224, 92, 92, 0.10);
+}
+
+@media (min-width: 1024px) {
+  .nm-item--led-clock {
+    display: inline-flex;
+  }
+}
+
+.led-watch-display {
+  display: inline-grid;
+  grid-template-columns: 9px 9px 3px 9px 9px;
+  gap: 2px;
+  align-items: center;
+  width: 47px;
+  height: 16px;
+}
+
+.led-digit {
+  position: relative;
+  width: 9px;
+  height: 16px;
+}
+
+.led-segment {
+  position: absolute;
+  display: block;
+  opacity: 0.14;
+  background: #ff2b26;
+  border-radius: 2px;
+  transition: opacity 0.16s ease, filter 0.16s ease;
+}
+
+.led-segment.is-on {
+  opacity: 1;
+  filter: saturate(1.24);
+  box-shadow:
+    0 0 4px rgba(255, 43, 38, 0.58),
+    0 0 1px rgba(255, 236, 224, 0.7) inset;
+}
+
+.led-segment--h {
+  left: 1.5px;
+  width: 6px;
+  height: 2px;
+  clip-path: polygon(2px 0, calc(100% - 2px) 0, 100% 50%, calc(100% - 2px) 100%, 2px 100%, 0 50%);
+}
+
+.led-segment--v {
+  width: 2px;
+  height: 6px;
+  clip-path: polygon(50% 0, 100% 2px, 100% calc(100% - 2px), 50% 100%, 0 calc(100% - 2px), 0 2px);
+}
+
+.led-segment--a { top: 0; }
+.led-segment--g { top: 7px; }
+.led-segment--d { bottom: 0; }
+.led-segment--b { top: 1.5px; right: 0; }
+.led-segment--c { right: 0; bottom: 1.5px; }
+.led-segment--e { left: 0; bottom: 1.5px; }
+.led-segment--f { top: 1.5px; left: 0; }
+
+.led-colon {
+  position: relative;
+  width: 3px;
+  height: 16px;
+}
+
+.led-colon::before,
+.led-colon::after {
+  content: "";
+  position: absolute;
+  left: 0.5px;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: #ff2b26;
+  box-shadow: 0 0 4px rgba(255, 43, 38, 0.58);
+}
+
+.led-colon::before {
+  top: 4px;
+}
+
+.led-colon::after {
+  bottom: 4px;
+}
+
+.nm-item--led-clock:not(.is-ready) .led-watch-display {
+  opacity: 0;
+}
 .nm-label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .4px; }
 .nm-val { font-size: 13px; font-weight: 700; color: var(--text); }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 3px;
