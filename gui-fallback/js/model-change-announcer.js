@@ -71,6 +71,9 @@ const BlueprintsModelChangeAnnouncer = (() => {
   const _TOAST_DURATION  = 7000;  // ms before toast auto-dismiss
   const _TOAST_MAX       = 4;     // max simultaneous toasts
   const _TOAST_DEDUPE_RECENT_MS = 60_000;
+  const _TOAST_DEDUPE_PERSIST_MS = 24 * 60 * 60 * 1000;
+  const _TOAST_DEDUPE_STORAGE_KEY = 'blueprints.toast.dedupe.recent.v1';
+  const _TOAST_REPLAY_FRESHNESS_SECONDS = 15 * 60;
   const _REPLAY_LOOKBACK = 900;   // seconds: replay window on SSE connect (15 min)
   const _REPLAY_DELAY_MS = 4500;  // ms after SSE connect before running replay
   const _NOTIFIER_SPEECH_FRESHNESS_SECONDS = 180;
@@ -96,6 +99,8 @@ const BlueprintsModelChangeAnnouncer = (() => {
   let _ttsOffModalRemoveTimer = null;
   const _pendingToastSignatures = new Set();
   const _recentToastSignatures = new Map();
+  const _persistedToastSignatures = new Map();
+  let _persistedToastSignaturesLoaded = false;
 
   // Dedup: prevent speaking the same event_id twice (replay overlap guard).
   const _seenIds     = new Set();
@@ -248,7 +253,20 @@ const BlueprintsModelChangeAnnouncer = (() => {
     return severity === 'warning' || severity === 'error';
   }
 
-  function _toastDedupeSignature(toastOpts = {}, evt = {}, category = '') {
+  function _uniqueToastDedupeSignatures(values = []) {
+    const seen = new Set();
+    const out = [];
+    for (const value of values) {
+      const normalized = _normalizeToastDedupePart(value);
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      out.push(normalized);
+    }
+    return out;
+  }
+
+  function _toastDedupeSignatures(toastOpts = {}, evt = {}, category = '') {
+    const signatures = [];
     const explicit = String(
       toastOpts.dedupeKey ||
       toastOpts.toastDedupeKey ||
@@ -257,19 +275,28 @@ const BlueprintsModelChangeAnnouncer = (() => {
       evt?.payload?.dedupe_key ||
       ''
     ).trim();
-    if (explicit) return _normalizeToastDedupePart(explicit);
+    if (explicit) signatures.push(`key:${explicit}`);
 
     const toastCategory = _normalizeToastDedupePart(category || toastOpts.category || _toastCategoryForEvent(evt));
-    if (toastCategory === 'notification_tests' || toastCategory === 'hermes_speech') return '';
+    if (toastCategory === 'notification_tests' || toastCategory === 'hermes_speech') {
+      return _uniqueToastDedupeSignatures(signatures);
+    }
 
     const severity = _normalizeToastDedupeSeverity(toastOpts.severity, evt);
-    if (!_isToastDedupeSeverity(severity)) return '';
+    if (!_isToastDedupeSeverity(severity)) return _uniqueToastDedupeSignatures(signatures);
+
+    const eventType = _normalizeToastDedupePart(evt?.event_type || '');
+    if (eventType) signatures.push(`event:${eventType}`);
 
     const title = _normalizeToastDedupePart(toastOpts.title || evt.title || '');
     const message = _normalizeToastDedupePart(toastOpts.message || evt.message || '');
-    if (!title && !message) return '';
+    if (title || message) signatures.push(`content:${toastCategory}|${severity}|${title}|${message}`);
 
-    return [toastCategory, severity, title, message].join('|');
+    return _uniqueToastDedupeSignatures(signatures);
+  }
+
+  function _toastDedupeSignature(toastOpts = {}, evt = {}, category = '') {
+    return _toastDedupeSignatures(toastOpts, evt, category)[0] || '';
   }
 
   function _pruneRecentToastSignatures(now = Date.now()) {
@@ -280,39 +307,199 @@ const BlueprintsModelChangeAnnouncer = (() => {
     }
   }
 
-  function _hasVisibleToastSignature(signature) {
-    if (!signature) return false;
+  function _loadPersistedToastSignatures(now = Date.now()) {
+    if (_persistedToastSignaturesLoaded) {
+      _prunePersistedToastSignatures(now);
+      return;
+    }
+    _persistedToastSignaturesLoaded = true;
+    if (typeof localStorage === 'undefined') return;
+    let raw = '';
+    try {
+      raw = localStorage.getItem(_TOAST_DEDUPE_STORAGE_KEY) || '';
+    } catch (_) {
+      return;
+    }
+    if (!raw) return;
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (_) {
+      return;
+    }
+    if (!parsed || typeof parsed !== 'object') return;
+    for (const [signature, seenAtRaw] of Object.entries(parsed)) {
+      const normalized = _normalizeToastDedupePart(signature);
+      const seenAt = Number(seenAtRaw);
+      if (!normalized || !Number.isFinite(seenAt)) continue;
+      if (now - seenAt <= _TOAST_DEDUPE_PERSIST_MS) {
+        _persistedToastSignatures.set(normalized, seenAt);
+      }
+    }
+    _writePersistedToastSignatures();
+  }
+
+  function _writePersistedToastSignatures() {
+    if (typeof localStorage === 'undefined' || !_persistedToastSignaturesLoaded) return;
+    try {
+      localStorage.setItem(
+        _TOAST_DEDUPE_STORAGE_KEY,
+        JSON.stringify(Object.fromEntries(_persistedToastSignatures.entries()))
+      );
+    } catch (_) {}
+  }
+
+  function _prunePersistedToastSignatures(now = Date.now()) {
+    let changed = false;
+    for (const [signature, seenAt] of _persistedToastSignatures.entries()) {
+      if (now - seenAt > _TOAST_DEDUPE_PERSIST_MS) {
+        _persistedToastSignatures.delete(signature);
+        changed = true;
+      }
+    }
+    if (changed) _writePersistedToastSignatures();
+  }
+
+  function _itemToastSignatures(item = {}) {
+    item = item || {};
+    if (Array.isArray(item.toastDedupeSignatures)) {
+      return _uniqueToastDedupeSignatures(item.toastDedupeSignatures);
+    }
+    return _uniqueToastDedupeSignatures([item.toastDedupeSignature]);
+  }
+
+  function _hasAnyToastSignature(signatures, predicate) {
+    const normalized = _uniqueToastDedupeSignatures(Array.isArray(signatures) ? signatures : [signatures]);
+    return normalized.some(predicate);
+  }
+
+  function _visibleToastSignatures(toast) {
+    const values = [toast?.dataset?.toastSignature || ''];
+    const packed = String(toast?.dataset?.toastSignatures || '');
+    if (packed) values.push(...packed.split('\n'));
+    return _uniqueToastDedupeSignatures(values);
+  }
+
+  function _hasVisibleToastSignature(signatures) {
+    const normalized = _uniqueToastDedupeSignatures(Array.isArray(signatures) ? signatures : [signatures]);
+    if (normalized.length === 0) return false;
     const container = document.getElementById('bp-event-toasts');
     if (!container) return false;
-    return Array.from(container.children || []).some(toast => toast?.dataset?.toastSignature === signature);
+    return Array.from(container.children || []).some(toast => {
+      const visible = new Set(_visibleToastSignatures(toast));
+      return normalized.some(signature => visible.has(signature));
+    });
   }
 
-  function _hasQueuedToastSignature(signature) {
-    if (!signature) return false;
-    if (_currentItem?.toastDedupeSignature === signature) return true;
-    return _queue.some(item => item?.toastDedupeSignature === signature)
-      || _priorityQueue.some(item => item?.toastDedupeSignature === signature);
+  function _itemHasToastSignature(item, signatures) {
+    const normalized = _uniqueToastDedupeSignatures(Array.isArray(signatures) ? signatures : [signatures]);
+    if (normalized.length === 0) return false;
+    const itemSet = new Set(_itemToastSignatures(item));
+    return normalized.some(signature => itemSet.has(signature));
   }
 
-  function _hasPendingToastSignature(signature) {
-    return !!signature && _pendingToastSignatures.has(signature);
+  function _hasQueuedToastSignature(signatures) {
+    const normalized = _uniqueToastDedupeSignatures(Array.isArray(signatures) ? signatures : [signatures]);
+    if (normalized.length === 0) return false;
+    if (_itemHasToastSignature(_currentItem, normalized)) return true;
+    return _queue.some(item => _itemHasToastSignature(item, normalized))
+      || _priorityQueue.some(item => _itemHasToastSignature(item, normalized));
   }
 
-  function _hasRecentToastSignature(signature) {
-    if (!signature) return false;
+  function _hasPendingToastSignature(signatures) {
+    return _hasAnyToastSignature(signatures, signature => _pendingToastSignatures.has(signature));
+  }
+
+  function _hasRecentToastSignature(signatures) {
+    const normalized = _uniqueToastDedupeSignatures(Array.isArray(signatures) ? signatures : [signatures]);
+    if (normalized.length === 0) return false;
     const now = Date.now();
     _pruneRecentToastSignatures(now);
-    const seenAt = _recentToastSignatures.get(signature);
-    return Number.isFinite(seenAt) && now - seenAt <= _TOAST_DEDUPE_RECENT_MS;
+    _loadPersistedToastSignatures(now);
+    return normalized.some(signature => {
+      const seenAt = _recentToastSignatures.get(signature);
+      if (Number.isFinite(seenAt) && now - seenAt <= _TOAST_DEDUPE_RECENT_MS) return true;
+      const persistedAt = _persistedToastSignatures.get(signature);
+      return Number.isFinite(persistedAt) && now - persistedAt <= _TOAST_DEDUPE_PERSIST_MS;
+    });
+  }
+
+  function _rememberToastSignatures(signatures, opts = {}) {
+    const normalized = _uniqueToastDedupeSignatures(Array.isArray(signatures) ? signatures : [signatures]);
+    if (normalized.length === 0) return;
+    const now = Number.isFinite(opts.now) ? opts.now : Date.now();
+    for (const signature of normalized) {
+      _recentToastSignatures.set(signature, now);
+    }
+    if (!opts.persist) return;
+    const persistent = normalized.filter(signature =>
+      signature.startsWith('key:') || signature.startsWith('event:')
+    );
+    if (persistent.length === 0) return;
+    _loadPersistedToastSignatures(now);
+    for (const signature of persistent) {
+      _persistedToastSignatures.set(signature, now);
+    }
+    _writePersistedToastSignatures();
+  }
+
+  function _forgetToastSignatures(signatures) {
+    const normalized = _uniqueToastDedupeSignatures(Array.isArray(signatures) ? signatures : [signatures]);
+    if (normalized.length === 0) return;
+    for (const signature of normalized) {
+      _recentToastSignatures.delete(signature);
+      _pendingToastSignatures.delete(signature);
+    }
+    _loadPersistedToastSignatures();
+    let changed = false;
+    for (const signature of normalized) {
+      if (_persistedToastSignatures.delete(signature)) changed = true;
+    }
+    if (changed) _writePersistedToastSignatures();
+  }
+
+  function _recoveredToastSignatures(evt = {}) {
+    const recoveredFrom = _normalizeToastDedupePart(evt?.payload?.recovered_from || '');
+    const eventType = _normalizeToastDedupePart(evt?.event_type || '');
+    const values = [];
+    if (recoveredFrom) {
+      values.push(`key:${recoveredFrom}`, `event:${recoveredFrom}`);
+    }
+    if (eventType.endsWith('.recovered')) {
+      const baseType = eventType.slice(0, -'.recovered'.length);
+      for (const suffix of ['warning', 'failed', 'offline', 'error']) {
+        values.push(`key:${baseType}.${suffix}`, `event:${baseType}.${suffix}`);
+      }
+    }
+    if (evt?.event_type === 'local.llm.recovered') {
+      values.push('key:local.llm.offline', 'event:local.llm.offline');
+      values.push('content:system_health|error|local llm offline|local large language model is offline.');
+    }
+    return _uniqueToastDedupeSignatures(values);
+  }
+
+  function _clearRecoveredToastDedupe(evt = {}) {
+    const signatures = _recoveredToastSignatures(evt);
+    if (signatures.length > 0) _forgetToastSignatures(signatures);
+  }
+
+  function _isStaleWarningToastReplay(item = {}) {
+    const evt = item.event || {};
+    const createdAt = Number(evt.created_at || 0);
+    if (!Number.isFinite(createdAt) || createdAt <= 0) return false;
+    const severity = _normalizeToastDedupeSeverity(item.toastOpts?.severity, evt);
+    if (!_isToastDedupeSeverity(severity)) return false;
+    if (_itemToastSignatures(item).length === 0) return false;
+    return (Date.now() / 1000) - createdAt > _TOAST_REPLAY_FRESHNESS_SECONDS;
   }
 
   function _shouldSuppressDuplicateToast(item = {}) {
-    const signature = item.toastDedupeSignature;
-    return !!signature && (
-      _hasQueuedToastSignature(signature) ||
-      _hasPendingToastSignature(signature) ||
-      _hasVisibleToastSignature(signature) ||
-      _hasRecentToastSignature(signature)
+    const signatures = _itemToastSignatures(item);
+    return signatures.length > 0 && (
+      _hasQueuedToastSignature(signatures) ||
+      _hasPendingToastSignature(signatures) ||
+      _hasVisibleToastSignature(signatures) ||
+      _hasRecentToastSignature(signatures)
     );
   }
 
@@ -942,16 +1129,22 @@ const BlueprintsModelChangeAnnouncer = (() => {
 
   async function _showToastForEvent(toastOpts = {}, event = {}, category = null) {
     const toastCategory = _normalizeToastCategory(category || toastOpts.category || _toastCategoryForEvent(event));
-    const toastDedupeSignature = _toastDedupeSignature(toastOpts, event, toastCategory);
+    const toastDedupeSignatures = _toastDedupeSignatures(toastOpts, event, toastCategory);
+    const toastDedupeSignature = toastDedupeSignatures[0] || '';
+    const toastItem = { toastOpts, event, toastCategory, toastDedupeSignatures, toastDedupeSignature };
+    if (_isStaleWarningToastReplay(toastItem)) {
+      _rememberToastSignatures(toastDedupeSignatures, { persist: true });
+      return;
+    }
     if (
-      toastDedupeSignature &&
-      (_hasPendingToastSignature(toastDedupeSignature) ||
-        _hasVisibleToastSignature(toastDedupeSignature) ||
-        _hasRecentToastSignature(toastDedupeSignature))
+      toastDedupeSignatures.length > 0 &&
+      (_hasPendingToastSignature(toastDedupeSignatures) ||
+        _hasVisibleToastSignature(toastDedupeSignatures) ||
+        _hasRecentToastSignature(toastDedupeSignatures))
     ) {
       return;
     }
-    if (toastDedupeSignature) _pendingToastSignatures.add(toastDedupeSignature);
+    for (const signature of toastDedupeSignatures) _pendingToastSignatures.add(signature);
     try {
       if (typeof BlueprintsNotifierDnd !== 'undefined') {
         const config = await BlueprintsNotifierDnd.loadConfig();
@@ -960,14 +1153,17 @@ const BlueprintsModelChangeAnnouncer = (() => {
     } catch (error) {
       console.warn('[model-change-announcer] toast policy check failed:', error);
     } finally {
-      if (toastDedupeSignature) _pendingToastSignatures.delete(toastDedupeSignature);
+      for (const signature of toastDedupeSignatures) _pendingToastSignatures.delete(signature);
     }
-    _showToast({ ...toastOpts, category: toastCategory, toastDedupeSignature });
+    _showToast({ ...toastOpts, category: toastCategory, toastDedupeSignature, toastDedupeSignatures });
   }
 
-  function _showToast({ title, message, severity, category, toastDedupeSignature }) {
+  function _showToast({ title, message, severity, category, toastDedupeSignature, toastDedupeSignatures }) {
     const signature = String(toastDedupeSignature || '');
-    if (signature && (_hasVisibleToastSignature(signature) || _hasRecentToastSignature(signature))) {
+    const signatures = _uniqueToastDedupeSignatures(
+      Array.isArray(toastDedupeSignatures) ? toastDedupeSignatures : [signature]
+    );
+    if (signatures.length > 0 && (_hasVisibleToastSignature(signatures) || _hasRecentToastSignature(signatures))) {
       return;
     }
 
@@ -981,6 +1177,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
     toast.setAttribute('role', 'status');
     if (category) toast.dataset.toastCategory = category;
     if (signature) toast.dataset.toastSignature = signature;
+    if (signatures.length > 0) toast.dataset.toastSignatures = signatures.join('\n');
 
     const iconEl  = document.createElement('span');
     iconEl.className = 'bp-event-toast__icon';
@@ -1013,7 +1210,9 @@ const BlueprintsModelChangeAnnouncer = (() => {
     container.appendChild(toast);
 
     requestAnimationFrame(() => toast.classList.add('bp-event-toast--visible'));
-    if (signature) _recentToastSignatures.set(signature, Date.now());
+    _rememberToastSignatures(signatures, {
+      persist: _isToastDedupeSeverity(_normalizeToastDedupeSeverity(severity)),
+    });
     setTimeout(() => _dismiss(toast), _TOAST_DURATION);
   }
 
@@ -1031,6 +1230,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
     if (!evt || !evt.event_type) return;
     // Alarm clock owns its own modal, sound, and TTS path; notifier DND must not gate it.
     if (_isAlarmClockEvent(evt)) return;
+    _clearRecoveredToastDedupe(evt);
 
     // Global dedup: don't speak an event we have already dispatched this session
     // (protects against replay overlap on reconnect).
@@ -1269,8 +1469,22 @@ const BlueprintsModelChangeAnnouncer = (() => {
     const toastCategory = _normalizeToastCategory(
       extra.toastCategory || toastOpts?.category || _toastCategoryForEvent(evt)
     );
-    const toastDedupeSignature = _toastDedupeSignature(toastOpts, evt, toastCategory);
-    const item = { text, toastOpts, event: evt, ...(extra || {}), toastCategory, toastDedupeSignature };
+    const toastDedupeSignatures = _toastDedupeSignatures(toastOpts, evt, toastCategory);
+    const toastDedupeSignature = toastDedupeSignatures[0] || '';
+    const item = {
+      text,
+      toastOpts,
+      event: evt,
+      ...(extra || {}),
+      toastCategory,
+      toastDedupeSignature,
+      toastDedupeSignatures,
+    };
+    if (_isStaleWarningToastReplay(item)) {
+      _rememberToastSignatures(toastDedupeSignatures, { persist: true });
+      _emitSpeechSkipped('stale_toast_replay', item);
+      return;
+    }
     if (_shouldSuppressDuplicateToast(item)) {
       _emitSpeechSkipped('duplicate_toast_signature', item);
       return;
