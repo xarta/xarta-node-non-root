@@ -58,6 +58,7 @@ body.has-managed-scroll-tab .tab-panel--managed-scroll.active {
 #tab-diary.active,
 #tab-calender.active,
 #tab-todo.active,
+#tab-email.active,
 #tab-imports.active,
 #tab-kanban.active {
   max-width: 100%;
@@ -67,6 +68,7 @@ body.has-managed-scroll-tab .tab-panel--managed-scroll.active {
 #tab-diary.active > .tab-scroll-shell,
 #tab-calender.active > .tab-scroll-shell,
 #tab-todo.active > .tab-scroll-shell,
+#tab-email.active > .tab-scroll-shell,
 #tab-imports.active > .tab-scroll-shell,
 #tab-kanban.active > .tab-scroll-shell {
   width: 100%;
@@ -78,6 +80,7 @@ body.has-managed-scroll-tab .tab-panel--managed-scroll.active {
 #tab-diary.active > .tab-scroll-shell > .diary-page,
 #tab-calender.active > .tab-scroll-shell > .calendar-page,
 #tab-todo.active > .tab-scroll-shell > .todo-page,
+#tab-email.active > .tab-scroll-shell > .email-page,
 #tab-imports.active > .tab-scroll-shell > .imports-dashboard,
 #tab-kanban.active > .tab-scroll-shell > .kanban-page {
   max-width: 100%;
@@ -306,6 +309,7 @@ body.shade-is-up .tab-scroll-shell {
 body.shade-is-up #tab-diary.active > .tab-scroll-shell,
 body.shade-is-up #tab-calender.active > .tab-scroll-shell,
 body.shade-is-up #tab-todo.active > .tab-scroll-shell,
+body.shade-is-up #tab-email.active > .tab-scroll-shell,
 body.shade-is-up #tab-imports.active > .tab-scroll-shell,
 body.shade-is-up #tab-kanban.active > .tab-scroll-shell {
   overflow-x: hidden;
