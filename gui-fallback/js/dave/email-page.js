@@ -6,7 +6,6 @@ const EmailPage = (() => {
   const API_ROOT = '/api/v1/personal/email';
   const ULTRAWIDE_QUERY = '(min-width: 2400px) and (max-height: 1280px)';
   const VIEW_IDS = ['plain', 'html', 'markdown', 'raw'];
-  const RICH_VIEW_IDS = new Set(['html', 'markdown']);
   const SECURITY_PROGRESS_EVENT = 'pim.email.security.progress';
   const SECURITY_SEGMENTS = [
     ['service', 'Svc'],
@@ -205,6 +204,21 @@ const EmailPage = (() => {
 
   function securityAggregate() {
     return state.message?.security?.aggregate || {};
+  }
+
+  function messageViewsAvailable(message) {
+    const available = message?.views_available || message?.view_availability || {};
+    return (available && typeof available === 'object') ? available : {};
+  }
+
+  function defaultMessageView(message) {
+    const aggregate = message?.security?.aggregate || {};
+    if (String(aggregate.status || '').toLowerCase() !== 'green') return 'plain';
+    const views = message?.views || {};
+    const available = messageViewsAvailable(message);
+    if (available.html !== false && String(views.html || '').trim()) return 'html';
+    if (available.markdown === true && String(views.markdown || '').trim()) return 'markdown';
+    return 'plain';
   }
 
   function securityTone(status) {
@@ -538,15 +552,11 @@ const EmailPage = (() => {
   }
 
   function renderViewTabs() {
-    const richAllowed = richViewsAllowed();
     document.querySelectorAll('[data-email-view-button]').forEach(button => {
       const view = button.dataset.emailViewButton || '';
-      const blocked = RICH_VIEW_IDS.has(view) && !richAllowed;
       button.dataset.active = view === state.view ? 'true' : 'false';
-      button.disabled = blocked;
-      button.title = blocked
-        ? 'HTML and Markdown views require a green message security result'
-        : '';
+      button.disabled = false;
+      button.title = '';
     });
   }
 
@@ -1014,10 +1024,6 @@ const EmailPage = (() => {
     content.appendChild(shell);
   }
 
-  function richViewsAllowed() {
-    return String(securityAggregate().status || '').toLowerCase() === 'green';
-  }
-
   function rawFindingTone(finding) {
     const code = String(finding?.code || '').toUpperCase();
     const statusTone = securityToneName(finding?.status || finding?.result);
@@ -1171,7 +1177,6 @@ const EmailPage = (() => {
   }
 
   function renderMessage() {
-    if (RICH_VIEW_IDS.has(state.view) && !richViewsAllowed()) state.view = 'plain';
     renderViewTabs();
     const meta = el('email-message-meta');
     const content = el('email-message-content');
@@ -1411,7 +1416,7 @@ const EmailPage = (() => {
       const folder = encodeURIComponent(state.folder || 'INBOX');
       const data = await fetchJson(`${API_ROOT}/messages/${encodeURIComponent(cleanUid)}?folder=${folder}&security_run_id=${encodeURIComponent(runId)}`);
       state.message = data.message || null;
-      state.view = 'plain';
+      state.view = defaultMessageView(state.message);
       if (state.message?.security?.progress && !state.message.security.progress.run_id) {
         state.message.security.progress.run_id = runId;
       }
@@ -1454,11 +1459,6 @@ const EmailPage = (() => {
 
   function setView(view) {
     const clean = VIEW_IDS.includes(view) ? view : 'plain';
-    if (RICH_VIEW_IDS.has(clean) && !richViewsAllowed()) {
-      setStatus(`${clean.toUpperCase()} view requires a green message security result`, 'warn');
-      renderViewTabs();
-      return false;
-    }
     state.view = clean;
     renderMessage();
     return true;

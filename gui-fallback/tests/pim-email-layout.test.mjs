@@ -114,11 +114,14 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /distributeFolderColumns/, 'Selected folder ranges must distribute roots across columns.');
   assert.match(emailJs, /frame\.setAttribute\('sandbox', ''\)/, 'HTML email must render in a no-permissions sandbox frame.');
   assert.match(emailJs, /img-src \$\{escHtml\(imgSources\)\}/, 'HTML email iframe must limit images to data and same-site proxy sources.');
-  assert.match(emailJs, /RICH_VIEW_IDS = new Set\(\['html', 'markdown'\]\)/, 'HTML and Markdown must be treated as gated rich views.');
-  assert.match(emailJs, /requires a green message security result/, 'Rich views must be gated behind a green security result.');
+  assert.doesNotMatch(emailJs, /RICH_VIEW_IDS/, 'HTML and Markdown tabs must not be gated by aggregate security colour.');
+  assert.doesNotMatch(emailJs, /requires a green message security result/, 'HTML and Markdown tabs must not be disabled for non-green messages.');
+  assert.match(emailJs, /button\.disabled = false/, 'Message view tabs must remain selectable after security checks complete.');
   assert.match(emailJs, /html_security/, 'HTML email safety metadata must be surfaced.');
   assert.match(emailJs, /state\.message\?\.security\?\.aggregate/, 'Email UI must consume backend security aggregate results.');
-  assert.match(emailJs, /state\.view = 'plain'/, 'Opening a message must default the reader back to plain view.');
+  assert.match(emailJs, /function defaultMessageView\(/, 'Opening a message must choose a security-aware default view.');
+  assert.match(emailJs, /views_available/, 'Message default view must distinguish real HTML/Markdown parts from generated fallbacks.');
+  assert.match(emailJs, /state\.view = defaultMessageView\(state\.message\)/, 'Opening a message must use the computed default view.');
   assert.match(emailJs, /SECURITY_PROGRESS_EVENT = 'pim\.email\.security\.progress'/, 'Email security progress must use the shared SSE event stream.');
   assert.match(emailJs, /function renderSecurityProgressStrip\(\)/, 'Opened-message status must render compact security progress segments.');
   assert.match(emailJs, /security_run_id=\$\{encodeURIComponent\(runId\)\}/, 'Message opening must correlate backend progress events with a client run id.');
