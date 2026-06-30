@@ -683,6 +683,7 @@ function switchTab(tab) {
   if (tab === 'diary' && typeof BlueprintsDiaryPage !== 'undefined') BlueprintsDiaryPage.load();
   if (tab === 'calender' && typeof BlueprintsCalendarPage !== 'undefined') BlueprintsCalendarPage.load();
   if (tab === 'todo' && typeof BlueprintsTodoPage !== 'undefined') BlueprintsTodoPage.load();
+  if (tab === 'email' && typeof BlueprintsEmailPage !== 'undefined') BlueprintsEmailPage.load();
   if (tab === 'imports' && typeof BlueprintsImportsDashboard !== 'undefined') BlueprintsImportsDashboard.load();
   if (tab === 'kanban' && typeof BlueprintsKanbanBoardPage !== 'undefined') BlueprintsKanbanBoardPage.load();
   _syncActiveMenuForTab(tab);

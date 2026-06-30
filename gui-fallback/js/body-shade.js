@@ -270,6 +270,7 @@
       'tab-diary',
       'tab-calender',
       'tab-todo',
+      'tab-email',
       'tab-imports',
       'tab-kanban',
     ].includes(panel.id)) return false;

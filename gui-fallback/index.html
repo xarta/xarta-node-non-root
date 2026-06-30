@@ -29,6 +29,7 @@
   <link rel="stylesheet" href="css/dave-diary.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/dave-calendar.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/dave-todo.css?v={{$assetVersion}}" />
+  <link rel="stylesheet" href="css/dave-email.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/dave-imports.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/personal-search.css?v={{$assetVersion}}" />
   <link rel="stylesheet" href="css/personal-filters.css?v={{$assetVersion}}" />
@@ -3679,6 +3680,79 @@
     </div><!-- /tab-scroll-shell -->
   </section>
 
+  <section id="tab-email" class="tab-panel tab-panel--managed-scroll" aria-label="Email" data-email-page>
+    <div class="email-page email-page--intro">
+      <div class="email-page__header">
+        <div id="s25-lift-email" class="s25-lift-block email-page__title-block" data-for-tab="email">
+          <h2>Email</h2>
+          <div class="email-page__meta" id="email-meta">Loading mailbox...</div>
+        </div>
+        <div class="email-page__actions" aria-label="Email actions">
+          <div class="email-status-strip" id="email-status-strip" role="status" aria-live="polite">
+            <span class="email-status-dot email-status-dot--unknown" aria-hidden="true"></span>
+            <span class="email-status-text">Email middleware idle</span>
+          </div>
+          <button class="email-icon-btn email-icon-btn--folders" type="button" data-email-action="browse-folders" title="Browse folders" aria-label="Browse folders"></button>
+          <button class="email-icon-btn email-icon-btn--refresh" type="button" data-email-action="refresh" title="Refresh email" aria-label="Refresh email"></button>
+        </div>
+      </div>
+
+      <div class="email-control-strip">
+        <div class="email-view-tabs" id="email-view-tabs" aria-label="Message view">
+          <button type="button" data-email-action="view-plain" data-email-view-button="plain">Plain</button>
+          <button type="button" data-email-action="view-html" data-email-view-button="html">HTML</button>
+          <button type="button" data-email-action="view-markdown" data-email-view-button="markdown">Markdown</button>
+        </div>
+        <div class="email-folder-chip" id="email-folder-chip">Folder: INBOX</div>
+      </div>
+    </div>
+
+    <div class="body-shade-handle" aria-hidden="true"><div class="body-shade-grip"></div></div>
+
+    <div class="tab-scroll-shell">
+    <div class="email-page email-page--body">
+      <section class="email-main-surface" aria-label="Email workspace">
+        <section class="email-folders-panel email-main-folders" aria-labelledby="email-main-folders-heading">
+          <div class="email-panel-head">
+            <h3 id="email-main-folders-heading">Folders</h3>
+          </div>
+          <div class="email-folder-list" id="email-folder-list"></div>
+        </section>
+
+        <section class="email-list-panel" aria-labelledby="email-inbox-heading">
+          <div class="email-panel-head">
+            <div class="email-panel-head__row">
+              <h3 id="email-inbox-heading">Inbox</h3>
+              <span id="email-inbox-count" class="email-pill">0</span>
+            </div>
+          </div>
+          <div class="email-message-list" id="email-message-list"></div>
+        </section>
+
+        <section class="email-message-panel" aria-labelledby="email-message-heading">
+          <div class="email-panel-head email-message-head">
+            <h3 id="email-message-heading">Message</h3>
+            <div class="email-message-meta" id="email-message-meta">Select a message</div>
+          </div>
+          <div class="email-message-content" id="email-message-content"></div>
+        </section>
+      </section>
+
+      <div class="local-shade-handle email-local-shade-handle" data-local-shade-handle data-local-shade-key="email-bottom-panel" data-local-shade-media="(min-width: 821px) and (orientation: portrait)" data-local-shade-scope="#tab-email.active &gt; .tab-scroll-shell &gt; .email-page--body" data-local-shade-panel="#tab-email.active .email-secondary-under-panel" data-local-shade-var="--email-bottom-panel-height" data-local-shade-min="0" data-local-shade-min-ratio="0.05" data-local-shade-main-min="0" data-local-shade-main-min-ratio="0.05" data-local-shade-max-ratio="0.95" data-local-shade-default="352" aria-label="Resize Email panels">
+        <div class="body-shade-grip" aria-hidden="true"></div>
+      </div>
+
+      <div class="email-secondary-under-panel" aria-label="Email panels">
+        <div class="email-secondary-tabs" role="tablist" aria-label="Email secondary tabs">
+          <button type="button" data-email-secondary-tab="folders">Folders</button>
+          <button type="button" data-email-secondary-tab="checks">Checks</button>
+        </div>
+        <div class="email-secondary-body" id="email-secondary-bottom-body"></div>
+      </div>
+    </div>
+    </div><!-- /tab-scroll-shell -->
+  </section>
+
   <section id="tab-imports" class="tab-panel tab-panel--managed-scroll" aria-label="Imports" data-imports-dashboard>
     <div class="imports-dashboard imports-dashboard--intro">
       <div class="imports-dashboard__header">
@@ -3829,6 +3903,27 @@
     <div class="hub-modal-footer">
       <span id="todo-action-modal-status" class="hub-modal-status"></span>
       <button type="button" class="hub-modal-secondary" id="todo-action-modal-footer-close">Close</button>
+    </div>
+  </dialog>
+
+  <dialog class="hub-modal hub-dialog email-modal" data-tone="info" id="email-secondary-modal" style="width:min(760px,94vw);max-width:94vw">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">EMAIL</span>
+        <span class="hub-dialog-title-text" id="email-secondary-modal-title">Email Panels</span>
+      </h2>
+      <button type="button" class="hub-modal-close hub-dialog-close" id="email-secondary-modal-close" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body">
+      <div class="email-secondary-tabs" role="tablist" aria-label="Email modal tabs">
+        <button type="button" data-email-secondary-tab="folders">Folders</button>
+        <button type="button" data-email-secondary-tab="checks">Checks</button>
+      </div>
+      <div class="email-secondary-body" id="email-secondary-modal-body"></div>
+    </div>
+    <div class="hub-modal-footer">
+      <span id="email-secondary-modal-status" class="hub-modal-status"></span>
+      <button type="button" class="hub-modal-secondary" id="email-secondary-modal-footer-close">Close</button>
     </div>
   </dialog>
 
@@ -6201,6 +6296,7 @@
 <script src="js/dave/diary-page.js?v={{$assetVersion}}"></script>
 <script src="js/dave/calendar-page.js?v={{$assetVersion}}"></script>
 <script src="js/dave/todo-page.js?v={{$assetVersion}}"></script>
+<script src="js/dave/email-page.js?v={{$assetVersion}}"></script>
 <script src="js/dave/imports-dashboard.js?v={{$assetVersion}}"></script>
 <script src="js/kanban/kanban-menu.js?v={{$assetVersion}}"></script>
 <script src="js/kanban/kanban-board.js?v={{$assetVersion}}"></script>
