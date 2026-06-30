@@ -1142,6 +1142,34 @@ const EmailPage = (() => {
     content.appendChild(shell);
   }
 
+  function formatPlainMessageText(value) {
+    const lines = String(value || '')
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .split('\n')
+      .map(line => line.replace(/[ \t]+$/g, ''));
+    const compact = [];
+    let previousBlank = true;
+    lines.forEach(line => {
+      if (!line.trim()) {
+        if (!previousBlank) compact.push('');
+        previousBlank = true;
+        return;
+      }
+      compact.push(line);
+      previousBlank = false;
+    });
+    return compact.join('\n').trim();
+  }
+
+  function renderPlainMessage(content, value) {
+    const pre = document.createElement('pre');
+    pre.className = 'email-plain-view';
+    pre.textContent = formatPlainMessageText(value) || 'No plain view is available for this message.';
+    content.textContent = '';
+    content.appendChild(pre);
+  }
+
   function renderMessage() {
     if (RICH_VIEW_IDS.has(state.view) && !richViewsAllowed()) state.view = 'plain';
     renderViewTabs();
@@ -1171,6 +1199,10 @@ const EmailPage = (() => {
     }
     if (state.view === 'raw') {
       renderRawMessage(content, value);
+      return;
+    }
+    if (state.view === 'plain') {
+      renderPlainMessage(content, value);
       return;
     }
     const pre = document.createElement('pre');

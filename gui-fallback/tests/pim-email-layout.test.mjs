@@ -139,6 +139,9 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailCss, /\.email-security-finding/, 'Security findings must have readable detail styling.');
   assert.match(emailCss, /\.email-security-pill\[data-tone="red"\]/, 'Security failures must be visually distinct.');
   assert.match(emailJs, /function renderRawMessage\(/, 'Raw message view must have a dedicated renderer.');
+  assert.match(emailJs, /function formatPlainMessageText\(/, 'Plain view must compact excessive blank lines before display.');
+  assert.match(emailJs, /function renderPlainMessage\(/, 'Plain message view must have a dedicated renderer.');
+  assert.match(emailCss, /\.email-message-content pre\.email-plain-view/, 'Plain view must have readable message-text styling.');
   assert.match(emailJs, /rawSecuritySignals/, 'Raw view must use security findings for line highlighting.');
   assert.match(emailCss, /\.email-raw-line\[data-tone="red"\]/, 'Raw view must style failed security evidence.');
   assert.match(emailCss, /\.email-raw-line\[data-tone="amber"\]/, 'Raw view must style indeterminate security evidence.');
