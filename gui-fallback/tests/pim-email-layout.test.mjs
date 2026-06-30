@@ -39,8 +39,12 @@ test('PIM Email tab follows the Blueprints managed-scroll shell contract', () =>
   assert.match(tabHtml, /data-email-folder-controls-host="main"/, 'Main folder panel must expose toolbar-level folder controls.');
   assert.match(tabHtml, /data-email-folder-controls-host="secondary"/, 'Secondary folder tabs must expose toolbar-level folder controls.');
   assert.doesNotMatch(tabHtml, /data-email-secondary-tab="folders"/, 'The bottom toolbar must replace the Folders tab with the folder dropdown tabs.');
+  assert.match(tabHtml, /data-email-secondary-tab="checks"[\s\S]*>Checks</, 'The bottom toolbar must keep the Checks tab.');
+  assert.match(tabHtml, /data-email-secondary-tab="security"[\s\S]*>Security</, 'The bottom toolbar must expose the Security tab.');
+  assert.match(tabHtml, /data-email-view-button="plain"[\s\S]*data-email-view-button="html"[\s\S]*data-email-view-button="markdown"[\s\S]*data-email-view-button="raw"/, 'Message view tabs must expose Plain, HTML, Markdown, then Raw.');
   assert.match(indexHtml, /id="email-secondary-modal"/, 'Mobile and fallback folder actions must use a HubModal.');
   assert.match(indexHtml, /data-email-folder-controls-host="modal"/, 'Folder modal must expose toolbar-level folder controls.');
+  assert.match(indexHtml, /id="email-secondary-modal"[\s\S]*data-email-secondary-tab="security"[\s\S]*>Security</, 'Folder/check modal must also expose the Security tab.');
   assert.match(tabHtml, /data-email-list-toggle/, 'Message list collapse toggle must remain in the message header.');
 });
 
@@ -83,8 +87,10 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
     'email.viewPlain',
     'email.viewHtml',
     'email.viewMarkdown',
+    'email.viewRaw',
     'email.toggleList',
     'email.safeChecks',
+    'email.security',
   ]) {
     assert.ok(daveMenuJs.includes(`fn: '${fn}'`) || emailJs.includes(`'${fn}'`), `${fn} must be wired.`);
   }
@@ -108,7 +114,35 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /distributeFolderColumns/, 'Selected folder ranges must distribute roots across columns.');
   assert.match(emailJs, /frame\.setAttribute\('sandbox', ''\)/, 'HTML email must render in a no-permissions sandbox frame.');
   assert.match(emailJs, /img-src \$\{escHtml\(imgSources\)\}/, 'HTML email iframe must limit images to data and same-site proxy sources.');
+  assert.match(emailJs, /RICH_VIEW_IDS = new Set\(\['html', 'markdown'\]\)/, 'HTML and Markdown must be treated as gated rich views.');
+  assert.match(emailJs, /requires a green message security result/, 'Rich views must be gated behind a green security result.');
   assert.match(emailJs, /html_security/, 'HTML email safety metadata must be surfaced.');
+  assert.match(emailJs, /state\.message\?\.security\?\.aggregate/, 'Email UI must consume backend security aggregate results.');
+  assert.match(emailJs, /state\.view = 'plain'/, 'Opening a message must default the reader back to plain view.');
+  assert.match(emailJs, /SECURITY_PROGRESS_EVENT = 'pim\.email\.security\.progress'/, 'Email security progress must use the shared SSE event stream.');
+  assert.match(emailJs, /function renderSecurityProgressStrip\(\)/, 'Opened-message status must render compact security progress segments.');
+  assert.match(emailJs, /security_run_id=\$\{encodeURIComponent\(runId\)\}/, 'Message opening must correlate backend progress events with a client run id.');
+  assert.doesNotMatch(emailJs, /Message security \$\{status\}/, 'Opened-message status must not render a textual security colour sentence.');
+  assert.doesNotMatch(emailJs, /Security \$\{aggregate\.status\}/, 'Message metadata must not duplicate the visible border colour in text.');
+  assert.match(emailJs, /function messageSecurityHtml\(\)/, 'Email UI must render detailed per-message security results.');
+  assert.match(emailJs, /authenticationResultsHtml/, 'Security detail must include provider Authentication-Results.');
+  assert.match(emailJs, /securityFindingsHtml/, 'Security detail must include individual finding codes.');
+  assert.match(emailJs, /\/messages\/\$\{encodeURIComponent\(uid\)\}\/security/, 'Security action must be able to refresh missing message security details.');
+  assert.match(emailJs, /Email Security/, 'Security modal title must identify the security panel.');
+  assert.match(emailCss, /\.email-message-panel\[data-email-security="red"\]/, 'Red security aggregate must tint the reader border.');
+  assert.match(emailCss, /\.email-message-panel\[data-email-security="amber"\]/, 'Amber security aggregate must tint the reader border.');
+  assert.match(emailCss, /\.email-message-panel\[data-email-security="green"\]/, 'Green security aggregate must tint the reader border.');
+  assert.match(emailCss, /\.email-security-meter__segment\[data-tone="red"\]/, 'Status strip segments must show failed checks.');
+  assert.match(emailCss, /\.email-security-meter__segment\[data-tone="amber"\]/, 'Status strip segments must show indeterminate checks.');
+  assert.match(emailCss, /\.email-security-meter__segment\[data-tone="green"\]/, 'Status strip segments must show passed checks.');
+  assert.match(emailCss, /@keyframes email-security-segment-pulse/, 'Running security checks must have a compact progress animation.');
+  assert.match(emailCss, /\.email-security-finding/, 'Security findings must have readable detail styling.');
+  assert.match(emailCss, /\.email-security-pill\[data-tone="red"\]/, 'Security failures must be visually distinct.');
+  assert.match(emailJs, /function renderRawMessage\(/, 'Raw message view must have a dedicated renderer.');
+  assert.match(emailJs, /rawSecuritySignals/, 'Raw view must use security findings for line highlighting.');
+  assert.match(emailCss, /\.email-raw-line\[data-tone="red"\]/, 'Raw view must style failed security evidence.');
+  assert.match(emailCss, /\.email-raw-line\[data-tone="amber"\]/, 'Raw view must style indeterminate security evidence.');
+  assert.match(emailCss, /\.email-raw-line\[data-tone="green"\]/, 'Raw view must style passed security evidence.');
   assert.doesNotMatch(emailJs, /\bmethod:\s*['"]DELETE['"]/, 'Email UI must not expose delete capability.');
   assert.doesNotMatch(`${indexHtml}\n${daveMenuJs}\n${emailJs}`, /data-email-action="(?:send|delete)"/, 'Email UI must not expose send/delete actions.');
   assert.doesNotMatch(emailJs, /smtp-self-test/, 'SMTP proof must not be a general UI action.');
