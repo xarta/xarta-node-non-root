@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 
 const MODEL_CHANGE_ANNOUNCER_JS = new URL('../js/model-change-announcer.js', import.meta.url);
+const TOAST_DEDUPE_STORAGE_KEY = 'blueprints.toast.dedupe.recent.v1';
 
 function createStorage() {
   const values = new Map();
@@ -129,7 +130,7 @@ async function createHarness(options = {}) {
     String,
     Map,
     document,
-    localStorage: createStorage(),
+    localStorage: options.localStorage || createStorage(),
     clearTimeout,
     setTimeout: setTimeoutUnref,
     requestAnimationFrame(fn) {
@@ -169,16 +170,34 @@ function toastCount(context) {
   return context.document.getElementById('bp-event-toasts')?.children.length || 0;
 }
 
-function dispatchOffline(context, eventId) {
+function dispatchOffline(context, eventId, options = {}) {
   context.document.dispatchEvent(new context.CustomEvent('blueprints:event', {
     detail: {
       event_id: eventId,
       event_type: 'local.llm.offline',
       title: 'Local LLM Offline',
-      message: 'Local Large Language Model is offline.',
-      severity: 'error',
+      message: options.message || 'Local Large Language Model is offline.',
+      severity: options.severity || 'error',
+      created_at: options.createdAt || Date.now() / 1000,
+      payload: options.payload || {},
+    },
+  }));
+}
+
+function dispatchRecovered(context, eventId) {
+  context.document.dispatchEvent(new context.CustomEvent('blueprints:event', {
+    detail: {
+      event_id: eventId,
+      event_type: 'local.llm.recovered',
+      title: 'Local LLM Recovered',
+      message: 'Local Large Language Model is back online.',
+      severity: 'info',
       created_at: Date.now() / 1000,
-      payload: {},
+      payload: {
+        notification_key: 'local.llm.recovered',
+        toast_dedupe_key: 'local.llm.recovered',
+        recovered_from: 'local.llm.offline',
+      },
     },
   }));
 }
@@ -227,6 +246,38 @@ function dispatchKeyedWarning(context, eventId, message) {
   }));
 }
 
+function dispatchPublicExposureWarning(context, eventId) {
+  context.document.dispatchEvent(new context.CustomEvent('blueprints:event', {
+    detail: {
+      event_id: eventId,
+      event_type: 'security.public_exposure.warning',
+      title: 'Public Exposure Guard Failed',
+      message: 'Public exposure guard failed.',
+      severity: 'error',
+      created_at: Date.now() / 1000,
+      payload: {},
+    },
+  }));
+}
+
+function dispatchPublicExposureRecovered(context, eventId) {
+  context.document.dispatchEvent(new context.CustomEvent('blueprints:event', {
+    detail: {
+      event_id: eventId,
+      event_type: 'security.public_exposure.recovered',
+      title: 'Public Exposure Guard Recovered',
+      message: 'Public exposure guard recovered.',
+      severity: 'info',
+      created_at: Date.now() / 1000,
+      payload: {},
+    },
+  }));
+}
+
+function persistedToastKeys(localStorage) {
+  return Object.keys(JSON.parse(localStorage.getItem(TOAST_DEDUPE_STORAGE_KEY) || '{}')).sort();
+}
+
 async function testIdenticalOfflineWarningsDedupeAcrossEventIds() {
   const context = await createHarness();
   dispatchOffline(context, 'offline-1');
@@ -251,6 +302,127 @@ async function testIdenticalOfflineWarningsDedupeAcrossEventIds() {
     toastCount(context),
     1,
     'Recently shown identical local.llm.offline warnings must remain suppressed during reconnect bursts.',
+  );
+}
+
+async function testOfflineWarningsPersistAcrossRefresh() {
+  const localStorage = createStorage();
+  const first = await createHarness({ localStorage });
+  dispatchOffline(first, 'offline-persist-1');
+
+  assert.equal(
+    toastCount(first),
+    1,
+    'First offline warning should render before a refresh-like reload.',
+  );
+
+  const second = await createHarness({ localStorage });
+  dispatchOffline(second, 'offline-persist-2');
+
+  assert.equal(
+    toastCount(second),
+    0,
+    'A refresh-like reload must remember recently shown warning identities.',
+  );
+  assert.equal(
+    second.BlueprintsModelChangeAnnouncer.getQueueLength(),
+    0,
+    'Persisted duplicate warning identity must not remain queued after refresh.',
+  );
+}
+
+async function testStaleWarningReplaySuppressed() {
+  const context = await createHarness();
+  dispatchOffline(context, 'offline-stale-1', {
+    createdAt: (Date.now() / 1000) - (60 * 60),
+  });
+
+  assert.equal(
+    toastCount(context),
+    0,
+    'Stale warning replay from broad SSE catch-up must not render a toast.',
+  );
+  assert.equal(
+    context.BlueprintsModelChangeAnnouncer.getRuntimeState().last_speech.reason,
+    'stale_toast_replay',
+    'Stale warning replay should be observable as a skipped notification.',
+  );
+  assert.deepEqual(
+    persistedToastKeys(context.localStorage),
+    ['event:local.llm.offline'],
+    'Stale replay should persist stable type identity, not visible-content identity.',
+  );
+}
+
+async function testLegacyAndKeyedOfflineWarningsShareIdentity() {
+  const context = await createHarness();
+  dispatchOffline(context, 'offline-legacy-1');
+  dispatchOffline(context, 'offline-keyed-1', {
+    message: 'LiteLLM proxy is still offline.',
+    payload: {
+      notification_key: 'local.llm.offline',
+      toast_dedupe_key: 'local.llm.offline',
+      dedupe_key: 'litellm:chat-proxy|PRIMARY-LOCAL|local-base',
+    },
+  });
+
+  assert.equal(
+    toastCount(context),
+    1,
+    'Legacy unkeyed and new keyed local.llm.offline events must share one warning identity.',
+  );
+  assert.equal(
+    context.BlueprintsModelChangeAnnouncer.getQueueLength(),
+    0,
+    'Keyed duplicate warning must not remain queued behind a legacy warning.',
+  );
+}
+
+async function testRecoveryClearsPersistedOfflineIdentity() {
+  const localStorage = createStorage();
+  const first = await createHarness({ localStorage });
+  dispatchOffline(first, 'offline-recover-1');
+
+  const recovery = await createHarness({ localStorage });
+  dispatchRecovered(recovery, 'offline-recovered-1');
+
+  const afterRecovery = await createHarness({ localStorage });
+  dispatchOffline(afterRecovery, 'offline-recover-2');
+
+  assert.equal(
+    toastCount(afterRecovery),
+    1,
+    'Recovery events must clear the persisted offline identity so a future outage can alert.',
+  );
+}
+
+async function testRecoveredEventClearsWarningIdentity() {
+  const localStorage = createStorage();
+  const first = await createHarness({ localStorage });
+  dispatchPublicExposureWarning(first, 'public-exposure-1');
+
+  assert.deepEqual(
+    persistedToastKeys(localStorage),
+    ['event:security.public_exposure.warning'],
+    'Warning persistence should use stable event identity when no explicit key exists.',
+  );
+
+  const recovery = await createHarness({ localStorage });
+  dispatchPublicExposureRecovered(recovery, 'public-exposure-recovered-1');
+
+  assert.deepEqual(
+    persistedToastKeys(localStorage),
+    [],
+    'A .recovered event should clear the matching .warning identity.',
+  );
+
+  const afterRecovery = await createHarness({ localStorage });
+  dispatchPublicExposureWarning(afterRecovery, 'public-exposure-2');
+
+  assert.equal(
+    toastCount(afterRecovery),
+    1,
+    'A warning should be allowed to alert again after its recovered event.',
   );
 }
 
@@ -311,6 +483,11 @@ async function testExplicitNotificationKeyDedupeBeatsChangingText() {
 }
 
 await testIdenticalOfflineWarningsDedupeAcrossEventIds();
+await testOfflineWarningsPersistAcrossRefresh();
+await testStaleWarningReplaySuppressed();
+await testLegacyAndKeyedOfflineWarningsShareIdentity();
+await testRecoveryClearsPersistedOfflineIdentity();
+await testRecoveredEventClearsWarningIdentity();
 await testIdenticalWarningsDedupeAcrossEventTypes();
 await testDirectWarningDedupeWhilePolicyLoads();
 await testExplicitNotificationKeyDedupeBeatsChangingText();
