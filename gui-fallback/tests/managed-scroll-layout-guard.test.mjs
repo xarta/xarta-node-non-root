@@ -1351,6 +1351,21 @@ assert.match(
   'Kanban Edit Item must use the shared filter-tag strip and keep the edit draft synced.',
 );
 assert.match(
+  kanbanBoardJs + kanbanBoardCss,
+  /function\s+embeddedPrioritiesHtml[\s\S]*\/api\/v1\/personal\/kanban\/priorities\?limit=10[\s\S]*\{ id: 'priorities', label: 'Priorities' \}[\s\S]*if \(tab === 'priorities'\) return embeddedPrioritiesHtml\(host\)[\s\S]*\.kanban-priority-link/,
+  'Kanban shared bottom/sidecar panel tabs must include board-level managed Priorities with clickable card links.',
+);
+assert.ok(
+  !/function\s+prioritiesSectionHtml/.test(kanbanBoardJs)
+    && !/data-kanban-detail-action="open-priority-item"/.test(kanbanBoardJs),
+  'Kanban priorities must not live inside item detail tabs.',
+);
+assert.match(
+  indexHtml + personalFiltersJs,
+  /selected,search,new-item,edit-item,priorities,backups,automation,prompts,provenance/,
+  'Kanban shared tab hosts must place Priorities in the bottom/sidecar tab row after Edit Item.',
+);
+assert.match(
   daveTodoJs,
   /kanban:\s*'Kanban'[\s\S]*Array\.isArray\(row\?\.tags\)[\s\S]*\.\.\.\(row\?\.related\?\.kanban_items\?\.length\s*\?\s*\['kanban'\]\s*:\s*\[\]\)/,
   'ToDo must display Kanban mode as Kanban and filter linked project tasks with the kanban token, not a user work tag.',

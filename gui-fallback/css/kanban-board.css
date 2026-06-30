@@ -956,6 +956,89 @@ dialog.hub-modal#kanban-detail-modal[open] {
   gap: 8px;
 }
 
+.kanban-priorities {
+  min-width: 0;
+}
+
+.kanban-priorities-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.kanban-priorities__meta {
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.kanban-priority-link {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255,255,255,.035);
+  color: var(--text);
+  padding: 10px 12px;
+  text-decoration: none;
+}
+
+.kanban-priority-link:hover,
+.kanban-priority-link:focus-visible {
+  border-color: rgba(91, 156, 246, .46);
+  background: rgba(91, 156, 246, .12);
+  color: var(--text);
+  outline: none;
+}
+
+.kanban-priority-rank {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(91, 156, 246, .34);
+  border-radius: 8px;
+  background: rgba(91, 156, 246, .12);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 760;
+  font-variant-numeric: tabular-nums;
+}
+
+.kanban-priority-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.kanban-priority-main strong,
+.kanban-priority-main span,
+.kanban-priority-main em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kanban-priority-main strong {
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.kanban-priority-main span,
+.kanban-priority-main em {
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.kanban-priority-main em {
+  font-style: normal;
+}
+
 .kanban-backups-panel {
   display: grid;
   gap: 10px;

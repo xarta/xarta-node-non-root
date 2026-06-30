@@ -4,11 +4,12 @@
 
 const KanbanBoardPage = (() => {
   const CONTENT_VIEW_STORAGE_KEY = 'blueprints.kanban.contentView.v1';
-  const CONTENT_VIEW_IDS = ['board', 'search', 'selection', 'backups', 'automation', 'provenance'];
+  const CONTENT_VIEW_IDS = ['board', 'search', 'selection', 'priorities', 'backups', 'automation', 'provenance'];
   const CONTENT_VIEW_LABELS = {
     board: 'Board',
     search: 'Search',
     selection: 'Selection',
+    priorities: 'Priorities',
     backups: 'Backups',
     automation: 'Automation',
     provenance: 'Provenance',
@@ -87,6 +88,12 @@ const KanbanBoardPage = (() => {
       lastResult: null,
       busyAction: '',
       applyingFilename: '',
+    },
+    priorities: {
+      loading: false,
+      error: '',
+      data: null,
+      lastLoadedAt: 0,
     },
     automationStatus: {
       loading: false,
@@ -1491,6 +1498,54 @@ const KanbanBoardPage = (() => {
     </section>`;
   }
 
+  function priorityRecommendations() {
+    return Array.isArray(state.priorities.data?.recommendations)
+      ? state.priorities.data.recommendations.slice(0, 10)
+      : [];
+  }
+
+  function priorityRecommendationLinkHtml(row, index) {
+    const itemId = cleanRouteId(row?.item_id || '');
+    const rank = Number(row?.rank || index + 1);
+    const reason = row?.reason || row?.summary || '';
+    return `<a class="kanban-priority-link" href="${escHtml(itemRouteUrl(itemId))}" data-kanban-action="open-priority-item" data-kanban-priority-item-id="${escHtml(itemId)}">
+      <span class="kanban-priority-rank">${escHtml(rank)}</span>
+      <span class="kanban-priority-main">
+        <strong>${escHtml(row?.title || itemId || 'Kanban item')}</strong>
+        <span>${escHtml(`${stateLabel(row?.state_id)} - ${priorityLabel(row?.priority_id)} - xarta-kanban:item:${itemId}`)}</span>
+        ${reason ? `<em>${escHtml(reason)}</em>` : ''}
+      </span>
+    </a>`;
+  }
+
+  function embeddedPrioritiesHtml(options = {}) {
+    if (!state.priorities.data && !state.priorities.loading && !state.priorities.error) {
+      setTimeout(() => loadPrioritiesPanel({ force: true }), 0);
+    }
+    const rows = priorityRecommendations();
+    const data = state.priorities.data || {};
+    const generated = data.generated_at ? `Generated ${data.generated_at}` : '';
+    const strategy = data.strategy_version || '';
+    const meta = [strategy, generated].filter(Boolean).join(' - ');
+    const head = options.modal
+      ? ''
+      : `<div class="calendar-section-head kanban-section-head">
+          <h3>Priorities</h3>
+          <div class="kanban-backups-toolbar">
+            <button class="kanban-command-btn" type="button" data-kanban-action="refresh-priorities"${state.priorities.loading ? ' disabled' : ''}>Refresh</button>
+          </div>
+        </div>`;
+    return `<section class="calendar-band kanban-band kanban-priorities-panel" aria-label="Kanban Priorities">
+      ${head}
+      ${meta ? `<div class="kanban-priorities__meta">${escHtml(meta)}</div>` : ''}
+      ${state.priorities.loading ? '<div class="kanban-backup-result" data-tone="info" role="status"><strong>Loading priorities...</strong></div>' : ''}
+      ${state.priorities.error ? `<div class="kanban-backup-result" data-tone="err" role="status"><strong>Priority list failed to load.</strong><span>${escHtml(state.priorities.error)}</span></div>` : ''}
+      <div class="kanban-detail-list kanban-priorities">
+        ${rows.length ? rows.map(priorityRecommendationLinkHtml).join('') : `<div class="kanban-empty">${escHtml(data.empty_reason || 'No saved Kanban priority list has been recorded yet.')}</div>`}
+      </div>
+    </section>`;
+  }
+
   function backupEntries() {
     return Array.isArray(state.backups.data?.backups) ? state.backups.data.backups : [];
   }
@@ -1764,6 +1819,39 @@ const KanbanBoardPage = (() => {
       if (!hostIsVisible(host)) return;
       window.PersonalFilters.activateTab('kanban', 'backups', { host, visibleOnly: false });
     });
+  }
+
+  function refreshPriorityPanels() {
+    if (!window.PersonalFilters?.activateTab) return;
+    document.querySelectorAll('[data-personal-filter-host][data-personal-filter-surface="kanban"]').forEach(host => {
+      if (host.dataset.personalFilterTab !== 'priorities') return;
+      if (!hostIsVisible(host)) return;
+      window.PersonalFilters.activateTab('kanban', 'priorities', { host, visibleOnly: false });
+    });
+  }
+
+  async function loadPrioritiesPanel(options = {}) {
+    if (state.priorities.loading && !options.force) return state.priorities.data;
+    state.priorities.loading = true;
+    state.priorities.error = '';
+    refreshPriorityPanels();
+    try {
+      state.priorities.data = await requestJson('/api/v1/personal/kanban/priorities?limit=10');
+      state.priorities.lastLoadedAt = Date.now();
+      return state.priorities.data;
+    } catch (err) {
+      state.priorities.error = err?.message || String(err);
+      return null;
+    } finally {
+      state.priorities.loading = false;
+      refreshPriorityPanels();
+    }
+  }
+
+  async function openPrioritiesPanel() {
+    activateKanbanPanelTab('priorities');
+    await loadPrioritiesPanel({ force: true });
+    return true;
   }
 
   async function loadBackupsPanel(options = {}) {
@@ -4542,6 +4630,7 @@ const KanbanBoardPage = (() => {
           { id: 'search', label: 'Search' },
           { id: 'new-item', label: 'New Item' },
           { id: 'edit-item', label: 'Edit Item', disabled: () => !detailItemAvailable() },
+          { id: 'priorities', label: 'Priorities' },
           { id: 'backups', label: 'Backups' },
           { id: 'automation', label: 'Automation' },
           { id: 'prompts', label: 'Prompts' },
@@ -4552,6 +4641,7 @@ const KanbanBoardPage = (() => {
           if (tab === 'search') return embeddedSearchHtml(host);
           if (tab === 'new-item') return embeddedItemFormHtml(host?.id === 'kanban-filter-inline-panel' ? 'kanban-inline-item' : 'kanban-panel-item');
           if (tab === 'edit-item') return embeddedItemDetailHtml(host);
+          if (tab === 'priorities') return embeddedPrioritiesHtml(host);
           if (tab === 'backups') return embeddedBackupsHtml(host);
           if (tab === 'automation') return embeddedAutomationStatusHtml(host);
           if (tab === 'prompts') return window.PersonalPrompts?.renderTab?.('kanban', host) || '';
@@ -4990,6 +5080,13 @@ const KanbanBoardPage = (() => {
         if (action === 'new-root-item') newRootItem();
         if (action === 'backups') openBackupsPanel();
         if (action === 'automation-status') openAutomationStatusPanel();
+        if (action === 'priorities') openPrioritiesPanel();
+        if (action === 'refresh-priorities') loadPrioritiesPanel({ force: true });
+        if (action === 'open-priority-item') {
+          event.preventDefault();
+          event.stopPropagation();
+          openItemById(button.dataset.kanbanPriorityItemId || '');
+        }
         if (action === 'add-item-state') handleCardAction('add-item-state', '', button.dataset.kanbanStateId || 'todo');
         if (action === 'submit-inline-item') submitInlineItem(button.dataset.kanbanItemPrefix || 'kanban-inline-item');
         if (action === 'toggle-markdown-preview') toggleMarkdownPreview(button, root);
@@ -5209,6 +5306,10 @@ const KanbanBoardPage = (() => {
       automation_processing_policy_active_mode: state.automationStatus.data?.processing_policy?.active_mode || '',
       automation_processing_policy_local_gate:
         state.automationStatus.data?.processing_policy?.local_processing?.gate || '',
+      priorities_loaded: !!state.priorities.data,
+      priorities_loading: !!state.priorities.loading,
+      priorities_error: state.priorities.error || '',
+      priorities_count: priorityRecommendations().length,
       error: state.error,
     };
   }
@@ -5227,6 +5328,7 @@ const KanbanBoardPage = (() => {
     openKanbanLinkFromText,
     itemRouteUrl,
     openBackupsPanel,
+    openPrioritiesPanel,
     openAutomationStatusPanel,
     addChildToSelected: () => openItemForm({ parentItemId: state.selection?.item?.item_id, childOfSelection: true }),
     addIssueToSelected: () => state.selection?.item?.item_id ? openLeafForm('issue', state.selection.item.item_id) : false,
@@ -5260,6 +5362,7 @@ if (typeof KanbanMenuConfig !== 'undefined') {
     'kanban.openUpBoard': () => KanbanBoardPage.openUpBoard(),
     'kanban.openChildBoard': () => KanbanBoardPage.openSelectedChildBoard(),
     'kanban.openDetail': () => KanbanBoardPage.openSelectedDetail(),
+    'kanban.priorities': () => KanbanBoardPage.openPrioritiesPanel(),
     'kanban.addChild': () => KanbanBoardPage.addChildToSelected(),
     'kanban.addIssue': () => KanbanBoardPage.addIssueToSelected(),
     'kanban.addTodo': () => KanbanBoardPage.addTodoToSelected(),
