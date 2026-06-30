@@ -40,6 +40,7 @@
     { key: 'page-switch', rank: 65, patterns: [/\bpage\s*\d+\b/, /\bsub\s*page\b/, /\bview\s*\d+\b/] },
     { key: 'horiz-scroll', rank: 66, patterns: [/horiz\s*scroll/, /scroll:\s*is\s*(on|off)/, /\bscroll\b/] },
     { key: 'fullscreen', rank: 67, patterns: [/\bfull\s*screen\b/, /\bfullscreen\b/] },
+    { key: 'toggle-list', rank: 67, patterns: [/\btoggle\s+list\b/, /email-toggle-list/] },
     { key: 'visibility-filter', rank: 68, patterns: [/\bhide inactive\b/, /\bshow inactive\b/, /\binactive\b/, /\bhide obsolete\b/, /\bshow obsolete\b/, /\bobsolete\b/, /\bshow archived\b/, /\bshow active\b/, /\barchived\b/] },
     { key: 'terminal-lock', rank: 69, patterns: [/ssh-fn-lock/, /\block\b/, /\bunlock\b/] },
     { key: 'expand-all', rank: 70, patterns: [/\bexpand all\b/] },

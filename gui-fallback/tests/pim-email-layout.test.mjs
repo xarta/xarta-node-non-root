@@ -36,7 +36,12 @@ test('PIM Email tab follows the Blueprints managed-scroll shell contract', () =>
   );
   assert.match(tabHtml, /class="email-folders-panel email-main-folders"/, 'Normal desktop must have main-surface folder navigation.');
   assert.match(tabHtml, /class="email-secondary-under-panel"/, 'Desktop portrait must have the bottom secondary panel.');
+  assert.match(tabHtml, /data-email-folder-controls-host="main"/, 'Main folder panel must expose toolbar-level folder controls.');
+  assert.match(tabHtml, /data-email-folder-controls-host="secondary"/, 'Secondary folder tabs must expose toolbar-level folder controls.');
+  assert.doesNotMatch(tabHtml, /data-email-secondary-tab="folders"/, 'The bottom toolbar must replace the Folders tab with the folder dropdown tabs.');
   assert.match(indexHtml, /id="email-secondary-modal"/, 'Mobile and fallback folder actions must use a HubModal.');
+  assert.match(indexHtml, /data-email-folder-controls-host="modal"/, 'Folder modal must expose toolbar-level folder controls.');
+  assert.match(tabHtml, /data-email-list-toggle/, 'Message list collapse toggle must remain in the message header.');
 });
 
 test('PIM Email viewport rules match Dave and Kanban precedent', () => {
@@ -53,6 +58,11 @@ test('PIM Email viewport rules match Dave and Kanban precedent', () => {
     'Ultrawide must suppress desktop main/bottom folder panels for the right sidecar.',
   );
   assert.match(emailCss, /\.email-ultrawide-shell\s*\{[\s\S]*grid-template-columns:\s*42px\s+minmax\(0,\s*1fr\)/);
+  assert.match(
+    emailCss,
+    /#tab-email\.email-list-collapsed\s+\.email-list-panel\s*\{[\s\S]*display:\s*none/,
+    'Collapsed list state must hide the message list panel.',
+  );
   assert.match(
     emailCss,
     /@media\s*\(max-width:\s*820px\)[\s\S]*\.email-main-folders,[\s\S]*\.email-secondary-under-panel,[\s\S]*\.email-local-shade-handle\s*\{[\s\S]*display:\s*none/,
@@ -73,6 +83,7 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
     'email.viewPlain',
     'email.viewHtml',
     'email.viewMarkdown',
+    'email.toggleList',
     'email.safeChecks',
   ]) {
     assert.ok(daveMenuJs.includes(`fn: '${fn}'`) || emailJs.includes(`'${fn}'`), `${fn} must be wired.`);
@@ -80,8 +91,24 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(appJs, /tab === 'email'[\s\S]*BlueprintsEmailPage\.load\(\)/, 'switchTab must lazy-load Email.');
   assert.match(emailJs, /\/status/, 'Email UI must read middleware status.');
   assert.match(emailJs, /\/folders/, 'Email UI must list folders.');
-  assert.match(emailJs, /\/inbox\?limit=30/, 'Email UI must list Inbox messages.');
+  assert.match(emailJs, /\/folder-messages\?folder=\$\{encodeURIComponent\(selectedFolder\)\}&limit=30/, 'Email UI must list the selected folder messages on load.');
+  assert.match(emailJs, /\/folder-messages\?folder=\$\{encodeURIComponent\(clean\)\}&limit=30/, 'Email UI must list any clicked folder.');
+  assert.doesNotMatch(emailJs, /Inbox is the only message listing/, 'Email UI must not keep the old Inbox-only folder restraint.');
+  assert.doesNotMatch(emailJs, /Only Inbox message opening/, 'Email UI must open messages from the selected folder.');
   assert.match(emailJs, /\/messages\/\$\{encodeURIComponent\(cleanUid\)\}/, 'Email UI must open messages by UID.');
+  assert.match(emailJs, /role="tree"/, 'Email folders must render as a tree.');
+  assert.match(emailJs, /data-email-folder-menu-toggle="set"/, 'Folder list must render as a split dropdown tab.');
+  assert.match(emailJs, /data-email-folder-menu-toggle="group"/, 'Folder group must render as a split dropdown tab.');
+  assert.match(emailJs, /data-email-folder-set-option/, 'Folder list dropdown tab must expose menu options.');
+  assert.match(emailJs, /data-email-folder-group-option/, 'Folder group dropdown tab must expose menu options.');
+  assert.doesNotMatch(emailJs, /<select[^>]+data-email-folder/, 'Folder controls must not regress to native selects.');
+  assert.match(emailCss, /\.email-folder-tab-dropdown/, 'Email folder controls must use dropdown-tab styling.');
+  assert.match(emailCss, /\.email-folder-tab-split/, 'Email folder controls must use split tab styling.');
+  assert.match(emailJs, /exclusiveFolderGroups/, 'Email folders must be grouped by exclusive initial ranges.');
+  assert.match(emailJs, /distributeFolderColumns/, 'Selected folder ranges must distribute roots across columns.');
+  assert.match(emailJs, /frame\.setAttribute\('sandbox', ''\)/, 'HTML email must render in a no-permissions sandbox frame.');
+  assert.match(emailJs, /img-src \$\{escHtml\(imgSources\)\}/, 'HTML email iframe must limit images to data and same-site proxy sources.');
+  assert.match(emailJs, /html_security/, 'HTML email safety metadata must be surfaced.');
   assert.doesNotMatch(emailJs, /\bmethod:\s*['"]DELETE['"]/, 'Email UI must not expose delete capability.');
   assert.doesNotMatch(`${indexHtml}\n${daveMenuJs}\n${emailJs}`, /data-email-action="(?:send|delete)"/, 'Email UI must not expose send/delete actions.');
   assert.doesNotMatch(emailJs, /smtp-self-test/, 'SMTP proof must not be a general UI action.');

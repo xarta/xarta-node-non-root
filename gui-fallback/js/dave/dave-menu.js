@@ -45,6 +45,7 @@ const DaveMenuConfig = createHubMenu({
                     'email-view-plain',
                     'email-view-html',
                     'email-view-markdown',
+                    'email-toggle-list',
                 ],
                 [
                     'email-safe-checks',
@@ -204,7 +205,8 @@ const DaveMenuConfig = createHubMenu({
         { id: 'email-view-plain', label: 'Mode Plain', icon: DaveActionIcons.document, pageLabel: 'Plain Email View', parent: 'dave-layout', order: 2, fn: 'email.viewPlain', activeOn: ['email'] },
         { id: 'email-view-html', label: 'Mode HTML', icon: DaveActionIcons.document, pageLabel: 'Sanitized HTML Email View', parent: 'dave-layout', order: 3, fn: 'email.viewHtml', activeOn: ['email'] },
         { id: 'email-view-markdown', label: 'Mode Markdown', icon: DaveActionIcons.document, pageLabel: 'Markdown Email View', parent: 'dave-layout', order: 4, fn: 'email.viewMarkdown', activeOn: ['email'] },
-        { id: 'email-safe-checks', label: 'Safe Checks', icon: DaveActionIcons.shield, pageLabel: 'Email Safe Checks', parent: 'dave-layout', order: 5, fn: 'email.safeChecks', activeOn: ['email'] },
+        { id: 'email-toggle-list', label: 'Toggle List', icon: DaveActionIcons.document, pageLabel: 'Collapse Or Expand Email List', parent: 'dave-layout', order: 5, fn: 'email.toggleList', activeOn: ['email'] },
+        { id: 'email-safe-checks', label: 'Safe Checks', icon: DaveActionIcons.shield, pageLabel: 'Email Safe Checks', parent: 'dave-layout', order: 6, fn: 'email.safeChecks', activeOn: ['email'] },
         { id: 'imports-refresh', label: 'Refresh', icon: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M13 3a9 9 0 1 0 8.95 10h-2.02A7 7 0 1 1 12 5a6.97 6.97 0 0 1 4.24 1.43L13 10h8V2l-3.33 3.33A8.97 8.97 0 0 0 13 3z%22/%3E%3C/svg%3E', pageLabel: 'Refresh Imports', parent: 'dave-layout', order: 0, fn: 'imports.refresh', activeOn: ['imports'] },
         { id: 'imports-source-doc', label: 'Open Source', icon: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M6 2h8l5 5v15H6V2zm7 1.5V8h4.5L13 3.5zM8 12h8v2H8v-2zm0 4h8v2H8v-2z%22/%3E%3C/svg%3E', pageLabel: 'Open Imports Source', parent: 'dave-layout', order: 1, fn: 'imports.openInterestsDoc', activeOn: ['imports'] },
         { id: 'imports-latest-proof', label: 'Open Proof', icon: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M5 3h14v18H5V3zm3 4h8v2H8V7zm0 4h8v2H8v-2zm0 4h5v2H8v-2z%22/%3E%3C/svg%3E', pageLabel: 'Open Latest Proof', parent: 'dave-layout', order: 2, fn: 'imports.openLatestProof', activeOn: ['imports'] },

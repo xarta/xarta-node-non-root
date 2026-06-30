@@ -3714,7 +3714,10 @@
       <section class="email-main-surface" aria-label="Email workspace">
         <section class="email-folders-panel email-main-folders" aria-labelledby="email-main-folders-heading">
           <div class="email-panel-head">
-            <h3 id="email-main-folders-heading">Folders</h3>
+            <div class="email-panel-head__row email-panel-head__row--folders">
+              <h3 id="email-main-folders-heading">Folders</h3>
+              <div class="email-folder-controls-host" data-email-folder-controls-host="main"></div>
+            </div>
           </div>
           <div class="email-folder-list" id="email-folder-list"></div>
         </section>
@@ -3731,7 +3734,10 @@
 
         <section class="email-message-panel" aria-labelledby="email-message-heading">
           <div class="email-panel-head email-message-head">
-            <h3 id="email-message-heading">Message</h3>
+            <div class="email-message-head__row">
+              <h3 id="email-message-heading">Message</h3>
+              <button class="email-icon-btn email-icon-btn--list-toggle" type="button" data-email-action="toggle-list" data-email-list-toggle aria-expanded="true" title="Collapse message list" aria-label="Collapse message list"></button>
+            </div>
             <div class="email-message-meta" id="email-message-meta">Select a message</div>
           </div>
           <div class="email-message-content" id="email-message-content"></div>
@@ -3743,9 +3749,11 @@
       </div>
 
       <div class="email-secondary-under-panel" aria-label="Email panels">
-        <div class="email-secondary-tabs" role="tablist" aria-label="Email secondary tabs">
-          <button type="button" data-email-secondary-tab="folders">Folders</button>
-          <button type="button" data-email-secondary-tab="checks">Checks</button>
+        <div class="email-secondary-toolbar" aria-label="Email secondary controls">
+          <div class="email-folder-controls-host" data-email-folder-controls-host="secondary"></div>
+          <div class="email-secondary-tabs" role="tablist" aria-label="Email secondary tabs">
+            <button type="button" data-email-secondary-tab="checks">Checks</button>
+          </div>
         </div>
         <div class="email-secondary-body" id="email-secondary-bottom-body"></div>
       </div>
@@ -3915,9 +3923,11 @@
       <button type="button" class="hub-modal-close hub-dialog-close" id="email-secondary-modal-close" aria-label="Close">&#10005;</button>
     </div>
     <div class="hub-modal-body">
-      <div class="email-secondary-tabs" role="tablist" aria-label="Email modal tabs">
-        <button type="button" data-email-secondary-tab="folders">Folders</button>
-        <button type="button" data-email-secondary-tab="checks">Checks</button>
+      <div class="email-secondary-toolbar" aria-label="Email modal controls">
+        <div class="email-folder-controls-host" data-email-folder-controls-host="modal"></div>
+        <div class="email-secondary-tabs" role="tablist" aria-label="Email modal tabs">
+          <button type="button" data-email-secondary-tab="checks">Checks</button>
+        </div>
       </div>
       <div class="email-secondary-body" id="email-secondary-modal-body"></div>
     </div>
