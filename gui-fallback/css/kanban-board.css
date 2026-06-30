@@ -2453,6 +2453,11 @@ dialog.hub-modal#kanban-scoped-modal[open] {
   min-width: 0;
 }
 
+#ultrawide-sidecar-body .kanban-detail-primary-grid--panel .kanban-goal-flag .hub-checkbox__label {
+  overflow: visible;
+  text-overflow: clip;
+}
+
 #ultrawide-sidecar-body .kanban-detail-edit-grid {
   grid-template-columns: 1fr;
 }

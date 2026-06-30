@@ -1005,13 +1005,13 @@ assert.match(
   );
   assert.match(
     todoTab,
-    /data-personal-filter-extra-tabs="selected,search,new-task,edit-task,sources,provenance"/,
+    /data-personal-filter-extra-tabs="selected,search,new-task,edit-task,sources,prompts,provenance"/,
     'ToDo desktop portrait bottom panel must expose Edit Task beside New Task.',
   );
 }
 assert.match(
   personalFiltersJs,
-  /todo:\s*'selected,search,new-task,edit-task,sources,provenance'/,
+  /todo:\s*'selected,search,new-task,edit-task,sources,prompts,provenance'/,
   'ToDo ultrawide sidecar must expose the same Edit Task panel tab as desktop portrait.',
 );
 assert.match(
@@ -1332,7 +1332,7 @@ assert.match(
 );
 assert.match(
   kanbanBoardCss,
-  /#ultrawide-sidecar-body\s+\.kanban-detail-primary-grid--panel\s*\{[\s\S]*grid-template-columns:\s*minmax\(118px,\s*1fr\)\s+minmax\(92px,\s*118px\)\s+minmax\(92px,\s*118px\)\s+minmax\(78px,\s*88px\)\s+38px[\s\S]*#ultrawide-sidecar-body\s+\.kanban-detail-primary-grid--panel\s+\.kanban-goal-flag\s+\.hub-checkbox__label\s*\{[\s\S]*overflow:\s*visible/,
+  /#ultrawide-sidecar-body\s+\.kanban-detail-primary-grid--panel\s*\{[\s\S]*grid-template-columns:\s*minmax\(118px,\s*1fr\)\s+minmax\(92px,\s*118px\)\s+minmax\(92px,\s*118px\)\s+minmax\(78px,\s*88px\)\s+minmax\(110px,\s*132px\)\s+38px[\s\S]*#ultrawide-sidecar-body\s+\.kanban-detail-primary-grid--panel\s+\.kanban-goal-flag\s+\.hub-checkbox__label\s*\{[\s\S]*overflow:\s*visible/,
   'Kanban sidecar Goal label must remain visible while the fullscreen button stays in the same edit-item row.',
 );
 assert.match(
