@@ -1832,7 +1832,7 @@ const PersonalFilters = (() => {
       calendar: 'selected,milestones,search,new-event,upcoming,prompts,provenance',
       diary: 'selected,day,search,new-entry,edit-entry,upcoming,prompts,provenance',
       todo: 'selected,search,new-task,edit-task,sources,prompts,provenance',
-      kanban: 'selected,search,new-item,edit-item,priorities,backups,automation,prompts,provenance',
+      kanban: 'selected,search,new-item,edit-item,priorities,postgres,automation,prompts,provenance',
     };
     if (modalExtraTabsBySurface[surface]) root.dataset.personalFilterExtraTabs = modalExtraTabsBySurface[surface];
     else delete root.dataset.personalFilterExtraTabs;
@@ -1897,7 +1897,7 @@ const PersonalFilters = (() => {
       calendar: 'selected,milestones,search,new-event,upcoming,prompts,provenance',
       diary: 'selected,day,search,new-entry,edit-entry,upcoming,prompts,provenance',
       todo: 'selected,search,new-task,edit-task,sources,prompts,provenance',
-      kanban: 'selected,search,new-item,edit-item,priorities,backups,automation,prompts,provenance',
+      kanban: 'selected,search,new-item,edit-item,priorities,postgres,automation,prompts,provenance',
     };
     const extraTabs = extraTabsBySurface[surface] ? ` data-personal-filter-extra-tabs="${escHtml(extraTabsBySurface[surface])}"` : '';
     const activeTabAttr = activeTab ? ` data-personal-filter-tab="${escHtml(activeTab)}"` : '';

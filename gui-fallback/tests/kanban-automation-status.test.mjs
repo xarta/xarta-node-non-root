@@ -15,8 +15,8 @@ assert.match(
 
 assert.match(
   indexHtml,
-  /data-personal-filter-extra-tabs="[^"]*backups,automation,provenance/,
-  'Kanban adaptive panel must register the Automation tab beside Backups and Provenance.',
+  /data-personal-filter-extra-tabs="[^"]*postgres,automation,prompts,provenance/,
+  'Kanban adaptive panel must register the Automation tab beside Postgres, Prompts, and Provenance.',
 );
 
 assert.match(

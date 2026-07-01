@@ -190,7 +190,7 @@
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M6 2h8l5 5v15H6V2zm7 1.5V8h4.5L13 3.5zM8 12h8v2H8v-2zm0 4h8v2H8v-2z'/%3E%3C/svg%3E");
 }
 
-.kanban-icon-btn--backups::before {
+.kanban-icon-btn--postgres::before {
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M5 3h11l3 3v15H5V3zm2 2v5h9V7.2L13.8 5H7zm0 14h10v-6H7v6zm2-4h6v2H9v-2z'/%3E%3C/svg%3E");
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M5 3h11l3 3v15H5V3zm2 2v5h9V7.2L13.8 5H7zm0 14h10v-6H7v6zm2-4h6v2H9v-2z'/%3E%3C/svg%3E");
 }
@@ -1066,6 +1066,25 @@ dialog.hub-modal#kanban-detail-modal[open] {
   overflow-wrap: anywhere;
 }
 
+.kanban-postgres-distribution {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.kanban-control-select {
+  min-height: 32px;
+  max-width: min(260px, 100%);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
 .kanban-backup-result {
   display: grid;
   gap: 3px;
@@ -1670,23 +1689,23 @@ dialog.hub-modal#kanban-detail-modal[open] {
   max-height: calc(100dvh - 104px);
 }
 
-#kanban-backups-modal {
+#kanban-postgres-modal {
   width: min(1560px, calc(100vw - 28px));
   max-width: min(1560px, calc(100vw - 28px));
 }
 
-#kanban-backups-modal .hub-modal-body {
+#kanban-postgres-modal .hub-modal-body {
   overflow-x: hidden;
   overflow-y: auto;
   max-height: calc(100dvh - 104px);
 }
 
-#kanban-backups-modal .kanban-backups-panel {
+#kanban-postgres-modal .kanban-backups-panel {
   width: 100%;
   gap: 14px;
 }
 
-#kanban-backups-modal .kanban-backup-row {
+#kanban-postgres-modal .kanban-backup-row {
   grid-template-columns:
     minmax(460px, 2.5fr)
     minmax(96px, .44fr)
@@ -1697,7 +1716,7 @@ dialog.hub-modal#kanban-detail-modal[open] {
   column-gap: 14px;
 }
 
-#kanban-backups-modal .kanban-backup-file strong {
+#kanban-postgres-modal .kanban-backup-file strong {
   overflow-wrap: anywhere;
   white-space: normal;
 }
@@ -1732,7 +1751,7 @@ dialog.hub-modal#kanban-detail-modal[open] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  #kanban-backups-modal .kanban-backup-row {
+  #kanban-postgres-modal .kanban-backup-row {
     grid-template-columns:
       minmax(320px, 2fr)
       minmax(86px, .5fr)
@@ -1742,11 +1761,11 @@ dialog.hub-modal#kanban-detail-modal[open] {
       minmax(44px, auto);
   }
 
-  #kanban-backups-modal .kanban-backup-actions-inline {
+  #kanban-postgres-modal .kanban-backup-actions-inline {
     display: none;
   }
 
-  #kanban-backups-modal .kanban-backup-actions-trigger {
+  #kanban-postgres-modal .kanban-backup-actions-trigger {
     display: inline-flex;
   }
 }
@@ -2479,12 +2498,12 @@ dialog.hub-modal#kanban-scoped-modal[open] {
     grid-template-columns: 1fr;
   }
 
-  #kanban-backups-modal {
+  #kanban-postgres-modal {
     width: calc(100vw - 12px);
     max-width: calc(100vw - 12px);
   }
 
-  #kanban-backups-modal .hub-modal-body {
+  #kanban-postgres-modal .hub-modal-body {
     max-height: calc(100dvh - 82px);
   }
 
@@ -2505,7 +2524,7 @@ dialog.hub-modal#kanban-scoped-modal[open] {
     padding: 10px;
   }
 
-  #kanban-backups-modal .kanban-backup-row {
+  #kanban-postgres-modal .kanban-backup-row {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -2563,19 +2582,19 @@ dialog.hub-modal#kanban-scoped-modal[open] {
 }
 
 @media (max-width: 900px) and (orientation: landscape) {
-  #kanban-backups-modal .hub-modal-body {
+  #kanban-postgres-modal .hub-modal-body {
     max-height: calc(100dvh - 70px);
   }
 
-  #kanban-backups-modal .kanban-backups-panel {
+  #kanban-postgres-modal .kanban-backups-panel {
     gap: 8px;
   }
 
-  #kanban-backups-modal .kanban-backup-paths {
+  #kanban-postgres-modal .kanban-backup-paths {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  #kanban-backups-modal .kanban-backup-row {
+  #kanban-postgres-modal .kanban-backup-row {
     grid-template-columns:
       minmax(240px, 2fr)
       minmax(64px, .44fr)
@@ -2588,35 +2607,35 @@ dialog.hub-modal#kanban-scoped-modal[open] {
     padding: 8px 10px;
   }
 
-  #kanban-backups-modal .kanban-backup-row--head {
+  #kanban-postgres-modal .kanban-backup-row--head {
     display: grid;
     padding-top: 0;
     padding-bottom: 0;
   }
 
-  #kanban-backups-modal .kanban-backup-file strong,
-  #kanban-backups-modal .kanban-backup-file span {
+  #kanban-postgres-modal .kanban-backup-file strong,
+  #kanban-postgres-modal .kanban-backup-file span {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  #kanban-backups-modal .kanban-backup-cell,
-  #kanban-backups-modal .kanban-backup-actions {
+  #kanban-postgres-modal .kanban-backup-cell,
+  #kanban-postgres-modal .kanban-backup-actions {
     display: block;
   }
 
-  #kanban-backups-modal .kanban-backup-cell::before,
-  #kanban-backups-modal .kanban-backup-actions::before {
+  #kanban-postgres-modal .kanban-backup-cell::before,
+  #kanban-postgres-modal .kanban-backup-actions::before {
     content: none;
   }
 
-  #kanban-backups-modal .kanban-backup-metric {
+  #kanban-postgres-modal .kanban-backup-metric {
     justify-self: end;
     text-align: right;
   }
 
-  #kanban-backups-modal .kanban-backup-actions {
+  #kanban-postgres-modal .kanban-backup-actions {
     display: flex;
     justify-content: flex-end;
   }

@@ -623,8 +623,8 @@ assert.match(
 );
 assert.match(
   kanbanBoardJs,
-  /keepBoardLeft[\s\S]*options\.preserveBoardScroll[\s\S]*board\.scrollLeft[\s\S]*scrollIntoView[\s\S]*board\.scrollLeft\s*=\s*keepBoardLeft/,
-  'Kanban route restore must preserve the board horizontal scroll position while opening the selected detail.',
+  /keepLeftNodes[\s\S]*el\('tab-kanban'\)[\s\S]*tab-scroll-shell[\s\S]*board[\s\S]*scrollIntoView[\s\S]*keepLeft\.forEach[\s\S]*node\.scrollLeft\s*=\s*left/,
+  'Kanban route restore must preserve managed-scroll ancestor horizontal positions while opening the selected detail.',
 );
 assert.match(
   kanbanBoardJs,
@@ -1403,7 +1403,7 @@ assert.ok(
 );
 assert.match(
   indexHtml + personalFiltersJs,
-  /selected,search,new-item,edit-item,priorities,backups,automation,prompts,provenance/,
+  /selected,search,new-item,edit-item,priorities,postgres,automation,prompts,provenance/,
   'Kanban shared tab hosts must place Priorities in the bottom/sidecar tab row after Edit Item.',
 );
 assert.match(

@@ -4,13 +4,13 @@
 
 const KanbanBoardPage = (() => {
   const CONTENT_VIEW_STORAGE_KEY = 'blueprints.kanban.contentView.v1';
-  const CONTENT_VIEW_IDS = ['board', 'search', 'selection', 'priorities', 'backups', 'automation', 'provenance'];
+  const CONTENT_VIEW_IDS = ['board', 'search', 'selection', 'priorities', 'postgres', 'automation', 'provenance'];
   const CONTENT_VIEW_LABELS = {
     board: 'Board',
     search: 'Search',
     selection: 'Selection',
     priorities: 'Priorities',
-    backups: 'Backups',
+    postgres: 'Postgres',
     automation: 'Automation',
     provenance: 'Provenance',
   };
@@ -81,13 +81,14 @@ const KanbanBoardPage = (() => {
       view: 'grouped',
       data: null,
     },
-    backups: {
+    postgres: {
       loading: false,
       error: '',
       data: null,
       lastResult: null,
       busyAction: '',
       applyingFilename: '',
+      distributeTarget: '',
     },
     priorities: {
       loading: false,
@@ -1546,11 +1547,15 @@ const KanbanBoardPage = (() => {
     </section>`;
   }
 
-  function backupEntries() {
-    return Array.isArray(state.backups.data?.backups) ? state.backups.data.backups : [];
+  function postgresExports() {
+    return Array.isArray(state.postgres.data?.exports) ? state.postgres.data.exports : [];
   }
 
-  function formatBackupBytes(value) {
+  function postgresNodes() {
+    return Array.isArray(state.postgres.data?.nodes) ? state.postgres.data.nodes : [];
+  }
+
+  function formatPostgresBytes(value) {
     const bytes = Number(value) || 0;
     if (!bytes) return '0 B';
     const units = ['B', 'KB', 'MB', 'GB'];
@@ -1563,7 +1568,7 @@ const KanbanBoardPage = (() => {
     return `${size >= 10 || unit === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[unit]}`;
   }
 
-  function formatBackupDate(value) {
+  function formatPostgresDate(value) {
     if (!value) return '';
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return String(value);
@@ -1576,205 +1581,245 @@ const KanbanBoardPage = (() => {
     });
   }
 
-  function backupKindLabel(value) {
+  function formatBackupDate(value) {
+    return formatPostgresDate(value);
+  }
+
+  function postgresKindLabel(value) {
     if (value === 'pre-import') return 'Pre-import';
     if (value === 'manual') return 'Manual';
-    return value ? String(value) : 'Backup';
+    return value ? String(value) : 'Export';
   }
 
-  function backupRowCount(entry) {
-    const counts = entry?.table_counts || {};
-    return Number(counts.kanban_items || 0);
-  }
-
-  function backupBusyFor(filename = '') {
-    if (state.backups.loading) return true;
-    if (state.backups.busyAction && state.backups.busyAction !== 'apply') return true;
-    if (state.backups.applyingFilename) return state.backups.applyingFilename !== filename || !!filename;
+  function postgresBusyFor(filename = '') {
+    if (state.postgres.loading) return true;
+    if (state.postgres.busyAction && state.postgres.busyAction !== 'apply') return true;
+    if (state.postgres.applyingFilename) return state.postgres.applyingFilename !== filename || !!filename;
     return false;
   }
 
-  function backupResultHtml() {
-    const result = state.backups.lastResult;
+  function postgresDownloadUrl(filename) {
+    return `/api/v1/personal/kanban/postgres/exports/${encodeURIComponent(filename)}`;
+  }
+
+  function postgresResultHtml() {
+    const result = state.postgres.lastResult;
     if (!result) return '';
     const tone = result.tone || (result.ok === false ? 'err' : 'ok');
     const payload = result.payload || {};
     const lines = [];
     if (payload.filename) lines.push(`File: ${payload.filename}`);
-    if (payload.backup?.filename) lines.push(`File: ${payload.backup.filename}`);
-    if (payload.pre_import_backup) lines.push(`Pre-import: ${payload.pre_import_backup}`);
+    if (payload.export?.filename) lines.push(`File: ${payload.export.filename}`);
+    if (payload.pre_import_export) lines.push(`Pre-import: ${payload.pre_import_export}`);
     if (typeof payload.applied === 'boolean') lines.push(`Applied: ${payload.applied ? 'yes' : 'no'}`);
-    if (typeof payload.restored_files === 'boolean') lines.push(`Files restored: ${payload.restored_files ? 'yes' : 'no'}`);
-    if (typeof payload.gen_before !== 'undefined' && typeof payload.gen_after !== 'undefined') {
-      lines.push(`Generation: ${payload.gen_before} -> ${payload.gen_after}`);
-    }
+    if (payload.target) lines.push(`Target: ${payload.target}`);
+    if (typeof payload.row_count !== 'undefined') lines.push(`Rows: ${payload.row_count}`);
     if (Array.isArray(payload.warnings) && payload.warnings.length) {
       lines.push(`Warnings: ${payload.warnings.join('; ')}`);
     }
     return `<div class="kanban-backup-result" data-tone="${escHtml(tone)}" role="status">
-      <strong>${escHtml(result.message || 'Backup action completed.')}</strong>
-      ${lines.length ? `<span>${escHtml(lines.join(' · '))}</span>` : ''}
+      <strong>${escHtml(result.message || 'Postgres action completed.')}</strong>
+      ${lines.length ? `<span>${escHtml(lines.join(' - '))}</span>` : ''}
     </div>`;
   }
 
-  function backupDownloadUrl(filename) {
-    return `/api/v1/personal/kanban/backups/${encodeURIComponent(filename)}`;
+  function postgresStatusHtml() {
+    const data = state.postgres.data || {};
+    const health = data.health || {};
+    const tableCounts = data.table_counts || {};
+    const latest = data.latest_export || {};
+    const warnings = Array.isArray(data.warnings) ? data.warnings : [];
+    const statusTone = data.ok ? 'ok' : 'warn';
+    return `<div class="kanban-detail-list kanban-postgres-status">
+      ${detailRow('Current Node', data.current_node_id || 'unknown', data.role || '')}
+      ${detailRow('Owner Node', data.owner_node_id || 'unknown', 'canonical Postgres writer')}
+      ${detailRow('Postgres Health', health.ok ? 'ready' : 'check required', health.pg_isready_stdout || health.pg_isready_stderr || '')}
+      ${detailRow('Rows', String(data.row_count || 0), `${Object.keys(tableCounts).length || 0} Kanban tables`)}
+      ${detailRow('Latest Export', latest.filename || 'none', latest.created_at ? formatPostgresDate(latest.created_at) : '')}
+      <div class="kanban-backup-result" data-tone="${escHtml(statusTone)}" role="status">
+        <strong>${escHtml(data.ok ? 'Postgres Kanban is reachable.' : 'Postgres Kanban needs attention.')}</strong>
+        ${warnings.length ? `<span>${escHtml(warnings.join(' '))}</span>` : ''}
+      </div>
+    </div>`;
   }
 
-  function downloadBackupFromPanel(filename) {
+  function downloadPostgresExportFromPanel(filename) {
     const clean = String(filename || '');
     if (!clean) return null;
     const link = document.createElement('a');
-    link.href = backupDownloadUrl(clean);
+    link.href = postgresDownloadUrl(clean);
     link.download = clean;
     link.rel = 'noopener';
     document.body.appendChild(link);
     link.click();
     link.remove();
-    setBackupResult('Backup download started.', { filename: clean }, { tone: 'ok' });
-    refreshBackupPanels();
+    setPostgresResult('Postgres export download started.', { filename: clean }, { tone: 'ok' });
+    refreshPostgresPanels();
     return true;
   }
 
-  function openBackupRowActions(filename) {
+  function openPostgresRowActions(filename) {
     const clean = String(filename || '');
     if (!clean) return false;
     if (!window.TableRowActions?.open) {
-      setBackupResult('Backup action menu unavailable.', { ok: false, filename: clean }, { tone: 'err' });
+      setPostgresResult('Postgres action menu unavailable.', { ok: false, filename: clean }, { tone: 'err' });
       return false;
     }
     window.TableRowActions.open({
-      title: 'Backup actions',
+      title: 'Postgres export actions',
       subtitle: clean,
       actions: [
         {
           label: 'Download',
-          detail: 'Save this backup package.',
-          onClick: () => downloadBackupFromPanel(clean),
+          detail: 'Save this Postgres SQL export.',
+          onClick: () => downloadPostgresExportFromPanel(clean),
         },
         {
           label: 'Validate',
-          detail: 'Check backup metadata and bundled files.',
-          onClick: () => validateBackupFromPanel(clean),
+          detail: 'Restore into a temporary Postgres database first.',
+          onClick: () => validatePostgresExportFromPanel(clean),
         },
         {
-          label: 'Dry Run',
-          detail: 'Preview the import without applying changes.',
-          onClick: () => dryRunImportBackupFromPanel(clean),
+          label: 'Dry Run Import',
+          detail: 'Validate the export without applying it.',
+          onClick: () => dryRunImportPostgresExportFromPanel(clean),
         },
         {
           label: 'Import',
-          detail: 'Restore from this backup after confirmation.',
+          detail: 'Restore the dedicated Kanban Postgres database.',
           tone: 'danger',
-          onClick: () => applyImportBackupFromPanel(clean),
+          onClick: () => applyImportPostgresExportFromPanel(clean),
         },
       ],
     });
     return true;
   }
 
-  function backupTableHtml() {
-    const rows = backupEntries();
-    if (state.backups.loading && !rows.length) {
-      return '<div class="kanban-empty">Loading backups...</div>';
+  function postgresExportsTableHtml() {
+    const rows = postgresExports();
+    if (state.postgres.loading && !rows.length) {
+      return '<div class="kanban-empty">Loading Postgres exports...</div>';
     }
-    if (state.backups.error) {
-      return `<div class="kanban-empty kanban-backup-error">${escHtml(state.backups.error)}</div>`;
+    if (state.postgres.error) {
+      return `<div class="kanban-empty kanban-backup-error">${escHtml(state.postgres.error)}</div>`;
     }
     if (!rows.length) {
-      return '<div class="kanban-empty">No Kanban backups found.</div>';
+      return '<div class="kanban-empty">No Postgres Kanban exports found.</div>';
     }
-    const busyAction = state.backups.busyAction;
-    return `<div class="kanban-backups-table" role="table" aria-label="Kanban import/export backups">
+    const busyAction = state.postgres.busyAction;
+    return `<div class="kanban-backups-table kanban-postgres-table" role="table" aria-label="Kanban Postgres exports">
       <div class="kanban-backup-row kanban-backup-row--head" role="row">
-        <span class="kanban-backup-head-cell" role="columnheader">Backup</span>
+        <span class="kanban-backup-head-cell" role="columnheader">Export</span>
         <span class="kanban-backup-head-cell" role="columnheader">Kind</span>
-        <span class="kanban-backup-head-cell kanban-backup-head-cell--metric" role="columnheader">Items</span>
-        <span class="kanban-backup-head-cell kanban-backup-head-cell--metric" role="columnheader">Files</span>
+        <span class="kanban-backup-head-cell kanban-backup-head-cell--metric" role="columnheader">Tables</span>
+        <span class="kanban-backup-head-cell kanban-backup-head-cell--metric" role="columnheader">Rows</span>
         <span class="kanban-backup-head-cell kanban-backup-head-cell--metric" role="columnheader">Size</span>
         <span class="kanban-backup-head-cell kanban-backup-head-cell--actions" role="columnheader">Actions</span>
       </div>
       ${rows.map(entry => {
         const filename = String(entry.filename || '');
-        const downloadUrl = backupDownloadUrl(filename);
-        const disabled = backupBusyFor(filename) ? ' disabled' : '';
-        const applying = state.backups.applyingFilename === filename;
+        const downloadUrl = postgresDownloadUrl(filename);
+        const disabled = postgresBusyFor(filename) ? ' disabled' : '';
+        const applying = state.postgres.applyingFilename === filename;
         const hash = String(entry.sha256 || '');
-        return `<article class="kanban-backup-row" role="row" data-kanban-backup-file="${escHtml(filename)}">
+        return `<article class="kanban-backup-row" role="row" data-kanban-postgres-file="${escHtml(filename)}">
           <div class="kanban-backup-file" role="cell">
             <strong title="${escHtml(filename)}">${escHtml(filename)}</strong>
-            <span>${escHtml(formatBackupDate(entry.created_at))}${hash ? ` · ${escHtml(hash.slice(0, 12))}` : ''}</span>
+            <span>${escHtml(formatPostgresDate(entry.created_at))}${hash ? ` - ${escHtml(hash.slice(0, 12))}` : ''}</span>
           </div>
-          <span class="kanban-backup-cell" role="cell" data-label="Kind">${escHtml(backupKindLabel(entry.kind))}</span>
-          <span class="kanban-backup-cell kanban-backup-metric" role="cell" data-label="Items">${escHtml(String(backupRowCount(entry)))}</span>
-          <span class="kanban-backup-cell kanban-backup-metric" role="cell" data-label="Files">${escHtml(String(entry.file_count ?? ''))}</span>
-          <span class="kanban-backup-cell kanban-backup-metric" role="cell" data-label="Size">${escHtml(formatBackupBytes(entry.size_bytes))}</span>
+          <span class="kanban-backup-cell" role="cell" data-label="Kind">${escHtml(postgresKindLabel(entry.kind))}</span>
+          <span class="kanban-backup-cell kanban-backup-metric" role="cell" data-label="Tables">${escHtml(String(entry.table_count || 0))}</span>
+          <span class="kanban-backup-cell kanban-backup-metric" role="cell" data-label="Rows">${escHtml(String(entry.row_count || 0))}</span>
+          <span class="kanban-backup-cell kanban-backup-metric" role="cell" data-label="Size">${escHtml(formatPostgresBytes(entry.size_bytes))}</span>
           <div class="kanban-backup-actions" role="cell" data-label="Actions">
             <div class="kanban-backup-actions-inline">
               <a class="kanban-command-btn kanban-backup-download" href="${downloadUrl}" download="${escHtml(filename)}">Download</a>
-              <button class="kanban-command-btn" type="button" data-kanban-backup-action="validate" data-kanban-backup-file="${escHtml(filename)}"${disabled}>Validate</button>
-              <button class="kanban-command-btn" type="button" data-kanban-backup-action="dry-run" data-kanban-backup-file="${escHtml(filename)}"${disabled}>Dry Run</button>
-              <button class="kanban-command-btn kanban-command-btn--danger" type="button" data-kanban-backup-action="apply" data-kanban-backup-file="${escHtml(filename)}"${disabled}>${applying || (busyAction === 'apply' && applying) ? 'Importing...' : 'Import'}</button>
+              <button class="kanban-command-btn" type="button" data-kanban-postgres-action="validate" data-kanban-postgres-file="${escHtml(filename)}"${disabled}>Validate</button>
+              <button class="kanban-command-btn" type="button" data-kanban-postgres-action="dry-run" data-kanban-postgres-file="${escHtml(filename)}"${disabled}>Dry Run</button>
+              <button class="kanban-command-btn kanban-command-btn--danger" type="button" data-kanban-postgres-action="apply" data-kanban-postgres-file="${escHtml(filename)}"${disabled}>${applying || (busyAction === 'apply' && applying) ? 'Importing...' : 'Import'}</button>
             </div>
-            <button class="kanban-command-btn table-row-action-trigger kanban-backup-actions-trigger" type="button" data-kanban-backup-row-actions="${escHtml(filename)}" aria-label="Backup actions for ${escHtml(filename)}" title="Backup actions"${disabled}>⋮</button>
+            <button class="kanban-command-btn table-row-action-trigger kanban-backup-actions-trigger" type="button" data-kanban-postgres-row-actions="${escHtml(filename)}" aria-label="Postgres export actions for ${escHtml(filename)}" title="Postgres export actions"${disabled}>⋮</button>
           </div>
         </article>`;
       }).join('')}
     </div>`;
   }
 
-  function embeddedBackupsHtml() {
-    if (!state.backups.data && !state.backups.loading && !state.backups.error) {
-      setTimeout(() => loadBackupsPanel({ force: true }), 0);
+  function postgresTargetControlsHtml(busy) {
+    const peers = postgresNodes().filter(node => !node.is_current);
+    const selected = state.postgres.distributeTarget || peers[0]?.node_id || '';
+    if (!state.postgres.distributeTarget && selected) state.postgres.distributeTarget = selected;
+    const options = peers.map(node => {
+      const nodeId = String(node.node_id || '');
+      return `<option value="${escHtml(nodeId)}"${nodeId === selected ? ' selected' : ''}>${escHtml(node.display_name || nodeId)}</option>`;
+    }).join('');
+    return `<div class="kanban-postgres-distribution">
+      <select class="kanban-control-select" data-kanban-postgres-target aria-label="Postgres distribution target"${busy || !peers.length ? ' disabled' : ''}>
+        ${options || '<option value="">No peer nodes</option>'}
+      </select>
+      <button class="kanban-command-btn" type="button" data-kanban-postgres-action="distribute-node"${busy || !selected ? ' disabled' : ''}>Distribute Selected Xarta-Node</button>
+      <button class="kanban-command-btn kanban-command-btn--danger" type="button" data-kanban-postgres-action="distribute-all"${busy ? ' disabled' : ''}>Distribute All Xarta-Nodes</button>
+    </div>`;
+  }
+
+  function embeddedPostgresHtml() {
+    if (!state.postgres.data && !state.postgres.loading && !state.postgres.error) {
+      setTimeout(() => loadPostgresPanel({ force: true }), 0);
     }
-    const data = state.backups.data || {};
-    const busy = state.backups.loading || !!state.backups.busyAction;
-    const backupDir = data.backup_dir ? `<span title="${escHtml(data.backup_dir)}">Backups: ${escHtml(data.backup_dir)}</span>` : '';
-    const kanbanRoot = data.kanban_root ? `<span title="${escHtml(data.kanban_root)}">Files: ${escHtml(data.kanban_root)}</span>` : '';
-    return `<section class="calendar-band kanban-band kanban-backups-panel" aria-label="Kanban Import/Export/Backups">
+    const data = state.postgres.data || {};
+    const busy = state.postgres.loading || !!state.postgres.busyAction;
+    const exportDir = data.export_dir ? `<span title="${escHtml(data.export_dir)}">Exports: ${escHtml(data.export_dir)}</span>` : '';
+    return `<section class="calendar-band kanban-band kanban-backups-panel kanban-postgres-panel" aria-label="Kanban Postgres">
       <div class="calendar-section-head kanban-section-head">
-        <h3>Backups</h3>
+        <h3>Postgres</h3>
         <div class="kanban-backups-toolbar">
-          <button class="kanban-command-btn" type="button" data-kanban-backup-action="refresh"${busy ? ' disabled' : ''}>Refresh</button>
-          <button class="kanban-command-btn" type="button" data-kanban-backup-action="create"${busy ? ' disabled' : ''}>Export Backup</button>
+          <button class="kanban-command-btn" type="button" data-kanban-postgres-action="refresh"${busy ? ' disabled' : ''}>Refresh</button>
+          <button class="kanban-command-btn" type="button" data-kanban-postgres-action="export"${busy ? ' disabled' : ''}>Export</button>
+          ${postgresTargetControlsHtml(busy)}
         </div>
       </div>
-      ${(backupDir || kanbanRoot) ? `<div class="kanban-backup-paths">${backupDir}${kanbanRoot}</div>` : ''}
-      ${state.backups.loading ? '<div class="kanban-backup-result" data-tone="info" role="status"><strong>Loading backups...</strong></div>' : ''}
-      ${backupResultHtml()}
-      ${backupTableHtml()}
+      ${exportDir ? `<div class="kanban-backup-paths">${exportDir}</div>` : ''}
+      ${state.postgres.loading ? '<div class="kanban-backup-result" data-tone="info" role="status"><strong>Loading Postgres status...</strong></div>' : ''}
+      ${postgresStatusHtml()}
+      ${postgresResultHtml()}
+      ${postgresExportsTableHtml()}
     </section>`;
   }
 
-  function refreshBackupModal() {
-    const body = document.querySelector('#kanban-backups-modal [data-kanban-backups-modal-body]');
+  function refreshPostgresModal() {
+    const body = document.querySelector('#kanban-postgres-modal [data-kanban-postgres-modal-body]');
     if (!body) return;
-    body.innerHTML = embeddedBackupsHtml();
+    body.innerHTML = embeddedPostgresHtml();
   }
 
-  function openBackupsModal() {
-    const dialog = openDialog('Kanban Import/Export/Backups', `<div data-kanban-backups-modal-body>${embeddedBackupsHtml()}</div>`, {
-      badge: 'BKP',
-      id: 'kanban-backups-modal',
+  function openPostgresModal() {
+    const dialog = openDialog('Kanban Postgres', `<div data-kanban-postgres-modal-body>${embeddedPostgresHtml()}</div>`, {
+      badge: 'PG',
+      id: 'kanban-postgres-modal',
       width: 'min(1560px, calc(100vw - 28px))',
     });
     dialog.addEventListener('click', event => {
-      const rowActionsButton = event.target.closest('[data-kanban-backup-row-actions]');
+      const rowActionsButton = event.target.closest('[data-kanban-postgres-row-actions]');
       if (rowActionsButton) {
         event.preventDefault();
         event.stopPropagation();
-        openBackupRowActions(rowActionsButton.dataset.kanbanBackupRowActions || '');
+        openPostgresRowActions(rowActionsButton.dataset.kanbanPostgresRowActions || '');
         return;
       }
-      const backupButton = event.target.closest('[data-kanban-backup-action]');
-      if (!backupButton) return;
+      const postgresButton = event.target.closest('[data-kanban-postgres-action]');
+      if (!postgresButton) return;
       event.preventDefault();
       event.stopPropagation();
-      const result = handleBackupAction(backupButton);
-      refreshBackupModal();
+      const result = handlePostgresAction(postgresButton);
+      refreshPostgresModal();
       if (result && typeof result.finally === 'function') {
-        result.finally(() => refreshBackupModal());
+        result.finally(() => refreshPostgresModal());
       }
+    });
+    dialog.addEventListener('change', event => {
+      const target = event.target.closest('[data-kanban-postgres-target]');
+      if (!target) return;
+      state.postgres.distributeTarget = target.value || '';
     });
     return dialog;
   }
@@ -1812,12 +1857,12 @@ const KanbanBoardPage = (() => {
     return false;
   }
 
-  function refreshBackupPanels() {
+  function refreshPostgresPanels() {
     if (!window.PersonalFilters?.activateTab) return;
     document.querySelectorAll('[data-personal-filter-host][data-personal-filter-surface="kanban"]').forEach(host => {
-      if (host.dataset.personalFilterTab !== 'backups') return;
+      if (host.dataset.personalFilterTab !== 'postgres') return;
       if (!hostIsVisible(host)) return;
-      window.PersonalFilters.activateTab('kanban', 'backups', { host, visibleOnly: false });
+      window.PersonalFilters.activateTab('kanban', 'postgres', { host, visibleOnly: false });
     });
   }
 
@@ -1854,143 +1899,186 @@ const KanbanBoardPage = (() => {
     return true;
   }
 
-  async function loadBackupsPanel(options = {}) {
-    if (state.backups.loading && !options.force) return state.backups.data;
-    state.backups.loading = true;
-    state.backups.error = '';
-    refreshBackupPanels();
+  async function loadPostgresPanel(options = {}) {
+    if (state.postgres.loading && !options.force) return state.postgres.data;
+    state.postgres.loading = true;
+    state.postgres.error = '';
+    refreshPostgresPanels();
     try {
-      state.backups.data = await requestJson('/api/v1/personal/kanban/backups');
-      return state.backups.data;
+      state.postgres.data = await requestJson('/api/v1/personal/kanban/postgres/status');
+      return state.postgres.data;
     } catch (err) {
-      state.backups.error = err?.message || String(err);
+      state.postgres.error = err?.message || String(err);
       return null;
     } finally {
-      state.backups.loading = false;
-      refreshBackupPanels();
-      refreshBackupModal();
+      state.postgres.loading = false;
+      refreshPostgresPanels();
+      refreshPostgresModal();
     }
   }
 
-  function setBackupResult(message, payload = {}, options = {}) {
-    state.backups.lastResult = {
+  function setPostgresResult(message, payload = {}, options = {}) {
+    state.postgres.lastResult = {
       message,
       payload,
       tone: options.tone || (payload?.ok === false ? 'err' : 'ok'),
       ok: payload?.ok !== false,
     };
-    refreshBackupModal();
+    refreshPostgresModal();
   }
 
-  async function createBackupFromPanel() {
-    state.backups.busyAction = 'create';
-    setBackupResult('Creating Kanban backup...', {}, { tone: 'info' });
-    refreshBackupPanels();
+  async function createPostgresExportFromPanel() {
+    state.postgres.busyAction = 'export';
+    setPostgresResult('Creating Postgres export...', {}, { tone: 'info' });
+    refreshPostgresPanels();
     try {
-      const payload = await requestJson('/api/v1/personal/kanban/backups?kind=manual', { method: 'POST' });
-      setBackupResult('Backup created.', payload);
-      await loadBackupsPanel({ force: true });
+      const payload = await requestJson('/api/v1/personal/kanban/postgres/exports?kind=manual', { method: 'POST' });
+      setPostgresResult('Postgres export created.', payload);
+      await loadPostgresPanel({ force: true });
       return payload;
     } catch (err) {
-      state.backups.error = err?.message || String(err);
-      setBackupResult('Backup failed.', { ok: false, error: state.backups.error }, { tone: 'err' });
+      state.postgres.error = err?.message || String(err);
+      setPostgresResult('Postgres export failed.', { ok: false, error: state.postgres.error }, { tone: 'err' });
       return null;
     } finally {
-      state.backups.busyAction = '';
-      refreshBackupPanels();
+      state.postgres.busyAction = '';
+      refreshPostgresPanels();
     }
   }
 
-  async function validateBackupFromPanel(filename) {
+  async function validatePostgresExportFromPanel(filename) {
     const clean = String(filename || '');
     if (!clean) return null;
-    state.backups.busyAction = 'validate';
-    setBackupResult(`Validating ${clean}...`, {}, { tone: 'info' });
-    refreshBackupPanels();
+    state.postgres.busyAction = 'validate';
+    setPostgresResult(`Validating ${clean}...`, {}, { tone: 'info' });
+    refreshPostgresPanels();
     try {
-      const payload = await requestJson(`/api/v1/personal/kanban/backups/${encodeURIComponent(clean)}/validate`);
-      setBackupResult(payload.ok ? 'Backup package validated.' : 'Backup package validated with warnings.', payload, { tone: payload.ok ? 'ok' : 'warn' });
+      const payload = await requestJson(`/api/v1/personal/kanban/postgres/exports/${encodeURIComponent(clean)}/validate`);
+      setPostgresResult(payload.ok ? 'Postgres export validated.' : 'Postgres export validated with warnings.', payload, { tone: payload.ok ? 'ok' : 'warn' });
       return payload;
     } catch (err) {
       const message = err?.message || String(err);
-      setBackupResult('Validation failed.', { ok: false, filename: clean, error: message }, { tone: 'err' });
+      setPostgresResult('Postgres validation failed.', { ok: false, filename: clean, error: message }, { tone: 'err' });
       return null;
     } finally {
-      state.backups.busyAction = '';
-      refreshBackupPanels();
+      state.postgres.busyAction = '';
+      refreshPostgresPanels();
     }
   }
 
-  async function dryRunImportBackupFromPanel(filename) {
+  async function dryRunImportPostgresExportFromPanel(filename) {
     const clean = String(filename || '');
     if (!clean) return null;
-    state.backups.busyAction = 'dry-run';
-    setBackupResult(`Dry-running ${clean}...`, {}, { tone: 'info' });
-    refreshBackupPanels();
+    state.postgres.busyAction = 'dry-run';
+    setPostgresResult(`Dry-running ${clean}...`, {}, { tone: 'info' });
+    refreshPostgresPanels();
     try {
-      const payload = await requestJson(`/api/v1/personal/kanban/backups/${encodeURIComponent(clean)}/import?apply=false&restore_files=true&backup_before_import=true`, { method: 'POST' });
-      setBackupResult(payload.ok ? 'Import dry run completed.' : 'Import dry run returned warnings.', payload, { tone: payload.ok ? 'ok' : 'warn' });
+      const payload = await requestJson(`/api/v1/personal/kanban/postgres/exports/${encodeURIComponent(clean)}/import?apply=false&backup_before_import=true`, { method: 'POST' });
+      setPostgresResult(payload.ok ? 'Postgres import dry run completed.' : 'Postgres import dry run returned warnings.', payload, { tone: payload.ok ? 'ok' : 'warn' });
       return payload;
     } catch (err) {
       const message = err?.message || String(err);
-      setBackupResult('Import dry run failed.', { ok: false, filename: clean, error: message }, { tone: 'err' });
+      setPostgresResult('Postgres import dry run failed.', { ok: false, filename: clean, error: message }, { tone: 'err' });
       return null;
     } finally {
-      state.backups.busyAction = '';
-      refreshBackupPanels();
+      state.postgres.busyAction = '';
+      refreshPostgresPanels();
     }
   }
 
-  async function applyImportBackupFromPanel(filename) {
+  async function applyImportPostgresExportFromPanel(filename) {
     const clean = String(filename || '');
     if (!clean) return null;
     const ok = await HubDialogs.confirm({
-      title: 'Import Kanban Backup',
-      message: `Import "${clean}"? This restores Kanban rows and file-backed Kanban documents from the backup package. A pre-import backup will be created first.`,
-      confirmText: 'Import Backup',
+      title: 'Import Kanban Postgres',
+      message: `Import "${clean}"? This restores the dedicated Kanban Postgres database after validation. A pre-import Postgres export will be created first.`,
+      confirmText: 'Import Postgres',
       tone: 'danger',
     });
     if (!ok) return null;
-    state.backups.busyAction = 'apply';
-    state.backups.applyingFilename = clean;
-    setBackupResult(`Importing ${clean}...`, {}, { tone: 'info' });
-    refreshBackupPanels();
+    state.postgres.busyAction = 'apply';
+    state.postgres.applyingFilename = clean;
+    setPostgresResult(`Importing ${clean}...`, {}, { tone: 'info' });
+    refreshPostgresPanels();
     try {
-      const payload = await requestJson(`/api/v1/personal/kanban/backups/${encodeURIComponent(clean)}/import?apply=true&restore_files=true&backup_before_import=true`, { method: 'POST' });
-      setBackupResult('Backup imported.', payload);
+      const payload = await requestJson(`/api/v1/personal/kanban/postgres/exports/${encodeURIComponent(clean)}/import?apply=true&backup_before_import=true`, { method: 'POST' });
+      setPostgresResult('Postgres export imported.', payload);
       state.detail = null;
       state.detailDraft = null;
       state.selection = null;
       await load({ force: true, forceConfig: true, skipRouteDetail: true, skipRouteScoped: true });
-      await loadBackupsPanel({ force: true });
+      await loadPostgresPanel({ force: true });
       return payload;
     } catch (err) {
       const message = err?.message || String(err);
-      setBackupResult('Backup import failed.', { ok: false, filename: clean, error: message }, { tone: 'err' });
+      setPostgresResult('Postgres import failed.', { ok: false, filename: clean, error: message }, { tone: 'err' });
       return null;
     } finally {
-      state.backups.busyAction = '';
-      state.backups.applyingFilename = '';
-      refreshBackupPanels();
+      state.postgres.busyAction = '';
+      state.postgres.applyingFilename = '';
+      refreshPostgresPanels();
     }
   }
 
-  async function openBackupsPanel() {
-    const activated = activateKanbanPanelTab('backups');
-    if (!activated) openBackupsModal();
-    await loadBackupsPanel({ force: true });
-    refreshBackupModal();
+  async function distributePostgresFromPanel(target) {
+    const cleanTarget = String(target || '').trim();
+    if (!cleanTarget) return null;
+    const ok = await HubDialogs.confirm({
+      title: 'Distribute Kanban Postgres',
+      message: cleanTarget === 'all'
+        ? 'Distribute this node\'s Kanban Postgres database to all xarta-nodes? This replaces peer Kanban Postgres snapshots.'
+        : `Distribute this node's Kanban Postgres database to ${cleanTarget}? This replaces that peer Kanban Postgres snapshot.`,
+      confirmText: cleanTarget === 'all' ? 'Distribute All Xarta-Nodes' : 'Distribute Selected Xarta-Node',
+      tone: 'danger',
+    });
+    if (!ok) return null;
+    state.postgres.busyAction = cleanTarget === 'all' ? 'distribute-all' : 'distribute-node';
+    setPostgresResult(`Distributing Postgres Kanban to ${cleanTarget}...`, {}, { tone: 'info' });
+    refreshPostgresPanels();
+    try {
+      const body = cleanTarget === 'all'
+        ? { targets: 'all' }
+        : { target_node_id: cleanTarget };
+      const payload = await requestJson('/api/v1/personal/kanban/postgres/distribute', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      setPostgresResult('Postgres distribution completed.', payload);
+      await loadPostgresPanel({ force: true });
+      return payload;
+    } catch (err) {
+      const message = err?.message || String(err);
+      setPostgresResult('Postgres distribution failed.', { ok: false, target: cleanTarget, error: message }, { tone: 'err' });
+      return null;
+    } finally {
+      state.postgres.busyAction = '';
+      refreshPostgresPanels();
+    }
+  }
+
+  async function openPostgresPanel() {
+    const activated = activateKanbanPanelTab('postgres');
+    if (!activated) openPostgresModal();
+    await loadPostgresPanel({ force: true });
+    refreshPostgresModal();
     return true;
   }
 
-  function handleBackupAction(button) {
-    const action = button?.dataset?.kanbanBackupAction || '';
-    const filename = button?.dataset?.kanbanBackupFile || '';
-    if (action === 'refresh') return loadBackupsPanel({ force: true });
-    if (action === 'create') return createBackupFromPanel();
-    if (action === 'validate') return validateBackupFromPanel(filename);
-    if (action === 'dry-run') return dryRunImportBackupFromPanel(filename);
-    if (action === 'apply') return applyImportBackupFromPanel(filename);
+  function handlePostgresAction(button) {
+    const action = button?.dataset?.kanbanPostgresAction || '';
+    const filename = button?.dataset?.kanbanPostgresFile || '';
+    if (action === 'refresh') return loadPostgresPanel({ force: true });
+    if (action === 'export') return createPostgresExportFromPanel();
+    if (action === 'validate') return validatePostgresExportFromPanel(filename);
+    if (action === 'dry-run') return dryRunImportPostgresExportFromPanel(filename);
+    if (action === 'apply') return applyImportPostgresExportFromPanel(filename);
+    if (action === 'distribute-all') return distributePostgresFromPanel('all');
+    if (action === 'distribute-node') {
+      const target = button.closest('.kanban-postgres-panel')?.querySelector('[data-kanban-postgres-target]')?.value
+        || state.postgres.distributeTarget;
+      state.postgres.distributeTarget = target || '';
+      return distributePostgresFromPanel(target);
+    }
     return null;
   }
 
@@ -2898,14 +2986,24 @@ const KanbanBoardPage = (() => {
     if (!itemId) return;
     window.requestAnimationFrame(() => {
       const board = el('kanban-board-shell');
-      const keepBoardLeft = options.preserveBoardScroll && board ? board.scrollLeft : null;
+      const keepLeftNodes = options.preserveBoardScroll
+        ? [
+          el('tab-kanban'),
+          document.querySelector('#tab-kanban.active > .tab-scroll-shell'),
+          document.querySelector('#tab-kanban.active > .tab-scroll-shell > .kanban-page--body'),
+          board,
+        ].filter(Boolean)
+        : [];
+      const keepLeft = keepLeftNodes.map(node => [node, node.scrollLeft || 0]);
       const card = Array.from(document.querySelectorAll('#tab-kanban [data-kanban-item-id]'))
         .find(node => node.dataset.kanbanItemId === itemId && node.classList?.contains('kanban-card'));
       card?.scrollIntoView?.({
         block: options.center ? 'center' : 'nearest',
         inline: options.center ? 'center' : 'nearest',
       });
-      if (keepBoardLeft !== null && board) board.scrollLeft = keepBoardLeft;
+      keepLeft.forEach(([node, left]) => {
+        node.scrollLeft = left;
+      });
     });
   }
 
@@ -4634,7 +4732,7 @@ const KanbanBoardPage = (() => {
           { id: 'new-item', label: 'New Item' },
           { id: 'edit-item', label: 'Edit Item', disabled: () => !detailItemAvailable() },
           { id: 'priorities', label: 'Priorities' },
-          { id: 'backups', label: 'Backups' },
+          { id: 'postgres', label: 'Postgres' },
           { id: 'automation', label: 'Automation' },
           { id: 'prompts', label: 'Prompts' },
           { id: 'provenance', label: 'Provenance' },
@@ -4645,7 +4743,7 @@ const KanbanBoardPage = (() => {
           if (tab === 'new-item') return embeddedItemFormHtml(host?.id === 'kanban-filter-inline-panel' ? 'kanban-inline-item' : 'kanban-panel-item');
           if (tab === 'edit-item') return embeddedItemDetailHtml(host);
           if (tab === 'priorities') return embeddedPrioritiesHtml(host);
-          if (tab === 'backups') return embeddedBackupsHtml(host);
+          if (tab === 'postgres') return embeddedPostgresHtml(host);
           if (tab === 'automation') return embeddedAutomationStatusHtml(host);
           if (tab === 'prompts') return window.PersonalPrompts?.renderTab?.('kanban', host) || '';
           if (tab === 'provenance') return embeddedProvenanceHtml(host);
@@ -5049,18 +5147,18 @@ const KanbanBoardPage = (() => {
         event.stopPropagation();
         return;
       }
-      const backupButton = event.target.closest('[data-kanban-backup-action]');
-      if (backupButton) {
+      const postgresButton = event.target.closest('[data-kanban-postgres-action]');
+      if (postgresButton) {
         event.preventDefault();
         event.stopPropagation();
-        handleBackupAction(backupButton);
+        handlePostgresAction(postgresButton);
         return;
       }
-      const backupRowActionsButton = event.target.closest('[data-kanban-backup-row-actions]');
-      if (backupRowActionsButton) {
+      const postgresRowActionsButton = event.target.closest('[data-kanban-postgres-row-actions]');
+      if (postgresRowActionsButton) {
         event.preventDefault();
         event.stopPropagation();
-        openBackupRowActions(backupRowActionsButton.dataset.kanbanBackupRowActions || '');
+        openPostgresRowActions(postgresRowActionsButton.dataset.kanbanPostgresRowActions || '');
         return;
       }
       const automationButton = event.target.closest('[data-kanban-automation-action]');
@@ -5081,7 +5179,7 @@ const KanbanBoardPage = (() => {
         if (action === 'up-board') openUpBoard();
         if (action === 'root-board') openRootBoard();
         if (action === 'new-root-item') newRootItem();
-        if (action === 'backups') openBackupsPanel();
+        if (action === 'postgres') openPostgresPanel();
         if (action === 'automation-status') openAutomationStatusPanel();
         if (action === 'priorities') openPrioritiesPanel();
         if (action === 'refresh-priorities') loadPrioritiesPanel({ force: true });
@@ -5165,16 +5263,16 @@ const KanbanBoardPage = (() => {
       submitInlineItem(btn.dataset.kanbanItemPrefix || 'kanban-panel-item');
     });
     document.addEventListener('click', event => {
-      const btn = event.target.closest('[data-kanban-backup-action]');
+      const btn = event.target.closest('[data-kanban-postgres-action]');
       if (!btn || root.contains(btn)) return;
       event.preventDefault();
-      handleBackupAction(btn);
+      handlePostgresAction(btn);
     });
     document.addEventListener('click', event => {
-      const btn = event.target.closest('[data-kanban-backup-row-actions]');
+      const btn = event.target.closest('[data-kanban-postgres-row-actions]');
       if (!btn || root.contains(btn)) return;
       event.preventDefault();
-      openBackupRowActions(btn.dataset.kanbanBackupRowActions || '');
+      openPostgresRowActions(btn.dataset.kanbanPostgresRowActions || '');
     });
     document.addEventListener('click', event => {
       const btn = event.target.closest('[data-kanban-automation-action]');
@@ -5267,13 +5365,15 @@ const KanbanBoardPage = (() => {
       rollup_total: state.board?.rollup?.items?.total || 0,
       issue_count: state.board?.rollup?.issues?.open || 0,
       todo_count: state.board?.rollup?.todos?.open || 0,
-      backups_loaded: !!state.backups.data,
-      backup_count: backupEntries().length,
-      backups_loading: !!state.backups.loading,
-      backups_error: state.backups.error || '',
-      backup_busy_action: state.backups.busyAction || '',
-      backup_importing_filename: state.backups.applyingFilename || '',
-      backup_last_result: state.backups.lastResult?.message || '',
+      postgres_loaded: !!state.postgres.data,
+      postgres_export_count: postgresExports().length,
+      postgres_loading: !!state.postgres.loading,
+      postgres_error: state.postgres.error || '',
+      postgres_busy_action: state.postgres.busyAction || '',
+      postgres_importing_filename: state.postgres.applyingFilename || '',
+      postgres_last_result: state.postgres.lastResult?.message || '',
+      postgres_role: state.postgres.data?.role || '',
+      postgres_row_count: Number(state.postgres.data?.row_count || 0),
       automation_status_loaded: !!state.automationStatus.data,
       automation_status_loading: !!state.automationStatus.loading,
       automation_status_error: state.automationStatus.error || '',
@@ -5330,7 +5430,7 @@ const KanbanBoardPage = (() => {
     openItemById,
     openKanbanLinkFromText,
     itemRouteUrl,
-    openBackupsPanel,
+    openPostgresPanel,
     openPrioritiesPanel,
     openAutomationStatusPanel,
     addChildToSelected: () => openItemForm({ parentItemId: state.selection?.item?.item_id, childOfSelection: true }),
@@ -5374,7 +5474,7 @@ if (typeof KanbanMenuConfig !== 'undefined') {
     'kanban.moveLeft': () => KanbanBoardPage.moveSelectedLeft(),
     'kanban.moveRight': () => KanbanBoardPage.moveSelectedRight(),
     'kanban.archive': () => KanbanBoardPage.archiveSelected(),
-    'kanban.backups': () => KanbanBoardPage.openBackupsPanel(),
+    'kanban.postgres': () => KanbanBoardPage.openPostgresPanel(),
     'kanban.automationStatus': () => KanbanBoardPage.openAutomationStatusPanel(),
     'kanban.toggleTestEntries': () => KanbanBoardPage.toggleTestEntriesVisibility({ source_surface: 'kanban-menu' }),
     'kanban.showTestEntries': () => KanbanBoardPage.showTestEntries(),

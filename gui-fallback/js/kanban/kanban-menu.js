@@ -97,7 +97,7 @@ const KanbanMenuConfig = createHubMenu({
             [
                 'kanban-refresh',
                 'kanban-automation-status',
-                'kanban-backups',
+                'kanban-postgres',
                 'kanban-safe-checks',
                 'kanban-toggle-tests',
                 'kanban-step18-proof',
@@ -154,7 +154,7 @@ const KanbanMenuConfig = createHubMenu({
         { id: 'kanban-move-left', label: 'Move Left', icon: KanbanActionIcons.left, pageLabel: 'Move Selected Left', parent: 'kanban-layout', order: 14, fn: 'kanban.moveLeft', activeOn: ['kanban'] },
         { id: 'kanban-move-right', label: 'Move Right', icon: KanbanActionIcons.right, pageLabel: 'Move Selected Right', parent: 'kanban-layout', order: 15, fn: 'kanban.moveRight', activeOn: ['kanban'] },
         { id: 'kanban-archive', label: 'Archive', icon: KanbanActionIcons.archive, pageLabel: 'Archive Selected Item', parent: 'kanban-layout', order: 16, fn: 'kanban.archive', activeOn: ['kanban'] },
-        { id: 'kanban-backups', label: 'Backups', icon: KanbanActionIcons.backup, pageLabel: 'Kanban Import/Export/Backups', parent: 'kanban-layout', order: 17, fn: 'kanban.backups', activeOn: ['kanban'] },
+        { id: 'kanban-postgres', label: 'Postgres', icon: KanbanActionIcons.backup, pageLabel: 'Kanban Postgres', parent: 'kanban-layout', order: 17, fn: 'kanban.postgres', activeOn: ['kanban'] },
         { id: 'kanban-automation-status', label: 'Automation Status', icon: KanbanActionIcons.automation, pageLabel: 'Kanban Automation Status', parent: 'kanban-layout', order: 18, fn: 'kanban.automationStatus', activeOn: ['kanban'] },
         { id: 'kanban-step18-proof', label: 'Write Detail Proof', icon: KanbanActionIcons.shield, pageLabel: 'Write Child And Detail Proof', parent: 'kanban-layout', order: 19, fn: 'kanban.step18ProofWrite', activeOn: ['kanban'] },
         { id: 'kanban-step19-proof', label: 'Write Scoped Proof', icon: KanbanActionIcons.shield, pageLabel: 'Write Scoped Issue And ToDo Proof', parent: 'kanban-layout', order: 20, fn: 'kanban.step19ProofWrite', activeOn: ['kanban'] },
