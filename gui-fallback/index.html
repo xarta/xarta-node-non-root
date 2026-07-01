@@ -4721,8 +4721,10 @@
       the non-root public repo, and the private repo.
     </p>
     <p style="color:var(--text-dim);font-size:13px;line-height:1.7;margin:0 0 12px;">
-      Fleet Update now runs in three stages with a 10 second settle time between them:
-      root public, non-root public, then private. Each stage is verified across all nodes.
+      Fleet Update runs staged repo checks first, then pulls root public, non-root public,
+      and private in order. Root public and private updates may restart Blueprints, so
+      short HTTP 502/503 or timeout windows are retried while branch, upstream, dirty,
+      and unpushed commit blockers are reported directly.
     </p>
     <p id="fleet-update-modal-status" style="min-height:1.4em;color:var(--text-dim);font-size:12px;margin:0;"></p>
     <div id="fleet-update-modal-log" style="max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;background:rgba(255,255,255,0.02);font-size:12px;line-height:1.6;color:var(--text-dim);margin-top:10px;"></div>

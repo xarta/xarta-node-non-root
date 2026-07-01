@@ -782,6 +782,12 @@ function _fleetUpdateModalEls() {
 
 const _FLEET_UPDATE_DELAY_MS = 10000;
 const _FLEET_UPDATE_MAX_ATTEMPTS = 3;
+const _FLEET_UPDATE_REPO_KEYS = ['outer', 'non_root', 'inner'];
+const _FLEET_UPDATE_DEPLOY_BRANCHES = Object.freeze({
+    outer: 'main',
+    non_root: 'main',
+    inner: 'main',
+});
 
 function _fleetUpdateFailureText(failure) {
     return `${failure.nodeId}: ${failure.message}`;
@@ -826,6 +832,52 @@ function _repoLabel(repoKey) {
     }[repoKey] || repoKey;
 }
 
+function _fleetUpdateRepoShortLabel(repoKey) {
+    return {
+        outer: 'root repo',
+        non_root: 'non-root repo',
+        inner: 'private repo',
+    }[repoKey] || repoKey;
+}
+
+function _fleetUpdateCode(value) {
+    return `\`${value || 'unknown'}\``;
+}
+
+function _fleetUpdateExpectedUpstream(branch) {
+    return branch ? `origin/${branch}` : '';
+}
+
+function _fleetUpdateAddFinding(findings, message) {
+    if (!findings.includes(message)) findings.push(message);
+}
+
+function _fleetUpdateDistinct(values) {
+    return Array.from(new Set(values.filter(Boolean).map(value => String(value))));
+}
+
+function _fleetUpdatePeerBranchesText(inspections, repoKey, coordinatorNodeId) {
+    const branches = _fleetUpdateDistinct(inspections
+        .filter(item => !item.error && item.nodeId !== coordinatorNodeId)
+        .map(item => item.versions?.[repoKey]?.branch));
+    if (!branches.length) return 'peer branch state is unavailable';
+    if (branches.length === 1) return `peers are on ${_fleetUpdateCode(branches[0])}`;
+    return `peers are on ${branches.map(_fleetUpdateCode).join(', ')}`;
+}
+
+function _fleetUpdateRepoIssuePrefix(nodeId, repoKey) {
+    return `${nodeId}: ${_repoLabel(repoKey)}`;
+}
+
+function _fleetUpdateBranchMismatchMessage(repoKey, repo, coordinatorRepo, expectedBranch) {
+    const coordinatorBranch = coordinatorRepo?.branch || expectedBranch || 'unknown';
+    const expectedCommit = coordinatorRepo?.commit || 'unknown';
+    const commitPart = repo.commit && expectedCommit && repo.commit !== expectedCommit
+        ? `; commit ${repo.commit} cannot converge to expected ${expectedCommit} while the branch differs`
+        : '';
+    return `${_repoLabel(repoKey)} branch ${_fleetUpdateCode(repo.branch)} differs from coordinator ${_fleetUpdateCode(coordinatorBranch)}${commitPart}. Merge or switch the repo before Fleet Update.`;
+}
+
 async function _fetchFleetNodesForUpdate() {
     const r = await apiFetch('/api/v1/nodes');
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -847,30 +899,89 @@ async function _fetchNodeRepoVersions(nodeId) {
     return r.json();
 }
 
-async function _checkFleetUpdatePreflight(nodes) {
+async function _checkFleetUpdatePreflight(nodes, expectedVersions = null) {
     const findings = [];
-    await Promise.all(nodes.map(async node => {
+    const inspections = await Promise.all(nodes.map(async node => {
         try {
             const versions = await _fetchNodeRepoVersions(node.node_id);
-            for (const repoKey of ['outer', 'non_root', 'inner']) {
-                const repo = versions[repoKey] || {};
-                if (!repo.exists) continue;
-                if (repo.dirty) {
-                    findings.push(`${node.node_id}: ${_repoLabel(repoKey)} dirty at ${repo.commit || 'unknown'}${repo.branch ? ` (${repo.branch})` : ''}`);
-                }
-                if (repo.upstream_tracked === false) {
-                    findings.push(`${node.node_id}: ${_repoLabel(repoKey)} has no upstream tracking branch${repo.branch ? ` (${repo.branch})` : ''}`);
-                }
-                if (typeof repo.ahead === 'number' && repo.ahead > 0) {
-                    findings.push(
-                        `${node.node_id}: ${_repoLabel(repoKey)} has ${repo.ahead} unpushed commit${repo.ahead === 1 ? '' : 's'} ahead of ${repo.upstream || 'upstream'}${repo.branch ? ` (${repo.branch})` : ''}`
-                    );
-                }
-            }
+            return { nodeId: node.node_id, versions, error: null };
         } catch (e) {
-            findings.push(`${node.node_id}: unable to inspect repo state (${e.message})`);
+            return { nodeId: node.node_id, versions: null, error: e };
         }
     }));
+
+    inspections.forEach(item => {
+        if (item.error) _fleetUpdateAddFinding(findings, `${item.nodeId}: unable to inspect repo state (${item.error.message})`);
+    });
+
+    const coordinatorNodeId = expectedVersions?.node_id || '';
+    const coordinatorSnapshot = inspections.find(item => item.nodeId === coordinatorNodeId)?.versions || expectedVersions || {};
+
+    for (const repoKey of _FLEET_UPDATE_REPO_KEYS) {
+        const coordinatorRepo = expectedVersions?.[repoKey] || coordinatorSnapshot?.[repoKey] || {};
+        const expectedBranch = _FLEET_UPDATE_DEPLOY_BRANCHES[repoKey];
+        if (coordinatorRepo.exists === false) continue;
+        if (expectedBranch && coordinatorRepo.branch && coordinatorRepo.branch !== expectedBranch) {
+            const branchText = _fleetUpdatePeerBranchesText(inspections, repoKey, coordinatorNodeId);
+            _fleetUpdateAddFinding(
+                findings,
+                `${coordinatorNodeId || 'coordinator'}: ${_fleetUpdateRepoShortLabel(repoKey)} is on ${_fleetUpdateCode(coordinatorRepo.branch)}, ${branchText}; merge/switch coordinator to ${_fleetUpdateCode(expectedBranch)} before Fleet Update.`
+            );
+        }
+        const expectedUpstream = _fleetUpdateExpectedUpstream(expectedBranch);
+        if (expectedUpstream && coordinatorRepo.upstream_tracked !== false && coordinatorRepo.upstream && coordinatorRepo.upstream !== expectedUpstream) {
+            _fleetUpdateAddFinding(
+                findings,
+                `${coordinatorNodeId || 'coordinator'}: ${_repoLabel(repoKey)} upstream ${_fleetUpdateCode(coordinatorRepo.upstream)} differs from expected ${_fleetUpdateCode(expectedUpstream)}.`
+            );
+        }
+    }
+
+    for (const item of inspections) {
+        if (item.error || !item.versions) continue;
+        for (const repoKey of _FLEET_UPDATE_REPO_KEYS) {
+            const repo = item.versions[repoKey] || {};
+            const coordinatorRepo = expectedVersions?.[repoKey] || coordinatorSnapshot?.[repoKey] || {};
+            const expectedBranch = _FLEET_UPDATE_DEPLOY_BRANCHES[repoKey];
+            if (!repo.exists) continue;
+            if (repo.dirty) {
+                _fleetUpdateAddFinding(findings, `${_fleetUpdateRepoIssuePrefix(item.nodeId, repoKey)} dirty at ${repo.commit || 'unknown'}${repo.branch ? ` (${repo.branch})` : ''}`);
+            }
+            if (repo.upstream_tracked === false) {
+                _fleetUpdateAddFinding(findings, `${_fleetUpdateRepoIssuePrefix(item.nodeId, repoKey)} has no upstream tracking branch${repo.branch ? ` (${repo.branch})` : ''}`);
+            }
+            if (typeof repo.ahead === 'number' && repo.ahead > 0) {
+                _fleetUpdateAddFinding(
+                    findings,
+                    `${_fleetUpdateRepoIssuePrefix(item.nodeId, repoKey)} has ${repo.ahead} unpushed commit${repo.ahead === 1 ? '' : 's'} ahead of ${repo.upstream || 'upstream'}${repo.branch ? ` (${repo.branch})` : ''}`
+                );
+            }
+            if (coordinatorRepo.branch && repo.branch && repo.branch !== coordinatorRepo.branch) {
+                _fleetUpdateAddFinding(
+                    findings,
+                    `${_fleetUpdateRepoIssuePrefix(item.nodeId, repoKey)} branch ${_fleetUpdateCode(repo.branch)} differs from coordinator ${_fleetUpdateCode(coordinatorRepo.branch)}; merge/switch before Fleet Update.`
+                );
+            } else if (expectedBranch && repo.branch && repo.branch !== expectedBranch) {
+                _fleetUpdateAddFinding(
+                    findings,
+                    `${_fleetUpdateRepoIssuePrefix(item.nodeId, repoKey)} branch ${_fleetUpdateCode(repo.branch)} differs from expected deploy branch ${_fleetUpdateCode(expectedBranch)}; merge/switch before Fleet Update.`
+                );
+            }
+            if (repo.upstream_tracked !== false && repo.upstream && coordinatorRepo.upstream && repo.upstream !== coordinatorRepo.upstream) {
+                _fleetUpdateAddFinding(
+                    findings,
+                    `${_fleetUpdateRepoIssuePrefix(item.nodeId, repoKey)} upstream ${_fleetUpdateCode(repo.upstream)} differs from coordinator ${_fleetUpdateCode(coordinatorRepo.upstream)}.`
+                );
+            }
+            const expectedUpstream = _fleetUpdateExpectedUpstream(expectedBranch);
+            if (repo.upstream_tracked !== false && expectedUpstream && repo.upstream && repo.upstream !== expectedUpstream) {
+                _fleetUpdateAddFinding(
+                    findings,
+                    `${_fleetUpdateRepoIssuePrefix(item.nodeId, repoKey)} upstream ${_fleetUpdateCode(repo.upstream)} differs from expected ${_fleetUpdateCode(expectedUpstream)}.`
+                );
+            }
+        }
+    }
     return findings;
 }
 
@@ -891,6 +1002,43 @@ async function _verifyFleetRepoStage(nodes, expectedVersions, repoKey, label) {
                     nodeId: node.node_id,
                     transient: false,
                     message: `${label} repo dirty at ${repo.commit || 'unknown'}`,
+                };
+            }
+            if (repo.upstream_tracked === false) {
+                return {
+                    nodeId: node.node_id,
+                    transient: false,
+                    message: `${label} repo has no upstream tracking branch${repo.branch ? ` (${repo.branch})` : ''}`,
+                };
+            }
+            if (typeof repo.ahead === 'number' && repo.ahead > 0) {
+                return {
+                    nodeId: node.node_id,
+                    transient: false,
+                    message: `${label} repo has ${repo.ahead} unpushed commit${repo.ahead === 1 ? '' : 's'} ahead of ${repo.upstream || 'upstream'}`,
+                };
+            }
+            const coordinatorRepo = expectedVersions[repoKey] || {};
+            const expectedBranch = _FLEET_UPDATE_DEPLOY_BRANCHES[repoKey];
+            if (coordinatorRepo.branch && repo.branch && repo.branch !== coordinatorRepo.branch) {
+                return {
+                    nodeId: node.node_id,
+                    transient: false,
+                    message: _fleetUpdateBranchMismatchMessage(repoKey, repo, coordinatorRepo, expectedBranch),
+                };
+            }
+            if (expectedBranch && repo.branch && repo.branch !== expectedBranch) {
+                return {
+                    nodeId: node.node_id,
+                    transient: false,
+                    message: `${label} repo branch ${_fleetUpdateCode(repo.branch)} differs from expected deploy branch ${_fleetUpdateCode(expectedBranch)}. Merge or switch the repo before Fleet Update.`,
+                };
+            }
+            if (repo.upstream_tracked !== false && coordinatorRepo.upstream && repo.upstream && repo.upstream !== coordinatorRepo.upstream) {
+                return {
+                    nodeId: node.node_id,
+                    transient: false,
+                    message: `${label} repo upstream ${_fleetUpdateCode(repo.upstream)} differs from coordinator ${_fleetUpdateCode(coordinatorRepo.upstream)}`,
                 };
             }
             if ((repo.commit || '') !== (expectedVersions[repoKey]?.commit || '')) {
@@ -1016,7 +1164,7 @@ async function submitFleetUpdate() {
     if (!dialog || dialog.dataset.busy === '1') return;
 
     const stages = [
-        { scope: 'outer', repoKey: 'outer', label: 'Root public repo' },
+        { scope: 'outer', repoKey: 'outer', label: 'Root public repo', settleMs: 20000, maxAttempts: 6, restartExpected: true },
         { scope: 'non_root', repoKey: 'non_root', label: 'Non-root public repo' },
         { scope: 'inner', repoKey: 'inner', label: 'Private repo', settleMs: 20000, maxAttempts: 6, restartExpected: true },
     ];
@@ -1038,13 +1186,13 @@ async function submitFleetUpdate() {
         ]);
 
         if (status) status.textContent = 'Running preflight repo checks...';
-        _fleetUpdateAppendLog('Running preflight repo checks (dirty + upstream divergence) across all fleet nodes.', '');
-        const preflightFindings = await _checkFleetUpdatePreflight(nodes);
+        _fleetUpdateAppendLog('Running preflight repo checks (branch + upstream + dirty + ahead state) across all fleet nodes.', '');
+        const preflightFindings = await _checkFleetUpdatePreflight(nodes, expectedVersions);
         if (preflightFindings.length) {
             preflightFindings.forEach(line => _fleetUpdateAppendLog(`  ${line}`, 'err'));
-            throw new Error(`preflight blocked by dirty, unpushed, or unreadable repos:\n${preflightFindings.join('\n')}`);
+            throw new Error(`preflight blocked by repo state that Fleet Update cannot repair:\n${preflightFindings.join('\n')}`);
         }
-        _fleetUpdateAppendLog('Preflight passed: repos are clean and no unpushed commits were detected.', 'ok');
+        _fleetUpdateAppendLog('Preflight passed: branches/upstreams are aligned and repos are clean with no unpushed commits.', 'ok');
 
         for (const stage of stages) {
             await _runFleetUpdateStage(nodes, expectedVersions, stage);
@@ -1076,12 +1224,12 @@ async function submitFleetUpdate() {
         }
     } catch (e) {
         dialog.dataset.busy = '0';
-        if (error) error.textContent = `Fleet update failed: ${e.message}`;
+        if (error) error.textContent = `Fleet update blocked: ${e.message}\nFix the listed repo state; closing this modal will not repair it. Re-run after the repo state is corrected.`;
         if (status) {
-            status.textContent = 'Fleet update failed.';
+            status.textContent = 'Fleet update blocked; fix the listed repo state before retrying.';
             status.style.color = 'var(--err,#f85149)';
         }
-        _fleetUpdateAppendLog(`Fleet update failed: ${e.message}`, 'err');
+        _fleetUpdateAppendLog(`Fleet update blocked: ${e.message}`, 'err');
         if (typeof recordFleetHealthBlockedReport === 'function') {
             recordFleetHealthBlockedReport(e.message, { source: 'fleet-update' });
         }
