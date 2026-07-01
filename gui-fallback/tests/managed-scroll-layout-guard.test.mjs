@@ -618,8 +618,13 @@ assert.match(
 );
 assert.match(
   kanbanBoardJs,
-  /openItemDetail\(state\.routeDetailItemId,\s*\{\s*routeTarget:\s*true\s*\}\)/,
-  'Kanban URL detail routes must open through the route-target highlight path.',
+  /openItemDetail\(state\.routeDetailItemId,\s*\{\s*routeTarget:\s*true,\s*preserveBoardScroll:\s*true\s*\}\)/,
+  'Kanban URL detail routes must highlight the target without horizontally recentering the board after refresh.',
+);
+assert.match(
+  kanbanBoardJs,
+  /keepBoardLeft[\s\S]*options\.preserveBoardScroll[\s\S]*board\.scrollLeft[\s\S]*scrollIntoView[\s\S]*board\.scrollLeft\s*=\s*keepBoardLeft/,
+  'Kanban route restore must preserve the board horizontal scroll position while opening the selected detail.',
 );
 assert.match(
   kanbanBoardJs,

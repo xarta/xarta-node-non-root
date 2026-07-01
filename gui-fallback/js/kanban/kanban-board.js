@@ -2586,7 +2586,7 @@ const KanbanBoardPage = (() => {
       }
       renderAll();
       if (state.routeDetailItemId && !state.detailModalOpen && !state.detailPanelOpen && !options.skipRouteDetail) {
-        await openItemDetail(state.routeDetailItemId, { routeTarget: true });
+        await openItemDetail(state.routeDetailItemId, { routeTarget: true, preserveBoardScroll: true });
       }
       if (state.routeScoped?.itemId && !state.scoped.open && !options.skipRouteScoped) {
         const scoped = state.routeScoped;
@@ -2897,12 +2897,15 @@ const KanbanBoardPage = (() => {
     const itemId = state.selection?.item?.item_id || '';
     if (!itemId) return;
     window.requestAnimationFrame(() => {
+      const board = el('kanban-board-shell');
+      const keepBoardLeft = options.preserveBoardScroll && board ? board.scrollLeft : null;
       const card = Array.from(document.querySelectorAll('#tab-kanban [data-kanban-item-id]'))
         .find(node => node.dataset.kanbanItemId === itemId && node.classList?.contains('kanban-card'));
       card?.scrollIntoView?.({
         block: options.center ? 'center' : 'nearest',
         inline: options.center ? 'center' : 'nearest',
       });
+      if (keepBoardLeft !== null && board) board.scrollLeft = keepBoardLeft;
     });
   }
 
@@ -3870,7 +3873,7 @@ const KanbanBoardPage = (() => {
     }
     writeRouteState(state.currentParentId, state.routeDetailItemId);
     renderAll();
-    scrollSelectionIntoView({ center: !!options.routeTarget });
+    scrollSelectionIntoView({ center: !!options.routeTarget, preserveBoardScroll: !!options.preserveBoardScroll });
     return detail;
   }
 
