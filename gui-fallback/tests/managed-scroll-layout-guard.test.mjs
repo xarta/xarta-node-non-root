@@ -10,6 +10,7 @@ const layoutNavCss = fs.readFileSync(path.resolve(here, '../css/layout-nav.css')
 const hubMenuJs = fs.readFileSync(path.resolve(here, '../js/hub-menu.js'), 'utf8');
 const hubMenuCss = fs.readFileSync(path.resolve(here, '../css/hub-menu.css'), 'utf8');
 const menuActionOrderJs = fs.readFileSync(path.resolve(here, '../js/menu-action-order.js'), 'utf8');
+const headerClockJs = fs.readFileSync(path.resolve(here, '../js/header-clock.js'), 'utf8');
 const indexHtml = fs.readFileSync(path.resolve(here, '../index.html'), 'utf8');
 const daveCalendarCss = fs.readFileSync(path.resolve(here, '../css/dave-calendar.css'), 'utf8');
 const daveDiaryCss = fs.readFileSync(path.resolve(here, '../css/dave-diary.css'), 'utf8');
@@ -51,6 +52,41 @@ assert.match(
   bodyShadeJs,
   /function\s+setScrollStateClass\s*\([^)]*\)[\s\S]*document\.documentElement\.classList\.toggle/,
   'Body Shade must mirror scroll-lock state classes onto <html>.',
+);
+assert.match(
+  indexHtml,
+  /id="header-local-time"[\s\S]*aria-controls="clock-hub-modal"/,
+  'Header LED clock must declare the anchored clock hub modal target.',
+);
+assert.match(
+  indexHtml,
+  /id="clock-hub-modal"[\s\S]*id="clock-hub-weekdays"[\s\S]*data-weekday="MON"[\s\S]*data-weekday="SUN"[\s\S]*id="clock-hub-date"/,
+  'Header LED clock hub must expose weekday indicators and a single grouped date display.',
+);
+assert.match(
+  headerClockJs,
+  /CLOCK_HUB_WEEKDAYS[\s\S]*function\s+setDateDisplay[\s\S]*Date\s+\$\{year\}\s+\$\{month\}\s+\$\{day\}[\s\S]*function\s+setWeekdayStrip[\s\S]*aria-current',\s*'date'/,
+  'Header LED clock hub must illuminate the current weekday and render YYYY MM DD as one date display.',
+);
+assert.match(
+  headerClockJs,
+  /const\s+ClockHubGestureMachine\s*=\s*\(\(\)\s*=>[\s\S]*TAP_PENDING[\s\S]*doubleTap[\s\S]*tapTimeout:\s*\{\s*next:\s*'IDLE',\s*actions:\s*\['openHub',\s*'clearTapContext'\]\s*\}[\s\S]*PRESSING[\s\S]*longPressTimeout[\s\S]*CLICK_SUPPRESSED/,
+  'Header LED clock must use an explicit FSM that owns click/tap, double-tap, long-press timing, and click echo suppression.',
+);
+assert.match(
+  headerClockJs,
+  /function\s+positionClockHub[\s\S]*getBoundingClientRect\(\)[\s\S]*--clock-hub-left[\s\S]*--clock-hub-top[\s\S]*--clock-hub-max-height/,
+  'Header LED clock hub must be anchored from the clock rect and clamped within the viewport.',
+);
+assert.match(
+  layoutNavCss,
+  /dialog\.hub-modal\.clock-hub-modal[\s\S]*position:\s*fixed[\s\S]*top:\s*var\(--clock-hub-top[\s\S]*left:\s*var\(--clock-hub-left[\s\S]*max-height:\s*min\(420px,\s*var\(--clock-hub-max-height/,
+  'Header LED clock hub CSS must use fixed anchored coordinates and a viewport-clamped max height.',
+);
+assert.match(
+  layoutNavCss,
+  /\.clock-hub-weekday-strip[\s\S]*repeat\(7,[\s\S]*\.clock-hub-weekday\.is-active[\s\S]*\.clock-hub-led-display--date/,
+  'Header LED clock hub CSS must style the etched weekday strip and grouped date row.',
 );
 assert.match(
   bodyShadeJs,

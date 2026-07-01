@@ -84,7 +84,7 @@
         <span id="header-host" class="brand bp-font-role-host-label"><span class="node-sigil" aria-hidden="true"></span><span class="node-host-text">—</span></span>
         <div class="node-meta">
           <span class="nm-item nm-item--gen"><span class="nm-label">Gen</span>&thinsp;<span class="nm-val" id="nn-gen">—</span></span>
-          <span class="nm-item nm-item--led-clock" id="header-local-time" role="timer" aria-label="Local time" title="Local time">
+          <span class="nm-item nm-item--led-clock" id="header-local-time" role="timer" aria-label="Local time" aria-haspopup="dialog" aria-controls="clock-hub-modal" tabindex="0" title="Local time">
             <span class="led-watch-display" aria-hidden="true"></span>
           </span>
           <span class="nm-item nm-item--integrity" id="nn-integrity"><span class="badge">—</span></span>
@@ -99,6 +99,33 @@
   </div>
 
 </header>
+
+<dialog class="hub-modal hub-dialog clock-hub-modal" data-tone="info" id="clock-hub-modal" aria-labelledby="clock-hub-modal-title">
+  <div class="hub-modal-header">
+    <h2 class="hub-modal-title">
+      <span class="hub-dialog-badge">CLOCK</span>
+      <span class="hub-dialog-title-text" id="clock-hub-modal-title">Local Date</span>
+    </h2>
+    <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
+  </div>
+  <div class="hub-modal-body">
+    <div class="clock-hub-date-grid" aria-label="Local date">
+      <div class="clock-hub-weekday-strip" id="clock-hub-weekdays" aria-label="Day of week">
+        <span class="clock-hub-weekday" data-weekday="MON">MON</span>
+        <span class="clock-hub-weekday" data-weekday="TUE">TUE</span>
+        <span class="clock-hub-weekday" data-weekday="WED">WED</span>
+        <span class="clock-hub-weekday" data-weekday="THU">THU</span>
+        <span class="clock-hub-weekday" data-weekday="FRI">FRI</span>
+        <span class="clock-hub-weekday" data-weekday="SAT">SAT</span>
+        <span class="clock-hub-weekday" data-weekday="SUN">SUN</span>
+      </div>
+      <div class="clock-hub-date-row clock-hub-date-row--date">
+        <span class="clock-hub-date-label">Date</span>
+        <span class="clock-hub-led-display clock-hub-led-display--date" id="clock-hub-date" aria-label="Date"></span>
+      </div>
+    </div>
+  </div>
+</dialog>
 
 <main>
 
