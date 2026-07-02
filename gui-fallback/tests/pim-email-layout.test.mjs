@@ -97,11 +97,15 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(appJs, /tab === 'email'[\s\S]*BlueprintsEmailPage\.load\(\)/, 'switchTab must lazy-load Email.');
   assert.match(emailJs, /\/status/, 'Email UI must read middleware status.');
   assert.match(emailJs, /\/folders/, 'Email UI must list folders.');
-  assert.match(emailJs, /\/folder-messages\?folder=\$\{encodeURIComponent\(selectedFolder\)\}&limit=30/, 'Email UI must list the selected folder messages on load.');
-  assert.match(emailJs, /\/folder-messages\?folder=\$\{encodeURIComponent\(clean\)\}&limit=30/, 'Email UI must list any clicked folder.');
+  assert.match(emailJs, /function localCorpusAvailable\(/, 'Email UI must prefer local corpus when it exists.');
+  assert.match(emailJs, /\/local\/folders/, 'Email UI must be able to list local folders.');
+  assert.match(emailJs, /\/local\/folder-messages/, 'Email UI must be able to list local folder messages.');
+  assert.match(emailJs, /folderMessagesEndpoint\(selectedFolder, status\)/, 'Email UI must list the selected folder messages on load.');
+  assert.match(emailJs, /folderMessagesEndpoint\(clean\)/, 'Email UI must list any clicked folder.');
   assert.doesNotMatch(emailJs, /Inbox is the only message listing/, 'Email UI must not keep the old Inbox-only folder restraint.');
   assert.doesNotMatch(emailJs, /Only Inbox message opening/, 'Email UI must open messages from the selected folder.');
-  assert.match(emailJs, /\/messages\/\$\{encodeURIComponent\(cleanUid\)\}/, 'Email UI must open messages by UID.');
+  assert.match(emailJs, /\/local\/messages\/\$\{encodeURIComponent\(emailUid\)\}/, 'Email UI must open local corpus messages by email_uid.');
+  assert.match(emailJs, /\/messages\/\$\{encodeURIComponent\(uid\)\}/, 'Email UI must open live messages by IMAP UID.');
   assert.match(emailJs, /role="tree"/, 'Email folders must render as a tree.');
   assert.match(emailJs, /data-email-folder-menu-toggle="set"/, 'Folder list must render as a split dropdown tab.');
   assert.match(emailJs, /data-email-folder-menu-toggle="group"/, 'Folder group must render as a split dropdown tab.');

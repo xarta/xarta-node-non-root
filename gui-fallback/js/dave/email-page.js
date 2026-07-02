@@ -25,6 +25,8 @@ const EmailPage = (() => {
     loading: false,
     error: '',
     status: null,
+    localCorpus: null,
+    readSource: 'live',
     mailbox: null,
     folders: [],
     messages: [],
@@ -531,7 +533,29 @@ const EmailPage = (() => {
   }
 
   function activeMessageUid() {
-    return String(state.message?.uid || '');
+    return String(state.message?.email_uid || state.message?.uid || '');
+  }
+
+  function localCorpusAvailable(status = state.status) {
+    return Boolean(status?.local_corpus?.available || state.localCorpus?.available);
+  }
+
+  function folderEndpoint(status = state.status) {
+    return localCorpusAvailable(status) ? `${API_ROOT}/local/folders` : `${API_ROOT}/folders`;
+  }
+
+  function folderMessagesEndpoint(folder, status = state.status) {
+    const base = localCorpusAvailable(status) ? `${API_ROOT}/local/folder-messages` : `${API_ROOT}/folder-messages`;
+    return `${base}?folder=${encodeURIComponent(folder)}&limit=30`;
+  }
+
+  function messageEndpoint(uid, row = null) {
+    if (localCorpusAvailable()) {
+      const emailUid = String(row?.email_uid || uid || '').trim();
+      return `${API_ROOT}/local/messages/${encodeURIComponent(emailUid)}`;
+    }
+    const folder = encodeURIComponent(state.folder || 'INBOX');
+    return `${API_ROOT}/messages/${encodeURIComponent(uid)}?folder=${folder}`;
   }
 
   function renderMeta() {
@@ -543,7 +567,8 @@ const EmailPage = (() => {
     }
     const folderCount = state.folders.length;
     const rowCount = state.messages.length;
-    meta.textContent = `${mailboxAddress()} - ${folderCount} folders - ${rowCount} ${state.folder || 'INBOX'} rows`;
+    const source = state.readSource === 'local' ? 'local corpus' : 'live IMAP';
+    meta.textContent = `${mailboxAddress()} - ${source} - ${folderCount} folders - ${rowCount} ${state.folder || 'INBOX'} rows`;
   }
 
   function renderFolderChip() {
@@ -612,15 +637,16 @@ const EmailPage = (() => {
   }
 
   function messageRowHtml(row) {
-    const selected = String(row.uid || '') === activeMessageUid();
+    const key = String(row.email_uid || row.uid || '');
+    const selected = key === activeMessageUid();
     return `
-      <div class="email-message-row" data-email-message-uid="${escHtml(row.uid || '')}" data-selected="${selected ? 'true' : 'false'}" tabindex="0">
+      <div class="email-message-row" data-email-message-uid="${escHtml(row.uid || '')}" data-email-message-email-uid="${escHtml(row.email_uid || '')}" data-selected="${selected ? 'true' : 'false'}" tabindex="0">
         <div>
           <div class="email-message-title">${escHtml(row.subject || '(no subject)')}</div>
           <div class="email-message-from">${escHtml(row.from || '')}</div>
           <div class="email-message-date">${escHtml(row.date || '')}</div>
         </div>
-        <button class="email-row-btn email-row-btn--open" type="button" data-email-message-uid="${escHtml(row.uid || '')}" title="Open message" aria-label="Open message"></button>
+        <button class="email-row-btn email-row-btn--open" type="button" data-email-message-uid="${escHtml(row.uid || '')}" data-email-message-email-uid="${escHtml(row.email_uid || '')}" title="Open message" aria-label="Open message"></button>
       </div>
     `;
   }
@@ -1349,12 +1375,17 @@ const EmailPage = (() => {
     state.error = '';
     setStatus('Loading email middleware', 'unknown');
     try {
-      const [status, folders, messages] = await Promise.all([
-        fetchJson(`${API_ROOT}/status`),
-        fetchJson(`${API_ROOT}/folders`),
-        fetchJson(`${API_ROOT}/folder-messages?folder=${encodeURIComponent(selectedFolder)}&limit=30`),
+      const status = await fetchJson(`${API_ROOT}/status`);
+      state.status = status;
+      state.localCorpus = status.local_corpus || null;
+      state.readSource = localCorpusAvailable(status) ? 'local' : 'live';
+      const [folders, messages] = await Promise.all([
+        fetchJson(folderEndpoint(status)),
+        fetchJson(folderMessagesEndpoint(selectedFolder, status)),
       ]);
       state.status = status;
+      state.localCorpus = status.local_corpus || null;
+      state.readSource = localCorpusAvailable(status) ? 'local' : 'live';
       state.mailbox = folders.mailbox || messages.mailbox || status.mailboxes?.[0] || null;
       state.folders = Array.isArray(folders.folders) ? folders.folders : [];
       state.messages = Array.isArray(messages.messages) ? messages.messages : [];
@@ -1388,9 +1419,10 @@ const EmailPage = (() => {
     setStatus(`Loading ${clean} messages`, 'unknown');
     renderAll();
     try {
-      const data = await fetchJson(`${API_ROOT}/folder-messages?folder=${encodeURIComponent(clean)}&limit=30`);
+      const data = await fetchJson(folderMessagesEndpoint(clean));
       if (seq !== state.folderLoadSeq) return false;
       state.mailbox = data.mailbox || state.mailbox;
+      state.readSource = data.source === 'local-corpus' ? 'local' : (localCorpusAvailable() ? 'local' : 'live');
       state.folder = data.folder || clean;
       state.messages = Array.isArray(data.messages) ? data.messages : [];
       state.folderLoading = false;
@@ -1410,11 +1442,33 @@ const EmailPage = (() => {
   async function openMessage(uid) {
     const cleanUid = String(uid || '').trim();
     if (!cleanUid) return false;
+    const row = state.messages.find(item => (
+      String(item.email_uid || '') === cleanUid || String(item.uid || '') === cleanUid
+    )) || null;
+    if (localCorpusAvailable()) {
+      const emailUid = String(row?.email_uid || cleanUid).trim();
+      if (!emailUid) return false;
+      setStatus('Opening local message', 'unknown');
+      try {
+        const data = await fetchJson(messageEndpoint(emailUid, row));
+        state.message = data.message || null;
+        state.view = defaultMessageView(state.message);
+        state.securityProgress = null;
+        renderMessages();
+        renderMessage();
+        renderSecondaryPanels();
+        setStatus('Local email loaded', 'ok');
+        return true;
+      } catch (error) {
+        setStatus(error.message || String(error), 'err');
+        return false;
+      }
+    }
     const runId = securityRunId();
     beginSecurityProgress(runId, cleanUid, state.folder || 'INBOX');
     try {
       const folder = encodeURIComponent(state.folder || 'INBOX');
-      const data = await fetchJson(`${API_ROOT}/messages/${encodeURIComponent(cleanUid)}?folder=${folder}&security_run_id=${encodeURIComponent(runId)}`);
+      const data = await fetchJson(`${messageEndpoint(cleanUid, row)}&security_run_id=${encodeURIComponent(runId)}`);
       state.message = data.message || null;
       state.view = defaultMessageView(state.message);
       if (state.message?.security?.progress && !state.message.security.progress.run_id) {
@@ -1629,7 +1683,7 @@ const EmailPage = (() => {
       const messageRow = target.closest?.('[data-email-message-uid]');
       if (messageRow) {
         event.preventDefault();
-        openMessage(messageRow.dataset.emailMessageUid || '');
+        openMessage(messageRow.dataset.emailMessageEmailUid || messageRow.dataset.emailMessageUid || '');
         return;
       }
       if (!target.closest?.('[data-email-folder-dropdown]')) closeFolderMenus();
@@ -1639,7 +1693,7 @@ const EmailPage = (() => {
       const row = event.target.closest?.('.email-message-row[data-email-message-uid]');
       if (!row) return;
       event.preventDefault();
-      openMessage(row.dataset.emailMessageUid || '');
+      openMessage(row.dataset.emailMessageEmailUid || row.dataset.emailMessageUid || '');
     });
     ['email-secondary-modal-close', 'email-secondary-modal-footer-close'].forEach(id => {
       const btn = el(id);
