@@ -134,7 +134,9 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /function messageSecurityHtml\(\)/, 'Email UI must render detailed per-message security results.');
   assert.match(emailJs, /authenticationResultsHtml/, 'Security detail must include provider Authentication-Results.');
   assert.match(emailJs, /securityFindingsHtml/, 'Security detail must include individual finding codes.');
-  assert.match(emailJs, /\/messages\/\$\{encodeURIComponent\(uid\)\}\/security/, 'Security action must be able to refresh missing message security details.');
+  assert.match(emailJs, /\/local\/messages\/\$\{encodeURIComponent\(uid\)\}\/security/, 'Local Security action must refresh missing security by email_uid.');
+  assert.match(emailJs, /method:\s*'POST'/, 'Local Security action must use the local POST endpoint.');
+  assert.match(emailJs, /\/messages\/\$\{encodeURIComponent\(uid\)\}\/security/, 'Live Security action must still refresh missing IMAP message security details.');
   assert.match(emailJs, /Email Security/, 'Security modal title must identify the security panel.');
   assert.match(emailCss, /\.email-message-panel\[data-email-security="red"\]/, 'Red security aggregate must tint the reader border.');
   assert.match(emailCss, /\.email-message-panel\[data-email-security="amber"\]/, 'Amber security aggregate must tint the reader border.');

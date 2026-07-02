@@ -865,7 +865,9 @@ const EmailPage = (() => {
       return '<div class="email-empty">Open a message to view security results.</div>';
     }
     if (!security?.available) {
-      return '<div class="email-empty">No backend security result is attached to this message yet.</div>';
+      const reason = security?.blocked_reason || message?.blocked_reason || 'completed security result missing';
+      const status = security?.security_status || 'missing';
+      return `<div class="email-empty">Body blocked: ${escHtml(reason)} (${escHtml(status)}).</div>`;
     }
     const aggregate = security.aggregate || {};
     const context = security.context || {};
@@ -1202,6 +1204,22 @@ const EmailPage = (() => {
     content.appendChild(pre);
   }
 
+  function renderBlockedMessage(content, message) {
+    const security = message?.security || {};
+    const reason = security.blocked_reason || message?.blocked_reason || 'completed security result missing';
+    const status = security.security_status || 'missing';
+    const rawHash = message?.raw_sha256 ? `${String(message.raw_sha256).slice(0, 16)}...` : 'n/a';
+    content.innerHTML = `
+      <div class="email-empty">
+        Body blocked: ${escHtml(reason)} (${escHtml(status)}).
+        <br>
+        <code>${escHtml(message?.email_uid || '')}</code>
+        <br>
+        Raw hash ${escHtml(rawHash)}
+      </div>
+    `;
+  }
+
   function renderMessage() {
     renderViewTabs();
     const meta = el('email-message-meta');
@@ -1222,6 +1240,10 @@ const EmailPage = (() => {
       meta.textContent = `${subject} - ${from} - ${date}`;
     }
     applyMessageSecurityStatus();
+    if (message.body_blocked) {
+      renderBlockedMessage(content, message);
+      return;
+    }
     const views = message.views || {};
     const value = String(views[state.view] || '');
     if (state.view === 'html') {
@@ -1577,9 +1599,20 @@ const EmailPage = (() => {
       const runId = securityRunId();
       beginSecurityProgress(runId, uid, state.folder || 'INBOX');
       try {
-        const folder = encodeURIComponent(state.folder || 'INBOX');
-        const data = await fetchJson(`${API_ROOT}/messages/${encodeURIComponent(uid)}/security?folder=${folder}&security_run_id=${encodeURIComponent(runId)}`);
-        if (state.message && data.security) state.message.security = data.security;
+        if (localCorpusAvailable()) {
+          const data = await fetchJson(
+            `${API_ROOT}/local/messages/${encodeURIComponent(uid)}/security?security_run_id=${encodeURIComponent(runId)}`,
+            { method: 'POST' },
+          );
+          if (state.message && data.security) state.message.security = data.security;
+          const refreshed = await fetchJson(messageEndpoint(uid));
+          state.message = refreshed.message || state.message;
+          state.view = defaultMessageView(state.message);
+        } else {
+          const folder = encodeURIComponent(state.folder || 'INBOX');
+          const data = await fetchJson(`${API_ROOT}/messages/${encodeURIComponent(uid)}/security?folder=${folder}&security_run_id=${encodeURIComponent(runId)}`);
+          if (state.message && data.security) state.message.security = data.security;
+        }
       } catch (error) {
         setStatus(error.message || String(error), 'err');
       }
