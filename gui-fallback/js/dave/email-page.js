@@ -159,6 +159,12 @@ const EmailPage = (() => {
     renderSecurityProgressStrip();
   }
 
+  function renderOpenedMessageSecurityProgress(message = state.message) {
+    if (!message?.security?.available) return false;
+    completeSecurityProgress(message.security);
+    return true;
+  }
+
   function securityToneFromFinding(finding) {
     const severity = securityToneName(finding?.severity);
     const status = securityToneName(finding?.status || finding?.result);
@@ -1480,6 +1486,7 @@ const EmailPage = (() => {
         renderMessage();
         renderSecondaryPanels();
         setStatus('Local email loaded', 'ok');
+        renderOpenedMessageSecurityProgress();
         return true;
       } catch (error) {
         setStatus(error.message || String(error), 'err');

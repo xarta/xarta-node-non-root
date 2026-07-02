@@ -128,6 +128,8 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /state\.view = defaultMessageView\(state\.message\)/, 'Opening a message must use the computed default view.');
   assert.match(emailJs, /SECURITY_PROGRESS_EVENT = 'pim\.email\.security\.progress'/, 'Email security progress must use the shared SSE event stream.');
   assert.match(emailJs, /function renderSecurityProgressStrip\(\)/, 'Opened-message status must render compact security progress segments.');
+  assert.match(emailJs, /function renderOpenedMessageSecurityProgress\(/, 'Completed local-message security progress must render after opening a stored message.');
+  assert.doesNotMatch(emailJs, /include_safe_raw=true/, 'Local message reads must use the persisted sanitized raw artifact, not an on-read raw generation flag.');
   assert.match(emailJs, /security_run_id=\$\{encodeURIComponent\(runId\)\}/, 'Message opening must correlate backend progress events with a client run id.');
   assert.doesNotMatch(emailJs, /Message security \$\{status\}/, 'Opened-message status must not render a textual security colour sentence.');
   assert.doesNotMatch(emailJs, /Security \$\{aggregate\.status\}/, 'Message metadata must not duplicate the visible border colour in text.');
