@@ -816,6 +816,9 @@ const BlueprintsActiveBrowserObserver = (() => {
     const kanbanSnapshot = typeof window.BlueprintsKanbanBoardPage?.snapshot === 'function'
       ? window.BlueprintsKanbanBoardPage.snapshot()
       : null;
+    const matrixChatSnapshot = typeof window.MatrixChat?.snapshot === 'function'
+      ? window.MatrixChat.snapshot()
+      : null;
     const personalSearchSnapshot = typeof window.BlueprintsPersonalSearch?.snapshot === 'function'
       ? window.BlueprintsPersonalSearch.snapshot()
       : null;
@@ -836,6 +839,11 @@ const BlueprintsActiveBrowserObserver = (() => {
       surfaces.kanban = kanbanSnapshot;
     } else if (!surfaces.kanban || typeof surfaces.kanban !== 'object') {
       surfaces.kanban = {};
+    }
+    if (matrixChatSnapshot && typeof matrixChatSnapshot === 'object') {
+      surfaces.matrix_chat = matrixChatSnapshot;
+    } else if (!surfaces.matrix_chat || typeof surfaces.matrix_chat !== 'object') {
+      surfaces.matrix_chat = {};
     }
     if (personalSearchSnapshot && typeof personalSearchSnapshot === 'object') {
       surfaces.personal_search = personalSearchSnapshot;

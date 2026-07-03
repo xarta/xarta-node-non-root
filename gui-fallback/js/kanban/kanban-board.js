@@ -2499,7 +2499,7 @@ const KanbanBoardPage = (() => {
     state.automationStatus.error = '';
     refreshAutomationStatusPanels();
     try {
-      state.automationStatus.data = await requestJson('/api/v1/personal/kanban/automation/status');
+      state.automationStatus.data = await requestJson('/api/v1/personal/kanban/automation/status?include_contracts=false');
       state.automationStatus.lastLoadedAt = Date.now();
       return state.automationStatus.data;
     } catch (err) {

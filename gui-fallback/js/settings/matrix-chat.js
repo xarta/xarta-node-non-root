@@ -10,6 +10,13 @@ const MATRIX_CHAT_MOBILE_PORTRAIT_DEFAULT_COMPOSER_HEIGHT = 132;
 const MATRIX_CHAT_KEYBOARD_COMPOSER_GAP_PX = 3;
 const MATRIX_CHAT_INITIAL_MESSAGE_LIMIT = 60;
 const MATRIX_CHAT_OLDER_MESSAGE_LIMIT = 60;
+const MATRIX_CHAT_PROGRESSIVE_BACKFILL_TARGET = 30;
+const MATRIX_CHAT_PROGRESSIVE_BACKFILL_LIMIT = 30;
+const MATRIX_CHAT_PROGRESSIVE_REFINE_LIMIT = 30;
+const MATRIX_CHAT_INITIAL_DECRYPT_TIMEOUT_MS = 0;
+const MATRIX_CHAT_PROGRESSIVE_REFINE_DECRYPT_TIMEOUT_MS = 9000;
+const MATRIX_CHAT_PROGRESSIVE_BACKFILL_DECRYPT_TIMEOUT_MS = 4500;
+const MATRIX_CHAT_OLDER_DECRYPT_TIMEOUT_MS = 0;
 const MATRIX_CHAT_MAX_MESSAGES_PER_ROOM = 600;
 const MATRIX_CHAT_DEFAULT_SERVER = 'tb1';
 const MATRIX_CHAT_ROOM_TAB_DOUBLE_CLICK_MS = 240;
@@ -101,7 +108,62 @@ const MatrixChat = (() => {
     audioDraftActive: false,
     audioDraftPrefix: '',
     audioDraftValue: '',
+    refreshGeneration: 0,
+    messageLoadGeneration: 0,
+    messageLoadAbortController: null,
+    historyBackfillGeneration: 0,
+    historyBackfillAbortController: null,
+    inlineImageObserver: null,
+    inlineImageAbortController: null,
+    renderGeneration: 0,
+    lastRefreshMetrics: null,
+    lastMessageLoadMetrics: null,
+    lastHistoryBackfillMetrics: null,
+    inlineImageStats: {
+      generation: 0,
+      scheduled: 0,
+      requested: 0,
+      loaded: 0,
+      unavailable: 0,
+      aborted: 0,
+    },
   };
+  const inlineImageTargets = new WeakMap();
+
+  function perfNow() {
+    return typeof performance !== 'undefined' && typeof performance.now === 'function'
+      ? performance.now()
+      : Date.now();
+  }
+
+  function elapsedMs(startedAt) {
+    return Math.round(Math.max(0, perfNow() - startedAt));
+  }
+
+  function briefError(error) {
+    return String(error?.message || error || '').slice(0, 180);
+  }
+
+  function recordRefreshMetrics(metrics) {
+    const priorGeneration = Number(state.lastRefreshMetrics?.generation || 0);
+    if (Number(metrics?.generation || 0) >= priorGeneration) {
+      state.lastRefreshMetrics = { ...metrics };
+    }
+  }
+
+  function recordMessageLoadMetrics(metrics) {
+    const priorGeneration = Number(state.lastMessageLoadMetrics?.generation || 0);
+    if (Number(metrics?.generation || 0) >= priorGeneration) {
+      state.lastMessageLoadMetrics = { ...metrics };
+    }
+  }
+
+  function recordHistoryBackfillMetrics(metrics) {
+    const priorGeneration = Number(state.lastHistoryBackfillMetrics?.generation || 0);
+    if (Number(metrics?.generation || 0) >= priorGeneration) {
+      state.lastHistoryBackfillMetrics = { ...metrics };
+    }
+  }
 
   const RoomTabInteractionMachine = (() => {
     const transitions = {
@@ -194,9 +256,9 @@ const MatrixChat = (() => {
     return `${MATRIX_CHAT_STORAGE_KEY}:${state.serverId}`;
   }
 
-  function matrixApi(path) {
+  function matrixApi(path, serverId = state.serverId) {
     const url = new URL(`/api/v1/matrix-chat${path}`, window.location.origin);
-    url.searchParams.set('server', state.serverId);
+    url.searchParams.set('server', serverId);
     return `${url.pathname}${url.search}`;
   }
 
@@ -314,13 +376,16 @@ const MatrixChat = (() => {
     state.attachmentModalTargetKey = '';
   }
 
-  async function attachmentBlobEntry(message, purpose = 'file') {
+  async function attachmentBlobEntry(message, purpose = 'file', options = {}) {
     const key = attachmentTargetKey(message, purpose);
     const cached = state.attachmentObjectUrls.get(key);
     if (cached?.url) return cached;
     if (cached?.promise) return cached.promise;
     const promise = (async () => {
-      const response = await apiFetch(attachmentDownloadPath(message, 'inline'), { cache: 'no-store' });
+      const response = await apiFetch(attachmentDownloadPath(message, 'inline'), {
+        cache: 'no-store',
+        signal: options.signal,
+      });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const blob = await response.blob();
       const media = message?.media || {};
@@ -1248,12 +1313,78 @@ const MatrixChat = (() => {
     }
   }
 
-  function hydrateInlineImage(message, img, button) {
-    attachmentBlobEntry(message, 'inline').then(entry => {
+  function resetInlineImageHydration() {
+    state.renderGeneration += 1;
+    if (state.inlineImageObserver) {
+      state.inlineImageObserver.disconnect();
+      state.inlineImageObserver = null;
+    }
+    if (state.inlineImageAbortController) {
+      state.inlineImageAbortController.abort();
+    }
+    state.inlineImageAbortController = typeof AbortController !== 'undefined'
+      ? new AbortController()
+      : null;
+    state.inlineImageStats = {
+      generation: state.renderGeneration,
+      scheduled: 0,
+      requested: 0,
+      loaded: 0,
+      unavailable: 0,
+      aborted: 0,
+    };
+  }
+
+  function inlineImageObserver() {
+    if (typeof IntersectionObserver === 'undefined') return null;
+    if (!state.inlineImageObserver) {
+      state.inlineImageObserver = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+          if (!entry.isIntersecting) return;
+          state.inlineImageObserver?.unobserve(entry.target);
+          const target = inlineImageTargets.get(entry.target);
+          if (!target) return;
+          hydrateInlineImage(target.message, target.img, target.button, target.generation);
+        });
+      }, {
+        root: el('matrix-chat-timeline') || null,
+        rootMargin: '360px 0px',
+        threshold: 0.01,
+      });
+    }
+    return state.inlineImageObserver;
+  }
+
+  function scheduleInlineImageHydration(message, img, button) {
+    const generation = state.renderGeneration;
+    state.inlineImageStats.scheduled += 1;
+    const observer = inlineImageObserver();
+    if (observer) {
+      inlineImageTargets.set(button, { message, img, button, generation });
+      observer.observe(button);
+      return;
+    }
+    window.setTimeout(() => hydrateInlineImage(message, img, button, generation), 0);
+  }
+
+  function hydrateInlineImage(message, img, button, generation = state.renderGeneration) {
+    if (generation !== state.renderGeneration) return;
+    state.inlineImageStats.requested += 1;
+    attachmentBlobEntry(message, 'inline', {
+      signal: state.inlineImageAbortController?.signal,
+    }).then(entry => {
+      if (generation !== state.renderGeneration) return;
+      state.inlineImageStats.loaded += 1;
       img.src = entry.url;
       button.classList.remove('is-loading');
       button.classList.add('is-ready');
     }).catch(error => {
+      if (generation !== state.renderGeneration) return;
+      if (error?.name === 'AbortError') {
+        state.inlineImageStats.aborted += 1;
+        return;
+      }
+      state.inlineImageStats.unavailable += 1;
       button.classList.remove('is-loading');
       button.classList.add('is-unavailable');
       button.title = `Inline image unavailable: ${error.message}`;
@@ -1284,7 +1415,7 @@ const MatrixChat = (() => {
         void openAttachmentModal(message);
       });
       wrap.appendChild(imageButton);
-      hydrateInlineImage(message, img, imageButton);
+      scheduleInlineImageHydration(message, img, imageButton);
     }
 
     const chip = document.createElement('button');
@@ -1383,6 +1514,7 @@ const MatrixChat = (() => {
     const history = active ? historyState(active.room_id) : {};
     renderMobileControls(active, allMessages, history);
     if (!timeline) return;
+    resetInlineImageHydration();
     timeline.innerHTML = '';
 
     if (!active) {
@@ -1463,17 +1595,47 @@ const MatrixChat = (() => {
     if (!roomId || !Array.isArray(messages) || !messages.length) return;
     const existing = state.messagesByRoom.get(roomId) || [];
     const redacted = redactedEventIds(roomId);
-    const seen = new Set(existing.map(message => message.event_id).filter(Boolean));
-    const merged = existing.slice();
-    messages.forEach(message => {
-      if (!message) return;
-      if (message.event_id && redacted.has(message.event_id)) return;
-      if (message.event_id && seen.has(message.event_id)) return;
-      if (message.event_id) seen.add(message.event_id);
-      merged.push(message);
-    });
+    state.messagesByRoom.set(
+      roomId,
+      mergeRoomMessages(existing, messages, redacted).slice(-MATRIX_CHAT_MAX_MESSAGES_PER_ROOM)
+    );
+  }
+
+  function messageCompletenessScore(message) {
+    if (!message) return 0;
+    if (message.encrypted && message.decrypted) return 4;
+    if (!message.encrypted && message.body && message.body !== '[encrypted event]') return 3;
+    if (message.encrypted && !message.decrypted) return 1;
+    return 2;
+  }
+
+  function preferredMessage(existing, incoming) {
+    if (!existing) return incoming;
+    if (!incoming) return existing;
+    const existingScore = messageCompletenessScore(existing);
+    const incomingScore = messageCompletenessScore(incoming);
+    if (incomingScore > existingScore) return { ...existing, ...incoming };
+    if (incomingScore < existingScore) return existing;
+    return { ...existing, ...incoming };
+  }
+
+  function mergeRoomMessages(existing, incoming, redacted) {
+    const byId = new Map();
+    const anonymous = [];
+    [...(Array.isArray(existing) ? existing : []), ...(Array.isArray(incoming) ? incoming : [])]
+      .forEach(message => {
+        if (!message) return;
+        const eventId = message.event_id || '';
+        if (eventId && redacted?.has(eventId)) return;
+        if (!eventId) {
+          anonymous.push(message);
+          return;
+        }
+        byId.set(eventId, preferredMessage(byId.get(eventId), message));
+      });
+    const merged = [...anonymous, ...byId.values()];
     merged.sort((a, b) => (a.origin_server_ts || 0) - (b.origin_server_ts || 0));
-    state.messagesByRoom.set(roomId, merged.slice(-MATRIX_CHAT_MAX_MESSAGES_PER_ROOM));
+    return merged;
   }
 
   function eventStreamState() {
@@ -1523,22 +1685,16 @@ const MatrixChat = (() => {
     if (!roomId || !Array.isArray(messages) || !messages.length) return;
     const existing = state.messagesByRoom.get(roomId) || [];
     const redacted = redactedEventIds(roomId);
-    const seen = new Set(existing.map(message => message.event_id).filter(Boolean));
-    const fresh = [];
-    messages.forEach(message => {
-      if (!message) return;
-      if (message.event_id && redacted.has(message.event_id)) return;
-      if (message.event_id && seen.has(message.event_id)) return;
-      if (message.event_id) seen.add(message.event_id);
-      fresh.push(message);
-    });
-    const merged = fresh.concat(existing);
-    merged.sort((a, b) => (a.origin_server_ts || 0) - (b.origin_server_ts || 0));
-    state.messagesByRoom.set(roomId, merged.slice(0, MATRIX_CHAT_MAX_MESSAGES_PER_ROOM));
+    state.messagesByRoom.set(
+      roomId,
+      mergeRoomMessages(existing, messages, redacted).slice(-MATRIX_CHAT_MAX_MESSAGES_PER_ROOM)
+    );
   }
 
-  async function loadStatus() {
-    state.status = await apiJson(matrixApi('/status'));
+  async function loadStatus(serverId = state.serverId) {
+    const status = await apiJson(matrixApi('/status', serverId));
+    if (serverId !== state.serverId) return false;
+    state.status = status;
     if (!state.status.configured) {
       setStatus('Matrix chat credentials are not configured on the Blueprints server.', 'warn');
     } else if (!state.status.reachable) {
@@ -1551,35 +1707,161 @@ const MatrixChat = (() => {
       setStatus('');
     }
     renderStatus();
+    return true;
   }
 
-  async function loadRooms() {
-    const data = await apiJson(matrixApi('/rooms'));
+  async function loadRooms(serverId = state.serverId) {
+    const data = await apiJson(matrixApi('/rooms', serverId));
+    if (serverId !== state.serverId) return false;
     state.joined = Array.isArray(data.joined) ? data.joined : [];
     state.invites = Array.isArray(data.invites) ? data.invites : [];
     state.nextBatch = data.next_batch || state.nextBatch || '';
     chooseActiveRoom();
     renderRooms();
+    return true;
+  }
+
+  function cancelMessageLoad() {
+    state.messageLoadGeneration += 1;
+    if (state.messageLoadAbortController) {
+      state.messageLoadAbortController.abort();
+      state.messageLoadAbortController = null;
+    }
+    cancelHistoryBackfill();
+  }
+
+  function cancelHistoryBackfill() {
+    state.historyBackfillGeneration += 1;
+    if (state.historyBackfillAbortController) {
+      state.historyBackfillAbortController.abort();
+      state.historyBackfillAbortController = null;
+    }
+  }
+
+  function beginMessageLoad() {
+    cancelMessageLoad();
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const generation = state.messageLoadGeneration;
+    state.messageLoadAbortController = controller;
+    return {
+      generation,
+      serverId: state.serverId,
+      signal: controller?.signal,
+    };
+  }
+
+  function isCurrentMessageLoad(token, roomId) {
+    return Boolean(
+      token
+      && token.generation === state.messageLoadGeneration
+      && token.serverId === state.serverId
+      && roomId === state.activeRoomId
+    );
+  }
+
+  function finishMessageLoad(token) {
+    if (token?.generation === state.messageLoadGeneration) {
+      state.messageLoadAbortController = null;
+    }
+  }
+
+  function beginHistoryBackfill() {
+    cancelHistoryBackfill();
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const generation = state.historyBackfillGeneration;
+    state.historyBackfillAbortController = controller;
+    return {
+      generation,
+      serverId: state.serverId,
+      signal: controller?.signal,
+    };
+  }
+
+  function isCurrentHistoryBackfill(token, roomId) {
+    return Boolean(
+      token
+      && token.generation === state.historyBackfillGeneration
+      && token.serverId === state.serverId
+      && roomId === state.activeRoomId
+    );
+  }
+
+  function finishHistoryBackfill(token) {
+    if (token?.generation === state.historyBackfillGeneration) {
+      state.historyBackfillAbortController = null;
+    }
   }
 
   async function loadMessages(roomId = state.activeRoomId) {
     if (!roomId) {
       renderMessages();
-      return;
+      return false;
     }
-    const data = await apiJson(matrixApi(`/rooms/${encodeURIComponent(roomId)}/messages?limit=${MATRIX_CHAT_INITIAL_MESSAGE_LIMIT}`));
-    const redacted = redactedEventIds(roomId);
-    const messages = Array.isArray(data.messages) ? data.messages : [];
-    state.messagesByRoom.set(
-      roomId,
-      messages.filter(message => !message?.event_id || !redacted.has(message.event_id)),
-    );
-    setHistoryState(roomId, {
-      end: data.end || '',
-      exhausted: !data.end || !Array.isArray(data.messages) || data.messages.length === 0,
-      loading: false,
-    });
-    renderMessages();
+    const token = beginMessageLoad();
+    const startedAt = perfNow();
+    const metrics = {
+      generation: token.generation,
+      server_id: token.serverId,
+      room_id: roomId,
+      started_at_ms: Date.now(),
+      limit: MATRIX_CHAT_INITIAL_MESSAGE_LIMIT,
+      total_ms: null,
+      response_message_count: 0,
+      visible_message_count: 0,
+      end_present: false,
+      decrypt_timeout_ms: MATRIX_CHAT_INITIAL_DECRYPT_TIMEOUT_MS,
+      server_metrics: null,
+      ok: false,
+      aborted: false,
+      stale: false,
+      error: '',
+    };
+    try {
+      const data = await apiJson(
+        matrixApi(
+          `/rooms/${encodeURIComponent(roomId)}/messages?limit=${MATRIX_CHAT_INITIAL_MESSAGE_LIMIT}&metrics=true&decrypt_timeout_ms=${MATRIX_CHAT_INITIAL_DECRYPT_TIMEOUT_MS}`,
+          token.serverId,
+        ),
+        { signal: token.signal }
+      );
+      metrics.total_ms = elapsedMs(startedAt);
+      if (!isCurrentMessageLoad(token, roomId)) {
+        metrics.stale = true;
+        return false;
+      }
+      const redacted = redactedEventIds(roomId);
+      const messages = Array.isArray(data.messages) ? data.messages : [];
+      const visibleMessages = messages.filter(message => !message?.event_id || !redacted.has(message.event_id));
+      metrics.response_message_count = messages.length;
+      metrics.visible_message_count = visibleMessages.length;
+      metrics.end_present = Boolean(data.end);
+      metrics.server_metrics = data.metrics || null;
+      state.messagesByRoom.set(
+        roomId,
+        mergeRoomMessages(state.messagesByRoom.get(roomId) || [], visibleMessages, redacted)
+          .slice(-MATRIX_CHAT_MAX_MESSAGES_PER_ROOM)
+      );
+      setHistoryState(roomId, {
+        end: data.end || '',
+        exhausted: !data.end || !Array.isArray(data.messages) || data.messages.length === 0,
+        loading: false,
+      });
+      renderMessages();
+      metrics.ok = true;
+      return true;
+    } catch (error) {
+      metrics.total_ms = elapsedMs(startedAt);
+      if (error?.name === 'AbortError') {
+        metrics.aborted = true;
+        return false;
+      }
+      metrics.error = briefError(error);
+      throw error;
+    } finally {
+      if (metrics.total_ms === null) metrics.total_ms = elapsedMs(startedAt);
+      recordMessageLoadMetrics(metrics);
+      finishMessageLoad(token);
+    }
   }
 
   async function loadOlderMessages() {
@@ -1587,13 +1869,14 @@ const MatrixChat = (() => {
     const timeline = el('matrix-chat-timeline');
     const history = historyState(roomId);
     if (!roomId || !history.end || history.exhausted || history.loading) return;
+    cancelHistoryBackfill();
     const priorHeight = timeline?.scrollHeight || 0;
     const priorTop = timeline?.scrollTop || 0;
     setHistoryState(roomId, { loading: true });
     renderMessages({ scrollToBottom: false });
     try {
       const data = await apiJson(
-        matrixApi(`/rooms/${encodeURIComponent(roomId)}/messages?limit=${MATRIX_CHAT_OLDER_MESSAGE_LIMIT}&from=${encodeURIComponent(history.end)}`)
+        matrixApi(`/rooms/${encodeURIComponent(roomId)}/messages?limit=${MATRIX_CHAT_OLDER_MESSAGE_LIMIT}&from=${encodeURIComponent(history.end)}&metrics=true&decrypt_timeout_ms=${MATRIX_CHAT_OLDER_DECRYPT_TIMEOUT_MS}`)
       );
       const messages = Array.isArray(data.messages) ? data.messages : [];
       prependMessages(roomId, messages);
@@ -1613,6 +1896,99 @@ const MatrixChat = (() => {
       setHistoryState(roomId, { loading: false });
       renderMessages({ scrollToBottom: false });
       setStatus(`Load older failed: ${error.message}`, 'error');
+    }
+  }
+
+  function scheduleProgressiveBackfill(roomId) {
+    window.setTimeout(() => {
+      if (roomId === state.activeRoomId) void loadProgressiveBackfill(roomId);
+    }, 0);
+  }
+
+  async function loadProgressiveBackfill(roomId) {
+    const history = historyState(roomId);
+    const existing = state.messagesByRoom.get(roomId) || [];
+    if (
+      !roomId
+      || roomId !== state.activeRoomId
+      || existing.length >= MATRIX_CHAT_PROGRESSIVE_BACKFILL_TARGET
+      || !history.end
+      || history.exhausted
+      || history.loading
+    ) {
+      return false;
+    }
+    const token = beginHistoryBackfill();
+    const startedAt = perfNow();
+    const timeline = el('matrix-chat-timeline');
+    const priorHeight = timeline?.scrollHeight || 0;
+    const priorTop = timeline?.scrollTop || 0;
+    const metrics = {
+      generation: token.generation,
+      server_id: token.serverId,
+      room_id: roomId,
+      started_at_ms: Date.now(),
+      limit: MATRIX_CHAT_PROGRESSIVE_BACKFILL_LIMIT,
+      total_ms: null,
+      response_message_count: 0,
+      visible_message_count: 0,
+      end_present: false,
+      decrypt_timeout_ms: MATRIX_CHAT_PROGRESSIVE_BACKFILL_DECRYPT_TIMEOUT_MS,
+      server_metrics: null,
+      ok: false,
+      aborted: false,
+      stale: false,
+      error: '',
+    };
+    setHistoryState(roomId, { loading: true });
+    renderMessages({ scrollToBottom: false });
+    try {
+      const data = await apiJson(
+        matrixApi(
+          `/rooms/${encodeURIComponent(roomId)}/messages?limit=${MATRIX_CHAT_PROGRESSIVE_BACKFILL_LIMIT}&from=${encodeURIComponent(history.end)}&metrics=true&decrypt_timeout_ms=${MATRIX_CHAT_PROGRESSIVE_BACKFILL_DECRYPT_TIMEOUT_MS}`,
+          token.serverId,
+        ),
+        { signal: token.signal, trackActivity: false }
+      );
+      metrics.total_ms = elapsedMs(startedAt);
+      if (!isCurrentHistoryBackfill(token, roomId)) {
+        metrics.stale = true;
+        return false;
+      }
+      const messages = Array.isArray(data.messages) ? data.messages : [];
+      metrics.response_message_count = messages.length;
+      metrics.server_metrics = data.metrics || null;
+      prependMessages(roomId, messages);
+      metrics.visible_message_count = (state.messagesByRoom.get(roomId) || []).length;
+      const exhausted = Boolean(data.at_start) || !data.end || messages.length === 0;
+      metrics.end_present = Boolean(data.end);
+      setHistoryState(roomId, {
+        end: data.end || '',
+        exhausted,
+        loading: false,
+      });
+      renderMessages({ scrollToBottom: false });
+      if (timeline) {
+        const delta = timeline.scrollHeight - priorHeight;
+        timeline.scrollTop = Math.max(0, priorTop + delta);
+      }
+      metrics.ok = true;
+      return true;
+    } catch (error) {
+      metrics.total_ms = elapsedMs(startedAt);
+      if (error?.name === 'AbortError') {
+        metrics.aborted = true;
+        return false;
+      }
+      metrics.error = briefError(error);
+      return false;
+    } finally {
+      if (metrics.total_ms === null) metrics.total_ms = elapsedMs(startedAt);
+      if (isCurrentHistoryBackfill(token, roomId)) {
+        setHistoryState(roomId, { loading: false });
+      }
+      recordHistoryBackfillMetrics(metrics);
+      finishHistoryBackfill(token);
     }
   }
 
@@ -2433,25 +2809,87 @@ const MatrixChat = (() => {
     else modal.showModal?.();
   }
 
-  async function refreshAll() {
-    if (state.loading) return;
+  async function refreshAll(options = {}) {
+    if (state.loading && !options.force) return;
+    const generation = ++state.refreshGeneration;
+    const serverId = state.serverId;
+    const startedAt = perfNow();
+    let stageKey = '';
+    let stageStartedAt = startedAt;
+    const metrics = {
+      generation,
+      server_id: serverId,
+      started_at_ms: Date.now(),
+      total_ms: null,
+      status_ms: null,
+      rooms_ms: null,
+      messages_ms: null,
+      message_load_ok: false,
+      room_count: 0,
+      invite_count: 0,
+      active_room_id: '',
+      ok: false,
+      aborted: false,
+      stale: false,
+      error: '',
+    };
     state.loading = true;
     state.pollGeneration += 1;
     try {
       const priorRoom = state.activeRoomId;
-      await loadStatus();
-      await loadRooms();
+      const statusStartedAt = perfNow();
+      const roomsStartedAt = perfNow();
+      stageKey = 'status_ms';
+      stageStartedAt = statusStartedAt;
+      const statusPromise = loadStatus(serverId).then(ok => {
+        metrics.status_ms = elapsedMs(statusStartedAt);
+        return ok;
+      });
+      const roomsPromise = loadRooms(serverId).then(ok => {
+        metrics.rooms_ms = elapsedMs(roomsStartedAt);
+        return ok;
+      });
+      const [statusOk, roomsOk] = await Promise.all([statusPromise, roomsPromise]);
+      if (!statusOk || !roomsOk) {
+        metrics.stale = true;
+        return;
+      }
+      metrics.room_count = state.joined.length;
+      metrics.invite_count = state.invites.length;
+      if (generation !== state.refreshGeneration || serverId !== state.serverId) {
+        metrics.stale = true;
+        return;
+      }
       if (priorRoom && state.joined.some(room => room.room_id === priorRoom)) {
         rememberActiveRoom(priorRoom);
       }
-      await loadMessages();
+      stageKey = 'messages_ms';
+      stageStartedAt = perfNow();
+      metrics.message_load_ok = await loadMessages();
+      metrics.messages_ms = elapsedMs(stageStartedAt);
+      metrics.active_room_id = state.activeRoomId || '';
+      if (generation !== state.refreshGeneration || serverId !== state.serverId) {
+        metrics.stale = true;
+        return;
+      }
       renderRooms();
       renderMessages();
+      metrics.ok = true;
     } catch (error) {
+      if (stageKey && metrics[stageKey] === null) metrics[stageKey] = elapsedMs(stageStartedAt);
+      if (error?.name === 'AbortError') {
+        metrics.aborted = true;
+        return;
+      }
+      metrics.error = briefError(error);
       setStatus(`Matrix chat load failed: ${error.message}`, 'error');
     } finally {
-      state.loading = false;
-      scheduleViewportFit();
+      metrics.total_ms = elapsedMs(startedAt);
+      recordRefreshMetrics(metrics);
+      if (generation === state.refreshGeneration) {
+        state.loading = false;
+        scheduleViewportFit();
+      }
     }
   }
 
@@ -2459,6 +2897,7 @@ const MatrixChat = (() => {
     const changed = roomId !== state.activeRoomId;
     rememberActiveRoom(roomId);
     if (changed) {
+      cancelMessageLoad();
       state.hermesCommands = [];
       state.hermesCommandsLoaded = false;
       state.hermesCommandsRoomId = '';
@@ -3754,6 +4193,9 @@ const MatrixChat = (() => {
   }
 
   function resetForServer(serverId) {
+    state.refreshGeneration += 1;
+    cancelMessageLoad();
+    resetInlineImageHydration();
     state.serverId = serverId;
     state.pollGeneration += 1;
     state.status = null;
@@ -3811,7 +4253,7 @@ const MatrixChat = (() => {
     if (!['tb1', 'vps'].includes(serverId) || serverId === state.serverId) return;
     resetForServer(serverId);
     setStatus(`Loading ${serverId.toUpperCase()} Matrix chat...`);
-    await refreshAll();
+    await refreshAll({ force: true });
   }
 
   async function waitForMatrixChatIdle() {
@@ -3996,6 +4438,45 @@ const MatrixChat = (() => {
     schedulePoll(0);
   }
 
+  function inlineImageSnapshot() {
+    const timeline = el('matrix-chat-timeline');
+    const buttons = timeline
+      ? Array.from(timeline.querySelectorAll('.matrix-chat-inline-image-button'))
+      : [];
+    return {
+      ...state.inlineImageStats,
+      dom_total: buttons.length,
+      dom_loading: buttons.filter(button => button.classList.contains('is-loading')).length,
+      dom_ready: buttons.filter(button => button.classList.contains('is-ready')).length,
+      dom_unavailable: buttons.filter(button => button.classList.contains('is-unavailable')).length,
+    };
+  }
+
+  function snapshot() {
+    const activeRoom = state.joined.find(room => room.room_id === state.activeRoomId) || null;
+    const activeMessages = state.activeRoomId
+      ? (state.messagesByRoom.get(state.activeRoomId) || [])
+      : [];
+    return {
+      server_id: state.serverId,
+      loading: !!state.loading,
+      active_room_id: state.activeRoomId || '',
+      active_room_title: activeRoom ? roomTitle(activeRoom) : '',
+      room_count: state.joined.length,
+      invite_count: state.invites.length,
+      known_message_count: activeMessages.length,
+      rendered_message_count: el('matrix-chat-timeline')?.querySelectorAll('.matrix-chat-message').length || 0,
+      poll_generation: state.pollGeneration,
+      refresh_generation: state.refreshGeneration,
+      message_load_generation: state.messageLoadGeneration,
+      history_backfill_generation: state.historyBackfillGeneration,
+      last_refresh: state.lastRefreshMetrics ? { ...state.lastRefreshMetrics } : null,
+      last_message_load: state.lastMessageLoadMetrics ? { ...state.lastMessageLoadMetrics } : null,
+      last_history_backfill: state.lastHistoryBackfillMetrics ? { ...state.lastHistoryBackfillMetrics } : null,
+      inline_images: inlineImageSnapshot(),
+    };
+  }
+
   return {
     loadTab,
     refresh: refreshAll,
@@ -4004,6 +4485,7 @@ const MatrixChat = (() => {
     syncVoiceModeAudioState,
     insertHermesMention,
     openRoom,
+    snapshot,
     openNotifierDnd: openNotifierDndModal,
     openNotifierTests: openNotifierTestsModal,
   };
