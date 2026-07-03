@@ -15,6 +15,7 @@ let _sshTerminalLocked = false;
 let _sshTerminalPaintRaf = 0;
 let _sshTerminalViewportResizeToken = 0;
 const _SSH_TERMINAL_RESTORE_KEY = 'blueprintsSshTerminalRestore';
+const _SSH_TERMINAL_OSC_COLOR_REPLY_RE = /^\x1b\](?:10|11|12);(?:rgb:[0-9a-fA-F]{1,4}\/[0-9a-fA-F]{1,4}\/[0-9a-fA-F]{1,4}|#[0-9a-fA-F]{6})(?:\x07|\x1b\\)$/;
 
 function _sshTerminalEls() {
   return {
@@ -458,6 +459,9 @@ function _sshTerminalEnsureTerminal() {
   _sshTerminalTerm.open(xterm);
   _sshTerminalForcePaint();
   _sshTerminalTerm.onData(data => {
+    if (_SSH_TERMINAL_OSC_COLOR_REPLY_RE.test(data)) {
+      return;
+    }
     if (_sshTerminalWs && _sshTerminalWs.readyState === WebSocket.OPEN) {
       _sshTerminalWs.send(JSON.stringify({ type: 'input', data }));
     }
