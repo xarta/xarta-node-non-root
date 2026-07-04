@@ -8,6 +8,7 @@ const AGENT_PAGE_CONFIGS = {
     runtimeKey: 'hermesLocalUrl',
     sessionEndpoint: '/api/v1/dashboard-auth/hermes-local/session',
     frameId: 'agent-hermes-local-frame',
+    statusId: 'agent-hermes-local-status',
     targets: {
       terminal: 'local-hermes-container',
       tui: 'local-hermes',
@@ -19,6 +20,7 @@ const AGENT_PAGE_CONFIGS = {
     runtimeKey: 'hermesVpsUrl',
     sessionEndpoint: '/api/v1/dashboard-auth/hermes-vps/session',
     frameId: 'agent-hermes-vps-frame',
+    statusId: 'agent-hermes-vps-status',
     targets: {
       terminal: 'hermes-vps-container',
       tui: 'hermes-vps-agent',
@@ -45,7 +47,21 @@ function _agentPagesEls(pageId) {
   const config = _agentPagesConfig(pageId);
   return {
     frame: document.getElementById(config.frameId),
+    status: document.getElementById(config.statusId),
   };
+}
+
+function _agentPagesSetStatus(pageId, message = '') {
+  const { frame, status } = _agentPagesEls(pageId);
+  const visible = Boolean(message);
+  if (status) {
+    status.textContent = message;
+    status.classList.toggle('is-visible', visible);
+    status.setAttribute('aria-hidden', visible ? 'false' : 'true');
+  }
+  if (frame) {
+    frame.hidden = visible && !frame.src;
+  }
 }
 
 function _agentPagesScheduleViewportFit() {
@@ -108,12 +124,15 @@ async function _agentPagesLoadHermes(pageId = _agentPagesCurrentPageId()) {
   if (!frame) return;
   const url = await _agentPagesResolveUrl(pageId);
   if (!url) {
+    _agentPagesSetStatus(pageId, 'Dashboard URL not configured.');
     _agentPagesScheduleViewportFit();
     return;
   }
+  _agentPagesSetStatus(pageId);
   if (!state.loaded || !frame.src) {
     const ok = await _agentPagesEstablishSession(pageId);
     if (!ok) {
+      _agentPagesSetStatus(pageId, 'Dashboard session could not be started.');
       _agentPagesScheduleViewportFit();
       return;
     }
@@ -129,10 +148,17 @@ async function _agentPagesRefreshHermes(pageId = _agentPagesCurrentPageId()) {
   if (!frame) return;
   const url = await _agentPagesResolveUrl(pageId);
   if (!url) {
+    _agentPagesSetStatus(pageId, 'Dashboard URL not configured.');
     _agentPagesScheduleViewportFit();
     return;
   }
-  await _agentPagesEstablishSession(pageId);
+  _agentPagesSetStatus(pageId);
+  const ok = await _agentPagesEstablishSession(pageId);
+  if (!ok && !frame.src) {
+    _agentPagesSetStatus(pageId, 'Dashboard session could not be started.');
+    _agentPagesScheduleViewportFit();
+    return;
+  }
   if (frame.src) {
     try {
       frame.contentWindow?.location?.reload();
@@ -147,8 +173,10 @@ async function _agentPagesOpenHermes(pageId = _agentPagesCurrentPageId()) {
   const state = _agentPagesState(pageId);
   const url = state.url || await _agentPagesResolveUrl(pageId);
   if (!url) {
+    _agentPagesSetStatus(pageId, 'Dashboard URL not configured.');
     return;
   }
+  _agentPagesSetStatus(pageId);
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 

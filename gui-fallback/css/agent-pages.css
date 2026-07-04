@@ -18,9 +18,29 @@
 }
 
 .agent-page-frame-wrap {
+  position: relative;
   min-height: 0;
   flex: 1 1 auto;
   overflow: hidden;
+}
+
+.agent-page-status {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #05070b;
+  color: rgba(235, 242, 255, 0.88);
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.agent-page-status.is-visible {
+  display: flex;
 }
 
 .agent-page-frame {
