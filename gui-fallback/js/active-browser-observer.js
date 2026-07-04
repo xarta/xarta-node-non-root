@@ -8,6 +8,7 @@ const BlueprintsActiveBrowserObserver = (() => {
   const REPORT_DEBOUNCE_MS = 300;
   const MODAL_COMMAND_SETTLE_MS = 650;
   const REPORT_HEARTBEAT_MS = 10000;
+  const API_ACTIVITY_REPORT_MIN_INTERVAL_MS = 2500;
   const PAGE_READY_QUIET_MS = 350;
   const LS_HANDLED_COMMANDS = 'blueprints.active_browser.handled_commands';
   const HANDLED_COMMAND_TTL_MS = 5 * 60 * 1000;
@@ -18,6 +19,7 @@ const BlueprintsActiveBrowserObserver = (() => {
   let _heartbeatTimer = null;
   let _lastReportKey = '';
   let _lastReportAt = 0;
+  let _lastApiActivityReportAt = 0;
   let _serviceWorkerVersion = null;
   let _serviceWorkerRequestPending = false;
   let _commandListenerInstalled = false;
@@ -1016,24 +1018,126 @@ const BlueprintsActiveBrowserObserver = (() => {
     return payload;
   }
 
-  async function _postReport(reason) {
-    const payload = _payload({ includeDiagnostics: true });
-    if (!payload.browser_id) return;
-    const key = JSON.stringify({
-      page: payload.page,
+  function _stablePageKey(page) {
+    return {
+      group: page?.group || '',
+      tab: page?.tab || '',
+      loading: !!page?.loading,
+      ready: !!page?.ready,
+      api_busy: Number(page?.api_in_flight || 0) > 0,
+    };
+  }
+
+  function _stableTtsKey(tts) {
+    const client = tts?.client || {};
+    const announcer = tts?.announcer || {};
+    return {
+      client_available: !!tts?.client_available,
+      client_status: client.status || '',
+      utterance_id: client.utterance_id || '',
+      announcer_available: !!tts?.announcer_available,
+      announcer_speaking: !!announcer.speaking,
+      announcer_utterance_id: announcer.last_speech?.event?.utterance_id || '',
+    };
+  }
+
+  function _stableAutomationKey(automation) {
+    const surfaces = automation?.surfaces || {};
+    const kanban = surfaces.kanban || {};
+    const matrixChat = surfaces.matrix_chat || {};
+    const lastCommand = automation?.last_command || {};
+    return {
+      current_group: automation?.current_group || '',
+      current_page_id: automation?.current_page_id || '',
+      current_menu_key: automation?.current_menu?.key || automation?.current_menu?.item_key || '',
+      selector_action_count: Array.isArray(automation?.selector_actions)
+        ? automation.selector_actions.length
+        : 0,
+      last_command: {
+        command_id: lastCommand.command_id || '',
+        action: lastCommand.action || '',
+        ok: !!lastCommand.ok,
+        error: lastCommand.error || '',
+      },
+      kanban: {
+        loaded: !!kanban.loaded,
+        loading: !!kanban.loading,
+        status: kanban.status || '',
+        current_parent_id: kanban.current_parent_id || '',
+        selected_item_id: kanban.selected_item_id || '',
+        detail_item_id: kanban.detail_item_id || '',
+        editing: !!kanban.editing,
+        draft_dirty: !!kanban.draft_dirty,
+        scoped_open: !!kanban.scoped_open,
+        automation_status_loaded: !!kanban.automation_status_loaded,
+        automation_status_loading: !!kanban.automation_status_loading,
+        automation_review_processor_status: kanban.automation_review_processor_status || '',
+        automation_review_queue_length: Number(kanban.automation_review_queue_length || 0),
+        automation_last_result: kanban.automation_last_result || '',
+      },
+      matrix_chat: {
+        server: matrixChat.server || '',
+        room_id: matrixChat.room_id || '',
+        loading: !!matrixChat.loading,
+        message_count: Number(matrixChat.message_count || 0),
+      },
+    };
+  }
+
+  function _stableLayoutKey(layout) {
+    const lanes = layout?.kanban_lanes || {};
+    return {
+      active_panel_id: layout?.active_panel_id || '',
+      viewport_scroll_y: layout?.root?.window_scroll_y || 0,
+      shell_scrollbar_active: !!layout?.shell?.scrollbar_active,
+      local_shade_count: Array.isArray(layout?.local_shades) ? layout.local_shades.length : 0,
+      kanban_lanes: {
+        handle_count: Number(lanes.handle_count || 0),
+        visible_handle_count: Number(lanes.visible_handle_count || 0),
+        column_count: Number(lanes.column_count || 0),
+        resized_count: Number(lanes.resized_count || 0),
+      },
+    };
+  }
+
+  function _stableReportKeyPayload(payload) {
+    return {
+      page: _stablePageKey(payload.page),
       modals: payload.modals,
-      automation: payload.automation,
-      docs: payload.docs,
-      body_shade: payload.body_shade,
-      layout: payload.layout,
-      tts: payload.tts,
-      viewport: payload.viewport,
+      automation: _stableAutomationKey(payload.automation),
+      docs: {
+        doc_id: payload.docs?.doc_id || '',
+        path: payload.docs?.path || '',
+      },
+      body_shade: {
+        state: payload.body_shade?.state || '',
+        active_panel_id: payload.body_shade?.active_panel_id || '',
+      },
+      layout: _stableLayoutKey(payload.layout),
+      tts: _stableTtsKey(payload.tts),
+      viewport: {
+        innerWidth: payload.viewport?.innerWidth || 0,
+        innerHeight: payload.viewport?.innerHeight || 0,
+        devicePixelRatio: payload.viewport?.devicePixelRatio || 1,
+        orientation: payload.viewport?.orientation?.type || '',
+      },
       voice: payload.voice,
       visibility_state: payload.visibility_state,
       has_focus: payload.has_focus,
       frontend: payload.frontend,
-      diagnostics: payload.diagnostics || null,
-    });
+      diagnostics: payload.diagnostics
+        ? {
+            command_id: payload.diagnostics.command_id || '',
+            sources: payload.diagnostics.sources || [],
+          }
+        : null,
+    };
+  }
+
+  async function _postReport(reason) {
+    const payload = _payload({ includeDiagnostics: true });
+    if (!payload.browser_id) return;
+    const key = JSON.stringify(_stableReportKeyPayload(payload));
     const now = Date.now();
     if (key === _lastReportKey && (now - _lastReportAt) < REPORT_HEARTBEAT_MS) return;
 
@@ -1059,6 +1163,15 @@ const BlueprintsActiveBrowserObserver = (() => {
       _reportTimer = null;
       _postReport(reason);
     }, Math.max(0, Number(delayMs || 0)));
+  }
+
+  function scheduleApiActivityReport(event) {
+    const now = Date.now();
+    if ((now - _lastApiActivityReportAt) >= API_ACTIVITY_REPORT_MIN_INTERVAL_MS) {
+      _lastApiActivityReportAt = now;
+      scheduleReport(event?.detail?.reason ? `api-${event.detail.reason}` : 'api-activity');
+    }
+    _schedulePageReadyReport();
   }
 
   function _schedulePageReadyReport() {
@@ -1098,10 +1211,7 @@ const BlueprintsActiveBrowserObserver = (() => {
       scheduleReport(event.detail?.reason || 'page-state');
       _schedulePageReadyReport();
     });
-    document.addEventListener('blueprints:api-activity', event => {
-      scheduleReport(event.detail?.reason ? `api-${event.detail.reason}` : 'api-activity');
-      _schedulePageReadyReport();
-    });
+    document.addEventListener('blueprints:api-activity', event => scheduleApiActivityReport(event));
     document.addEventListener('close', event => {
       if (_isDialog(event.target)) scheduleReport('dialog-close');
     }, true);
