@@ -109,6 +109,7 @@ const KanbanBoardPage = (() => {
     routeHighlightItemId: '',
     routeScoped: null,
     rollups: {},
+    rollupLoadToken: 0,
     selection: null,
     currentParentId: '',
     parentStack: [],
@@ -2635,8 +2636,8 @@ const KanbanBoardPage = (() => {
     renderItemTagSummaries();
   }
 
-  async function loadRollups(items) {
-    const entries = await Promise.all(items.slice(0, 40).map(async item => {
+  async function loadSingleRollups(items) {
+    const entries = await Promise.all(items.map(async item => {
       try {
         const payload = await requestJson(`/api/v1/personal/kanban/items/${encodeURIComponent(item.item_id)}/rollup`);
         return [item.item_id, payload.rollup || {}];
@@ -2644,7 +2645,32 @@ const KanbanBoardPage = (() => {
         return [item.item_id, null];
       }
     }));
-    state.rollups = Object.fromEntries(entries.filter(([, value]) => value));
+    return Object.fromEntries(entries.filter(([, value]) => value));
+  }
+
+  function applyLoadedRollups(rollups, token) {
+    if (token !== state.rollupLoadToken) return false;
+    state.rollups = rollups;
+    return true;
+  }
+
+  async function loadRollups(items, token = state.rollupLoadToken) {
+    const visibleItems = items.slice(0, 200);
+    if (!visibleItems.length) {
+      return applyLoadedRollups({}, token);
+    }
+    let nextRollups = {};
+    const params = new URLSearchParams();
+    visibleItems.forEach(item => params.append('item_id', item.item_id));
+    try {
+      const payload = await requestJson(`/api/v1/personal/kanban/rollups?${params.toString()}`);
+      const rollups = payload.rollups || {};
+      const entries = visibleItems.map(item => [item.item_id, rollups[item.item_id] || null]);
+      nextRollups = Object.fromEntries(entries.filter(([, value]) => value));
+    } catch (_) {
+      nextRollups = await loadSingleRollups(visibleItems);
+    }
+    return applyLoadedRollups(nextRollups, token);
   }
 
   async function load(options = {}) {
@@ -2665,7 +2691,9 @@ const KanbanBoardPage = (() => {
       state.board = payload.board || {};
       applyPreferences(state.board);
       state.loaded = true;
-      await loadRollups(rawBoardItems());
+      state.rollups = {};
+      const rollupItems = rawBoardItems();
+      const rollupToken = ++state.rollupLoadToken;
       reconcileVisibleBoardState();
       if (window.PersonalFilters?.invalidateSurface) {
         ['kanban', 'kanban-search', NEW_ITEM_TAG_SURFACE, EDIT_ITEM_TAG_SURFACE].forEach(surface => {
@@ -2673,6 +2701,11 @@ const KanbanBoardPage = (() => {
         });
       }
       renderAll();
+      void loadRollups(rollupItems, rollupToken).then(applied => {
+        if (!applied) return;
+        renderBoard();
+        renderSelection();
+      });
       if (state.routeDetailItemId && !state.detailModalOpen && !state.detailPanelOpen && !options.skipRouteDetail) {
         await openItemDetail(state.routeDetailItemId, { routeTarget: true, preserveBoardScroll: true });
       }
