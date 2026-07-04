@@ -1258,6 +1258,21 @@ assert.match(
 );
 assert.match(
   personalFiltersJs,
+  /if\s*\(!BUILTIN_IDS\.has\(id\)\)\s*nextCustom\.push\(id\)/,
+  'Personal Filter Settings must keep server-discovered used tags visible so they can be promoted back to saved registry tags.',
+);
+assert.doesNotMatch(
+  personalFiltersJs,
+  /setting\.group\s*\|\|\s*['"]codex-generated['"]/,
+  'Personal Filter Settings must not save ungrouped tags into a synthetic codex-generated meta group.',
+);
+assert.match(
+  personalFiltersJs,
+  /pendingMetaSaves:\s*new Map\(\)[\s\S]*const\s+waitForMeta\s*=\s*setting\.group\s*\?\s*ensureMetaGroupPersisted\(setting\.group\)[\s\S]*function\s+ensureMetaGroupPersisted/,
+  'Personal Filter Settings must persist a meta tag before saving a filter tag assignment to that meta tag.',
+);
+assert.match(
+  personalFiltersJs,
   /id:\s*'meta-filters'[\s\S]*metaFiltersBodyHtml|metaFiltersBodyHtml[\s\S]*id:\s*'meta-filters'/,
   'Personal Filters must expose a first-class Meta Filters tab.',
 );

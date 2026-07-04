@@ -76,6 +76,7 @@ const PersonalFilters = (() => {
     serverStateLoaded: false,
     serverStateFailed: false,
     serverStatePromise: null,
+    pendingMetaSaves: new Map(),
   };
 
   function escHtml(value) {
@@ -467,7 +468,7 @@ const PersonalFilters = (() => {
       color,
       shape,
       fill,
-      group: normalizeOptionalId(setting.group || 'codex-generated'),
+      group: normalizeOptionalId(setting.group || fallback.group || ''),
       custom: Boolean(setting.custom || fallback.custom),
     };
   }
@@ -530,7 +531,7 @@ const PersonalFilters = (() => {
         group: tag.meta_tag_id || tag.group || '',
         custom: tag.custom !== false && !tag.builtin,
       });
-      if (!BUILTIN_IDS.has(id) && tag.source !== 'discovered') nextCustom.push(id);
+      if (!BUILTIN_IDS.has(id)) nextCustom.push(id);
     });
     state.settings = nextSettings;
     state.custom = unique(nextCustom);
@@ -581,10 +582,10 @@ const PersonalFilters = (() => {
     const clean = normalizeId(id);
     if (!clean || !state.serverStateLoaded) {
       saveSettings();
-      return;
+      return Promise.resolve(null);
     }
     const setting = settingFor(clean);
-    filterApi('/api/v1/personal/filters/tags', {
+    const saveTag = () => filterApi('/api/v1/personal/filters/tags', {
       method: 'POST',
       body: JSON.stringify({
         tag_id: clean,
@@ -598,20 +599,26 @@ const PersonalFilters = (() => {
         source_surface: 'personal-filters-ui',
         request_id: `ui-personal-filter-tag-${Date.now()}`,
       }),
-    }).then(loadServerState).catch(err => {
-      state.serverStateFailed = true;
-      console.error('Failed to save Personal filter tag', err);
     });
+    const waitForMeta = setting.group ? ensureMetaGroupPersisted(setting.group) : Promise.resolve(true);
+    return waitForMeta
+      .then(ok => (ok ? saveTag() : null))
+      .then(result => (result ? loadServerState().then(() => result) : result))
+      .catch(err => {
+        state.serverStateFailed = true;
+        console.error('Failed to save Personal filter tag', err);
+        return null;
+      });
   }
 
   function persistMetaGroup(id) {
     const clean = normalizeOptionalId(id);
     if (!clean || !state.serverStateLoaded) {
       saveSettings();
-      return;
+      return Promise.resolve(null);
     }
     const setting = metaGroupSetting(clean);
-    filterApi('/api/v1/personal/filters/meta-tags', {
+    const promise = filterApi('/api/v1/personal/filters/meta-tags', {
       method: 'POST',
       body: JSON.stringify({
         meta_tag_id: clean,
@@ -622,10 +629,29 @@ const PersonalFilters = (() => {
         source_surface: 'personal-filters-ui',
         request_id: `ui-personal-filter-meta-${Date.now()}`,
       }),
-    }).then(loadServerState).catch(err => {
-      state.serverStateFailed = true;
-      console.error('Failed to save Personal filter meta tag', err);
-    });
+    })
+      .then(result => loadServerState().then(() => result))
+      .catch(err => {
+        state.serverStateFailed = true;
+        console.error('Failed to save Personal filter meta tag', err);
+        return null;
+      })
+      .finally(() => {
+        if (state.pendingMetaSaves.get(clean) === promise) state.pendingMetaSaves.delete(clean);
+      });
+    state.pendingMetaSaves.set(clean, promise);
+    return promise;
+  }
+
+  function ensureMetaGroupPersisted(id) {
+    const clean = normalizeOptionalId(id);
+    if (!clean || !state.serverStateLoaded) return Promise.resolve(true);
+    const pending = state.pendingMetaSaves.get(clean);
+    if (pending) return pending.then(Boolean);
+    if (DEFAULT_META_GROUPS[clean] || customMetaGroups().includes(clean)) {
+      return persistMetaGroup(clean).then(Boolean);
+    }
+    return Promise.resolve(false);
   }
 
   function cleanMetaGroup(group) {
