@@ -1631,8 +1631,12 @@ const PersonalFilters = (() => {
     clampDocumentHorizontalScroll();
   }
 
-  function renderAll() {
-    document.querySelectorAll('[data-personal-filter-host]').forEach(renderHost);
+  function renderAll(options = {}) {
+    const includeHidden = options?.includeHidden === true;
+    document.querySelectorAll('[data-personal-filter-host]').forEach(host => {
+      if (!includeHidden && !hostIsVisible(host)) return;
+      renderHost(host);
+    });
     document.querySelectorAll('[data-personal-filter-summary-for]').forEach(node => {
       const surface = node.dataset.personalFilterSummaryFor || 'calendar';
       node.innerHTML = summaryHtml(surface);
