@@ -2636,18 +2636,6 @@ const KanbanBoardPage = (() => {
     renderItemTagSummaries();
   }
 
-  async function loadSingleRollups(items) {
-    const entries = await Promise.all(items.map(async item => {
-      try {
-        const payload = await requestJson(`/api/v1/personal/kanban/items/${encodeURIComponent(item.item_id)}/rollup`);
-        return [item.item_id, payload.rollup || {}];
-      } catch (_) {
-        return [item.item_id, null];
-      }
-    }));
-    return Object.fromEntries(entries.filter(([, value]) => value));
-  }
-
   function applyLoadedRollups(rollups, token) {
     if (token !== state.rollupLoadToken) return false;
     state.rollups = rollups;
@@ -2668,7 +2656,7 @@ const KanbanBoardPage = (() => {
       const entries = visibleItems.map(item => [item.item_id, rollups[item.item_id] || null]);
       nextRollups = Object.fromEntries(entries.filter(([, value]) => value));
     } catch (_) {
-      nextRollups = await loadSingleRollups(visibleItems);
+      nextRollups = {};
     }
     return applyLoadedRollups(nextRollups, token);
   }

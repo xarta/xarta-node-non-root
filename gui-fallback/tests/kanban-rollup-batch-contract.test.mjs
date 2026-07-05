@@ -15,7 +15,6 @@ function functionSlice(source, fnName) {
   return source.slice(fnStart, nextFn === -1 ? source.length : nextFn);
 }
 
-const loadSingleRollups = functionSlice(kanbanBoardJs, 'loadSingleRollups');
 const loadRollups = functionSlice(kanbanBoardJs, 'loadRollups');
 const load = functionSlice(kanbanBoardJs, 'load');
 
@@ -39,15 +38,20 @@ assert.match(
   /\/api\/v1\/personal\/kanban\/rollups\?\$\{params\.toString\(\)\}/,
   'Kanban visible rollup loading must prefer the batch rollups endpoint.',
 );
-assert.match(
+assert.doesNotMatch(
+  kanbanBoardJs,
+  /function\s+loadSingleRollups\(/,
+  'Kanban visible rollup loading must not keep a per-card rollup fallback.',
+);
+assert.doesNotMatch(
   loadRollups,
-  /catch\s*\([^)]*\)\s*\{[\s\S]*loadSingleRollups\(visibleItems\)/,
-  'Kanban visible rollup loading must retain the single-card fallback path.',
+  /\/api\/v1\/personal\/kanban\/items\/\$\{encodeURIComponent\(item\.item_id\)\}\/rollup/,
+  'Kanban visible rollup loading must not fan out to single-card rollup requests.',
 );
 assert.match(
-  loadSingleRollups,
-  /\/api\/v1\/personal\/kanban\/items\/\$\{encodeURIComponent\(item\.item_id\)\}\/rollup/,
-  'Kanban single-card rollup loading must remain available for compatibility fallback.',
+  loadRollups,
+  /catch\s*\([^)]*\)\s*\{[\s\S]*nextRollups\s*=\s*\{\};[\s\S]*\}/,
+  'Kanban visible rollup batch failure must leave rollups empty without per-card retries.',
 );
 assert.match(
   load,
