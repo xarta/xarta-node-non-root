@@ -11,6 +11,7 @@ const hubMenuJs = fs.readFileSync(path.resolve(here, '../js/hub-menu.js'), 'utf8
 const hubMenuCss = fs.readFileSync(path.resolve(here, '../css/hub-menu.css'), 'utf8');
 const menuActionOrderJs = fs.readFileSync(path.resolve(here, '../js/menu-action-order.js'), 'utf8');
 const headerClockJs = fs.readFileSync(path.resolve(here, '../js/header-clock.js'), 'utf8');
+const appJs = fs.readFileSync(path.resolve(here, '../js/app.js'), 'utf8');
 const indexHtml = fs.readFileSync(path.resolve(here, '../index.html'), 'utf8');
 const daveCalendarCss = fs.readFileSync(path.resolve(here, '../css/dave-calendar.css'), 'utf8');
 const daveDiaryCss = fs.readFileSync(path.resolve(here, '../css/dave-diary.css'), 'utf8');
@@ -733,6 +734,26 @@ assert.match(
   daveMenuJs,
   /syncDefaultItemText:\s*true/,
   'Dave menu must sync shipped action labels over stale saved layout state.',
+);
+assert.match(
+  daveMenuJs,
+  /\{ id:\s*'diary',[^\n]*parent:\s*null,[^\n]*order:\s*0 \}[\s\S]*\{ id:\s*'calender',[^\n]*parent:\s*'diary',[^\n]*order:\s*0 \}[\s\S]*\{ id:\s*'todo',[^\n]*parent:\s*'diary',[^\n]*order:\s*1 \}/,
+  'Dave split menu must keep Calendar and ToDo nested under the Diary split button.',
+);
+assert.match(
+  daveMenuJs,
+  /\{ id:\s*'email',[^\n]*parent:\s*null,[^\n]*order:\s*1 \}[\s\S]*\{ id:\s*'kanban',[^\n]*icon:\s*'icons\/ui\/kanban-blue\.svg',[^\n]*parent:\s*null,[^\n]*order:\s*2 \}[\s\S]*\{ id:\s*'imports',[^\n]*parent:\s*null,[^\n]*order:\s*3 \}[\s\S]*\{ id:\s*'dave-layout',[^\n]*parent:\s*null,[^\n]*order:\s*4 \}/,
+  'Dave split menu top level must expose Email, Kanban, Imports, and the layout control as siblings after Diary.',
+);
+assert.doesNotMatch(
+  daveMenuJs,
+  /\{ id:\s*'email',[^\n]*parent:\s*'diary'/,
+  'Email must not be nested under the Diary split-button group.',
+);
+assert.match(
+  appJs,
+  /const\s+preferredGroups\s*=\s*\[_selectorOriginMenuGroup,\s*_activeGroup\][\s\S]*const\s+canonical\s*=\s*entries\.find\(candidate\s*=>\s*candidate\.group\s*===\s*tab\s*&&\s*_menuOwnsTab/,
+  'Duplicate tab ownership must prefer the active/requested group, then the canonical same-named group.',
 );
 assert.match(
   kanbanMenuJs,

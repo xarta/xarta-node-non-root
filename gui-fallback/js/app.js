@@ -112,7 +112,17 @@ function _menuOwnsTab(menu, tab) {
 
 function _inferGroupForTab(tab) {
   tab = _normalizeLegacyPageId(tab);
-  const entry = _groupMenuEntries().find(candidate => _menuOwnsTab(candidate.menu, tab));
+  const entries = _groupMenuEntries();
+  const preferredGroups = [_selectorOriginMenuGroup, _activeGroup]
+    .map(group => String(group || '').trim().toLowerCase())
+    .filter((group, index, groups) => group && groups.indexOf(group) === index);
+  for (const group of preferredGroups) {
+    const preferred = entries.find(candidate => candidate.group === group && _menuOwnsTab(candidate.menu, tab));
+    if (preferred) return preferred.group;
+  }
+  const canonical = entries.find(candidate => candidate.group === tab && _menuOwnsTab(candidate.menu, tab));
+  if (canonical) return canonical.group;
+  const entry = entries.find(candidate => _menuOwnsTab(candidate.menu, tab));
   return entry ? entry.group : null;
 }
 
