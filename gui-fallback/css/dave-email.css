@@ -348,9 +348,49 @@
 }
 
 .email-panel-head h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   color: var(--text);
   font-size: 12px;
   margin: 0;
+}
+
+.email-health-heartbeat {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: rgba(127, 139, 158, 0.72);
+  font-size: 12px;
+  line-height: 1;
+  transform-origin: 50% 58%;
+}
+
+.email-health-heartbeat--green {
+  color: var(--ok, #3fb950);
+  text-shadow: 0 0 8px rgba(63, 185, 80, 0.36);
+}
+
+.email-health-heartbeat--amber {
+  color: var(--warn, #e6a817);
+}
+
+.email-health-heartbeat--red {
+  color: var(--err, #f85149);
+}
+
+.email-health-heartbeat--beating {
+  animation: email-health-heartbeat 1.12s ease-in-out infinite;
+}
+
+@keyframes email-health-heartbeat {
+  0%, 100% { opacity: 0.78; transform: scale(1); }
+  24% { opacity: 1; transform: scale(1.2); }
+  38% { transform: scale(0.96); }
+  54% { opacity: 1; transform: scale(1.12); }
+  72% { opacity: 0.88; transform: scale(1); }
 }
 
 .email-folder-list,

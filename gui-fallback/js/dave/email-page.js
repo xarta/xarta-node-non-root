@@ -6,6 +6,7 @@ const EmailPage = (() => {
   const API_ROOT = '/api/v1/personal/email';
   const ULTRAWIDE_QUERY = '(min-width: 2400px) and (max-height: 1280px)';
   const VIEW_IDS = ['plain', 'html', 'markdown', 'raw'];
+  const MESSAGE_LIST_LIMIT = 100;
   const SECURITY_PROGRESS_EVENT = 'pim.email.security.progress';
   const SECURITY_SEGMENTS = [
     ['service', 'Svc'],
@@ -25,8 +26,9 @@ const EmailPage = (() => {
     loading: false,
     error: '',
     status: null,
+    health: null,
     localCorpus: null,
-    readSource: 'live',
+    readSource: 'local',
     mailbox: null,
     folders: [],
     messages: [],
@@ -259,8 +261,10 @@ const EmailPage = (() => {
   }
 
   function folderFlags(folder) {
-    const flags = Array.isArray(folder?.flags) ? folder.flags : [];
-    return flags.length ? flags.join(', ') : 'mailbox folder';
+    const role = String(folder?.special_use_role || '').trim();
+    const count = Number(folder?.message_count || 0);
+    const roleText = role ? `${role}, ` : '';
+    return `${roleText}${count} local row${count === 1 ? '' : 's'}`;
   }
 
   function folderDelimiter(folder) {
@@ -542,26 +546,21 @@ const EmailPage = (() => {
     return String(state.message?.email_uid || state.message?.uid || '');
   }
 
-  function localCorpusAvailable(status = state.status) {
-    return Boolean(status?.local_corpus?.available || state.localCorpus?.available);
+  function localCorpusAvailable() {
+    return true;
   }
 
-  function folderEndpoint(status = state.status) {
-    return localCorpusAvailable(status) ? `${API_ROOT}/local/folders` : `${API_ROOT}/folders`;
+  function folderEndpoint() {
+    return `${API_ROOT}/local/folders`;
   }
 
-  function folderMessagesEndpoint(folder, status = state.status) {
-    const base = localCorpusAvailable(status) ? `${API_ROOT}/local/folder-messages` : `${API_ROOT}/folder-messages`;
-    return `${base}?folder=${encodeURIComponent(folder)}&limit=30`;
+  function folderMessagesEndpoint(folder) {
+    return `${API_ROOT}/local/folder-messages?folder=${encodeURIComponent(folder)}&limit=${MESSAGE_LIST_LIMIT}`;
   }
 
   function messageEndpoint(uid, row = null) {
-    if (localCorpusAvailable()) {
-      const emailUid = String(row?.email_uid || uid || '').trim();
-      return `${API_ROOT}/local/messages/${encodeURIComponent(emailUid)}`;
-    }
-    const folder = encodeURIComponent(state.folder || 'INBOX');
-    return `${API_ROOT}/messages/${encodeURIComponent(uid)}?folder=${folder}`;
+    const emailUid = String(row?.email_uid || uid || '').trim();
+    return `${API_ROOT}/local/messages/${encodeURIComponent(emailUid)}`;
   }
 
   function renderMeta() {
@@ -573,13 +572,39 @@ const EmailPage = (() => {
     }
     const folderCount = state.folders.length;
     const rowCount = state.messages.length;
-    const source = state.readSource === 'local' ? 'local corpus' : 'live IMAP';
+    const source = 'local corpus';
     meta.textContent = `${mailboxAddress()} - ${source} - ${folderCount} folders - ${rowCount} ${state.folder || 'INBOX'} rows`;
   }
 
   function renderFolderChip() {
     const chip = el('email-folder-chip');
     if (chip) chip.textContent = `Folder: ${state.folder || 'INBOX'}`;
+  }
+
+  function healthTone() {
+    const status = String(state.health?.status || '').toLowerCase();
+    if (status === 'green') return 'green';
+    if (status === 'amber') return 'amber';
+    if (status === 'red') return 'red';
+    return 'unknown';
+  }
+
+  function healthHeartbeatLabel() {
+    const health = state.health || {};
+    const status = health.status || 'pending';
+    const issues = Array.isArray(health.issues) ? health.issues.length : 0;
+    const warnings = Array.isArray(health.warnings) ? health.warnings.length : 0;
+    const active = health.activity ? 'active' : 'idle';
+    if (issues) return `PIM Email ${status}, ${issues} issue${issues === 1 ? '' : 's'}, ${active}`;
+    if (warnings) return `PIM Email ${status}, ${warnings} warning${warnings === 1 ? '' : 's'}, ${active}`;
+    return `PIM Email ${status}, ${active}`;
+  }
+
+  function healthHeartbeatHtml() {
+    const tone = healthTone();
+    const beating = state.health?.heartbeat ? ' email-health-heartbeat--beating' : '';
+    const label = healthHeartbeatLabel();
+    return `<span class="email-health-heartbeat email-health-heartbeat--${escHtml(tone)}${beating}" role="img" aria-label="${escHtml(label)}" title="${escHtml(label)}">&#9829;</span>`;
   }
 
   function renderViewTabs() {
@@ -661,11 +686,13 @@ const EmailPage = (() => {
     const count = el('email-inbox-count');
     if (count) count.textContent = String(state.messages.length);
     const heading = el('email-inbox-heading');
-    if (heading) heading.textContent = state.folder || 'INBOX';
+    if (heading) {
+      heading.innerHTML = `<span>${escHtml(state.folder || 'INBOX')}</span>${healthHeartbeatHtml()}`;
+    }
     const host = el('email-message-list');
     if (!host) return;
     if (state.folderLoading) {
-      host.innerHTML = `<div class="email-empty">Loading last 30 messages for ${escHtml(state.folder || 'INBOX')}.</div>`;
+      host.innerHTML = `<div class="email-empty">Loading last ${MESSAGE_LIST_LIMIT} messages for ${escHtml(state.folder || 'INBOX')}.</div>`;
       return;
     }
     host.innerHTML = state.messages.length
@@ -1280,9 +1307,18 @@ const EmailPage = (() => {
     const proxied = Number(security.remote_images_proxied || 0);
     const tracking = Number(security.tracking_images_blocked || 0);
     const inline = Number(security.inline_images_rendered || 0);
+    const health = state.health || {};
+    const imageHealth = health.external_images || {};
+    const securityHealth = health.security || {};
+    const downloadHealth = health.download || {};
+    const lastRun = downloadHealth.last_run || {};
     const rows = [
+      ['PIM health', health.status ? `${health.status}${health.activity ? ', active' : ', idle'}` : 'pending'],
+      ['Download run', lastRun.status ? `${lastRun.status} ${lastRun.finished_at || lastRun.started_at || ''}` : 'pending'],
+      ['Image worker queue', `${imageHealth.assigned || 0} assigned, ${imageHealth.due || 0} due, ${imageHealth.failed || 0} failed`],
+      ['Security worker queue', `${securityHealth.assigned || 0} assigned, ${securityHealth.due || 0} due, ${securityHealth.failed || 0} failed`],
       ['Credential storage', state.status?.storage === 'postgres' ? 'Postgres, encrypted mailbox password' : 'not ready'],
-      ['IMAP read', caps.imap_read ? 'enabled' : 'disabled'],
+      ['Local corpus read', caps.local_corpus_read ? 'enabled' : 'not ready'],
       ['SMTP self-test gate', caps.smtp_self_test ? 'self mailbox only' : 'disabled'],
       ['General outbound', caps.smtp_general_send ? 'enabled' : 'disabled'],
       ['Delete capability', caps.delete ? 'enabled' : 'disabled'],
@@ -1292,7 +1328,7 @@ const EmailPage = (() => {
       ['DKIM / SPF / DMARC', messageSecurity.available ? `${messageSecurity.dkim?.signature_count || 0} DKIM, SPF ${messageSecurity.spf?.result || 'n/a'}, DMARC ${messageSecurity.dmarc?.result || 'n/a'}` : 'not checked yet'],
       ['Local AI scam judgement', messageSecurity.llm?.called ? `called ${messageSecurity.llm.model || 'local model'}` : 'not checked yet'],
       ['HTML sandbox', 'srcdoc iframe, no scripts, no same-origin storage'],
-      ['Image proxy', 'same-site JPEG transform, no cookies or referrer'],
+      ['Image assets', 'worker JPEG transforms, no remote fetch on open'],
       ['Remote images', proxied ? `${proxied} transformed` : (remote ? `${remote} blocked` : 'none in current message')],
       ['Tracking images', tracking ? `${tracking} detected` : 'none detected'],
       ['Inline images', inline ? `${inline} transformed/rendered` : 'none in current message'],
@@ -1391,6 +1427,57 @@ const EmailPage = (() => {
     renderSecondaryPanels();
   }
 
+  async function refreshHealth(options = {}) {
+    try {
+      const data = await fetchJson(`${API_ROOT}/local/health`);
+      state.health = data.health || null;
+      state.localCorpus = state.health?.local_corpus || state.localCorpus;
+      state.mailbox = data.mailbox || state.mailbox;
+      state.status = {
+        ...(state.status || {}),
+        storage: 'postgres',
+        local_corpus: state.localCorpus || {},
+        capabilities: {
+          ...(state.status?.capabilities || {}),
+          imap_read: false,
+          local_corpus_read: true,
+          safe_local_download: true,
+          smtp_self_test: true,
+          smtp_general_send: false,
+          delete: false,
+          ai_send: false,
+          security_checks: {
+            available: true,
+            message_view_requires_security: true,
+          },
+        },
+      };
+      if (!options.silent) setStatus('Email health refreshed', healthTone() === 'red' ? 'err' : (healthTone() === 'amber' ? 'warn' : 'ok'));
+      if (state.loaded && !options.deferRender) {
+        renderMeta();
+        renderMessages();
+        renderSecondaryPanels();
+        renderUltrawide();
+      }
+      return state.health;
+    } catch (error) {
+      state.health = {
+        status: 'red',
+        healthy: false,
+        activity: false,
+        heartbeat: false,
+        issues: ['health_unavailable'],
+        warnings: [],
+      };
+      if (!options.silent) setStatus(error.message || String(error), 'err');
+      if (state.loaded && !options.deferRender) {
+        renderMessages();
+        renderSecondaryPanels();
+      }
+      return null;
+    }
+  }
+
   async function load(options = {}) {
     if (state.loading) return state.status;
     if (state.loaded && !options.force) {
@@ -1401,20 +1488,16 @@ const EmailPage = (() => {
     state.folderLoadSeq += 1;
     state.loading = true;
     state.error = '';
-    setStatus('Loading email middleware', 'unknown');
+    state.readSource = 'local';
+    setStatus('Loading local email corpus', 'unknown');
+    const healthPromise = refreshHealth({ silent: true, deferRender: true });
     try {
-      const status = await fetchJson(`${API_ROOT}/status`);
-      state.status = status;
-      state.localCorpus = status.local_corpus || null;
-      state.readSource = localCorpusAvailable(status) ? 'local' : 'live';
       const [folders, messages] = await Promise.all([
-        fetchJson(folderEndpoint(status)),
-        fetchJson(folderMessagesEndpoint(selectedFolder, status)),
+        fetchJson(folderEndpoint()),
+        fetchJson(folderMessagesEndpoint(selectedFolder)),
       ]);
-      state.status = status;
-      state.localCorpus = status.local_corpus || null;
-      state.readSource = localCorpusAvailable(status) ? 'local' : 'live';
-      state.mailbox = folders.mailbox || messages.mailbox || status.mailboxes?.[0] || null;
+      state.readSource = 'local';
+      state.mailbox = folders.mailbox || messages.mailbox || state.mailbox || null;
       state.folders = Array.isArray(folders.folders) ? folders.folders : [];
       state.messages = Array.isArray(messages.messages) ? messages.messages : [];
       state.folder = messages.folder || selectedFolder;
@@ -1423,7 +1506,14 @@ const EmailPage = (() => {
       state.loaded = true;
       setStatus('Email middleware ready', 'ok');
       renderAll();
-      return status;
+      healthPromise.then(() => {
+        if (!state.loaded) return;
+        renderMeta();
+        renderMessages();
+        renderSecondaryPanels();
+        renderUltrawide();
+      });
+      return state.status;
     } catch (error) {
       renderError(error.message || String(error));
       return null;
@@ -1450,7 +1540,7 @@ const EmailPage = (() => {
       const data = await fetchJson(folderMessagesEndpoint(clean));
       if (seq !== state.folderLoadSeq) return false;
       state.mailbox = data.mailbox || state.mailbox;
-      state.readSource = data.source === 'local-corpus' ? 'local' : (localCorpusAvailable() ? 'local' : 'live');
+      state.readSource = 'local';
       state.folder = data.folder || clean;
       state.messages = Array.isArray(data.messages) ? data.messages : [];
       state.folderLoading = false;
@@ -1473,40 +1563,19 @@ const EmailPage = (() => {
     const row = state.messages.find(item => (
       String(item.email_uid || '') === cleanUid || String(item.uid || '') === cleanUid
     )) || null;
-    if (localCorpusAvailable()) {
-      const emailUid = String(row?.email_uid || cleanUid).trim();
-      if (!emailUid) return false;
-      setStatus('Opening local message', 'unknown');
-      try {
-        const data = await fetchJson(messageEndpoint(emailUid, row));
-        state.message = data.message || null;
-        state.view = defaultMessageView(state.message);
-        state.securityProgress = null;
-        renderMessages();
-        renderMessage();
-        renderSecondaryPanels();
-        setStatus('Local email loaded', 'ok');
-        renderOpenedMessageSecurityProgress();
-        return true;
-      } catch (error) {
-        setStatus(error.message || String(error), 'err');
-        return false;
-      }
-    }
-    const runId = securityRunId();
-    beginSecurityProgress(runId, cleanUid, state.folder || 'INBOX');
+    const emailUid = String(row?.email_uid || cleanUid).trim();
+    if (!emailUid) return false;
+    setStatus('Opening local message', 'unknown');
     try {
-      const folder = encodeURIComponent(state.folder || 'INBOX');
-      const data = await fetchJson(`${messageEndpoint(cleanUid, row)}&security_run_id=${encodeURIComponent(runId)}`);
+      const data = await fetchJson(messageEndpoint(emailUid, row));
       state.message = data.message || null;
       state.view = defaultMessageView(state.message);
-      if (state.message?.security?.progress && !state.message.security.progress.run_id) {
-        state.message.security.progress.run_id = runId;
-      }
-      completeSecurityProgress(state.message?.security || {});
+      state.securityProgress = null;
       renderMessages();
       renderMessage();
       renderSecondaryPanels();
+      setStatus('Local email loaded', 'ok');
+      renderOpenedMessageSecurityProgress();
       return true;
     } catch (error) {
       setStatus(error.message || String(error), 'err');
@@ -1582,12 +1651,7 @@ const EmailPage = (() => {
 
   async function safeChecks() {
     if (!state.loaded) await load();
-    try {
-      state.status = await fetchJson(`${API_ROOT}/status`);
-      setStatus('Email safety checks refreshed', 'ok');
-    } catch (error) {
-      setStatus(error.message || String(error), 'err');
-    }
+    await refreshHealth();
     state.secondaryTab = 'checks';
     renderSecondaryPanels();
     const modal = el('email-secondary-modal');
@@ -1606,20 +1670,14 @@ const EmailPage = (() => {
       const runId = securityRunId();
       beginSecurityProgress(runId, uid, state.folder || 'INBOX');
       try {
-        if (localCorpusAvailable()) {
-          const data = await fetchJson(
-            `${API_ROOT}/local/messages/${encodeURIComponent(uid)}/security?security_run_id=${encodeURIComponent(runId)}`,
-            { method: 'POST' },
-          );
-          if (state.message && data.security) state.message.security = data.security;
-          const refreshed = await fetchJson(messageEndpoint(uid));
-          state.message = refreshed.message || state.message;
-          state.view = defaultMessageView(state.message);
-        } else {
-          const folder = encodeURIComponent(state.folder || 'INBOX');
-          const data = await fetchJson(`${API_ROOT}/messages/${encodeURIComponent(uid)}/security?folder=${folder}&security_run_id=${encodeURIComponent(runId)}`);
-          if (state.message && data.security) state.message.security = data.security;
-        }
+        const data = await fetchJson(
+          `${API_ROOT}/local/messages/${encodeURIComponent(uid)}/security?security_run_id=${encodeURIComponent(runId)}`,
+          { method: 'POST' },
+        );
+        if (state.message && data.security) state.message.security = data.security;
+        const refreshed = await fetchJson(messageEndpoint(uid));
+        state.message = refreshed.message || state.message;
+        state.view = defaultMessageView(state.message);
       } catch (error) {
         setStatus(error.message || String(error), 'err');
       }
