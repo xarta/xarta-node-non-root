@@ -156,6 +156,16 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /MESSAGE_IMAGE_CACHE_CONCURRENCY = 4/, 'Opened HTML image cache must warm local images concurrently without flooding the page.');
   assert.match(emailJs, /function ensureMessageImageCache\(/, 'HTML message rendering must preload local images into browser memory.');
   assert.match(emailJs, /htmlWithCachedMessageImages\(value, message\)/, 'HTML frame rendering must use cached local image data when available.');
+  assert.match(emailJs, /function appendImageOutcomeDetails\(/, 'HTML message rendering must annotate blocked image placeholders with backend worker outcomes.');
+  assert.match(emailJs, /email-image-error/, 'Blocked image placeholders must expose the exact image worker error inline.');
+  assert.match(emailJs, /function imageOutcomeHoverText\(/, 'Inline image errors must expose a descriptive hover explanation.');
+  assert.match(emailJs, /Pillow could not decode/, 'Decode failures must explain the underlying image-library gate.');
+  assert.match(emailJs, /error_cause_class/, 'Inline image hover text must surface preserved decoder cause class when available.');
+  assert.match(emailJs, /tabindex', '0'/, 'Inline image errors must be keyboard-focusable for hover/title inspection.');
+  assert.match(emailJs, /external_image_derivative_summary/, 'Checks view must summarize per-message external image derivative outcomes.');
+  assert.match(emailJs, /Image failure reasons/, 'Checks view must show per-message image failure reasons.');
+  assert.match(emailJs, /background:#6f1017/, 'Inline image errors must use the dark red highlighted background.');
+  assert.match(emailJs, /color:#fff/, 'Inline image errors must use white foreground text.');
   assert.match(emailJs, /function enqueueMessageOpenPrefetch\(/, 'Recent rows must prefetch sanitized message payloads, not only metadata.');
   assert.match(emailJs, /function pumpMessageImagePrefetch\(/, 'Browser image warming must be queued behind message body prefetch.');
   assert.match(emailJs, /function cacheStatusHtml\(/, 'Email UI must render an operator-visible Cache tab.');
@@ -217,6 +227,10 @@ test('PIM Email message list refreshes only on list data changes', () => {
   assert.match(emailJs, /function scheduleMessagePagePrefetch\(/, 'Email UI must prefetch the next metadata page before the scroll boundary.');
   assert.match(emailJs, /takePrefetchedMessagePage\(folder, offset\)/, 'Infinite scroll must consume prefetched metadata before issuing another fetch.');
   assert.match(emailJs, /\/local\/cache\/warm/, 'Email UI must warm sanitized source artifacts through the local cache endpoint.');
+  assert.match(emailJs, /function staleHealthErrorVisible\(/, 'Email health polling must detect stale visible stack-unavailable errors.');
+  assert.match(emailJs, /Email health restored/, 'Successful silent health polling must clear stale stack-unavailable status.');
+  assert.match(emailJs, /function isMessagePayload\(/, 'Force refresh must distinguish a full message object from a status string response.');
+  assert.match(emailJs, /isMessagePayload\(data\.message\)/, 'Force refresh must refetch the message detail when the refresh result only includes a status message.');
   assert.match(emailJs, /message_prefetch_ready/, 'Email automation snapshot must expose metadata prefetch readiness.');
   assert.match(emailJs, /offset=\$\{offset\}/, 'Folder message fetches must support offset pagination.');
   assert.match(emailJs, /function loadMoreMessages\(/, 'Email UI must append the next page near the list bottom.');

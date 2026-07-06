@@ -158,6 +158,11 @@ const EmailPage = (() => {
     `;
   }
 
+  function staleHealthErrorVisible() {
+    const text = String(el('email-status-strip')?.querySelector?.('.email-status-text')?.textContent || '');
+    return /PIM Email stack API is unavailable|Email middleware unavailable/i.test(text);
+  }
+
   function securityRunId() {
     if (window.crypto && typeof window.crypto.randomUUID === 'function') {
       return window.crypto.randomUUID();
@@ -621,6 +626,15 @@ const EmailPage = (() => {
 
   function activeMessageUid() {
     return String(state.messagePendingUid || state.message?.email_uid || state.message?.uid || '');
+  }
+
+  function isMessagePayload(value) {
+    return Boolean(
+      value
+      && typeof value === 'object'
+      && !Array.isArray(value)
+      && (value.email_uid || value.headers || value.views)
+    );
   }
 
   function localCorpusAvailable() {
@@ -1383,18 +1397,143 @@ const EmailPage = (() => {
   function htmlWithCachedMessageImages(value, message) {
     if (!value || typeof DOMParser === 'undefined') return value;
     const entry = imageCacheEntryForMessage(message);
-    if (!entry || !entry.sources.size) return value;
     const doc = new DOMParser().parseFromString(`<body>${value}</body>`, 'text/html');
     let changed = false;
-    Array.from(doc.images).forEach(img => {
-      const local = localMessageImageUrl(img.getAttribute('src') || '');
-      if (!local) return;
-      const cached = entry.sources.get(local.key);
-      if (!cached?.dataUrl) return;
-      img.setAttribute('src', cached.dataUrl);
+    if (entry?.sources?.size) {
+      Array.from(doc.images).forEach(img => {
+        const local = localMessageImageUrl(img.getAttribute('src') || '');
+        if (!local) return;
+        const cached = entry.sources.get(local.key);
+        if (!cached?.dataUrl) return;
+        img.setAttribute('src', cached.dataUrl);
+        changed = true;
+      });
+    }
+    if (appendImageOutcomeDetails(doc, message)) changed = true;
+    return changed ? doc.body.innerHTML : value;
+  }
+
+  function imageDerivativeRows(message) {
+    const rows = message?.stored?.external_image_derivatives;
+    return Array.isArray(rows) ? rows : [];
+  }
+
+  function imageOutcomeMap(message) {
+    const outcomes = new Map();
+    imageDerivativeRows(message).forEach(row => {
+      const status = String(row?.status || '').toLowerCase();
+      if (!status || status === 'stored') return;
+      const source = String(row?.source_url || '').trim();
+      if (!source) return;
+      outcomes.set(source, row);
+      try {
+        outcomes.set(new URL(source).href, row);
+      } catch (error) {}
+    });
+    return outcomes;
+  }
+
+  function imageOutcomeText(row) {
+    const status = String(row?.status || 'not stored').trim() || 'not stored';
+    const reason = String(row?.reason || row?.last_error || 'image was not stored').trim();
+    return `${status}: ${reason}`;
+  }
+
+  function imageOutcomeMetadata(row) {
+    const metadata = row?.metadata;
+    return metadata && typeof metadata === 'object' ? metadata : {};
+  }
+
+  function cleanImageOutcomeDetail(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+  }
+
+  function imageOutcomeMeaning(row) {
+    const status = String(row?.status || '').toLowerCase();
+    const reason = String(row?.reason || row?.last_error || '').toLowerCase();
+    if (reason.includes('could not be decoded safely')) {
+      return 'The worker fetched bytes for this URL, then Pillow could not decode, normalize, resize, and re-encode them as a bounded local JPEG. That usually means invalid or truncated image bytes, malformed/unsupported image data, or Pillow refusing a decompression-bomb style payload.';
+    }
+    if (reason.includes('did not return an image')) {
+      return 'The URL did not return a response that the worker was willing to decode as an image. It may have returned HTML, a login/redirect/error body, or a non-image Content-Type.';
+    }
+    if (reason.includes('payload is too large') || reason.includes('empty or too large')) {
+      return 'The image was refused by the size guard before it could be stored locally.';
+    }
+    if (reason.includes('private or unsafe') || reason.includes('not an allowed http')) {
+      return 'The URL was blocked before fetch because it was not a public, safe HTTP(S) image URL.';
+    }
+    if (status === 'blocked') {
+      return 'The worker treated this as unsafe to store as a local image, so the HTML keeps a placeholder instead.';
+    }
+    if (status === 'unavailable') {
+      return 'The worker could not obtain a usable image from this URL, so there is no local image to render.';
+    }
+    if (status === 'pending') {
+      return 'The worker considered this retryable; a later image-worker pass may try again.';
+    }
+    if (status === 'failed') {
+      return 'The worker hit a non-terminal processing failure while trying to fetch or transform this image.';
+    }
+    return 'The image worker did not store a local image for this source.';
+  }
+
+  function imageOutcomeLibraryDetail(row) {
+    const metadata = imageOutcomeMetadata(row);
+    const errorClass = cleanImageOutcomeDetail(
+      metadata.error_cause_class || metadata.cause_class || metadata.error_class,
+    );
+    const errorMessage = cleanImageOutcomeDetail(
+      metadata.error_cause_message || metadata.cause_message || metadata.error_message || row?.last_error,
+    );
+    if (errorClass && errorMessage) return `${errorClass}: ${errorMessage}`;
+    if (errorClass) return errorClass;
+    if (errorMessage) return errorMessage;
+    if (String(row?.reason || '').toLowerCase().includes('could not be decoded safely')) {
+      return 'not recorded for this row; future worker failures include bounded decoder detail when available';
+    }
+    return '';
+  }
+
+  function imageOutcomeHoverText(row) {
+    const lines = [imageOutcomeText(row), '', `Meaning: ${imageOutcomeMeaning(row)}`];
+    const libraryDetail = imageOutcomeLibraryDetail(row);
+    if (libraryDetail) lines.push(`Library detail: ${libraryDetail}`);
+    const decision = cleanImageOutcomeDetail(row?.safety_decision);
+    if (decision) lines.push(`Worker decision: ${decision}`);
+    const contentType = cleanImageOutcomeDetail(row?.content_type);
+    if (contentType) lines.push(`Fetched content type: ${contentType}`);
+    const transform = cleanImageOutcomeDetail(row?.transform_version);
+    if (transform) lines.push(`Transform row: ${transform}`);
+    const updated = cleanImageOutcomeDetail(row?.updated_at);
+    if (updated) lines.push(`Updated: ${updated}`);
+    const source = cleanImageOutcomeDetail(row?.source_url);
+    if (source) lines.push(`Original URL: ${source}`);
+    return lines.join('\n');
+  }
+
+  function appendImageOutcomeDetails(doc, message) {
+    const outcomes = imageOutcomeMap(message);
+    if (!outcomes.size) return false;
+    let changed = false;
+    Array.from(doc.querySelectorAll('.email-image-wrap')).forEach(wrap => {
+      if (wrap.querySelector('.email-image-error')) return;
+      const placeholder = wrap.querySelector('.email-image-blocked');
+      const original = wrap.querySelector('a.email-image-original[href]');
+      if (!placeholder || !original) return;
+      const href = String(original.getAttribute('href') || '').trim();
+      const row = outcomes.get(href) || outcomes.get(original.href || '');
+      if (!row) return;
+      const detail = doc.createElement('span');
+      detail.className = 'email-image-error';
+      detail.textContent = imageOutcomeText(row);
+      detail.setAttribute('title', imageOutcomeHoverText(row));
+      detail.setAttribute('aria-label', imageOutcomeHoverText(row));
+      detail.setAttribute('tabindex', '0');
+      placeholder.insertAdjacentElement('afterend', detail);
       changed = true;
     });
-    return changed ? doc.body.innerHTML : value;
+    return changed;
   }
 
   function messageListAnchorFromHost(host) {
@@ -1636,6 +1775,38 @@ const EmailPage = (() => {
     return state.message?.html_security || {};
   }
 
+  function externalImageDerivativeSummary(message = state.message) {
+    const storedSummary = message?.stored?.external_image_derivative_summary;
+    if (storedSummary && typeof storedSummary === 'object') return storedSummary;
+    const securitySummary = message?.html_security?.external_image_derivatives;
+    return securitySummary && typeof securitySummary === 'object' ? securitySummary : {};
+  }
+
+  function imageOutcomeSummaryText(summary) {
+    const total = Number(summary?.total || 0);
+    if (!total) return 'no derivative rows for current message';
+    const parts = [
+      ['stored', summary.stored],
+      ['blocked', summary.blocked],
+      ['unavailable', summary.unavailable],
+      ['pending', summary.pending],
+      ['failed', summary.failed],
+      ['other', summary.other],
+    ].filter(([, value]) => Number(value || 0) > 0)
+      .map(([label, value]) => `${Number(value)} ${label}`);
+    return `${total} total: ${parts.join(', ')}`;
+  }
+
+  function imageReasonSummaryText(summary) {
+    const reasons = summary?.reasons && typeof summary.reasons === 'object' ? summary.reasons : {};
+    const parts = Object.entries(reasons)
+      .filter(([, count]) => Number(count || 0) > 0)
+      .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
+      .slice(0, 4)
+      .map(([reason, count]) => `${Number(count)} ${reason}`);
+    return parts.length ? parts.join('; ') : 'no stored failure reasons';
+  }
+
   function htmlSafetyItems() {
     const security = htmlSecurity();
     const rows = [];
@@ -1646,7 +1817,7 @@ const EmailPage = (() => {
     const active = Number(security.active_content_blocked || 0);
     const unsafeLinks = Number(security.unsafe_links_blocked || 0);
     rows.push(`sandboxed`);
-    if (proxied) rows.push(`${proxied} remote image${proxied === 1 ? '' : 's'} transformed`);
+    if (proxied) rows.push(`${proxied} image asset${proxied === 1 ? '' : 's'} transformed`);
     if (remote) rows.push(`${remote} remote image${remote === 1 ? '' : 's'} blocked`);
     if (tracking) rows.push(`${tracking} tracking image${tracking === 1 ? '' : 's'} detected`);
     if (inline) rows.push(`${inline} inline image${inline === 1 ? '' : 's'} shown`);
@@ -1986,6 +2157,19 @@ const EmailPage = (() => {
       color:#5f4600;
       font-size:12px;
     }
+    .email-image-error {
+      display:block;
+      justify-self:start;
+      max-width:min(100%, 720px);
+      border:1px solid #ffb3b3;
+      border-radius:5px;
+      background:#6f1017;
+      color:#fff;
+      padding:5px 8px;
+      font-size:12px;
+      line-height:1.35;
+      white-space:normal;
+    }
   </style>
 </head>
 <body>${bodyHtml}</body>
@@ -2275,6 +2459,7 @@ const EmailPage = (() => {
     const proxied = Number(security.remote_images_proxied || 0);
     const tracking = Number(security.tracking_images_blocked || 0);
     const inline = Number(security.inline_images_rendered || 0);
+    const imageSummary = externalImageDerivativeSummary();
     const health = state.health || {};
     const imageHealth = health.external_images || {};
     const securityHealth = health.security || {};
@@ -2297,7 +2482,10 @@ const EmailPage = (() => {
       ['Local AI scam judgement', messageSecurity.llm?.called ? `called ${messageSecurity.llm.model || 'local model'}` : 'not checked yet'],
       ['HTML sandbox', 'srcdoc iframe, no scripts, no same-origin storage'],
       ['Image assets', 'worker JPEG transforms, no remote fetch on open'],
-      ['Remote images', proxied ? `${proxied} transformed` : (remote ? `${remote} blocked` : 'none in current message')],
+      ['Local image assets', proxied ? `${proxied} transformed/rendered` : 'none in current message'],
+      ['Remote images', imageSummary.total ? `${imageSummary.stored || 0} stored, ${imageSummary.blocked || 0} blocked, ${imageSummary.unavailable || 0} unavailable` : (remote ? `${remote} blocked` : 'none in current message')],
+      ['Remote image outcomes', imageOutcomeSummaryText(imageSummary)],
+      ['Image failure reasons', imageReasonSummaryText(imageSummary)],
       ['Tracking images', tracking ? `${tracking} detected` : 'none detected'],
       ['Inline images', inline ? `${inline} transformed/rendered` : 'none in current message'],
     ];
@@ -2570,7 +2758,13 @@ const EmailPage = (() => {
           },
         },
       };
-      if (!options.silent) setStatus('Email health refreshed', healthTone() === 'red' ? 'err' : (healthTone() === 'amber' ? 'warn' : 'ok'));
+      const tone = healthTone();
+      if (!options.silent || (tone !== 'red' && staleHealthErrorVisible())) {
+        setStatus(
+          staleHealthErrorVisible() ? 'Email health restored' : 'Email health refreshed',
+          tone === 'red' ? 'err' : (tone === 'amber' ? 'warn' : 'ok')
+        );
+      }
       if (state.loaded && !options.deferRender) {
         renderMeta();
         renderMessageListChrome();
@@ -2958,7 +3152,7 @@ const EmailPage = (() => {
       invalidateOpenedMessageCache(uid);
       clearBrowserImageStorageCache(uid);
       const data = await fetchJson(forceRefreshEndpoint(uid), { method: 'POST' });
-      if (data.message) {
+      if (isMessagePayload(data.message)) {
         state.message = data.message;
       } else {
         const refreshed = await fetchJson(messageEndpoint(uid));
