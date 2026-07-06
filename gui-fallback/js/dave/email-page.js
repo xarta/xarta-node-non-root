@@ -24,6 +24,8 @@ const EmailPage = (() => {
   const MESSAGE_CONTEXT_MENU_ID = 'email-message-context-menu';
   const MESSAGE_CONTEXT_LONG_PRESS_MS = 420;
   const MESSAGE_CONTEXT_MOVE_PX = 10;
+  const PROBABLE_TRUSTED_SECURITY_POLL_MS = 2500;
+  const PROBABLE_TRUSTED_SECURITY_POLL_ATTEMPTS = 36;
   const HEALTH_POLL_MS = 5000;
   const CACHE_STATUS_POLL_MS = 5000;
   const SECURITY_PROGRESS_EVENT = 'pim.email.security.progress';
@@ -107,6 +109,7 @@ const EmailPage = (() => {
     folderLoadSeq: 0,
     securityProgress: null,
     messageContextMenuOpen: false,
+    securitySegmentModalOpen: false,
     healthPollTimer: null,
   };
 
@@ -136,6 +139,10 @@ const EmailPage = (() => {
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) throw new Error(errorMessageFromPayload(data, `HTTP ${resp.status}`));
     return data;
+  }
+
+  function delay(ms) {
+    return new Promise(resolve => window.setTimeout(resolve, ms));
   }
 
   function errorMessageFromPayload(data, fallback) {
@@ -204,16 +211,19 @@ const EmailPage = (() => {
       ? `Email security checks running: ${active.label}`
       : `Email security checks: ${complete} of ${segments.length} complete`;
     strip.innerHTML = `
-      <div class="email-security-meter" role="status" aria-live="polite" aria-label="${escHtml(label)}">
+      <div class="email-security-meter" role="group" aria-label="${escHtml(label)}">
+        <span class="email-sr-only" aria-live="polite">${escHtml(label)}</span>
         ${segments.map(segment => `
-          <span
+          <button
+            type="button"
             class="email-security-meter__segment"
             data-segment="${escHtml(segment.id)}"
+            data-email-security-segment="${escHtml(segment.id)}"
             data-tone="${escHtml(segment.tone)}"
             data-status="${escHtml(segment.status)}"
             title="${escHtml(`${segment.label}: ${segment.status}${segment.finding_codes.length ? ` (${segment.finding_codes.join(', ')})` : ''}`)}"
             aria-label="${escHtml(`${segment.label}: ${segment.status}`)}"
-          ></span>
+          ></button>
         `).join('')}
       </div>
     `;
@@ -270,17 +280,31 @@ const EmailPage = (() => {
     const findings = Array.isArray(security?.findings) ? security.findings : [];
     const byPrefix = prefix => findings.filter(item => String(item.code || '').startsWith(prefix));
     const byCodes = codes => findings.filter(item => codes.includes(String(item.code || '')));
+    const segment = (id, label, status, tone, items = []) => ({
+      id,
+      label,
+      status,
+      tone,
+      finding_codes: items.map(item => String(item.code || '')).filter(Boolean),
+    });
+    const authItems = byPrefix('AUTHRES_');
+    const dkimItems = byPrefix('DKIM_');
+    const spfItems = byPrefix('SPF_');
+    const dmarcItems = byPrefix('DMARC_');
+    const inputItems = byCodes(['LLM_INPUT_SANITIZED', 'LLM_BODY_OVERSIZE']);
+    const llmJsonItems = byCodes(['LLM_JSON_INVALID']);
+    const llmJudgementItems = byPrefix('LLM_SCAM_TRAITS_');
     return [
-      { id: 'service', label: 'Svc', status: 'complete', tone: security?.available ? 'green' : 'red' },
-      { id: 'parse', label: 'Parse', status: 'complete', tone: 'green' },
-      { id: 'authres_provider', label: 'Auth', status: 'complete', tone: segmentToneFromFindings(byPrefix('AUTHRES_')) },
-      { id: 'dkim_crypto', label: 'DKIM', status: 'complete', tone: segmentToneFromFindings(byPrefix('DKIM_')) },
-      { id: 'spf_protocol', label: 'SPF', status: 'complete', tone: segmentToneFromFindings(byPrefix('SPF_')) },
-      { id: 'dmarc_policy', label: 'DMARC', status: 'complete', tone: segmentToneFromFindings(byPrefix('DMARC_')) },
-      { id: 'llm_input', label: 'Input', status: 'complete', tone: segmentToneFromFindings(byCodes(['LLM_INPUT_SANITIZED', 'LLM_BODY_OVERSIZE']), 'green') },
-      { id: 'llm_json', label: 'JSON', status: 'complete', tone: security?.llm?.valid_json ? 'green' : 'red' },
-      { id: 'llm_judgement', label: 'AI', status: 'complete', tone: segmentToneFromFindings(byPrefix('LLM_SCAM_TRAITS_')) },
-      { id: 'aggregate', label: 'All', status: 'complete', tone: String(security?.aggregate?.status || 'amber').toLowerCase() },
+      segment('service', 'Svc', 'complete', security?.available ? 'green' : 'red'),
+      segment('parse', 'Parse', 'complete', 'green'),
+      segment('authres_provider', 'Auth', 'complete', segmentToneFromFindings(authItems), authItems),
+      segment('dkim_crypto', 'DKIM', 'complete', segmentToneFromFindings(dkimItems), dkimItems),
+      segment('spf_protocol', 'SPF', 'complete', segmentToneFromFindings(spfItems), spfItems),
+      segment('dmarc_policy', 'DMARC', 'complete', segmentToneFromFindings(dmarcItems), dmarcItems),
+      segment('llm_input', 'Input', 'complete', segmentToneFromFindings(inputItems, 'green'), inputItems),
+      segment('llm_json', 'JSON', 'complete', security?.llm?.valid_json ? 'green' : 'red', llmJsonItems),
+      segment('llm_judgement', 'AI', 'complete', segmentToneFromFindings(llmJudgementItems), llmJudgementItems),
+      segment('aggregate', 'All', 'complete', String(security?.aggregate?.status || 'amber').toLowerCase(), findings),
     ];
   }
 
@@ -666,6 +690,10 @@ const EmailPage = (() => {
 
   function forceRefreshEndpoint(uid) {
     return `${API_ROOT}/local/messages/${encodeURIComponent(uid)}/force-refresh`;
+  }
+
+  function probableTrustedEndpoint(uid) {
+    return `${API_ROOT}/local/messages/${encodeURIComponent(uid)}/probable-trusted-sender`;
   }
 
   function renderMeta() {
@@ -1664,6 +1692,7 @@ const EmailPage = (() => {
       ? `${state.messages.map(messageRowHtml).join('')}${messageListTailHtml()}`
       : `<div class="email-empty">No messages loaded for ${escHtml(state.folder || 'INBOX')}.</div>`;
     restoreMessageListAnchor(anchor);
+    installMessageRowContextFsms();
   }
 
   function closeMessageContextMenu() {
@@ -1739,8 +1768,8 @@ const EmailPage = (() => {
 
     [
       [messageContextButton('force-refresh-message', 'Force refresh')],
-      [],
-      [],
+      [messageContextButton('mark-sender-probable-trusted', 'Mark sender probable trusted')],
+      [messageContextButton('show-message-uid', 'Show / copy email_uid')],
     ].forEach(items => {
       const column = document.createElement('div');
       column.className = 'hub-context-menu-floating__column';
@@ -1757,7 +1786,7 @@ const EmailPage = (() => {
       const current = el(MESSAGE_CONTEXT_MENU_ID);
       if (!current) return;
       if (current.contains(event.target)) return;
-      if (event.target?.closest?.('[data-email-list-toggle]')) return;
+      if (event.target?.closest?.('[data-email-list-toggle], .email-message-row')) return;
       closeMessageContextMenu();
     };
     messageContextKeyHandler = event => {
@@ -1992,6 +2021,163 @@ const EmailPage = (() => {
         }).join('')}
       </div>
     `;
+  }
+
+  function currentSecuritySegments() {
+    const security = state.message?.security || {};
+    const segments = state.securityProgress?.segments?.length
+      ? state.securityProgress.segments
+      : (security?.progress?.segments || (security?.available ? securitySegmentsFromFindings(security) : []));
+    return mergeSecuritySegments([], segments);
+  }
+
+  function securitySegmentById(segmentId) {
+    const cleanId = String(segmentId || '').trim();
+    return currentSecuritySegments().find(segment => segment.id === cleanId) || normalizeSecuritySegment({ id: cleanId });
+  }
+
+  function securitySegmentFindings(segmentId) {
+    const security = state.message?.security || {};
+    const findings = Array.isArray(security.findings) ? security.findings : [];
+    const segment = securitySegmentById(segmentId);
+    const codes = new Set((segment.finding_codes || []).map(code => String(code || '')).filter(Boolean));
+    if (codes.size) return findings.filter(finding => codes.has(String(finding.code || '')));
+    const id = String(segmentId || '');
+    if (id === 'aggregate') return findings;
+    if (id === 'authres_provider') return findings.filter(finding => String(finding.code || '').startsWith('AUTHRES_'));
+    if (id === 'dkim_crypto') return findings.filter(finding => String(finding.code || '').startsWith('DKIM_'));
+    if (id === 'spf_protocol') return findings.filter(finding => String(finding.code || '').startsWith('SPF_'));
+    if (id === 'dmarc_policy') return findings.filter(finding => String(finding.code || '').startsWith('DMARC_'));
+    if (id === 'llm_input') return findings.filter(finding => ['LLM_INPUT_SANITIZED', 'LLM_BODY_OVERSIZE'].includes(String(finding.code || '')));
+    if (id === 'llm_json') return findings.filter(finding => String(finding.code || '').startsWith('LLM_JSON_'));
+    if (id === 'llm_judgement') return findings.filter(finding => String(finding.code || '').startsWith('LLM_SCAM_TRAITS_'));
+    return [];
+  }
+
+  function securitySegmentDetailHtml(segmentId, security) {
+    const id = String(segmentId || '');
+    const dkim = security?.dkim || {};
+    const spf = security?.spf || {};
+    const dmarc = security?.dmarc || {};
+    const llm = security?.llm || {};
+    const judgement = llm.judgement || {};
+    const policy = llm.policy || {};
+    if (id === 'authres_provider') return authenticationResultsHtml(security);
+    if (id === 'dkim_crypto') {
+      return securityKvRowsHtml([
+        ['Signatures', dkim.signature_count ?? 0],
+        ['Aligned pass', Boolean(dkim.aligned_pass), dkim.aligned_pass ? 'green' : 'amber'],
+        ['Failed signatures', Array.isArray(dkim.failed) ? dkim.failed.length : 0, Array.isArray(dkim.failed) && dkim.failed.length ? 'red' : 'green'],
+      ]);
+    }
+    if (id === 'spf_protocol') {
+      return securityKvRowsHtml([
+        ['Evaluated', Boolean(spf.evaluated), spf.evaluated ? 'green' : 'amber'],
+        ['Result', spf.result || 'n/a', spf.result || 'amber'],
+        ['Aligned pass', Boolean(spf.aligned_pass), spf.aligned_pass ? 'green' : 'amber'],
+        ['Mail-from domain', spf.mail_from_domain || 'n/a'],
+        ['Source IP', spf.source_ip || 'n/a'],
+      ]);
+    }
+    if (id === 'dmarc_policy') {
+      return securityKvRowsHtml([
+        ['Result', dmarc.result || 'n/a', dmarc.result || 'amber'],
+        ['Policy', dmarc.policy || 'n/a', dmarc.policy === 'none' ? 'amber' : 'info'],
+        ['Policy domain', dmarc.policy_domain || 'n/a'],
+        ['Aligned pass', Boolean(dmarc.aligned_pass), dmarc.aligned_pass ? 'green' : 'amber'],
+      ]);
+    }
+    if (id === 'llm_input' || id === 'llm_json' || id === 'llm_judgement') {
+      return `
+        ${securityKvRowsHtml([
+          ['Prompt variant', policy.prompt_variant || 'standard_v1'],
+          ['Probable-trusted sender', policy.probable_trusted_sender?.sender_email || 'none', policy.probable_trusted_sender?.sender_email ? 'amber' : 'info'],
+          ['Suspicious threshold', policy.suspicious_risk_threshold ?? 50],
+          ['Deterministic protections', policy.deterministic_protections || 'unchanged'],
+          ['Called', Boolean(llm.called), llm.called ? 'green' : 'amber'],
+          ['Model', llm.model || 'n/a'],
+          ['Valid JSON', Boolean(llm.valid_json), llm.valid_json ? 'green' : 'red'],
+          ['Verdict', judgement.verdict || 'n/a', judgement.verdict || ''],
+          ['Risk score', judgement.risk_score ?? 'n/a'],
+        ])}
+        ${localAiSecurityHtml(security)}
+      `;
+    }
+    return securityKvRowsHtml([
+      ['Available', Boolean(security?.available), security?.available ? 'green' : 'red'],
+      ['Schema', security?.schema || 'n/a'],
+      ['Checked', security?.checked_at || 'n/a'],
+      ['Duration', security?.duration_ms ? `${security.duration_ms} ms` : 'n/a'],
+    ]);
+  }
+
+  function securitySegmentInsightHtml(segmentId) {
+    const message = state.message || null;
+    const security = message?.security || null;
+    const segment = securitySegmentById(segmentId);
+    const aggregate = security?.aggregate || {};
+    const findings = securitySegmentFindings(segment.id);
+    if (!message) return '<div class="email-empty">Open a message to view segment details.</div>';
+    if (!security?.available) {
+      return `<div class="email-empty">Security result unavailable for ${escHtml(message.email_uid || message.uid || 'this message')}.</div>`;
+    }
+    return `
+      <div class="email-security-segment-modal-body">
+        <section class="email-security-segment-summary" data-tone="${escHtml(securityToneName(segment.tone || aggregate.status))}">
+          <div>
+            <h4>${escHtml(segment.label || segment.id)}</h4>
+            <p>${escHtml(aggregate.summary || 'Current message security result.')}</p>
+          </div>
+          ${securityPillHtml(segment.tone || aggregate.status || 'unknown', segment.tone || aggregate.status)}
+        </section>
+        ${securityKvRowsHtml([
+          ['Segment', segment.id],
+          ['Segment status', segment.status || 'pending', segment.tone || aggregate.status],
+          ['Aggregate', aggregate.status || 'unknown', aggregate.status],
+          ['Score', aggregate.score ?? aggregate.risk_score ?? 'n/a', aggregate.status],
+          ['email_uid', message.email_uid || message.uid || 'n/a'],
+          ['Raw hash', security.raw_sha256 ? `${String(security.raw_sha256).slice(0, 16)}...` : 'n/a'],
+        ])}
+        <section class="email-security-section">
+          <div class="email-security-section__head">
+            <h4>Segment Detail</h4>
+            ${securityPillHtml(segment.finding_codes?.length ? `${segment.finding_codes.length} finding codes` : 'no direct codes', segment.finding_codes?.length ? segment.tone : 'info')}
+          </div>
+          ${securitySegmentDetailHtml(segment.id, security)}
+        </section>
+        <section class="email-security-section">
+          <div class="email-security-section__head">
+            <h4>Findings</h4>
+            ${securityPillHtml(`${findings.length} shown`, findings.length ? segment.tone : 'info')}
+          </div>
+          ${findings.length ? securityFindingsHtml({ findings }) : '<div class="email-empty">No findings are mapped directly to this segment.</div>'}
+        </section>
+      </div>
+    `;
+  }
+
+  function openSecuritySegmentModal(segmentId) {
+    const modal = el('email-security-segment-modal');
+    const title = el('email-security-segment-modal-title');
+    const body = el('email-security-segment-modal-body');
+    const status = el('email-security-segment-modal-status');
+    if (!modal || !body) return false;
+    const segment = securitySegmentById(segmentId);
+    if (title) title.textContent = `${segment.label || segment.id} Security`;
+    body.innerHTML = securitySegmentInsightHtml(segment.id);
+    if (status) status.textContent = state.message?.email_uid || '';
+    state.securitySegmentModalOpen = true;
+    if (typeof HubModal !== 'undefined') HubModal.open(modal, { onClose: () => { state.securitySegmentModalOpen = false; } });
+    else if (typeof modal.showModal === 'function' && !modal.open) modal.showModal();
+    return true;
+  }
+
+  function closeSecuritySegmentModal() {
+    const modal = el('email-security-segment-modal');
+    if (!modal) return;
+    state.securitySegmentModalOpen = false;
+    if (typeof HubModal !== 'undefined') HubModal.close(modal);
+    else if (typeof modal.close === 'function') modal.close();
   }
 
   function messageSecurityHtml() {
@@ -3175,6 +3361,119 @@ const EmailPage = (() => {
     }
   }
 
+  async function copyText(value) {
+    const text = String(value || '');
+    if (!text) return false;
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', 'readonly');
+    area.style.position = 'fixed';
+    area.style.left = '-1000px';
+    document.body.appendChild(area);
+    area.select();
+    let copied = false;
+    try {
+      copied = document.execCommand('copy');
+    } finally {
+      area.remove();
+    }
+    return copied;
+  }
+
+  async function showMessageUid() {
+    closeMessageContextMenu();
+    const uid = activeMessageUid();
+    if (!uid) {
+      setStatus('Open a message before copying email_uid', 'warn');
+      return false;
+    }
+    let copied = false;
+    try {
+      copied = await copyText(uid);
+    } catch (error) {
+      copied = false;
+    }
+    setStatus(copied ? 'Message email_uid copied' : 'Message email_uid ready to copy', copied ? 'ok' : 'warn');
+    if (typeof HubDialogs !== 'undefined' && typeof HubDialogs.alert === 'function') {
+      await HubDialogs.alert({
+        title: 'Message email_uid',
+        message: uid,
+        tone: copied ? 'success' : 'info',
+      });
+    }
+    return copied;
+  }
+
+  function messageHasProbableTrustedSecurity(message, senderEmail = '') {
+    const llm = message?.security?.llm || {};
+    const policy = llm.policy || {};
+    const trusted = policy.probable_trusted_sender || {};
+    const expectedSender = String(senderEmail || '').trim().toLowerCase();
+    const actualSender = String(trusted.sender_email || '').trim().toLowerCase();
+    return policy.prompt_variant === 'probable_trusted_sender_v1'
+      && (!expectedSender || actualSender === expectedSender);
+  }
+
+  async function waitForProbableTrustedSecurityResult(uid, senderEmail = '') {
+    let latestMessage = null;
+    let lastError = null;
+    for (let attempt = 0; attempt < PROBABLE_TRUSTED_SECURITY_POLL_ATTEMPTS; attempt += 1) {
+      try {
+        const refreshed = await fetchJson(messageEndpoint(uid));
+        latestMessage = refreshed.message || latestMessage;
+        if (messageHasProbableTrustedSecurity(latestMessage, senderEmail)) {
+          return { settled: true, message: latestMessage, error: null };
+        }
+      } catch (error) {
+        lastError = error;
+      }
+      if (attempt + 1 < PROBABLE_TRUSTED_SECURITY_POLL_ATTEMPTS) {
+        await delay(PROBABLE_TRUSTED_SECURITY_POLL_MS);
+      }
+    }
+    return { settled: false, message: latestMessage, error: lastError };
+  }
+
+  async function markSenderProbableTrusted() {
+    closeMessageContextMenu();
+    const uid = activeMessageUid();
+    if (!uid) {
+      setStatus('Open a message before marking sender trust', 'warn');
+      return false;
+    }
+    setStatus('Marking sender probable trusted', 'unknown');
+    try {
+      invalidateOpenedMessageCache(uid);
+      const data = await fetchJson(probableTrustedEndpoint(uid), { method: 'POST' });
+      const sender = data?.probable_trusted_sender?.sender_email || 'sender';
+      setStatus(`Marked ${sender} probable trusted; waiting for security LLM`, 'unknown');
+      const refreshed = await waitForProbableTrustedSecurityResult(uid, sender);
+      if (refreshed.message) {
+        cacheOpenedMessage(uid, null, refreshed.message);
+        if (activeMessageUid() === uid) {
+          state.message = refreshed.message;
+          state.view = defaultMessageView(state.message);
+          state.securityProgress = null;
+          renderMessage();
+          renderSecondaryPanels();
+          renderUltrawide();
+          syncSelectedMessageRows();
+        }
+      }
+      const done = refreshed.settled;
+      const suffix = done ? 'security LLM complete' : 'security LLM still queued';
+      setStatus(`Marked ${sender} probable trusted; ${suffix}`, done ? 'ok' : 'warn');
+      return true;
+    } catch (error) {
+      setStatus(error.message || String(error), 'err');
+      return false;
+    }
+  }
+
   function closeModal() {
     const modal = el('email-secondary-modal');
     if (!modal) return;
@@ -3193,6 +3492,8 @@ const EmailPage = (() => {
     if (action === 'safe-checks') return safeChecks();
     if (action === 'security-checks') return securityChecks();
     if (action === 'force-refresh-message') return forceRefreshMessage();
+    if (action === 'mark-sender-probable-trusted') return markSenderProbableTrusted();
+    if (action === 'show-message-uid') return showMessageUid();
     return false;
   }
 
@@ -3286,14 +3587,125 @@ const EmailPage = (() => {
     }, true);
   }
 
+  function messageRowTargetUid(row) {
+    return String(row?.dataset?.emailMessageEmailUid || row?.dataset?.emailMessageUid || '').trim();
+  }
+
+  function openMessageContextMenuForRow(row) {
+    const uid = messageRowTargetUid(row);
+    if (!uid) return false;
+    state.messagePendingUid = uid;
+    syncSelectedMessageRows();
+    const opened = openMessageContextMenuAt(row);
+    openMessage(uid).catch(error => {
+      setStatus(error.message || String(error), 'err');
+    });
+    return opened;
+  }
+
+  function installMessageRowContextFsm(row) {
+    if (!row || row.dataset.emailRowContextFsm === '1') return;
+    row.dataset.emailRowContextFsm = '1';
+
+    const fsm = {
+      state: 'idle',
+      pointerId: null,
+      startX: 0,
+      startY: 0,
+      timer: null,
+      suppressNextClick: false,
+    };
+
+    const clearTimer = () => {
+      if (!fsm.timer) return;
+      window.clearTimeout(fsm.timer);
+      fsm.timer = null;
+    };
+
+    const cancelPress = () => {
+      clearTimer();
+      fsm.state = 'idle';
+      fsm.pointerId = null;
+    };
+
+    const openFromLongPress = () => {
+      if (fsm.state !== 'pressing') return;
+      clearTimer();
+      fsm.state = 'open';
+      fsm.suppressNextClick = true;
+      row.dataset.emailContextSuppressClick = '1';
+      openMessageContextMenuForRow(row);
+    };
+
+    row.addEventListener('pointerdown', event => {
+      if (event.button !== undefined && event.button !== 0) return;
+      fsm.state = 'pressing';
+      fsm.pointerId = event.pointerId;
+      fsm.startX = event.clientX;
+      fsm.startY = event.clientY;
+      clearTimer();
+      fsm.timer = window.setTimeout(openFromLongPress, MESSAGE_CONTEXT_LONG_PRESS_MS);
+      if (typeof row.setPointerCapture === 'function') {
+        try {
+          row.setPointerCapture(event.pointerId);
+        } catch (error) {
+          // Pointer capture can fail after fast release; document-level click suppression still handles it.
+        }
+      }
+    });
+
+    row.addEventListener('pointermove', event => {
+      if (fsm.state !== 'pressing' || event.pointerId !== fsm.pointerId) return;
+      const dx = event.clientX - fsm.startX;
+      const dy = event.clientY - fsm.startY;
+      if (Math.hypot(dx, dy) > MESSAGE_CONTEXT_MOVE_PX) cancelPress();
+    });
+
+    row.addEventListener('pointerup', event => {
+      if (event.pointerId !== fsm.pointerId) return;
+      if (fsm.state === 'pressing') cancelPress();
+      else {
+        clearTimer();
+        fsm.state = 'idle';
+        fsm.pointerId = null;
+      }
+    });
+
+    row.addEventListener('pointercancel', event => {
+      if (event.pointerId === fsm.pointerId) cancelPress();
+    });
+
+    row.addEventListener('lostpointercapture', cancelPress);
+    row.addEventListener('contextmenu', event => {
+      event.preventDefault();
+      if (openMessageContextMenuForRow(row)) {
+        fsm.suppressNextClick = true;
+        row.dataset.emailContextSuppressClick = '1';
+      }
+    });
+
+    row.addEventListener('click', event => {
+      if (!fsm.suppressNextClick && row.dataset.emailContextSuppressClick !== '1') return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      fsm.suppressNextClick = false;
+      delete row.dataset.emailContextSuppressClick;
+    }, true);
+  }
+
   function installMessageContextToggleFsms() {
     document.querySelectorAll('[data-email-list-toggle]').forEach(installMessageContextToggleFsm);
+  }
+
+  function installMessageRowContextFsms() {
+    document.querySelectorAll('#email-message-list .email-message-row[data-email-message-uid]').forEach(installMessageRowContextFsm);
   }
 
   function bind() {
     if (document.body.dataset.emailPageBound === '1') return;
     document.body.dataset.emailPageBound = '1';
     installMessageContextToggleFsms();
+    installMessageRowContextFsms();
     const messageList = el('email-message-list');
     if (messageList) messageList.addEventListener('scroll', handleMessageListScroll, { passive: true });
     if (window.BlueprintsEventStream && typeof window.BlueprintsEventStream.on === 'function') {
@@ -3320,6 +3732,12 @@ const EmailPage = (() => {
           return;
         }
         handleAction(actionBtn.dataset.emailAction);
+        return;
+      }
+      const securitySegment = target.closest?.('[data-email-security-segment]');
+      if (securitySegment) {
+        event.preventDefault();
+        openSecuritySegmentModal(securitySegment.dataset.emailSecuritySegment || securitySegment.dataset.segment || '');
         return;
       }
       const tabBtn = target.closest?.('[data-email-secondary-tab]');
@@ -3366,6 +3784,10 @@ const EmailPage = (() => {
       const messageRow = target.closest?.('[data-email-message-uid]');
       if (messageRow) {
         event.preventDefault();
+        if (messageRow.dataset.emailContextSuppressClick === '1') {
+          delete messageRow.dataset.emailContextSuppressClick;
+          return;
+        }
         openMessage(messageRow.dataset.emailMessageEmailUid || messageRow.dataset.emailMessageUid || '');
         return;
       }
@@ -3382,6 +3804,16 @@ const EmailPage = (() => {
       const btn = el(id);
       if (btn) btn.addEventListener('click', closeModal);
     });
+    ['email-security-segment-modal-close', 'email-security-segment-modal-footer-close'].forEach(id => {
+      const btn = el(id);
+      if (btn) btn.addEventListener('click', closeSecuritySegmentModal);
+    });
+    const securitySegmentModal = el('email-security-segment-modal');
+    if (securitySegmentModal) {
+      securitySegmentModal.addEventListener('close', () => {
+        state.securitySegmentModalOpen = false;
+      });
+    }
     window.addEventListener('resize', renderUltrawide);
     window.addEventListener('orientationchange', renderUltrawide);
   }
@@ -3433,6 +3865,7 @@ const EmailPage = (() => {
       last_message_timing: state.lastMessageTiming,
       message_timings: state.messageTimings.slice(0, 6),
       message_context_menu_open: state.messageContextMenuOpen,
+      security_segment_modal_open: state.securitySegmentModalOpen,
       view: state.view,
       secondary_tab: state.secondaryTab,
       list_collapsed: state.listCollapsed,

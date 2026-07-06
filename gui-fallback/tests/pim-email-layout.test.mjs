@@ -143,6 +143,12 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /state\.view = defaultMessageView\(state\.message\)/, 'Opening a message must use the computed default view.');
   assert.match(emailJs, /SECURITY_PROGRESS_EVENT = 'pim\.email\.security\.progress'/, 'Email security progress must use the shared SSE event stream.');
   assert.match(emailJs, /function renderSecurityProgressStrip\(\)/, 'Opened-message status must render compact security progress segments.');
+  assert.match(emailJs, /data-email-security-segment/, 'Security progress segments must be clickable controls.');
+  assert.match(indexHtml, /id="email-security-segment-modal"/, 'Security segments must open a HubModal detail view.');
+  assert.match(emailJs, /function openSecuritySegmentModal\(/, 'Email UI must render segment-specific security insight.');
+  assert.match(emailJs, /security_segment_modal_open/, 'Email automation snapshot must expose the segment modal state.');
+  assert.match(emailJs, /prompt_variant/, 'Security segment detail must surface the LLM prompt variant.');
+  assert.match(emailJs, /probable_trusted_sender/, 'Security segment detail must surface probable-trusted LLM context.');
   assert.match(emailJs, /function renderOpenedMessageSecurityProgress\(/, 'Completed local-message security progress must render after opening a stored message.');
   assert.doesNotMatch(emailJs, /include_safe_raw=true/, 'Local message reads must use the persisted sanitized raw artifact, not an on-read raw generation flag.');
   assert.match(emailJs, /MESSAGE_WARM_LIMIT = 100/, 'The current 100 rows must be sent for background stack warming.');
@@ -195,6 +201,7 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailCss, /\.email-security-meter__segment\[data-tone="red"\]/, 'Status strip segments must show failed checks.');
   assert.match(emailCss, /\.email-security-meter__segment\[data-tone="amber"\]/, 'Status strip segments must show indeterminate checks.');
   assert.match(emailCss, /\.email-security-meter__segment\[data-tone="green"\]/, 'Status strip segments must show passed checks.');
+  assert.match(emailCss, /\.email-security-meter__segment:hover/, 'Clickable security segments must expose pointer/focus affordance.');
   assert.match(emailCss, /@keyframes email-security-segment-pulse/, 'Running security checks must have a compact progress animation.');
   assert.match(emailCss, /\.email-security-finding/, 'Security findings must have readable detail styling.');
   assert.match(emailCss, /\.email-security-pill\[data-tone="red"\]/, 'Security failures must be visually distinct.');
@@ -236,13 +243,33 @@ test('PIM Email message list refreshes only on list data changes', () => {
   assert.match(emailJs, /function loadMoreMessages\(/, 'Email UI must append the next page near the list bottom.');
 });
 
-test('PIM Email message context menu is owned by the list toggle button', () => {
+test('PIM Email message context menu is shared by the list toggle and message rows', () => {
   assert.doesNotMatch(bodyShadeJs, /BodyShadeContextMenuHooks/, 'Email message actions must not hook the top Body Shade handle.');
   assert.match(indexHtml, /data-email-list-toggle/, 'The message reader list toggle must exist.');
   assert.match(emailJs, /function installMessageContextToggleFsm\(/, 'The list toggle must own a long-press FSM.');
+  assert.match(emailJs, /function installMessageRowContextFsm\(/, 'Message rows must support the same long-press context menu.');
   assert.match(emailJs, /MESSAGE_CONTEXT_LONG_PRESS_MS/, 'The long-press FSM must have built-in timing.');
   assert.match(emailJs, /openMessageContextMenuAt\(button\)/, 'The list toggle FSM must open the message context menu.');
+  assert.match(emailJs, /openMessageContextMenuForRow\(row\)/, 'The row FSM must open the shared message context menu.');
+  assert.match(emailJs, /emailContextSuppressClick/, 'Long-press context opens must suppress the follow-up click.');
   assert.match(emailJs, /hub-context-menu-floating--columns/, 'The message context menu must use the shared 3-column context-menu layout.');
   assert.match(emailJs, /force-refresh-message/, 'The first message context command must be Force refresh.');
   assert.match(emailJs, /\/local\/messages\/\$\{encodeURIComponent\(uid\)\}\/force-refresh/, 'Force refresh must call the local safe refresh endpoint.');
+  assert.match(emailJs, /mark-sender-probable-trusted/, 'The context menu must expose probable-trusted sender marking.');
+  assert.match(emailJs, /show-message-uid/, 'The context menu must expose message email_uid copy/show.');
+  assert.match(emailJs, /navigator\.clipboard\.writeText/, 'The email_uid command must use the clipboard when available.');
+  assert.match(emailJs, /\/local\/messages\/\$\{encodeURIComponent\(uid\)\}\/probable-trusted-sender/, 'Probable-trusted sender action must call the local mark-and-requeue endpoint.');
+  assert.match(emailJs, /function waitForProbableTrustedSecurityResult\(/, 'Probable-trusted action must wait for the rechecked LLM result before replacing the opened message.');
+  assert.match(emailJs, /messageHasProbableTrustedSecurity/, 'Probable-trusted action must detect the prompt-policy result, not merely the requeue response.');
+  assert.match(emailJs, /security LLM complete/, 'Probable-trusted action must tell the operator when the rechecked LLM result has landed.');
+  assert.match(
+    emailCss,
+    /\.email-page__actions\s*>\s*\.email-icon-btn\s*\{[\s\S]*width:\s*44px[\s\S]*height:\s*44px/,
+    'Header folder/refresh icon buttons must be large and legible.',
+  );
+  assert.match(
+    emailCss,
+    /\.email-page__actions\s*>\s*\.email-icon-btn::before\s*\{[\s\S]*width:\s*24px[\s\S]*height:\s*24px/,
+    'Header folder/refresh glyphs must be large enough to read.',
+  );
 });
