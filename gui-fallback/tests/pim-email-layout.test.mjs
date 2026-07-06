@@ -124,6 +124,9 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /role="tree"/, 'Email folders must render as a tree.');
   assert.match(emailJs, /email-health-heartbeat/, 'Email list heading must expose a compact PIM health heartbeat.');
   assert.match(emailCss, /\.email-health-heartbeat--beating/, 'Healthy active PIM work must animate the compact heartbeat.');
+  assert.match(emailJs, /return downloadHealthActivity\(\);/, 'Heartbeat animation must mean active IMAP folder checking, not generic health.');
+  assert.doesNotMatch(emailJs, /state\.health\?\.healthy \|\| state\.health\?\.activity \|\| downloadHealthActivity\(\)/, 'Generic health/status/cache activity must not drive the green heartbeat.');
+  assert.match(emailJs, /checking IMAP folders/, 'Heartbeat copy must describe active IMAP folder checks.');
   assert.match(emailJs, /data-email-folder-menu-toggle="set"/, 'Folder list must render as a split dropdown tab.');
   assert.match(emailJs, /data-email-folder-menu-toggle="group"/, 'Folder group must render as a split dropdown tab.');
   assert.match(emailJs, /data-email-folder-set-option/, 'Folder list dropdown tab must expose menu options.');
@@ -165,6 +168,8 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /function ensureMessageImageCache\(/, 'HTML message rendering must preload local images into browser memory.');
   assert.match(emailJs, /htmlWithCachedMessageImages\(value, message\)/, 'HTML frame rendering must use cached local image data when available.');
   assert.match(emailJs, /function appendImageOutcomeDetails\(/, 'HTML message rendering must annotate blocked image placeholders with backend worker outcomes.');
+  assert.match(emailJs, /querySelectorAll\('\.email-image-blocked'\)/, 'Every blocked image placeholder must be considered for inline diagnostic decoration.');
+  assert.match(emailJs, /function imageOriginalForPlaceholder\(/, 'Blocked image diagnostics must work for wrapped and unwrapped original links.');
   assert.match(emailJs, /no worker outcome row is recorded/, 'Blocked image placeholders must still get inline explanations before worker outcome rows exist.');
   assert.match(emailJs, /email-image-error/, 'Blocked image placeholders must expose the exact image worker error inline.');
   assert.match(emailJs, /function imageOutcomeHoverText\(/, 'Inline image errors must expose a descriptive hover explanation.');

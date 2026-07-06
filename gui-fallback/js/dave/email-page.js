@@ -794,7 +794,7 @@ const EmailPage = (() => {
   function healthHeartbeatActive() {
     const status = String(state.health?.status || '').toLowerCase();
     if (status === 'red') return false;
-    return Boolean(state.health?.healthy || state.health?.activity || downloadHealthActivity());
+    return downloadHealthActivity();
   }
 
   function healthHeartbeatLabel() {
@@ -807,13 +807,13 @@ const EmailPage = (() => {
     const active = staleDownloads
       ? 'download state stale'
       : downloadHealthActivity()
-      ? 'checking downloads'
-      : (health.activity ? 'background active' : 'healthy');
+      ? 'checking IMAP folders'
+      : (health.activity ? 'background health/cache active' : 'health/cache OK');
     if (issues) return `PIM Email ${status}, ${issues} issue${issues === 1 ? '' : 's'}, ${active}`;
     if (warnings) return `PIM Email ${status}, ${warnings} warning${warnings === 1 ? '' : 's'}, ${active}`;
     if (downloadHealthActivity()) {
       const running = Number(download.running || 0);
-      return `PIM Email checking downloads${running ? `, ${running} run${running === 1 ? '' : 's'} active` : ''}`;
+      return `PIM Email checking IMAP folders${running ? `, ${running} run${running === 1 ? '' : 's'} active` : ''}`;
     }
     return `PIM Email ${status}, ${active}`;
   }
@@ -1602,13 +1602,34 @@ const EmailPage = (() => {
     return lines.join('\n');
   }
 
+  function imageOriginalForPlaceholder(placeholder) {
+    const wrap = placeholder?.closest?.('.email-image-wrap') || null;
+    if (wrap) {
+      const original = wrap.querySelector('a.email-image-original[href]');
+      if (original) return original;
+    }
+    let next = placeholder?.nextElementSibling || null;
+    while (next) {
+      if (next.matches?.('a.email-image-original[href]')) return next;
+      if (!next.matches?.('.email-image-error')) break;
+      next = next.nextElementSibling;
+    }
+    return null;
+  }
+
+  function placeholderAlreadyHasImageDetail(placeholder) {
+    const next = placeholder?.nextElementSibling || null;
+    if (next?.matches?.('.email-image-error')) return true;
+    const wrap = placeholder?.closest?.('.email-image-wrap') || null;
+    return Boolean(wrap?.querySelector?.('.email-image-error'));
+  }
+
   function appendImageOutcomeDetails(doc, message) {
     const outcomes = imageOutcomeMap(message);
     let changed = false;
-    Array.from(doc.querySelectorAll('.email-image-wrap')).forEach(wrap => {
-      if (wrap.querySelector('.email-image-error')) return;
-      const placeholder = wrap.querySelector('.email-image-blocked');
-      const original = wrap.querySelector('a.email-image-original[href]');
+    Array.from(doc.querySelectorAll('.email-image-blocked')).forEach(placeholder => {
+      if (placeholderAlreadyHasImageDetail(placeholder)) return;
+      const original = imageOriginalForPlaceholder(placeholder);
       if (!placeholder) return;
       const href = String(original?.getAttribute?.('href') || '').trim();
       const row = href ? (outcomes.get(href) || outcomes.get(original?.href || '')) : null;
