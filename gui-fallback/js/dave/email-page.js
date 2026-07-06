@@ -7,6 +7,7 @@ const EmailPage = (() => {
   const ULTRAWIDE_QUERY = '(min-width: 2400px) and (max-height: 1280px)';
   const VIEW_IDS = ['plain', 'html', 'markdown', 'raw'];
   const MESSAGE_LIST_LIMIT = 100;
+  const HEALTH_POLL_MS = 5000;
   const SECURITY_PROGRESS_EVENT = 'pim.email.security.progress';
   const SECURITY_SEGMENTS = [
     ['service', 'Svc'],
@@ -43,6 +44,7 @@ const EmailPage = (() => {
     expandedFolderKeys: new Set(),
     folderLoadSeq: 0,
     securityProgress: null,
+    healthPollTimer: null,
   };
 
   const escHtml = typeof esc === 'function'
@@ -583,10 +585,26 @@ const EmailPage = (() => {
 
   function healthTone() {
     const status = String(state.health?.status || '').toLowerCase();
-    if (status === 'green') return 'green';
-    if (status === 'amber') return 'amber';
     if (status === 'red') return 'red';
+    if (downloadHealthActivity()) return 'green';
+    if (status === 'amber') return 'amber';
+    if (status === 'green') return 'amber';
     return 'unknown';
+  }
+
+  function downloadHealthActivity() {
+    const download = state.health?.download || {};
+    return Boolean(
+      Number(download.running || 0) > 0
+      || download.activity
+      || download.recent_activity
+    );
+  }
+
+  function healthHeartbeatActive() {
+    const status = String(state.health?.status || '').toLowerCase();
+    if (status === 'red') return false;
+    return Boolean(state.health?.healthy || state.health?.activity || downloadHealthActivity());
   }
 
   function healthHeartbeatLabel() {
@@ -594,15 +612,22 @@ const EmailPage = (() => {
     const status = health.status || 'pending';
     const issues = Array.isArray(health.issues) ? health.issues.length : 0;
     const warnings = Array.isArray(health.warnings) ? health.warnings.length : 0;
-    const active = health.activity ? 'active' : 'idle';
+    const download = health.download || {};
+    const active = downloadHealthActivity()
+      ? 'checking downloads'
+      : (health.activity ? 'background active' : 'healthy');
     if (issues) return `PIM Email ${status}, ${issues} issue${issues === 1 ? '' : 's'}, ${active}`;
     if (warnings) return `PIM Email ${status}, ${warnings} warning${warnings === 1 ? '' : 's'}, ${active}`;
+    if (downloadHealthActivity()) {
+      const running = Number(download.running || 0);
+      return `PIM Email checking downloads${running ? `, ${running} run${running === 1 ? '' : 's'} active` : ''}`;
+    }
     return `PIM Email ${status}, ${active}`;
   }
 
   function healthHeartbeatHtml() {
     const tone = healthTone();
-    const beating = state.health?.heartbeat ? ' email-health-heartbeat--beating' : '';
+    const beating = healthHeartbeatActive() ? ' email-health-heartbeat--beating' : '';
     const label = healthHeartbeatLabel();
     return `<span class="email-health-heartbeat email-health-heartbeat--${escHtml(tone)}${beating}" role="img" aria-label="${escHtml(label)}" title="${escHtml(label)}">&#9829;</span>`;
   }
@@ -1478,6 +1503,14 @@ const EmailPage = (() => {
     }
   }
 
+  function ensureHealthPoll() {
+    if (state.healthPollTimer) return;
+    state.healthPollTimer = window.setInterval(() => {
+      if (!state.loaded || document.hidden) return;
+      refreshHealth({ silent: true });
+    }, HEALTH_POLL_MS);
+  }
+
   async function load(options = {}) {
     if (state.loading) return state.status;
     if (state.loaded && !options.force) {
@@ -1506,6 +1539,7 @@ const EmailPage = (() => {
       state.loaded = true;
       setStatus('Email middleware ready', 'ok');
       renderAll();
+      ensureHealthPoll();
       healthPromise.then(() => {
         if (!state.loaded) return;
         renderMeta();
@@ -1730,6 +1764,9 @@ const EmailPage = (() => {
         if (event.detail?.event_type === SECURITY_PROGRESS_EVENT) handleSecurityProgressEvent(event.detail);
       });
     }
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && state.loaded) refreshHealth({ silent: true });
+    });
     document.addEventListener('click', event => {
       const target = event.target;
       const actionBtn = target.closest?.('[data-email-action]');
