@@ -778,9 +778,57 @@ function _applySemanticFontRoleClasses() {
   });
 }
 
+const BLUEPRINTS_FORM_CONTROL_GUARD_SELECTOR = 'input, textarea, select, [contenteditable="true"]';
+const BLUEPRINTS_PASSWORD_MANAGER_GUARD_ATTRS = {
+  'data-lpignore': 'true',
+  'data-form-type': 'other',
+  'data-1p-ignore': 'true',
+  'data-bwignore': 'true',
+  'data-keeper-ignore': 'true',
+  'data-dashlane-ignore': 'true',
+  'data-protonpass-ignore': 'true',
+};
+
+function _guardBlueprintsFormControl(control) {
+  if (!control || control.nodeType !== 1 || typeof control.matches !== 'function') return;
+  if (!control.matches(BLUEPRINTS_FORM_CONTROL_GUARD_SELECTOR)) return;
+  Object.entries(BLUEPRINTS_PASSWORD_MANAGER_GUARD_ATTRS).forEach(([name, value]) => {
+    control.setAttribute(name, value);
+  });
+  const tag = String(control.tagName || '').toLowerCase();
+  if ((tag === 'input' || tag === 'textarea' || tag === 'select') && !control.hasAttribute('autocomplete')) {
+    control.setAttribute('autocomplete', 'off');
+  }
+  if (tag === 'input' || tag === 'textarea' || control.getAttribute('contenteditable') === 'true') {
+    if (!control.hasAttribute('autocorrect')) control.setAttribute('autocorrect', 'off');
+    if (!control.hasAttribute('autocapitalize')) control.setAttribute('autocapitalize', 'off');
+  }
+}
+
+function _applyBlueprintsFormInputGuards(root = document) {
+  if (!root || typeof root.querySelectorAll !== 'function') return;
+  if (typeof root.matches === 'function') _guardBlueprintsFormControl(root);
+  root.querySelectorAll(BLUEPRINTS_FORM_CONTROL_GUARD_SELECTOR).forEach(_guardBlueprintsFormControl);
+}
+
+function _installBlueprintsFormInputGuards() {
+  _applyBlueprintsFormInputGuards(document);
+  if (typeof MutationObserver === 'undefined') return;
+  const observer = new MutationObserver(mutations => {
+    mutations.forEach(mutation => {
+      mutation.addedNodes.forEach(node => {
+        if (node.nodeType !== 1) return;
+        _applyBlueprintsFormInputGuards(node);
+      });
+    });
+  });
+  observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
+}
+
 /* ── Bootstrap ────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
   _applySemanticFontRoleClasses();
+  _installBlueprintsFormInputGuards();
   _installBlueprintsInternalLinkHandler();
   if (!localStorage.getItem(_LS_SECRET_KEY)) { openApiKeyModal(); }
   if (typeof SoundManager !== 'undefined') SoundManager.init();

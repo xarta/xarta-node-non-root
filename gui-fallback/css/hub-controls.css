@@ -92,6 +92,19 @@ input[type="text"].hub-ctrl:autofill {
     border: 1px solid rgba(var(--hub-accent-rgb), 0.3);
 }
 
+/* Password-manager overlays can resize or cover custom Blueprints controls. */
+[data-lastpass-icon-root],
+[data-lastpass-icon],
+[data-lastpass-root],
+[data-lastpass-infield],
+[data-lpfieldnum],
+[data-lpignore="true"] + [data-lastpass-icon-root] {
+    display: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+}
+
 /* ── Clearable text input wrapper ───────────────────────────── */
 
 .hub-clear-input {

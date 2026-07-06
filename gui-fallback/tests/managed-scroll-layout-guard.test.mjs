@@ -7,6 +7,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const bodyShadeJs = fs.readFileSync(path.resolve(here, '../js/body-shade.js'), 'utf8');
 const bodyShadeCss = fs.readFileSync(path.resolve(here, '../css/body-shade.css'), 'utf8');
 const layoutNavCss = fs.readFileSync(path.resolve(here, '../css/layout-nav.css'), 'utf8');
+const hubControlsCss = fs.readFileSync(path.resolve(here, '../css/hub-controls.css'), 'utf8');
 const hubMenuJs = fs.readFileSync(path.resolve(here, '../js/hub-menu.js'), 'utf8');
 const hubMenuCss = fs.readFileSync(path.resolve(here, '../css/hub-menu.css'), 'utf8');
 const menuActionOrderJs = fs.readFileSync(path.resolve(here, '../js/menu-action-order.js'), 'utf8');
@@ -73,6 +74,26 @@ assert.match(
   headerClockJs,
   /const\s+ClockHubGestureMachine\s*=\s*\(\(\)\s*=>[\s\S]*TAP_PENDING[\s\S]*doubleTap[\s\S]*tapTimeout:\s*\{\s*next:\s*'IDLE',\s*actions:\s*\['openHub',\s*'clearTapContext'\]\s*\}[\s\S]*PRESSING[\s\S]*longPressTimeout[\s\S]*CLICK_SUPPRESSED/,
   'Header LED clock must use an explicit FSM that owns click/tap, double-tap, long-press timing, and click echo suppression.',
+);
+assert.match(
+  appJs,
+  /BLUEPRINTS_FORM_CONTROL_GUARD_SELECTOR\s*=\s*'input,\s*textarea,\s*select,\s*\[contenteditable="true"\]'/,
+  'Blueprints must keep a global form-control guard selector.',
+);
+assert.match(
+  appJs,
+  /data-lpignore[\s\S]*data-form-type[\s\S]*data-1p-ignore[\s\S]*data-bwignore/,
+  'Blueprints form controls must carry password-manager ignore attributes.',
+);
+assert.match(
+  appJs,
+  /function\s+_installBlueprintsFormInputGuards[\s\S]*new MutationObserver[\s\S]*_applyBlueprintsFormInputGuards/,
+  'Blueprints must guard dynamically-created form controls too.',
+);
+assert.match(
+  hubControlsCss,
+  /\[data-lastpass-icon-root\][\s\S]*\[data-lastpass-icon\][\s\S]*display:\s*none\s*!important/,
+  'Blueprints must globally hide known LastPass injected controls.',
 );
 assert.match(
   headerClockJs,

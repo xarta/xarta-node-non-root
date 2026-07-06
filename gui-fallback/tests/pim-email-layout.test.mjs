@@ -49,6 +49,8 @@ test('PIM Email tab follows the Blueprints managed-scroll shell contract', () =>
   assert.match(indexHtml, /data-email-folder-controls-host="modal"/, 'Folder modal must expose toolbar-level folder controls.');
   assert.match(indexHtml, /id="email-secondary-modal"[\s\S]*data-email-secondary-tab="security"[\s\S]*>Security</, 'Folder/check modal must also expose the Security tab.');
   assert.match(indexHtml, /id="email-secondary-modal"[\s\S]*data-email-secondary-tab="cache"[\s\S]*>Cache</, 'Folder/check modal must also expose the Cache tab.');
+  assert.match(tabHtml, /data-email-secondary-tab="trusted"[\s\S]*>Trusted</, 'The bottom toolbar must expose the Trusted tab.');
+  assert.match(indexHtml, /id="email-secondary-modal"[\s\S]*data-email-secondary-tab="trusted"[\s\S]*>Trusted</, 'Folder/check modal must also expose the Trusted tab.');
   assert.match(tabHtml, /data-email-list-toggle/, 'Message list collapse toggle must remain in the message header.');
 });
 
@@ -163,6 +165,7 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /function ensureMessageImageCache\(/, 'HTML message rendering must preload local images into browser memory.');
   assert.match(emailJs, /htmlWithCachedMessageImages\(value, message\)/, 'HTML frame rendering must use cached local image data when available.');
   assert.match(emailJs, /function appendImageOutcomeDetails\(/, 'HTML message rendering must annotate blocked image placeholders with backend worker outcomes.');
+  assert.match(emailJs, /no worker outcome row is recorded/, 'Blocked image placeholders must still get inline explanations before worker outcome rows exist.');
   assert.match(emailJs, /email-image-error/, 'Blocked image placeholders must expose the exact image worker error inline.');
   assert.match(emailJs, /function imageOutcomeHoverText\(/, 'Inline image errors must expose a descriptive hover explanation.');
   assert.match(emailJs, /Pillow could not decode/, 'Decode failures must explain the underlying image-library gate.');
@@ -208,12 +211,21 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /function renderRawMessage\(/, 'Raw message view must have a dedicated renderer.');
   assert.match(emailJs, /function formatPlainMessageText\(/, 'Plain view must compact excessive blank lines before display.');
   assert.match(emailJs, /function renderPlainMessage\(/, 'Plain message view must have a dedicated renderer.');
+  assert.match(emailJs, /function renderMarkdownMessage\(/, 'Markdown view must have a dedicated renderer.');
+  assert.match(emailJs, /function safeMarkdownHref\(/, 'Markdown rendering must constrain rendered image/link hrefs.');
+  assert.match(emailJs, /window\.BlueprintsMarkdown\?\.render/, 'Markdown preview must use the shared Blueprints Markdown renderer.');
+  assert.match(emailJs, /function sanitizeEmailMarkdownPreview\(/, 'Email Markdown preview must post-process shared renderer output for email-safe links/images.');
+  assert.doesNotMatch(emailJs, /function markdownToHtml\(/, 'Email must not keep a separate table-blind Markdown renderer.');
+  assert.match(emailJs, /email-markdown-image/, 'Markdown rendering must preserve local image display.');
+  assert.match(emailCss, /\.email-markdown-image/, 'Markdown images must have readable responsive styling.');
+  assert.match(emailCss, /\.email-markdown-view\s+\.rich-md-table/, 'Markdown tables must be styled inside the email preview.');
+  assert.match(emailCss, /\.email-markdown-raw/, 'Raw Markdown mode must have readable styling.');
   assert.match(emailCss, /\.email-message-content pre\.email-plain-view/, 'Plain view must have readable message-text styling.');
   assert.match(emailJs, /rawSecuritySignals/, 'Raw view must use security findings for line highlighting.');
   assert.match(emailCss, /\.email-raw-line\[data-tone="red"\]/, 'Raw view must style failed security evidence.');
   assert.match(emailCss, /\.email-raw-line\[data-tone="amber"\]/, 'Raw view must style indeterminate security evidence.');
   assert.match(emailCss, /\.email-raw-line\[data-tone="green"\]/, 'Raw view must style passed security evidence.');
-  assert.doesNotMatch(emailJs, /\bmethod:\s*['"]DELETE['"]/, 'Email UI must not expose delete capability.');
+  assert.doesNotMatch(emailJs, /delete-message|remove-message|message-delete/i, 'Email UI must not expose message delete capability.');
   assert.doesNotMatch(`${indexHtml}\n${daveMenuJs}\n${emailJs}`, /data-email-action="(?:send|delete)"/, 'Email UI must not expose send/delete actions.');
   assert.doesNotMatch(emailJs, /smtp-self-test/, 'SMTP proof must not be a general UI action.');
 });
@@ -238,9 +250,26 @@ test('PIM Email message list refreshes only on list data changes', () => {
   assert.match(emailJs, /Email health restored/, 'Successful silent health polling must clear stale stack-unavailable status.');
   assert.match(emailJs, /function isMessagePayload\(/, 'Force refresh must distinguish a full message object from a status string response.');
   assert.match(emailJs, /isMessagePayload\(data\.message\)/, 'Force refresh must refetch the message detail when the refresh result only includes a status message.');
+  assert.match(emailJs, /HEALTH_POLL_MS = 15000/, 'Email health polling must avoid old 5s ambient stack/API polling pressure.');
+  assert.match(emailJs, /CACHE_STATUS_POLL_MS = 30000/, 'Email cache-status polling must avoid old 5s ambient status polling pressure.');
+  assert.match(emailJs, /state\.secondaryTab === 'cache' \|\| cacheAge >= CACHE_STATUS_POLL_MS/, 'Cache status polling must be eager only while the Cache tab is open.');
   assert.match(emailJs, /message_prefetch_ready/, 'Email automation snapshot must expose metadata prefetch readiness.');
   assert.match(emailJs, /offset=\$\{offset\}/, 'Folder message fetches must support offset pagination.');
   assert.match(emailJs, /function loadMoreMessages\(/, 'Email UI must append the next page near the list bottom.');
+});
+
+test('PIM Email folder changes retain message and artifact caches', () => {
+  const start = emailJs.indexOf('async function loadFolderMessages');
+  const end = emailJs.indexOf('async function loadMoreMessages', start);
+  assert.notEqual(start, -1, 'loadFolderMessages must exist.');
+  const slice = emailJs.slice(start, end);
+
+  assert.match(slice, /state\.messages = \[\]/, 'Folder changes may reset visible row data.');
+  assert.match(slice, /resetMessagePrefetchQueues\(\)/, 'Folder changes may reset list/body prefetch queues.');
+  assert.doesNotMatch(slice, /state\.messageOpenCache\.clear\(/, 'Folder changes must not clear opened-message payload cache.');
+  assert.doesNotMatch(slice, /state\.messageImageCache\.clear\(/, 'Folder changes must not clear browser image memory cache.');
+  assert.doesNotMatch(slice, /clearBrowserImageStorageCache\(/, 'Folder changes must not clear service-worker image cache.');
+  assert.doesNotMatch(slice, /invalidateOpenedMessageCache\(/, 'Folder changes must not invalidate message-scoped opened cache entries.');
 });
 
 test('PIM Email message context menu is shared by the list toggle and message rows', () => {
@@ -257,6 +286,19 @@ test('PIM Email message context menu is shared by the list toggle and message ro
   assert.match(emailJs, /\/local\/messages\/\$\{encodeURIComponent\(uid\)\}\/force-refresh/, 'Force refresh must call the local safe refresh endpoint.');
   assert.match(emailJs, /mark-sender-probable-trusted/, 'The context menu must expose probable-trusted sender marking.');
   assert.match(emailJs, /show-message-uid/, 'The context menu must expose message email_uid copy/show.');
+  assert.match(emailJs, /selectedMessageUids:\s*new Set/, 'Message rows must track multi-select state.');
+  assert.match(emailJs, /data-email-message-select/, 'Message rows must use checkbox selectors for multi-select.');
+  assert.match(emailJs, /class="hub-checkbox email-row-select"/, 'Message row selection must use the shared hub checkbox convention.');
+  assert.doesNotMatch(emailJs, /email-row-btn--open/, 'Message row arrow open buttons must be replaced by checkbox selectors.');
+  assert.match(emailJs, /copy-selected-message-uids/, 'Multi-message context menus must expose only multi-capable UID copy.');
+  assert.match(emailJs, /const multi = targetUids\.length > 1/, 'Context action rendering must branch on multi-selection.');
+  assert.match(emailJs, /toggle-original-image-buttons/, 'The message context menu must expose original-button visibility.');
+  assert.match(emailJs, /ORIGINAL_IMAGE_BUTTONS_STORAGE_KEY/, 'Original-button visibility must persist locally.');
+  assert.match(emailJs, /getItem\(ORIGINAL_IMAGE_BUTTONS_STORAGE_KEY\) === 'true'/, 'Sanitized HTML original buttons must be hidden by default.');
+  assert.match(emailJs, /email-image-original \{ display:none !important; \}/, 'The HTML iframe must hide original buttons when toggled off.');
+  assert.match(emailJs, /toggle-markdown-preview/, 'The message context menu must expose Markdown raw/preview mode.');
+  assert.match(emailJs, /MARKDOWN_PREVIEW_STORAGE_KEY/, 'Markdown raw/preview mode must persist locally.');
+  assert.match(emailJs, /render_markdown_preview/, 'Email automation snapshot must expose Markdown raw/preview mode.');
   assert.match(emailJs, /navigator\.clipboard\.writeText/, 'The email_uid command must use the clipboard when available.');
   assert.match(emailJs, /\/local\/messages\/\$\{encodeURIComponent\(uid\)\}\/probable-trusted-sender/, 'Probable-trusted sender action must call the local mark-and-requeue endpoint.');
   assert.match(emailJs, /function waitForProbableTrustedSecurityResult\(/, 'Probable-trusted action must wait for the rechecked LLM result before replacing the opened message.');
@@ -272,4 +314,17 @@ test('PIM Email message context menu is shared by the list toggle and message ro
     /\.email-page__actions\s*>\s*\.email-icon-btn::before\s*\{[\s\S]*width:\s*24px[\s\S]*height:\s*24px/,
     'Header folder/refresh glyphs must be large enough to read.',
   );
+});
+
+test('PIM Email Trusted tab is stack-backed and editable', () => {
+  assert.match(emailJs, /trustedProbableSendersEndpoint/, 'Email UI must centralize the trusted sender API endpoint.');
+  assert.match(emailJs, /\/local\/trusted\/probable-senders/, 'Trusted tab must call the local stack-backed probable sender API.');
+  assert.match(emailJs, /function trustedSendersHtml\(/, 'Trusted tab must render a panel body.');
+  assert.match(emailJs, /data-email-trusted-tab="probable"/, 'Trusted tab must use nested tabs with probable senders first.');
+  assert.match(emailJs, /data-email-trusted-add-form/, 'Trusted tab must expose an add form.');
+  assert.match(emailJs, /data-email-trusted-remove/, 'Trusted tab must expose sender removal controls.');
+  assert.match(emailJs, /refreshTrustedSenders\(\{ silent: true \}\)/, 'Opening Trusted must fetch sender rows without blocking the tab render.');
+  assert.match(emailJs, /trusted_sender_count/, 'Email automation snapshot must expose trusted sender count.');
+  assert.match(emailCss, /\.email-trusted-panel/, 'Trusted panel must have dedicated styling.');
+  assert.match(emailCss, /\.email-trusted-row/, 'Trusted sender rows must have dedicated styling.');
 });

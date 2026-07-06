@@ -26,9 +26,11 @@ const EmailPage = (() => {
   const MESSAGE_CONTEXT_MOVE_PX = 10;
   const PROBABLE_TRUSTED_SECURITY_POLL_MS = 2500;
   const PROBABLE_TRUSTED_SECURITY_POLL_ATTEMPTS = 36;
-  const HEALTH_POLL_MS = 5000;
-  const CACHE_STATUS_POLL_MS = 5000;
+  const HEALTH_POLL_MS = 15000;
+  const CACHE_STATUS_POLL_MS = 30000;
   const SECURITY_PROGRESS_EVENT = 'pim.email.security.progress';
+  const ORIGINAL_IMAGE_BUTTONS_STORAGE_KEY = 'blueprints.pimEmail.showOriginalImageButtons';
+  const MARKDOWN_PREVIEW_STORAGE_KEY = 'blueprints.pimEmail.renderMarkdownPreview';
   const SECURITY_SEGMENTS = [
     ['service', 'Svc'],
     ['parse', 'Parse'],
@@ -41,6 +43,22 @@ const EmailPage = (() => {
     ['llm_judgement', 'AI'],
     ['aggregate', 'All'],
   ];
+
+  function initialOriginalImageButtonsVisible() {
+    try {
+      return window.localStorage?.getItem(ORIGINAL_IMAGE_BUTTONS_STORAGE_KEY) === 'true';
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function initialMarkdownPreviewEnabled() {
+    try {
+      return window.localStorage?.getItem(MARKDOWN_PREVIEW_STORAGE_KEY) !== 'false';
+    } catch (error) {
+      return true;
+    }
+  }
 
   const state = {
     loaded: false,
@@ -95,6 +113,7 @@ const EmailPage = (() => {
     cacheStatusLastRefreshed: 0,
     cacheStatusPollTimer: null,
     serviceWorkerImageCacheCount: null,
+    selectedMessageUids: new Set(),
     messageListSignature: '',
     messageListScrollPending: false,
     message: null,
@@ -108,7 +127,15 @@ const EmailPage = (() => {
     expandedFolderKeys: new Set(),
     folderLoadSeq: 0,
     securityProgress: null,
+    showOriginalImageButtons: initialOriginalImageButtonsVisible(),
+    renderMarkdownPreview: initialMarkdownPreviewEnabled(),
+    trustedNestedTab: 'probable',
+    trustedSenders: [],
+    trustedLoading: false,
+    trustedLoaded: false,
+    trustedError: '',
     messageContextMenuOpen: false,
+    messageContextUids: [],
     securitySegmentModalOpen: false,
     healthPollTimer: null,
   };
@@ -652,6 +679,27 @@ const EmailPage = (() => {
     return String(state.messagePendingUid || state.message?.email_uid || state.message?.uid || '');
   }
 
+  function rowMessageUid(row) {
+    return String(row?.dataset?.emailMessageEmailUid || row?.dataset?.emailMessageUid || '').trim();
+  }
+
+  function contextMessageUids(anchorEl = null) {
+    const anchorRow = anchorEl?.closest?.('.email-message-row') || null;
+    const anchorUid = rowMessageUid(anchorRow);
+    if (anchorUid && state.selectedMessageUids.has(anchorUid) && state.selectedMessageUids.size > 1) {
+      return Array.from(state.selectedMessageUids);
+    }
+    if (!anchorUid && state.selectedMessageUids.size > 1) {
+      return Array.from(state.selectedMessageUids);
+    }
+    const uid = anchorUid || activeMessageUid();
+    return uid ? [uid] : [];
+  }
+
+  function currentContextMessageUids() {
+    return Array.isArray(state.messageContextUids) ? state.messageContextUids.filter(Boolean) : [];
+  }
+
   function isMessagePayload(value) {
     return Boolean(
       value
@@ -696,6 +744,15 @@ const EmailPage = (() => {
     return `${API_ROOT}/local/messages/${encodeURIComponent(uid)}/probable-trusted-sender`;
   }
 
+  function trustedProbableSendersEndpoint(options = {}) {
+    const limit = Math.max(1, Math.min(Number(options.limit || 500), 2000));
+    return `${API_ROOT}/local/trusted/probable-senders?limit=${limit}`;
+  }
+
+  function trustedProbableSenderDeleteEndpoint(senderEmail) {
+    return `${API_ROOT}/local/trusted/probable-senders?sender_email=${encodeURIComponent(senderEmail)}`;
+  }
+
   function renderMeta() {
     const meta = el('email-meta');
     if (!meta) return;
@@ -725,6 +782,8 @@ const EmailPage = (() => {
 
   function downloadHealthActivity() {
     const download = state.health?.download || {};
+    const stale = Number(download.stale_running || 0) > 0 || Boolean(download.last_run?.stale);
+    if (stale && Number(download.running || 0) <= 0) return false;
     return Boolean(
       Number(download.running || 0) > 0
       || download.activity
@@ -744,7 +803,10 @@ const EmailPage = (() => {
     const issues = Array.isArray(health.issues) ? health.issues.length : 0;
     const warnings = Array.isArray(health.warnings) ? health.warnings.length : 0;
     const download = health.download || {};
-    const active = downloadHealthActivity()
+    const staleDownloads = Number(download.stale_running || 0) > 0 || Boolean(download.last_run?.stale);
+    const active = staleDownloads
+      ? 'download state stale'
+      : downloadHealthActivity()
       ? 'checking downloads'
       : (health.activity ? 'background active' : 'healthy');
     if (issues) return `PIM Email ${status}, ${issues} issue${issues === 1 ? '' : 's'}, ${active}`;
@@ -1542,21 +1604,24 @@ const EmailPage = (() => {
 
   function appendImageOutcomeDetails(doc, message) {
     const outcomes = imageOutcomeMap(message);
-    if (!outcomes.size) return false;
     let changed = false;
     Array.from(doc.querySelectorAll('.email-image-wrap')).forEach(wrap => {
       if (wrap.querySelector('.email-image-error')) return;
       const placeholder = wrap.querySelector('.email-image-blocked');
       const original = wrap.querySelector('a.email-image-original[href]');
-      if (!placeholder || !original) return;
-      const href = String(original.getAttribute('href') || '').trim();
-      const row = outcomes.get(href) || outcomes.get(original.href || '');
-      if (!row) return;
+      if (!placeholder) return;
+      const href = String(original?.getAttribute?.('href') || '').trim();
+      const row = href ? (outcomes.get(href) || outcomes.get(original?.href || '')) : null;
       const detail = doc.createElement('span');
       detail.className = 'email-image-error';
-      detail.textContent = imageOutcomeText(row);
-      detail.setAttribute('title', imageOutcomeHoverText(row));
-      detail.setAttribute('aria-label', imageOutcomeHoverText(row));
+      const fallbackText = original
+        ? 'Remote image blocked in the local-safe view; no worker outcome row is recorded for this source yet.'
+        : 'Image blocked in the local-safe view; no worker outcome row is recorded for this placeholder yet.';
+      const text = row ? imageOutcomeText(row) : fallbackText;
+      const title = row ? imageOutcomeHoverText(row) : (original ? `${fallbackText}\nOriginal URL: ${href}` : fallbackText);
+      detail.textContent = text;
+      detail.setAttribute('title', title);
+      detail.setAttribute('aria-label', title);
       detail.setAttribute('tabindex', '0');
       placeholder.insertAdjacentElement('afterend', detail);
       changed = true;
@@ -1602,9 +1667,22 @@ const EmailPage = (() => {
   function syncSelectedMessageRows() {
     const activeUid = activeMessageUid();
     document.querySelectorAll('#email-message-list .email-message-row').forEach(row => {
-      const uid = row.dataset.emailMessageEmailUid || row.dataset.emailMessageUid || '';
+      const uid = rowMessageUid(row);
+      const multiSelected = uid && state.selectedMessageUids.has(uid);
       row.dataset.selected = uid && uid === activeUid ? 'true' : 'false';
+      row.dataset.multiSelected = multiSelected ? 'true' : 'false';
+      const checkbox = row.querySelector('[data-email-message-select]');
+      if (checkbox) checkbox.checked = Boolean(multiSelected);
     });
+  }
+
+  function toggleMessageSelection(uid, checked) {
+    const clean = String(uid || '').trim();
+    if (!clean) return false;
+    if (checked) state.selectedMessageUids.add(clean);
+    else state.selectedMessageUids.delete(clean);
+    syncSelectedMessageRows();
+    return true;
   }
 
   function applyMessageListResponse(data, { append = false, offset = 0 } = {}) {
@@ -1647,14 +1725,18 @@ const EmailPage = (() => {
   function messageRowHtml(row) {
     const key = messageIdentity(row);
     const selected = key === activeMessageUid();
+    const multiSelected = state.selectedMessageUids.has(key);
     return `
-      <div class="email-message-row" data-email-message-uid="${escHtml(row.uid || '')}" data-email-message-email-uid="${escHtml(row.email_uid || '')}" data-selected="${selected ? 'true' : 'false'}" tabindex="0">
+      <div class="email-message-row" data-email-message-uid="${escHtml(row.uid || '')}" data-email-message-email-uid="${escHtml(row.email_uid || '')}" data-selected="${selected ? 'true' : 'false'}" data-multi-selected="${multiSelected ? 'true' : 'false'}" tabindex="0">
+        <label class="hub-checkbox email-row-select" title="Select message" aria-label="Select message ${escHtml(row.subject || row.email_uid || '')}">
+          <input class="hub-checkbox__input" type="checkbox" data-email-message-select="${escHtml(key)}"${multiSelected ? ' checked' : ''}>
+          <span class="hub-checkbox__box" aria-hidden="true"></span>
+        </label>
         <div>
           <div class="email-message-title">${escHtml(row.subject || '(no subject)')}</div>
           <div class="email-message-from">${escHtml(row.from || '')}</div>
           <div class="email-message-date">${escHtml(row.date || '')}</div>
         </div>
-        <button class="email-row-btn email-row-btn--open" type="button" data-email-message-uid="${escHtml(row.uid || '')}" data-email-message-email-uid="${escHtml(row.email_uid || '')}" title="Open message" aria-label="Open message"></button>
       </div>
     `;
   }
@@ -1743,10 +1825,12 @@ const EmailPage = (() => {
 
   function openMessageContextMenuAt(anchorEl) {
     if (!anchorEl || typeof anchorEl.getBoundingClientRect !== 'function') return false;
-    if (!activeMessageUid()) {
+    const targetUids = contextMessageUids(anchorEl);
+    if (!targetUids.length) {
       setStatus('Open a message before using message actions', 'warn');
       return true;
     }
+    state.messageContextUids = targetUids;
     closeFolderMenus();
     closeMessageContextMenu();
     const host = document.createElement('div');
@@ -1766,11 +1850,20 @@ const EmailPage = (() => {
     menu.style.left = '0';
     menu.style.marginTop = '0';
 
-    [
-      [messageContextButton('force-refresh-message', 'Force refresh')],
-      [messageContextButton('mark-sender-probable-trusted', 'Mark sender probable trusted')],
-      [messageContextButton('show-message-uid', 'Show / copy email_uid')],
-    ].forEach(items => {
+    const multi = targetUids.length > 1;
+    const actionColumns = multi
+      ? [
+          [messageContextButton('copy-selected-message-uids', `Copy ${targetUids.length} email_uids`)],
+          [messageContextButton('toggle-original-image-buttons', state.showOriginalImageButtons ? 'Hide original buttons' : 'Show original buttons')],
+        ]
+      : [
+          [messageContextButton('force-refresh-message', 'Force refresh')],
+          [messageContextButton('mark-sender-probable-trusted', 'Mark sender probable trusted')],
+          [messageContextButton('show-message-uid', 'Show / copy email_uid')],
+          [messageContextButton('toggle-original-image-buttons', state.showOriginalImageButtons ? 'Hide original buttons' : 'Show original buttons')],
+          [messageContextButton('toggle-markdown-preview', state.renderMarkdownPreview ? 'Show raw Markdown' : 'Render Markdown preview')],
+        ];
+    actionColumns.forEach(items => {
       const column = document.createElement('div');
       column.className = 'hub-context-menu-floating__column';
       items.forEach(item => column.appendChild(item));
@@ -2328,6 +2421,7 @@ const EmailPage = (() => {
       line-height:1.3;
       text-decoration:none;
     }
+    ${state.showOriginalImageButtons ? '' : '.email-image-original { display:none !important; }'}
     table { width:auto; max-width:100%; border-collapse:collapse; margin:12px 0; background:#fff; }
     th, td { border:1px solid #cfd6e3; padding:6px 8px; vertical-align:top; }
     th { background:#edf2f8; }
@@ -2358,7 +2452,7 @@ const EmailPage = (() => {
     }
   </style>
 </head>
-<body>${bodyHtml}</body>
+<body data-original-image-buttons="${state.showOriginalImageButtons ? 'shown' : 'hidden'}">${bodyHtml}</body>
 </html>`;
   }
 
@@ -2541,6 +2635,106 @@ const EmailPage = (() => {
     content.appendChild(pre);
   }
 
+  function safeMarkdownHref(value) {
+    const clean = String(value || '').trim();
+    if (!clean) return '';
+    if (clean.startsWith('/api/v1/personal/email/local/images/')) return clean;
+    if (/^https?:\/\//i.test(clean)) return clean;
+    if (/^mailto:[^\s]+$/i.test(clean)) return clean;
+    try {
+      const url = new URL(clean, window.location?.origin || undefined);
+      if (url.origin === window.location?.origin && url.pathname.startsWith('/api/v1/personal/email/local/images/')) {
+        return url.href;
+      }
+    } catch (error) {}
+    return '';
+  }
+
+  function safeMarkdownImageSrc(value) {
+    const clean = String(value || '').trim();
+    if (!clean) return '';
+    if (clean.startsWith('/api/v1/personal/email/local/images/')) return clean;
+    if (/^data:image\//i.test(clean)) return clean;
+    try {
+      const url = new URL(clean, window.location?.origin || undefined);
+      if (url.origin === window.location?.origin && url.pathname.startsWith('/api/v1/personal/email/local/images/')) {
+        return url.href;
+      }
+    } catch (error) {}
+    return '';
+  }
+
+  function rawMarkdownText(value) {
+    const clean = String(value || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+    return clean || 'No Markdown view is available for this message.';
+  }
+
+  function sharedMarkdownHtml(value) {
+    const renderer = window.BlueprintsMarkdown?.render;
+    if (typeof renderer === 'function') {
+      return renderer(value, { emptyText: 'No Markdown view is available for this message.' });
+    }
+    return `<pre class="email-markdown-raw">${escHtml(rawMarkdownText(value))}</pre>`;
+  }
+
+  function sanitizeEmailMarkdownPreview(shell) {
+    if (!shell) return;
+    shell.querySelectorAll('img').forEach(img => {
+      const cleanSrc = safeMarkdownImageSrc(img.getAttribute('src') || img.getAttribute('data-rich-md-image-uri') || '');
+      if (!cleanSrc) {
+        const blocked = document.createElement('span');
+        blocked.className = 'email-markdown-image-blocked';
+        const alt = String(img.getAttribute('alt') || '').trim();
+        blocked.textContent = alt ? `[image blocked: ${alt}]` : '[image blocked]';
+        img.replaceWith(blocked);
+        return;
+      }
+      img.setAttribute('src', cleanSrc);
+      img.classList.add('email-markdown-image');
+      img.setAttribute('loading', 'lazy');
+    });
+    shell.querySelectorAll('a[href]').forEach(anchor => {
+      const cleanHref = safeMarkdownHref(anchor.getAttribute('href') || '');
+      if (!cleanHref) {
+        const blocked = document.createElement('span');
+        blocked.className = 'email-markdown-link-blocked';
+        blocked.textContent = anchor.textContent || anchor.getAttribute('href') || '';
+        anchor.replaceWith(blocked);
+        return;
+      }
+      anchor.setAttribute('href', cleanHref);
+      if (/^https?:\/\//i.test(cleanHref)) {
+        anchor.setAttribute('target', '_blank');
+        anchor.setAttribute('rel', 'noopener noreferrer');
+      } else {
+        anchor.removeAttribute('target');
+        anchor.removeAttribute('rel');
+      }
+    });
+  }
+
+  function renderRawMarkdownMessage(content, value) {
+    const pre = document.createElement('pre');
+    pre.className = 'email-markdown-view email-markdown-raw';
+    pre.textContent = rawMarkdownText(value);
+    content.textContent = '';
+    content.appendChild(pre);
+  }
+
+  function renderMarkdownMessage(content, value) {
+    if (!state.renderMarkdownPreview) {
+      renderRawMarkdownMessage(content, value);
+      return;
+    }
+    const shell = document.createElement('div');
+    shell.className = 'email-markdown-view calendar-markdown-preview';
+    shell.dataset.emailMarkdownMode = 'preview';
+    shell.innerHTML = sharedMarkdownHtml(value);
+    sanitizeEmailMarkdownPreview(shell);
+    content.textContent = '';
+    content.appendChild(shell);
+  }
+
   function renderBlockedMessage(content, message) {
     const security = message?.security || {};
     const reason = security.blocked_reason || message?.blocked_reason || 'completed security result missing';
@@ -2593,6 +2787,10 @@ const EmailPage = (() => {
     }
     if (state.view === 'plain') {
       renderPlainMessage(content, value);
+      return;
+    }
+    if (state.view === 'markdown') {
+      renderMarkdownMessage(content, value);
       return;
     }
     const pre = document.createElement('pre');
@@ -2795,6 +2993,114 @@ const EmailPage = (() => {
     `;
   }
 
+  function trustedSendersRowsHtml() {
+    const rows = Array.isArray(state.trustedSenders) ? state.trustedSenders : [];
+    if (state.trustedLoading && !rows.length) {
+      return '<div class="email-empty">Loading probable trusted senders.</div>';
+    }
+    if (state.trustedError) {
+      return `<div class="email-empty">${escHtml(state.trustedError)}</div>`;
+    }
+    if (!rows.length) {
+      return '<div class="email-empty">No probable trusted senders have been added.</div>';
+    }
+    return `
+      <div class="email-trusted-table">
+        ${rows.map(row => `
+          <div class="email-trusted-row">
+            <div class="email-trusted-row__main">
+              <strong>${escHtml(row.sender_email || '')}</strong>
+              <span>${escHtml(row.display_name || row.sender_domain || 'probable trusted')}</span>
+              <span>${escHtml(row.updated_at || '')}</span>
+            </div>
+            <button class="email-trusted-remove" type="button" data-email-trusted-remove="${escHtml(row.sender_email || '')}">Remove</button>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  function trustedSendersHtml() {
+    return `
+      <div class="email-trusted-panel">
+        <div class="email-trusted-tabs" role="tablist" aria-label="Trusted sender tables">
+          <button type="button" data-email-trusted-tab="probable" data-active="${state.trustedNestedTab === 'probable' ? 'true' : 'false'}">Probable trusted senders</button>
+        </div>
+        <section class="email-trusted-section">
+          <div class="email-cache-section__head">
+            <h4>Probable Trusted Senders</h4>
+            ${securityPillHtml(`${state.trustedSenders.length} active`, 'info')}
+          </div>
+          <form class="email-trusted-add" data-email-trusted-add-form>
+            <input type="email" name="sender_email" placeholder="sender@example.com" autocomplete="off" required>
+            <button type="submit">Add</button>
+          </form>
+          ${trustedSendersRowsHtml()}
+        </section>
+      </div>
+    `;
+  }
+
+  async function refreshTrustedSenders(options = {}) {
+    if (state.trustedLoading) return state.trustedSenders;
+    state.trustedLoading = true;
+    state.trustedError = '';
+    if (!options.silent) renderSecondaryPanels();
+    try {
+      const data = await fetchJson(trustedProbableSendersEndpoint());
+      state.trustedSenders = Array.isArray(data.probable_trusted_senders)
+        ? data.probable_trusted_senders
+        : [];
+      state.trustedLoaded = true;
+      return state.trustedSenders;
+    } catch (error) {
+      state.trustedError = error.message || String(error);
+      return state.trustedSenders;
+    } finally {
+      state.trustedLoading = false;
+      if (state.secondaryTab === 'trusted') {
+        renderSecondaryPanels();
+        renderUltrawide();
+      }
+    }
+  }
+
+  async function addTrustedSenderFromForm(form) {
+    const input = form?.querySelector?.('input[name="sender_email"]');
+    const sender = String(input?.value || '').trim();
+    if (!sender) return false;
+    setStatus('Adding probable trusted sender', 'unknown');
+    try {
+      await fetchJson(trustedProbableSendersEndpoint(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sender_email: sender }),
+      });
+      if (input) input.value = '';
+      await refreshTrustedSenders({ silent: true });
+      setStatus(`Added ${sender} probable trusted`, 'ok');
+      return true;
+    } catch (error) {
+      setStatus(error.message || String(error), 'err');
+      return false;
+    }
+  }
+
+  async function removeTrustedSender(senderEmail) {
+    const sender = String(senderEmail || '').trim();
+    if (!sender) return false;
+    setStatus('Removing probable trusted sender', 'unknown');
+    try {
+      await fetchJson(trustedProbableSenderDeleteEndpoint(sender), { method: 'DELETE' });
+      await refreshTrustedSenders({ silent: true });
+      setStatus(`Removed ${sender} probable trusted`, 'ok');
+      return true;
+    } catch (error) {
+      setStatus(error.message || String(error), 'err');
+      return false;
+    }
+  }
+
   async function browserPimEmailImageCacheCount() {
     if (typeof caches === 'undefined') return null;
     try {
@@ -2837,6 +3143,7 @@ const EmailPage = (() => {
       ['checks', 'Checks'],
       ['security', 'Security'],
       ['cache', 'Cache'],
+      ['trusted', 'Trusted'],
     ];
     return tabs.map(([id, label]) => `
       <button type="button" data-email-secondary-tab="${escHtml(id)}" data-active="${state.secondaryTab === id ? 'true' : 'false'}" data-email-secondary-layout="${escHtml(layout)}">${escHtml(label)}</button>
@@ -2847,6 +3154,7 @@ const EmailPage = (() => {
     if (state.secondaryTab === 'checks') return capabilityRowsHtml();
     if (state.secondaryTab === 'security') return messageSecurityHtml();
     if (state.secondaryTab === 'cache') return cacheStatusHtml();
+    if (state.secondaryTab === 'trusted') return trustedSendersHtml();
     return foldersHtml();
   }
 
@@ -2863,7 +3171,7 @@ const EmailPage = (() => {
     if (modalTitle) {
       modalTitle.textContent = state.secondaryTab === 'security'
         ? 'Email Security'
-        : (state.secondaryTab === 'checks' ? 'Email Checks' : (state.secondaryTab === 'cache' ? 'Email Cache' : 'Email Folders'));
+        : (state.secondaryTab === 'checks' ? 'Email Checks' : (state.secondaryTab === 'cache' ? 'Email Cache' : (state.secondaryTab === 'trusted' ? 'Email Trusted' : 'Email Folders')));
     }
   }
 
@@ -2981,7 +3289,10 @@ const EmailPage = (() => {
     state.healthPollTimer = window.setInterval(() => {
       if (!state.loaded || document.hidden) return;
       refreshHealth({ silent: true });
-      refreshCacheStatus({ silent: true });
+      const cacheAge = Date.now() - Number(state.cacheStatusLastRefreshed || 0);
+      if (state.secondaryTab === 'cache' || cacheAge >= CACHE_STATUS_POLL_MS) {
+        refreshCacheStatus({ silent: true });
+      }
     }, Math.min(HEALTH_POLL_MS, CACHE_STATUS_POLL_MS));
   }
 
@@ -3386,7 +3697,8 @@ const EmailPage = (() => {
 
   async function showMessageUid() {
     closeMessageContextMenu();
-    const uid = activeMessageUid();
+    const contextUids = currentContextMessageUids();
+    const uid = contextUids.length === 1 ? contextUids[0] : activeMessageUid();
     if (!uid) {
       setStatus('Open a message before copying email_uid', 'warn');
       return false;
@@ -3406,6 +3718,58 @@ const EmailPage = (() => {
       });
     }
     return copied;
+  }
+
+  async function copySelectedMessageUids() {
+    closeMessageContextMenu();
+    const uids = currentContextMessageUids();
+    if (!uids.length) {
+      setStatus('Select messages before copying email_uids', 'warn');
+      return false;
+    }
+    const text = uids.join('\n');
+    let copied = false;
+    try {
+      copied = await copyText(text);
+    } catch (error) {
+      copied = false;
+    }
+    setStatus(copied ? `${uids.length} email_uids copied` : `${uids.length} email_uids ready to copy`, copied ? 'ok' : 'warn');
+    return copied;
+  }
+
+  function toggleOriginalImageButtons() {
+    closeMessageContextMenu();
+    state.showOriginalImageButtons = !state.showOriginalImageButtons;
+    try {
+      window.localStorage?.setItem(
+        ORIGINAL_IMAGE_BUTTONS_STORAGE_KEY,
+        state.showOriginalImageButtons ? 'true' : 'false',
+      );
+    } catch (error) {}
+    if (state.view === 'html') renderMessage();
+    setStatus(
+      state.showOriginalImageButtons ? 'Sanitized HTML original buttons shown' : 'Sanitized HTML original buttons hidden',
+      'ok',
+    );
+    return true;
+  }
+
+  function toggleMarkdownPreview() {
+    closeMessageContextMenu();
+    state.renderMarkdownPreview = !state.renderMarkdownPreview;
+    try {
+      window.localStorage?.setItem(
+        MARKDOWN_PREVIEW_STORAGE_KEY,
+        state.renderMarkdownPreview ? 'true' : 'false',
+      );
+    } catch (error) {}
+    if (state.view === 'markdown') renderMessage();
+    setStatus(
+      state.renderMarkdownPreview ? 'Markdown preview rendered' : 'Raw Markdown shown',
+      'ok',
+    );
+    return true;
   }
 
   function messageHasProbableTrustedSecurity(message, senderEmail = '') {
@@ -3494,6 +3858,9 @@ const EmailPage = (() => {
     if (action === 'force-refresh-message') return forceRefreshMessage();
     if (action === 'mark-sender-probable-trusted') return markSenderProbableTrusted();
     if (action === 'show-message-uid') return showMessageUid();
+    if (action === 'copy-selected-message-uids') return copySelectedMessageUids();
+    if (action === 'toggle-original-image-buttons') return toggleOriginalImageButtons();
+    if (action === 'toggle-markdown-preview') return toggleMarkdownPreview();
     return false;
   }
 
@@ -3588,7 +3955,7 @@ const EmailPage = (() => {
   }
 
   function messageRowTargetUid(row) {
-    return String(row?.dataset?.emailMessageEmailUid || row?.dataset?.emailMessageUid || '').trim();
+    return rowMessageUid(row);
   }
 
   function openMessageContextMenuForRow(row) {
@@ -3639,6 +4006,7 @@ const EmailPage = (() => {
 
     row.addEventListener('pointerdown', event => {
       if (event.button !== undefined && event.button !== 0) return;
+      if (event.target?.closest?.('[data-email-message-select], .email-row-select')) return;
       fsm.state = 'pressing';
       fsm.pointerId = event.pointerId;
       fsm.startX = event.clientX;
@@ -3747,6 +4115,22 @@ const EmailPage = (() => {
         renderSecondaryPanels();
         renderUltrawide();
         if (state.secondaryTab === 'cache') refreshCacheStatus({ silent: true });
+        if (state.secondaryTab === 'trusted' && !state.trustedLoaded) refreshTrustedSenders({ silent: true });
+        return;
+      }
+      const trustedTab = target.closest?.('[data-email-trusted-tab]');
+      if (trustedTab) {
+        event.preventDefault();
+        state.trustedNestedTab = trustedTab.dataset.emailTrustedTab || 'probable';
+        renderSecondaryPanels();
+        renderUltrawide();
+        if (!state.trustedLoaded) refreshTrustedSenders({ silent: true });
+        return;
+      }
+      const trustedRemove = target.closest?.('[data-email-trusted-remove]');
+      if (trustedRemove) {
+        event.preventDefault();
+        removeTrustedSender(trustedRemove.dataset.emailTrustedRemove || '');
         return;
       }
       const folderToggle = target.closest?.('[data-email-folder-toggle]');
@@ -3781,6 +4165,17 @@ const EmailPage = (() => {
         setFolderGroup(groupOption.dataset.emailFolderGroupOption || '');
         return;
       }
+      const selectLabel = target.closest?.('.email-row-select');
+      if (selectLabel && !target.closest?.('[data-email-message-select]')) {
+        event.stopPropagation();
+        return;
+      }
+      const messageSelect = target.closest?.('[data-email-message-select]');
+      if (messageSelect) {
+        event.stopPropagation();
+        toggleMessageSelection(messageSelect.dataset.emailMessageSelect || '', messageSelect.checked);
+        return;
+      }
       const messageRow = target.closest?.('[data-email-message-uid]');
       if (messageRow) {
         event.preventDefault();
@@ -3793,10 +4188,22 @@ const EmailPage = (() => {
       }
       if (!target.closest?.('[data-email-folder-dropdown]')) closeFolderMenus();
     });
+    document.addEventListener('change', event => {
+      const messageSelect = event.target.closest?.('[data-email-message-select]');
+      if (!messageSelect) return;
+      toggleMessageSelection(messageSelect.dataset.emailMessageSelect || '', messageSelect.checked);
+    });
+    document.addEventListener('submit', event => {
+      const form = event.target.closest?.('[data-email-trusted-add-form]');
+      if (!form) return;
+      event.preventDefault();
+      addTrustedSenderFromForm(form);
+    });
     document.addEventListener('keydown', event => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       const row = event.target.closest?.('.email-message-row[data-email-message-uid]');
       if (!row) return;
+      if (event.target.closest?.('[data-email-message-select], .email-row-select')) return;
       event.preventDefault();
       openMessage(row.dataset.emailMessageEmailUid || row.dataset.emailMessageUid || '');
     });
@@ -3862,6 +4269,12 @@ const EmailPage = (() => {
       service_worker_image_cache_count: state.serviceWorkerImageCacheCount,
       cache_status: state.cacheStatus,
       cache_status_error: state.cacheStatusError,
+      selected_message_count: state.selectedMessageUids.size,
+      selected_message_uids: Array.from(state.selectedMessageUids).slice(0, 20),
+      show_original_image_buttons: state.showOriginalImageButtons,
+      render_markdown_preview: state.renderMarkdownPreview,
+      trusted_sender_count: state.trustedSenders.length,
+      trusted_loaded: state.trustedLoaded,
       last_message_timing: state.lastMessageTiming,
       message_timings: state.messageTimings.slice(0, 6),
       message_context_menu_open: state.messageContextMenuOpen,
