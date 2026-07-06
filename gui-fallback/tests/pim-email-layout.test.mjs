@@ -10,6 +10,7 @@ const indexHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const emailCss = fs.readFileSync(path.join(root, 'css/dave-email.css'), 'utf8');
 const bodyShadeCss = fs.readFileSync(path.join(root, 'css/body-shade.css'), 'utf8');
 const bodyShadeJs = fs.readFileSync(path.join(root, 'js/body-shade.js'), 'utf8');
+const activeBrowserObserverJs = fs.readFileSync(path.join(root, 'js/active-browser-observer.js'), 'utf8');
 const daveMenuJs = fs.readFileSync(path.join(root, 'js/dave/dave-menu.js'), 'utf8');
 const appJs = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
 const emailJs = fs.readFileSync(path.join(root, 'js/dave/email-page.js'), 'utf8');
@@ -95,6 +96,10 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
     assert.ok(daveMenuJs.includes(`fn: '${fn}'`) || emailJs.includes(`'${fn}'`), `${fn} must be wired.`);
   }
   assert.match(appJs, /tab === 'email'[\s\S]*BlueprintsEmailPage\.load\(\)/, 'switchTab must lazy-load Email.');
+  assert.match(appJs, /email:\s*typeof window\.BlueprintsEmailPage\?\.snapshot === 'function'/, 'Active Browser automation reports must include Email snapshot state.');
+  assert.match(activeBrowserObserverJs, /const emailSnapshot = typeof window\.BlueprintsEmailPage\?\.snapshot === 'function'/, 'Active Browser observer reports must normalize Email snapshot state.');
+  assert.match(activeBrowserObserverJs, /surfaces\.email = emailSnapshot/, 'Active Browser observer must preserve Email surface details in raw reports.');
+  assert.match(activeBrowserObserverJs, /message_context_menu_open: !!email\.message_context_menu_open/, 'Active Browser stable keys must notice Email context menu state changes.');
   assert.match(emailJs, /\/local\/health/, 'Email UI must read lightweight local PIM health.');
   assert.match(emailJs, /\/local\/folders/, 'Email UI must list virtual local folders.');
   assert.match(emailJs, /function localCorpusAvailable\(/, 'Email UI must keep local corpus as the integrated page mode.');
@@ -167,4 +172,32 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.doesNotMatch(emailJs, /\bmethod:\s*['"]DELETE['"]/, 'Email UI must not expose delete capability.');
   assert.doesNotMatch(`${indexHtml}\n${daveMenuJs}\n${emailJs}`, /data-email-action="(?:send|delete)"/, 'Email UI must not expose send/delete actions.');
   assert.doesNotMatch(emailJs, /smtp-self-test/, 'SMTP proof must not be a general UI action.');
+});
+
+test('PIM Email message list refreshes only on list data changes', () => {
+  const healthStart = emailJs.indexOf('async function refreshHealth');
+  const healthEnd = emailJs.indexOf('function ensureHealthPoll', healthStart);
+  assert.notEqual(healthStart, -1, 'refreshHealth must exist.');
+  const healthSlice = emailJs.slice(healthStart, healthEnd);
+
+  assert.match(emailJs, /function renderMessageListChrome\(/, 'Email UI must split list chrome from list row rendering.');
+  assert.doesNotMatch(healthSlice, /renderMessages\(/, 'Health polling must not rebuild message rows.');
+  assert.match(healthSlice, /renderMessageListChrome\(\)/, 'Health polling may refresh heartbeat/count chrome.');
+  assert.match(emailJs, /function captureMessageListAnchor\(/, 'Explicit list refreshes must capture scroll anchors.');
+  assert.match(emailJs, /function restoreMessageListAnchor\(/, 'Explicit list refreshes must restore scroll anchors.');
+  assert.match(emailJs, /function syncSelectedMessageRows\(/, 'Opening a message must update row selection without rebuilding the list.');
+  assert.match(emailJs, /MESSAGE_PREFETCH_AHEAD = 100/, 'Infinite-scroll prefetch should keep about 100 next rows in view.');
+  assert.match(emailJs, /offset=\$\{offset\}/, 'Folder message fetches must support offset pagination.');
+  assert.match(emailJs, /function loadMoreMessages\(/, 'Email UI must append the next page near the list bottom.');
+});
+
+test('PIM Email message context menu is owned by the list toggle button', () => {
+  assert.doesNotMatch(bodyShadeJs, /BodyShadeContextMenuHooks/, 'Email message actions must not hook the top Body Shade handle.');
+  assert.match(indexHtml, /data-email-list-toggle/, 'The message reader list toggle must exist.');
+  assert.match(emailJs, /function installMessageContextToggleFsm\(/, 'The list toggle must own a long-press FSM.');
+  assert.match(emailJs, /MESSAGE_CONTEXT_LONG_PRESS_MS/, 'The long-press FSM must have built-in timing.');
+  assert.match(emailJs, /openMessageContextMenuAt\(button\)/, 'The list toggle FSM must open the message context menu.');
+  assert.match(emailJs, /hub-context-menu-floating--columns/, 'The message context menu must use the shared 3-column context-menu layout.');
+  assert.match(emailJs, /force-refresh-message/, 'The first message context command must be Force refresh.');
+  assert.match(emailJs, /\/local\/messages\/\$\{encodeURIComponent\(uid\)\}\/force-refresh/, 'Force refresh must call the local safe refresh endpoint.');
 });

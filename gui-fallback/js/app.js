@@ -296,6 +296,9 @@ function _activeBrowserAutomationState() {
       imports_dashboard: typeof window.BlueprintsImportsDashboard?.snapshot === 'function'
         ? window.BlueprintsImportsDashboard.snapshot()
         : {},
+      email: typeof window.BlueprintsEmailPage?.snapshot === 'function'
+        ? window.BlueprintsEmailPage.snapshot()
+        : {},
       kanban: typeof window.BlueprintsKanbanBoardPage?.snapshot === 'function'
         ? window.BlueprintsKanbanBoardPage.snapshot()
         : {},

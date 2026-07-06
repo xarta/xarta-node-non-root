@@ -7,6 +7,11 @@ const EmailPage = (() => {
   const ULTRAWIDE_QUERY = '(min-width: 2400px) and (max-height: 1280px)';
   const VIEW_IDS = ['plain', 'html', 'markdown', 'raw'];
   const MESSAGE_LIST_LIMIT = 100;
+  const MESSAGE_PREFETCH_AHEAD = 100;
+  const MESSAGE_SCROLL_LOAD_PX = 320;
+  const MESSAGE_CONTEXT_MENU_ID = 'email-message-context-menu';
+  const MESSAGE_CONTEXT_LONG_PRESS_MS = 420;
+  const MESSAGE_CONTEXT_MOVE_PX = 10;
   const HEALTH_POLL_MS = 5000;
   const SECURITY_PROGRESS_EVENT = 'pim.email.security.progress';
   const SECURITY_SEGMENTS = [
@@ -33,6 +38,12 @@ const EmailPage = (() => {
     mailbox: null,
     folders: [],
     messages: [],
+    messageListOffset: 0,
+    messageListTotal: null,
+    messagesHasMore: false,
+    messagesLoadingMore: false,
+    messageListSignature: '',
+    messageListScrollPending: false,
     message: null,
     folder: 'INBOX',
     folderLoading: false,
@@ -44,6 +55,7 @@ const EmailPage = (() => {
     expandedFolderKeys: new Set(),
     folderLoadSeq: 0,
     securityProgress: null,
+    messageContextMenuOpen: false,
     healthPollTimer: null,
   };
 
@@ -57,6 +69,9 @@ const EmailPage = (() => {
         "'": '&#39;',
       }[ch]));
 
+  let messageContextPointerHandler = null;
+  let messageContextKeyHandler = null;
+
   function el(id) {
     return document.getElementById(id);
   }
@@ -68,8 +83,17 @@ const EmailPage = (() => {
   async function fetchJson(url, options = {}) {
     const resp = await fetcher()(url, options);
     const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
+    if (!resp.ok) throw new Error(errorMessageFromPayload(data, `HTTP ${resp.status}`));
     return data;
+  }
+
+  function errorMessageFromPayload(data, fallback) {
+    const detail = data?.detail;
+    if (typeof detail === 'string') return detail;
+    if (detail && typeof detail === 'object') {
+      return detail.message || detail.detail || detail.code || JSON.stringify(detail);
+    }
+    return data?.message || data?.error || fallback;
   }
 
   function setStatus(text, tone = 'unknown') {
@@ -556,13 +580,19 @@ const EmailPage = (() => {
     return `${API_ROOT}/local/folders`;
   }
 
-  function folderMessagesEndpoint(folder) {
-    return `${API_ROOT}/local/folder-messages?folder=${encodeURIComponent(folder)}&limit=${MESSAGE_LIST_LIMIT}`;
+  function folderMessagesEndpoint(folder, options = {}) {
+    const limit = Math.max(1, Math.min(Number(options.limit || MESSAGE_LIST_LIMIT), 200));
+    const offset = Math.max(0, Number(options.offset || 0));
+    return `${API_ROOT}/local/folder-messages?folder=${encodeURIComponent(folder)}&limit=${limit}&offset=${offset}`;
   }
 
   function messageEndpoint(uid, row = null) {
     const emailUid = String(row?.email_uid || uid || '').trim();
     return `${API_ROOT}/local/messages/${encodeURIComponent(emailUid)}`;
+  }
+
+  function forceRefreshEndpoint(uid) {
+    return `${API_ROOT}/local/messages/${encodeURIComponent(uid)}/force-refresh`;
   }
 
   function renderMeta() {
@@ -692,8 +722,100 @@ const EmailPage = (() => {
     return true;
   }
 
+  function messageIdentity(row) {
+    return String(row?.email_uid || row?.uid || '').trim();
+  }
+
+  function messageListSignature(rows) {
+    return (rows || []).map(row => [
+      messageIdentity(row),
+      row?.raw_sha256 || '',
+      row?.date || row?.date_header || '',
+      row?.subject || '',
+      row?.from || row?.from_addr || '',
+    ].join(':')).join('|');
+  }
+
+  function messageListAnchorFromHost(host) {
+    if (!host) return null;
+    const hostRect = host.getBoundingClientRect();
+    const rows = Array.from(host.querySelectorAll('.email-message-row[data-email-message-email-uid]'));
+    const visible = rows.find(row => row.getBoundingClientRect().bottom >= hostRect.top);
+    if (!visible) return { scrollTop: host.scrollTop };
+    return {
+      uid: visible.dataset.emailMessageEmailUid || visible.dataset.emailMessageUid || '',
+      delta: visible.getBoundingClientRect().top - hostRect.top,
+      scrollTop: host.scrollTop,
+    };
+  }
+
+  function captureMessageListAnchor() {
+    return messageListAnchorFromHost(el('email-message-list'));
+  }
+
+  function restoreMessageListAnchor(anchor) {
+    const host = el('email-message-list');
+    if (!host || !anchor) return;
+    if (anchor.uid) {
+      const row = Array.from(host.querySelectorAll('.email-message-row')).find(item => (
+        item.dataset.emailMessageEmailUid === anchor.uid
+        || item.dataset.emailMessageUid === anchor.uid
+      ));
+      if (row) {
+        const hostRect = host.getBoundingClientRect();
+        const rowRect = row.getBoundingClientRect();
+        host.scrollTop += rowRect.top - hostRect.top - Number(anchor.delta || 0);
+        return;
+      }
+    }
+    host.scrollTop = Number(anchor.scrollTop || 0);
+  }
+
+  function syncSelectedMessageRows() {
+    const activeUid = activeMessageUid();
+    document.querySelectorAll('#email-message-list .email-message-row').forEach(row => {
+      const uid = row.dataset.emailMessageEmailUid || row.dataset.emailMessageUid || '';
+      row.dataset.selected = uid && uid === activeUid ? 'true' : 'false';
+    });
+  }
+
+  function applyMessageListResponse(data, { append = false, offset = 0 } = {}) {
+    const incoming = Array.isArray(data?.messages) ? data.messages : [];
+    if (append) {
+      const seen = new Set(state.messages.map(messageIdentity));
+      incoming.forEach(row => {
+        const key = messageIdentity(row);
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        state.messages.push(row);
+      });
+    } else {
+      state.messages = incoming;
+    }
+    const loadedEnd = Number(data?.next_offset ?? (offset + incoming.length));
+    state.messageListOffset = Number.isFinite(loadedEnd) ? Math.max(0, loadedEnd) : state.messages.length;
+    state.messageListTotal = Number.isFinite(Number(data?.total)) ? Number(data.total) : null;
+    state.messagesHasMore = Boolean(data?.has_more);
+    state.messageListSignature = messageListSignature(state.messages);
+  }
+
+  function renderMessageListChrome() {
+    const count = el('email-inbox-count');
+    if (count) {
+      const total = state.messageListTotal;
+      count.textContent = total && total > state.messages.length
+        ? `${state.messages.length}/${total}`
+        : String(state.messages.length);
+    }
+    const heading = el('email-inbox-heading');
+    if (heading) {
+      heading.innerHTML = `<span>${escHtml(state.folder || 'INBOX')}</span>${healthHeartbeatHtml()}`;
+    }
+    renderMeta();
+  }
+
   function messageRowHtml(row) {
-    const key = String(row.email_uid || row.uid || '');
+    const key = messageIdentity(row);
     const selected = key === activeMessageUid();
     return `
       <div class="email-message-row" data-email-message-uid="${escHtml(row.uid || '')}" data-email-message-email-uid="${escHtml(row.email_uid || '')}" data-selected="${selected ? 'true' : 'false'}" tabindex="0">
@@ -707,22 +829,135 @@ const EmailPage = (() => {
     `;
   }
 
-  function renderMessages() {
-    const count = el('email-inbox-count');
-    if (count) count.textContent = String(state.messages.length);
-    const heading = el('email-inbox-heading');
-    if (heading) {
-      heading.innerHTML = `<span>${escHtml(state.folder || 'INBOX')}</span>${healthHeartbeatHtml()}`;
+  function messageListTailHtml() {
+    if (state.messagesLoadingMore) {
+      return '<div class="email-empty email-message-list-tail">Loading more messages.</div>';
     }
+    if (state.messagesHasMore) {
+      return `<div class="email-empty email-message-list-tail">More messages are cached below the loaded ${state.messages.length} rows.</div>`;
+    }
+    return '';
+  }
+
+  function renderMessages(options = {}) {
+    renderMessageListChrome();
     const host = el('email-message-list');
     if (!host) return;
+    const anchor = options.anchor || (options.preserveScroll ? captureMessageListAnchor() : null);
     if (state.folderLoading) {
       host.innerHTML = `<div class="email-empty">Loading last ${MESSAGE_LIST_LIMIT} messages for ${escHtml(state.folder || 'INBOX')}.</div>`;
+      restoreMessageListAnchor(anchor);
       return;
     }
     host.innerHTML = state.messages.length
-      ? state.messages.map(messageRowHtml).join('')
+      ? `${state.messages.map(messageRowHtml).join('')}${messageListTailHtml()}`
       : `<div class="email-empty">No messages loaded for ${escHtml(state.folder || 'INBOX')}.</div>`;
+    restoreMessageListAnchor(anchor);
+  }
+
+  function closeMessageContextMenu() {
+    const existing = el(MESSAGE_CONTEXT_MENU_ID);
+    if (existing) existing.remove();
+    if (messageContextPointerHandler) {
+      document.removeEventListener('pointerdown', messageContextPointerHandler, true);
+      messageContextPointerHandler = null;
+    }
+    if (messageContextKeyHandler) {
+      document.removeEventListener('keydown', messageContextKeyHandler, true);
+      messageContextKeyHandler = null;
+    }
+    state.messageContextMenuOpen = false;
+  }
+
+  function positionMessageContextMenu(host, menu, anchorEl) {
+    const rect = anchorEl.getBoundingClientRect();
+    const viewportW = window.innerWidth || document.documentElement.clientWidth || 0;
+    const viewportH = window.innerHeight || document.documentElement.clientHeight || 0;
+    const margin = 8;
+    const menuW = menu.offsetWidth || 360;
+    const menuH = menu.offsetHeight || 120;
+    let left = Math.min(Math.max(margin, rect.right - menuW), Math.max(margin, viewportW - menuW - margin));
+    let top = rect.bottom + 6;
+    if (top + menuH + margin > viewportH) top = rect.top - menuH - 6;
+    top = Math.min(Math.max(margin, top), Math.max(margin, viewportH - menuH - margin));
+    host.style.left = `${Math.round(left)}px`;
+    host.style.top = `${Math.round(top)}px`;
+    host.style.width = `${Math.round(menuW)}px`;
+    host.style.height = `${Math.round(menuH)}px`;
+  }
+
+  function messageContextButton(action, label) {
+    const btn = document.createElement('button');
+    btn.className = 'hub-dropdown-item hub-dropdown-fn email-message-context-menu__item';
+    btn.type = 'button';
+    btn.dataset.emailAction = action;
+    btn.setAttribute('role', 'menuitem');
+    btn.textContent = label;
+    btn.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      handleAction(action);
+    });
+    return btn;
+  }
+
+  function openMessageContextMenuAt(anchorEl) {
+    if (!anchorEl || typeof anchorEl.getBoundingClientRect !== 'function') return false;
+    if (!activeMessageUid()) {
+      setStatus('Open a message before using message actions', 'warn');
+      return true;
+    }
+    closeFolderMenus();
+    closeMessageContextMenu();
+    const host = document.createElement('div');
+    host.id = MESSAGE_CONTEXT_MENU_ID;
+    host.className = 'hub-tab-dropdown open hub-context-menu-floating hub-context-menu-floating--columns email-message-context-menu';
+    host.dataset.hubContextMenu = '1';
+    host.dataset.hubMenuGroup = 'dave-email-message';
+    host.style.position = 'fixed';
+    host.style.zIndex = '12000';
+
+    const menu = document.createElement('div');
+    menu.className = 'hub-dropdown-menu hub-context-menu-floating__menu hub-context-menu-floating__menu--columns';
+    menu.setAttribute('role', 'menu');
+    menu.setAttribute('aria-label', 'Message actions');
+    menu.style.position = 'absolute';
+    menu.style.top = '0';
+    menu.style.left = '0';
+    menu.style.marginTop = '0';
+
+    [
+      [messageContextButton('force-refresh-message', 'Force refresh')],
+      [],
+      [],
+    ].forEach(items => {
+      const column = document.createElement('div');
+      column.className = 'hub-context-menu-floating__column';
+      items.forEach(item => column.appendChild(item));
+      menu.appendChild(column);
+    });
+
+    host.appendChild(menu);
+    document.body.appendChild(host);
+    positionMessageContextMenu(host, menu, anchorEl);
+    state.messageContextMenuOpen = true;
+
+    messageContextPointerHandler = event => {
+      const current = el(MESSAGE_CONTEXT_MENU_ID);
+      if (!current) return;
+      if (current.contains(event.target)) return;
+      if (event.target?.closest?.('[data-email-list-toggle]')) return;
+      closeMessageContextMenu();
+    };
+    messageContextKeyHandler = event => {
+      if (event.key === 'Escape') closeMessageContextMenu();
+    };
+    window.setTimeout(() => {
+      if (!el(MESSAGE_CONTEXT_MENU_ID)) return;
+      document.addEventListener('pointerdown', messageContextPointerHandler, true);
+      document.addEventListener('keydown', messageContextKeyHandler, true);
+    }, 0);
+    return true;
   }
 
   function htmlSecurity() {
@@ -1425,12 +1660,15 @@ const EmailPage = (() => {
     renderFolderControls();
   }
 
-  function renderAll() {
+  function renderAll(options = {}) {
     renderMeta();
     renderFolderChip();
     renderFolderControls();
     renderFolders();
-    renderMessages();
+    renderMessages({
+      preserveScroll: Boolean(options.preserveMessageListScroll),
+      anchor: options.messageListAnchor || null,
+    });
     renderMessage();
     renderSecondaryPanels();
     renderUltrawide();
@@ -1480,7 +1718,7 @@ const EmailPage = (() => {
       if (!options.silent) setStatus('Email health refreshed', healthTone() === 'red' ? 'err' : (healthTone() === 'amber' ? 'warn' : 'ok'));
       if (state.loaded && !options.deferRender) {
         renderMeta();
-        renderMessages();
+        renderMessageListChrome();
         renderSecondaryPanels();
         renderUltrawide();
       }
@@ -1496,7 +1734,7 @@ const EmailPage = (() => {
       };
       if (!options.silent) setStatus(error.message || String(error), 'err');
       if (state.loaded && !options.deferRender) {
-        renderMessages();
+        renderMessageListChrome();
         renderSecondaryPanels();
       }
       return null;
@@ -1518,6 +1756,10 @@ const EmailPage = (() => {
       return state.status;
     }
     const selectedFolder = options.folder || (state.loaded ? state.folder : 'INBOX') || 'INBOX';
+    const preserveList = Boolean(state.loaded && options.force);
+    const listAnchor = preserveList ? captureMessageListAnchor() : null;
+    const previousMessage = state.message;
+    const previousUid = activeMessageUid();
     state.folderLoadSeq += 1;
     state.loading = true;
     state.error = '';
@@ -1532,18 +1774,20 @@ const EmailPage = (() => {
       state.readSource = 'local';
       state.mailbox = folders.mailbox || messages.mailbox || state.mailbox || null;
       state.folders = Array.isArray(folders.folders) ? folders.folders : [];
-      state.messages = Array.isArray(messages.messages) ? messages.messages : [];
       state.folder = messages.folder || selectedFolder;
+      applyMessageListResponse(messages, { append: false, offset: 0 });
       state.folderLoading = false;
-      state.message = null;
+      state.message = preserveList && previousUid && state.messages.some(row => messageIdentity(row) === previousUid)
+        ? previousMessage
+        : null;
       state.loaded = true;
       setStatus('Email middleware ready', 'ok');
-      renderAll();
+      renderAll({ messageListAnchor: listAnchor });
       ensureHealthPoll();
       healthPromise.then(() => {
         if (!state.loaded) return;
         renderMeta();
-        renderMessages();
+        renderMessageListChrome();
         renderSecondaryPanels();
         renderUltrawide();
       });
@@ -1567,6 +1811,11 @@ const EmailPage = (() => {
     state.folder = clean;
     state.message = null;
     state.messages = [];
+    state.messageListOffset = 0;
+    state.messageListTotal = null;
+    state.messagesHasMore = false;
+    state.messagesLoadingMore = false;
+    state.messageListSignature = '';
     state.folderLoading = true;
     setStatus(`Loading ${clean} messages`, 'unknown');
     renderAll();
@@ -1576,7 +1825,7 @@ const EmailPage = (() => {
       state.mailbox = data.mailbox || state.mailbox;
       state.readSource = 'local';
       state.folder = data.folder || clean;
-      state.messages = Array.isArray(data.messages) ? data.messages : [];
+      applyMessageListResponse(data, { append: false, offset: 0 });
       state.folderLoading = false;
       setStatus(`${state.folder} selected`, 'ok');
       renderAll();
@@ -1589,6 +1838,46 @@ const EmailPage = (() => {
       renderAll();
       return false;
     }
+  }
+
+  async function loadMoreMessages() {
+    if (!state.loaded || state.folderLoading || state.messagesLoadingMore || !state.messagesHasMore) return false;
+    const seq = state.folderLoadSeq;
+    const folder = state.folder || 'INBOX';
+    const offset = state.messageListOffset || state.messages.length;
+    const anchor = captureMessageListAnchor();
+    state.messagesLoadingMore = true;
+    renderMessages({ anchor });
+    try {
+      const data = await fetchJson(folderMessagesEndpoint(folder, {
+        limit: MESSAGE_PREFETCH_AHEAD,
+        offset,
+      }));
+      if (seq !== state.folderLoadSeq || folder !== state.folder) return false;
+      applyMessageListResponse(data, { append: true, offset });
+      setStatus(`Loaded ${state.messages.length} ${state.folder || 'INBOX'} messages`, 'ok');
+      return true;
+    } catch (error) {
+      setStatus(error.message || String(error), 'err');
+      return false;
+    } finally {
+      if (seq === state.folderLoadSeq && folder === state.folder) {
+        state.messagesLoadingMore = false;
+        renderMessages({ anchor });
+      }
+    }
+  }
+
+  function handleMessageListScroll() {
+    if (state.messageListScrollPending) return;
+    state.messageListScrollPending = true;
+    window.requestAnimationFrame(() => {
+      state.messageListScrollPending = false;
+      const host = el('email-message-list');
+      if (!host) return;
+      const remaining = host.scrollHeight - host.scrollTop - host.clientHeight;
+      if (remaining <= MESSAGE_SCROLL_LOAD_PX) loadMoreMessages();
+    });
   }
 
   async function openMessage(uid) {
@@ -1605,7 +1894,7 @@ const EmailPage = (() => {
       state.message = data.message || null;
       state.view = defaultMessageView(state.message);
       state.securityProgress = null;
-      renderMessages();
+      syncSelectedMessageRows();
       renderMessage();
       renderSecondaryPanels();
       setStatus('Local email loaded', 'ok');
@@ -1733,6 +2022,36 @@ const EmailPage = (() => {
     return true;
   }
 
+  async function forceRefreshMessage() {
+    closeMessageContextMenu();
+    const uid = activeMessageUid();
+    if (!uid) {
+      setStatus('Open a message before force refresh', 'warn');
+      return false;
+    }
+    setStatus('Force refreshing message from IMAP', 'unknown');
+    try {
+      const data = await fetchJson(forceRefreshEndpoint(uid), { method: 'POST' });
+      if (data.message) {
+        state.message = data.message;
+      } else {
+        const refreshed = await fetchJson(messageEndpoint(uid));
+        state.message = refreshed.message || state.message;
+      }
+      state.view = defaultMessageView(state.message);
+      state.securityProgress = null;
+      renderMessage();
+      renderSecondaryPanels();
+      renderUltrawide();
+      syncSelectedMessageRows();
+      setStatus('Message force refresh complete', 'ok');
+      return true;
+    } catch (error) {
+      setStatus(error.message || String(error), 'err');
+      return false;
+    }
+  }
+
   function closeModal() {
     const modal = el('email-secondary-modal');
     if (!modal) return;
@@ -1750,12 +2069,110 @@ const EmailPage = (() => {
     if (action === 'toggle-list') return toggleList();
     if (action === 'safe-checks') return safeChecks();
     if (action === 'security-checks') return securityChecks();
+    if (action === 'force-refresh-message') return forceRefreshMessage();
     return false;
+  }
+
+  function installMessageContextToggleFsm(button) {
+    if (!button || button.dataset.emailMessageContextFsm === '1') return;
+    button.dataset.emailMessageContextFsm = '1';
+
+    const fsm = {
+      state: 'idle',
+      pointerId: null,
+      startX: 0,
+      startY: 0,
+      timer: null,
+      suppressNextClick: false,
+    };
+
+    const clearTimer = () => {
+      if (!fsm.timer) return;
+      window.clearTimeout(fsm.timer);
+      fsm.timer = null;
+    };
+
+    const cancelPress = () => {
+      clearTimer();
+      fsm.state = 'idle';
+      fsm.pointerId = null;
+    };
+
+    const openFromLongPress = () => {
+      if (fsm.state !== 'pressing') return;
+      clearTimer();
+      fsm.state = 'open';
+      fsm.suppressNextClick = true;
+      button.dataset.emailContextSuppressClick = '1';
+      openMessageContextMenuAt(button);
+    };
+
+    button.addEventListener('pointerdown', event => {
+      if (event.button !== undefined && event.button !== 0) return;
+      fsm.state = 'pressing';
+      fsm.pointerId = event.pointerId;
+      fsm.startX = event.clientX;
+      fsm.startY = event.clientY;
+      clearTimer();
+      fsm.timer = window.setTimeout(openFromLongPress, MESSAGE_CONTEXT_LONG_PRESS_MS);
+      if (typeof button.setPointerCapture === 'function') {
+        try {
+          button.setPointerCapture(event.pointerId);
+        } catch (error) {
+          // Pointer capture can fail if the pointer is already gone; the FSM still cancels on document events.
+        }
+      }
+    });
+
+    button.addEventListener('pointermove', event => {
+      if (fsm.state !== 'pressing' || event.pointerId !== fsm.pointerId) return;
+      const dx = event.clientX - fsm.startX;
+      const dy = event.clientY - fsm.startY;
+      if (Math.hypot(dx, dy) > MESSAGE_CONTEXT_MOVE_PX) cancelPress();
+    });
+
+    button.addEventListener('pointerup', event => {
+      if (event.pointerId !== fsm.pointerId) return;
+      if (fsm.state === 'pressing') cancelPress();
+      else {
+        clearTimer();
+        fsm.state = 'idle';
+        fsm.pointerId = null;
+      }
+    });
+
+    button.addEventListener('pointercancel', event => {
+      if (event.pointerId === fsm.pointerId) cancelPress();
+    });
+
+    button.addEventListener('lostpointercapture', cancelPress);
+    button.addEventListener('contextmenu', event => {
+      event.preventDefault();
+      if (openMessageContextMenuAt(button)) {
+        fsm.suppressNextClick = true;
+        button.dataset.emailContextSuppressClick = '1';
+      }
+    });
+
+    button.addEventListener('click', event => {
+      if (!fsm.suppressNextClick && button.dataset.emailContextSuppressClick !== '1') return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      fsm.suppressNextClick = false;
+      delete button.dataset.emailContextSuppressClick;
+    }, true);
+  }
+
+  function installMessageContextToggleFsms() {
+    document.querySelectorAll('[data-email-list-toggle]').forEach(installMessageContextToggleFsm);
   }
 
   function bind() {
     if (document.body.dataset.emailPageBound === '1') return;
     document.body.dataset.emailPageBound = '1';
+    installMessageContextToggleFsms();
+    const messageList = el('email-message-list');
+    if (messageList) messageList.addEventListener('scroll', handleMessageListScroll, { passive: true });
     if (window.BlueprintsEventStream && typeof window.BlueprintsEventStream.on === 'function') {
       window.BlueprintsEventStream.on(SECURITY_PROGRESS_EVENT, handleSecurityProgressEvent);
       window.BlueprintsEventStream.resumeSoon?.('email security progress listener');
@@ -1772,6 +2189,10 @@ const EmailPage = (() => {
       const actionBtn = target.closest?.('[data-email-action]');
       if (actionBtn) {
         event.preventDefault();
+        if (actionBtn.dataset.emailContextSuppressClick === '1') {
+          delete actionBtn.dataset.emailContextSuppressClick;
+          return;
+        }
         handleAction(actionBtn.dataset.emailAction);
         return;
       }
@@ -1850,6 +2271,10 @@ const EmailPage = (() => {
       message_count: state.messages.length,
       selected_folder: state.folder,
       selected_uid: activeMessageUid(),
+      message_list_offset: state.messageListOffset,
+      message_list_total: state.messageListTotal,
+      message_list_has_more: state.messagesHasMore,
+      message_context_menu_open: state.messageContextMenuOpen,
       view: state.view,
       secondary_tab: state.secondaryTab,
       list_collapsed: state.listCollapsed,

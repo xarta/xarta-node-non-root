@@ -818,6 +818,9 @@ const BlueprintsActiveBrowserObserver = (() => {
     const kanbanSnapshot = typeof window.BlueprintsKanbanBoardPage?.snapshot === 'function'
       ? window.BlueprintsKanbanBoardPage.snapshot()
       : null;
+    const emailSnapshot = typeof window.BlueprintsEmailPage?.snapshot === 'function'
+      ? window.BlueprintsEmailPage.snapshot()
+      : null;
     const matrixChatSnapshot = typeof window.MatrixChat?.snapshot === 'function'
       ? window.MatrixChat.snapshot()
       : null;
@@ -841,6 +844,11 @@ const BlueprintsActiveBrowserObserver = (() => {
       surfaces.kanban = kanbanSnapshot;
     } else if (!surfaces.kanban || typeof surfaces.kanban !== 'object') {
       surfaces.kanban = {};
+    }
+    if (emailSnapshot && typeof emailSnapshot === 'object') {
+      surfaces.email = emailSnapshot;
+    } else if (!surfaces.email || typeof surfaces.email !== 'object') {
+      surfaces.email = {};
     }
     if (matrixChatSnapshot && typeof matrixChatSnapshot === 'object') {
       surfaces.matrix_chat = matrixChatSnapshot;
@@ -1044,6 +1052,7 @@ const BlueprintsActiveBrowserObserver = (() => {
   function _stableAutomationKey(automation) {
     const surfaces = automation?.surfaces || {};
     const kanban = surfaces.kanban || {};
+    const email = surfaces.email || {};
     const matrixChat = surfaces.matrix_chat || {};
     const lastCommand = automation?.last_command || {};
     return {
@@ -1074,6 +1083,19 @@ const BlueprintsActiveBrowserObserver = (() => {
         automation_review_processor_status: kanban.automation_review_processor_status || '',
         automation_review_queue_length: Number(kanban.automation_review_queue_length || 0),
         automation_last_result: kanban.automation_last_result || '',
+      },
+      email: {
+        loaded: !!email.loaded,
+        loading: !!email.loading,
+        status: email.status || '',
+        message_count: Number(email.message_count || 0),
+        selected_folder: email.selected_folder || '',
+        selected_uid: email.selected_uid || '',
+        message_list_offset: Number(email.message_list_offset || 0),
+        message_list_total: Number(email.message_list_total || 0),
+        message_list_has_more: !!email.message_list_has_more,
+        message_context_menu_open: !!email.message_context_menu_open,
+        list_collapsed: !!email.list_collapsed,
       },
       matrix_chat: {
         server: matrixChat.server || '',
