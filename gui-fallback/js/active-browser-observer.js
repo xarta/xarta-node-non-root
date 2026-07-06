@@ -612,7 +612,7 @@ const BlueprintsActiveBrowserObserver = (() => {
   }
 
   function _isDialog(node) {
-    return typeof HTMLDialogElement !== 'undefined' && node instanceof HTMLDialogElement;
+    return typeof HTMLDialogElement === 'function' && node instanceof HTMLDialogElement;
   }
 
   function _elementLooksVisible(node) {

@@ -1,6 +1,8 @@
-const BP_CACHE_VERSION = 'bp-fallback-v378';
+const BP_CACHE_VERSION = 'bp-fallback-v379';
 const STATIC_CACHE = `${BP_CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${BP_CACHE_VERSION}-runtime`;
+const PIM_EMAIL_IMAGE_CACHE = `${BP_CACHE_VERSION}-pim-email-images`;
+const PIM_EMAIL_IMAGE_PATH = '/api/v1/personal/email/local/images/';
 
 const STATIC_ASSETS = [
   './',
@@ -20,6 +22,10 @@ function isRuntimeCacheableAsset(pathname) {
   return /\.(css|js|svg|png|jpg|jpeg|webp|gif|ico|woff2?|ttf)$/i.test(pathname);
 }
 
+function isPimEmailImageRequest(url) {
+  return url.pathname.startsWith(PIM_EMAIL_IMAGE_PATH);
+}
+
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(STATIC_CACHE);
@@ -33,7 +39,7 @@ self.addEventListener('activate', event => {
     const keys = await caches.keys();
     await Promise.all(
       keys
-        .filter(key => ![STATIC_CACHE, RUNTIME_CACHE].includes(key))
+        .filter(key => ![STATIC_CACHE, RUNTIME_CACHE, PIM_EMAIL_IMAGE_CACHE].includes(key))
         .map(key => caches.delete(key))
     );
     await self.clients.claim();
@@ -49,6 +55,19 @@ self.addEventListener('fetch', event => {
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/splash-renderer/')) {
     event.respondWith(fetch(req));
+    return;
+  }
+  if (isPimEmailImageRequest(url)) {
+    event.respondWith((async () => {
+      const cache = await caches.open(PIM_EMAIL_IMAGE_CACHE);
+      const cached = await cache.match(req);
+      if (cached) return cached;
+      const fresh = await fetch(req);
+      if (fresh && fresh.ok) {
+        cache.put(req, fresh.clone()).catch(() => {});
+      }
+      return fresh;
+    })());
     return;
   }
   if (url.pathname.startsWith('/api/')) return;
@@ -89,9 +108,26 @@ self.addEventListener('fetch', event => {
 });
 
 self.addEventListener('message', event => {
-  if (event.data?.type !== 'BP_SW_VERSION') return;
-  event.ports?.[0]?.postMessage({
-    type: 'BP_SW_VERSION',
-    cache_version: BP_CACHE_VERSION,
-  });
+  if (event.data?.type === 'BP_SW_VERSION') {
+    event.ports?.[0]?.postMessage({
+      type: 'BP_SW_VERSION',
+      cache_version: BP_CACHE_VERSION,
+      pim_email_image_cache: PIM_EMAIL_IMAGE_CACHE,
+    });
+    return;
+  }
+  if (event.data?.type === 'BP_PIM_EMAIL_CLEAR_IMAGE_CACHE') {
+    const emailUid = String(event.data.email_uid || '').trim();
+    event.waitUntil((async () => {
+      if (!emailUid) return;
+      const cache = await caches.open(PIM_EMAIL_IMAGE_CACHE);
+      const requests = await cache.keys();
+      await Promise.all(requests.map(request => {
+        const url = new URL(request.url);
+        return url.searchParams.get('email_uid') === emailUid
+          ? cache.delete(request)
+          : Promise.resolve(false);
+      }));
+    })());
+  }
 });

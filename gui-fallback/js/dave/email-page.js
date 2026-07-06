@@ -9,6 +9,12 @@ const EmailPage = (() => {
   const MESSAGE_LIST_LIMIT = 100;
   const MESSAGE_PREFETCH_AHEAD = 100;
   const MESSAGE_SCROLL_LOAD_PX = 320;
+  const MESSAGE_WARM_LIMIT = 12;
+  const MESSAGE_OPEN_CACHE_LIMIT = 12;
+  const MESSAGE_IMAGE_CACHE_LIMIT = 8;
+  const MESSAGE_IMAGE_CACHE_SOURCE_LIMIT = 80;
+  const MESSAGE_IMAGE_CACHE_MAX_BYTES = 24 * 1024 * 1024;
+  const MESSAGE_IMAGE_CACHE_CONCURRENCY = 8;
   const MESSAGE_CONTEXT_MENU_ID = 'email-message-context-menu';
   const MESSAGE_CONTEXT_LONG_PRESS_MS = 420;
   const MESSAGE_CONTEXT_MOVE_PX = 10;
@@ -42,6 +48,15 @@ const EmailPage = (() => {
     messageListTotal: null,
     messagesHasMore: false,
     messagesLoadingMore: false,
+    messagePrefetchPage: null,
+    messagePrefetchPromise: null,
+    messagePrefetchFolder: '',
+    messagePrefetchOffset: 0,
+    messagePrefetchError: '',
+    messageWarmSeen: new Set(),
+    messageOpenCache: new Map(),
+    messageImageCache: new Map(),
+    messageOpenCacheHit: false,
     messageListSignature: '',
     messageListScrollPending: false,
     message: null,
@@ -586,6 +601,10 @@ const EmailPage = (() => {
     return `${API_ROOT}/local/folder-messages?folder=${encodeURIComponent(folder)}&limit=${limit}&offset=${offset}`;
   }
 
+  function cacheWarmEndpoint() {
+    return `${API_ROOT}/local/cache/warm`;
+  }
+
   function messageEndpoint(uid, row = null) {
     const emailUid = String(row?.email_uid || uid || '').trim();
     return `${API_ROOT}/local/messages/${encodeURIComponent(emailUid)}`;
@@ -736,6 +755,307 @@ const EmailPage = (() => {
     ].join(':')).join('|');
   }
 
+  function clearMessagePrefetch() {
+    state.messagePrefetchPage = null;
+    state.messagePrefetchPromise = null;
+    state.messagePrefetchFolder = '';
+    state.messagePrefetchOffset = 0;
+    state.messagePrefetchError = '';
+  }
+
+  function messagePrefetchMatches(folder, offset) {
+    return state.messagePrefetchFolder === folder
+      && Number(state.messagePrefetchOffset) === Number(offset);
+  }
+
+  function warmMessageArtifacts(rows) {
+    const uids = [];
+    (rows || []).forEach(row => {
+      if (uids.length >= MESSAGE_WARM_LIMIT) return;
+      const uid = String(row?.email_uid || '').trim();
+      if (!uid || state.messageWarmSeen.has(uid)) return;
+      state.messageWarmSeen.add(uid);
+      uids.push(uid);
+    });
+    if (!uids.length) return;
+    const batch = uids;
+    const runWarm = () => {
+      fetchJson(cacheWarmEndpoint(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email_uids: batch, limit: batch.length }),
+      }).catch(() => {
+        // Background warm misses must never affect list scrolling or message opening.
+      });
+    };
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(runWarm, { timeout: 2500 });
+    } else {
+      window.setTimeout(runWarm, 300);
+    }
+  }
+
+  function scheduleMessagePagePrefetch() {
+    if (!state.loaded || state.folderLoading || !state.messagesHasMore) return null;
+    const folder = state.folder || 'INBOX';
+    const offset = state.messageListOffset || state.messages.length;
+    if (state.messagePrefetchPage && messagePrefetchMatches(folder, offset)) {
+      return Promise.resolve(state.messagePrefetchPage.data);
+    }
+    if (state.messagePrefetchPromise && messagePrefetchMatches(folder, offset)) {
+      return state.messagePrefetchPromise;
+    }
+    const seq = state.folderLoadSeq;
+    state.messagePrefetchFolder = folder;
+    state.messagePrefetchOffset = offset;
+    state.messagePrefetchError = '';
+    const promise = fetchJson(folderMessagesEndpoint(folder, {
+      limit: MESSAGE_PREFETCH_AHEAD,
+      offset,
+    })).then(data => {
+      if (seq !== state.folderLoadSeq || folder !== state.folder) return null;
+      state.messagePrefetchPage = { folder, offset, data };
+      state.messagePrefetchPromise = null;
+      warmMessageArtifacts(data?.messages || []);
+      renderMessageListChrome();
+      return data;
+    }).catch(error => {
+      if (seq === state.folderLoadSeq && folder === state.folder) {
+        state.messagePrefetchError = error.message || String(error);
+        state.messagePrefetchPromise = null;
+      }
+      return null;
+    });
+    state.messagePrefetchPromise = promise;
+    return promise;
+  }
+
+  function takePrefetchedMessagePage(folder, offset) {
+    if (!state.messagePrefetchPage || !messagePrefetchMatches(folder, offset)) return null;
+    const data = state.messagePrefetchPage.data;
+    state.messagePrefetchPage = null;
+    return data;
+  }
+
+  function messageRawSha(message, row = null) {
+    return String(message?.raw_sha256 || message?.stored?.raw_sha256 || row?.raw_sha256 || '').trim();
+  }
+
+  function evictOldestMapEntry(map, limit, onEvict = null) {
+    while (map.size > limit) {
+      let oldestKey = '';
+      let oldestSeen = Infinity;
+      map.forEach((entry, key) => {
+        const seen = Number(entry?.lastUsed || 0);
+        if (seen < oldestSeen) {
+          oldestSeen = seen;
+          oldestKey = key;
+        }
+      });
+      if (!oldestKey) break;
+      const entry = map.get(oldestKey);
+      map.delete(oldestKey);
+      if (typeof onEvict === 'function') onEvict(entry);
+    }
+  }
+
+  function cacheOpenedMessage(emailUid, row, message) {
+    const uid = String(emailUid || message?.email_uid || '').trim();
+    if (!uid || !message) return;
+    state.messageOpenCache.set(uid, {
+      message,
+      rawSha: messageRawSha(message, row),
+      lastUsed: performance.now(),
+    });
+    evictOldestMapEntry(state.messageOpenCache, MESSAGE_OPEN_CACHE_LIMIT);
+  }
+
+  function cachedOpenedMessage(emailUid, row) {
+    const uid = String(emailUid || '').trim();
+    if (!uid) return null;
+    const entry = state.messageOpenCache.get(uid);
+    if (!entry) return null;
+    const rowRawSha = String(row?.raw_sha256 || '').trim();
+    if (rowRawSha && entry.rawSha && rowRawSha !== entry.rawSha) {
+      state.messageOpenCache.delete(uid);
+      invalidateMessageImageCache(uid);
+      return null;
+    }
+    entry.lastUsed = performance.now();
+    return entry.message || null;
+  }
+
+  function revokeImageCacheEntry(entry) {
+    (entry?.sources || new Map()).forEach(item => {
+      if (item?.objectUrl) URL.revokeObjectURL(item.objectUrl);
+    });
+  }
+
+  function invalidateMessageImageCache(emailUid) {
+    const uid = String(emailUid || '').trim();
+    const entry = state.messageImageCache.get(uid);
+    if (entry) revokeImageCacheEntry(entry);
+    state.messageImageCache.delete(uid);
+  }
+
+  function invalidateOpenedMessageCache(emailUid) {
+    const uid = String(emailUid || '').trim();
+    state.messageOpenCache.delete(uid);
+    invalidateMessageImageCache(uid);
+  }
+
+  function clearBrowserImageStorageCache(emailUid) {
+    const uid = String(emailUid || '').trim();
+    if (!uid || !navigator.serviceWorker) return;
+    const payload = { type: 'BP_PIM_EMAIL_CLEAR_IMAGE_CACHE', email_uid: uid };
+    try {
+      navigator.serviceWorker.controller?.postMessage(payload);
+    } catch (error) {}
+    navigator.serviceWorker.ready
+      .then(registration => {
+        try {
+          registration.active?.postMessage(payload);
+        } catch (error) {}
+      })
+      .catch(() => {});
+  }
+
+  function localMessageImageUrl(src) {
+    try {
+      const url = new URL(String(src || ''), window.location.origin);
+      if (url.pathname !== `${API_ROOT}/local/images` && !url.pathname.startsWith(`${API_ROOT}/local/images/`)) {
+        return null;
+      }
+      return {
+        absolute: url.href,
+        key: `${url.pathname}${url.search}`,
+      };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function localImageSourcesFromHtml(value) {
+    if (!value || typeof DOMParser === 'undefined') return [];
+    const doc = new DOMParser().parseFromString(`<body>${value}</body>`, 'text/html');
+    const seen = new Set();
+    return Array.from(doc.images).map(img => localMessageImageUrl(img.getAttribute('src') || ''))
+      .filter(Boolean)
+      .filter(item => {
+        if (seen.has(item.key)) return false;
+        seen.add(item.key);
+        return true;
+      });
+  }
+
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('image cache read failed'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function decodeCachedImage(dataUrl) {
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = dataUrl;
+    if (typeof img.decode === 'function') {
+      try {
+        await img.decode();
+      } catch (error) {
+        // Some browsers reject decode() after a usable load; keeping the Image still helps memory cache.
+      }
+    }
+    return img;
+  }
+
+  function imageCacheEntryForMessage(message) {
+    const uid = String(message?.email_uid || '').trim();
+    const rawSha = messageRawSha(message);
+    if (!uid) return null;
+    let entry = state.messageImageCache.get(uid);
+    if (!entry || (entry.rawSha && rawSha && entry.rawSha !== rawSha)) {
+      if (entry) revokeImageCacheEntry(entry);
+      entry = { rawSha, sources: new Map(), bytes: 0, pending: null, lastUsed: performance.now() };
+      state.messageImageCache.set(uid, entry);
+    }
+    entry.rawSha = rawSha || entry.rawSha || '';
+    entry.lastUsed = performance.now();
+    evictOldestMapEntry(state.messageImageCache, MESSAGE_IMAGE_CACHE_LIMIT, revokeImageCacheEntry);
+    return entry;
+  }
+
+  function ensureMessageImageCache(message) {
+    const html = String(message?.views?.html || '');
+    const uid = String(message?.email_uid || '').trim();
+    if (!uid || !html) return null;
+    const entry = imageCacheEntryForMessage(message);
+    if (!entry) return null;
+    if (entry.pending) return entry.pending;
+    const sources = localImageSourcesFromHtml(html).slice(0, MESSAGE_IMAGE_CACHE_SOURCE_LIMIT);
+    const missing = sources.filter(item => !entry.sources.has(item.key));
+    if (!missing.length) return Promise.resolve(entry);
+    const activeUid = uid;
+    entry.pending = (async () => {
+      let nextIndex = 0;
+      async function warmNextImage() {
+        while (nextIndex < missing.length) {
+          const item = missing[nextIndex];
+          nextIndex += 1;
+          if (entry.bytes >= MESSAGE_IMAGE_CACHE_MAX_BYTES) return;
+          if (entry.sources.has(item.key)) continue;
+          try {
+            const response = await fetcher()(item.absolute, {
+              credentials: 'same-origin',
+              cache: 'force-cache',
+            });
+            if (!response.ok) continue;
+            const blob = await response.blob();
+            if (!String(blob.type || '').startsWith('image/')) continue;
+            if (entry.bytes + blob.size > MESSAGE_IMAGE_CACHE_MAX_BYTES) return;
+            const dataUrl = await blobToDataUrl(blob);
+            const image = await decodeCachedImage(dataUrl);
+            entry.sources.set(item.key, { dataUrl, image, bytes: blob.size });
+            entry.bytes += blob.size;
+          } catch (error) {
+            // Browser-side image cache is opportunistic; direct local image URLs remain the fallback.
+          }
+        }
+      }
+      const workers = Array.from(
+        { length: Math.min(MESSAGE_IMAGE_CACHE_CONCURRENCY, missing.length) },
+        () => warmNextImage(),
+      );
+      await Promise.all(workers);
+      return entry;
+    })().finally(() => {
+      entry.pending = null;
+      if (activeMessageUid() === activeUid && state.view === 'html') {
+        renderMessage();
+      }
+    });
+    return entry.pending;
+  }
+
+  function htmlWithCachedMessageImages(value, message) {
+    if (!value || typeof DOMParser === 'undefined') return value;
+    const entry = imageCacheEntryForMessage(message);
+    if (!entry || !entry.sources.size) return value;
+    const doc = new DOMParser().parseFromString(`<body>${value}</body>`, 'text/html');
+    let changed = false;
+    Array.from(doc.images).forEach(img => {
+      const local = localMessageImageUrl(img.getAttribute('src') || '');
+      if (!local) return;
+      const cached = entry.sources.get(local.key);
+      if (!cached?.dataUrl) return;
+      img.setAttribute('src', cached.dataUrl);
+      changed = true;
+    });
+    return changed ? doc.body.innerHTML : value;
+  }
+
   function messageListAnchorFromHost(host) {
     if (!host) return null;
     const hostRect = host.getBoundingClientRect();
@@ -797,6 +1117,7 @@ const EmailPage = (() => {
     state.messageListTotal = Number.isFinite(Number(data?.total)) ? Number(data.total) : null;
     state.messagesHasMore = Boolean(data?.has_more);
     state.messageListSignature = messageListSignature(state.messages);
+    warmMessageArtifacts(incoming);
   }
 
   function renderMessageListChrome() {
@@ -832,6 +1153,15 @@ const EmailPage = (() => {
   function messageListTailHtml() {
     if (state.messagesLoadingMore) {
       return '<div class="email-empty email-message-list-tail">Loading more messages.</div>';
+    }
+    if (state.messagePrefetchPage) {
+      const rows = Array.isArray(state.messagePrefetchPage.data?.messages)
+        ? state.messagePrefetchPage.data.messages.length
+        : MESSAGE_PREFETCH_AHEAD;
+      return `<div class="email-empty email-message-list-tail">${rows} more messages are ready below the loaded ${state.messages.length} rows.</div>`;
+    }
+    if (state.messagePrefetchPromise) {
+      return `<div class="email-empty email-message-list-tail">Preparing more messages below the loaded ${state.messages.length} rows.</div>`;
     }
     if (state.messagesHasMore) {
       return `<div class="email-empty email-message-list-tail">More messages are cached below the loaded ${state.messages.length} rows.</div>`;
@@ -1264,9 +1594,10 @@ const EmailPage = (() => {
     `;
   }
 
-  function htmlFrameDocument(value) {
+  function htmlFrameDocument(value, message = state.message) {
     const origin = window.location?.origin || '';
     const imgSources = origin ? `data: ${origin}` : 'data:';
+    const bodyHtml = htmlWithCachedMessageImages(value, message);
     return `<!doctype html>
 <html>
 <head>
@@ -1315,15 +1646,16 @@ const EmailPage = (() => {
     }
   </style>
 </head>
-<body>${value}</body>
+<body>${bodyHtml}</body>
 </html>`;
   }
 
-  function renderHtmlMessage(content, value) {
+  function renderHtmlMessage(content, value, message = state.message) {
     if (!value) {
       content.innerHTML = '<div class="email-empty">No sanitized HTML view is available for this message.</div>';
       return;
     }
+    ensureMessageImageCache(message);
     content.textContent = '';
     const shell = document.createElement('div');
     shell.className = 'email-html-shell';
@@ -1339,7 +1671,7 @@ const EmailPage = (() => {
     frame.setAttribute('sandbox', '');
     frame.setAttribute('referrerpolicy', 'no-referrer');
     frame.setAttribute('title', 'Sanitized email HTML');
-    frame.srcdoc = htmlFrameDocument(value);
+    frame.srcdoc = htmlFrameDocument(value, message);
     shell.appendChild(safety);
     shell.appendChild(frame);
     content.appendChild(shell);
@@ -1540,7 +1872,7 @@ const EmailPage = (() => {
     const views = message.views || {};
     const value = String(views[state.view] || '');
     if (state.view === 'html') {
-      renderHtmlMessage(content, value);
+      renderHtmlMessage(content, value, message);
       return;
     }
     if (state.view === 'raw') {
@@ -1764,6 +2096,8 @@ const EmailPage = (() => {
     state.loading = true;
     state.error = '';
     state.readSource = 'local';
+    clearMessagePrefetch();
+    state.messageWarmSeen = new Set();
     setStatus('Loading local email corpus', 'unknown');
     const healthPromise = refreshHealth({ silent: true, deferRender: true });
     try {
@@ -1783,6 +2117,7 @@ const EmailPage = (() => {
       state.loaded = true;
       setStatus('Email middleware ready', 'ok');
       renderAll({ messageListAnchor: listAnchor });
+      scheduleMessagePagePrefetch();
       ensureHealthPoll();
       healthPromise.then(() => {
         if (!state.loaded) return;
@@ -1815,6 +2150,8 @@ const EmailPage = (() => {
     state.messageListTotal = null;
     state.messagesHasMore = false;
     state.messagesLoadingMore = false;
+    clearMessagePrefetch();
+    state.messageWarmSeen = new Set();
     state.messageListSignature = '';
     state.folderLoading = true;
     setStatus(`Loading ${clean} messages`, 'unknown');
@@ -1829,6 +2166,7 @@ const EmailPage = (() => {
       state.folderLoading = false;
       setStatus(`${state.folder} selected`, 'ok');
       renderAll();
+      scheduleMessagePagePrefetch();
       return true;
     } catch (error) {
       if (seq !== state.folderLoadSeq) return false;
@@ -1846,16 +2184,31 @@ const EmailPage = (() => {
     const folder = state.folder || 'INBOX';
     const offset = state.messageListOffset || state.messages.length;
     const anchor = captureMessageListAnchor();
+    const prefetched = takePrefetchedMessagePage(folder, offset);
+    if (prefetched) {
+      applyMessageListResponse(prefetched, { append: true, offset });
+      setStatus(`Loaded ${state.messages.length} ${state.folder || 'INBOX'} messages`, 'ok');
+      renderMessages({ anchor });
+      scheduleMessagePagePrefetch();
+      return true;
+    }
     state.messagesLoadingMore = true;
     renderMessages({ anchor });
     try {
-      const data = await fetchJson(folderMessagesEndpoint(folder, {
-        limit: MESSAGE_PREFETCH_AHEAD,
-        offset,
-      }));
+      let data = null;
+      if (state.messagePrefetchPromise && messagePrefetchMatches(folder, offset)) {
+        data = await state.messagePrefetchPromise;
+      }
+      if (!data) {
+        data = await fetchJson(folderMessagesEndpoint(folder, {
+          limit: MESSAGE_PREFETCH_AHEAD,
+          offset,
+        }));
+      }
       if (seq !== state.folderLoadSeq || folder !== state.folder) return false;
       applyMessageListResponse(data, { append: true, offset });
       setStatus(`Loaded ${state.messages.length} ${state.folder || 'INBOX'} messages`, 'ok');
+      scheduleMessagePagePrefetch();
       return true;
     } catch (error) {
       setStatus(error.message || String(error), 'err');
@@ -1889,9 +2242,25 @@ const EmailPage = (() => {
     const emailUid = String(row?.email_uid || cleanUid).trim();
     if (!emailUid) return false;
     setStatus('Opening local message', 'unknown');
+    state.messageOpenCacheHit = false;
+    const cached = cachedOpenedMessage(emailUid, row);
+    if (cached) {
+      state.messageOpenCacheHit = true;
+      state.message = cached;
+      state.view = defaultMessageView(state.message);
+      state.securityProgress = null;
+      syncSelectedMessageRows();
+      renderMessage();
+      renderSecondaryPanels();
+      setStatus('Local email loaded', 'ok');
+      renderOpenedMessageSecurityProgress();
+      return true;
+    }
     try {
       const data = await fetchJson(messageEndpoint(emailUid, row));
       state.message = data.message || null;
+      cacheOpenedMessage(emailUid, row, state.message);
+      ensureMessageImageCache(state.message);
       state.view = defaultMessageView(state.message);
       state.securityProgress = null;
       syncSelectedMessageRows();
@@ -2031,6 +2400,8 @@ const EmailPage = (() => {
     }
     setStatus('Force refreshing message from IMAP', 'unknown');
     try {
+      invalidateOpenedMessageCache(uid);
+      clearBrowserImageStorageCache(uid);
       const data = await fetchJson(forceRefreshEndpoint(uid), { method: 'POST' });
       if (data.message) {
         state.message = data.message;
@@ -2038,6 +2409,9 @@ const EmailPage = (() => {
         const refreshed = await fetchJson(messageEndpoint(uid));
         state.message = refreshed.message || state.message;
       }
+      cacheOpenedMessage(uid, null, state.message);
+      clearBrowserImageStorageCache(uid);
+      ensureMessageImageCache(state.message);
       state.view = defaultMessageView(state.message);
       state.securityProgress = null;
       renderMessage();
@@ -2260,6 +2634,8 @@ const EmailPage = (() => {
   }
 
   function snapshot() {
+    const activeUid = activeMessageUid();
+    const imageCache = activeUid ? state.messageImageCache.get(activeUid) : null;
     return {
       loaded: state.loaded,
       loading: state.loading,
@@ -2270,10 +2646,20 @@ const EmailPage = (() => {
       inbox_count: state.messages.length,
       message_count: state.messages.length,
       selected_folder: state.folder,
-      selected_uid: activeMessageUid(),
+      selected_uid: activeUid,
       message_list_offset: state.messageListOffset,
       message_list_total: state.messageListTotal,
       message_list_has_more: state.messagesHasMore,
+      message_prefetch_ready: !!state.messagePrefetchPage,
+      message_prefetch_loading: !!state.messagePrefetchPromise,
+      message_prefetch_offset: state.messagePrefetchOffset,
+      message_prefetch_error: state.messagePrefetchError,
+      message_open_cache_size: state.messageOpenCache.size,
+      message_open_cache_hit: state.messageOpenCacheHit,
+      message_image_cache_size: state.messageImageCache.size,
+      message_image_cache_ready: !!imageCache && !imageCache.pending && imageCache.sources.size > 0,
+      message_image_cache_count: imageCache?.sources?.size || 0,
+      message_image_cache_pending: !!imageCache?.pending,
       message_context_menu_open: state.messageContextMenuOpen,
       view: state.view,
       secondary_tab: state.secondaryTab,

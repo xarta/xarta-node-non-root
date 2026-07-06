@@ -14,6 +14,7 @@ const activeBrowserObserverJs = fs.readFileSync(path.join(root, 'js/active-brows
 const daveMenuJs = fs.readFileSync(path.join(root, 'js/dave/dave-menu.js'), 'utf8');
 const appJs = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
 const emailJs = fs.readFileSync(path.join(root, 'js/dave/email-page.js'), 'utf8');
+const serviceWorkerJs = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 
 function tabSlice(tabId) {
   const start = indexHtml.indexOf(`<section id="${tabId}"`);
@@ -142,6 +143,17 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /function renderSecurityProgressStrip\(\)/, 'Opened-message status must render compact security progress segments.');
   assert.match(emailJs, /function renderOpenedMessageSecurityProgress\(/, 'Completed local-message security progress must render after opening a stored message.');
   assert.doesNotMatch(emailJs, /include_safe_raw=true/, 'Local message reads must use the persisted sanitized raw artifact, not an on-read raw generation flag.');
+  assert.match(emailJs, /MESSAGE_OPEN_CACHE_LIMIT = 12/, 'Opened messages must have a bounded browser-side payload cache.');
+  assert.match(emailJs, /MESSAGE_IMAGE_CACHE_LIMIT = 8/, 'Opened HTML messages must keep a bounded browser-side image cache.');
+  assert.match(emailJs, /MESSAGE_IMAGE_CACHE_CONCURRENCY = 8/, 'Opened HTML image cache must warm several local images concurrently.');
+  assert.match(emailJs, /function ensureMessageImageCache\(/, 'HTML message rendering must preload local images into browser memory.');
+  assert.match(emailJs, /htmlWithCachedMessageImages\(value, message\)/, 'HTML frame rendering must use cached local image data when available.');
+  assert.match(emailJs, /function clearBrowserImageStorageCache\(/, 'Force refresh must clear persistent browser image storage for that message.');
+  assert.match(emailJs, /BP_PIM_EMAIL_CLEAR_IMAGE_CACHE/, 'Force refresh must notify the service worker to evict stale message images.');
+  assert.match(emailJs, /message_image_cache_ready/, 'Email automation snapshot must expose opened-message image cache readiness.');
+  assert.match(serviceWorkerJs, /PIM_EMAIL_IMAGE_CACHE/, 'Service worker must keep a dedicated PIM Email image cache.');
+  assert.match(serviceWorkerJs, /PIM_EMAIL_IMAGE_PATH = '\/api\/v1\/personal\/email\/local\/images\/'/, 'Service worker cache must be scoped to local PIM image routes.');
+  assert.match(serviceWorkerJs, /BP_PIM_EMAIL_CLEAR_IMAGE_CACHE/, 'Service worker must accept message-scoped PIM image cache invalidation.');
   assert.match(emailJs, /security_run_id=\$\{encodeURIComponent\(runId\)\}/, 'Message opening must correlate backend progress events with a client run id.');
   assert.doesNotMatch(emailJs, /Message security \$\{status\}/, 'Opened-message status must not render a textual security colour sentence.');
   assert.doesNotMatch(emailJs, /Security \$\{aggregate\.status\}/, 'Message metadata must not duplicate the visible border colour in text.');
@@ -187,6 +199,10 @@ test('PIM Email message list refreshes only on list data changes', () => {
   assert.match(emailJs, /function restoreMessageListAnchor\(/, 'Explicit list refreshes must restore scroll anchors.');
   assert.match(emailJs, /function syncSelectedMessageRows\(/, 'Opening a message must update row selection without rebuilding the list.');
   assert.match(emailJs, /MESSAGE_PREFETCH_AHEAD = 100/, 'Infinite-scroll prefetch should keep about 100 next rows in view.');
+  assert.match(emailJs, /function scheduleMessagePagePrefetch\(/, 'Email UI must prefetch the next metadata page before the scroll boundary.');
+  assert.match(emailJs, /takePrefetchedMessagePage\(folder, offset\)/, 'Infinite scroll must consume prefetched metadata before issuing another fetch.');
+  assert.match(emailJs, /\/local\/cache\/warm/, 'Email UI must warm sanitized source artifacts through the local cache endpoint.');
+  assert.match(emailJs, /message_prefetch_ready/, 'Email automation snapshot must expose metadata prefetch readiness.');
   assert.match(emailJs, /offset=\$\{offset\}/, 'Folder message fetches must support offset pagination.');
   assert.match(emailJs, /function loadMoreMessages\(/, 'Email UI must append the next page near the list bottom.');
 });
