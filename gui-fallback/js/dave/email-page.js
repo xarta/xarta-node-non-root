@@ -3866,6 +3866,78 @@ const EmailPage = (() => {
     else if (typeof modal.close === 'function') modal.close();
   }
 
+  function rectSnapshot(node) {
+    if (!node || typeof node.getBoundingClientRect !== 'function') return null;
+    const rect = node.getBoundingClientRect();
+    const round = value => Math.round(Number(value || 0) * 100) / 100;
+    return {
+      x: round(rect.x),
+      y: round(rect.y),
+      width: round(rect.width),
+      height: round(rect.height),
+      top: round(rect.top),
+      right: round(rect.right),
+      bottom: round(rect.bottom),
+      left: round(rect.left),
+    };
+  }
+
+  function trustedAddLayoutFor(surface, selector) {
+    const form = document.querySelector(selector);
+    if (!form) return { surface, present: false, visible: false };
+    const input = form.querySelector('input');
+    const button = form.querySelector('button');
+    const formRect = rectSnapshot(form);
+    const inputRect = rectSnapshot(input);
+    const buttonRect = rectSnapshot(button);
+    const formStyle = window.getComputedStyle ? window.getComputedStyle(form) : null;
+    const buttonStyle = window.getComputedStyle && button ? window.getComputedStyle(button) : null;
+    const visible = !!(
+      formRect
+      && formRect.width > 0
+      && formRect.height > 0
+      && formStyle?.display !== 'none'
+      && formStyle?.visibility !== 'hidden'
+    );
+    const sameRow = !!(inputRect && buttonRect && Math.abs(inputRect.top - buttonRect.top) <= 2);
+    const buttonDropped = !!(inputRect && buttonRect && buttonRect.top > inputRect.bottom - 2);
+    const inputOverflowsForm = !!(formRect && inputRect && inputRect.right > formRect.right + 1);
+    const buttonOverflowsForm = !!(formRect && buttonRect && buttonRect.right > formRect.right + 1);
+    return {
+      surface,
+      present: true,
+      visible,
+      same_row: sameRow,
+      button_dropped: buttonDropped,
+      input_overflows_form: inputOverflowsForm,
+      button_overflows_form: buttonOverflowsForm,
+      form_display: formStyle?.display || '',
+      form_columns: formStyle?.gridTemplateColumns || '',
+      button_width: buttonRect?.width || 0,
+      button_display: buttonStyle?.display || '',
+      form_rect: formRect,
+      input_rect: inputRect,
+      button_rect: buttonRect,
+    };
+  }
+
+  function trustedAddLayoutSnapshot() {
+    const surfaces = [
+      trustedAddLayoutFor('bottom', '#email-secondary-bottom-body .email-trusted-add'),
+      trustedAddLayoutFor('modal', '#email-secondary-modal-body .email-trusted-add'),
+      trustedAddLayoutFor('ultrawide', '#ultrawide-sidecar .email-trusted-add'),
+    ];
+    const active = surfaces.find(item => item.visible) || surfaces.find(item => item.present) || null;
+    return {
+      active_surface: active?.surface || '',
+      same_row: !!active?.same_row,
+      button_dropped: !!active?.button_dropped,
+      input_overflows_form: !!active?.input_overflows_form,
+      button_overflows_form: !!active?.button_overflows_form,
+      surfaces,
+    };
+  }
+
   function handleAction(action) {
     if (action === 'refresh') return refresh();
     if (action === 'browse-folders') return browseFolders();
@@ -4296,6 +4368,7 @@ const EmailPage = (() => {
       render_markdown_preview: state.renderMarkdownPreview,
       trusted_sender_count: state.trustedSenders.length,
       trusted_loaded: state.trustedLoaded,
+      trusted_add_layout: trustedAddLayoutSnapshot(),
       last_message_timing: state.lastMessageTiming,
       message_timings: state.messageTimings.slice(0, 6),
       message_context_menu_open: state.messageContextMenuOpen,

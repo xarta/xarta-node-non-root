@@ -330,6 +330,34 @@ test('PIM Email Trusted tab is stack-backed and editable', () => {
   assert.match(emailJs, /data-email-trusted-remove/, 'Trusted tab must expose sender removal controls.');
   assert.match(emailJs, /refreshTrustedSenders\(\{ silent: true \}\)/, 'Opening Trusted must fetch sender rows without blocking the tab render.');
   assert.match(emailJs, /trusted_sender_count/, 'Email automation snapshot must expose trusted sender count.');
+  assert.match(emailJs, /function trustedAddLayoutSnapshot\(/, 'Email automation snapshot must measure trusted add form layout.');
+  assert.match(emailJs, /trusted_add_layout:\s*trustedAddLayoutSnapshot\(\)/, 'Email automation snapshot must expose trusted add form layout.');
+  assert.match(activeBrowserObserverJs, /trusted_add_layout/, 'Active Browser stable reports must include trusted add form layout.');
   assert.match(emailCss, /\.email-trusted-panel/, 'Trusted panel must have dedicated styling.');
   assert.match(emailCss, /\.email-trusted-row/, 'Trusted sender rows must have dedicated styling.');
+  assert.match(
+    emailCss,
+    /\.email-trusted-add\s*\{[\s\S]*display:\s*flex/,
+    'Trusted add form must use flex so the Add button cannot be collapsed into a grid row.',
+  );
+  assert.match(
+    emailCss,
+    /\.email-trusted-add\s*>\s*input\[type="email"\]\s*\{[\s\S]*flex:\s*1\s+1\s+0[\s\S]*width:\s*auto/,
+    'Trusted add input must override generic modal full-width inputs while leaving room for Add.',
+  );
+  assert.match(
+    emailCss,
+    /\.email-modal\s+\.email-trusted-add\s*>\s*input\[type="email"\]/,
+    'Trusted add input must outrank the later generic Hub modal input rule.',
+  );
+  assert.match(
+    emailCss,
+    /\.email-trusted-add button\s*\{[\s\S]*flex:\s*0\s+0\s+auto[\s\S]*white-space:\s*nowrap/,
+    'Trusted add button must keep its intrinsic Add width beside the input.',
+  );
+  assert.doesNotMatch(
+    emailCss,
+    /@media\s*\(max-width:\s*820px\)[\s\S]*\.email-trusted-add,\s*\.email-trusted-row\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+    'Trusted add form must not be collapsed with stacked trusted-sender rows.',
+  );
 });

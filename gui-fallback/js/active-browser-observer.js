@@ -1096,6 +1096,13 @@ const BlueprintsActiveBrowserObserver = (() => {
         message_list_has_more: !!email.message_list_has_more,
         message_context_menu_open: !!email.message_context_menu_open,
         list_collapsed: !!email.list_collapsed,
+        trusted_add_layout: {
+          active_surface: email.trusted_add_layout?.active_surface || '',
+          same_row: !!email.trusted_add_layout?.same_row,
+          button_dropped: !!email.trusted_add_layout?.button_dropped,
+          input_overflows_form: !!email.trusted_add_layout?.input_overflows_form,
+          button_overflows_form: !!email.trusted_add_layout?.button_overflows_form,
+        },
       },
       matrix_chat: {
         server: matrixChat.server || '',
