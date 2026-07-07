@@ -70,6 +70,7 @@ const PersonalFilters = (() => {
     settingsOrderByHost: new WeakMap(),
     filterIndexBySurface: new Map(),
     filterQueryByHost: new WeakMap(),
+    metaFilterQueryByHost: new WeakMap(),
     filterGroupByHost: new WeakMap(),
     filterRenderSerialByHost: new WeakMap(),
     filterRenderTimerByHost: new WeakMap(),
@@ -765,13 +766,15 @@ const PersonalFilters = (() => {
   function addMetaGroup(surface, input, host = null) {
     const label = String(input?.value || '').trim();
     if (!label) return;
+    const targetHost = host || input?.closest?.('[data-personal-filter-host]');
     const id = normalizeId(label);
     if (!DEFAULT_META_GROUPS[id] && !customMetaGroups().includes(id)) {
       state.meta.groups.push({ id, label, color: 'blue', priority: 0, custom: true });
       state.meta = normalizeMetaState(state.meta);
     }
     if (input) input.value = '';
-    setFilterGroupForHost(host || input?.closest?.('[data-personal-filter-host]'), id);
+    setMetaFilterQueryForHost(targetHost, '');
+    setFilterGroupForHost(targetHost, id);
     persistMetaGroup(id);
     emitChange(surface, 'meta-settings');
     renderAll();
@@ -1063,6 +1066,15 @@ const PersonalFilters = (() => {
     state.filterQueryByHost.set(host, String(value || ''));
   }
 
+  function metaFilterQueryForHost(host) {
+    return host ? (state.metaFilterQueryByHost.get(host) || '') : '';
+  }
+
+  function setMetaFilterQueryForHost(host, value) {
+    if (!host) return;
+    state.metaFilterQueryByHost.set(host, String(value || ''));
+  }
+
   function filterGroupForHost(host) {
     return host ? (state.filterGroupByHost.get(host) || 'all') : 'all';
   }
@@ -1107,9 +1119,26 @@ const PersonalFilters = (() => {
     return recordsFor(surface).filter(record => recordTokens(record).has(token)).length;
   }
 
-  function idsForMetaGroup(surface, groupId) {
+  function metaSearchMatchesFilterId(id, query) {
+    const terms = searchTerms(query);
+    if (!terms.length) return true;
+    const group = filterGroupFor(id);
+    const groupId = group || 'ungrouped';
+    const text = normalizeSearchText(`${groupId} ${group ? groupLabel(group) : 'Ungrouped'}`);
+    const entry = {
+      text,
+      words: unique(text.split(/\s+/).filter(Boolean)),
+    };
+    return terms.every(term => Number.isFinite(termScore(term, entry)));
+  }
+
+  function filterIdsByMetaSearch(ids, query) {
+    return ids.filter(id => metaSearchMatchesFilterId(id, query));
+  }
+
+  function idsForMetaGroup(surface, groupId, baseIds = null) {
     const cleanGroup = normalizeOptionalId(groupId || 'all');
-    const ids = sortedFilterIds(surface);
+    const ids = Array.isArray(baseIds) ? baseIds : sortedFilterIds(surface);
     if (cleanGroup === 'all') return ids;
     if (cleanGroup === 'ungrouped') return ids.filter(id => !filterGroupFor(id));
     return ids.filter(id => filterGroupFor(id) === cleanGroup);
@@ -1227,6 +1256,9 @@ const PersonalFilters = (() => {
   function groupTabsHtml(surface, host) {
     const query = filterQueryForHost(host);
     const active = filterGroupForHost(host);
+    const settingsMode = activeFilterTab(host) === 'settings';
+    const sourceIds = settingsMode ? settingsFilterIds(surface, host) : sortedFilterIds(surface);
+    const metaQuery = settingsMode ? metaFilterQueryForHost(host) : '';
     const groups = [
       { id: 'all', label: 'All' },
       ...metaGroupIds(surface).map(id => ({ id, label: groupLabel(id) })),
@@ -1235,7 +1267,7 @@ const PersonalFilters = (() => {
     const terms = searchTerms(query);
     return `<div class="personal-filter-group-tabs" role="tablist">
       ${groups.map(group => {
-        const groupIds = idsForMetaGroup(surface, group.id);
+        const groupIds = filterIdsByMetaSearch(idsForMetaGroup(surface, group.id, sourceIds), metaQuery);
         const matchCount = terms.length
           ? filteredFilterIds(surface, query, groupIds).length
           : groupIds.length;
@@ -1419,7 +1451,9 @@ const PersonalFilters = (() => {
 
   function settingsBodyHtml(surface, host) {
     const stableIds = settingsFilterIds(surface, host);
-    const ids = filteredFilterIds(surface, filterQueryForHost(host), stableIds);
+    const groupedIds = idsForMetaGroup(surface, filterGroupForHost(host), stableIds);
+    const metaIds = filterIdsByMetaSearch(groupedIds, metaFilterQueryForHost(host));
+    const ids = filteredFilterIds(surface, filterQueryForHost(host), metaIds);
     return `<div class="personal-filter-settings">
       <div class="personal-filter-settings__new">
         <label class="personal-filter-field">
@@ -1429,10 +1463,11 @@ const PersonalFilters = (() => {
         <button class="personal-filter-command" type="button" data-personal-filter-add="${escHtml(surface)}">Add Tag</button>
         <label class="personal-filter-field">
           <span>Meta Tag</span>
-          <input type="text" data-personal-filter-new-meta="${escHtml(surface)}" maxlength="48" autocomplete="off" aria-label="Meta Tag" />
+          <input type="text" data-personal-filter-new-meta="${escHtml(surface)}" data-personal-filter-meta-search="${escHtml(surface)}" maxlength="48" autocomplete="off" aria-label="Meta Tag" value="${escHtml(metaFilterQueryForHost(host))}" />
         </label>
         <button class="personal-filter-command" type="button" data-personal-filter-add-meta="${escHtml(surface)}">Add Meta Tag</button>
       </div>
+      ${groupTabsHtml(surface, host)}
       <div class="personal-filter-settings__rows">
         ${settingsRowsHtml(surface, ids)}
       </div>
@@ -1951,8 +1986,12 @@ const PersonalFilters = (() => {
       : (host.dataset.personalFilterSurface || 'calendar');
     const query = filterQueryForHost(host);
     if (activeFilterTab(host) === 'settings') {
+      const groupTabs = host.querySelector('.personal-filter-group-tabs');
+      if (groupTabs) groupTabs.outerHTML = groupTabsHtml(surface, host);
       const rows = host.querySelector('.personal-filter-settings__rows');
-      if (rows) rows.innerHTML = settingsRowsHtml(surface, filteredFilterIds(surface, query, settingsFilterIds(surface, host)));
+      const groupedIds = idsForMetaGroup(surface, filterGroupForHost(host), settingsFilterIds(surface, host));
+      const metaIds = filterIdsByMetaSearch(groupedIds, metaFilterQueryForHost(host));
+      if (rows) rows.innerHTML = settingsRowsHtml(surface, filteredFilterIds(surface, query, metaIds));
     } else {
       const selected = new Set(getSelectedIds(surface));
       const groupTabs = host.querySelector('.personal-filter-group-tabs');
@@ -2057,6 +2096,15 @@ const PersonalFilters = (() => {
       input.addEventListener('input', event => {
         const currentHost = input.closest('[data-personal-filter-host]') || host;
         setFilterQueryForHost(currentHost, event.target.value);
+        scheduleFilteredListRender(currentHost);
+      });
+    });
+    host.querySelectorAll('[data-personal-filter-meta-search]').forEach(input => {
+      if (input.dataset.personalFilterMetaBound === '1') return;
+      input.dataset.personalFilterMetaBound = '1';
+      input.addEventListener('input', event => {
+        const currentHost = input.closest('[data-personal-filter-host]') || host;
+        setMetaFilterQueryForHost(currentHost, event.target.value);
         scheduleFilteredListRender(currentHost);
       });
     });

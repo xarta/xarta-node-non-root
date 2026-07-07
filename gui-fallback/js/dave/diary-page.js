@@ -1509,6 +1509,11 @@ const DiaryPage = (() => {
     state.sourceFilter = selected.length ? 'custom' : 'all';
   }
 
+  function personalFilterChangeAffectsSelection(change) {
+    const reason = String(change?.reason || '');
+    return !reason || reason === 'selection' || reason === 'storage';
+  }
+
   function renderMeta() {
     syncSharedFilterState();
     const meta = el('diary-meta');
@@ -3298,9 +3303,9 @@ const DiaryPage = (() => {
           if (tab === 'provenance') return embeddedProvenanceHtml(host);
           return '';
         },
-        onChange: () => {
+        onChange: change => {
           syncSharedFilterState();
-          clearSelectedEntry();
+          if (personalFilterChangeAffectsSelection(change)) clearSelectedEntry();
           render();
         },
       });

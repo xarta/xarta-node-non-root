@@ -1425,6 +1425,16 @@ assert.match(
 );
 assert.match(
   personalFiltersJs,
+  /metaFilterQueryByHost:\s*new WeakMap\(\)[\s\S]*function\s+filterIdsByMetaSearch[\s\S]*function\s+settingsBodyHtml[\s\S]*idsForMetaGroup\(surface,\s*filterGroupForHost\(host\),\s*stableIds\)[\s\S]*filterIdsByMetaSearch\(groupedIds,\s*metaFilterQueryForHost\(host\)\)[\s\S]*data-personal-filter-meta-search[\s\S]*function\s+renderFilteredLists[\s\S]*activeFilterTab\(host\)\s*===\s*'settings'[\s\S]*filterIdsByMetaSearch\(groupedIds,\s*metaFilterQueryForHost\(host\)\)/,
+  'Personal Filter Settings must filter tag rows by the active meta tag and by typed meta-tag text as well as by tag search text.',
+);
+assert.match(
+  daveDiaryJs + daveCalendarJs + daveTodoJs + kanbanBoardJs,
+  /personalFilterChangeAffectsSelection[\s\S]*reason\s*===\s*'selection'[\s\S]*reason\s*===\s*'storage'[\s\S]*onChange:\s*change\s*=>[\s\S]*personalFilterChangeAffectsSelection\(change\)[\s\S]*onChange:\s*change\s*=>[\s\S]*change\.reason\s*===\s*'selection'[\s\S]*change\.reason\s*===\s*'storage'/,
+  'Personal filter presentation/meta setting edits must not steal focus by clearing selections or activating New/Edit panels.',
+);
+assert.match(
+  personalFiltersJs,
   /id:\s*'meta-filters'[\s\S]*metaFiltersBodyHtml|metaFiltersBodyHtml[\s\S]*id:\s*'meta-filters'/,
   'Personal Filters must expose a first-class Meta Filters tab.',
 );
@@ -1507,6 +1517,11 @@ assert.match(
   daveCalendarJs + daveCalendarCss,
   /calendar-day--meta[\s\S]*bestMetaGroupForRecords[\s\S]*--calendar-day-meta-color[\s\S]*if\s*\(compact\)\s*return\s*''/,
   'Calendar must use highest-priority meta tag colours for day borders and render no event content in year view.',
+);
+assert.match(
+  daveCalendarJs,
+  /IMPORTANT_META_GROUP_ID\s*=\s*'important'[\s\S]*filterPresentation\(token\)[\s\S]*presentation\?\.group[\s\S]*importantRank[\s\S]*left\.importantRank\s*!==\s*right\.importantRank/,
+  'Calendar month markers must prioritise filter tags assigned to the important meta tag before other marker candidates.',
 );
 assert.match(
   personalFiltersJs,

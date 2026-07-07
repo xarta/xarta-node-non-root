@@ -48,6 +48,7 @@ const CalendarPage = (() => {
   const MONTH_EVENT_TITLE_LIMIT = 22;
   const MONTH_DESKTOP_EVENT_LIMIT = 3;
   const MONTH_MOBILE_MARKER_SLOTS = 4;
+  const IMPORTANT_META_GROUP_ID = 'important';
   const MONTH_MARKER_GENERIC_TOKENS = new Set([
     'calendar',
     'calendar-event',
@@ -1232,7 +1233,13 @@ const CalendarPage = (() => {
     const actualIndex = actualTags.indexOf(token);
     const generic = MONTH_MARKER_GENERIC_TOKENS.has(token) || token === normalizeFilterId(event?.kind);
     const specificity = (token.match(/-/g) || []).length;
+    const presentation = window.PersonalFilters?.filterPresentation
+      ? window.PersonalFilters.filterPresentation(token)
+      : null;
+    const important = normalizeFilterId(token) === IMPORTANT_META_GROUP_ID
+      || normalizeFilterId(presentation?.group) === IMPORTANT_META_GROUP_ID;
     return {
+      importantRank: important ? 0 : 1,
       selectedIndex,
       bucket: selectedIndex >= 0 ? 0 : (actualIndex >= 0 ? 1 : 2) + (generic ? 1 : 0),
       specificity,
@@ -1244,6 +1251,7 @@ const CalendarPage = (() => {
   function compareMarkerTokens(a, b, event, selected, actualTags) {
     const left = markerTokenSortValue(a, event, selected, actualTags);
     const right = markerTokenSortValue(b, event, selected, actualTags);
+    if (left.importantRank !== right.importantRank) return left.importantRank - right.importantRank;
     if (left.bucket !== right.bucket) return left.bucket - right.bucket;
     if (left.selectedIndex !== right.selectedIndex && left.selectedIndex >= 0 && right.selectedIndex >= 0) {
       return left.selectedIndex - right.selectedIndex;
@@ -3586,9 +3594,9 @@ const CalendarPage = (() => {
           if (tab === 'provenance') return embeddedProvenanceHtml(host);
           return '';
         },
-        onChange: () => {
+        onChange: change => {
           syncSharedFilterState();
-          state.selection = null;
+          if (!change || change.reason === 'selection' || change.reason === 'storage') state.selection = null;
           render();
         },
       });

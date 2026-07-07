@@ -4770,8 +4770,8 @@ const KanbanBoardPage = (() => {
           if (tab === 'provenance') return embeddedProvenanceHtml(host);
           return '';
         },
-        onChange: () => {
-          state.selection = null;
+        onChange: change => {
+          if (!change || change.reason === 'selection' || change.reason === 'storage') state.selection = null;
           renderAll();
         },
       });
