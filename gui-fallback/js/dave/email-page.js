@@ -2796,7 +2796,7 @@ const EmailPage = (() => {
     if (!clean) return '';
     if (clean.startsWith('/api/v1/personal/email/local/images/')) return clean;
     if (/^https?:\/\//i.test(clean)) return clean;
-    if (/^mailto:[^\s]+$/i.test(clean)) return clean;
+    if (/^(?:mailto|tel):[^\s]+$/i.test(clean)) return clean;
     try {
       const url = new URL(clean, window.location?.origin || undefined);
       if (url.origin === window.location?.origin && url.pathname.startsWith('/api/v1/personal/email/local/images/')) {

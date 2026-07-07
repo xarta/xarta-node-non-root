@@ -61,6 +61,48 @@ test('PIM Email viewport rules match Dave and Kanban precedent', () => {
   assert.match(bodyShadeCss, /#tab-email\.active\s*>\s*\.tab-scroll-shell/, 'Body Shade CSS must include Email shell constraints.');
   assert.match(
     emailCss,
+    /@media\s*\(min-width:\s*821px\)[\s\S]*\.email-page__title-block\s*\{[\s\S]*display:\s*none/,
+    'Desktop Email must hide its page title block like Diary and Calendar.',
+  );
+  assert.match(emailCss, /--email-status-strip-size:\s*32px/, 'Email status/security strip must keep the compact shared size.');
+  assert.match(
+    emailCss,
+    /--email-action-size:\s*var\(--email-status-strip-size\)/,
+    'Email action buttons must derive from the compact strip size, not the other way round.',
+  );
+  assert.match(emailCss, /--email-action-icon-size:\s*20px/, 'Email action icons must stay prominent inside the compact button outline.');
+  assert.match(
+    emailCss,
+    /@media\s*\(min-width:\s*821px\)[\s\S]*\.email-page__header\s*\{[\s\S]*justify-content:\s*flex-end/,
+    'Desktop Email header actions must remain right aligned when the title block is hidden.',
+  );
+  assert.match(
+    emailCss,
+    /\.email-status-strip\s*\{[\s\S]*min-height:\s*var\(--email-status-strip-size\)/,
+    'Email status/security strip height must keep its compact natural size.',
+  );
+  assert.match(
+    emailCss,
+    /\.email-page__actions\s*>\s*\.email-icon-btn\s*\{[\s\S]*width:\s*var\(--email-action-size\)[\s\S]*height:\s*var\(--email-action-size\)/,
+    'Email browse/refresh buttons must match the strip beside them.',
+  );
+  assert.match(
+    emailCss,
+    /\.email-icon-btn::before,\s*[\r\n]+\.email-row-btn::before\s*\{[\s\S]*display:\s*block[\s\S]*flex:\s*0\s+0\s+17px/,
+    'Email masked icon pseudo-elements must be block-level and resist flex shrink.',
+  );
+  assert.match(
+    emailCss,
+    /\.email-page__actions\s*>\s*\.email-icon-btn::before\s*\{[\s\S]*flex:\s*0\s+0\s+var\(--email-action-icon-size\)[\s\S]*width:\s*var\(--email-action-icon-size\)[\s\S]*min-width:\s*var\(--email-action-icon-size\)[\s\S]*height:\s*var\(--email-action-icon-size\)/,
+    'Email top action icons must scale with the button outline without flex-shrinking.',
+  );
+  assert.match(
+    emailCss,
+    /\.email-icon-btn--folders::before[\s\S]*M3 6a2 2 0 0 1 2-2h5l2 2h7/,
+    'Email Browse Folders must reuse the shared filled folder glyph.',
+  );
+  assert.match(
+    emailCss,
     /@media\s*\(min-width:\s*821px\)\s*and\s*\(orientation:\s*portrait\)[\s\S]*#tab-email\.active\s+\.email-main-folders\s*\{[\s\S]*display:\s*none[\s\S]*#tab-email\.active\s+\.email-secondary-under-panel\s*\{[\s\S]*display:\s*grid/,
     'Desktop portrait must move folders into the bottom tabbed section.',
   );
@@ -237,6 +279,7 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /function renderPlainMessage\(/, 'Plain message view must have a dedicated renderer.');
   assert.match(emailJs, /function renderMarkdownMessage\(/, 'Markdown view must have a dedicated renderer.');
   assert.match(emailJs, /function safeMarkdownHref\(/, 'Markdown rendering must constrain rendered image/link hrefs.');
+  assert.match(emailJs, /mailto\|tel/, 'Markdown rendering must keep explicit click-only mail and phone links.');
   assert.match(emailJs, /window\.BlueprintsMarkdown\?\.render/, 'Markdown preview must use the shared Blueprints Markdown renderer.');
   assert.match(emailJs, /function sanitizeEmailMarkdownPreview\(/, 'Email Markdown preview must post-process shared renderer output for email-safe links/images.');
   assert.doesNotMatch(emailJs, /function markdownToHtml\(/, 'Email must not keep a separate table-blind Markdown renderer.');
@@ -330,13 +373,13 @@ test('PIM Email message context menu is shared by the list toggle and message ro
   assert.match(emailJs, /security LLM complete/, 'Probable-trusted action must tell the operator when the rechecked LLM result has landed.');
   assert.match(
     emailCss,
-    /\.email-page__actions\s*>\s*\.email-icon-btn\s*\{[\s\S]*width:\s*44px[\s\S]*height:\s*44px/,
-    'Header folder/refresh icon buttons must be large and legible.',
+    /\.email-page__actions\s*>\s*\.email-icon-btn\s*\{[\s\S]*width:\s*var\(--email-action-size\)[\s\S]*height:\s*var\(--email-action-size\)/,
+    'Header folder/refresh icon buttons must match the adjacent strip.',
   );
   assert.match(
     emailCss,
-    /\.email-page__actions\s*>\s*\.email-icon-btn::before\s*\{[\s\S]*width:\s*24px[\s\S]*height:\s*24px/,
-    'Header folder/refresh glyphs must be large enough to read.',
+    /\.email-page__actions\s*>\s*\.email-icon-btn::before\s*\{[\s\S]*width:\s*var\(--email-action-icon-size\)[\s\S]*height:\s*var\(--email-action-icon-size\)/,
+    'Header folder/refresh glyphs must scale with the button outline.',
   );
 });
 

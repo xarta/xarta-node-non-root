@@ -150,41 +150,55 @@
 
   function renderInline(raw) {
     const source = String(raw || '');
-    const pattern = /(!?\[([^\]\n]{0,240})\]\(([^)\n]{1,1000})\)|`([^`\n]+)`|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*)/g;
+    const pattern = /(\[!\[([^\]\n]{0,240})\]\(([^)\n]{1,1000})\)\]\(([^)\n]{1,1000})\))|(!?\[([^\]\n]{0,240})\]\(([^)\n]{1,1000})\))|`([^`\n]+)`|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*/g;
     let html = '';
     let last = 0;
     let match;
     while ((match = pattern.exec(source))) {
       html += escHtml(source.slice(last, match.index));
       last = pattern.lastIndex;
-      if (match[1]?.startsWith('!')) {
-        const target = splitMarkdownTarget(match[3]);
+      if (match[1]?.startsWith('[!')) {
+        const imageTarget = splitMarkdownTarget(match[3]);
+        const linkTarget = splitMarkdownTarget(match[4]);
+        const src = imageUrl(imageTarget.href);
+        const href = linkUrl(linkTarget.href);
+        if (!src || !href) {
+          html += escHtml(match[0]);
+          continue;
+        }
+        const alt = match[2] || PathName(imageTarget.href);
+        const attrs = /^https?:/i.test(href) ? ' target="_blank" rel="noopener noreferrer"' : '';
+        html += `<a href="${escAttr(href)}"${attrs}${linkTarget.title ? ` title="${escAttr(linkTarget.title)}"` : ''}><img class="rich-md-image" src="${escAttr(src)}" alt="${escAttr(alt)}" loading="lazy"${imageTarget.title ? ` title="${escAttr(imageTarget.title)}"` : ''} data-rich-md-image-uri="${escAttr(imageTarget.href)}" /></a>`;
+        continue;
+      }
+      if (match[5]?.startsWith('!')) {
+        const target = splitMarkdownTarget(match[7]);
         const src = imageUrl(target.href);
         if (!src) {
           html += escHtml(match[0]);
           continue;
         }
-        const alt = match[2] || PathName(target.href);
+        const alt = match[6] || PathName(target.href);
         html += `<img class="rich-md-image" src="${escAttr(src)}" alt="${escAttr(alt)}" loading="lazy"${target.title ? ` title="${escAttr(target.title)}"` : ''} data-rich-md-image-uri="${escAttr(target.href)}" />`;
         continue;
       }
-      if (match[1]) {
-        const target = splitMarkdownTarget(match[3]);
+      if (match[5]) {
+        const target = splitMarkdownTarget(match[7]);
         const href = linkUrl(target.href);
         if (!href) {
           html += escHtml(match[0]);
           continue;
         }
-        const attrs = href.startsWith('http') ? ' target="_blank" rel="noopener noreferrer"' : '';
-        html += `<a href="${escAttr(href)}"${attrs}${target.title ? ` title="${escAttr(target.title)}"` : ''}>${renderInline(match[2])}</a>`;
+        const attrs = /^https?:/i.test(href) ? ' target="_blank" rel="noopener noreferrer"' : '';
+        html += `<a href="${escAttr(href)}"${attrs}${target.title ? ` title="${escAttr(target.title)}"` : ''}>${renderInline(match[6])}</a>`;
         continue;
       }
-      if (match[4]) {
-        html += `<code>${escHtml(match[4])}</code>`;
-      } else if (match[5]) {
-        html += `<strong>${escHtml(match[5])}</strong>`;
-      } else if (match[6]) {
-        html += `<em>${escHtml(match[6])}</em>`;
+      if (match[8]) {
+        html += `<code>${escHtml(match[8])}</code>`;
+      } else if (match[9]) {
+        html += `<strong>${escHtml(match[9])}</strong>`;
+      } else if (match[10]) {
+        html += `<em>${escHtml(match[10])}</em>`;
       }
     }
     html += escHtml(source.slice(last));
@@ -357,7 +371,7 @@
   }
 
   function isTableSeparator(line) {
-    return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line || '');
+    return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/.test(line || '');
   }
 
   function splitTableRow(line) {
