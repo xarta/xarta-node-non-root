@@ -3743,6 +3743,20 @@ const CalendarPage = (() => {
         filterSurface: SEARCH_TAG_SURFACE,
         rangeControls: true,
         getRange: searchDefaultRange,
+        getPresetRange: preset => {
+          if (preset === 'month') {
+            return {
+              start: localDateString(monthStartDate()),
+              end: localDateString(monthEndDate()),
+              label: monthLabel(state.date, { month: 'long', year: 'numeric' }),
+            };
+          }
+          return {
+            start: localDateString(yearRangeStartDate()),
+            end: localDateString(yearRangeEndDate()),
+            label: rangeLabel(),
+          };
+        },
       });
     }
     syncCreateDate();

@@ -60,6 +60,40 @@
   min-width: 0;
 }
 
+.personal-search-date-label-row {
+  gap: 4px;
+  margin-bottom: 0;
+}
+
+.personal-search-date-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.personal-search-date-action {
+  height: 17px;
+  min-height: 17px;
+  padding: 0 5px;
+  border: 1px solid rgba(91, 156, 246, 0.44);
+  border-radius: 5px;
+  background: rgba(35, 67, 118, 0.24);
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 15px;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.personal-search-date-action:hover,
+.personal-search-date-action:focus-visible {
+  border-color: rgba(91, 156, 246, 0.82);
+  background: rgba(35, 67, 118, 0.38);
+}
+
 @media (min-width: 700px) {
   .personal-search-form--calendar-range {
     grid-template-columns: repeat(4, minmax(0, 1fr));

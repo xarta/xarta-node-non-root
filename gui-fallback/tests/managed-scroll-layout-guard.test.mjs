@@ -19,6 +19,7 @@ const daveDiaryCss = fs.readFileSync(path.resolve(here, '../css/dave-diary.css')
 const daveTodoCss = fs.readFileSync(path.resolve(here, '../css/dave-todo.css'), 'utf8');
 const daveImportsCss = fs.readFileSync(path.resolve(here, '../css/dave-imports.css'), 'utf8');
 const personalFiltersCss = fs.readFileSync(path.resolve(here, '../css/personal-filters.css'), 'utf8');
+const personalSearchCss = fs.readFileSync(path.resolve(here, '../css/personal-search.css'), 'utf8');
 const kanbanBoardCss = fs.readFileSync(path.resolve(here, '../css/kanban-board.css'), 'utf8');
 const daveCalendarJs = fs.readFileSync(path.resolve(here, '../js/dave/calendar-page.js'), 'utf8');
 const daveDiaryJs = fs.readFileSync(path.resolve(here, '../js/dave/diary-page.js'), 'utf8');
@@ -800,6 +801,66 @@ assert.match(
   personalSearchJs,
   /BlueprintsPersonalGraphLinks/,
   'Shared Personal search UI must expose graph-link automation state.',
+);
+assert.match(
+  personalSearchJs,
+  /function\s+dateSpanLabel\(result\)[\s\S]*result\?\.date_span[\s\S]*calendar\?\.local_end_date[\s\S]*`\$\{start\} to \$\{end\}`/,
+  'Shared Personal search results must render API date spans, including ranged Diary/Calendar entries.',
+);
+assert.match(
+  personalSearchJs,
+  /function\s+resultIdentity\(result, index = 0\)[\s\S]*result\?\.document_id[\s\S]*data-personal-search-open="\$\{escHtml\(identity\)\}"/,
+  'Shared Personal search Open buttons must target stable result ids, not shifting result indexes.',
+);
+assert.match(
+  personalSearchJs,
+  /async\s+function\s+openPersonalEventResult\(result\)[\s\S]*activatePage\('dave', 'diary'\)[\s\S]*BlueprintsDiaryPage\.editEntryById\(eventId, targetDate\)/,
+  'Shared Personal search Open must send Diary/Calendar personal events to the full Diary Edit Entry path.',
+);
+assert.match(
+  personalSearchJs,
+  /function\s+snapshotSearchState\(surface\)[\s\S]*query:\s*data\.query[\s\S]*rangeStart:\s*data\.rangeStart[\s\S]*results:\s*data\.results[\s\S]*function\s+restoreSearchState\(surface, saved\)[\s\S]*data\.query = saved\.query[\s\S]*renderResults\(surface\)/,
+  'Shared Personal search Open must preserve Search criteria and results while navigating to an entry.',
+);
+assert.match(
+  personalSearchJs,
+  /async\s+function\s+openResult\(surface, key\)[\s\S]*savedSearchState = snapshotSearchState\(surface\)[\s\S]*finally\s*\{[\s\S]*restoreSearchState\(surface, savedSearchState\)/,
+  'Shared Personal search Open must restore Search state after page navigation side effects.',
+);
+assert.match(
+  personalSearchJs,
+  /function\s+syncRangeFromAdapter\(surface, options = \{\}\)[\s\S]*Boolean\(options\.force\) && !hasUserSearchState\(surface, data\)/,
+  'Shared Personal search range syncing must not overwrite user-owned Search criteria on page navigation.',
+);
+assert.match(
+  personalSearchJs,
+  /data-personal-search-range-preset="\$\{safeSurface\}"[\s\S]*data-personal-search-preset="year"[\s\S]*YEAR[\s\S]*data-personal-search-preset="month"[\s\S]*MONTH/,
+  'Shared Personal search start date label must expose compact YEAR and MONTH range buttons.',
+);
+assert.match(
+  personalSearchJs,
+  /data-personal-search-end-offset="\$\{safeSurface\}"[\s\S]*data-personal-search-offset-months="12"[\s\S]*\+YEAR[\s\S]*data-personal-search-offset-months="1"[\s\S]*\+MONTH/,
+  'Shared Personal search end date label must expose compact +YEAR and +MONTH buttons.',
+);
+assert.match(
+  personalSearchJs,
+  /function\s+applyRangePreset\(surface, preset\)[\s\S]*data\.rangeStart = range\.start[\s\S]*data\.rangeEnd = range\.end \|\| range\.start[\s\S]*run\(surface\)/,
+  'Shared Personal search range preset buttons must set both dates and rerun search.',
+);
+assert.match(
+  personalSearchJs,
+  /function\s+applyEndOffset\(surface, months\)[\s\S]*data\.rangeEnd = dateIso\(addMonthsClamped\(start, months\)\)[\s\S]*run\(surface\)/,
+  'Shared Personal search end offset buttons must only derive the end date from the start date.',
+);
+assert.match(
+  personalSearchCss,
+  /\.personal-search-date-action[\s\S]*height:\s*17px[\s\S]*font-size:\s*9px/,
+  'Shared Personal search date shortcut buttons must stay compact enough for the label row.',
+);
+assert.match(
+  daveCalendarJs,
+  /getPresetRange:\s*preset =>[\s\S]*preset === 'month'[\s\S]*monthStartDate\(\)[\s\S]*monthEndDate\(\)[\s\S]*yearRangeStartDate\(\)[\s\S]*yearRangeEndDate\(\)/,
+  'Calendar Personal search presets must use the current month and configured year-start 12-month range.',
 );
 assert.match(
   personalSearchJs,

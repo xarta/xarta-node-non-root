@@ -59,6 +59,7 @@ const BlueprintsPersonalSearch = (() => {
         timeStart: '',
         timeEnd: '',
         allDay: true,
+        rangeUserSet: false,
         loading: false,
         loadingEnhanced: false,
         error: '',
@@ -115,6 +116,28 @@ const BlueprintsPersonalSearch = (() => {
     return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : '';
   }
 
+  function parseDate(value) {
+    const clean = cleanDate(value);
+    if (!clean) return null;
+    const [year, month, day] = clean.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  }
+
+  function dateIso(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function addMonthsClamped(date, months) {
+    const target = new Date(date.getFullYear(), date.getMonth() + months, 1);
+    const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+    target.setDate(Math.min(date.getDate(), lastDay));
+    return target;
+  }
+
   function orderedRange(start, end) {
     const cleanStart = cleanDate(start);
     const cleanEnd = cleanDate(end || start);
@@ -124,6 +147,108 @@ const BlueprintsPersonalSearch = (() => {
     return cleanStart <= cleanEnd
       ? { start: cleanStart, end: cleanEnd }
       : { start: cleanEnd, end: cleanStart };
+  }
+
+  function fallbackPresetRange(surface, preset) {
+    const data = surfaceState(surface);
+    const anchor = parseDate(data.rangeStart || rangeFor(surface).start || dateIso(new Date())) || new Date();
+    if (preset === 'month') {
+      return orderedRange(
+        dateIso(new Date(anchor.getFullYear(), anchor.getMonth(), 1)),
+        dateIso(new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0))
+      );
+    }
+    return orderedRange(
+      dateIso(new Date(anchor.getFullYear(), 0, 1)),
+      dateIso(new Date(anchor.getFullYear(), 11, 31))
+    );
+  }
+
+  function presetRangeFor(surface, preset) {
+    const adapter = adapterFor(surface);
+    if (typeof adapter.getPresetRange === 'function') {
+      const range = adapter.getPresetRange(preset) || {};
+      const ordered = orderedRange(range.start || range.date_start, range.end || range.date_end);
+      if (ordered.start || ordered.end) return ordered;
+    }
+    return fallbackPresetRange(surface, preset);
+  }
+
+  function applyRangePreset(surface, preset) {
+    if (!rangeControlsFor(surface)) return;
+    const data = surfaceState(surface);
+    const range = presetRangeFor(surface, preset);
+    data.rangeStart = range.start;
+    data.rangeEnd = range.end || range.start;
+    data.rangeUserSet = true;
+    syncRangeInputs(surface);
+    run(surface);
+  }
+
+  function applyEndOffset(surface, months) {
+    if (!rangeControlsFor(surface)) return;
+    const data = surfaceState(surface);
+    if (!data.rangeStart) syncRangeFromAdapter(surface);
+    const start = parseDate(data.rangeStart);
+    if (!start) return;
+    data.rangeEnd = dateIso(addMonthsClamped(start, months));
+    data.rangeUserSet = true;
+    syncRangeInputs(surface);
+    run(surface);
+  }
+
+  function syncQueryInputs(surface) {
+    const data = surfaceState(surface);
+    document.querySelectorAll(`[data-personal-search-query="${surface}"]`).forEach(input => {
+      input.value = data.query || '';
+    });
+  }
+
+  function hasUserSearchState(surface, data = surfaceState(surface)) {
+    return Boolean(
+      data.query
+      || data.rangeUserSet
+      || selectedTags(surface).length
+      || data.results.length
+      || data.error
+    );
+  }
+
+  function snapshotSearchState(surface) {
+    const data = surfaceState(surface);
+    return {
+      query: data.query,
+      restrictToRange: data.restrictToRange,
+      rangeStart: data.rangeStart,
+      rangeEnd: data.rangeEnd,
+      timeStart: data.timeStart,
+      timeEnd: data.timeEnd,
+      allDay: data.allDay,
+      rangeUserSet: data.rangeUserSet,
+      results: data.results,
+      subsystems: data.subsystems,
+      error: data.error,
+    };
+  }
+
+  function restoreSearchState(surface, saved) {
+    if (!saved) return;
+    const data = surfaceState(surface);
+    data.query = saved.query;
+    data.restrictToRange = saved.restrictToRange;
+    data.rangeStart = saved.rangeStart;
+    data.rangeEnd = saved.rangeEnd;
+    data.timeStart = saved.timeStart;
+    data.timeEnd = saved.timeEnd;
+    data.allDay = saved.allDay;
+    data.rangeUserSet = saved.rangeUserSet;
+    data.results = saved.results;
+    data.subsystems = saved.subsystems;
+    data.error = saved.error;
+    syncQueryInputs(surface);
+    syncRangeInputs(surface);
+    renderResults(surface);
+    renderFilterSummaries(surface);
   }
 
   function syncRangeInputs(surface) {
@@ -152,7 +277,7 @@ const BlueprintsPersonalSearch = (() => {
   function syncRangeFromAdapter(surface, options = {}) {
     if (!rangeControlsFor(surface)) return null;
     const data = surfaceState(surface);
-    const force = Boolean(options.force);
+    const force = Boolean(options.force) && !hasUserSearchState(surface, data);
     const range = rangeFor(surface);
     const next = orderedRange(range.start, range.end);
     if (force || !data.rangeStart) data.rangeStart = next.start;
@@ -363,20 +488,42 @@ const BlueprintsPersonalSearch = (() => {
     }
   }
 
+  function dateSpanLabel(result) {
+    const span = result?.date_span || {};
+    const start = cleanDate(span.start || result?.local_date || result?.page_ref?.date || '');
+    const end = cleanDate(span.end || result?.provenance?.calendar?.local_end_date || start);
+    if (!start && !end) return '';
+    if (!start) return end;
+    if (!end || end === start) return start;
+    return start < end ? `${start} to ${end}` : `${end} to ${start}`;
+  }
+
+  function resultPageLabel(result, dateLabel) {
+    const page = result.page_ref || {};
+    const anchor = page.item_id || (!dateLabel ? page.date : '');
+    return [page.group, page.tab, anchor].filter(Boolean).join(' / ');
+  }
+
+  function resultIdentity(result, index = 0) {
+    return String(result?.document_id || result?.record_id || result?.source?.ref || index);
+  }
+
   function resultHtml(result, index) {
     const source = result.source || {};
-    const page = result.page_ref || {};
-    const pageLabel = [page.group, page.tab, page.date || page.item_id].filter(Boolean).join(' / ');
+    const dateLabel = dateSpanLabel(result);
+    const pageLabel = resultPageLabel(result, dateLabel);
+    const meta = [result.record_type || '', source.type || '', dateLabel, pageLabel || result.document_id].filter(Boolean).join(' - ');
+    const identity = resultIdentity(result, index);
     return `
       <article class="personal-search-row" data-personal-search-result="${index}">
         <div>
           <div class="personal-search-title">${escHtml(result.title || result.document_id)}</div>
-          <div class="personal-search-meta">${escHtml(result.record_type || '')} - ${escHtml(source.type || '')} - ${escHtml(pageLabel || result.document_id)}</div>
+          <div class="personal-search-meta">${escHtml(meta)}</div>
           <div class="personal-search-body">${escHtml(result.body_excerpt || '')}</div>
         </div>
         <div class="personal-search-score">
           ${scoreChips(result)}
-          <button class="personal-search-open" type="button" data-personal-search-open="${index}">Open</button>
+          <button class="personal-search-open" type="button" data-personal-search-open="${escHtml(identity)}">Open</button>
           <button class="personal-search-open" type="button" data-personal-graph-open="${index}">Links</button>
         </div>
       </article>
@@ -525,11 +672,23 @@ const BlueprintsPersonalSearch = (() => {
           <input id="${escHtml(prefix)}-query" class="personal-search-query-input" type="search" data-personal-search-query="${safeSurface}" value="${escHtml(data.query)}" autocomplete="off" spellcheck="false" aria-label="Search personal records" />
         </label>
         <label class="calendar-field" for="${escHtml(prefix)}-start-date">
-          <span>Start date</span>
+          <span class="calendar-field__label-row personal-search-date-label-row">
+            <span>Start date</span>
+            <span class="personal-search-date-actions">
+              <button class="personal-search-date-action" type="button" data-personal-search-range-preset="${safeSurface}" data-personal-search-preset="year">YEAR</button>
+              <button class="personal-search-date-action" type="button" data-personal-search-range-preset="${safeSurface}" data-personal-search-preset="month">MONTH</button>
+            </span>
+          </span>
           <input id="${escHtml(prefix)}-start-date" type="date" data-personal-search-start-date="${safeSurface}" value="${escHtml(data.rangeStart)}" />
         </label>
         <label class="calendar-field" for="${escHtml(prefix)}-end-date">
-          <span>End date</span>
+          <span class="calendar-field__label-row personal-search-date-label-row">
+            <span>End date</span>
+            <span class="personal-search-date-actions">
+              <button class="personal-search-date-action" type="button" data-personal-search-end-offset="${safeSurface}" data-personal-search-offset-months="12">+YEAR</button>
+              <button class="personal-search-date-action" type="button" data-personal-search-end-offset="${safeSurface}" data-personal-search-offset-months="1">+MONTH</button>
+            </span>
+          </span>
           <input id="${escHtml(prefix)}-end-date" type="date" data-personal-search-end-date="${safeSurface}" value="${escHtml(data.rangeEnd || data.rangeStart)}" />
         </label>
         <label class="calendar-field" for="${escHtml(prefix)}-start-time">
@@ -559,26 +718,23 @@ const BlueprintsPersonalSearch = (() => {
     `;
   }
 
-  async function openResult(surface, index) {
-    const result = surfaceState(surface).results[Number(index)];
-    if (!result) return;
-    const adapter = adapterFor(surface);
-    if (typeof adapter.openResult === 'function') {
-      try {
-        const handled = await adapter.openResult(result, {
-          surface,
-          index: Number(index),
-        });
-        if (handled !== false) return;
-      } catch (error) {
-        surfaceState(surface).error = error.message || String(error);
-        setStatus(surface, surfaceState(surface).error, 'error');
-        return;
-      }
-    }
-    const page = result.page_ref || {};
-    const group = page.group || (result.mode === 'work' ? 'kanban' : 'dave');
-    const tab = page.tab || (group === 'kanban' ? 'kanban' : 'diary');
+  function findResult(surface, key) {
+    const data = surfaceState(surface);
+    const clean = String(key || '').trim();
+    const matched = data.results.find(result => {
+      const source = result.source || {};
+      return [
+        result.document_id,
+        result.record_id,
+        source.ref,
+        ...(Array.isArray(result.source_refs) ? result.source_refs : []),
+      ].some(value => String(value || '') === clean);
+    });
+    if (matched) return matched;
+    return data.results[Number(clean)];
+  }
+
+  function activatePage(group, tab) {
     if (typeof switchGroup === 'function') switchGroup(group);
     if (typeof switchTab === 'function') switchTab(tab);
     if (group === 'dave' && window.DaveMenuConfig?.updateActiveTab) {
@@ -586,6 +742,52 @@ const BlueprintsPersonalSearch = (() => {
     }
     if (group === 'kanban' && window.KanbanMenuConfig?.updateActiveTab) {
       window.KanbanMenuConfig.updateActiveTab(tab);
+    }
+  }
+
+  async function openPersonalEventResult(result) {
+    const eventId = String(result.record_id || '').trim();
+    if (!eventId || !window.BlueprintsDiaryPage?.editEntryById) return false;
+    const targetDate = cleanDate(result.date_span?.start || result.local_date || result.page_ref?.date || '');
+    activatePage('dave', 'diary');
+    return window.BlueprintsDiaryPage.editEntryById(eventId, targetDate);
+  }
+
+  async function openTaskResult(result) {
+    const taskRef = String(result.record_id || result.source?.ref || '').trim();
+    if (!taskRef || !window.BlueprintsTodoPage?.openTask) return false;
+    return window.BlueprintsTodoPage.openTask(taskRef);
+  }
+
+  async function openResult(surface, key) {
+    const result = findResult(surface, key);
+    if (!result) return;
+    const savedSearchState = snapshotSearchState(surface);
+    const adapter = adapterFor(surface);
+    let openError = '';
+    try {
+      if (typeof adapter.openResult === 'function') {
+        const handled = await adapter.openResult(result, {
+          surface,
+          key: String(key || ''),
+        });
+        if (handled !== false) return;
+      }
+      if (result.record_table === 'personal_events' && await openPersonalEventResult(result)) return;
+      if (result.record_table === 'personal_time_tasks' && await openTaskResult(result)) return;
+      const page = result.page_ref || {};
+      const group = page.group || (result.mode === 'work' ? 'kanban' : 'dave');
+      const tab = page.tab || (group === 'kanban' ? 'kanban' : 'diary');
+      activatePage(group, tab);
+    } catch (error) {
+      openError = error.message || String(error);
+    } finally {
+      restoreSearchState(surface, savedSearchState);
+      if (openError) {
+        const data = surfaceState(surface);
+        data.error = openError;
+        setStatus(surface, openError, 'error');
+      }
     }
   }
 
@@ -634,6 +836,7 @@ const BlueprintsPersonalSearch = (() => {
       if (target.matches('[data-personal-search-start-date]')) {
         data.rangeStart = cleanDate(target.value);
         if (!data.rangeEnd || data.rangeEnd < data.rangeStart) data.rangeEnd = data.rangeStart;
+        data.rangeUserSet = true;
         syncRangeInputs(surface);
         run(surface);
         return;
@@ -641,6 +844,7 @@ const BlueprintsPersonalSearch = (() => {
       if (target.matches('[data-personal-search-end-date]')) {
         data.rangeEnd = cleanDate(target.value);
         if (!data.rangeStart || data.rangeEnd < data.rangeStart) data.rangeStart = data.rangeEnd;
+        data.rangeUserSet = true;
         syncRangeInputs(surface);
         run(surface);
         return;
@@ -667,6 +871,20 @@ const BlueprintsPersonalSearch = (() => {
       data.timer = window.setTimeout(() => run(surface), 450);
     });
     root.addEventListener('click', event => {
+      const presetButton = event.target.closest?.('[data-personal-search-range-preset]');
+      if (presetButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        applyRangePreset(surface, presetButton.dataset.personalSearchPreset || 'year');
+        return;
+      }
+      const endOffsetButton = event.target.closest?.('[data-personal-search-end-offset]');
+      if (endOffsetButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        applyEndOffset(surface, Number(endOffsetButton.dataset.personalSearchOffsetMonths || 0));
+        return;
+      }
       const openButton = event.target.closest?.('[data-personal-search-open]');
       if (openButton) {
         openResult(surface, openButton.dataset.personalSearchOpen);
