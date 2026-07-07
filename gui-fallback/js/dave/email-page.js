@@ -3515,10 +3515,6 @@ const EmailPage = (() => {
     return `
       <div class="email-trusted-panel">
         <section class="email-trusted-section">
-          <div class="email-cache-section__head">
-            <h4>Probable Trusted Senders</h4>
-            ${securityPillHtml(`${state.trustedSenders.length} active`, 'info')}
-          </div>
           <form class="email-trusted-add" data-email-trusted-add-form>
             <input type="email" name="sender_email" placeholder="sender@example.com" autocomplete="off" required>
             <button type="submit">Add</button>
@@ -3771,9 +3767,19 @@ const EmailPage = (() => {
     return searchModeDropdownHtml(layout, { activateSearch: false, placement: 'toolbar' });
   }
 
+  function trustedViewOptionCount(id) {
+    if (id === 'probable') return Array.isArray(state.trustedSenders) ? state.trustedSenders.length : 0;
+    return 0;
+  }
+
+  function trustedViewOptionLabel(id, label) {
+    return `${label} (${trustedViewOptionCount(id)})`;
+  }
+
   function trustedViewLabel() {
     const found = TRUSTED_VIEW_OPTIONS.find(([id]) => id === state.trustedNestedTab);
-    return found ? found[1] : TRUSTED_VIEW_OPTIONS[0][1];
+    const option = found || TRUSTED_VIEW_OPTIONS[0];
+    return trustedViewOptionLabel(option[0], option[1]);
   }
 
   function trustedViewDropdownHtml(layout = 'secondary', options = {}) {
@@ -3796,7 +3802,7 @@ const EmailPage = (() => {
         </div>
         <div class="email-folder-tab-menu" role="menu">
           ${TRUSTED_VIEW_OPTIONS.map(([id, labelText]) => `
-            <button class="email-folder-tab-menu__item" type="button" role="menuitemradio" aria-checked="${state.trustedNestedTab === id ? 'true' : 'false'}" data-email-trusted-view-option="${escHtml(id)}">${escHtml(labelText)}</button>
+            <button class="email-folder-tab-menu__item" type="button" role="menuitemradio" aria-checked="${state.trustedNestedTab === id ? 'true' : 'false'}" data-email-trusted-view-option="${escHtml(id)}">${escHtml(trustedViewOptionLabel(id, labelText))}</button>
           `).join('')}
         </div>
       </div>

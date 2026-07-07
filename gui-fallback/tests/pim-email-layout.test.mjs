@@ -458,8 +458,11 @@ test('PIM Email Trusted tab is stack-backed and editable', () => {
   assert.match(emailJs, /function trustedSendersHtml\(/, 'Trusted tab must render a panel body.');
   assert.match(emailJs, /TRUSTED_VIEW_OPTIONS = \[[\s\S]*\['probable', 'Probable trusted senders'\]/, 'Trusted nested view options must start with probable trusted senders.');
   assert.match(emailJs, /function trustedViewDropdownHtml\([\s\S]*data-email-trusted-view-dropdown[\s\S]*data-email-trusted-view-option="\$\{escHtml\(id\)\}"/, 'Trusted nested views must be selected from compact dropdown markup.');
+  assert.match(emailJs, /function trustedViewOptionLabel\([\s\S]*trustedViewOptionCount\(id\)[\s\S]*trustedViewOptionLabel\(id, labelText\)/, 'Trusted nested-view dropdown entries must carry the sender count in the dropdown label.');
   assert.match(emailJs, /function trustedViewToolbarDropdownHtml\(layout = 'ultrawide'\)[\s\S]*trustedViewDropdownHtml\(layout, \{ activateTrusted: false, placement: 'toolbar' \}\)/, 'Ultrawide Trusted nested views must use a toolbar dropdown.');
   assert.doesNotMatch(emailJs, /data-email-trusted-tab/, 'Trusted must not render nested tabs inside the panel body.');
+  assert.doesNotMatch(emailJs, /<h4>Probable Trusted Senders<\/h4>/, 'Trusted panel body must not duplicate the selected dropdown label as a title.');
+  assert.doesNotMatch(emailJs, /\$\{state\.trustedSenders\.length\} active/, 'Trusted panel body must not repeat the active count outside the dropdown.');
   assert.doesNotMatch(emailCss, /\.email-trusted-tabs/, 'Trusted nested-tab styling must not remain after moving the choice to dropdowns.');
   assert.match(emailJs, /data-email-trusted-add-form/, 'Trusted tab must expose an add form.');
   assert.match(emailJs, /data-email-trusted-remove/, 'Trusted tab must expose sender removal controls.');
