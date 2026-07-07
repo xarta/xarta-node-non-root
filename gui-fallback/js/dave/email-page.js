@@ -655,6 +655,9 @@ const EmailPage = (() => {
     const activeGroup = view.groups.find(group => group.key === state.folderGroup) || view.groups[0];
     const setLabel = activeSet ? `${activeSet.label} (${activeSet.count})` : 'List';
     const groupLabel = activeGroup ? `${activeGroup.label} (${activeGroup.nodes.length})` : 'Group';
+    const searchModeControl = layout === 'ultrawide' && state.secondaryTab === 'search'
+      ? searchModeToolbarDropdownHtml(layout)
+      : '';
     return `
       <div class="email-folder-browser-controls" data-email-folder-controls="${escHtml(layout)}">
         <div class="email-folder-tab-dropdown" data-email-folder-dropdown="set">
@@ -683,6 +686,7 @@ const EmailPage = (() => {
             `).join('')}
           </div>
         </div>
+        ${searchModeControl}
       </div>
     `;
   }
@@ -3703,12 +3707,17 @@ const EmailPage = (() => {
     }
   }
 
-  function searchTabDropdownHtml(layout = 'secondary') {
+  function searchModeDropdownHtml(layout = 'secondary', options = {}) {
     const active = state.secondaryTab === 'search';
+    const activateSearch = options.activateSearch !== false;
+    const placement = options.placement || (activateSearch ? 'tab' : 'toolbar');
+    const primaryAttrs = activateSearch
+      ? `data-email-secondary-tab="search" data-active="${active ? 'true' : 'false'}" data-email-secondary-layout="${escHtml(layout)}"`
+      : 'aria-label="Choose search mode" aria-haspopup="menu" aria-expanded="false" data-email-search-mode-menu-toggle';
     return `
-      <div class="email-search-tab-dropdown email-folder-tab-dropdown" data-email-search-mode-dropdown data-active="${active ? 'true' : 'false'}" data-mode="${escHtml(state.searchMode)}" data-email-secondary-layout="${escHtml(layout)}">
+      <div class="email-search-tab-dropdown email-folder-tab-dropdown" data-email-search-mode-dropdown data-email-search-mode-placement="${escHtml(placement)}" data-active="${active ? 'true' : 'false'}" data-mode="${escHtml(state.searchMode)}" data-email-secondary-layout="${escHtml(layout)}">
         <div class="email-folder-tab-split">
-          <button class="email-folder-tab email-folder-tab--primary" type="button" data-email-secondary-tab="search" data-active="${active ? 'true' : 'false'}" data-email-secondary-layout="${escHtml(layout)}">
+          <button class="email-folder-tab email-folder-tab--primary" type="button" ${primaryAttrs}>
             <span data-email-search-mode-label>Search: ${escHtml(searchModeLabel())}</span>
           </button>
           <button class="email-folder-tab-caret" type="button" aria-label="Choose search mode" aria-haspopup="menu" aria-expanded="false" data-email-search-mode-menu-toggle>
@@ -3724,11 +3733,23 @@ const EmailPage = (() => {
     `;
   }
 
+  function searchTabDropdownHtml(layout = 'secondary') {
+    return searchModeDropdownHtml(layout, { activateSearch: true, placement: 'tab' });
+  }
+
+  function searchModeToolbarDropdownHtml(layout = 'ultrawide') {
+    return searchModeDropdownHtml(layout, { activateSearch: false, placement: 'toolbar' });
+  }
+
+  function secondaryTabButtonHtml(id, label, layout = 'secondary') {
+    return `<button type="button" data-email-secondary-tab="${escHtml(id)}" data-active="${state.secondaryTab === id ? 'true' : 'false'}" data-email-secondary-layout="${escHtml(layout)}">${escHtml(label)}</button>`;
+  }
+
   function secondaryTabsHtml(layout = 'secondary') {
     return EMAIL_SECONDARY_TABS.map(([id, label]) => (
-      id === 'search'
+      id === 'search' && layout !== 'ultrawide'
         ? searchTabDropdownHtml(layout)
-        : `<button type="button" data-email-secondary-tab="${escHtml(id)}" data-active="${state.secondaryTab === id ? 'true' : 'false'}" data-email-secondary-layout="${escHtml(layout)}">${escHtml(label)}</button>`
+        : secondaryTabButtonHtml(id, label, layout)
     )).join('');
   }
 

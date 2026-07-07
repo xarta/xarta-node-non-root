@@ -134,6 +134,8 @@ test('PIM Email viewport rules match Dave and Kanban precedent', () => {
   assert.match(emailCss, /\.email-ultrawide-shell\s*\{[\s\S]*grid-template-columns:\s*42px\s+minmax\(0,\s*1fr\)/);
   assert.match(emailJs, /function scheduleUltrawideRender\(\)/, 'Email must defer an ultrawide sidecar render after initial page activation.');
   assert.match(emailJs, /blueprints:page-state-changed[\s\S]*scheduleUltrawideRender/, 'Email initial-load sidecar render must run after app page-state activation.');
+  assert.match(emailJs, /function secondaryTabsHtml\(layout = 'secondary'\)[\s\S]*id === 'search' && layout !== 'ultrawide'[\s\S]*searchTabDropdownHtml\(layout\)[\s\S]*secondaryTabButtonHtml\(id, label, layout\)/, 'Ultrawide must render Search as a plain vertical side tab.');
+  assert.match(emailJs, /function folderControlsHtml\(layout = 'folders'\)[\s\S]*layout === 'ultrawide' && state\.secondaryTab === 'search'[\s\S]*searchModeToolbarDropdownHtml\(layout\)/, 'Ultrawide Search must move the Simple/Advanced mode dropdown into the top folder controls.');
   assert.match(
     emailCss,
     /#tab-email\.email-list-collapsed\s+\.email-list-panel\s*\{[\s\S]*display:\s*none/,
@@ -180,7 +182,9 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /function searchEndpoint\(\)[\s\S]*\/local\/search/, 'Email Search must call the local PIM search endpoint.');
   assert.match(emailJs, /SEARCH_FIELDS = \[[\s\S]*\['from', 'From'\][\s\S]*\['recipients', 'Recipients'\][\s\S]*\['subject', 'Subject'\][\s\S]*\['content', 'Body'\][\s\S]*\['image', 'Images'\][\s\S]*\['sent_at', 'Sent date'\][\s\S]*\['received_at', 'Received date'\]/, 'Email Search must expose production field targeting.');
   assert.match(emailJs, /SEARCH_MODE_OPTIONS = \[[\s\S]*\['simple', 'Simple'\][\s\S]*\['advanced', 'Advanced'\]/, 'Email Search must define simple and advanced modes.');
-  assert.match(emailJs, /function searchTabDropdownHtml\([\s\S]*data-email-search-mode-dropdown[\s\S]*data-email-search-mode-option/, 'Email Search mode must live in the secondary split dropdown.');
+  assert.match(emailJs, /function searchModeDropdownHtml\([\s\S]*data-email-search-mode-dropdown[\s\S]*data-email-search-mode-option/, 'Email Search mode dropdown markup must be shared by desktop and ultrawide controls.');
+  assert.match(emailJs, /function searchTabDropdownHtml\(layout = 'secondary'\)[\s\S]*searchModeDropdownHtml\(layout, \{ activateSearch: true, placement: 'tab' \}\)/, 'Desktop Email Search mode must live in the secondary split dropdown.');
+  assert.match(emailJs, /function searchModeToolbarDropdownHtml\(layout = 'ultrawide'\)[\s\S]*searchModeDropdownHtml\(layout, \{ activateSearch: false, placement: 'toolbar' \}\)/, 'Ultrawide Email Search mode must use a toolbar dropdown instead of the vertical side tab.');
   assert.match(emailJs, /function openSecondaryModalTab\(tabId = 'folders'\)/, 'Email secondary context functions must open the shared folder/check/search modal.');
   assert.match(emailJs, /function focusSecondaryModalTab\(tabId\)/, 'Email secondary modal actions must focus the chosen tab when opened from the context menu.');
   assert.match(emailJs, /function setSearchMode\(mode\)/, 'Email Search dropdown options must switch modes through a dedicated setter.');
