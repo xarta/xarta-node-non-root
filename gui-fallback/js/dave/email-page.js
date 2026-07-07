@@ -22,6 +22,9 @@ const EmailPage = (() => {
     ['trusted', 'Email Trusted'],
     ['search', 'Email Search'],
   ]);
+  const TRUSTED_VIEW_OPTIONS = [
+    ['probable', 'Probable trusted senders'],
+  ];
   const MESSAGE_LIST_LIMIT = 100;
   const MESSAGE_PREFETCH_AHEAD = 100;
   const MESSAGE_SCROLL_LOAD_PX = 320;
@@ -658,6 +661,9 @@ const EmailPage = (() => {
     const searchModeControl = layout === 'ultrawide' && state.secondaryTab === 'search'
       ? searchModeToolbarDropdownHtml(layout)
       : '';
+    const trustedViewControl = layout === 'ultrawide' && state.secondaryTab === 'trusted'
+      ? trustedViewToolbarDropdownHtml(layout)
+      : '';
     return `
       <div class="email-folder-browser-controls" data-email-folder-controls="${escHtml(layout)}">
         <div class="email-folder-tab-dropdown" data-email-folder-dropdown="set">
@@ -687,6 +693,7 @@ const EmailPage = (() => {
           </div>
         </div>
         ${searchModeControl}
+        ${trustedViewControl}
       </div>
     `;
   }
@@ -1131,11 +1138,22 @@ const EmailPage = (() => {
     });
   }
 
+  function closeTrustedViewMenus(except = null) {
+    document.querySelectorAll('[data-email-trusted-view-dropdown].open').forEach(dropdown => {
+      if (except && dropdown === except) return;
+      dropdown.classList.remove('open');
+      dropdown.querySelectorAll('[data-email-trusted-view-menu-toggle]').forEach(button => {
+        button.setAttribute('aria-expanded', 'false');
+      });
+    });
+  }
+
   function toggleFolderMenu(button) {
     const dropdown = button?.closest?.('[data-email-folder-dropdown]');
     if (!dropdown || dropdown.classList.contains('is-disabled') || button.disabled) return false;
     const nextOpen = !dropdown.classList.contains('open');
     closeSearchModeMenus();
+    closeTrustedViewMenus();
     closeFolderMenus(dropdown);
     dropdown.classList.toggle('open', nextOpen);
     dropdown.querySelectorAll('[data-email-folder-menu-toggle]').forEach(toggle => {
@@ -1149,9 +1167,24 @@ const EmailPage = (() => {
     if (!dropdown || button.disabled) return false;
     const nextOpen = !dropdown.classList.contains('open');
     closeFolderMenus();
+    closeTrustedViewMenus();
     closeSearchModeMenus(dropdown);
     dropdown.classList.toggle('open', nextOpen);
     dropdown.querySelectorAll('[data-email-search-mode-menu-toggle]').forEach(toggle => {
+      toggle.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+    });
+    return true;
+  }
+
+  function toggleTrustedViewMenu(button) {
+    const dropdown = button?.closest?.('[data-email-trusted-view-dropdown]');
+    if (!dropdown || button.disabled) return false;
+    const nextOpen = !dropdown.classList.contains('open');
+    closeFolderMenus();
+    closeSearchModeMenus();
+    closeTrustedViewMenus(dropdown);
+    dropdown.classList.toggle('open', nextOpen);
+    dropdown.querySelectorAll('[data-email-trusted-view-menu-toggle]').forEach(toggle => {
       toggle.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
     });
     return true;
@@ -3481,9 +3514,6 @@ const EmailPage = (() => {
   function trustedSendersHtml() {
     return `
       <div class="email-trusted-panel">
-        <div class="email-trusted-tabs" role="tablist" aria-label="Trusted sender tables">
-          <button type="button" data-email-trusted-tab="probable" data-active="${state.trustedNestedTab === 'probable' ? 'true' : 'false'}">Probable trusted senders</button>
-        </div>
         <section class="email-trusted-section">
           <div class="email-cache-section__head">
             <h4>Probable Trusted Senders</h4>
@@ -3741,6 +3771,46 @@ const EmailPage = (() => {
     return searchModeDropdownHtml(layout, { activateSearch: false, placement: 'toolbar' });
   }
 
+  function trustedViewLabel() {
+    const found = TRUSTED_VIEW_OPTIONS.find(([id]) => id === state.trustedNestedTab);
+    return found ? found[1] : TRUSTED_VIEW_OPTIONS[0][1];
+  }
+
+  function trustedViewDropdownHtml(layout = 'secondary', options = {}) {
+    const active = state.secondaryTab === 'trusted';
+    const activateTrusted = options.activateTrusted !== false;
+    const placement = options.placement || (activateTrusted ? 'tab' : 'toolbar');
+    const label = activateTrusted ? 'Trusted' : trustedViewLabel();
+    const primaryAttrs = activateTrusted
+      ? `data-email-secondary-tab="trusted" data-active="${active ? 'true' : 'false'}" data-email-secondary-layout="${escHtml(layout)}"`
+      : 'aria-label="Choose trusted sender table" aria-haspopup="menu" aria-expanded="false" data-email-trusted-view-menu-toggle';
+    return `
+      <div class="email-trusted-view-dropdown email-folder-tab-dropdown" data-email-trusted-view-dropdown data-email-trusted-view-placement="${escHtml(placement)}" data-active="${active ? 'true' : 'false'}" data-view="${escHtml(state.trustedNestedTab)}" data-email-secondary-layout="${escHtml(layout)}">
+        <div class="email-folder-tab-split">
+          <button class="email-folder-tab email-folder-tab--primary" type="button" ${primaryAttrs}>
+            <span data-email-trusted-view-label>${escHtml(label)}</span>
+          </button>
+          <button class="email-folder-tab-caret" type="button" aria-label="Choose trusted sender table" aria-haspopup="menu" aria-expanded="false" data-email-trusted-view-menu-toggle>
+            <span class="menu-editor-icon menu-editor-icon--chevron-down" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div class="email-folder-tab-menu" role="menu">
+          ${TRUSTED_VIEW_OPTIONS.map(([id, labelText]) => `
+            <button class="email-folder-tab-menu__item" type="button" role="menuitemradio" aria-checked="${state.trustedNestedTab === id ? 'true' : 'false'}" data-email-trusted-view-option="${escHtml(id)}">${escHtml(labelText)}</button>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  function trustedTabDropdownHtml(layout = 'secondary') {
+    return trustedViewDropdownHtml(layout, { activateTrusted: true, placement: 'tab' });
+  }
+
+  function trustedViewToolbarDropdownHtml(layout = 'ultrawide') {
+    return trustedViewDropdownHtml(layout, { activateTrusted: false, placement: 'toolbar' });
+  }
+
   function secondaryTabButtonHtml(id, label, layout = 'secondary') {
     return `<button type="button" data-email-secondary-tab="${escHtml(id)}" data-active="${state.secondaryTab === id ? 'true' : 'false'}" data-email-secondary-layout="${escHtml(layout)}">${escHtml(label)}</button>`;
   }
@@ -3749,6 +3819,8 @@ const EmailPage = (() => {
     return EMAIL_SECONDARY_TABS.map(([id, label]) => (
       id === 'search' && layout !== 'ultrawide'
         ? searchTabDropdownHtml(layout)
+        : id === 'trusted' && layout !== 'ultrawide'
+          ? trustedTabDropdownHtml(layout)
         : secondaryTabButtonHtml(id, label, layout)
     )).join('');
   }
@@ -4266,6 +4338,17 @@ const EmailPage = (() => {
     closeSearchModeMenus();
     renderSecondaryPanels();
     renderUltrawide();
+    return true;
+  }
+
+  function setTrustedNestedTab(tabId) {
+    const clean = TRUSTED_VIEW_OPTIONS.some(([id]) => id === tabId) ? tabId : 'probable';
+    state.trustedNestedTab = clean;
+    state.secondaryTab = 'trusted';
+    closeTrustedViewMenus();
+    renderSecondaryPanels();
+    renderUltrawide();
+    if (!state.trustedLoaded) refreshTrustedSenders({ silent: true });
     return true;
   }
 
@@ -4961,6 +5044,18 @@ const EmailPage = (() => {
         setSearchMode(searchModeOption.dataset.emailSearchModeOption || 'simple');
         return;
       }
+      const trustedViewToggle = target.closest?.('[data-email-trusted-view-menu-toggle]');
+      if (trustedViewToggle) {
+        event.preventDefault();
+        toggleTrustedViewMenu(trustedViewToggle);
+        return;
+      }
+      const trustedViewOption = target.closest?.('[data-email-trusted-view-option]');
+      if (trustedViewOption) {
+        event.preventDefault();
+        setTrustedNestedTab(trustedViewOption.dataset.emailTrustedViewOption || 'probable');
+        return;
+      }
       const tabBtn = target.closest?.('[data-email-secondary-tab]');
       if (tabBtn) {
         event.preventDefault();
@@ -5000,15 +5095,6 @@ const EmailPage = (() => {
         if (!state.searchTerms.length) state.searchTerms = searchDefaultTerms();
         renderSecondaryPanels();
         renderUltrawide();
-        return;
-      }
-      const trustedTab = target.closest?.('[data-email-trusted-tab]');
-      if (trustedTab) {
-        event.preventDefault();
-        state.trustedNestedTab = trustedTab.dataset.emailTrustedTab || 'probable';
-        renderSecondaryPanels();
-        renderUltrawide();
-        if (!state.trustedLoaded) refreshTrustedSenders({ silent: true });
         return;
       }
       const trustedRemove = target.closest?.('[data-email-trusted-remove]');
@@ -5072,6 +5158,7 @@ const EmailPage = (() => {
       }
       if (!target.closest?.('[data-email-folder-dropdown]')) closeFolderMenus();
       if (!target.closest?.('[data-email-search-mode-dropdown]')) closeSearchModeMenus();
+      if (!target.closest?.('[data-email-trusted-view-dropdown]')) closeTrustedViewMenus();
     });
     document.addEventListener('change', event => {
       const searchForm = event.target.closest?.('[data-email-search-form]');

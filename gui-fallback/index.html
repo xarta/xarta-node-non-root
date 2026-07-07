@@ -3788,7 +3788,19 @@
             <button type="button" data-email-secondary-tab="checks">Checks</button>
             <button type="button" data-email-secondary-tab="security">Security</button>
             <button type="button" data-email-secondary-tab="cache">Cache</button>
-            <button type="button" data-email-secondary-tab="trusted">Trusted</button>
+            <div class="email-trusted-view-dropdown email-folder-tab-dropdown" data-email-trusted-view-dropdown data-email-trusted-view-placement="tab" data-active="false" data-view="probable" data-email-secondary-layout="secondary">
+              <div class="email-folder-tab-split">
+                <button class="email-folder-tab email-folder-tab--primary" type="button" data-email-secondary-tab="trusted" data-active="false" data-email-secondary-layout="secondary">
+                  <span data-email-trusted-view-label>Trusted</span>
+                </button>
+                <button class="email-folder-tab-caret" type="button" aria-label="Choose trusted sender table" aria-haspopup="menu" aria-expanded="false" data-email-trusted-view-menu-toggle>
+                  <span class="menu-editor-icon menu-editor-icon--chevron-down" aria-hidden="true"></span>
+                </button>
+              </div>
+              <div class="email-folder-tab-menu" role="menu">
+                <button class="email-folder-tab-menu__item" type="button" role="menuitemradio" aria-checked="true" data-email-trusted-view-option="probable">Probable trusted senders</button>
+              </div>
+            </div>
             <div class="email-search-tab-dropdown email-folder-tab-dropdown" data-email-search-mode-dropdown data-active="false" data-mode="simple" data-email-secondary-layout="secondary">
               <div class="email-folder-tab-split">
                 <button class="email-folder-tab email-folder-tab--primary" type="button" data-email-secondary-tab="search" data-active="false" data-email-secondary-layout="secondary">
@@ -3979,7 +3991,19 @@
           <button type="button" data-email-secondary-tab="checks">Checks</button>
           <button type="button" data-email-secondary-tab="security">Security</button>
           <button type="button" data-email-secondary-tab="cache">Cache</button>
-          <button type="button" data-email-secondary-tab="trusted">Trusted</button>
+          <div class="email-trusted-view-dropdown email-folder-tab-dropdown" data-email-trusted-view-dropdown data-email-trusted-view-placement="tab" data-active="false" data-view="probable" data-email-secondary-layout="modal">
+            <div class="email-folder-tab-split">
+              <button class="email-folder-tab email-folder-tab--primary" type="button" data-email-secondary-tab="trusted" data-active="false" data-email-secondary-layout="modal">
+                <span data-email-trusted-view-label>Trusted</span>
+              </button>
+              <button class="email-folder-tab-caret" type="button" aria-label="Choose trusted sender table" aria-haspopup="menu" aria-expanded="false" data-email-trusted-view-menu-toggle>
+                <span class="menu-editor-icon menu-editor-icon--chevron-down" aria-hidden="true"></span>
+              </button>
+            </div>
+            <div class="email-folder-tab-menu" role="menu">
+              <button class="email-folder-tab-menu__item" type="button" role="menuitemradio" aria-checked="true" data-email-trusted-view-option="probable">Probable trusted senders</button>
+            </div>
+          </div>
           <div class="email-search-tab-dropdown email-folder-tab-dropdown" data-email-search-mode-dropdown data-active="false" data-mode="simple" data-email-secondary-layout="modal">
             <div class="email-folder-tab-split">
               <button class="email-folder-tab email-folder-tab--primary" type="button" data-email-secondary-tab="search" data-active="false" data-email-secondary-layout="modal">

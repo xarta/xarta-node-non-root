@@ -943,12 +943,15 @@
 }
 
 .email-search-tab-dropdown[data-active="true"] .email-folder-tab,
-.email-search-tab-dropdown[data-active="true"] .email-folder-tab-caret {
+.email-search-tab-dropdown[data-active="true"] .email-folder-tab-caret,
+.email-trusted-view-dropdown[data-active="true"] .email-folder-tab,
+.email-trusted-view-dropdown[data-active="true"] .email-folder-tab-caret {
   color: var(--hub-accent);
   border-color: rgba(var(--hub-accent-rgb), 0.58);
 }
 
-.email-search-tab-dropdown .email-folder-tab {
+.email-search-tab-dropdown .email-folder-tab,
+.email-trusted-view-dropdown .email-folder-tab {
   max-width: min(170px, calc(100vw - 80px));
 }
 
@@ -1242,13 +1245,6 @@
   padding: 9px;
 }
 
-.email-trusted-tabs {
-  display: flex;
-  gap: 6px;
-  min-width: 0;
-}
-
-.email-trusted-tabs button,
 .email-trusted-add button,
 .email-trusted-remove {
   min-height: 30px;
@@ -1258,11 +1254,6 @@
   color: var(--text-dim);
   cursor: pointer;
   padding: 0 10px;
-}
-
-.email-trusted-tabs button[data-active="true"] {
-  color: var(--hub-accent);
-  border-color: rgba(var(--hub-accent-rgb), 0.58);
 }
 
 .email-trusted-add {

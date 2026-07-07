@@ -49,10 +49,10 @@ test('PIM Email tab follows the Blueprints managed-scroll shell contract', () =>
   assert.match(indexHtml, /data-email-folder-controls-host="modal"/, 'Folder modal must expose toolbar-level folder controls.');
   assert.match(indexHtml, /id="email-secondary-modal"[\s\S]*data-email-secondary-tab="security"[\s\S]*>Security</, 'Folder/check modal must also expose the Security tab.');
   assert.match(indexHtml, /id="email-secondary-modal"[\s\S]*data-email-secondary-tab="cache"[\s\S]*>Cache</, 'Folder/check modal must also expose the Cache tab.');
-  assert.match(tabHtml, /data-email-secondary-tab="trusted"[\s\S]*>Trusted</, 'The bottom toolbar must expose the Trusted tab.');
-  assert.match(indexHtml, /id="email-secondary-modal"[\s\S]*data-email-secondary-tab="trusted"[\s\S]*>Trusted</, 'Folder/check modal must also expose the Trusted tab.');
-  assert.match(tabHtml, /data-email-secondary-tab="trusted"[\s\S]*>Trusted<[\s\S]*data-email-search-mode-dropdown[\s\S]*data-email-secondary-tab="search"[\s\S]*Search: Simple[\s\S]*data-email-search-mode-option="simple"[\s\S]*data-email-search-mode-option="advanced"/, 'The bottom toolbar must expose Search as a Simple/Advanced split dropdown directly after Trusted.');
-  assert.match(indexHtml, /id="email-secondary-modal"[\s\S]*data-email-secondary-tab="trusted"[\s\S]*>Trusted<[\s\S]*data-email-search-mode-dropdown[\s\S]*data-email-secondary-tab="search"[\s\S]*Search: Simple[\s\S]*data-email-search-mode-option="simple"[\s\S]*data-email-search-mode-option="advanced"/, 'Folder/check modal must expose Search as a Simple/Advanced split dropdown directly after Trusted.');
+  assert.match(tabHtml, /data-email-trusted-view-dropdown[\s\S]*data-email-secondary-tab="trusted"[\s\S]*data-email-trusted-view-label>Trusted<[\s\S]*data-email-trusted-view-option="probable"[\s\S]*Probable trusted senders/, 'The bottom toolbar must expose Trusted as a compact nested-view dropdown.');
+  assert.match(indexHtml, /id="email-secondary-modal"[\s\S]*data-email-trusted-view-dropdown[\s\S]*data-email-secondary-tab="trusted"[\s\S]*data-email-trusted-view-label>Trusted<[\s\S]*data-email-trusted-view-option="probable"[\s\S]*Probable trusted senders/, 'Folder/check modal must also expose Trusted as a compact nested-view dropdown.');
+  assert.match(tabHtml, /data-email-trusted-view-dropdown[\s\S]*data-email-secondary-tab="trusted"[\s\S]*data-email-search-mode-dropdown[\s\S]*data-email-secondary-tab="search"[\s\S]*Search: Simple[\s\S]*data-email-search-mode-option="simple"[\s\S]*data-email-search-mode-option="advanced"/, 'The bottom toolbar must expose Search as a Simple/Advanced split dropdown directly after Trusted.');
+  assert.match(indexHtml, /id="email-secondary-modal"[\s\S]*data-email-trusted-view-dropdown[\s\S]*data-email-secondary-tab="trusted"[\s\S]*data-email-search-mode-dropdown[\s\S]*data-email-secondary-tab="search"[\s\S]*Search: Simple[\s\S]*data-email-search-mode-option="simple"[\s\S]*data-email-search-mode-option="advanced"/, 'Folder/check modal must expose Search as a Simple/Advanced split dropdown directly after Trusted.');
   assert.match(tabHtml, /data-email-list-toggle/, 'Message list collapse toggle must remain in the message header.');
 });
 
@@ -136,6 +136,8 @@ test('PIM Email viewport rules match Dave and Kanban precedent', () => {
   assert.match(emailJs, /blueprints:page-state-changed[\s\S]*scheduleUltrawideRender/, 'Email initial-load sidecar render must run after app page-state activation.');
   assert.match(emailJs, /function secondaryTabsHtml\(layout = 'secondary'\)[\s\S]*id === 'search' && layout !== 'ultrawide'[\s\S]*searchTabDropdownHtml\(layout\)[\s\S]*secondaryTabButtonHtml\(id, label, layout\)/, 'Ultrawide must render Search as a plain vertical side tab.');
   assert.match(emailJs, /function folderControlsHtml\(layout = 'folders'\)[\s\S]*layout === 'ultrawide' && state\.secondaryTab === 'search'[\s\S]*searchModeToolbarDropdownHtml\(layout\)/, 'Ultrawide Search must move the Simple/Advanced mode dropdown into the top folder controls.');
+  assert.match(emailJs, /id === 'trusted' && layout !== 'ultrawide'[\s\S]*trustedTabDropdownHtml\(layout\)/, 'Normal secondary toolbars must render Trusted as a compact dropdown.');
+  assert.match(emailJs, /function folderControlsHtml\(layout = 'folders'\)[\s\S]*layout === 'ultrawide' && state\.secondaryTab === 'trusted'[\s\S]*trustedViewToolbarDropdownHtml\(layout\)/, 'Ultrawide Trusted must move nested view choices into the top folder controls.');
   assert.match(
     emailCss,
     /#tab-email\.email-list-collapsed\s+\.email-list-panel\s*\{[\s\S]*display:\s*none/,
@@ -454,7 +456,11 @@ test('PIM Email Trusted tab is stack-backed and editable', () => {
   assert.match(emailJs, /trustedProbableSendersEndpoint/, 'Email UI must centralize the trusted sender API endpoint.');
   assert.match(emailJs, /\/local\/trusted\/probable-senders/, 'Trusted tab must call the local stack-backed probable sender API.');
   assert.match(emailJs, /function trustedSendersHtml\(/, 'Trusted tab must render a panel body.');
-  assert.match(emailJs, /data-email-trusted-tab="probable"/, 'Trusted tab must use nested tabs with probable senders first.');
+  assert.match(emailJs, /TRUSTED_VIEW_OPTIONS = \[[\s\S]*\['probable', 'Probable trusted senders'\]/, 'Trusted nested view options must start with probable trusted senders.');
+  assert.match(emailJs, /function trustedViewDropdownHtml\([\s\S]*data-email-trusted-view-dropdown[\s\S]*data-email-trusted-view-option="\$\{escHtml\(id\)\}"/, 'Trusted nested views must be selected from compact dropdown markup.');
+  assert.match(emailJs, /function trustedViewToolbarDropdownHtml\(layout = 'ultrawide'\)[\s\S]*trustedViewDropdownHtml\(layout, \{ activateTrusted: false, placement: 'toolbar' \}\)/, 'Ultrawide Trusted nested views must use a toolbar dropdown.');
+  assert.doesNotMatch(emailJs, /data-email-trusted-tab/, 'Trusted must not render nested tabs inside the panel body.');
+  assert.doesNotMatch(emailCss, /\.email-trusted-tabs/, 'Trusted nested-tab styling must not remain after moving the choice to dropdowns.');
   assert.match(emailJs, /data-email-trusted-add-form/, 'Trusted tab must expose an add form.');
   assert.match(emailJs, /data-email-trusted-remove/, 'Trusted tab must expose sender removal controls.');
   assert.match(emailJs, /refreshTrustedSenders\(\{ silent: true \}\)/, 'Opening Trusted must fetch sender rows without blocking the tab render.');
