@@ -857,8 +857,10 @@ const EmailPage = (() => {
       form.classList.toggle('email-search-form--advanced', advanced);
       const simplePanel = form.querySelector('.email-search-simple');
       const advancedPanel = form.querySelector('.email-search-advanced');
+      const toolbar = form.querySelector('.email-search-toolbar');
       if (simplePanel) simplePanel.hidden = advanced;
       if (advancedPanel) advancedPanel.hidden = !advanced;
+      if (toolbar) toolbar.hidden = advanced;
     });
     document.querySelectorAll('[data-email-search-mode-dropdown]').forEach(dropdown => {
       dropdown.dataset.mode = state.searchMode;
@@ -3504,15 +3506,20 @@ const EmailPage = (() => {
   function searchTermRowsHtml() {
     return normalizeSearchTerms(state.searchTerms).map((term, index) => `
       <div class="email-search-row" data-email-search-row>
-        <select data-email-search-term-operator aria-label="Operator"${index === 0 ? ' disabled' : ''}>
-          <option value="AND"${term.operator !== 'OR' ? ' selected' : ''}>AND</option>
-          <option value="OR"${term.operator === 'OR' ? ' selected' : ''}>OR</option>
-        </select>
-        <select data-email-search-term-field aria-label="Field">
-          ${searchFieldOptionsHtml(term.field)}
-        </select>
-        <input type="text" data-email-search-term-value value="${escHtml(term.value)}" placeholder="term, phrase, or wild*" autocomplete="off">
-        <button class="email-search-icon-btn" type="button" data-email-search-remove-row="${index}" aria-label="Remove search row"${index === 0 ? ' disabled' : ''}>X</button>
+        <div class="email-search-term-controls">
+          <select data-email-search-term-operator aria-label="Operator"${index === 0 ? ' disabled' : ''}>
+            <option value="AND"${term.operator !== 'OR' ? ' selected' : ''}>AND</option>
+            <option value="OR"${term.operator === 'OR' ? ' selected' : ''}>OR</option>
+          </select>
+          <select data-email-search-term-field aria-label="Field">
+            ${searchFieldOptionsHtml(term.field)}
+          </select>
+        </div>
+        <div class="email-search-value-control">
+          <input type="text" data-email-search-term-value value="${escHtml(term.value)}" placeholder="term, phrase, or wild*" autocomplete="off">
+          <button class="email-search-icon-btn" type="button" data-email-search-remove-row="${index}" aria-label="Remove search row"${index === 0 ? ' disabled' : ''}>X</button>
+        </div>
+        ${index === 0 ? `<button type="submit" class="email-search-submit email-search-submit--advanced"${state.searchLoading ? ' disabled' : ''}>Search</button>` : '<span class="email-search-row-tail" aria-hidden="true"></span>'}
       </div>
     `).join('');
   }
@@ -3534,7 +3541,7 @@ const EmailPage = (() => {
     return `
       <div class="email-search-panel">
         <form class="email-search-form${advanced ? ' email-search-form--advanced' : ''}" data-email-search-form>
-          <div class="email-search-toolbar">
+          <div class="email-search-toolbar"${advanced ? ' hidden' : ''}>
             <div class="email-search-simple"${advanced ? ' hidden' : ''}>
               <input type="search" data-email-search-query value="${escHtml(state.searchQuery)}" placeholder="Search email" autocomplete="off">
             </div>

@@ -1352,6 +1352,10 @@
   justify-content: end;
 }
 
+.email-search-toolbar[hidden] {
+  display: none;
+}
+
 .email-search-toggles {
   display: flex;
   flex-wrap: wrap;
@@ -1381,7 +1385,32 @@
 }
 
 .email-search-row {
-  grid-template-columns: 68px minmax(116px, 0.45fr) minmax(160px, 1fr) 34px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.email-search-term-controls,
+.email-search-value-control {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.email-search-term-controls {
+  grid-template-columns: 68px minmax(0, 1fr);
+}
+
+.email-search-value-control {
+  grid-template-columns: minmax(0, 1fr) 34px;
+}
+
+.email-search-row .email-search-submit {
+  justify-self: end;
+}
+
+.email-search-row-tail {
+  display: block;
+  min-width: 0;
 }
 
 .email-search-filters {

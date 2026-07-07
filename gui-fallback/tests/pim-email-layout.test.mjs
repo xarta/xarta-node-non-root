@@ -174,6 +174,8 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /searchDateFieldHtml\('received-from', 'Received from'/, 'Email Search received-from date input must have a visible label.');
   assert.match(emailJs, /searchDateFieldHtml\('sent-to', 'Sent to'/, 'Email Search sent-to date input must have a visible label.');
   assert.match(emailJs, /class="email-search-toolbar"[\s\S]*class="email-search-simple"[\s\S]*data-email-search-query[\s\S]*class="email-search-submit"/, 'Simple Email Search must put the query input on the same row as the submit button.');
+  assert.match(emailJs, /class="email-search-term-controls"[\s\S]*data-email-search-term-operator[\s\S]*data-email-search-term-field[\s\S]*class="email-search-value-control"[\s\S]*data-email-search-term-value[\s\S]*data-email-search-remove-row[\s\S]*email-search-submit--advanced/, 'Advanced Email Search must keep operator/field, term/remove, and submit in aligned row groups.');
+  assert.match(emailJs, /class="email-search-toolbar"\$\{advanced \? ' hidden' : ''\}/, 'Advanced Email Search must hide the simple toolbar so the first term row moves up.');
   assert.match(emailJs, /class="email-search-filter-column"[\s\S]*searchDateFieldHtml\('received-from'[\s\S]*searchDateFieldHtml\('received-to'[\s\S]*class="email-search-filter-column"[\s\S]*searchDateFieldHtml\('sent-from'[\s\S]*searchDateFieldHtml\('sent-to'[\s\S]*email-search-filter-column--source[\s\S]*>Folder<[\s\S]*data-email-search-folder[\s\S]*>Options<[\s\S]*data-email-search-toggle="hybrid"[\s\S]*data-email-search-toggle="rerank"/, 'Email Search filters must render as received, sent, and aligned source/options two-row columns.');
   assert.match(emailJs, /data-email-search-clear-date/, 'Email Search date fields must expose a clear-date button.');
   assert.match(emailJs, /const searchClearDate = target\.closest\?\.\('\[data-email-search-clear-date\]'\)/, 'Email Search clear-date buttons must be handled without submitting the form.');
@@ -186,14 +188,18 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailCss, /\.email-search-panel/, 'Email Search controls must have compact panel styling.');
   assert.match(emailCss, /\.email-search-tab-dropdown\[data-active="true"\][\s\S]*\.email-folder-tab/, 'Email Search dropdown must share active tab styling.');
   assert.match(emailCss, /\.email-search-toolbar\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*560px\)\s+auto/, 'Simple Email Search toolbar must reserve a shorter query field beside the submit button.');
+  assert.match(emailCss, /\.email-search-toolbar\[hidden\]\s*\{[\s\S]*display:\s*none/, 'Advanced Email Search must remove the simple toolbar row.');
   assert.match(emailCss, /\.email-search-filters\s*\{[\s\S]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/, 'Email Search filters must use three equal desktop columns.');
+  assert.match(emailCss, /\.email-search-row\s*\{[\s\S]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/, 'Advanced Email Search rows must use the same three desktop columns as the filters.');
+  assert.match(emailCss, /\.email-search-term-controls\s*\{[\s\S]*grid-template-columns:\s*68px\s+minmax\(0,\s*1fr\)/, 'Advanced Email Search operator and field controls must stay inside the first filter column width.');
+  assert.match(emailCss, /\.email-search-value-control\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+34px/, 'Advanced Email Search term input and remove button must stay inside the second filter column width.');
   assert.match(emailCss, /\.email-search-filter-column\s*\{[\s\S]*display:\s*grid/, 'Email Search filter columns must stack their two rows.');
   assert.match(emailCss, /\.email-search-date-field,\s*[\r\n]+\.email-search-filter-field\s*\{[\s\S]*display:\s*grid/, 'Email Search source/options rows must share the date field label rhythm.');
   assert.match(emailCss, /\.email-search-date-field > span,\s*[\r\n]+\.email-search-filter-field > span\s*\{[\s\S]*font-size:\s*10px/, 'Email Search date and source/options labels must share compact stacked field styling.');
   assert.match(emailCss, /\.email-search-date-control\s*\{[\s\S]*position:\s*relative/, 'Email Search date controls must have room for an in-field clear button.');
   assert.match(emailCss, /\.email-search-clear-date::before[\s\S]*mask-image/, 'Email Search date clear buttons must use an icon glyph, not visible text.');
   assert.match(emailCss, /\.email-search-simple\[hidden\],[\s\S]*\.email-search-advanced\[hidden\]\s*\{[\s\S]*display:\s*none/, 'Email Search hidden mode panels must stay hidden despite grid display rules.');
-  assert.match(emailCss, /\.email-search-row\s*\{[\s\S]*grid-template-columns/, 'Advanced Email Search rows must use stable grid tracks.');
+  assert.match(emailCss, /\.email-search-row .email-search-submit\s*\{[\s\S]*justify-self:\s*end/, 'Advanced Email Search submit button must sit on the first term row.');
   assert.match(emailCss, /@media\s*\(max-width:\s*820px\)[\s\S]*\.email-search-toolbar,[\s\S]*\.email-search-row,[\s\S]*\.email-search-filters\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/, 'Email Search controls must collapse cleanly on mobile.');
   assert.match(emailJs, /function localCorpusAvailable\(/, 'Email UI must keep local corpus as the integrated page mode.');
   assert.match(emailJs, /\/local\/folder-messages/, 'Email UI must list local folder messages.');
