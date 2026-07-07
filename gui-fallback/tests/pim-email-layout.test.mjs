@@ -112,6 +112,9 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /function searchEndpoint\(\)[\s\S]*\/local\/search/, 'Email Search must call the local PIM search endpoint.');
   assert.match(emailJs, /SEARCH_FIELDS = \[[\s\S]*\['from', 'From'\][\s\S]*\['recipients', 'Recipients'\][\s\S]*\['subject', 'Subject'\][\s\S]*\['content', 'Body'\][\s\S]*\['image', 'Images'\][\s\S]*\['sent_at', 'Sent date'\][\s\S]*\['received_at', 'Received date'\]/, 'Email Search must expose production field targeting.');
   assert.match(emailJs, /data-email-search-mode value="simple"[\s\S]*data-email-search-mode value="advanced"/, 'Email Search must expose simple and advanced modes.');
+  assert.match(emailJs, /function syncSearchModeControls\(\)/, 'Email Search mode toggles must update visible panels without a full secondary render.');
+  assert.match(emailJs, /searchDateFieldHtml\('received-from', 'Received from'/, 'Email Search received-from date input must have a visible label.');
+  assert.match(emailJs, /searchDateFieldHtml\('sent-to', 'Sent to'/, 'Email Search sent-to date input must have a visible label.');
   assert.match(emailJs, /data-email-search-term-operator[\s\S]*<option value="AND"[\s\S]*<option value="OR"/, 'Advanced Email Search rows must support AND/OR composition.');
   assert.match(emailJs, /data-email-search-toggle="hybrid"[\s\S]*data-email-search-toggle="rerank"/, 'Email Search must expose hybrid and rerank toggles.');
   assert.match(emailJs, /state\.readSource = 'search'/, 'Email Search results must replace the message list source.');
@@ -119,6 +122,7 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /search_elapsed_ms/, 'Email automation snapshot must expose search timing.');
   assert.match(emailJs, /search_total/, 'Email automation snapshot must expose search result totals.');
   assert.match(emailCss, /\.email-search-panel/, 'Email Search controls must have compact panel styling.');
+  assert.match(emailCss, /\.email-search-date-field\s*\{[\s\S]*display:\s*grid/, 'Email Search date labels must use compact stacked field styling.');
   assert.match(emailCss, /\.email-search-simple\[hidden\],[\s\S]*\.email-search-advanced\[hidden\]\s*\{[\s\S]*display:\s*none/, 'Email Search hidden mode panels must stay hidden despite grid display rules.');
   assert.match(emailCss, /\.email-search-row\s*\{[\s\S]*grid-template-columns/, 'Advanced Email Search rows must use stable grid tracks.');
   assert.match(emailCss, /@media\s*\(max-width:\s*820px\)[\s\S]*\.email-search-toolbar,[\s\S]*\.email-search-row,[\s\S]*\.email-search-filters\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/, 'Email Search controls must collapse cleanly on mobile.');

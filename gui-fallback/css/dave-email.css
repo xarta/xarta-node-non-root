@@ -1339,7 +1339,22 @@
 }
 
 .email-search-filters {
+  align-items: end;
   grid-template-columns: minmax(150px, 1fr) repeat(4, minmax(118px, 0.72fr));
+}
+
+.email-search-date-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.email-search-date-field span {
+  color: var(--text-dim);
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0;
+  padding-left: 1px;
 }
 
 .email-search-form input[type="search"],
@@ -1356,6 +1371,16 @@
   color: var(--text);
   font-size: 12px;
   padding: 0 9px;
+}
+
+.email-search-form select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235b9cf6' opacity='.8'/%3E%3C/svg%3E");
+  background-position: right 12px center;
+  background-repeat: no-repeat;
+  background-size: 10px 6px;
+  padding-right: 30px;
 }
 
 .email-search-submit,

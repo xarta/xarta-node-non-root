@@ -842,6 +842,19 @@ const EmailPage = (() => {
     })));
   }
 
+  function syncSearchModeControls() {
+    const advanced = state.searchMode === 'advanced';
+    document.querySelectorAll('[data-email-search-form]').forEach(form => {
+      form.querySelectorAll('[data-email-search-mode]').forEach(input => {
+        input.checked = input.value === state.searchMode;
+      });
+      const simplePanel = form.querySelector('.email-search-simple');
+      const advancedPanel = form.querySelector('.email-search-advanced');
+      if (simplePanel) simplePanel.hidden = advanced;
+      if (advancedPanel) advancedPanel.hidden = !advanced;
+    });
+  }
+
   function currentSearchPayload({ offset = 0, limit = MESSAGE_LIST_LIMIT } = {}) {
     const terms = normalizeSearchTerms(state.searchTerms).filter(term => term.value || term.field.endsWith('_at'));
     return {
@@ -3224,6 +3237,15 @@ const EmailPage = (() => {
     `).join('');
   }
 
+  function searchDateFieldHtml(key, label, value) {
+    return `
+      <label class="email-search-date-field">
+        <span>${escHtml(label)}</span>
+        <input type="datetime-local" data-email-search-date="${escHtml(key)}" value="${escHtml(value)}" aria-label="${escHtml(label)}">
+      </label>
+    `;
+  }
+
   function emailSearchHtml() {
     const advanced = state.searchMode === 'advanced';
     return `
@@ -3247,10 +3269,10 @@ const EmailPage = (() => {
             <select data-email-search-folder aria-label="Folder">
               ${searchFolderOptionsHtml()}
             </select>
-            <input type="datetime-local" data-email-search-date="received-from" value="${escHtml(state.searchReceivedFrom)}" aria-label="Received from">
-            <input type="datetime-local" data-email-search-date="received-to" value="${escHtml(state.searchReceivedTo)}" aria-label="Received to">
-            <input type="datetime-local" data-email-search-date="sent-from" value="${escHtml(state.searchSentFrom)}" aria-label="Sent from">
-            <input type="datetime-local" data-email-search-date="sent-to" value="${escHtml(state.searchSentTo)}" aria-label="Sent to">
+            ${searchDateFieldHtml('received-from', 'Received from', state.searchReceivedFrom)}
+            ${searchDateFieldHtml('received-to', 'Received to', state.searchReceivedTo)}
+            ${searchDateFieldHtml('sent-from', 'Sent from', state.searchSentFrom)}
+            ${searchDateFieldHtml('sent-to', 'Sent to', state.searchSentTo)}
           </div>
           <div class="email-search-toggles">
             <label class="hub-checkbox email-search-toggle">
@@ -4619,11 +4641,9 @@ const EmailPage = (() => {
     document.addEventListener('change', event => {
       const searchForm = event.target.closest?.('[data-email-search-form]');
       if (searchForm) {
-        const previousMode = state.searchMode;
         readSearchForm(searchForm);
-        if (event.target.closest?.('[data-email-search-mode]') && previousMode !== state.searchMode) {
-          renderSecondaryPanels();
-          renderUltrawide();
+        if (event.target.closest?.('[data-email-search-mode]')) {
+          syncSearchModeControls();
         }
         return;
       }
@@ -4633,7 +4653,12 @@ const EmailPage = (() => {
     });
     document.addEventListener('input', event => {
       const searchForm = event.target.closest?.('[data-email-search-form]');
-      if (searchForm) readSearchForm(searchForm);
+      if (searchForm) {
+        readSearchForm(searchForm);
+        if (event.target.closest?.('[data-email-search-mode]')) {
+          syncSearchModeControls();
+        }
+      }
     });
     document.addEventListener('submit', event => {
       const searchForm = event.target.closest?.('[data-email-search-form]');
