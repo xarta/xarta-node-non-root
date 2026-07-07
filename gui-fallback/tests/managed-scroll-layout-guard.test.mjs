@@ -596,6 +596,45 @@ assert.match(
   /requestRangeStart\s*=\s*rangeStart\(\)[\s\S]*requestRangeEnd\s*=\s*rangeEnd\(\)[\s\S]*loadRequestId[\s\S]*date_start:\s*requestRangeStart[\s\S]*date_end:\s*requestRangeEnd[\s\S]*requestId\s*!==\s*state\.loadRequestId/,
   'Calendar load must pin the requested range and discard stale responses from older view/range requests.',
 );
+for (const [surface, js, filterAttr] of [
+  ['Calendar', daveCalendarJs, 'data-calendar-upcoming-filtered'],
+  ['Diary', daveDiaryJs, 'data-diary-upcoming-filtered'],
+]) {
+  assert.match(
+    js,
+    /UPCOMING_DEFAULT_MONTHS\s*=\s*12[\s\S]*UPCOMING_WIDE_YEARS\s*=\s*10/,
+    `${surface} Upcoming must default to twelve months while keeping the ten-year expansion.`,
+  );
+  assert.match(
+    functionSlice(js, 'groupEvents'),
+    /state\.upcomingItems[\s\S]*matchesFilter\(event\)[\s\S]*isUpcomingEvent\(event,\s*nowParts\)[\s\S]*UPCOMING_WIDE_MAX_EVENTS/,
+    `${surface} Upcoming must list the fetched future range through the active shared filters.`,
+  );
+  assert.doesNotMatch(
+    functionSlice(js, 'groupEvents'),
+    /rows\.filter\(event => isUpcomingEvent\(event,\s*nowParts\)\)\.sort\(compareEvents\)\.slice\(0,\s*16\)/,
+    `${surface} Upcoming must not fall back to the selected day/week range or first sixteen rows.`,
+  );
+  assert.match(
+    functionSlice(js, 'ensureUpcomingLoaded'),
+    /upcomingRangeInfo\(nowParts\)[\s\S]*state\.upcomingLoadedKey === range\.key[\s\S]*fetchUpcomingRange\(nowParts,\s*range\)/,
+    `${surface} Upcoming must cache and fetch by explicit upcoming scope.`,
+  );
+  assert.match(
+    functionSlice(js, 'load'),
+    /ensureUpcomingLoaded/,
+    `${surface} load/refresh must also refresh the Upcoming range.`,
+  );
+  assert.ok(
+    js.includes(filterAttr) && js.includes('<strong>Filtered</strong>'),
+    `${surface} Upcoming body must show a prominent filtered indicator when shared filters are active.`,
+  );
+}
+assert.match(
+  daveCalendarCss,
+  /\.calendar-upcoming-filtered\s*\{[\s\S]*background:[\s\S]*\.calendar-upcoming-context\s*\{/,
+  'Upcoming filtered and scope notices must be styled in the shared Calendar/Diary CSS.',
+);
 assert.match(
   daveCalendarJs,
   /'calendar\.toggleContentView':\s*\(\)\s*=>\s*CalendarPage\.toggleContentView\(\)/,

@@ -1011,6 +1011,51 @@
   padding: 0 2px;
 }
 
+.calendar-upcoming-notices {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.calendar-upcoming-filtered {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid rgba(245, 182, 92, .45);
+  border-radius: 8px;
+  background: rgba(245, 182, 92, .12);
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.calendar-upcoming-filtered strong {
+  color: #f5b65c;
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.calendar-upcoming-filtered span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.calendar-upcoming-context {
+  min-width: 0;
+  border: 1px solid rgba(91, 156, 246, .22);
+  border-radius: 8px;
+  background: rgba(91, 156, 246, .08);
+  color: var(--muted);
+  padding: 7px 10px;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .calendar-quick-event__footer {
   justify-content: space-between;
   gap: 10px;

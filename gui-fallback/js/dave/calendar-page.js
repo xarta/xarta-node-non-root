@@ -9,6 +9,7 @@ const CalendarPage = (() => {
   const EVENT_TAG_SURFACE = 'calendar-event';
   const EVENT_REQUIRED_TAGS = ['calendar'];
   const SEARCH_TAG_SURFACE = 'calendar-search';
+  const UPCOMING_DEFAULT_MONTHS = 12;
   const UPCOMING_WIDE_BATCH_SIZE = 200;
   const UPCOMING_WIDE_MAX_EVENTS = 2000;
   const UPCOMING_WIDE_YEARS = 10;
@@ -82,10 +83,11 @@ const CalendarPage = (() => {
     selection: null,
     lastWrite: null,
     upcomingWide: false,
-    upcomingWideLoading: false,
-    upcomingWideError: '',
-    upcomingWideItems: [],
-    upcomingWideRequestId: 0,
+    upcomingLoading: false,
+    upcomingError: '',
+    upcomingItems: [],
+    upcomingRequestId: 0,
+    upcomingLoadedKey: '',
     daySummaryDate: '',
     daySummary: null,
     daySummaryLoading: false,
@@ -1065,9 +1067,12 @@ const CalendarPage = (() => {
     const timed = rows.filter(event => !isAllDay(event));
     const allDay = rows.filter(isAllDay);
     const nowParts = londonNowParts();
-    const upcoming = state.upcomingWide
-      ? (state.upcomingWideLoading ? [] : state.upcomingWideItems)
-      : rows.filter(event => isUpcomingEvent(event, nowParts)).sort(compareEvents).slice(0, 16);
+    const upcoming = state.upcomingLoading
+      ? []
+      : state.upcomingItems
+          .filter(event => matchesFilter(event) && isUpcomingEvent(event, nowParts))
+          .sort(compareEvents)
+          .slice(0, UPCOMING_WIDE_MAX_EVENTS);
     return { timed, allDay, upcoming };
   }
 
@@ -1640,16 +1645,16 @@ const CalendarPage = (() => {
   }
 
   function upcomingEmptyMessage() {
-    if (state.upcomingWideLoading) return `Loading future items for the next ${UPCOMING_WIDE_YEARS} years...`;
-    if (state.upcomingWideError) return `Upcoming refresh failed: ${state.upcomingWideError}`;
-    if (state.upcomingWide) return `No future items in the next ${UPCOMING_WIDE_YEARS} years.`;
-    return 'No future items for this range.';
+    const scope = upcomingScopeLabel().toLowerCase();
+    if (state.upcomingLoading) return `Loading future items for the ${scope}...`;
+    if (state.upcomingError) return `Upcoming refresh failed: ${state.upcomingError}`;
+    return `No future items in the ${scope}.`;
   }
 
   function upcomingScopeHtml() {
     return `
       <label class="calendar-check calendar-upcoming-scope hub-checkbox">
-        <input class="hub-checkbox__input" type="checkbox" data-calendar-upcoming-next-years${state.upcomingWide ? ' checked' : ''}${state.upcomingWideLoading ? ' disabled' : ''} />
+        <input class="hub-checkbox__input" type="checkbox" data-calendar-upcoming-next-years${state.upcomingWide ? ' checked' : ''}${state.upcomingLoading ? ' disabled' : ''} />
         <span class="hub-checkbox__box" aria-hidden="true"></span>
         <span class="hub-checkbox__label">Next ${UPCOMING_WIDE_YEARS} years</span>
       </label>
@@ -1659,8 +1664,37 @@ const CalendarPage = (() => {
   function syncUpcomingControls() {
     document.querySelectorAll('[data-calendar-upcoming-next-years]').forEach(control => {
       control.checked = state.upcomingWide;
-      control.disabled = state.upcomingWideLoading;
+      control.disabled = state.upcomingLoading;
     });
+  }
+
+  function upcomingScopeLabel() {
+    return state.upcomingWide ? `Next ${UPCOMING_WIDE_YEARS} years` : `Next ${UPCOMING_DEFAULT_MONTHS} months`;
+  }
+
+  function upcomingFilterIsActive() {
+    if (state.sourceFilter !== 'all') return true;
+    const selected = window.PersonalFilters?.getSelectedIds ? window.PersonalFilters.getSelectedIds('calendar') : [];
+    return selected.length > 0;
+  }
+
+  function upcomingNoticeHtml() {
+    const nowParts = londonNowParts();
+    const endDate = upcomingRangeEndDate(nowParts.date);
+    const range = `${monthLabel(nowParts.date, { day: '2-digit', month: 'short', year: 'numeric' })} to ${monthLabel(endDate, { day: '2-digit', month: 'short', year: 'numeric' })}`;
+    const filter = upcomingFilterIsActive()
+      ? `<div class="calendar-upcoming-filtered" data-calendar-upcoming-filtered><strong>Filtered</strong> <span>${escHtml(filterLabel(state.sourceFilter))}</span></div>`
+      : '';
+    return `
+      <div class="calendar-upcoming-notices">
+        ${filter}
+        <div class="calendar-upcoming-context">${escHtml(`${upcomingScopeLabel()} from today - ${range}`)}</div>
+      </div>
+    `;
+  }
+
+  function upcomingListHtml(rows) {
+    return `${upcomingNoticeHtml()}${listHtml(rows, 'upcoming', upcomingEmptyMessage())}`;
   }
 
   function renderSelectedSummary(rows) {
@@ -1682,7 +1716,8 @@ const CalendarPage = (() => {
     if (allDayTarget) {
       allDayTarget.innerHTML = `${daySummaryHtml()}${listHtml(rows.allDay, 'all-day', 'No all-day items or milestones for this range.')}`;
     }
-    renderList('calendar-upcoming-list', rows.upcoming, 'upcoming', upcomingEmptyMessage());
+    const upcomingList = el('calendar-upcoming-list');
+    if (upcomingList) upcomingList.innerHTML = upcomingListHtml(rows.upcoming);
     syncUpcomingControls();
   }
 
@@ -1744,28 +1779,46 @@ const CalendarPage = (() => {
     if (meta) meta.textContent = 'Calendar refresh failed';
   }
 
-  function upcomingWideEndDate(startText) {
+  function upcomingRangeEndDate(startText) {
     const date = parseLocalDate(startText);
-    date.setFullYear(date.getFullYear() + UPCOMING_WIDE_YEARS);
+    if (state.upcomingWide) {
+      date.setFullYear(date.getFullYear() + UPCOMING_WIDE_YEARS);
+    } else {
+      date.setMonth(date.getMonth() + UPCOMING_DEFAULT_MONTHS);
+    }
     return localDateString(date);
   }
 
-  async function fetchUpcomingWide() {
-    const requestId = state.upcomingWideRequestId + 1;
-    state.upcomingWideRequestId = requestId;
-    state.upcomingWideLoading = true;
-    state.upcomingWideError = '';
+  function upcomingRangeInfo(nowParts = londonNowParts()) {
+    const start = nowParts.date;
+    const end = upcomingRangeEndDate(start);
+    const scope = state.upcomingWide ? 'wide' : 'default';
+    return { start, end, key: `${scope}:${start}:${end}` };
+  }
+
+  function ensureUpcomingLoaded(options = {}) {
+    const nowParts = londonNowParts();
+    const range = upcomingRangeInfo(nowParts);
+    if (!options.force && (state.upcomingLoading || state.upcomingLoadedKey === range.key)) return;
+    fetchUpcomingRange(nowParts, range);
+  }
+
+  async function fetchUpcomingRange(nowParts = londonNowParts(), range = upcomingRangeInfo(nowParts)) {
+    const requestId = state.upcomingRequestId + 1;
+    state.upcomingRequestId = requestId;
+    state.upcomingLoading = true;
+    state.upcomingError = '';
+    state.upcomingLoadedKey = '';
     state.selection = null;
     render();
-    const nowParts = londonNowParts();
     try {
       const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
       const items = [];
       let offset = 0;
       for (let page = 0; items.length < UPCOMING_WIDE_MAX_EVENTS; page += 1) {
         const params = new URLSearchParams({
-          date_start: nowParts.date,
-          date_end: upcomingWideEndDate(nowParts.date),
+          date_start: range.start,
+          date_end: range.end,
           limit: String(UPCOMING_WIDE_BATCH_SIZE),
           offset: String(offset),
         });
@@ -1778,18 +1831,20 @@ const CalendarPage = (() => {
         if (!pagination.has_more || pageItems.length < UPCOMING_WIDE_BATCH_SIZE) break;
         offset += UPCOMING_WIDE_BATCH_SIZE;
       }
-      if (requestId !== state.upcomingWideRequestId) return;
-      state.upcomingWideItems = items
+      if (requestId !== state.upcomingRequestId) return;
+      state.upcomingItems = items
         .filter(event => isUpcomingEvent(event, nowParts))
         .sort(compareEvents)
         .slice(0, UPCOMING_WIDE_MAX_EVENTS);
+      state.upcomingLoadedKey = range.key;
     } catch (error) {
-      if (requestId !== state.upcomingWideRequestId) return;
-      state.upcomingWideError = error?.message || String(error);
-      state.upcomingWideItems = [];
+      if (requestId !== state.upcomingRequestId) return;
+      state.upcomingError = error?.message || String(error);
+      state.upcomingItems = [];
+      state.upcomingLoadedKey = range.key;
     } finally {
-      if (requestId === state.upcomingWideRequestId) {
-        state.upcomingWideLoading = false;
+      if (requestId === state.upcomingRequestId) {
+        state.upcomingLoading = false;
         render();
       }
     }
@@ -1799,14 +1854,7 @@ const CalendarPage = (() => {
     const next = Boolean(enabled);
     state.upcomingWide = next;
     state.selection = null;
-    if (!next) {
-      state.upcomingWideRequestId += 1;
-      state.upcomingWideLoading = false;
-      state.upcomingWideError = '';
-      render();
-      return;
-    }
-    fetchUpcomingWide();
+    ensureUpcomingLoaded({ force: true });
   }
 
   async function load(options = {}) {
@@ -1817,7 +1865,10 @@ const CalendarPage = (() => {
       && !options.force
       && state.loadedRangeStart === requestRangeStart
       && state.loadedRangeEnd === requestRangeEnd
-    ) return state.data;
+    ) {
+      ensureUpcomingLoaded();
+      return state.data;
+    }
     const requestId = state.loadRequestId + 1;
     state.loadRequestId = requestId;
     state.loading = true;
@@ -1864,6 +1915,7 @@ const CalendarPage = (() => {
         window.PersonalFilters.invalidateSurface(SEARCH_TAG_SURFACE);
       }
       state.loaded = true;
+      ensureUpcomingLoaded({ force: Boolean(options.force) });
       return data;
     } catch (error) {
       if (requestId !== state.loadRequestId) return state.data;
@@ -2344,7 +2396,7 @@ const CalendarPage = (() => {
     return `
       <section class="calendar-band calendar-band--embedded-upcoming" aria-label="Upcoming">
         ${head}
-        <div class="calendar-agenda-list">${listHtml(rows.upcoming, 'upcoming', upcomingEmptyMessage())}</div>
+        <div class="calendar-agenda-list">${upcomingListHtml(rows.upcoming)}</div>
       </section>
     `;
   }
@@ -3840,8 +3892,9 @@ const CalendarPage = (() => {
       selected_filters: window.PersonalFilters?.getSelectedIds ? window.PersonalFilters.getSelectedIds('calendar') : [],
       new_event_tags: eventTagIds(),
       upcoming_next_years: state.upcomingWide,
-      upcoming_loading: state.upcomingWideLoading,
-      upcoming_error: state.upcomingWideError,
+      upcoming_scope: upcomingScopeLabel(),
+      upcoming_loading: state.upcomingLoading,
+      upcoming_error: state.upcomingError,
       upcoming_count: groupEvents().upcoming.length,
       event_count: visibleEvents().length,
       total_count: items.length,
