@@ -759,6 +759,12 @@
   align-items: center;
   gap: 4px;
   text-overflow: clip;
+  cursor: pointer;
+}
+
+.calendar-event-chip[data-calendar-selected="true"] {
+  outline: 1px solid var(--accent);
+  background: rgba(73, 144, 226, .2);
 }
 
 .calendar-event-more {

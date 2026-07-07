@@ -102,6 +102,20 @@ run_kanban_rollup_contract_guard() {
 
 run_kanban_rollup_contract_guard
 
+run_personal_shared_view_contract_guard() {
+  local guard="/root/xarta-node/.xarta/.claude/skills/blueprints-personal/scripts/assert-personal-view-contract.sh"
+
+  if [[ ! -f "$guard" ]]; then
+    echo "ERROR: Personal shared view contract guard not found at $guard" >&2
+    echo "Install/update private blueprints-personal skill before committing Personal UI changes." >&2
+    exit 1
+  fi
+
+  bash "$guard" --repo-root "$REPO_ROOT"
+}
+
+run_personal_shared_view_contract_guard
+
 run_active_browser_live_checks() {
   local runner="/root/xarta-node/.xarta/.claude/skills/xarta-blueprints-browser-automation/scripts/active_browser_precommit_test.py"
   local staged_pattern='^(gui-fallback/|gui-embed/|\.githooks/pre-commit)$'

@@ -100,7 +100,7 @@ const CalendarPage = (() => {
   let suppressSelectDayClick = false;
   let suppressSelectDayClickUntil = 0;
   let pendingEventTapTimer = null;
-  let lastEventTap = null;
+  let pendingEventTapContext = null;
 
   const escHtml = typeof esc === 'function'
     ? esc
@@ -574,6 +574,28 @@ const CalendarPage = (() => {
     return event?.provenance?.calendar || {};
   }
 
+  function eventEndDate(event) {
+    const start = eventStartDate(event);
+    const end = String(calendarMeta(event).local_end_date || start);
+    return end >= start ? end : start;
+  }
+
+  function eventOverlapsRange(event, startDate, endDate) {
+    return eventStartDate(event) <= endDate && eventEndDate(event) >= startDate;
+  }
+
+  function eventDateKeysInRange(event, startDate, endDate) {
+    const start = eventStartDate(event);
+    const end = eventEndDate(event);
+    const first = start > startDate ? start : startDate;
+    const last = end < endDate ? end : endDate;
+    const keys = [];
+    for (let date = parseLocalDate(first); localDateString(date) <= last; date = addDays(date, 1)) {
+      keys.push(localDateString(date));
+    }
+    return keys;
+  }
+
   function isAllDay(event) {
     const meta = calendarMeta(event);
     const tags = eventTags(event);
@@ -625,23 +647,36 @@ const CalendarPage = (() => {
 
   function eventsInRange(startDate, endDate) {
     return visibleEvents()
-      .filter(event => {
-        const date = eventStartDate(event);
-        return date >= startDate && date <= endDate;
-      })
+      .filter(event => eventOverlapsRange(event, startDate, endDate))
       .sort(compareEvents);
   }
 
   function eventsByDate() {
     const map = new Map();
     visibleEvents().forEach(event => {
-      const key = eventStartDate(event);
-      const rows = map.get(key) || [];
-      rows.push(event);
-      map.set(key, rows);
+      eventDateKeysInRange(event, rangeStart(), rangeEnd()).forEach(key => {
+        const rows = map.get(key) || [];
+        rows.push(event);
+        map.set(key, rows);
+      });
     });
     map.forEach(rows => rows.sort(compareEvents));
     return map;
+  }
+
+  function uniqueDateCellEvent(dateText) {
+    const rows = (eventsByDate().get(dateText) || []).filter(event => eventIdentity(event));
+    return rows.length === 1 ? rows[0] : null;
+  }
+
+  function eventIdentity(event) {
+    return String(event?.event_id || event?.source?.ref || event?.source_ref || '').trim();
+  }
+
+  function findEventById(eventId) {
+    const clean = String(eventId || '').trim();
+    if (!clean) return null;
+    return (state.data?.items || []).find(event => eventIdentity(event) === clean) || null;
   }
 
   function rowsForType(type) {
@@ -670,25 +705,16 @@ const CalendarPage = (() => {
   }
 
   function clearPendingEventPreview() {
-    if (!pendingEventTapTimer) return;
-    window.clearTimeout(pendingEventTapTimer);
+    if (pendingEventTapTimer) window.clearTimeout(pendingEventTapTimer);
     pendingEventTapTimer = null;
+    pendingEventTapContext = null;
   }
 
-  function handleEventActivation(row, event, options = {}) {
-    if (!row?.event_id) return false;
-    const now = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
-    const x = Number.isFinite(event.clientX) ? event.clientX : 0;
-    const y = Number.isFinite(event.clientY) ? event.clientY : 0;
-    const previous = lastEventTap;
-    const isDouble = event.detail >= 2
-      || (previous
-        && previous.id === row.event_id
-        && now - previous.time <= 320
-        && Math.hypot(x - previous.x, y - previous.y) <= DAY_DOUBLE_TAP_PX);
-    clearPendingEventPreview();
+  function selectEventForGesture(row, options = {}) {
+    const id = eventIdentity(row);
+    if (!id) return false;
     state.selection = {
-      key: selectionKey(options.type || 'event', Number.isFinite(Number(options.index)) ? Number(options.index) : -1),
+      key: id,
       type: options.type || 'event',
       index: Number.isFinite(Number(options.index)) ? Number(options.index) : -1,
       label: rowLabel(row),
@@ -696,18 +722,76 @@ const CalendarPage = (() => {
     };
     applySelectionStyles();
     renderMeta();
-    if (isDouble) {
-      lastEventTap = null;
+    return true;
+  }
+
+  function eventGestureContext(row, event, options = {}) {
+    const targetDate = options.targetDate || event?.target?.closest?.('[data-calendar-date]')?.dataset?.calendarDate || eventStartDate(row);
+    return {
+      row,
+      event,
+      options,
+      id: eventIdentity(row),
+      targetDate: localDateString(parseLocalDate(targetDate)),
+      time: eventNow(),
+      x: Number.isFinite(event?.clientX) ? event.clientX : 0,
+      y: Number.isFinite(event?.clientY) ? event.clientY : 0,
+    };
+  }
+
+  function handleEventActivation(row, event, options = {}) {
+    const id = eventIdentity(row);
+    if (!id) return false;
+    if (CalendarEventGestureMachine.shouldIgnoreClick()) {
       event.preventDefault();
-      editSelected();
+      event.stopPropagation();
       return true;
     }
-    lastEventTap = { id: row.event_id, time: now, x, y };
-    pendingEventTapTimer = window.setTimeout(() => {
-      pendingEventTapTimer = null;
-      lastEventTap = null;
-      openEventPreview(row);
-    }, 280);
+    event.preventDefault();
+    event.stopPropagation();
+    const input = event.detail >= 2 ? 'doubleTap' : 'tap';
+    if (input === 'doubleTap' && !CalendarEventGestureMachine.noteDoubleTap()) return true;
+    CalendarEventGestureMachine.dispatch(input, eventGestureContext(row, event, options));
+    return true;
+  }
+
+  function handleEventDoubleClick(target, event) {
+    const row = findEventById(target?.dataset?.calendarEventId);
+    if (!row) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!CalendarEventGestureMachine.noteDoubleTap()) return true;
+    CalendarEventGestureMachine.dispatch('doubleTap', eventGestureContext(row, event, eventTargetOptions(target)));
+    return true;
+  }
+
+  function handleDateCellEventActivation(btn, event) {
+    const dateText = btn?.dataset?.calendarDate || '';
+    const row = uniqueDateCellEvent(dateText);
+    if (!row) return false;
+    return handleEventActivation(row, event, {
+      type: 'event',
+      index: -1,
+      surface: 'grid',
+      targetDate: dateText,
+      dateCell: true,
+    });
+  }
+
+  function handleDateCellEventDoubleClick(btn, event) {
+    const dateText = btn?.dataset?.calendarDate || '';
+    const row = uniqueDateCellEvent(dateText);
+    if (!row) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!CalendarEventGestureMachine.noteDoubleTap()) return true;
+    CalendarEventGestureMachine.dispatch('doubleTap', eventGestureContext(row, event, {
+      type: 'event',
+      index: -1,
+      surface: 'grid',
+      targetDate: dateText,
+      dateCell: true,
+    }));
     return true;
   }
 
@@ -717,8 +801,231 @@ const CalendarPage = (() => {
     const rows = rowsForType(type);
     const row = rows[Number(index)];
     if (!row) return false;
-    return handleEventActivation(row, event, { type, index: Number(index) });
+    return handleEventActivation(row, event, {
+      type,
+      index: Number(index),
+      surface: selectable.dataset.calendarEventSurface || 'agenda',
+      targetDate: selectable.dataset.calendarDate || eventStartDate(row),
+    });
   }
+
+  function calendarEventTargetFromNode(node) {
+    return node?.closest?.('[data-calendar-action="select-event"][data-calendar-event-id], [data-calendar-select-type][data-calendar-event-id]') || null;
+  }
+
+  function eventTargetOptions(target) {
+    return {
+      type: target?.dataset?.calendarSelectType || 'event',
+      index: Number.isFinite(Number(target?.dataset?.calendarSelectIndex)) ? Number(target.dataset.calendarSelectIndex) : -1,
+      surface: target?.dataset?.calendarEventSurface || (target?.dataset?.calendarAction === 'select-event' ? 'grid' : 'agenda'),
+      targetDate: target?.dataset?.calendarDate || '',
+    };
+  }
+
+  function beginEventPress(event) {
+    if (event.button !== undefined && event.button !== 0) return false;
+    const target = calendarEventTargetFromNode(event.target);
+    if (!target) return false;
+    const row = findEventById(target.dataset.calendarEventId);
+    if (!row) return false;
+    CalendarEventGestureMachine.dispatch('pointerDown', eventGestureContext(row, event, eventTargetOptions(target)));
+    return true;
+  }
+
+  function moveEventPress(event) {
+    CalendarEventGestureMachine.dispatch('pointerMove', {
+      x: Number.isFinite(event.clientX) ? event.clientX : 0,
+      y: Number.isFinite(event.clientY) ? event.clientY : 0,
+    });
+  }
+
+  function finishEventPress(event, input) {
+    CalendarEventGestureMachine.dispatch(input, {
+      x: Number.isFinite(event.clientX) ? event.clientX : 0,
+      y: Number.isFinite(event.clientY) ? event.clientY : 0,
+    });
+  }
+
+  const CalendarEventGestureMachine = (() => {
+    let machineState = 'IDLE';
+    let longPressTimer = null;
+    let pointer = null;
+    let ignoreClicksUntil = 0;
+    let lastDoubleAt = 0;
+    const transitions = {
+      IDLE: {
+        pointerDown: { next: 'PRESSING', actions: ['startLongPressTimer'] },
+        tap: { next: 'TAP_PENDING', actions: ['startTapTimer'] },
+        doubleTap: { next: 'IDLE', actions: ['clearTapTimer', 'select', 'edit'] },
+        longPress: { next: 'PREVIEW_OPEN', actions: ['select', 'preview'] },
+      },
+      TAP_PENDING: {
+        pointerDown: { next: 'PRESSING', actions: ['startLongPressTimer'] },
+        tap: { next: 'IDLE', actions: ['confirmDoubleTap'] },
+        doubleTap: { next: 'IDLE', actions: ['clearTapTimer', 'select', 'edit'] },
+        tapTimeout: { next: 'IDLE', actions: ['selectPendingTap', 'singleEventAction'] },
+        longPress: { next: 'PREVIEW_OPEN', actions: ['clearTapTimer', 'select', 'preview'] },
+      },
+      PRESSING: {
+        pointerMove: { next: 'PRESSING', actions: ['cancelLongPressIfMoved'] },
+        pointerUp: { next: 'IDLE', actions: ['clearLongPressTimer'] },
+        pointerCancel: { next: 'IDLE', actions: ['clearLongPressTimer'] },
+        longPressTimeout: { next: 'PREVIEW_OPEN', actions: ['markLongPress', 'clearTapTimer', 'select', 'preview'] },
+      },
+      PREVIEW_OPEN: {
+        pointerDown: { next: 'PRESSING', actions: ['startLongPressTimer'] },
+        tap: { next: 'TAP_PENDING', actions: ['startTapTimer'] },
+        doubleTap: { next: 'IDLE', actions: ['clearTapTimer', 'select', 'edit'] },
+        longPress: { next: 'PREVIEW_OPEN', actions: ['select', 'preview'] },
+      },
+    };
+
+    function syncState() {
+      machineState = activeActionModalView() === 'event-preview' ? 'PREVIEW_OPEN' : 'IDLE';
+    }
+
+    function clearLongPressTimer() {
+      if (longPressTimer) window.clearTimeout(longPressTimer);
+      longPressTimer = null;
+      pointer = null;
+    }
+
+    function isSameTap(context, pending) {
+      return Boolean(context?.id && pending?.id
+        && context.id === pending.id
+        && context.time - pending.time <= DAY_DOUBLE_TAP_MS
+        && Math.hypot((context.x || 0) - (pending.x || 0), (context.y || 0) - (pending.y || 0)) <= DAY_DOUBLE_TAP_PX);
+    }
+
+    function clearTapTimer() {
+      if (pendingEventTapTimer) window.clearTimeout(pendingEventTapTimer);
+      pendingEventTapTimer = null;
+    }
+
+    function startTapTimer(context) {
+      clearTapTimer();
+      pendingEventTapContext = context;
+      pendingEventTapTimer = window.setTimeout(() => {
+        dispatch('tapTimeout', pendingEventTapContext);
+      }, DAY_DOUBLE_TAP_MS);
+    }
+
+    function startLongPressTimer(context) {
+      clearLongPressTimer();
+      pointer = {
+        ...context,
+        startX: context?.x || 0,
+        startY: context?.y || 0,
+      };
+      longPressTimer = window.setTimeout(() => {
+        dispatch('longPressTimeout', pointer);
+      }, DAY_LONG_PRESS_MS);
+    }
+
+    function cancelLongPressIfMoved(context) {
+      if (!longPressTimer || !pointer) return;
+      const moved = Math.hypot((context?.x || 0) - pointer.startX, (context?.y || 0) - pointer.startY);
+      if (moved > DAY_MOVE_TOLERANCE_PX) clearLongPressTimer();
+    }
+
+    function drillOrPreview(context) {
+      const row = context?.row;
+      if (!row) return;
+      const targetDate = context.targetDate || eventStartDate(row);
+      if (context.options?.surface === 'grid') {
+        if (state.view === 'year') {
+          openMonth(targetDate);
+          return;
+        }
+        if (state.view === 'month') {
+          openDiaryWeek(targetDate);
+          return;
+        }
+      }
+      openEventPreview(row);
+    }
+
+    function runAction(action, context) {
+      if (action === 'startTapTimer') {
+        startTapTimer(context);
+        return;
+      }
+      if (action === 'clearTapTimer') {
+        clearTapTimer();
+        pendingEventTapContext = null;
+        return;
+      }
+      if (action === 'startLongPressTimer') {
+        startLongPressTimer(context);
+        return;
+      }
+      if (action === 'clearLongPressTimer') {
+        clearLongPressTimer();
+        return;
+      }
+      if (action === 'cancelLongPressIfMoved') {
+        cancelLongPressIfMoved(context);
+        return;
+      }
+      if (action === 'markLongPress') {
+        ignoreClicksUntil = eventNow() + 720;
+        clearLongPressTimer();
+        pendingEventTapContext = null;
+        return;
+      }
+      if (action === 'confirmDoubleTap') {
+        const pending = pendingEventTapContext;
+        clearTapTimer();
+        pendingEventTapContext = null;
+        if (isSameTap(context, pending)) {
+          runAction('select', context);
+          runAction('edit', context);
+        } else {
+          machineState = 'TAP_PENDING';
+          startTapTimer(context);
+        }
+        return;
+      }
+      if (action === 'selectPendingTap') {
+        const pending = pendingEventTapContext;
+        pendingEventTapContext = null;
+        if (pending) runAction('select', pending);
+        return;
+      }
+      const row = context?.row;
+      if (!row) return;
+      if (action === 'select') selectEventForGesture(row, context.options || {});
+      if (action === 'singleEventAction') drillOrPreview(context);
+      if (action === 'edit') openEventEditForContext(context);
+      if (action === 'preview') openEventPreview(row);
+    }
+
+    function dispatch(input, context = {}) {
+      if (input === 'tap' && pendingEventTapContext && isSameTap(context, pendingEventTapContext)) {
+        input = 'doubleTap';
+      }
+      if (machineState !== 'TAP_PENDING' && machineState !== 'PRESSING') syncState();
+      const transition = transitions[machineState]?.[input];
+      if (!transition) return machineState;
+      machineState = transition.next;
+      transition.actions.forEach(action => runAction(action, context));
+      if (machineState !== 'TAP_PENDING' && machineState !== 'PRESSING') syncState();
+      return machineState;
+    }
+
+    return {
+      dispatch,
+      shouldIgnoreClick() {
+        return eventNow() < ignoreClicksUntil;
+      },
+      noteDoubleTap() {
+        const now = eventNow();
+        if (now - lastDoubleAt < 80) return false;
+        lastDoubleAt = now;
+        return true;
+      },
+    };
+  })();
 
   function selectionKey(type, index) {
     return `${type}:${index}`;
@@ -732,6 +1039,14 @@ const CalendarPage = (() => {
     document.querySelectorAll('[data-calendar-selected="true"]').forEach(node => {
       node.removeAttribute('data-calendar-selected');
     });
+    const selectedEventId = eventIdentity(state.selection?.row);
+    if (selectedEventId) {
+      document.querySelectorAll('[data-calendar-event-id]').forEach(node => {
+        if (node.dataset.calendarEventId === selectedEventId) {
+          node.setAttribute('data-calendar-selected', 'true');
+        }
+      });
+    }
     if (!state.selection) return;
     document.querySelectorAll('[data-calendar-select-type]').forEach(node => {
       if (selectionKey(node.dataset.calendarSelectType, node.dataset.calendarSelectIndex) === state.selection.key) {
@@ -977,10 +1292,18 @@ const CalendarPage = (() => {
       : title;
   }
 
-  function monthEventChipHtml(event) {
+  function eventChipAttrs(event, options = {}) {
+    const id = eventIdentity(event);
+    if (!id) return '';
+    const targetDate = options.dateText || eventStartDate(event);
+    const label = event.title || event.kind || event.event_id || 'Calendar event';
+    return `data-calendar-action="select-event" data-calendar-event-id="${escHtml(id)}" data-calendar-event-surface="grid" data-calendar-date="${escHtml(targetDate)}" role="button" tabindex="0" aria-label="${escHtml(label)}" title="${escHtml(label)}"`;
+  }
+
+  function monthEventChipHtml(event, options = {}) {
     const marker = monthEventMarker(event);
     return `
-      <span class="calendar-event-chip calendar-event-chip--${escHtml(eventCategory(event))}">
+      <span class="calendar-event-chip calendar-event-chip--${escHtml(eventCategory(event))}" ${eventChipAttrs(event, options)}>
         ${monthEventMarkerHtml(marker)}
         <span class="calendar-event-chip__title">${escHtml(monthEventExcerpt(event))}</span>
       </span>
@@ -1029,10 +1352,10 @@ const CalendarPage = (() => {
     return html.join('');
   }
 
-  function dayEventSummary(events, compact = false) {
+  function dayEventSummary(events, compact = false, dateText = '') {
     if (!events.length) return '';
     if (compact) return '';
-    const chips = events.slice(0, MONTH_DESKTOP_EVENT_LIMIT).map(monthEventChipHtml).join('');
+    const chips = events.slice(0, MONTH_DESKTOP_EVENT_LIMIT).map(event => monthEventChipHtml(event, { dateText })).join('');
     const more = events.length > MONTH_DESKTOP_EVENT_LIMIT ? `<span class="calendar-event-more">+${events.length - MONTH_DESKTOP_EVENT_LIMIT}</span>` : '';
     return `<span class="calendar-event-stack calendar-event-stack--desktop">${chips}${more}</span><span class="calendar-event-stack calendar-event-stack--mobile">${mobileEventSummary(events)}</span>`;
   }
@@ -1101,7 +1424,7 @@ const CalendarPage = (() => {
                 data-calendar-action="select-day" data-calendar-date="${escHtml(dateText)}"
                 aria-label="${escHtml(monthLabel(dateText, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }))}"${dayMetaAttrs(metaGroup)}>
           <span class="calendar-day-number">${date.getDate()}</span>
-          <span class="calendar-mini-day__events">${dayEventSummary(events, true)}</span>
+          <span class="calendar-mini-day__events">${dayEventSummary(events, true, dateText)}</span>
         </button>
       `;
     }).join('');
@@ -1137,7 +1460,7 @@ const CalendarPage = (() => {
                 data-calendar-action="select-day" data-calendar-date="${escHtml(dateText)}"
                 aria-label="${escHtml(monthLabel(dateText, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }))}"${dayMetaAttrs(metaGroup)}>
           <span class="calendar-day-number">${date.getDate()}</span>
-          <span class="calendar-month-day__events">${dayEventSummary(events)}</span>
+          <span class="calendar-month-day__events">${dayEventSummary(events, false, dateText)}</span>
         </button>
       `;
     }).join('');
@@ -1254,7 +1577,7 @@ const CalendarPage = (() => {
     const ref = event.source?.ref || (Array.isArray(event.file_refs) ? event.file_refs[0] : '') || event.event_id || '';
     const todoLink = todoLinkHtml(event);
     return `
-      <div class="calendar-agenda-row calendar-agenda-row--${escHtml(eventCategory(event))}" ${selectionAttrs(type, index)}>
+      <div class="calendar-agenda-row calendar-agenda-row--${escHtml(eventCategory(event))}" ${selectionAttrs(type, index)} data-calendar-event-id="${escHtml(eventIdentity(event))}" data-calendar-event-surface="agenda">
         <div class="calendar-agenda-time">${escHtml(eventTime(event))}</div>
         <div class="calendar-agenda-main">
           <div class="calendar-agenda-title">${escHtml(event.title || event.kind || event.event_id)}</div>
@@ -2124,6 +2447,11 @@ const CalendarPage = (() => {
     }
   }
 
+  function activeActionModalView() {
+    const modal = el('calendar-action-modal');
+    return modal?.open ? String(modal.dataset.calendarActionModalView || '') : '';
+  }
+
   function showActionModal(title, html, status = '', options = {}) {
     const modal = el('calendar-action-modal');
     const titleEl = el('calendar-action-modal-title');
@@ -2240,6 +2568,8 @@ const CalendarPage = (() => {
       title: event?.title || 'Untitled',
       body: bodyText.trim(),
       local_date: eventStartDate(event),
+      range_start_date: eventStartDate(event),
+      range_end_date: eventEndDate(event),
       start_time: isAllDay(event) ? null : meta.local_start_time || null,
       end_time: isAllDay(event) ? null : meta.local_end_time || null,
       all_day: isAllDay(event),
@@ -2330,22 +2660,22 @@ const CalendarPage = (() => {
     return true;
   }
 
-  function eachDateText(startText, endText) {
+  function calendarRangePayloadDates(startText, endText) {
     const range = orderedDateRange(startText, endText);
-    const dates = [];
-    for (let date = parseLocalDate(range.start); localDateString(date) <= range.end; date = addDays(date, 1)) {
-      dates.push(localDateString(date));
-    }
-    return dates;
+    return { start: range.start, end: range.end };
   }
 
   function eventPayloadsFromForm(prefix = 'calendar-event') {
+    return [eventPayloadFromForm(prefix)];
+  }
+
+  function eventPayloadFromForm(prefix = 'calendar-event') {
     const allDay = !!el(`${prefix}-all-day`)?.checked;
     const startDate = String(el(`${prefix}-date`)?.value || state.date).trim();
     const endDate = String(el(`${prefix}-end-date`)?.value || startDate || state.date).trim();
-    const dates = eachDateText(startDate, endDate);
-    const runId = dates.length > 1 ? `ui-calendar-range-${Date.now()}` : `ui-calendar-${Date.now()}`;
-    const base = {
+    const range = calendarRangePayloadDates(startDate, endDate);
+    const runId = range.start !== range.end ? `ui-calendar-range-${Date.now()}` : `ui-calendar-${Date.now()}`;
+    return {
       title: String(el(`${prefix}-title`)?.value || '').trim(),
       body: String(el(`${prefix}-body`)?.value || '').trim(),
       start_time: allDay ? null : String(el(`${prefix}-start`)?.value || '').trim() || null,
@@ -2354,17 +2684,12 @@ const CalendarPage = (() => {
       tags: eventTagIds(),
       actor: 'blueprints-ui',
       source_surface: 'calendar-page',
-    };
-    return dates.map((localDate, index) => ({
-      ...base,
-      local_date: localDate,
-      request_id: dates.length > 1 ? `${runId}-${index + 1}` : runId,
+      local_date: range.start,
+      range_start_date: range.start,
+      range_end_date: range.end,
+      request_id: runId,
       run_id: runId,
-    }));
-  }
-
-  function eventPayloadFromForm(prefix = 'calendar-event') {
-    return eventPayloadsFromForm(prefix)[0] || {};
+    };
   }
 
   function setAllDayControls(prefix = 'calendar-event') {
@@ -2377,31 +2702,26 @@ const CalendarPage = (() => {
 
   async function submitEvent(prefix = 'calendar-event') {
     const status = el(prefix === 'calendar-event' ? 'calendar-entry-status' : `${prefix}-status`);
-    const payloads = eventPayloadsFromForm(prefix);
-    const firstPayload = payloads[0];
-    if (!firstPayload?.title) {
+    const payload = eventPayloadFromForm(prefix);
+    if (!payload?.title) {
       if (status) status.textContent = 'Event title is required.';
       return false;
     }
-    if (!payloads.length) {
+    if (!payload.local_date) {
       if (status) status.textContent = 'A valid event date is required.';
       return false;
     }
-    if (status) status.textContent = payloads.length > 1 ? `Saving ${payloads.length} events...` : 'Saving event...';
+    if (status) status.textContent = 'Saving event...';
     const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
-    const saved = [];
-    for (const payload of payloads) {
-      const resp = await fetcher('/api/v1/personal/calendar/events', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        if (status) status.textContent = `${payload.local_date}: ${responseErrorMessage(data, resp.status)}`;
-        return false;
-      }
-      saved.push(data);
+    const resp = await fetcher('/api/v1/personal/calendar/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      if (status) status.textContent = responseErrorMessage(data, resp.status);
+      return false;
     }
     ['title', 'body', 'start', 'end'].forEach(key => {
       const field = el(`${prefix}-${key}`);
@@ -2410,12 +2730,10 @@ const CalendarPage = (() => {
     const endDate = el(`${prefix}-end-date`);
     if (endDate) endDate.value = el(`${prefix}-date`)?.value || eventDefaultStartDate();
     if (status) {
-      status.textContent = saved.length > 1
-        ? `Saved ${saved.length} events`
-        : `Saved ${saved[0]?.event?.event_id || ''}`;
+      status.textContent = `Saved ${data?.event?.event_id || ''}`;
     }
-    state.lastWrite = saved[saved.length - 1];
-    state.date = saved[0]?.event?.local_date || firstPayload.local_date || state.date;
+    state.lastWrite = data;
+    state.date = data?.event?.local_date || payload.local_date || state.date;
     state.view = 'month';
     state.contentView = 'calendar';
     state.loaded = false;
@@ -2509,13 +2827,15 @@ const CalendarPage = (() => {
     removeDateRangeDragListeners();
   }
 
-  function editSelected() {
+  function openCalendarEventEditModal() {
     const event = state.selection?.row;
     if (!event) {
       return showActionModal('Edit Calendar Event', '<p>Select a Calendar event before editing.</p>');
     }
     const meta = calendarMeta(event);
     const allDay = !!meta.all_day;
+    const startDate = eventStartDate(event);
+    const endDate = eventEndDate(event);
     const html = `
       ${kvHtml([
         ['Event', event.event_id || ''],
@@ -2527,8 +2847,12 @@ const CalendarPage = (() => {
           <input id="calendar-edit-title" type="text" maxlength="180" value="${escHtml(event.title || '')}" />
         </label>
         <label class="calendar-field" for="calendar-edit-date">
-          <span>Date</span>
-          <input id="calendar-edit-date" type="date" value="${escHtml(event.local_date || state.date)}" />
+          <span>Start date</span>
+          <input id="calendar-edit-date" type="date" data-calendar-event-date value="${escHtml(startDate || state.date)}" />
+        </label>
+        <label class="calendar-field" for="calendar-edit-end-date">
+          <span>End date</span>
+          <input id="calendar-edit-end-date" type="date" data-calendar-event-end-date value="${escHtml(endDate || startDate || state.date)}" />
         </label>
         <label class="calendar-field" for="calendar-edit-start">
           <span>Start</span>
@@ -2539,7 +2863,7 @@ const CalendarPage = (() => {
           <input id="calendar-edit-end" type="time" value="${escHtml(meta.local_end_time || '')}" ${allDay ? 'disabled' : ''} />
         </label>
         <label class="calendar-check hub-checkbox" for="calendar-edit-all-day">
-          <input id="calendar-edit-all-day" class="hub-checkbox__input" type="checkbox" ${allDay ? 'checked' : ''} />
+          <input id="calendar-edit-all-day" class="hub-checkbox__input" type="checkbox" data-calendar-event-all-day="calendar-edit" ${allDay ? 'checked' : ''} />
           <span class="hub-checkbox__box" aria-hidden="true"></span>
           <span class="hub-checkbox__label">All day</span>
         </label>
@@ -2559,6 +2883,14 @@ const CalendarPage = (() => {
       </div>
     `;
     return showActionModal('Edit Calendar Event', html);
+  }
+
+  function editSelected(context = {}) {
+    const event = context?.row || state.selection?.row;
+    if (event?.event_id && window.BlueprintsDiaryPage?.editEntryById) {
+      return openSharedEntryEdit(event, context?.targetDate || eventStartDate(event));
+    }
+    return openCalendarEventEditModal();
   }
 
   async function submitEdit() {
@@ -2678,6 +3010,26 @@ const CalendarPage = (() => {
     if (window.BlueprintsDiaryPage?.openWeek) window.BlueprintsDiaryPage.openWeek(targetDate);
     else if (window.BlueprintsDiaryPage?.setDate) window.BlueprintsDiaryPage.setDate(targetDate);
     return true;
+  }
+
+  function openSharedEntryEdit(event, dateText = state.date) {
+    const eventId = eventIdentity(event);
+    if (!eventId) return false;
+    const targetDate = localDateString(parseLocalDate(dateText || eventStartDate(event) || state.date));
+    if (typeof switchGroup === 'function') switchGroup('dave');
+    if (typeof switchTab === 'function') switchTab('diary');
+    if (typeof DaveMenuConfig !== 'undefined') DaveMenuConfig.updateActiveTab('diary');
+    if (window.BlueprintsDiaryPage?.editEntryById) {
+      window.BlueprintsDiaryPage.editEntryById(eventId, targetDate);
+      return true;
+    }
+    if (window.BlueprintsDiaryPage?.openWeek) window.BlueprintsDiaryPage.openWeek(targetDate);
+    if (window.BlueprintsDiaryPage?.editEntry) window.BlueprintsDiaryPage.editEntry();
+    return true;
+  }
+
+  function openEventEditForContext(context = {}) {
+    return editSelected(context);
   }
 
   async function createTask() {
@@ -3278,6 +3630,7 @@ const CalendarPage = (() => {
       render();
     });
     root.addEventListener('pointerdown', event => {
+      if (beginEventPress(event)) return;
       const btn = event.target.closest('[data-calendar-action="select-day"][data-calendar-date]');
       if (btn && (event.button === undefined || event.button === 0)) {
         try {
@@ -3288,12 +3641,14 @@ const CalendarPage = (() => {
       beginDateRangeDrag(event);
     });
     root.addEventListener('pointermove', event => {
+      moveEventPress(event);
       const btn = event.target.closest('[data-calendar-action="select-day"][data-calendar-date]');
       if (!btn) return;
       CalendarDayGestureMachine.dispatch('pointerMove', CalendarDayGestureMachine.eventContext(btn, event));
     });
     ['pointerup', 'pointercancel', 'pointerleave'].forEach(type => {
       root.addEventListener(type, event => {
+        finishEventPress(event, type === 'pointerup' ? 'pointerUp' : 'pointerCancel');
         const btn = event.target.closest('[data-calendar-action="select-day"][data-calendar-date]');
         if (!btn) return;
         CalendarDayGestureMachine.dispatch(type === 'pointerup' ? 'pointerUp' : 'pointerCancel', CalendarDayGestureMachine.eventContext(btn, event));
@@ -3306,6 +3661,11 @@ const CalendarPage = (() => {
         event.stopPropagation();
         openTodoLink(todoLink.dataset.personalTodoLink);
         return;
+      }
+      const eventTarget = calendarEventTargetFromNode(event.target);
+      if (eventTarget) {
+        const row = findEventById(eventTarget.dataset.calendarEventId);
+        if (row && handleEventActivation(row, event, eventTargetOptions(eventTarget))) return;
       }
       const selectable = event.target.closest('[data-calendar-select-type]');
       if (selectable) {
@@ -3326,6 +3686,7 @@ const CalendarPage = (() => {
       if (action === 'mode-week') setMode('week');
       if (action === 'select-day') {
         if (shouldSuppressSelectDayInteraction(event)) return;
+        if (handleDateCellEventActivation(btn, event)) return;
         event.preventDefault();
         CalendarDayGestureMachine.dispatch('click', CalendarDayGestureMachine.eventContext(btn, event));
         return;
@@ -3335,9 +3696,12 @@ const CalendarPage = (() => {
       if (action === 'submit-event') submitEvent(btn.dataset.calendarEventPrefix || 'calendar-event');
     });
     root.addEventListener('dblclick', event => {
+      const eventTarget = calendarEventTargetFromNode(event.target);
+      if (eventTarget && handleEventDoubleClick(eventTarget, event)) return;
       const btn = event.target.closest('[data-calendar-action="select-day"][data-calendar-date]');
       if (!btn) return;
       if (shouldSuppressSelectDayInteraction(event)) return;
+      if (handleDateCellEventDoubleClick(btn, event)) return;
       event.preventDefault();
       CalendarDayGestureMachine.dispatch('doubleTap', CalendarDayGestureMachine.eventContext(btn, event));
     });
@@ -3371,6 +3735,12 @@ const CalendarPage = (() => {
     });
     root.addEventListener('keydown', event => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
+      const eventTarget = calendarEventTargetFromNode(event.target);
+      if (eventTarget) {
+        const row = findEventById(eventTarget.dataset.calendarEventId);
+        if (row) handleEventActivation(row, event, eventTargetOptions(eventTarget));
+        return;
+      }
       const selectable = event.target.closest('[data-calendar-select-type]');
       if (!selectable) return;
       event.preventDefault();

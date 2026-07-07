@@ -528,6 +528,28 @@ const DiaryPage = (() => {
     return event?.provenance?.calendar || {};
   }
 
+  function eventEndDate(event) {
+    const start = eventStartDate(event);
+    const end = String(calendarMeta(event).local_end_date || start);
+    return end >= start ? end : start;
+  }
+
+  function eventOverlapsRange(event, startDate, endDate) {
+    return eventStartDate(event) <= endDate && eventEndDate(event) >= startDate;
+  }
+
+  function eventDateKeysInRange(event, startDate, endDate) {
+    const start = eventStartDate(event);
+    const end = eventEndDate(event);
+    const first = start > startDate ? start : startDate;
+    const last = end < endDate ? end : endDate;
+    const keys = [];
+    for (let date = parseLocalDate(first); localDateString(date) <= last; date = addDays(date, 1)) {
+      keys.push(localDateString(date));
+    }
+    return keys;
+  }
+
   function isAllDay(event) {
     const meta = calendarMeta(event);
     const tags = eventTags(event);
@@ -590,20 +612,18 @@ const DiaryPage = (() => {
 
   function eventsInRange(startDate, endDate) {
     return visibleEvents()
-      .filter(event => {
-        const date = eventStartDate(event);
-        return date >= startDate && date <= endDate;
-      })
+      .filter(event => eventOverlapsRange(event, startDate, endDate))
       .sort(compareEvents);
   }
 
   function eventsByDate() {
     const map = new Map();
     visibleEvents().forEach(event => {
-      const key = eventStartDate(event);
-      const rows = map.get(key) || [];
-      rows.push(event);
-      map.set(key, rows);
+      eventDateKeysInRange(event, rangeStart(), rangeEnd()).forEach(key => {
+        const rows = map.get(key) || [];
+        rows.push(event);
+        map.set(key, rows);
+      });
     });
     map.forEach(rows => rows.sort(compareEvents));
     return map;
@@ -665,6 +685,10 @@ const DiaryPage = (() => {
 
   function activateInlineDiaryTab(tabId) {
     if (!window.PersonalFilters?.activateTab) return false;
+    if (window.UltrawideSidecar?.isVisible?.() && window.PersonalFilters?.syncUltrawideSidecar) {
+      const sidecarHost = document.querySelector('#ultrawide-sidecar-body [data-personal-filter-host][data-personal-filter-surface="diary"]');
+      if (!diaryTabHostVisible(sidecarHost)) window.PersonalFilters.syncUltrawideSidecar({ tab: 'diary' });
+    }
     const hosts = [
       document.getElementById('diary-filter-inline-panel'),
       document.querySelector('#ultrawide-sidecar-body [data-personal-filter-host][data-personal-filter-surface="diary"]'),
@@ -771,11 +795,13 @@ const DiaryPage = (() => {
 
   function entryGestureContext(row, event, options = {}) {
     const id = entryIdentity(row);
+    const targetDate = options.targetDate || event?.target?.closest?.('[data-diary-date]')?.dataset?.diaryDate || eventStartDate(row);
     return {
       row,
       event,
       options,
       id,
+      targetDate: localDateString(parseLocalDate(targetDate)),
       time: eventNow(),
       x: Number.isFinite(event?.clientX) ? event.clientX : 0,
       y: Number.isFinite(event?.clientY) ? event.clientY : 0,
@@ -804,7 +830,7 @@ const DiaryPage = (() => {
     event.preventDefault();
     event.stopPropagation();
     if (!DiaryEntryGestureMachine.noteDoubleTap()) return true;
-    DiaryEntryGestureMachine.dispatch('doubleTap', entryGestureContext(row, event, { type: 'entry', index: -1 }));
+    DiaryEntryGestureMachine.dispatch('doubleTap', entryGestureContext(row, event, entryTargetOptions(btn)));
     return true;
   }
 
@@ -814,7 +840,21 @@ const DiaryPage = (() => {
     const rows = rowsForType(type);
     const row = rows[Number(index)];
     if (!row) return false;
-    return handleEntryActivation(row, event, { type, index: Number(index) });
+    return handleEntryActivation(row, event, {
+      type,
+      index: Number(index),
+      surface: selectable.dataset.diaryEntrySurface || 'agenda',
+      targetDate: selectable.dataset.diaryDate || eventStartDate(row),
+    });
+  }
+
+  function entryTargetOptions(target) {
+    return {
+      type: target?.dataset?.diarySelectType || 'entry',
+      index: Number.isFinite(Number(target?.dataset?.diarySelectIndex)) ? Number(target.dataset.diarySelectIndex) : -1,
+      surface: target?.dataset?.diaryEntrySurface || 'entry',
+      targetDate: target?.dataset?.diaryDate || '',
+    };
   }
 
   const DiaryEntryGestureMachine = (() => {
@@ -834,7 +874,7 @@ const DiaryPage = (() => {
         pointerDown: { next: 'PRESSING', actions: ['startLongPressTimer'] },
         tap: { next: 'IDLE', actions: ['confirmDoubleTap'] },
         doubleTap: { next: 'IDLE', actions: ['clearTapTimer', 'select', 'editTabs'] },
-        tapTimeout: { next: 'IDLE', actions: ['selectPendingTap', 'editModal'] },
+        tapTimeout: { next: 'IDLE', actions: ['selectPendingTap', 'singleEntryAction'] },
         longPress: { next: 'PREVIEW_OPEN', actions: ['clearTapTimer', 'select', 'preview'] },
       },
       PRESSING: {
@@ -955,7 +995,13 @@ const DiaryPage = (() => {
       const row = context?.row;
       if (!row) return;
       if (action === 'select') selectEntryForGesture(row, context.options || {});
-      if (action === 'editModal') openEditEntryModalForSelected();
+      if (action === 'singleEntryAction') {
+        if (context.options?.surface === 'week' && state.view === 'week') {
+          selectWeekDay(context.targetDate || eventStartDate(row), true);
+        } else {
+          openEntryPreview(row);
+        }
+      }
       if (action === 'editTabs') openEditEntryInTabsIfAvailable();
       if (action === 'preview') openEntryPreview(row);
     }
@@ -993,10 +1039,7 @@ const DiaryPage = (() => {
     if (!target) return;
     const row = findEventById(target.dataset.diaryEntryId);
     if (!row) return;
-    DiaryEntryGestureMachine.dispatch('pointerDown', entryGestureContext(row, event, {
-      type: target.dataset.diarySelectType || 'entry',
-      index: Number.isFinite(Number(target.dataset.diarySelectIndex)) ? Number(target.dataset.diarySelectIndex) : -1,
-    }));
+    DiaryEntryGestureMachine.dispatch('pointerDown', entryGestureContext(row, event, entryTargetOptions(target)));
   }
 
   function moveEntryLongPress(event) {
@@ -1010,9 +1053,16 @@ const DiaryPage = (() => {
     return `data-diary-select-type="${escHtml(type)}" data-diary-select-index="${escHtml(index)}" tabindex="0"`;
   }
 
-  function entryAttrs(event) {
+  function entryAttrs(event, options = {}) {
     const id = entryIdentity(event);
-    return id ? `data-diary-action="select-entry" data-diary-entry-id="${escHtml(id)}"` : '';
+    if (!id) return '';
+    const attrs = [
+      'data-diary-action="select-entry"',
+      `data-diary-entry-id="${escHtml(id)}"`,
+    ];
+    if (options.surface) attrs.push(`data-diary-entry-surface="${escHtml(options.surface)}"`);
+    if (options.dateText) attrs.push(`data-diary-date="${escHtml(options.dateText)}"`);
+    return attrs.join(' ');
   }
 
   function applySelectionStyles() {
@@ -1132,7 +1182,7 @@ const DiaryPage = (() => {
     const ref = event.source?.ref || (Array.isArray(event.file_refs) ? event.file_refs[0] : '') || event.event_id || '';
     const todoLink = todoLinkHtml(event);
     return `
-      <div class="calendar-agenda-row diary-agenda-row calendar-agenda-row--${escHtml(eventCategory(event))}" ${selectionAttrs(type, index)} data-diary-entry-id="${escHtml(entryIdentity(event))}">
+      <div class="calendar-agenda-row diary-agenda-row calendar-agenda-row--${escHtml(eventCategory(event))}" ${selectionAttrs(type, index)} data-diary-entry-id="${escHtml(entryIdentity(event))}" data-diary-entry-surface="agenda" data-diary-date="${escHtml(eventStartDate(event))}">
         <div class="calendar-agenda-time diary-agenda-time">${escHtml(eventTime(event))}</div>
         <div class="calendar-agenda-main diary-agenda-main">
           <div class="calendar-agenda-title diary-agenda-title">${escHtml(event.title || event.kind || event.event_id)}</div>
@@ -1150,9 +1200,9 @@ const DiaryPage = (() => {
       : `<div class="calendar-empty diary-empty">${escHtml(empty)}</div>`;
   }
 
-  function weekEventChip(event) {
+  function weekEventChip(event, dateText) {
     return `
-      <button class="diary-week-event diary-week-event--${escHtml(eventCategory(event))}" type="button" ${entryAttrs(event)}>
+      <button class="diary-week-event diary-week-event--${escHtml(eventCategory(event))}" type="button" ${entryAttrs(event, { surface: 'week', dateText })}>
         <span class="diary-week-event__time">${escHtml(eventTime(event))}</span>
         <span class="diary-week-event__title">${escHtml(event.title || event.kind || event.event_id)}</span>
       </button>
@@ -1180,7 +1230,7 @@ const DiaryPage = (() => {
                 <span class="diary-week-card__date">${escHtml(monthLabel(dateText, { day: '2-digit', month: 'short' }))}</span>
               </button>
               <div class="diary-week-card__body">
-                ${compactRows.length ? compactRows.map(weekEventChip).join('') + more : '<div class="diary-week-empty">No visible entries.</div>'}
+                ${compactRows.length ? compactRows.map(event => weekEventChip(event, dateText)).join('') + more : '<div class="diary-week-empty">No visible entries.</div>'}
               </div>
             </article>
           `;
@@ -1661,6 +1711,13 @@ const DiaryPage = (() => {
     return load({ force: true });
   }
 
+  async function editEntryById(eventId, dateText = state.date) {
+    const cleanId = String(eventId || '').trim();
+    if (!cleanId) return false;
+    await setDate(dateText || state.date, { view: 'week' });
+    return selectEntryById(cleanId, { type: 'entry', index: -1, openEdit: true });
+  }
+
   function setView(view, dateText = null) {
     if (dateText) state.date = localDateString(parseLocalDate(dateText));
     state.view = view === 'day' ? 'day' : 'week';
@@ -1742,6 +1799,12 @@ const DiaryPage = (() => {
       dates.push(localDateString(date));
     }
     return dates;
+  }
+
+  function diaryRangePayloadDates(startText, endText) {
+    const start = String(startText || state.date).trim() || state.date;
+    const end = String(endText || start || state.date).trim() || start || state.date;
+    return orderedDateRange(start, end);
   }
 
   function hourEntryRange(hour) {
@@ -2528,64 +2591,52 @@ const DiaryPage = (() => {
   }
 
   function entryPayloadsFromForm(prefix = 'diary-entry') {
+    return [entryPayloadFromForm(prefix)];
+  }
+
+  function entryPayloadFromForm(prefix = 'diary-entry') {
     const title = String(el(`${prefix}-title`)?.value || '').trim();
     const body = String(el(`${prefix}-body`)?.value || '').trim();
     const text = [title, body].filter(Boolean).join('\n\n');
     const allDay = !!el(`${prefix}-all-day`)?.checked;
     const startDate = String(el(`${prefix}-date`)?.value || state.date).trim();
     const endDate = String(el(`${prefix}-end-date`)?.value || startDate || state.date).trim();
-    const dates = eachDateText(startDate, endDate);
-    const runId = dates.length > 1 ? `ui-diary-range-${Date.now()}` : `ui-diary-entry-${Date.now()}`;
-    const base = {
+    const range = diaryRangePayloadDates(startDate, endDate);
+    const runId = range.start !== range.end ? `ui-diary-range-${Date.now()}` : `ui-diary-entry-${Date.now()}`;
+    return {
       body: text,
+      local_date: range.start,
+      range_start_date: range.start,
+      range_end_date: range.end,
       local_time: allDay ? null : String(el(`${prefix}-start`)?.value || '').trim() || null,
       end_time: allDay ? null : String(el(`${prefix}-end`)?.value || '').trim() || null,
       all_day: allDay,
       actor: 'blueprints-ui',
       source_surface: 'diary-page',
       tags: entryTagIds(),
-    };
-    return dates.map((localDate, index) => ({
-      ...base,
-      local_date: localDate,
-      range_start_date: startDate,
-      range_end_date: endDate,
-      request_id: dates.length > 1 ? `${runId}-${index + 1}` : runId,
+      request_id: runId,
       run_id: runId,
-    }));
-  }
-
-  function entryPayloadFromForm(prefix = 'diary-entry') {
-    return entryPayloadsFromForm(prefix)[0] || {};
+    };
   }
 
   async function submitEntry(prefix = 'diary-entry') {
     const status = el(prefix === 'diary-entry' ? 'diary-entry-status' : `${prefix}-status`);
-    const payloads = entryPayloadsFromForm(prefix);
-    const firstPayload = payloads[0];
-    if (!firstPayload?.body) {
+    const payload = entryPayloadFromForm(prefix);
+    if (!payload?.body) {
       if (status) status.textContent = 'Entry body is required.';
       return false;
     }
-    if (!payloads.length) {
-      if (status) status.textContent = 'Entry date is required.';
-      return false;
-    }
-    if (status) status.textContent = payloads.length > 1 ? `Saving ${payloads.length} entries...` : 'Saving entry...';
+    if (status) status.textContent = 'Saving entry...';
     const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
-    const saved = [];
-    for (const payload of payloads) {
-      const resp = await fetcher('/api/v1/personal/diary-day/entries', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        if (status) status.textContent = `${payload.local_date}: ${responseErrorMessage(data, resp.status)}`;
-        return false;
-      }
-      saved.push(data);
+    const resp = await fetcher('/api/v1/personal/diary-day/entries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const saved = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      if (status) status.textContent = responseErrorMessage(saved, resp.status);
+      return false;
     }
     ['title', 'body', 'start', 'end'].forEach(key => {
       const field = el(`${prefix}-${key}`);
@@ -2593,16 +2644,12 @@ const DiaryPage = (() => {
     });
     const endDate = el(`${prefix}-end-date`);
     if (endDate) endDate.value = el(`${prefix}-date`)?.value || entryDefaultDate();
-    if (status) {
-      status.textContent = saved.length > 1
-        ? `Saved ${saved.length} entries`
-        : `Saved ${saved[0]?.write?.file_ref || ''}`;
-    }
+    if (status) status.textContent = `Saved ${saved?.write?.file_ref || ''}`;
     state.entryDraftRange = null;
-    state.lastWrite = saved[saved.length - 1];
-    state.date = saved[0]?.event?.local_date || firstPayload.local_date || state.date;
+    state.lastWrite = saved;
+    state.date = saved?.event?.local_date || payload.local_date || state.date;
     state.loaded = false;
-    state.daySummary = saved[saved.length - 1]?.day || null;
+    state.daySummary = saved?.day || null;
     await load({ force: true });
     return true;
   }
@@ -2674,8 +2721,11 @@ const DiaryPage = (() => {
     if (!editEntryAvailable()) return false;
     closeContentViewMenu();
     const openedInline = activateInlineDiaryTab('edit-entry');
-    if (openedInline) prepareInlineEditEntryForms();
-    return openedInline;
+    if (openedInline) {
+      prepareInlineEditEntryForms();
+      return true;
+    }
+    return openContentViewModal('edit-entry');
   }
 
   function openEditEntryModalForSelected() {
@@ -3341,7 +3391,7 @@ const DiaryPage = (() => {
         if (shouldSuppressWeekDayInteraction(event)) return;
         if (event.detail >= 2) {
           lastWeekDayClick = null;
-          if (openPendingEntryTapInTabs(event)) {
+          if (openPendingEntryTapInEditTabs(event)) {
             suppressWeekDayInteractions(700);
             return;
           }
@@ -3356,7 +3406,7 @@ const DiaryPage = (() => {
       if (action === 'show-new-entry') openNewEntry();
       if (action === 'select-entry') {
         const row = findEventById(btn.dataset.diaryEntryId);
-        if (row) handleEntryActivation(row, event);
+        if (row) handleEntryActivation(row, event, entryTargetOptions(btn));
       }
       if (action === 'toggle-markdown-preview') toggleMarkdownPreview(btn, root);
       if (action === 'submit-entry') submitEntry(btn.dataset.diaryEntryPrefix || 'diary-entry');
@@ -3370,7 +3420,7 @@ const DiaryPage = (() => {
       if (!btn) return;
       if (shouldSuppressWeekDayInteraction(event)) return;
       event.preventDefault();
-      if (openPendingEntryTapInTabs(event)) return;
+      if (openPendingEntryTapInEditTabs(event)) return;
       setView('day', btn.dataset.diaryDate);
     });
 	    document.addEventListener('click', event => {
@@ -3530,6 +3580,7 @@ const DiaryPage = (() => {
     showSearch: () => openContentViewModal('search'),
     newEntry: () => openNewEntry(),
     editEntry: () => openEditEntryForSelected(),
+    editEntryById,
     showUpcoming: () => openContentViewModal('upcoming'),
     showProvenance: () => openContentViewModal('provenance'),
     submitEntry,

@@ -1023,6 +1023,116 @@ assert.match(
   /data-diary-action="delete-entry"[\s\S]*disabled/,
   'Diary edit form must expose a Delete button that disables when deletion is not allowed.',
 );
+assert.match(
+  daveCalendarJs,
+  /function\s+eventEndDate\(event\)[\s\S]*local_end_date[\s\S]*function\s+eventOverlapsRange\(event,\s*startDate,\s*endDate\)[\s\S]*eventStartDate\(event\)\s*<=\s*endDate[\s\S]*eventEndDate\(event\)\s*>=\s*startDate/,
+  'Calendar month/year views must use calendar local_end_date when deciding whether an event overlaps the visible range.',
+);
+assert.match(
+  daveCalendarJs,
+  /function\s+eventsByDate\(\)[\s\S]*eventDateKeysInRange\(event,\s*rangeStart\(\),\s*rangeEnd\(\)\)\.forEach\(key =>[\s\S]*rows\.push\(event\)/,
+  'Calendar month/year views must place the same ranged event on each visible day it spans.',
+);
+assert.match(
+  daveCalendarJs,
+  /const\s+CalendarEventGestureMachine\s*=\s*\(\(\)\s*=>[\s\S]*tapTimeout:\s*\{\s*next:\s*'IDLE',\s*actions:\s*\['selectPendingTap',\s*'singleEventAction'\]\s*\}[\s\S]*doubleTap:\s*\{\s*next:\s*'IDLE',\s*actions:\s*\['clearTapTimer',\s*'select',\s*'edit'\]\s*\}[\s\S]*function\s+drillOrPreview\(context\)[\s\S]*context\.options\?\.surface === 'grid'[\s\S]*state\.view === 'year'[\s\S]*openMonth\(targetDate\)[\s\S]*state\.view === 'month'[\s\S]*openDiaryWeek\(targetDate\)[\s\S]*if\s*\(action === 'edit'\)\s*openEventEditForContext\(context\)/,
+  'Calendar event entries must use an event FSM where single click drills year->month or month->Diary week, and double click opens shared entry edit.',
+);
+assert.match(
+  daveCalendarJs,
+  /function\s+uniqueDateCellEvent\(dateText\)[\s\S]*eventsByDate\(\)\.get\(dateText\)[\s\S]*rows\.length === 1[\s\S]*function\s+handleDateCellEventActivation\(btn,\s*event\)[\s\S]*surface:\s*'grid'[\s\S]*dateCell:\s*true[\s\S]*function\s+handleDateCellEventDoubleClick\(btn,\s*event\)[\s\S]*surface:\s*'grid'[\s\S]*dateCell:\s*true/,
+  'Calendar year/month date cells with exactly one visible event must behave as that event for click/double-click without rendering extra year symbols.',
+);
+assert.match(
+  daveCalendarJs,
+  /function\s+eventChipAttrs\(event,\s*options = \{\}\)[\s\S]*data-calendar-action="select-event"[\s\S]*data-calendar-event-id[\s\S]*data-calendar-date/,
+  'Calendar month entry chips must carry event identity and the clicked rendered date for entry-specific interaction.',
+);
+assert.match(
+  daveCalendarJs,
+  /root\.addEventListener\('pointerdown',\s*event => \{[\s\S]*if\s*\(beginEventPress\(event\)\)\s*return;[\s\S]*CalendarDayGestureMachine\.dispatch\('pointerDown'[\s\S]*beginDateRangeDrag\(event\);/,
+  'Calendar event entries must not start date-range drag, while Calendar day cells must still dispatch the day FSM and begin date-range drag.',
+);
+assert.match(
+  daveCalendarJs,
+  /if\s*\(action === 'select-day'\)\s*\{[\s\S]*if\s*\(shouldSuppressSelectDayInteraction\(event\)\)\s*return;[\s\S]*if\s*\(handleDateCellEventActivation\(btn,\s*event\)\)\s*return;[\s\S]*CalendarDayGestureMachine\.dispatch\('click'/,
+  'Calendar date-cell click must try single-event entry handling before falling back to day-cell drill handling.',
+);
+assert.match(
+  daveCalendarJs,
+  /root\.addEventListener\('dblclick'[\s\S]*if\s*\(handleDateCellEventDoubleClick\(btn,\s*event\)\)\s*return;[\s\S]*CalendarDayGestureMachine\.dispatch\('doubleTap'/,
+  'Calendar date-cell double-click must try single-event entry edit before falling back to day-cell drill handling.',
+);
+assert.match(
+  daveCalendarJs,
+  /function\s+openSharedEntryEdit\(event,\s*dateText = state\.date\)[\s\S]*switchTab\('diary'\)[\s\S]*BlueprintsDiaryPage\?\.editEntryById/,
+  'Calendar shared entry edit must route through the Diary edit-entry tab API because that tab hosts the shared entry editor.',
+);
+assert.match(
+  daveCalendarJs,
+  /function\s+editSelected\(context = \{\}\)[\s\S]*event\?\.event_id[\s\S]*openSharedEntryEdit\(event,\s*context\?\.targetDate/,
+  'Calendar edit must be view-neutral: selected events open the shared Edit Entry sidecar path instead of choosing behavior by source ownership.',
+);
+assert.doesNotMatch(
+  daveCalendarJs,
+  /function\s+editSelected\(context = \{\}\)\s*\{(?:(?!\n  function\s)[\s\S])*sourceType\(/,
+  'Calendar editSelected must not branch on owner/source type; Calendar, Diary, Week, Day, and ToDo are views on the same event data.',
+);
+assert.match(
+  daveCalendarJs,
+  /function\s+dayEventSummary\(events,\s*compact = false,\s*dateText = ''\)[\s\S]*if\s*\(compact\)\s*return '';/,
+  'Calendar year view compact day cells must not grow new event-chip or symbol rendering while fixing ranged-event bucketing.',
+);
+assert.match(
+  daveCalendarJs,
+  /function\s+eventPayloadFromForm\(prefix = 'calendar-event'\)[\s\S]*const\s+range\s*=\s*calendarRangePayloadDates\(startDate,\s*endDate\)[\s\S]*local_date:\s*range\.start[\s\S]*range_start_date:\s*range\.start[\s\S]*range_end_date:\s*range\.end/,
+  'Calendar range saves must send one canonical payload anchored at the range start with the range end preserved.',
+);
+assert.doesNotMatch(
+  daveCalendarJs,
+  /for\s*\(\s*const\s+payload\s+of\s+payloads\s*\)/,
+  'Calendar range save must not loop one POST per date.',
+);
+assert.match(
+  daveCalendarJs,
+  /id="calendar-edit-end-date"[\s\S]*data-calendar-event-end-date/,
+  'Calendar edit modal must expose the range end date so editing a ranged entry does not collapse the span.',
+);
+assert.match(
+  daveDiaryJs,
+  /function\s+eventEndDate\(event\)[\s\S]*local_end_date[\s\S]*function\s+eventOverlapsRange\(event,\s*startDate,\s*endDate\)[\s\S]*eventStartDate\(event\)\s*<=\s*endDate[\s\S]*eventEndDate\(event\)\s*>=\s*startDate/,
+  'Diary ranged entries must use calendar local_end_date when deciding whether an event overlaps the visible range.',
+);
+assert.match(
+  daveDiaryJs,
+  /function\s+eventsByDate\(\)[\s\S]*eventDateKeysInRange\(event,\s*rangeStart\(\),\s*rangeEnd\(\)\)\.forEach\(key =>[\s\S]*rows\.push\(event\)/,
+  'Diary week rendering must place the same ranged event on each visible day it spans.',
+);
+assert.match(
+  daveDiaryJs,
+  /function\s+entryPayloadFromForm\(prefix = 'diary-entry'\)[\s\S]*const\s+range\s*=\s*diaryRangePayloadDates\(startDate,\s*endDate\)[\s\S]*local_date:\s*range\.start[\s\S]*range_start_date:\s*range\.start[\s\S]*range_end_date:\s*range\.end/,
+  'Diary range saves must send one canonical payload anchored at the range start with the range end preserved.',
+);
+assert.match(
+  daveDiaryJs,
+  /async\s+function\s+editEntryById\(eventId,\s*dateText = state\.date\)[\s\S]*await\s+setDate\(dateText \|\| state\.date,\s*\{\s*view:\s*'week'\s*\}\)[\s\S]*selectEntryById\(cleanId,[\s\S]*openEdit:\s*true[\s\S]*editEntryById,/,
+  'Diary must expose a shared entry edit API that Calendar/other views can call by event id.',
+);
+assert.doesNotMatch(
+  daveDiaryJs,
+  /for\s*\(\s*const\s+payload\s+of\s+payloads\s*\)/,
+  'Diary range save must not loop one POST per date.',
+);
+assert.match(
+  daveDiaryJs,
+  /const\s+DiaryEntryGestureMachine\s*=\s*\(\(\)\s*=>[\s\S]*tapTimeout:\s*\{\s*next:\s*'IDLE',\s*actions:\s*\['selectPendingTap',\s*'singleEntryAction'\]\s*\}[\s\S]*doubleTap:\s*\{\s*next:\s*'IDLE',\s*actions:\s*\['clearTapTimer',\s*'select',\s*'editTabs'\]\s*\}[\s\S]*action === 'singleEntryAction'[\s\S]*context\.options\?\.surface === 'week'[\s\S]*selectWeekDay\(context\.targetDate[\s\S]*true\)/,
+  'Diary week entries must use the entry FSM where single click drills to the day view and double click opens edit.',
+);
+assert.doesNotMatch(
+  daveDiaryJs,
+  /openPendingEntryTapInTabs/,
+  'Diary double-click fallback must call the real pending-entry edit-tabs helper.',
+);
 
 for (const [surface, js] of [
   ['Calendar', daveCalendarJs],
@@ -1250,8 +1360,8 @@ assert.match(
 );
 assert.match(
   daveDiaryJs,
-  /const\s+ENTRY_LONG_PRESS_MS[\s\S]*const\s+DiaryEntryGestureMachine[\s\S]*TAP_PENDING[\s\S]*doubleTap:\s*\{\s*next:\s*'IDLE',\s*actions:\s*\[[^\]]*'clearTapTimer'[^\]]*'editTabs'[^\]]*\]\s*\}[\s\S]*tapTimeout:\s*\{\s*next:\s*'IDLE',\s*actions:\s*\['selectPendingTap',\s*'editModal'\]\s*\}[\s\S]*longPressTimeout:\s*\{\s*next:\s*'PREVIEW_OPEN',\s*actions:\s*\[[^\]]*'clearTapTimer'[^\]]*'preview'[^\]]*\]\s*\}/,
-  'Diary entry gestures must use an FSM where single-click timeout opens the edit modal, double click opens edit tabs, and long press opens the read-only preview modal.',
+  /const\s+ENTRY_LONG_PRESS_MS[\s\S]*const\s+DiaryEntryGestureMachine[\s\S]*TAP_PENDING[\s\S]*doubleTap:\s*\{\s*next:\s*'IDLE',\s*actions:\s*\[[^\]]*'clearTapTimer'[^\]]*'editTabs'[^\]]*\]\s*\}[\s\S]*tapTimeout:\s*\{\s*next:\s*'IDLE',\s*actions:\s*\['selectPendingTap',\s*'singleEntryAction'\]\s*\}[\s\S]*longPressTimeout:\s*\{\s*next:\s*'PREVIEW_OPEN',\s*actions:\s*\[[^\]]*'clearTapTimer'[^\]]*'preview'[^\]]*\]\s*\}/,
+  'Diary entry gestures must use an FSM where single-click timeout drills/previews by entry surface, double click opens edit tabs, and long press opens the read-only preview modal.',
 );
 assert.match(
   daveDiaryJs,
@@ -1265,8 +1375,8 @@ assert.match(
 );
 assert.match(
   daveDiaryJs,
-  /function\s+openEditEntryInTabsIfAvailable\(\)[\s\S]*activateInlineDiaryTab\('edit-entry'\)[\s\S]*prepareInlineEditEntryForms\(\)[\s\S]*function\s+openEditEntryModalForSelected\(\)[\s\S]*openContentViewModal\('edit-entry'\)/,
-  'Diary double-click must use the inline edit tab when available, while single-click uses the edit modal path.',
+  /function\s+activateInlineDiaryTab\(tabId\)[\s\S]*UltrawideSidecar\?\.isVisible\?\.\(\)[\s\S]*PersonalFilters\?\.syncUltrawideSidecar[\s\S]*syncUltrawideSidecar\(\{\s*tab:\s*'diary'\s*\}\)[\s\S]*function\s+openEditEntryInTabsIfAvailable\(\)[\s\S]*const\s+openedInline\s*=\s*activateInlineDiaryTab\('edit-entry'\)[\s\S]*if\s*\(openedInline\)\s*\{[\s\S]*prepareInlineEditEntryForms\(\)[\s\S]*return true;[\s\S]*return openContentViewModal\('edit-entry'\)/,
+  'Diary double-click must prefer the visible inline edit tab and fall back to the edit modal only when no inline tab host is available.',
 );
 assert.match(
   daveDiaryJs,
