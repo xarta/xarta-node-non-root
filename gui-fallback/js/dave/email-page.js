@@ -171,6 +171,15 @@ const EmailPage = (() => {
     messageContextMenuOpen: false,
     messageContextUids: [],
     securitySegmentModalOpen: false,
+    auditLedgerModalOpen: false,
+    auditLedgerLoading: false,
+    auditLedgerError: '',
+    auditLedgerEmailUid: '',
+    auditLedgerHistory: null,
+    auditLedgerMailbox: null,
+    auditLedgerMessageSummary: null,
+    auditLedgerSeq: 0,
+    auditLedgerLoadedAt: '',
     healthPollTimer: null,
   };
 
@@ -430,8 +439,45 @@ const EmailPage = (() => {
   function folderFlags(folder) {
     const role = String(folder?.special_use_role || '').trim();
     const count = Number(folder?.message_count || 0);
+    const metadata = folderMetadata(folder);
+    const semantics = String(metadata.count_semantics || '').trim();
+    if (metadata.meta_virtual_folder) {
+      const noun = semantics === 'distinct_messages' ? 'message' : 'row';
+      return `read-only meta, ${count} ${noun}${count === 1 ? '' : 's'}`;
+    }
+    if (metadata.virtual_path) {
+      const noun = semantics === 'virtual_path_association_rows' ? 'assignment' : 'row';
+      return `${count} ${noun}${count === 1 ? '' : 's'}`;
+    }
     const roleText = role ? `${role}, ` : '';
     return `${roleText}${count} local row${count === 1 ? '' : 's'}`;
+  }
+
+  function folderMetadata(folder) {
+    const metadata = folder?.metadata;
+    return metadata && typeof metadata === 'object' ? metadata : {};
+  }
+
+  function selectedFolderRecord() {
+    const active = String(state.folder || 'INBOX').toLocaleLowerCase();
+    return state.folders.find(folder => (
+      String(folderName(folder) || '').toLocaleLowerCase() === active
+    )) || null;
+  }
+
+  function selectedFolderCapabilities() {
+    const folder = selectedFolderRecord();
+    const metadata = folderMetadata(folder);
+    const readOnly = Boolean(metadata.read_only || metadata.meta_virtual_folder);
+    return {
+      read_only: readOnly,
+      assignable: !readOnly && metadata.assignable !== false,
+      removable: !readOnly && metadata.removable !== false,
+      move_controls_enabled: !readOnly && metadata.move_controls_enabled !== false,
+      meta_virtual_folder: Boolean(metadata.meta_virtual_folder),
+      virtual_folder_suffix: String(metadata.virtual_folder_suffix || ''),
+      derived_from_folder: String(metadata.derived_from_folder || ''),
+    };
   }
 
   function folderDelimiter(folder) {
@@ -468,6 +514,13 @@ const EmailPage = (() => {
   }
 
   function folderSystemKind(node) {
+    const role = String(node?.folder?.special_use_role || '').trim().toLocaleLowerCase();
+    const metadata = folderMetadata(node?.folder);
+    if (role.includes('inbox') || metadata.derived_from_folder === 'incoming-corpus') return 'inbox';
+    if (role.includes('archive')) return 'archive';
+    if (role.includes('draft')) return 'drafts';
+    if (role.includes('sent')) return 'sent';
+    if (role.includes('trash') || role.includes('junk') || role.includes('spam')) return 'rubbish';
     const key = normalizedFolderLabel(node?.label || node?.path || '');
     if (!key) return '';
     if (key === 'inbox') return 'inbox';
@@ -777,9 +830,23 @@ const EmailPage = (() => {
     return `${API_ROOT}/local/cache/status`;
   }
 
-  function messageEndpoint(uid, row = null) {
+  function messageEndpoint(uid, row = null, options = {}) {
     const emailUid = String(row?.email_uid || uid || '').trim();
-    return `${API_ROOT}/local/messages/${encodeURIComponent(emailUid)}`;
+    const params = new URLSearchParams();
+    if (options.opened === false) params.set('opened', 'false');
+    const query = params.toString();
+    return `${API_ROOT}/local/messages/${encodeURIComponent(emailUid)}${query ? `?${query}` : ''}`;
+  }
+
+  function messageOpenedEndpoint(uid, row = null) {
+    const emailUid = String(row?.email_uid || uid || '').trim();
+    return `${API_ROOT}/local/messages/${encodeURIComponent(emailUid)}/opened`;
+  }
+
+  function messageActionsEndpoint(uid, options = {}) {
+    const emailUid = String(uid || '').trim();
+    const limit = Math.max(1, Math.min(Number(options.limit || 500), 500));
+    return `${API_ROOT}/local/messages/${encodeURIComponent(emailUid)}/actions?limit=${limit}`;
   }
 
   function forceRefreshEndpoint(uid) {
@@ -1017,8 +1084,21 @@ const EmailPage = (() => {
     }
     const folderCount = state.folders.length;
     const rowCount = state.messages.length;
+    const totalCount = Number(state.messageListTotal || 0);
+    const folder = state.folder || 'INBOX';
+    const metadata = folderMetadata(selectedFolderRecord());
+    const countSemantics = String(metadata.count_semantics || '').trim();
+    let rowSummary = `${rowCount} ${folder} rows loaded`;
+    if (totalCount > 0) {
+      rowSummary = `${rowCount}/${totalCount} ${folder} rows loaded`;
+      if (countSemantics === 'distinct_messages') {
+        rowSummary = `${rowSummary} (${totalCount} distinct messages)`;
+      } else if (countSemantics === 'virtual_path_association_rows') {
+        rowSummary = `${rowSummary} (${totalCount} assignments)`;
+      }
+    }
     const source = 'local corpus';
-    meta.textContent = `${mailboxAddress()} - ${source} - ${folderCount} folders - ${rowCount} ${state.folder || 'INBOX'} rows`;
+    meta.textContent = `${mailboxAddress()} - ${source} - ${folderCount} folders - ${rowSummary}`;
   }
 
   function renderFolderChip() {
@@ -1428,7 +1508,7 @@ const EmailPage = (() => {
     task.controller = controller;
     state.messageOpenPrefetchControllers.add(controller);
     try {
-      const data = await fetchJson(messageEndpoint(task.uid, task.row), {
+      const data = await fetchJson(messageEndpoint(task.uid, task.row, { opened: false }), {
         signal: controller.signal,
       });
       if (task.seq !== state.folderLoadSeq || task.folder !== state.folder) {
@@ -2342,7 +2422,10 @@ const EmailPage = (() => {
       : [
           [messageContextButton('force-refresh-message', 'Force refresh')],
           [messageContextButton('mark-sender-probable-trusted', 'Mark sender probable trusted')],
-          [messageContextButton('show-message-uid', 'Show / copy email_uid')],
+          [
+            messageContextButton('open-message-audit-ledger', 'Open audit ledger'),
+            messageContextButton('show-message-uid', 'Show / copy email_uid'),
+          ],
           [messageContextButton('toggle-original-image-buttons', state.showOriginalImageButtons ? 'Hide original buttons' : 'Show original buttons')],
           [messageContextButton('toggle-markdown-preview', state.renderMarkdownPreview ? 'Show raw Markdown' : 'Render Markdown preview')],
         ];
@@ -2473,6 +2556,240 @@ const EmailPage = (() => {
         `).join('')}
       </div>
     `;
+  }
+
+  function auditLedgerMessageSummary(uid) {
+    const clean = String(uid || '').trim();
+    const row = state.messages.find(item => (
+      String(item.email_uid || '') === clean || String(item.uid || '') === clean
+    )) || null;
+    const opened = state.message && (
+      String(state.message.email_uid || '') === clean || String(state.message.uid || '') === clean
+    ) ? state.message : null;
+    const source = opened || row || {};
+    return {
+      email_uid: clean,
+      subject: source.subject || '',
+      from: source.from || source.sender || '',
+      date: source.date || source.received_at || source.sent_at || '',
+    };
+  }
+
+  function auditLedgerJsonHtml(value) {
+    const safe = value && typeof value === 'object' ? value : {};
+    const text = Object.keys(safe).length ? JSON.stringify(safe, null, 2) : '{}';
+    return `<pre class="email-audit-ledger-json">${escHtml(text)}</pre>`;
+  }
+
+  function auditLedgerPathChipsHtml(paths) {
+    const items = Array.isArray(paths) ? paths.filter(Boolean) : [];
+    if (!items.length) return '<div class="email-audit-ledger-empty">No current virtual paths recorded.</div>';
+    return `
+      <div class="email-audit-ledger-paths">
+        ${items.map(path => `<span class="email-audit-ledger-path">${escHtml(path)}</span>`).join('')}
+      </div>
+    `;
+  }
+
+  function auditLedgerEventTone(event) {
+    const type = String(event?.event_type || '').toLowerCase();
+    const op = String(event?.virtual_path_operation || '').toLowerCase();
+    const status = String(event?.result_status || '').toLowerCase();
+    if (status && status !== 'ok') return 'red';
+    if (type === 'message_open') return 'info';
+    if (op === 'remove') return 'amber';
+    if (op === 'add' || op === 'set') return 'green';
+    if (type === 'virtual_path_change') return 'info';
+    return 'unknown';
+  }
+
+  function auditLedgerEventTitle(event) {
+    const type = String(event?.event_type || '').trim();
+    const action = String(event?.action || '').trim();
+    const op = String(event?.virtual_path_operation || '').trim();
+    const path = String(event?.virtual_path || event?.destination_virtual_path || event?.source_virtual_path || '').trim();
+    if (type === 'message_open') return 'Message opened';
+    if (op && path) return `${op} ${path}`;
+    if (action) return action;
+    return type || 'ledger event';
+  }
+
+  function auditLedgerEventRowsHtml(events) {
+    const rows = Array.isArray(events) ? events : [];
+    if (!rows.length) return '<div class="email-audit-ledger-empty">No audit events are recorded for this message.</div>';
+    return `
+      <div class="email-audit-ledger-events">
+        ${rows.map(event => `
+          <article class="email-audit-ledger-event" data-tone="${escHtml(auditLedgerEventTone(event))}">
+            <div class="email-audit-ledger-event__head">
+              <div>
+                <h4>${escHtml(auditLedgerEventTitle(event))}</h4>
+                <p>${escHtml(event.event_ts || event.created_at || '')}</p>
+              </div>
+              ${securityPillHtml(event.event_type || event.action || 'event', auditLedgerEventTone(event))}
+            </div>
+            ${securityKvRowsHtml([
+              ['Action', event.action || 'n/a'],
+              ['Operation', event.virtual_path_operation || 'n/a', event.virtual_path_operation || 'info'],
+              ['Virtual path', event.virtual_path || 'n/a'],
+              ['Before', event.virtual_path_before || 'n/a'],
+              ['After', event.virtual_path_after || 'n/a'],
+              ['Actor', event.actor || 'n/a'],
+              ['Surface', event.source_surface || 'n/a'],
+              ['Request', event.request_id || 'n/a'],
+              ['Result', event.result_status || 'n/a', event.result_status || 'info'],
+              ['Event id', event.event_id || 'n/a'],
+            ])}
+            <details class="email-audit-ledger-event__metadata">
+              <summary>Metadata</summary>
+              ${auditLedgerJsonHtml(event.metadata)}
+            </details>
+          </article>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  function auditLedgerModalHtml() {
+    if (state.auditLedgerLoading) {
+      return '<div class="email-empty">Loading audit ledger.</div>';
+    }
+    if (state.auditLedgerError) {
+      return `<div class="hub-modal-error">${escHtml(state.auditLedgerError)}</div>`;
+    }
+    const history = state.auditLedgerHistory || {};
+    const summary = state.auditLedgerMessageSummary || auditLedgerMessageSummary(state.auditLedgerEmailUid);
+    const ledgerState = history.state || {};
+    const events = Array.isArray(history.events) ? history.events : [];
+    return `
+      <div class="email-audit-ledger-shell">
+        <section class="email-audit-ledger-summary">
+          <div>
+            <h3>${escHtml(summary.subject || '(no subject)')}</h3>
+            <p>${escHtml(summary.from || '')}</p>
+            <p>${escHtml(summary.date || '')}</p>
+          </div>
+          ${securityPillHtml(`${events.length} event${events.length === 1 ? '' : 's'}`, events.length ? 'info' : 'amber')}
+        </section>
+        ${securityKvRowsHtml([
+          ['email_uid', history.email_uid || state.auditLedgerEmailUid || 'n/a'],
+          ['Mailbox', history.mailbox_id || state.auditLedgerMailbox?.mailbox_id || 'n/a'],
+          ['Raw hash', ledgerState.raw_sha256 ? `${String(ledgerState.raw_sha256).slice(0, 16)}...` : 'n/a'],
+          ['Latest virtual path', ledgerState.latest_virtual_path || 'n/a'],
+          ['Latest operation', ledgerState.latest_virtual_path_operation || 'n/a', ledgerState.latest_virtual_path_operation || 'info'],
+          ['Previous virtual path', ledgerState.previous_virtual_path || 'n/a'],
+          ['Latest path change', ledgerState.latest_virtual_path_changed_at || 'n/a'],
+          ['Folder change count', ledgerState.folder_change_count ?? 'n/a'],
+          ['Last opened', ledgerState.last_opened_at || 'n/a'],
+          ['Open count', ledgerState.open_count ?? 'n/a'],
+          ['Loaded', state.auditLedgerLoadedAt || 'n/a'],
+        ])}
+        <section class="email-audit-ledger-section">
+          <div class="email-audit-ledger-section__head">
+            <h3>Current Virtual Paths</h3>
+            ${securityPillHtml(ledgerState.current_virtual_path_count ?? 0, 'info')}
+          </div>
+          ${auditLedgerPathChipsHtml(ledgerState.current_virtual_paths)}
+        </section>
+        <section class="email-audit-ledger-section">
+          <div class="email-audit-ledger-section__head">
+            <h3>Events</h3>
+            ${securityPillHtml(`limit ${history.limit ?? 500}`, 'info')}
+          </div>
+          ${auditLedgerEventRowsHtml(events)}
+        </section>
+      </div>
+    `;
+  }
+
+  function renderAuditLedgerModal() {
+    const modal = el('email-audit-ledger-modal');
+    const title = el('email-audit-ledger-modal-title');
+    const body = el('email-audit-ledger-modal-body');
+    const status = el('email-audit-ledger-modal-status');
+    if (title) title.textContent = 'Message Audit Ledger';
+    if (body) body.innerHTML = auditLedgerModalHtml();
+    if (status) {
+      status.textContent = state.auditLedgerLoading
+        ? 'Loading'
+        : (state.auditLedgerEmailUid || '');
+    }
+    return Boolean(modal && body);
+  }
+
+  async function loadAuditLedger(emailUid) {
+    const clean = String(emailUid || '').trim();
+    if (!clean) return null;
+    const seq = state.auditLedgerSeq + 1;
+    state.auditLedgerSeq = seq;
+    state.auditLedgerLoading = true;
+    state.auditLedgerError = '';
+    state.auditLedgerHistory = null;
+    state.auditLedgerMailbox = null;
+    state.auditLedgerLoadedAt = '';
+    renderAuditLedgerModal();
+    try {
+      const data = await fetchJson(messageActionsEndpoint(clean, { limit: 500 }));
+      if (seq !== state.auditLedgerSeq) return null;
+      state.auditLedgerHistory = data.history || null;
+      state.auditLedgerMailbox = data.mailbox || null;
+      state.auditLedgerLoadedAt = new Date().toISOString();
+      state.auditLedgerLoading = false;
+      state.auditLedgerError = '';
+      renderAuditLedgerModal();
+      return data;
+    } catch (error) {
+      if (seq !== state.auditLedgerSeq) return null;
+      state.auditLedgerLoading = false;
+      state.auditLedgerError = error.message || String(error);
+      renderAuditLedgerModal();
+      return null;
+    }
+  }
+
+  function closeAuditLedgerModal() {
+    const modal = el('email-audit-ledger-modal');
+    state.auditLedgerModalOpen = false;
+    if (!modal) return;
+    if (typeof HubModal !== 'undefined') HubModal.close(modal);
+    else if (typeof modal.close === 'function') modal.close();
+  }
+
+  function openAuditLedgerModal(emailUid) {
+    const clean = String(emailUid || '').trim();
+    if (!clean) {
+      setStatus('Select a message before opening the audit ledger', 'warn');
+      return false;
+    }
+    state.auditLedgerEmailUid = clean;
+    state.auditLedgerMessageSummary = auditLedgerMessageSummary(clean);
+    state.auditLedgerModalOpen = true;
+    state.auditLedgerLoading = true;
+    state.auditLedgerError = '';
+    state.auditLedgerHistory = null;
+    state.auditLedgerMailbox = null;
+    state.auditLedgerLoadedAt = '';
+    renderAuditLedgerModal();
+    const modal = el('email-audit-ledger-modal');
+    if (modal) {
+      if (typeof HubModal !== 'undefined') {
+        HubModal.open(modal, { onClose: () => { state.auditLedgerModalOpen = false; } });
+      } else if (typeof modal.showModal === 'function' && !modal.open) {
+        modal.showModal();
+      }
+    }
+    return loadAuditLedger(clean);
+  }
+
+  function openContextAuditLedger() {
+    const uids = currentContextMessageUids();
+    if (uids.length !== 1) {
+      setStatus('Select one message before opening the audit ledger', 'warn');
+      return false;
+    }
+    const uid = uids[0];
+    closeMessageContextMenu();
+    return openAuditLedgerModal(uid);
   }
 
   function securityDetailsHtml(details) {
@@ -4239,6 +4556,23 @@ const EmailPage = (() => {
     });
   }
 
+  async function recordMessageOpenClick(uid, row = null, source = 'email-ui') {
+    const emailUid = String(row?.email_uid || uid || '').trim();
+    if (!emailUid) return null;
+    return fetchJson(messageOpenedEndpoint(emailUid, row), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actor: 'email-ui',
+        source_surface: source,
+        metadata: {
+          cached: source === 'browser-cache',
+          selected_folder: state.folder || '',
+        },
+      }),
+    });
+  }
+
   async function openMessage(uid) {
     const cleanUid = String(uid || '').trim();
     if (!cleanUid) return false;
@@ -4255,30 +4589,40 @@ const EmailPage = (() => {
     state.messageOpenCacheHit = false;
     const cached = cachedOpenedMessage(emailUid, row, { opened: true });
     if (cached) {
-      state.messageOpenCacheHit = true;
-      state.message = cached;
-      state.messagePendingUid = '';
-      state.view = defaultMessageView(state.message);
-      state.securityProgress = null;
-      syncSelectedMessageRows();
-      renderMessage();
-      renderSecondaryPanels();
-      setStatus('Local email loaded', 'ok');
-      renderOpenedMessageSecurityProgress();
-      recordMessageTiming({
-        uid: emailUid,
-        source: 'browser-cache',
-        body_ms: performance.now() - startedAt,
-        network_ms: 0,
-      });
-      return true;
+      try {
+        const networkStartedAt = performance.now();
+        await recordMessageOpenClick(emailUid, row, 'browser-cache');
+        const networkMs = performance.now() - networkStartedAt;
+        if (openSeq !== state.messageOpenSeq) return false;
+        state.messageOpenCacheHit = true;
+        state.message = cached;
+        state.messagePendingUid = '';
+        state.view = defaultMessageView(state.message);
+        state.securityProgress = null;
+        syncSelectedMessageRows();
+        renderMessage();
+        renderSecondaryPanels();
+        setStatus('Local email loaded', 'ok');
+        renderOpenedMessageSecurityProgress();
+        recordMessageTiming({
+          uid: emailUid,
+          source: 'browser-cache',
+          body_ms: performance.now() - startedAt,
+          network_ms: networkMs,
+        });
+        return true;
+      } catch (error) {
+        if (openSeq === state.messageOpenSeq) state.messagePendingUid = '';
+        setStatus(error.message || String(error), 'err');
+        return false;
+      }
     }
     state.messagePendingUid = emailUid;
     syncSelectedMessageRows();
     renderMessageLoading(row, emailUid);
     try {
       const networkStartedAt = performance.now();
-      const data = await fetchJson(messageEndpoint(emailUid, row));
+      const data = await fetchJson(messageEndpoint(emailUid, row, { opened: true }));
       const networkMs = performance.now() - networkStartedAt;
       if (openSeq !== state.messageOpenSeq) return false;
       state.message = data.message || null;
@@ -4787,6 +5131,7 @@ const EmailPage = (() => {
     if (action === 'security-checks') return securityChecks();
     if (action === 'force-refresh-message') return forceRefreshMessage();
     if (action === 'mark-sender-probable-trusted') return markSenderProbableTrusted();
+    if (action === 'open-message-audit-ledger') return openContextAuditLedger();
     if (action === 'show-message-uid') return showMessageUid();
     if (action === 'copy-selected-message-uids') return copySelectedMessageUids();
     if (action === 'toggle-original-image-buttons') return toggleOriginalImageButtons();
@@ -5210,10 +5555,20 @@ const EmailPage = (() => {
       const btn = el(id);
       if (btn) btn.addEventListener('click', closeSecuritySegmentModal);
     });
+    ['email-audit-ledger-modal-close', 'email-audit-ledger-modal-footer-close'].forEach(id => {
+      const btn = el(id);
+      if (btn) btn.addEventListener('click', closeAuditLedgerModal);
+    });
     const securitySegmentModal = el('email-security-segment-modal');
     if (securitySegmentModal) {
       securitySegmentModal.addEventListener('close', () => {
         state.securitySegmentModalOpen = false;
+      });
+    }
+    const auditLedgerModal = el('email-audit-ledger-modal');
+    if (auditLedgerModal) {
+      auditLedgerModal.addEventListener('close', () => {
+        state.auditLedgerModalOpen = false;
       });
     }
     window.addEventListener('resize', renderUltrawide);
@@ -5227,6 +5582,8 @@ const EmailPage = (() => {
   function snapshot() {
     const activeUid = activeMessageUid();
     const imageCache = activeUid ? state.messageImageCache.get(activeUid) : null;
+    const selectedFolder = selectedFolderRecord();
+    const selectedCapabilities = selectedFolderCapabilities();
     return {
       loaded: state.loaded,
       loading: state.loading,
@@ -5237,6 +5594,9 @@ const EmailPage = (() => {
       inbox_count: state.messages.length,
       message_count: state.messages.length,
       selected_folder: state.folder,
+      selected_folder_meta: folderMetadata(selectedFolder),
+      selected_folder_capabilities: selectedCapabilities,
+      folder_assignment_disabled: !selectedCapabilities.move_controls_enabled,
       selected_uid: activeUid,
       message_list_offset: state.messageListOffset,
       message_list_total: state.messageListTotal,
@@ -5284,6 +5644,15 @@ const EmailPage = (() => {
       message_timings: state.messageTimings.slice(0, 6),
       message_context_menu_open: state.messageContextMenuOpen,
       security_segment_modal_open: state.securitySegmentModalOpen,
+      audit_ledger_modal_open: state.auditLedgerModalOpen,
+      audit_ledger_email_uid: state.auditLedgerEmailUid,
+      audit_ledger_loading: state.auditLedgerLoading,
+      audit_ledger_error: state.auditLedgerError,
+      audit_ledger_event_count: Array.isArray(state.auditLedgerHistory?.events) ? state.auditLedgerHistory.events.length : 0,
+      audit_ledger_current_virtual_paths: Array.isArray(state.auditLedgerHistory?.state?.current_virtual_paths)
+        ? state.auditLedgerHistory.state.current_virtual_paths
+        : [],
+      audit_ledger_last_opened_at: state.auditLedgerHistory?.state?.last_opened_at || '',
       view: state.view,
       secondary_tab: state.secondaryTab,
       list_collapsed: state.listCollapsed,
@@ -5312,6 +5681,7 @@ const EmailPage = (() => {
     viewMarkdown: () => setView('markdown'),
     viewRaw: () => setView('raw'),
     openMessage,
+    openAuditLedger: openAuditLedgerModal,
     setFolder,
     snapshot,
   };

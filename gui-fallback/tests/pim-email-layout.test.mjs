@@ -420,6 +420,8 @@ test('PIM Email message context menu is shared by the list toggle and message ro
   assert.match(emailJs, /hub-context-menu-floating--columns/, 'The message context menu must use the shared 3-column context-menu layout.');
   assert.match(emailJs, /force-refresh-message/, 'The first message context command must be Force refresh.');
   assert.match(emailJs, /\/local\/messages\/\$\{encodeURIComponent\(uid\)\}\/force-refresh/, 'Force refresh must call the local safe refresh endpoint.');
+  assert.match(emailJs, /open-message-audit-ledger/, 'Single-message context menus must expose the audit ledger opener.');
+  assert.match(emailJs, /function openContextAuditLedger\(\)[\s\S]*uids\.length !== 1/, 'Audit ledger context action must require exactly one selected message.');
   assert.match(emailJs, /mark-sender-probable-trusted/, 'The context menu must expose probable-trusted sender marking.');
   assert.match(emailJs, /show-message-uid/, 'The context menu must expose message email_uid copy/show.');
   assert.match(emailJs, /selectedMessageUids:\s*new Set/, 'Message rows must track multi-select state.');
@@ -497,5 +499,36 @@ test('PIM Email Trusted tab is stack-backed and editable', () => {
     emailCss,
     /@media\s*\(max-width:\s*820px\)[\s\S]*\.email-trusted-add,\s*\.email-trusted-row\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
     'Trusted add form must not be collapsed with stacked trusted-sender rows.',
+  );
+});
+
+test('PIM Email INBOX_X meta folder and open-audit browser contract stays wired', () => {
+  assert.match(emailJs, /function folderSystemKind\(node\)[\s\S]*metadata\.derived_from_folder === 'incoming-corpus'[\s\S]*return 'inbox'/, 'INBOX_X metadata must place the meta folder under Special folders.');
+  assert.match(emailJs, /metadata\.count_semantics[\s\S]*distinct_messages[\s\S]*message/, 'INBOX_X count wording must be distinct-message aware.');
+  assert.match(emailJs, /metadata\.virtual_path[\s\S]*virtual_path_association_rows[\s\S]*assignment/, 'Virtual-path count wording must be association-aware.');
+  assert.match(emailJs, /function selectedFolderCapabilities\(\)[\s\S]*metadata\.meta_virtual_folder[\s\S]*move_controls_enabled/, 'Selected-folder capabilities must disable controls for read-only meta folders.');
+  assert.match(emailJs, /selected_folder_meta/, 'Browser snapshot must expose selected folder metadata.');
+  assert.match(emailJs, /selected_folder_capabilities/, 'Browser snapshot must expose selected folder capabilities.');
+  assert.match(emailJs, /folder_assignment_disabled/, 'Browser snapshot must expose assignment-disabled state.');
+  assert.match(emailJs, /function messageEndpoint\(uid, row = null, options = \{\}\)[\s\S]*options\.opened === false[\s\S]*opened/, 'Message endpoint must support opened=false for prefetch.');
+  assert.match(emailJs, /messageEndpoint\(task\.uid, task\.row, \{ opened: false \}\)/, 'Open prefetch must not record message-open audit events.');
+  assert.match(emailJs, /function messageOpenedEndpoint/, 'Cached opens must have an explicit audit endpoint.');
+  assert.match(emailJs, /await recordMessageOpenClick\(emailUid, row, 'browser-cache'\)/, 'Cached rendered opens must append an audit event before showing the cached body.');
+  assert.match(emailJs, /messageEndpoint\(emailUid, row, \{ opened: true \}\)/, 'Direct message opens must record open events through the stack endpoint.');
+  assert.match(emailJs, /function messageActionsEndpoint\(uid, options = \{\}\)[\s\S]*\/local\/messages\/\$\{encodeURIComponent\(emailUid\)\}\/actions\?limit=\$\{limit\}/, 'Audit ledger modal must read the real per-message action endpoint.');
+  assert.match(indexHtml, /id="email-audit-ledger-modal"/, 'Email must include a HubModal for per-message audit ledger inspection.');
+  assert.match(emailJs, /function auditLedgerModalHtml\(\)[\s\S]*current_virtual_paths[\s\S]*auditLedgerEventRowsHtml/, 'Audit ledger modal must render current paths and event history from the stack response.');
+  assert.match(emailJs, /openAuditLedger:\s*openAuditLedgerModal/, 'Browser proof automation must be able to open a selected message audit ledger.');
+  assert.match(emailJs, /audit_ledger_modal_open/, 'Email automation snapshot must expose audit ledger modal state.');
+  assert.match(emailJs, /audit_ledger_event_count/, 'Email automation snapshot must expose audit ledger event count.');
+  assert.match(
+    emailCss,
+    /dialog\.hub-modal\.email-audit-ledger-modal\s*\{[\s\S]*width:\s*100vw[\s\S]*height:\s*100dvh[\s\S]*margin:\s*0/,
+    'Audit ledger modal must occupy the full viewport.',
+  );
+  assert.match(
+    emailCss,
+    /\.email-audit-ledger-modal-body\s*\{[\s\S]*overflow-y:\s*scroll[\s\S]*scrollbar-gutter:\s*stable/,
+    'Audit ledger modal body must assume a vertical scrollbar.',
   );
 });
