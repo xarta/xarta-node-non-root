@@ -197,7 +197,8 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailCss, /\.email-folder-tab-split/, 'Email folder controls must use split tab styling.');
   assert.match(emailJs, /exclusiveFolderGroups/, 'Email folders must be grouped by exclusive initial ranges.');
   assert.match(emailJs, /distributeFolderColumns/, 'Selected folder ranges must distribute roots across columns.');
-  assert.match(emailJs, /frame\.setAttribute\('sandbox', ''\)/, 'HTML email must render in a no-permissions sandbox frame.');
+  assert.match(emailJs, /frame\.setAttribute\('sandbox', 'allow-same-origin'\)/, 'HTML email must allow parent-owned diagnostics without allowing email scripts.');
+  assert.doesNotMatch(emailJs, /frame\.setAttribute\('sandbox', 'allow-scripts'\)/, 'HTML email iframe must never allow message scripts.');
   assert.match(emailJs, /img-src \$\{escHtml\(imgSources\)\}/, 'HTML email iframe must limit images to data and same-site proxy sources.');
   assert.doesNotMatch(emailJs, /RICH_VIEW_IDS/, 'HTML and Markdown tabs must not be gated by aggregate security colour.');
   assert.doesNotMatch(emailJs, /requires a green message security result/, 'HTML and Markdown tabs must not be disabled for non-green messages.');
@@ -237,6 +238,17 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /Pillow could not decode/, 'Decode failures must explain the underlying image-library gate.');
   assert.match(emailJs, /error_cause_class/, 'Inline image hover text must surface preserved decoder cause class when available.');
   assert.match(emailJs, /tabindex', '0'/, 'Inline image errors must be keyboard-focusable for hover/title inspection.');
+  assert.match(emailJs, /function openImageDiagnosticModal\(/, 'Blocked image diagnostics must open a Hub dialog with full details.');
+  assert.match(emailJs, /function imageDetailForPlaceholder\(/, 'Blocked image diagnostics must detect pre-existing server-rendered error pills.');
+  assert.match(emailJs, /existingDetail\.textContent = text/, 'Pre-existing image error pills must be upgraded into detailed diagnostic triggers.');
+  assert.match(emailJs, /data-email-image-diagnostic/, 'Blocked image diagnostics must carry a structured click payload.');
+  assert.match(emailJs, /email-image-diagnostic-trigger/, 'Blocked image placeholders and error pills must be clickable diagnostic triggers.');
+  assert.match(emailJs, /connectHtmlFrameImageDiagnostics\(frame\)/, 'HTML email frames must wire parent-owned diagnostic click handling.');
+  assert.match(emailJs, /doc\.addEventListener\('click'/, 'Blocked image diagnostics must be clickable inside the HTML frame.');
+  assert.match(emailJs, /event\.key !== 'Enter' && event\.key !== ' '/, 'Blocked image diagnostics must support keyboard activation.');
+  assert.match(emailJs, /Remote Image Blocked/, 'Blocked image diagnostics must use a clear Hub dialog title.');
+  assert.match(emailJs, /Blueprints never loads remote email images directly/, 'Blocked image modal detail must explain the local-safe image policy.');
+  assert.match(emailJs, /The remote worker received bytes, but the image transform library could not safely open and decode them/, 'Decode modal detail must explain what the safe decode failure means.');
   assert.match(emailJs, /external_image_derivative_summary/, 'Checks view must summarize per-message external image derivative outcomes.');
   assert.match(emailJs, /Image failure reasons/, 'Checks view must show per-message image failure reasons.');
   assert.match(emailJs, /background:#6f1017/, 'Inline image errors must use the dark red highlighted background.');

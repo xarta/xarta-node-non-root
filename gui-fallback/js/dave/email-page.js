@@ -1722,6 +1722,109 @@ const EmailPage = (() => {
     return lines.join('\n');
   }
 
+  function imageOutcomeDiagnostic(row, context = {}) {
+    const fallbackText = String(context.fallbackText || '').trim();
+    const href = cleanImageOutcomeDetail(context.href || '');
+    const message = context.message || state.message || {};
+    const rawHash = cleanImageOutcomeDetail(message?.raw_sha256);
+    const status = row ? String(row?.status || 'not stored').trim() : 'not recorded';
+    const reason = row
+      ? String(row?.reason || row?.last_error || 'image was not stored').trim()
+      : (fallbackText || 'No worker outcome row is recorded for this placeholder yet.');
+    const diagnostic = {
+      schema: 'xarta.pim_email.image_block_diagnostic.v1',
+      summary: row ? imageOutcomeText(row) : reason,
+      status,
+      reason,
+      meaning: row
+        ? imageOutcomeMeaning(row)
+        : 'The sanitized HTML contains a local-safe placeholder, but the opened message payload did not include a matching external-image derivative row for this source.',
+      policy: 'Blueprints never loads remote email images directly in the readable HTML view. The PIM Email image worker must fetch public image bytes, pass URL and size guards, decode them with Pillow, normalize/resize/re-encode them as a bounded local JPEG, validate the result, and store only that local asset. When any gate fails, the sanitized email keeps a placeholder.',
+      source_url: cleanImageOutcomeDetail(row?.source_url) || href,
+      library_detail: row ? imageOutcomeLibraryDetail(row) : '',
+      worker_decision: row ? cleanImageOutcomeDetail(row?.safety_decision) : '',
+      content_type: row ? cleanImageOutcomeDetail(row?.content_type) : '',
+      transform_version: row ? cleanImageOutcomeDetail(row?.transform_version) : '',
+      updated_at: row ? cleanImageOutcomeDetail(row?.updated_at) : '',
+      email_uid: cleanImageOutcomeDetail(message?.email_uid || message?.uid),
+      raw_sha256: rawHash ? `${rawHash.slice(0, 16)}...` : '',
+      fallback_only: !row,
+    };
+    if (String(reason).toLowerCase().includes('could not be decoded safely')) {
+      diagnostic.decode_detail = 'The remote worker received bytes, but the image transform library could not safely open and decode them. Common causes are truncated/corrupt bytes, unsupported image data, a non-image response body, or a decoder/decompression-bomb safety refusal.';
+    }
+    return diagnostic;
+  }
+
+  function imageDiagnosticTitle(diagnostic) {
+    const status = diagnostic?.status ? `${diagnostic.status}: ` : '';
+    return `${status}${diagnostic?.reason || diagnostic?.summary || 'Remote image blocked'}`;
+  }
+
+  function imageDiagnosticDetailText(diagnostic) {
+    const rows = [
+      ['Meaning', diagnostic?.meaning],
+      ['Decode detail', diagnostic?.decode_detail],
+      ['Local safety policy', diagnostic?.policy],
+      ['Status', diagnostic?.status],
+      ['Reason', diagnostic?.reason],
+      ['Library detail', diagnostic?.library_detail],
+      ['Worker decision', diagnostic?.worker_decision],
+      ['Fetched content type', diagnostic?.content_type],
+      ['Transform version', diagnostic?.transform_version],
+      ['Updated', diagnostic?.updated_at],
+      ['Original URL', diagnostic?.source_url],
+      ['email_uid', diagnostic?.email_uid],
+      ['Raw hash', diagnostic?.raw_sha256],
+    ].filter(([, value]) => String(value || '').trim());
+    return rows.map(([label, value]) => `${label}:\n${value}`).join('\n\n');
+  }
+
+  function encodeImageDiagnostic(diagnostic) {
+    try {
+      return JSON.stringify(diagnostic || {});
+    } catch (error) {
+      return '{}';
+    }
+  }
+
+  function decorateImageDiagnosticElement(element, diagnostic, title) {
+    if (!element) return;
+    element.classList.add('email-image-diagnostic-trigger');
+    element.setAttribute('role', 'button');
+    element.setAttribute('tabindex', '0');
+    element.setAttribute('title', title);
+    element.setAttribute('aria-label', `Open image block detail: ${title}`);
+    element.setAttribute('data-email-image-diagnostic', encodeImageDiagnostic(diagnostic));
+  }
+
+  async function openImageDiagnosticModal(diagnostic) {
+    const title = imageDiagnosticTitle(diagnostic);
+    const detail = imageDiagnosticDetailText(diagnostic);
+    if (typeof HubDialogs !== 'undefined' && typeof HubDialogs.alert === 'function') {
+      await HubDialogs.alert({
+        title: 'Remote Image Blocked',
+        badge: 'IMG',
+        tone: 'warning',
+        message: title,
+        detail,
+        width: 'min(760px,96vw)',
+      });
+      return true;
+    }
+    setStatus(title, 'warn');
+    return false;
+  }
+
+  function parseImageDiagnosticPayload(value) {
+    try {
+      const parsed = JSON.parse(String(value || '{}'));
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (error) {
+      return {};
+    }
+  }
+
   function imageOriginalForPlaceholder(placeholder) {
     const wrap = placeholder?.closest?.('.email-image-wrap') || null;
     if (wrap) {
@@ -1737,37 +1840,76 @@ const EmailPage = (() => {
     return null;
   }
 
-  function placeholderAlreadyHasImageDetail(placeholder) {
+  function imageDetailForPlaceholder(placeholder) {
     const next = placeholder?.nextElementSibling || null;
-    if (next?.matches?.('.email-image-error')) return true;
+    if (next?.matches?.('.email-image-error')) return next;
     const wrap = placeholder?.closest?.('.email-image-wrap') || null;
-    return Boolean(wrap?.querySelector?.('.email-image-error'));
+    return wrap?.querySelector?.('.email-image-error') || null;
   }
 
   function appendImageOutcomeDetails(doc, message) {
     const outcomes = imageOutcomeMap(message);
     let changed = false;
     Array.from(doc.querySelectorAll('.email-image-blocked')).forEach(placeholder => {
-      if (placeholderAlreadyHasImageDetail(placeholder)) return;
+      const existingDetail = imageDetailForPlaceholder(placeholder);
       const original = imageOriginalForPlaceholder(placeholder);
       if (!placeholder) return;
       const href = String(original?.getAttribute?.('href') || '').trim();
       const row = href ? (outcomes.get(href) || outcomes.get(original?.href || '')) : null;
-      const detail = doc.createElement('span');
-      detail.className = 'email-image-error';
       const fallbackText = original
         ? 'Remote image blocked in the local-safe view; no worker outcome row is recorded for this source yet.'
         : 'Image blocked in the local-safe view; no worker outcome row is recorded for this placeholder yet.';
       const text = row ? imageOutcomeText(row) : fallbackText;
       const title = row ? imageOutcomeHoverText(row) : (original ? `${fallbackText}\nOriginal URL: ${href}` : fallbackText);
+      const diagnostic = imageOutcomeDiagnostic(row, { fallbackText, href, message });
+      if (existingDetail) {
+        existingDetail.textContent = text;
+        decorateImageDiagnosticElement(existingDetail, diagnostic, title);
+        decorateImageDiagnosticElement(placeholder, diagnostic, title);
+        changed = true;
+        return;
+      }
+      const detail = doc.createElement('span');
+      detail.className = 'email-image-error';
       detail.textContent = text;
-      detail.setAttribute('title', title);
-      detail.setAttribute('aria-label', title);
-      detail.setAttribute('tabindex', '0');
+      decorateImageDiagnosticElement(detail, diagnostic, title);
+      decorateImageDiagnosticElement(placeholder, diagnostic, title);
       placeholder.insertAdjacentElement('afterend', detail);
       changed = true;
     });
     return changed;
+  }
+
+  function connectHtmlFrameImageDiagnostics(frame) {
+    if (!frame) return;
+    frame.addEventListener('load', () => {
+      let doc = null;
+      try {
+        doc = frame.contentDocument || frame.contentWindow?.document || null;
+      } catch (error) {
+        return;
+      }
+      if (!doc || doc.__emailImageDiagnosticsBound) return;
+      doc.__emailImageDiagnosticsBound = true;
+      const openFromTarget = target => {
+        const trigger = target?.closest?.('.email-image-diagnostic-trigger');
+        if (!trigger) return false;
+        const diagnostic = parseImageDiagnosticPayload(trigger.getAttribute('data-email-image-diagnostic'));
+        openImageDiagnosticModal(diagnostic);
+        return true;
+      };
+      doc.addEventListener('click', event => {
+        if (!openFromTarget(event.target)) return;
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      doc.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        if (!openFromTarget(event.target)) return;
+        event.preventDefault();
+        event.stopPropagation();
+      });
+    });
   }
 
   function messageListAnchorFromHost(host) {
@@ -2606,6 +2748,13 @@ const EmailPage = (() => {
       line-height:1.35;
       white-space:normal;
     }
+    .email-image-diagnostic-trigger {
+      cursor:pointer;
+    }
+    .email-image-diagnostic-trigger:focus-visible {
+      outline:2px solid #1458b8;
+      outline-offset:2px;
+    }
   </style>
 </head>
 <body data-original-image-buttons="${state.showOriginalImageButtons ? 'shown' : 'hidden'}">${bodyHtml}</body>
@@ -2630,9 +2779,10 @@ const EmailPage = (() => {
     });
     const frame = document.createElement('iframe');
     frame.className = 'email-html-frame';
-    frame.setAttribute('sandbox', '');
+    frame.setAttribute('sandbox', 'allow-same-origin');
     frame.setAttribute('referrerpolicy', 'no-referrer');
     frame.setAttribute('title', 'Sanitized email HTML');
+    connectHtmlFrameImageDiagnostics(frame);
     frame.srcdoc = htmlFrameDocument(value, message);
     shell.appendChild(safety);
     shell.appendChild(frame);
@@ -3020,7 +3170,7 @@ const EmailPage = (() => {
       ['Current message security', aggregate.status ? `${aggregate.status} - ${aggregate.summary || ''}` : 'open a message'],
       ['DKIM / SPF / DMARC', messageSecurity.available ? `${messageSecurity.dkim?.signature_count || 0} DKIM, SPF ${messageSecurity.spf?.result || 'n/a'}, DMARC ${messageSecurity.dmarc?.result || 'n/a'}` : 'not checked yet'],
       ['Local AI scam judgement', messageSecurity.llm?.called ? `called ${messageSecurity.llm.model || 'local model'}` : 'not checked yet'],
-      ['HTML sandbox', 'srcdoc iframe, no scripts, no same-origin storage'],
+      ['HTML sandbox', 'srcdoc iframe, no email scripts; parent-only diagnostic click bridge'],
       ['Image assets', 'worker JPEG transforms, no remote fetch on open'],
       ['Local image assets', proxied ? `${proxied} transformed/rendered` : 'none in current message'],
       ['Remote images', imageSummary.total ? `${imageSummary.stored || 0} stored, ${imageSummary.blocked || 0} blocked, ${imageSummary.unavailable || 0} unavailable` : (remote ? `${remote} blocked` : 'none in current message')],
