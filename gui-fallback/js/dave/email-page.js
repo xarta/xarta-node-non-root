@@ -134,6 +134,21 @@ const EmailPage = (() => {
     trustedLoading: false,
     trustedLoaded: false,
     trustedError: '',
+    searchMode: 'simple',
+    searchQuery: '',
+    searchTerms: [{ field: 'default', operator: 'AND', value: '' }],
+    searchFolder: '',
+    searchSentFrom: '',
+    searchSentTo: '',
+    searchReceivedFrom: '',
+    searchReceivedTo: '',
+    searchHybrid: true,
+    searchRerank: true,
+    searchLoading: false,
+    searchError: '',
+    searchResults: null,
+    searchLastElapsedMs: null,
+    searchSeq: 0,
     messageContextMenuOpen: false,
     messageContextUids: [],
     securitySegmentModalOpen: false,
@@ -723,6 +738,10 @@ const EmailPage = (() => {
     return `${API_ROOT}/local/folder-messages?folder=${encodeURIComponent(folder)}&limit=${limit}&offset=${offset}`;
   }
 
+  function searchEndpoint() {
+    return `${API_ROOT}/local/search`;
+  }
+
   function cacheWarmEndpoint() {
     return `${API_ROOT}/local/cache/warm`;
   }
@@ -751,6 +770,94 @@ const EmailPage = (() => {
 
   function trustedProbableSenderDeleteEndpoint(senderEmail) {
     return `${API_ROOT}/local/trusted/probable-senders?sender_email=${encodeURIComponent(senderEmail)}`;
+  }
+
+  const SEARCH_FIELDS = [
+    ['default', 'All'],
+    ['from', 'From'],
+    ['recipients', 'Recipients'],
+    ['to', 'To'],
+    ['cc', 'Cc'],
+    ['bcc', 'Bcc'],
+    ['subject', 'Subject'],
+    ['content', 'Body'],
+    ['image', 'Images'],
+    ['message_id', 'Message ID'],
+    ['uid', 'UID'],
+    ['folder', 'Folder'],
+    ['sent_at', 'Sent date'],
+    ['received_at', 'Received date'],
+  ];
+
+  function searchDefaultTerms() {
+    return [{ field: 'default', operator: 'AND', value: '' }];
+  }
+
+  function normalizeSearchTerms(terms) {
+    const incoming = Array.isArray(terms) ? terms : [];
+    const normalized = incoming.slice(0, 12).map((term, index) => ({
+      field: SEARCH_FIELDS.some(([id]) => id === term?.field) ? term.field : 'default',
+      operator: index === 0 ? 'AND' : (String(term?.operator || 'AND').toUpperCase() === 'OR' ? 'OR' : 'AND'),
+      value: String(term?.value || '').trim(),
+    }));
+    return normalized.length ? normalized : searchDefaultTerms();
+  }
+
+  function searchFieldOptionsHtml(value) {
+    return SEARCH_FIELDS.map(([id, label]) => (
+      `<option value="${escHtml(id)}"${id === value ? ' selected' : ''}>${escHtml(label)}</option>`
+    )).join('');
+  }
+
+  function searchFolderOptionsHtml() {
+    const folders = Array.isArray(state.folders) ? state.folders : [];
+    const seen = new Set();
+    const options = ['<option value="">Any folder</option>'];
+    folders.forEach(folder => {
+      const name = String(folder?.path || folder?.name || '').trim();
+      if (!name || seen.has(name)) return;
+      seen.add(name);
+      options.push(`<option value="${escHtml(name)}"${state.searchFolder === name ? ' selected' : ''}>${escHtml(name)}</option>`);
+    });
+    return options.join('');
+  }
+
+  function readSearchForm(form) {
+    if (!form) return;
+    const mode = form.querySelector('[data-email-search-mode]:checked')?.value || state.searchMode || 'simple';
+    state.searchMode = mode === 'advanced' ? 'advanced' : 'simple';
+    state.searchQuery = String(form.querySelector('[data-email-search-query]')?.value || '').trim();
+    state.searchFolder = String(form.querySelector('[data-email-search-folder]')?.value || '').trim();
+    state.searchSentFrom = String(form.querySelector('[data-email-search-date="sent-from"]')?.value || '').trim();
+    state.searchSentTo = String(form.querySelector('[data-email-search-date="sent-to"]')?.value || '').trim();
+    state.searchReceivedFrom = String(form.querySelector('[data-email-search-date="received-from"]')?.value || '').trim();
+    state.searchReceivedTo = String(form.querySelector('[data-email-search-date="received-to"]')?.value || '').trim();
+    state.searchHybrid = Boolean(form.querySelector('[data-email-search-toggle="hybrid"]')?.checked);
+    state.searchRerank = Boolean(form.querySelector('[data-email-search-toggle="rerank"]')?.checked);
+    const rows = Array.from(form.querySelectorAll('[data-email-search-row]'));
+    state.searchTerms = normalizeSearchTerms(rows.map((row, index) => ({
+      field: row.querySelector('[data-email-search-term-field]')?.value || 'default',
+      operator: index === 0 ? 'AND' : (row.querySelector('[data-email-search-term-operator]')?.value || 'AND'),
+      value: row.querySelector('[data-email-search-term-value]')?.value || '',
+    })));
+  }
+
+  function currentSearchPayload({ offset = 0, limit = MESSAGE_LIST_LIMIT } = {}) {
+    const terms = normalizeSearchTerms(state.searchTerms).filter(term => term.value || term.field.endsWith('_at'));
+    return {
+      mode: state.searchMode === 'advanced' ? 'advanced' : 'simple',
+      query: state.searchMode === 'advanced' ? '' : state.searchQuery,
+      terms: state.searchMode === 'advanced' ? terms : [],
+      folder: state.searchFolder,
+      sent_from: state.searchSentFrom,
+      sent_to: state.searchSentTo,
+      received_from: state.searchReceivedFrom,
+      received_to: state.searchReceivedTo,
+      hybrid: state.searchHybrid,
+      rerank: state.searchRerank,
+      limit: Math.max(1, Math.min(Number(limit || MESSAGE_LIST_LIMIT), 200)),
+      offset: Math.max(0, Number(offset || 0)),
+    };
   }
 
   function renderMeta() {
@@ -1216,7 +1323,7 @@ const EmailPage = (() => {
   }
 
   function scheduleMessagePagePrefetch() {
-    if (!state.loaded || state.folderLoading || !state.messagesHasMore) return null;
+    if (!state.loaded || state.folderLoading || !state.messagesHasMore || state.readSource === 'search') return null;
     const folder = state.folder || 'INBOX';
     const offset = state.messageListOffset || state.messages.length;
     if (state.messagePrefetchPage && messagePrefetchMatches(folder, offset)) {
@@ -1747,6 +1854,15 @@ const EmailPage = (() => {
     const key = messageIdentity(row);
     const selected = key === activeMessageUid();
     const multiSelected = state.selectedMessageUids.has(key);
+    const search = row?.search && typeof row.search === 'object' ? row.search : null;
+    const sources = Array.isArray(search?.sources) ? search.sources.join('+') : '';
+    const score = Number(search?.score || 0);
+    const searchMeta = search
+      ? `<div class="email-message-search-meta">${escHtml(sources || 'search')}${score ? ` ${escHtml(score.toFixed(3))}` : ''}</div>`
+      : '';
+    const searchSnippet = search?.snippet
+      ? `<div class="email-message-snippet">${escHtml(search.snippet)}</div>`
+      : '';
     return `
       <div class="email-message-row" data-email-message-uid="${escHtml(row.uid || '')}" data-email-message-email-uid="${escHtml(row.email_uid || '')}" data-selected="${selected ? 'true' : 'false'}" data-multi-selected="${multiSelected ? 'true' : 'false'}" tabindex="0">
         <label class="hub-checkbox email-row-select" title="Select message" aria-label="Select message ${escHtml(row.subject || row.email_uid || '')}">
@@ -1757,6 +1873,8 @@ const EmailPage = (() => {
           <div class="email-message-title">${escHtml(row.subject || '(no subject)')}</div>
           <div class="email-message-from">${escHtml(row.from || '')}</div>
           <div class="email-message-date">${escHtml(row.date || '')}</div>
+          ${searchMeta}
+          ${searchSnippet}
         </div>
       </div>
     `;
@@ -1787,13 +1905,17 @@ const EmailPage = (() => {
     if (!host) return;
     const anchor = options.anchor || (options.preserveScroll ? captureMessageListAnchor() : null);
     if (state.folderLoading) {
-      host.innerHTML = `<div class="email-empty">Loading last ${MESSAGE_LIST_LIMIT} messages for ${escHtml(state.folder || 'INBOX')}.</div>`;
+      host.innerHTML = state.readSource === 'search'
+        ? '<div class="email-empty">Searching local email corpus.</div>'
+        : `<div class="email-empty">Loading last ${MESSAGE_LIST_LIMIT} messages for ${escHtml(state.folder || 'INBOX')}.</div>`;
       restoreMessageListAnchor(anchor);
       return;
     }
     host.innerHTML = state.messages.length
       ? `${state.messages.map(messageRowHtml).join('')}${messageListTailHtml()}`
-      : `<div class="email-empty">No messages loaded for ${escHtml(state.folder || 'INBOX')}.</div>`;
+      : (state.readSource === 'search'
+        ? '<div class="email-empty">No search results loaded.</div>'
+        : `<div class="email-empty">No messages loaded for ${escHtml(state.folder || 'INBOX')}.</div>`);
     restoreMessageListAnchor(anchor);
     installMessageRowContextFsms();
   }
@@ -3062,6 +3184,92 @@ const EmailPage = (() => {
     `;
   }
 
+  function searchSummaryHtml() {
+    if (state.searchLoading) return '<div class="email-empty">Searching local corpus.</div>';
+    if (state.searchError) return `<div class="email-empty">${escHtml(state.searchError)}</div>`;
+    const result = state.searchResults;
+    if (!result) return '';
+    const timings = result.timings || {};
+    const index = result.index || {};
+    const docs = Number(index.documents || 0);
+    const vectors = Number(index.vectors_indexed || 0);
+    const bits = [
+      `${result.total ?? state.messages.length} candidates`,
+      `${timings.elapsed_ms ?? state.searchLastElapsedMs ?? 0} ms`,
+      `PG ${timings.postgres_ms ?? 0} ms`,
+      `Vec ${timings.vector_ms ?? 0} ms`,
+      `Rank ${timings.rerank_ms ?? 0} ms`,
+      `${vectors}/${docs} vectors`,
+    ];
+    return `
+      <div class="email-search-summary">
+        ${bits.map(bit => `<span>${escHtml(bit)}</span>`).join('')}
+      </div>
+    `;
+  }
+
+  function searchTermRowsHtml() {
+    return normalizeSearchTerms(state.searchTerms).map((term, index) => `
+      <div class="email-search-row" data-email-search-row>
+        <select data-email-search-term-operator aria-label="Operator"${index === 0 ? ' disabled' : ''}>
+          <option value="AND"${term.operator !== 'OR' ? ' selected' : ''}>AND</option>
+          <option value="OR"${term.operator === 'OR' ? ' selected' : ''}>OR</option>
+        </select>
+        <select data-email-search-term-field aria-label="Field">
+          ${searchFieldOptionsHtml(term.field)}
+        </select>
+        <input type="text" data-email-search-term-value value="${escHtml(term.value)}" placeholder="term, phrase, or wild*" autocomplete="off">
+        <button class="email-search-icon-btn" type="button" data-email-search-remove-row="${index}" aria-label="Remove search row"${index === 0 ? ' disabled' : ''}>X</button>
+      </div>
+    `).join('');
+  }
+
+  function emailSearchHtml() {
+    const advanced = state.searchMode === 'advanced';
+    return `
+      <div class="email-search-panel">
+        <form class="email-search-form" data-email-search-form>
+          <div class="email-search-toolbar">
+            <div class="email-search-mode" role="radiogroup" aria-label="Search mode">
+              <label><input type="radio" name="email-search-mode" data-email-search-mode value="simple"${advanced ? '' : ' checked'}> Simple</label>
+              <label><input type="radio" name="email-search-mode" data-email-search-mode value="advanced"${advanced ? ' checked' : ''}> Advanced</label>
+            </div>
+            <button type="submit" class="email-search-submit"${state.searchLoading ? ' disabled' : ''}>Search</button>
+          </div>
+          <div class="email-search-simple"${advanced ? ' hidden' : ''}>
+            <input type="search" data-email-search-query value="${escHtml(state.searchQuery)}" placeholder="Search email" autocomplete="off">
+          </div>
+          <div class="email-search-advanced"${advanced ? '' : ' hidden'}>
+            ${searchTermRowsHtml()}
+            <button class="email-search-add-row" type="button" data-email-search-add-row>Add row</button>
+          </div>
+          <div class="email-search-filters">
+            <select data-email-search-folder aria-label="Folder">
+              ${searchFolderOptionsHtml()}
+            </select>
+            <input type="datetime-local" data-email-search-date="received-from" value="${escHtml(state.searchReceivedFrom)}" aria-label="Received from">
+            <input type="datetime-local" data-email-search-date="received-to" value="${escHtml(state.searchReceivedTo)}" aria-label="Received to">
+            <input type="datetime-local" data-email-search-date="sent-from" value="${escHtml(state.searchSentFrom)}" aria-label="Sent from">
+            <input type="datetime-local" data-email-search-date="sent-to" value="${escHtml(state.searchSentTo)}" aria-label="Sent to">
+          </div>
+          <div class="email-search-toggles">
+            <label class="hub-checkbox email-search-toggle">
+              <input class="hub-checkbox__input" type="checkbox" data-email-search-toggle="hybrid"${state.searchHybrid ? ' checked' : ''}>
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label">Hybrid</span>
+            </label>
+            <label class="hub-checkbox email-search-toggle">
+              <input class="hub-checkbox__input" type="checkbox" data-email-search-toggle="rerank"${state.searchRerank ? ' checked' : ''}>
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label">Rerank</span>
+            </label>
+          </div>
+        </form>
+        ${searchSummaryHtml()}
+      </div>
+    `;
+  }
+
   async function refreshTrustedSenders(options = {}) {
     if (state.trustedLoading) return state.trustedSenders;
     state.trustedLoading = true;
@@ -3165,6 +3373,7 @@ const EmailPage = (() => {
       ['security', 'Security'],
       ['cache', 'Cache'],
       ['trusted', 'Trusted'],
+      ['search', 'Search'],
     ];
     return tabs.map(([id, label]) => `
       <button type="button" data-email-secondary-tab="${escHtml(id)}" data-active="${state.secondaryTab === id ? 'true' : 'false'}" data-email-secondary-layout="${escHtml(layout)}">${escHtml(label)}</button>
@@ -3176,6 +3385,7 @@ const EmailPage = (() => {
     if (state.secondaryTab === 'security') return messageSecurityHtml();
     if (state.secondaryTab === 'cache') return cacheStatusHtml();
     if (state.secondaryTab === 'trusted') return trustedSendersHtml();
+    if (state.secondaryTab === 'search') return emailSearchHtml();
     return foldersHtml();
   }
 
@@ -3192,7 +3402,7 @@ const EmailPage = (() => {
     if (modalTitle) {
       modalTitle.textContent = state.secondaryTab === 'security'
         ? 'Email Security'
-        : (state.secondaryTab === 'checks' ? 'Email Checks' : (state.secondaryTab === 'cache' ? 'Email Cache' : (state.secondaryTab === 'trusted' ? 'Email Trusted' : 'Email Folders')));
+        : (state.secondaryTab === 'checks' ? 'Email Checks' : (state.secondaryTab === 'cache' ? 'Email Cache' : (state.secondaryTab === 'trusted' ? 'Email Trusted' : (state.secondaryTab === 'search' ? 'Email Search' : 'Email Folders'))));
     }
   }
 
@@ -3382,6 +3592,7 @@ const EmailPage = (() => {
     const clean = String(folder || '').trim() || 'INBOX';
     const seq = state.folderLoadSeq + 1;
     state.folderLoadSeq = seq;
+    state.readSource = 'local';
     state.folder = clean;
     state.message = null;
     state.messages = [];
@@ -3420,8 +3631,96 @@ const EmailPage = (() => {
     }
   }
 
+  async function runEmailSearch(options = {}) {
+    if (options.form) readSearchForm(options.form);
+    const append = Boolean(options.append);
+    const offset = append ? Math.max(0, Number(options.offset || state.messageListOffset || state.messages.length)) : 0;
+    const limit = append ? MESSAGE_PREFETCH_AHEAD : MESSAGE_LIST_LIMIT;
+    const seq = append ? state.searchSeq : state.searchSeq + 1;
+    if (!append) {
+      state.searchSeq = seq;
+      state.folderLoadSeq += 1;
+      state.folder = 'Search';
+      state.readSource = 'search';
+      state.message = null;
+      state.messages = [];
+      state.messageListOffset = 0;
+      state.messageListTotal = null;
+      state.messagesHasMore = false;
+      state.messagesLoadingMore = false;
+      state.searchResults = null;
+      state.searchError = '';
+      state.searchLastElapsedMs = null;
+      clearMessagePrefetch();
+      state.messageWarmSeen = new Set();
+      resetMessagePrefetchQueues();
+      state.messageListSignature = '';
+      state.messagePendingUid = '';
+      state.folderLoading = true;
+      state.searchLoading = true;
+      setStatus('Searching local email corpus', 'unknown');
+      renderAll();
+    } else {
+      if (state.searchLoading || state.messagesLoadingMore || !state.messagesHasMore) return false;
+      state.messagesLoadingMore = true;
+      state.searchLoading = true;
+      renderMessages({ preserveScroll: true });
+    }
+    const startedAt = performance.now();
+    try {
+      const payload = currentSearchPayload({ offset, limit });
+      const data = await fetchJson(searchEndpoint(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (seq !== state.searchSeq || state.readSource !== 'search') return false;
+      state.mailbox = data.mailbox || state.mailbox;
+      state.searchResults = data || null;
+      state.searchError = '';
+      state.searchLastElapsedMs = Number(data?.timings?.elapsed_ms || Math.round(performance.now() - startedAt));
+      applyMessageListResponse(data, { append, offset });
+      state.folderLoading = false;
+      state.messagesLoadingMore = false;
+      setStatus(`Search returned ${state.messages.length} messages in ${state.searchLastElapsedMs} ms`, 'ok');
+      if (append) {
+        renderMessages({ preserveScroll: true });
+        renderSecondaryPanels();
+      } else {
+        renderAll();
+      }
+      refreshCacheStatus({ silent: true });
+      return true;
+    } catch (error) {
+      if (seq !== state.searchSeq) return false;
+      state.searchError = error.message || String(error);
+      if (!append) state.messages = [];
+      state.folderLoading = false;
+      state.messagesLoadingMore = false;
+      setStatus(state.searchError, 'err');
+      renderAll();
+      return false;
+    } finally {
+      if (seq === state.searchSeq) {
+        state.searchLoading = false;
+        state.folderLoading = false;
+        state.messagesLoadingMore = false;
+        renderSecondaryPanels();
+      }
+    }
+  }
+
+  async function loadMoreSearch() {
+    if (!state.loaded || state.readSource !== 'search' || state.folderLoading || state.messagesLoadingMore || !state.messagesHasMore) return false;
+    return runEmailSearch({
+      append: true,
+      offset: state.messageListOffset || state.messages.length,
+    });
+  }
+
   async function loadMoreMessages() {
     if (!state.loaded || state.folderLoading || state.messagesLoadingMore || !state.messagesHasMore) return false;
+    if (state.readSource === 'search') return loadMoreSearch();
     const seq = state.folderLoadSeq;
     const folder = state.folder || 'INBOX';
     const offset = state.messageListOffset || state.messages.length;
@@ -3612,6 +3911,19 @@ const EmailPage = (() => {
     if (!state.loaded) await load();
     await refreshHealth();
     state.secondaryTab = 'checks';
+    renderSecondaryPanels();
+    const modal = el('email-secondary-modal');
+    if (modal) {
+      if (typeof HubModal !== 'undefined') HubModal.open(modal);
+      else if (typeof modal.showModal === 'function' && !modal.open) modal.showModal();
+    }
+    renderUltrawide();
+    return true;
+  }
+
+  async function searchPanel() {
+    if (!state.loaded) await load();
+    state.secondaryTab = 'search';
     renderSecondaryPanels();
     const modal = el('email-secondary-modal');
     if (modal) {
@@ -4211,6 +4523,29 @@ const EmailPage = (() => {
         if (state.secondaryTab === 'trusted' && !state.trustedLoaded) refreshTrustedSenders({ silent: true });
         return;
       }
+      const searchAddRow = target.closest?.('[data-email-search-add-row]');
+      if (searchAddRow) {
+        event.preventDefault();
+        const form = searchAddRow.closest('[data-email-search-form]');
+        readSearchForm(form);
+        state.searchTerms = normalizeSearchTerms(state.searchTerms);
+        state.searchTerms.push({ field: 'default', operator: 'AND', value: '' });
+        renderSecondaryPanels();
+        renderUltrawide();
+        return;
+      }
+      const searchRemoveRow = target.closest?.('[data-email-search-remove-row]');
+      if (searchRemoveRow) {
+        event.preventDefault();
+        const form = searchRemoveRow.closest('[data-email-search-form]');
+        readSearchForm(form);
+        const index = Number(searchRemoveRow.dataset.emailSearchRemoveRow || -1);
+        state.searchTerms = normalizeSearchTerms(state.searchTerms).filter((_, rowIndex) => rowIndex !== index);
+        if (!state.searchTerms.length) state.searchTerms = searchDefaultTerms();
+        renderSecondaryPanels();
+        renderUltrawide();
+        return;
+      }
       const trustedTab = target.closest?.('[data-email-trusted-tab]');
       if (trustedTab) {
         event.preventDefault();
@@ -4282,11 +4617,31 @@ const EmailPage = (() => {
       if (!target.closest?.('[data-email-folder-dropdown]')) closeFolderMenus();
     });
     document.addEventListener('change', event => {
+      const searchForm = event.target.closest?.('[data-email-search-form]');
+      if (searchForm) {
+        const previousMode = state.searchMode;
+        readSearchForm(searchForm);
+        if (event.target.closest?.('[data-email-search-mode]') && previousMode !== state.searchMode) {
+          renderSecondaryPanels();
+          renderUltrawide();
+        }
+        return;
+      }
       const messageSelect = event.target.closest?.('[data-email-message-select]');
       if (!messageSelect) return;
       toggleMessageSelection(messageSelect.dataset.emailMessageSelect || '', messageSelect.checked);
     });
+    document.addEventListener('input', event => {
+      const searchForm = event.target.closest?.('[data-email-search-form]');
+      if (searchForm) readSearchForm(searchForm);
+    });
     document.addEventListener('submit', event => {
+      const searchForm = event.target.closest?.('[data-email-search-form]');
+      if (searchForm) {
+        event.preventDefault();
+        runEmailSearch({ form: searchForm });
+        return;
+      }
       const form = event.target.closest?.('[data-email-trusted-add-form]');
       if (!form) return;
       event.preventDefault();
@@ -4335,6 +4690,11 @@ const EmailPage = (() => {
       message_list_offset: state.messageListOffset,
       message_list_total: state.messageListTotal,
       message_list_has_more: state.messagesHasMore,
+      search_mode: state.searchMode,
+      search_loading: state.searchLoading,
+      search_error: state.searchError,
+      search_elapsed_ms: state.searchLastElapsedMs,
+      search_total: state.searchResults?.total ?? null,
       message_prefetch_ready: !!state.messagePrefetchPage,
       message_prefetch_loading: !!state.messagePrefetchPromise,
       message_prefetch_offset: state.messagePrefetchOffset,
@@ -4389,6 +4749,7 @@ const EmailPage = (() => {
     refresh,
     browseFolders,
     safeChecks,
+    searchPanel,
     securityChecks,
     setView,
     toggleList,
@@ -4414,6 +4775,7 @@ if (typeof DaveMenuConfig !== 'undefined') {
     'email.viewRaw': () => EmailPage.viewRaw(),
     'email.toggleList': () => EmailPage.toggleList(),
     'email.safeChecks': () => EmailPage.safeChecks(),
+    'email.search': () => EmailPage.searchPanel(),
     'email.security': () => EmailPage.securityChecks(),
   });
 }

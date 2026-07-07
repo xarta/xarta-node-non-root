@@ -51,6 +51,8 @@ test('PIM Email tab follows the Blueprints managed-scroll shell contract', () =>
   assert.match(indexHtml, /id="email-secondary-modal"[\s\S]*data-email-secondary-tab="cache"[\s\S]*>Cache</, 'Folder/check modal must also expose the Cache tab.');
   assert.match(tabHtml, /data-email-secondary-tab="trusted"[\s\S]*>Trusted</, 'The bottom toolbar must expose the Trusted tab.');
   assert.match(indexHtml, /id="email-secondary-modal"[\s\S]*data-email-secondary-tab="trusted"[\s\S]*>Trusted</, 'Folder/check modal must also expose the Trusted tab.');
+  assert.match(tabHtml, /data-email-secondary-tab="trusted"[\s\S]*>Trusted<[\s\S]*data-email-secondary-tab="search"[\s\S]*>Search</, 'The bottom toolbar must expose Search directly after Trusted.');
+  assert.match(indexHtml, /id="email-secondary-modal"[\s\S]*data-email-secondary-tab="trusted"[\s\S]*>Trusted<[\s\S]*data-email-secondary-tab="search"[\s\S]*>Search</, 'Folder/check modal must expose Search directly after Trusted.');
   assert.match(tabHtml, /data-email-list-toggle/, 'Message list collapse toggle must remain in the message header.');
 });
 
@@ -107,6 +109,19 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(activeBrowserObserverJs, /message_context_menu_open: !!email\.message_context_menu_open/, 'Active Browser stable keys must notice Email context menu state changes.');
   assert.match(emailJs, /\/local\/health/, 'Email UI must read lightweight local PIM health.');
   assert.match(emailJs, /\/local\/folders/, 'Email UI must list virtual local folders.');
+  assert.match(emailJs, /function searchEndpoint\(\)[\s\S]*\/local\/search/, 'Email Search must call the local PIM search endpoint.');
+  assert.match(emailJs, /SEARCH_FIELDS = \[[\s\S]*\['from', 'From'\][\s\S]*\['recipients', 'Recipients'\][\s\S]*\['subject', 'Subject'\][\s\S]*\['content', 'Body'\][\s\S]*\['image', 'Images'\][\s\S]*\['sent_at', 'Sent date'\][\s\S]*\['received_at', 'Received date'\]/, 'Email Search must expose production field targeting.');
+  assert.match(emailJs, /data-email-search-mode value="simple"[\s\S]*data-email-search-mode value="advanced"/, 'Email Search must expose simple and advanced modes.');
+  assert.match(emailJs, /data-email-search-term-operator[\s\S]*<option value="AND"[\s\S]*<option value="OR"/, 'Advanced Email Search rows must support AND/OR composition.');
+  assert.match(emailJs, /data-email-search-toggle="hybrid"[\s\S]*data-email-search-toggle="rerank"/, 'Email Search must expose hybrid and rerank toggles.');
+  assert.match(emailJs, /state\.readSource = 'search'/, 'Email Search results must replace the message list source.');
+  assert.match(emailJs, /if \(state\.readSource === 'search'\) return loadMoreSearch\(\)/, 'Email Search pagination must use the search endpoint.');
+  assert.match(emailJs, /search_elapsed_ms/, 'Email automation snapshot must expose search timing.');
+  assert.match(emailJs, /search_total/, 'Email automation snapshot must expose search result totals.');
+  assert.match(emailCss, /\.email-search-panel/, 'Email Search controls must have compact panel styling.');
+  assert.match(emailCss, /\.email-search-simple\[hidden\],[\s\S]*\.email-search-advanced\[hidden\]\s*\{[\s\S]*display:\s*none/, 'Email Search hidden mode panels must stay hidden despite grid display rules.');
+  assert.match(emailCss, /\.email-search-row\s*\{[\s\S]*grid-template-columns/, 'Advanced Email Search rows must use stable grid tracks.');
+  assert.match(emailCss, /@media\s*\(max-width:\s*820px\)[\s\S]*\.email-search-toolbar,[\s\S]*\.email-search-row,[\s\S]*\.email-search-filters\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/, 'Email Search controls must collapse cleanly on mobile.');
   assert.match(emailJs, /function localCorpusAvailable\(/, 'Email UI must keep local corpus as the integrated page mode.');
   assert.match(emailJs, /\/local\/folder-messages/, 'Email UI must list local folder messages.');
   assert.match(emailJs, /MESSAGE_LIST_LIMIT = 100/, 'Email UI must request the last 100 local messages.');
