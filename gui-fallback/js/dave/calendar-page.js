@@ -583,6 +583,27 @@ const CalendarPage = (() => {
     return end >= start ? end : start;
   }
 
+  function dateSpanLabel(startDate, endDate) {
+    if (!startDate || !endDate || endDate <= startDate) return '';
+    const start = parseLocalDate(startDate);
+    const end = parseLocalDate(endDate);
+    const startDay = String(start.getDate());
+    const endDay = String(end.getDate());
+    const startMonth = monthLabel(startDate, { month: 'short' });
+    const endMonth = monthLabel(endDate, { month: 'short' });
+    if (start.getFullYear() === end.getFullYear() && start.getMonth() === end.getMonth()) {
+      return `${startDay}-${endDay} ${startMonth}`;
+    }
+    if (start.getFullYear() === end.getFullYear()) {
+      return `${startDay} ${startMonth} - ${endDay} ${endMonth}`;
+    }
+    return `${startDay} ${startMonth} ${start.getFullYear()} - ${endDay} ${endMonth} ${end.getFullYear()}`;
+  }
+
+  function eventDateSpanLabel(event) {
+    return dateSpanLabel(eventStartDate(event), eventEndDate(event));
+  }
+
   function eventOverlapsRange(event, startDate, endDate) {
     return eventStartDate(event) <= endDate && eventEndDate(event) >= startDate;
   }
@@ -608,7 +629,7 @@ const CalendarPage = (() => {
   }
 
   function eventTime(event) {
-    if (isAllDay(event)) return 'All day';
+    if (isAllDay(event)) return eventDateSpanLabel(event) || 'All day';
     const meta = calendarMeta(event);
     if (meta.local_start_time) {
       return meta.local_end_time ? `${meta.local_start_time}-${meta.local_end_time}` : meta.local_start_time;
@@ -617,6 +638,40 @@ const CalendarPage = (() => {
     const date = new Date(event.start_at);
     if (Number.isNaN(date.getTime())) return '';
     return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function eventSearchText(event) {
+    return [
+      event?.title,
+      event?.body_excerpt,
+      event?.content_projection,
+      event?.event_id,
+      event?.source?.ref,
+      event?.source_ref,
+      Array.isArray(event?.file_refs) ? event.file_refs.join('\n') : '',
+    ].filter(Boolean).join('\n');
+  }
+
+  function bankHolidayDivisions(event) {
+    const match = /Divisions:\s*([^.\n]+)/i.exec(eventSearchText(event));
+    return match ? match[1].trim() : '';
+  }
+
+  function isNonEnglandBankHoliday(event) {
+    const text = eventSearchText(event);
+    const tags = eventTags(event);
+    const looksLikeBankHoliday = tags.includes('national-holiday')
+      || /\bbank holiday\b/i.test(text)
+      || /uk-national-holiday/i.test(text);
+    if (!looksLikeBankHoliday) return false;
+    const divisions = bankHolidayDivisions(event);
+    return Boolean(divisions && !/\bEngland\b/i.test(divisions));
+  }
+
+  function upcomingDimReason(event, type) {
+    if (type !== 'upcoming') return '';
+    if (isNonEnglandBankHoliday(event)) return 'non-england-bank-holiday';
+    return '';
   }
 
   function eventSortKey(event) {
@@ -944,6 +999,10 @@ const CalendarPage = (() => {
           openDiaryWeek(targetDate);
           return;
         }
+      }
+      if (context.options?.type === 'upcoming') {
+        openEventEditForContext(context);
+        return;
       }
       openEventPreview(row);
     }
@@ -1589,8 +1648,15 @@ const CalendarPage = (() => {
     const datePart = state.mode !== 'day' ? `${monthLabel(eventStartDate(event), { weekday: 'short', day: '2-digit', month: 'short' })} - ` : '';
     const ref = event.source?.ref || (Array.isArray(event.file_refs) ? event.file_refs[0] : '') || event.event_id || '';
     const todoLink = todoLinkHtml(event);
+    const dimReason = upcomingDimReason(event, type);
+    const rowClasses = [
+      'calendar-agenda-row',
+      `calendar-agenda-row--${eventCategory(event)}`,
+      dimReason ? 'calendar-upcoming-row--dimmed' : '',
+    ].filter(Boolean).join(' ');
+    const dimAttr = dimReason ? ` data-upcoming-dim-reason="${escHtml(dimReason)}"` : '';
     return `
-      <div class="calendar-agenda-row calendar-agenda-row--${escHtml(eventCategory(event))}" ${selectionAttrs(type, index)} data-calendar-event-id="${escHtml(eventIdentity(event))}" data-calendar-event-surface="agenda">
+      <div class="${escHtml(rowClasses)}" ${selectionAttrs(type, index)} data-calendar-event-id="${escHtml(eventIdentity(event))}" data-calendar-event-surface="agenda"${dimAttr}>
         <div class="calendar-agenda-time">${escHtml(eventTime(event))}</div>
         <div class="calendar-agenda-main">
           <div class="calendar-agenda-title">${escHtml(event.title || event.kind || event.event_id)}</div>
@@ -3854,9 +3920,15 @@ const CalendarPage = (() => {
           generateDaySummary();
           return;
         }
-	        const btn = event.target.closest('[data-calendar-modal-action]');
-	        if (!btn) return;
-	        if (btn.dataset.calendarModalAction === 'submit-edit') submitEdit();
+        const selectable = event.target.closest('[data-calendar-select-type]');
+        if (selectable) {
+          if (handleSelectableEventActivation(selectable, event)) return;
+          setSelection(selectable.dataset.calendarSelectType, selectable.dataset.calendarSelectIndex);
+          return;
+        }
+		        const btn = event.target.closest('[data-calendar-modal-action]');
+		        if (!btn) return;
+		        if (btn.dataset.calendarModalAction === 'submit-edit') submitEdit();
 	        if (btn.dataset.calendarModalAction === 'delete-event') deleteSelectedEvent();
 		        if (btn.dataset.calendarModalAction === 'submit-kanban-link') submitKanbanLink();
 		        if (btn.dataset.calendarModalAction === 'edit-event-content') openSelectedEventContentEditor();

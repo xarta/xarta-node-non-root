@@ -1349,6 +1349,23 @@
   background: rgba(73, 144, 226, .14);
 }
 
+.calendar-agenda-row.calendar-upcoming-row--dimmed {
+  opacity: .52;
+  filter: saturate(.6);
+}
+
+.calendar-agenda-row.calendar-upcoming-row--dimmed[data-calendar-selected="true"],
+.calendar-agenda-row.calendar-upcoming-row--dimmed[data-diary-selected="true"] {
+  opacity: .72;
+}
+
+.calendar-agenda-row.calendar-upcoming-row--dimmed .calendar-agenda-time,
+.calendar-agenda-row.calendar-upcoming-row--dimmed .calendar-agenda-title,
+.calendar-agenda-row.calendar-upcoming-row--dimmed .calendar-agenda-meta,
+.calendar-agenda-row.calendar-upcoming-row--dimmed .calendar-agenda-source {
+  color: var(--muted);
+}
+
 .calendar-agenda-time {
   flex: 0 0 84px;
   color: var(--accent);

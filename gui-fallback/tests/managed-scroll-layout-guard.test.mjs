@@ -629,11 +629,31 @@ for (const [surface, js, filterAttr] of [
     js.includes(filterAttr) && js.includes('<strong>Filtered</strong>'),
     `${surface} Upcoming body must show a prominent filtered indicator when shared filters are active.`,
   );
+  assert.match(
+    js,
+    /function\s+eventDateSpanLabel\(event\)[\s\S]*dateSpanLabel\(eventStartDate\(event\),\s*eventEndDate\(event\)\)[\s\S]*function\s+eventTime\(event\)[\s\S]*if\s*\(isAllDay\(event\)\)\s*return\s+eventDateSpanLabel\(event\)\s*\|\|\s*'All day'/,
+    `${surface} Upcoming must show ranged all-day spans instead of the generic All day label.`,
+  );
+  assert.match(
+    js,
+    /function\s+isNonEnglandBankHoliday\(event\)[\s\S]*bank holiday[\s\S]*bankHolidayDivisions\(event\)[\s\S]*!\s*\/\\bEngland\\b\/i\.test\(divisions\)[\s\S]*function\s+upcomingDimReason\(event,\s*type\)[\s\S]*type !== 'upcoming'[\s\S]*non-england-bank-holiday/,
+    `${surface} Upcoming must detect non-England bank holidays as a reusable dimming reason.`,
+  );
+  assert.match(
+    functionSlice(js, 'eventRow'),
+    /upcomingDimReason\(event,\s*type\)[\s\S]*calendar-upcoming-row--dimmed[\s\S]*data-upcoming-dim-reason/,
+    `${surface} Upcoming rows must expose the reusable dimming class and reason attribute.`,
+  );
 }
 assert.match(
   daveCalendarCss,
   /\.calendar-upcoming-filtered\s*\{[\s\S]*background:[\s\S]*\.calendar-upcoming-context\s*\{/,
   'Upcoming filtered and scope notices must be styled in the shared Calendar/Diary CSS.',
+);
+assert.match(
+  daveCalendarCss,
+  /\.calendar-agenda-row\.calendar-upcoming-row--dimmed\s*\{[\s\S]*opacity:[\s\S]*filter:[\s\S]*\.calendar-agenda-row\.calendar-upcoming-row--dimmed\s+\.calendar-agenda-time/,
+  'Upcoming rows must have a reusable dimmed CSS rule.',
 );
 assert.match(
   daveCalendarJs,
@@ -1079,6 +1099,16 @@ assert.match(
 );
 assert.match(
   daveCalendarJs,
+  /function\s+drillOrPreview\(context\)[\s\S]*context\.options\?\.type === 'upcoming'[\s\S]*openEventEditForContext\(context\)[\s\S]*openEventPreview\(row\)/,
+  'Calendar Upcoming single-click must open the shared Diary edit entry path instead of the lightweight preview.',
+);
+assert.match(
+  daveCalendarJs,
+  /calendar-action-modal-body[\s\S]*addEventListener\('click'[\s\S]*data-calendar-select-type[\s\S]*handleSelectableEventActivation\(selectable,\s*event\)/,
+  'Calendar content modals must route Upcoming row clicks through the same event gesture handler as embedded panels.',
+);
+assert.match(
+  daveCalendarJs,
   /function\s+uniqueDateCellEvent\(dateText\)[\s\S]*eventsByDate\(\)\.get\(dateText\)[\s\S]*rows\.length === 1[\s\S]*function\s+handleDateCellEventActivation\(btn,\s*event\)[\s\S]*surface:\s*'grid'[\s\S]*dateCell:\s*true[\s\S]*function\s+handleDateCellEventDoubleClick\(btn,\s*event\)[\s\S]*surface:\s*'grid'[\s\S]*dateCell:\s*true/,
   'Calendar year/month date cells with exactly one visible event must behave as that event for click/double-click without rendering extra year symbols.',
 );
@@ -1166,6 +1196,21 @@ assert.match(
   daveDiaryJs,
   /const\s+DiaryEntryGestureMachine\s*=\s*\(\(\)\s*=>[\s\S]*tapTimeout:\s*\{\s*next:\s*'IDLE',\s*actions:\s*\['selectPendingTap',\s*'singleEntryAction'\]\s*\}[\s\S]*doubleTap:\s*\{\s*next:\s*'IDLE',\s*actions:\s*\['clearTapTimer',\s*'select',\s*'editTabs'\]\s*\}[\s\S]*action === 'singleEntryAction'[\s\S]*context\.options\?\.surface === 'week'[\s\S]*selectWeekDay\(context\.targetDate[\s\S]*true\)/,
   'Diary week entries must use the entry FSM where single click drills to the day view and double click opens edit.',
+);
+assert.match(
+  daveDiaryJs,
+  /function\s+selectEntryForGesture\(row,\s*options = \{\}\)[\s\S]*selectEntryById\(cleanId[\s\S]*state\.selection = \{[\s\S]*row,[\s\S]*function\s+entryGestureContext/,
+  'Diary gesture selection must retain future Upcoming rows that are outside the currently loaded week.',
+);
+assert.match(
+  daveDiaryJs,
+  /action === 'singleEntryAction'[\s\S]*context\.options\?\.type === 'upcoming'[\s\S]*openEditEntryInTabsIfAvailable\(\)[\s\S]*context\.options\?\.surface === 'week'/,
+  'Diary Upcoming single-click must open Edit Entry in the inline tabs when available, falling back to the modal.',
+);
+assert.match(
+  daveDiaryJs,
+  /diary-action-modal-body[\s\S]*addEventListener\('click'[\s\S]*data-diary-select-type[\s\S]*handleSelectableEntryActivation\(selectable,\s*event\)/,
+  'Diary content modals must route Upcoming row clicks through the same entry gesture handler as embedded panels.',
 );
 assert.doesNotMatch(
   daveDiaryJs,
