@@ -855,6 +855,102 @@ const EmailPage = (() => {
     });
   }
 
+  function searchFocusFieldFor(active, form) {
+    if (!active || !form) return null;
+    if (active.matches?.('[data-email-search-query]')) return { type: 'query' };
+    if (active.matches?.('[data-email-search-folder]')) return { type: 'folder' };
+    if (active.matches?.('[data-email-search-date]')) {
+      return { type: 'date', key: active.dataset.emailSearchDate || '' };
+    }
+    if (active.matches?.('[data-email-search-clear-date]')) {
+      return { type: 'clear-date', key: active.dataset.emailSearchClearDate || '' };
+    }
+    if (active.matches?.('[data-email-search-mode]')) {
+      return { type: 'mode', value: active.value || '' };
+    }
+    if (active.matches?.('[data-email-search-toggle]')) {
+      return { type: 'toggle', key: active.dataset.emailSearchToggle || '' };
+    }
+    const row = active.closest?.('[data-email-search-row]');
+    if (!row) return null;
+    const rowIndex = Array.from(form.querySelectorAll('[data-email-search-row]')).indexOf(row);
+    if (rowIndex < 0) return null;
+    if (active.matches?.('[data-email-search-term-operator]')) return { type: 'term-operator', rowIndex };
+    if (active.matches?.('[data-email-search-term-field]')) return { type: 'term-field', rowIndex };
+    if (active.matches?.('[data-email-search-term-value]')) return { type: 'term-value', rowIndex };
+    return null;
+  }
+
+  function captureSearchFocus() {
+    const active = document.activeElement;
+    const form = active?.closest?.('[data-email-search-form]');
+    if (!form) return null;
+    const field = searchFocusFieldFor(active, form);
+    if (!field) return null;
+    readSearchForm(form);
+    const root = active.closest?.('#email-secondary-bottom-body, #email-secondary-modal-body, #ultrawide-sidecar');
+    const snapshot = {
+      rootId: root?.id || '',
+      field,
+      selection: null,
+    };
+    if (
+      (active.type === 'text' || active.type === 'search')
+      && typeof active.selectionStart === 'number'
+      && typeof active.selectionEnd === 'number'
+    ) {
+      snapshot.selection = {
+        start: active.selectionStart,
+        end: active.selectionEnd,
+        direction: active.selectionDirection || 'none',
+      };
+    }
+    return snapshot;
+  }
+
+  function matchingControlByData(root, selector, dataKey, dataValue) {
+    return Array.from(root.querySelectorAll(selector)).find(node => node.dataset?.[dataKey] === dataValue) || null;
+  }
+
+  function searchFocusTarget(root, field) {
+    if (!root || !field) return null;
+    if (field.type === 'query') return root.querySelector('[data-email-search-query]');
+    if (field.type === 'folder') return root.querySelector('[data-email-search-folder]');
+    if (field.type === 'date') return matchingControlByData(root, '[data-email-search-date]', 'emailSearchDate', field.key);
+    if (field.type === 'clear-date') return matchingControlByData(root, '[data-email-search-clear-date]', 'emailSearchClearDate', field.key);
+    if (field.type === 'mode') {
+      return Array.from(root.querySelectorAll('[data-email-search-mode]')).find(node => node.value === field.value) || null;
+    }
+    if (field.type === 'toggle') return matchingControlByData(root, '[data-email-search-toggle]', 'emailSearchToggle', field.key);
+    if (field.type.startsWith('term-')) {
+      const row = root.querySelectorAll('[data-email-search-row]')[field.rowIndex];
+      if (!row) return null;
+      if (field.type === 'term-operator') return row.querySelector('[data-email-search-term-operator]');
+      if (field.type === 'term-field') return row.querySelector('[data-email-search-term-field]');
+      if (field.type === 'term-value') return row.querySelector('[data-email-search-term-value]');
+    }
+    return null;
+  }
+
+  function restoreSearchFocus(snapshot) {
+    if (!snapshot) return;
+    const restore = () => {
+      const root = snapshot.rootId ? el(snapshot.rootId) : document;
+      const target = searchFocusTarget(root || document, snapshot.field) || searchFocusTarget(document, snapshot.field);
+      if (!target || target.disabled) return;
+      target.focus({ preventScroll: true });
+      if (snapshot.selection && typeof target.setSelectionRange === 'function') {
+        try {
+          target.setSelectionRange(snapshot.selection.start, snapshot.selection.end, snapshot.selection.direction);
+        } catch (error) {
+          // Some input types do not allow programmatic selection; focus is the important part.
+        }
+      }
+    };
+    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(restore);
+    else window.setTimeout(restore, 0);
+  }
+
   function currentSearchPayload({ offset = 0, limit = MESSAGE_LIST_LIMIT } = {}) {
     const terms = normalizeSearchTerms(state.searchTerms).filter(term => term.value || term.field.endsWith('_at'));
     return {
@@ -3391,7 +3487,10 @@ const EmailPage = (() => {
     return `
       <label class="email-search-date-field">
         <span>${escHtml(label)}</span>
-        <input type="datetime-local" data-email-search-date="${escHtml(key)}" value="${escHtml(value)}" aria-label="${escHtml(label)}">
+        <span class="email-search-date-control">
+          <input type="datetime-local" data-email-search-date="${escHtml(key)}" value="${escHtml(value)}" aria-label="${escHtml(label)}">
+          <button class="email-search-clear-date" type="button" data-email-search-clear-date="${escHtml(key)}" aria-label="Clear ${escHtml(label)}" title="Clear ${escHtml(label)}"></button>
+        </span>
       </label>
     `;
   }
@@ -3562,6 +3661,7 @@ const EmailPage = (() => {
   }
 
   function renderSecondaryPanels() {
+    const focusSnapshot = captureSearchFocus();
     document.querySelectorAll('.email-secondary-tabs').forEach(host => {
       host.innerHTML = secondaryTabsHtml(host.closest('#ultrawide-sidecar') ? 'ultrawide' : 'secondary');
     });
@@ -3576,6 +3676,7 @@ const EmailPage = (() => {
         ? 'Email Security'
         : (state.secondaryTab === 'checks' ? 'Email Checks' : (state.secondaryTab === 'cache' ? 'Email Cache' : (state.secondaryTab === 'trusted' ? 'Email Trusted' : (state.secondaryTab === 'search' ? 'Email Search' : 'Email Folders'))));
     }
+    restoreSearchFocus(focusSnapshot);
   }
 
   function renderUltrawide() {
@@ -3583,6 +3684,7 @@ const EmailPage = (() => {
     const active = document.getElementById('tab-email')?.classList.contains('active');
     const match = window.matchMedia ? window.matchMedia(ULTRAWIDE_QUERY).matches : false;
     if (!active || !match) return;
+    const focusSnapshot = captureSearchFocus();
     const shell = document.createElement('div');
     shell.className = 'email-ultrawide-shell';
     shell.innerHTML = `
@@ -3598,6 +3700,7 @@ const EmailPage = (() => {
     window.UltrawideSidecar.clear();
     window.UltrawideSidecar.appendNode(shell);
     renderFolderControls();
+    restoreSearchFocus(focusSnapshot);
   }
 
   function renderAll(options = {}) {
@@ -4693,6 +4796,18 @@ const EmailPage = (() => {
         renderUltrawide();
         if (state.secondaryTab === 'cache') refreshCacheStatus({ silent: true });
         if (state.secondaryTab === 'trusted' && !state.trustedLoaded) refreshTrustedSenders({ silent: true });
+        return;
+      }
+      const searchClearDate = target.closest?.('[data-email-search-clear-date]');
+      if (searchClearDate) {
+        event.preventDefault();
+        const form = searchClearDate.closest('[data-email-search-form]');
+        const key = searchClearDate.dataset.emailSearchClearDate || '';
+        const input = Array.from(form?.querySelectorAll?.('[data-email-search-date]') || [])
+          .find(node => node.dataset.emailSearchDate === key);
+        if (input) input.value = '';
+        readSearchForm(form);
+        input?.focus?.({ preventScroll: true });
         return;
       }
       const searchAddRow = target.closest?.('[data-email-search-add-row]');

@@ -35,12 +35,12 @@
 }
 
 @media (min-width: 821px) {
-  .email-page__title-block {
+  .email-page__title-block h2 {
     display: none;
   }
 
   .email-page__header {
-    justify-content: flex-end;
+    justify-content: space-between;
   }
 }
 
@@ -155,6 +155,10 @@
   display: inline-flex;
   align-items: center;
   padding: 0 10px;
+}
+
+.email-folder-chip {
+  min-height: 32px;
 }
 
 .email-pill {
@@ -1377,6 +1381,12 @@
   min-width: 0;
 }
 
+.email-search-date-control {
+  display: block;
+  min-width: 0;
+  position: relative;
+}
+
 .email-search-date-field span {
   color: var(--text-dim);
   font-size: 10px;
@@ -1399,6 +1409,55 @@
   color: var(--text);
   font-size: 12px;
   padding: 0 9px;
+}
+
+.email-search-date-control input[type="datetime-local"] {
+  padding-right: 32px;
+}
+
+.email-search-date-control input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  opacity: 0;
+}
+
+.email-search-clear-date {
+  align-items: center;
+  background-color: rgba(var(--hub-accent-rgb), 0.12);
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.22);
+  border-radius: 50%;
+  box-sizing: border-box;
+  color: var(--text-dim);
+  cursor: pointer;
+  display: inline-flex;
+  height: 18px;
+  justify-content: center;
+  padding: 0;
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+}
+
+.email-search-clear-date::before {
+  background-color: currentColor;
+  content: "";
+  display: block;
+  height: 9px;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='black' d='M2.2 1.2 6 5l3.8-3.8 1 1L7 6l3.8 3.8-1 1L6 7l-3.8 3.8-1-1L5 6 1.2 2.2l1-1z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='black' d='M2.2 1.2 6 5l3.8-3.8 1 1L7 6l3.8 3.8-1 1L6 7l-3.8 3.8-1-1L5 6 1.2 2.2l1-1z'/%3E%3C/svg%3E");
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 9px 9px;
+  mask-size: 9px 9px;
+  width: 9px;
+}
+
+.email-search-clear-date:hover,
+.email-search-clear-date:focus-visible {
+  background-color: rgba(var(--hub-accent-rgb), 0.22);
+  border-color: rgba(var(--hub-accent-rgb), 0.5);
+  color: var(--text);
+  outline: none;
 }
 
 .email-search-form select {
