@@ -770,6 +770,7 @@ assert.match(
   /js\/dave\/personal-search\.js/,
   'Shared Personal search JS must be loaded.',
 );
+const personalSearchJs = fs.readFileSync(path.resolve(here, '../js/dave/personal-search.js'), 'utf8');
 assert.match(
   activeBrowserObserver,
   /DIAGNOSTIC_SOURCES = new Set\(\['gpu_activity_sound', 'personal_search', 'personal_graph'\]\)/,
@@ -796,9 +797,29 @@ assert.match(
   'Personal graph links must use the shared HubModal and HubDialogs house style.',
 );
 assert.match(
-  fs.readFileSync(path.resolve(here, '../js/dave/personal-search.js'), 'utf8'),
+  personalSearchJs,
   /BlueprintsPersonalGraphLinks/,
   'Shared Personal search UI must expose graph-link automation state.',
+);
+assert.match(
+  personalSearchJs,
+  /url\.searchParams\.set\('include_vector', options\.includeVector === false \? 'false' : 'true'\)[\s\S]*url\.searchParams\.set\('rerank_results', options\.rerankResults === false \? 'false' : 'true'\)[\s\S]*url\.searchParams\.set\('sync', options\.sync === true \? 'true' : 'false'\)/,
+  'Shared Personal search requests must default to no sync while still allowing explicit vector/rerank options.',
+);
+assert.match(
+  personalSearchJs,
+  /const payload = await fetchSearch\(surface, data, \{\s*includeVector:\s*false,\s*rerankResults:\s*false,\s*sync:\s*false,\s*\}\)[\s\S]*void runEnhancedSearch\(surface, requestId, payload\)/,
+  'Shared Personal search must render a fast exact/FTS pass before lazy vector/rerank enrichment.',
+);
+assert.match(
+  personalSearchJs,
+  /function\s+shouldRunEnhancedSearch\(surface, data\)[\s\S]*dateWindowDays\(effectiveRange\(surface, data\)\)[\s\S]*days != null && days <= 31[\s\S]*return false/,
+  'Short date-range Personal searches must stay exact/FTS-only instead of spawning vector/rerank work.',
+);
+assert.doesNotMatch(
+  personalSearchJs,
+  /fetchSearchPayload\(surface, data, \{ tag: tags\[0\], sync: true \}\)/,
+  'Shared Personal search tag filtering must not force an interactive sync request.',
 );
 assert.match(
   hubMenuJs,

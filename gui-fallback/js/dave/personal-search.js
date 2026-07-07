@@ -60,9 +60,11 @@ const BlueprintsPersonalSearch = (() => {
         timeEnd: '',
         allDay: true,
         loading: false,
+        loadingEnhanced: false,
         error: '',
         results: [],
         subsystems: {},
+        requestId: 0,
       };
     }
     return state.surfaces[surface];
@@ -176,6 +178,23 @@ const BlueprintsPersonalSearch = (() => {
     return Boolean(range.start || range.end);
   }
 
+  function dateWindowDays(range) {
+    const start = cleanDate(range?.start || range?.end || '');
+    const end = cleanDate(range?.end || range?.start || '');
+    if (!start || !end) return null;
+    const startTime = Date.parse(`${start}T00:00:00Z`);
+    const endTime = Date.parse(`${end}T00:00:00Z`);
+    if (!Number.isFinite(startTime) || !Number.isFinite(endTime)) return null;
+    return Math.abs(endTime - startTime) / 86400000;
+  }
+
+  function shouldRunEnhancedSearch(surface, data) {
+    if (!data.query.trim()) return false;
+    const days = dateWindowDays(effectiveRange(surface, data));
+    if (days != null && days <= 31) return false;
+    return true;
+  }
+
   function apiUrl(surface, data, options = {}) {
     const url = new URL('/api/v1/personal/search', window.location.origin);
     if (data.query) url.searchParams.set('q', data.query);
@@ -184,9 +203,9 @@ const BlueprintsPersonalSearch = (() => {
     if (range.start) url.searchParams.set('date_start', range.start);
     if (range.end) url.searchParams.set('date_end', range.end);
     url.searchParams.set('limit', '40');
-    url.searchParams.set('include_vector', 'true');
-    url.searchParams.set('rerank_results', 'true');
-    url.searchParams.set('sync', options.sync === false ? 'false' : 'true');
+    url.searchParams.set('include_vector', options.includeVector === false ? 'false' : 'true');
+    url.searchParams.set('rerank_results', options.rerankResults === false ? 'false' : 'true');
+    url.searchParams.set('sync', options.sync === true ? 'true' : 'false');
     return `${url.pathname}${url.search}`;
   }
 
@@ -417,21 +436,58 @@ const BlueprintsPersonalSearch = (() => {
     return response.json();
   }
 
-  async function fetchSearch(surface, data) {
+  async function fetchSearch(surface, data, options = {}) {
     const tags = selectedTags(surface);
     if (tags.length <= 1) {
-      return fetchSearchPayload(surface, data, { tag: tags[0] || '' });
+      return fetchSearchPayload(surface, data, { ...options, tag: tags[0] || '' });
     }
-    const first = await fetchSearchPayload(surface, data, { tag: tags[0], sync: true });
-    const rest = await Promise.all(tags.slice(1).map(tag => fetchSearchPayload(surface, data, { tag, sync: false })));
-    return mergeSearchPayloads([first, ...rest]);
+    const payloads = await Promise.all(tags.map(tag => fetchSearchPayload(surface, data, { ...options, tag })));
+    return mergeSearchPayloads(payloads);
+  }
+
+  async function runEnhancedSearch(surface, requestId, fastPayload) {
+    const data = surfaceState(surface);
+    if (!shouldRunEnhancedSearch(surface, data)) return;
+    data.loadingEnhanced = true;
+    try {
+      const enhanced = await fetchSearch(surface, data, {
+        includeVector: true,
+        rerankResults: true,
+        sync: false,
+      });
+      if (requestId !== data.requestId) return;
+      const merged = mergeSearchPayloads([fastPayload, enhanced]);
+      data.results = Array.isArray(merged.results) ? merged.results : [];
+      data.subsystems = {
+        ...(merged.subsystems || {}),
+        enhanced: enhanced.subsystems || {},
+      };
+      setStatus(surface, `${merged.count || 0} result${merged.count === 1 ? '' : 's'}`);
+      renderResults(surface);
+    } catch (error) {
+      if (requestId !== data.requestId) return;
+      data.subsystems = {
+        ...(data.subsystems || {}),
+        enhanced: { status: 'error', error: error.message || String(error) },
+      };
+    } finally {
+      if (requestId === data.requestId) {
+        data.loadingEnhanced = false;
+        if (window.BodyShade && typeof window.BodyShade.scheduleSizeFillTable === 'function') {
+          window.BodyShade.scheduleSizeFillTable();
+        }
+      }
+    }
   }
 
   async function run(surface) {
     const data = surfaceState(surface);
+    const requestId = ++data.requestId;
     if (!data.query && !data.restrictToRange && !selectedTags(surface).length && !hasEffectiveRange(surface, data)) {
       data.results = [];
       data.error = '';
+      data.loading = false;
+      data.loadingEnhanced = false;
       setStatus(surface, 'Ready');
       renderResults(surface);
       return;
@@ -440,20 +496,31 @@ const BlueprintsPersonalSearch = (() => {
     data.error = '';
     setStatus(surface, 'Searching');
     try {
-      const payload = await fetchSearch(surface, data);
+      const payload = await fetchSearch(surface, data, {
+        includeVector: false,
+        rerankResults: false,
+        sync: false,
+      });
+      if (requestId !== data.requestId) return;
       data.results = Array.isArray(payload.results) ? payload.results : [];
       data.subsystems = payload.subsystems || {};
       setStatus(surface, `${payload.count || 0} result${payload.count === 1 ? '' : 's'}`);
+      renderResults(surface);
+      renderFilterSummaries(surface);
+      void runEnhancedSearch(surface, requestId, payload);
     } catch (error) {
+      if (requestId !== data.requestId) return;
       data.results = [];
       data.error = error.message || String(error);
       setStatus(surface, data.error, 'error');
     } finally {
-      data.loading = false;
-      renderResults(surface);
-      renderFilterSummaries(surface);
-      if (window.BodyShade && typeof window.BodyShade.scheduleSizeFillTable === 'function') {
-        window.BodyShade.scheduleSizeFillTable();
+      if (requestId === data.requestId) {
+        data.loading = false;
+        renderResults(surface);
+        renderFilterSummaries(surface);
+        if (window.BodyShade && typeof window.BodyShade.scheduleSizeFillTable === 'function') {
+          window.BodyShade.scheduleSizeFillTable();
+        }
       }
     }
   }
@@ -671,6 +738,7 @@ const BlueprintsPersonalSearch = (() => {
         filter_surface: filterSurfaceFor(key),
         selected_tags: selectedTags(key),
         loading: value.loading,
+        loading_enhanced: value.loadingEnhanced,
         error: value.error,
         result_count: value.results.length,
         first_result: value.results[0]?.document_id || '',
