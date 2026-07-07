@@ -178,21 +178,8 @@ const BlueprintsPersonalSearch = (() => {
     return Boolean(range.start || range.end);
   }
 
-  function dateWindowDays(range) {
-    const start = cleanDate(range?.start || range?.end || '');
-    const end = cleanDate(range?.end || range?.start || '');
-    if (!start || !end) return null;
-    const startTime = Date.parse(`${start}T00:00:00Z`);
-    const endTime = Date.parse(`${end}T00:00:00Z`);
-    if (!Number.isFinite(startTime) || !Number.isFinite(endTime)) return null;
-    return Math.abs(endTime - startTime) / 86400000;
-  }
-
   function shouldRunEnhancedSearch(surface, data) {
-    if (!data.query.trim()) return false;
-    const days = dateWindowDays(effectiveRange(surface, data));
-    if (days != null && days <= 31) return false;
-    return true;
+    return Boolean(data.query.trim());
   }
 
   function apiUrl(surface, data, options = {}) {

@@ -813,8 +813,13 @@ assert.match(
 );
 assert.match(
   personalSearchJs,
-  /function\s+shouldRunEnhancedSearch\(surface, data\)[\s\S]*dateWindowDays\(effectiveRange\(surface, data\)\)[\s\S]*days != null && days <= 31[\s\S]*return false/,
-  'Short date-range Personal searches must stay exact/FTS-only instead of spawning vector/rerank work.',
+  /function\s+shouldRunEnhancedSearch\(surface, data\)\s*\{\s*return Boolean\(data\.query\.trim\(\)\);\s*\}/,
+  'Shared Personal search must run lazy vector/rerank enrichment for every non-empty query.',
+);
+assert.doesNotMatch(
+  personalSearchJs,
+  /dateWindowDays|days <= 31/,
+  'Shared Personal search must not suppress lazy enrichment just because the date range is short.',
 );
 assert.doesNotMatch(
   personalSearchJs,
