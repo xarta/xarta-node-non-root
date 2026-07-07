@@ -6,6 +6,22 @@ const EmailPage = (() => {
   const API_ROOT = '/api/v1/personal/email';
   const ULTRAWIDE_QUERY = '(min-width: 2400px) and (max-height: 1280px)';
   const VIEW_IDS = ['plain', 'html', 'markdown', 'raw'];
+  const EMAIL_SECONDARY_TABS = [
+    ['checks', 'Checks'],
+    ['security', 'Security'],
+    ['cache', 'Cache'],
+    ['trusted', 'Trusted'],
+    ['search', 'Search'],
+  ];
+  const EMAIL_SECONDARY_TAB_IDS = new Set(['folders', ...EMAIL_SECONDARY_TABS.map(([id]) => id)]);
+  const EMAIL_SECONDARY_TAB_TITLES = new Map([
+    ['folders', 'Email Folders'],
+    ['checks', 'Email Checks'],
+    ['security', 'Email Security'],
+    ['cache', 'Email Cache'],
+    ['trusted', 'Email Trusted'],
+    ['search', 'Email Search'],
+  ]);
   const MESSAGE_LIST_LIMIT = 100;
   const MESSAGE_PREFETCH_AHEAD = 100;
   const MESSAGE_SCROLL_LOAD_PX = 320;
@@ -3709,18 +3725,16 @@ const EmailPage = (() => {
   }
 
   function secondaryTabsHtml(layout = 'secondary') {
-    const tabs = [
-      ['checks', 'Checks'],
-      ['security', 'Security'],
-      ['cache', 'Cache'],
-      ['trusted', 'Trusted'],
-      ['search', 'Search'],
-    ];
-    return tabs.map(([id, label]) => (
+    return EMAIL_SECONDARY_TABS.map(([id, label]) => (
       id === 'search'
         ? searchTabDropdownHtml(layout)
         : `<button type="button" data-email-secondary-tab="${escHtml(id)}" data-active="${state.secondaryTab === id ? 'true' : 'false'}" data-email-secondary-layout="${escHtml(layout)}">${escHtml(label)}</button>`
     )).join('');
+  }
+
+  function normalizeSecondaryTab(tabId) {
+    const clean = String(tabId || '').trim();
+    return EMAIL_SECONDARY_TAB_IDS.has(clean) ? clean : 'folders';
   }
 
   function secondaryBodyHtml() {
@@ -3743,11 +3757,7 @@ const EmailPage = (() => {
     const modal = el('email-secondary-modal-body');
     if (modal) modal.innerHTML = secondaryBodyHtml();
     const modalTitle = el('email-secondary-modal-title');
-    if (modalTitle) {
-      modalTitle.textContent = state.secondaryTab === 'security'
-        ? 'Email Security'
-        : (state.secondaryTab === 'checks' ? 'Email Checks' : (state.secondaryTab === 'cache' ? 'Email Cache' : (state.secondaryTab === 'trusted' ? 'Email Trusted' : (state.secondaryTab === 'search' ? 'Email Search' : 'Email Folders'))));
-    }
+    if (modalTitle) modalTitle.textContent = EMAIL_SECONDARY_TAB_TITLES.get(state.secondaryTab) || 'Email Folders';
     restoreSearchFocus(focusSnapshot);
   }
 
@@ -3773,6 +3783,13 @@ const EmailPage = (() => {
     window.UltrawideSidecar.appendNode(shell);
     renderFolderControls();
     restoreSearchFocus(focusSnapshot);
+  }
+
+  function scheduleUltrawideRender() {
+    const run = () => renderUltrawide();
+    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(run);
+    else window.setTimeout(run, 0);
+    window.setTimeout(run, 250);
   }
 
   function renderAll(options = {}) {
@@ -3878,6 +3895,7 @@ const EmailPage = (() => {
     if (state.loading) return state.status;
     if (state.loaded && !options.force) {
       renderUltrawide();
+      scheduleUltrawideRender();
       return state.status;
     }
     const selectedFolder = options.folder || (state.loaded ? state.folder : 'INBOX') || 'INBOX';
@@ -3912,6 +3930,7 @@ const EmailPage = (() => {
       state.loaded = true;
       setStatus('Email middleware ready', 'ok');
       renderAll({ messageListAnchor: listAnchor });
+      scheduleUltrawideRender();
       scheduleMessagePagePrefetch();
       refreshCacheStatus({ silent: true });
       ensureHealthPoll();
@@ -4256,48 +4275,51 @@ const EmailPage = (() => {
     return true;
   }
 
-  async function browseFolders() {
-    if (!state.loaded) await load();
-    state.secondaryTab = 'folders';
+  function refreshSecondaryTabData(tabId) {
+    const clean = normalizeSecondaryTab(tabId);
+    if (clean === 'cache') refreshCacheStatus({ silent: true });
+    if (clean === 'trusted' && !state.trustedLoaded) refreshTrustedSenders({ silent: true });
+  }
+
+  function activateSecondaryTab(tabId) {
+    state.secondaryTab = normalizeSecondaryTab(tabId);
     renderSecondaryPanels();
+    renderUltrawide();
+    refreshSecondaryTabData(state.secondaryTab);
+    return true;
+  }
+
+  function openSecondaryModalElement() {
     const modal = el('email-secondary-modal');
     if (modal) {
       if (typeof HubModal !== 'undefined') HubModal.open(modal);
       else if (typeof modal.showModal === 'function' && !modal.open) modal.showModal();
+      return true;
     }
-    renderUltrawide();
-    return true;
+    return false;
   }
 
-  async function safeChecks() {
-    if (!state.loaded) await load();
-    await refreshHealth();
-    state.secondaryTab = 'checks';
-    renderSecondaryPanels();
-    const modal = el('email-secondary-modal');
-    if (modal) {
-      if (typeof HubModal !== 'undefined') HubModal.open(modal);
-      else if (typeof modal.showModal === 'function' && !modal.open) modal.showModal();
-    }
-    renderUltrawide();
-    return true;
+  function focusSecondaryModalTab(tabId) {
+    const clean = normalizeSecondaryTab(tabId);
+    window.requestAnimationFrame(() => {
+      const modal = el('email-secondary-modal');
+      if (!modal || !modal.open) return;
+      let target = null;
+      if (clean !== 'folders') {
+        target = Array.from(modal.querySelectorAll('[data-email-secondary-tab]'))
+          .find(node => node.dataset.emailSecondaryTab === clean) || null;
+      }
+      if (!target && clean === 'folders') {
+        target = modal.querySelector('[data-email-folder-menu-toggle], [data-email-folder-name]');
+      }
+      if (!target) {
+        target = modal.querySelector('button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      }
+      target?.focus?.({ preventScroll: true });
+    });
   }
 
-  async function searchPanel() {
-    if (!state.loaded) await load();
-    state.secondaryTab = 'search';
-    renderSecondaryPanels();
-    const modal = el('email-secondary-modal');
-    if (modal) {
-      if (typeof HubModal !== 'undefined') HubModal.open(modal);
-      else if (typeof modal.showModal === 'function' && !modal.open) modal.showModal();
-    }
-    renderUltrawide();
-    return true;
-  }
-
-  async function securityChecks() {
-    if (!state.loaded) await load();
+  async function prepareSecurityChecks() {
     const uid = activeMessageUid();
     if (uid && !state.message?.security?.available) {
       const runId = securityRunId();
@@ -4321,15 +4343,45 @@ const EmailPage = (() => {
     } else if (!uid) {
       setStatus('Open a message to view security results', 'warn');
     }
-    state.secondaryTab = 'security';
-    renderSecondaryPanels();
-    const modal = el('email-secondary-modal');
-    if (modal) {
-      if (typeof HubModal !== 'undefined') HubModal.open(modal);
-      else if (typeof modal.showModal === 'function' && !modal.open) modal.showModal();
-    }
-    renderUltrawide();
+  }
+
+  async function openSecondaryModalTab(tabId = 'folders') {
+    const clean = normalizeSecondaryTab(tabId);
+    if (!state.loaded) await load();
+    if (clean === 'checks') await refreshHealth();
+    if (clean === 'security') await prepareSecurityChecks();
+    activateSecondaryTab(clean);
+    openSecondaryModalElement();
+    focusSecondaryModalTab(clean);
     return true;
+  }
+
+  async function browseFolders() {
+    return openSecondaryModalTab('folders');
+  }
+
+  async function safeChecks() {
+    return openSecondaryModalTab('checks');
+  }
+
+  async function searchPanel() {
+    return openSecondaryModalTab('search');
+  }
+
+  async function securityChecks() {
+    return openSecondaryModalTab('security');
+  }
+
+  async function cachePanel() {
+    return openSecondaryModalTab('cache');
+  }
+
+  async function trustedPanel() {
+    return openSecondaryModalTab('trusted');
+  }
+
+  async function openSecondaryPanel(tabId = 'folders') {
+    return openSecondaryModalTab(tabId);
   }
 
   async function forceRefreshMessage() {
@@ -4613,6 +4665,7 @@ const EmailPage = (() => {
   }
 
   function handleAction(action) {
+    if (String(action || '').startsWith('secondary-')) return openSecondaryModalTab(String(action || '').slice('secondary-'.length));
     if (action === 'refresh') return refresh();
     if (action === 'browse-folders') return browseFolders();
     if (action === 'view-plain') return setView('plain');
@@ -4890,11 +4943,7 @@ const EmailPage = (() => {
       const tabBtn = target.closest?.('[data-email-secondary-tab]');
       if (tabBtn) {
         event.preventDefault();
-        state.secondaryTab = tabBtn.dataset.emailSecondaryTab || 'folders';
-        renderSecondaryPanels();
-        renderUltrawide();
-        if (state.secondaryTab === 'cache') refreshCacheStatus({ silent: true });
-        if (state.secondaryTab === 'trusted' && !state.trustedLoaded) refreshTrustedSenders({ silent: true });
+        activateSecondaryTab(tabBtn.dataset.emailSecondaryTab || 'folders');
         return;
       }
       const searchClearDate = target.closest?.('[data-email-search-clear-date]');
@@ -5055,6 +5104,10 @@ const EmailPage = (() => {
     }
     window.addEventListener('resize', renderUltrawide);
     window.addEventListener('orientationchange', renderUltrawide);
+    window.addEventListener('load', scheduleUltrawideRender);
+    document.addEventListener('blueprints:page-state-changed', event => {
+      if (event.detail?.page?.tab === 'email') scheduleUltrawideRender();
+    });
   }
 
   function snapshot() {
@@ -5135,6 +5188,9 @@ const EmailPage = (() => {
     safeChecks,
     searchPanel,
     securityChecks,
+    cachePanel,
+    trustedPanel,
+    openSecondaryPanel,
     setView,
     toggleList,
     viewPlain: () => setView('plain'),
@@ -5161,5 +5217,13 @@ if (typeof DaveMenuConfig !== 'undefined') {
     'email.safeChecks': () => EmailPage.safeChecks(),
     'email.search': () => EmailPage.searchPanel(),
     'email.security': () => EmailPage.securityChecks(),
+    'email.cache': () => EmailPage.cachePanel(),
+    'email.trusted': () => EmailPage.trustedPanel(),
+    'email.secondary.folders': () => EmailPage.openSecondaryPanel('folders'),
+    'email.secondary.checks': () => EmailPage.openSecondaryPanel('checks'),
+    'email.secondary.security': () => EmailPage.openSecondaryPanel('security'),
+    'email.secondary.cache': () => EmailPage.openSecondaryPanel('cache'),
+    'email.secondary.trusted': () => EmailPage.openSecondaryPanel('trusted'),
+    'email.secondary.search': () => EmailPage.openSecondaryPanel('search'),
   });
 }

@@ -360,14 +360,14 @@
 
 .email-main-surface {
   display: grid;
-  grid-template-columns: 260px minmax(260px, 380px) minmax(0, 1fr);
+  grid-template-columns: minmax(260px, 380px) minmax(0, 1fr);
   gap: 10px;
   min-height: 0;
   padding: 10px;
 }
 
 #tab-email.email-list-collapsed .email-main-surface {
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 #tab-email.email-list-collapsed .email-list-panel {
@@ -381,6 +381,10 @@
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
+}
+
+.email-main-folders {
+  display: none;
 }
 
 .email-panel-head {

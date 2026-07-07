@@ -36,7 +36,7 @@ test('PIM Email tab follows the Blueprints managed-scroll shell contract', () =>
     tabHtml.indexOf('class="body-shade-handle"') < tabHtml.indexOf('<div class="tab-scroll-shell">'),
     'Email Body Shade handle must sit before the managed scroll shell.',
   );
-  assert.match(tabHtml, /class="email-folders-panel email-main-folders"/, 'Normal desktop must have main-surface folder navigation.');
+  assert.match(tabHtml, /class="email-folders-panel email-main-folders"/, 'Email must keep the reusable folder panel host for modal/special layouts.');
   assert.match(tabHtml, /class="email-secondary-under-panel"/, 'Desktop portrait must have the bottom secondary panel.');
   assert.match(tabHtml, /data-email-folder-controls-host="main"/, 'Main folder panel must expose toolbar-level folder controls.');
   assert.match(tabHtml, /data-email-folder-controls-host="secondary"/, 'Secondary folder tabs must expose toolbar-level folder controls.');
@@ -93,6 +93,16 @@ test('PIM Email viewport rules match Dave and Kanban precedent', () => {
   );
   assert.match(
     emailCss,
+    /\.email-main-surface\s*\{[\s\S]*grid-template-columns:\s*minmax\(260px,\s*380px\)\s+minmax\(0,\s*1fr\)/,
+    'Normal desktop Email must use list and message columns only.',
+  );
+  assert.match(
+    emailCss,
+    /\.email-main-folders\s*\{[\s\S]*display:\s*none/,
+    'Normal desktop Email must not show the persistent folders panel.',
+  );
+  assert.match(
+    emailCss,
     /\.email-page__actions\s*>\s*\.email-icon-btn\s*\{[\s\S]*width:\s*var\(--email-action-size\)[\s\S]*height:\s*var\(--email-action-size\)/,
     'Email browse/refresh buttons must match the strip beside them.',
   );
@@ -122,6 +132,8 @@ test('PIM Email viewport rules match Dave and Kanban precedent', () => {
     'Ultrawide must suppress desktop main/bottom folder panels for the right sidecar.',
   );
   assert.match(emailCss, /\.email-ultrawide-shell\s*\{[\s\S]*grid-template-columns:\s*42px\s+minmax\(0,\s*1fr\)/);
+  assert.match(emailJs, /function scheduleUltrawideRender\(\)/, 'Email must defer an ultrawide sidecar render after initial page activation.');
+  assert.match(emailJs, /blueprints:page-state-changed[\s\S]*scheduleUltrawideRender/, 'Email initial-load sidecar render must run after app page-state activation.');
   assert.match(
     emailCss,
     /#tab-email\.email-list-collapsed\s+\.email-list-panel\s*\{[\s\S]*display:\s*none/,
@@ -149,11 +161,15 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
     'email.viewMarkdown',
     'email.viewRaw',
     'email.toggleList',
-    'email.safeChecks',
-    'email.security',
+    'email.secondary.checks',
+    'email.secondary.security',
+    'email.secondary.cache',
+    'email.secondary.trusted',
+    'email.secondary.search',
   ]) {
     assert.ok(daveMenuJs.includes(`fn: '${fn}'`) || emailJs.includes(`'${fn}'`), `${fn} must be wired.`);
   }
+  assert.match(daveMenuJs, /const DaveEmailSecondaryPanelItems = \[[\s\S]*email\.secondary\.checks[\s\S]*email\.secondary\.security[\s\S]*email\.secondary\.cache[\s\S]*email\.secondary\.trusted[\s\S]*email\.secondary\.search/, 'Email secondary panels must be grouped as context-menu function items.');
   assert.match(appJs, /tab === 'email'[\s\S]*BlueprintsEmailPage\.load\(\)/, 'switchTab must lazy-load Email.');
   assert.match(appJs, /email:\s*typeof window\.BlueprintsEmailPage\?\.snapshot === 'function'/, 'Active Browser automation reports must include Email snapshot state.');
   assert.match(activeBrowserObserverJs, /const emailSnapshot = typeof window\.BlueprintsEmailPage\?\.snapshot === 'function'/, 'Active Browser observer reports must normalize Email snapshot state.');
@@ -165,6 +181,8 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /SEARCH_FIELDS = \[[\s\S]*\['from', 'From'\][\s\S]*\['recipients', 'Recipients'\][\s\S]*\['subject', 'Subject'\][\s\S]*\['content', 'Body'\][\s\S]*\['image', 'Images'\][\s\S]*\['sent_at', 'Sent date'\][\s\S]*\['received_at', 'Received date'\]/, 'Email Search must expose production field targeting.');
   assert.match(emailJs, /SEARCH_MODE_OPTIONS = \[[\s\S]*\['simple', 'Simple'\][\s\S]*\['advanced', 'Advanced'\]/, 'Email Search must define simple and advanced modes.');
   assert.match(emailJs, /function searchTabDropdownHtml\([\s\S]*data-email-search-mode-dropdown[\s\S]*data-email-search-mode-option/, 'Email Search mode must live in the secondary split dropdown.');
+  assert.match(emailJs, /function openSecondaryModalTab\(tabId = 'folders'\)/, 'Email secondary context functions must open the shared folder/check/search modal.');
+  assert.match(emailJs, /function focusSecondaryModalTab\(tabId\)/, 'Email secondary modal actions must focus the chosen tab when opened from the context menu.');
   assert.match(emailJs, /function setSearchMode\(mode\)/, 'Email Search dropdown options must switch modes through a dedicated setter.');
   assert.match(emailJs, /function syncSearchModeControls\(\)/, 'Email Search mode dropdowns must update visible panels without stale mode labels.');
   assert.doesNotMatch(emailJs, /role="radiogroup" aria-label="Search mode"/, 'Email Search must not keep the old in-panel Simple/Advanced radio group.');

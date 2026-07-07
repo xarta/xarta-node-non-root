@@ -21,6 +21,14 @@ const DaveActionIcons = {
     archive: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M4 4h16v5H4V4zm2 7h12v9H6v-9zm3 2v2h6v-2H9zM6 6v1h12V6H6z%22/%3E%3C/svg%3E',
 };
 
+const DaveEmailSecondaryPanelItems = [
+    { id: 'email-safe-checks', label: 'Checks', icon: DaveActionIcons.shield, pageLabel: 'Email Checks', parent: 'dave-layout', order: 7, fn: 'email.secondary.checks', activeOn: ['email'] },
+    { id: 'email-security', label: 'Security', icon: DaveActionIcons.shield, pageLabel: 'Email Security', parent: 'dave-layout', order: 8, fn: 'email.secondary.security', activeOn: ['email'] },
+    { id: 'email-cache', label: 'Cache', icon: DaveActionIcons.archive, pageLabel: 'Email Cache', parent: 'dave-layout', order: 9, fn: 'email.secondary.cache', activeOn: ['email'] },
+    { id: 'email-trusted', label: 'Trusted', icon: DaveActionIcons.shield, pageLabel: 'Email Trusted', parent: 'dave-layout', order: 10, fn: 'email.secondary.trusted', activeOn: ['email'] },
+    { id: 'email-search', label: 'Search', icon: DaveActionIcons.filter, pageLabel: 'Email Search', parent: 'dave-layout', order: 11, fn: 'email.secondary.search', activeOn: ['email'] },
+];
+
 const DaveMenuConfig = createHubMenu({
     storageKey:      'blueprintsDaveMenuConfig',
     group:           'dave',
@@ -48,10 +56,7 @@ const DaveMenuConfig = createHubMenu({
                     'email-view-raw',
                     'email-toggle-list',
                 ],
-                [
-                    'email-safe-checks',
-                    'email-security',
-                ],
+                DaveEmailSecondaryPanelItems.map(item => item.id),
             ]
             : activeId === 'calender'
             ? [
@@ -210,8 +215,7 @@ const DaveMenuConfig = createHubMenu({
         { id: 'email-view-markdown', label: 'Mode Markdown', icon: DaveActionIcons.document, pageLabel: 'Markdown Email View', parent: 'dave-layout', order: 4, fn: 'email.viewMarkdown', activeOn: ['email'] },
         { id: 'email-view-raw', label: 'Mode Raw', icon: DaveActionIcons.document, pageLabel: 'Safe Raw Email View', parent: 'dave-layout', order: 5, fn: 'email.viewRaw', activeOn: ['email'] },
         { id: 'email-toggle-list', label: 'Toggle List', icon: DaveActionIcons.document, pageLabel: 'Collapse Or Expand Email List', parent: 'dave-layout', order: 6, fn: 'email.toggleList', activeOn: ['email'] },
-        { id: 'email-safe-checks', label: 'Safe Checks', icon: DaveActionIcons.shield, pageLabel: 'Email Safe Checks', parent: 'dave-layout', order: 7, fn: 'email.safeChecks', activeOn: ['email'] },
-        { id: 'email-security', label: 'Security', icon: DaveActionIcons.shield, pageLabel: 'Email Security', parent: 'dave-layout', order: 8, fn: 'email.security', activeOn: ['email'] },
+        ...DaveEmailSecondaryPanelItems,
         { id: 'imports-refresh', label: 'Refresh', icon: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M13 3a9 9 0 1 0 8.95 10h-2.02A7 7 0 1 1 12 5a6.97 6.97 0 0 1 4.24 1.43L13 10h8V2l-3.33 3.33A8.97 8.97 0 0 0 13 3z%22/%3E%3C/svg%3E', pageLabel: 'Refresh Imports', parent: 'dave-layout', order: 0, fn: 'imports.refresh', activeOn: ['imports'] },
         { id: 'imports-source-doc', label: 'Open Source', icon: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M6 2h8l5 5v15H6V2zm7 1.5V8h4.5L13 3.5zM8 12h8v2H8v-2zm0 4h8v2H8v-2z%22/%3E%3C/svg%3E', pageLabel: 'Open Imports Source', parent: 'dave-layout', order: 1, fn: 'imports.openInterestsDoc', activeOn: ['imports'] },
         { id: 'imports-latest-proof', label: 'Open Proof', icon: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath fill=%22black%22 d=%22M5 3h14v18H5V3zm3 4h8v2H8V7zm0 4h8v2H8v-2zm0 4h5v2H8v-2z%22/%3E%3C/svg%3E', pageLabel: 'Open Latest Proof', parent: 'dave-layout', order: 2, fn: 'imports.openLatestProof', activeOn: ['imports'] },
