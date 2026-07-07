@@ -1464,6 +1464,16 @@ assert.match(
 );
 assert.match(
   daveDiaryJs,
+  /function\s+inlineDiaryTabIs\(tabId\)[\s\S]*data-personal-filter-body[\s\S]*function\s+activateInlineDiaryTab\(tabId\)[\s\S]*inlineDiaryTabHosts\(\)[\s\S]*function\s+clearSelectedEntry\(options = \{\}\)[\s\S]*editModalWasActive\s*=\s*activeActionModalView\(\) === 'edit-entry'[\s\S]*editInlineWasActive\s*=\s*inlineDiaryTabIs\('edit-entry'\)[\s\S]*if\s*\(editInlineWasActive\)\s*activateInlineDiaryTab\('new-entry'\)[\s\S]*if\s*\(editModalWasActive\)/,
+  'Diary selection clearing must only move Edit Entry back to New Entry when Edit Entry was the active inline/modal tab.',
+);
+assert.doesNotMatch(
+  functionSlice(daveDiaryJs, 'clearSelectedEntry'),
+  /if\s*\(options\.moveEditToNew !== false\)\s*\{\s*activateInlineDiaryTab\('new-entry'\)/,
+  'Diary selection clearing must not unconditionally focus New Entry while the user is in Filters, Upcoming, Search, or another tab.',
+);
+assert.match(
+  daveDiaryJs,
   /preserveExistingValues[\s\S]*editingForm\?\.dataset\.diaryEditingEntryId\s*===\s*eventId[\s\S]*const\s+valueFor\s*=[\s\S]*data-diary-editing-entry-id/,
   'Diary edit-entry forms must reset from the newly selected event when double-clicking between different entries.',
 );

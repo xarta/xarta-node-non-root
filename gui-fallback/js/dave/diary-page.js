@@ -743,17 +743,31 @@ const DiaryPage = (() => {
     [80, 220, 520].forEach(delay => window.setTimeout(refresh, delay));
   }
 
+  function inlineDiaryTabHosts() {
+    return [
+      document.getElementById('diary-filter-inline-panel'),
+      document.querySelector('#ultrawide-sidecar-body [data-personal-filter-host][data-personal-filter-surface="diary"]'),
+    ].filter(Boolean);
+  }
+
+  function inlineDiaryTabIs(tabId) {
+    const clean = String(tabId || '');
+    return inlineDiaryTabHosts().some(host => {
+      if (!diaryTabHostVisible(host)) return false;
+      const active = host.dataset.personalFilterTab
+        || host.querySelector('[data-personal-filter-body]')?.dataset.personalFilterBody
+        || '';
+      return active === clean;
+    });
+  }
+
   function activateInlineDiaryTab(tabId) {
     if (!window.PersonalFilters?.activateTab) return false;
     if (window.UltrawideSidecar?.isVisible?.() && window.PersonalFilters?.syncUltrawideSidecar) {
       const sidecarHost = document.querySelector('#ultrawide-sidecar-body [data-personal-filter-host][data-personal-filter-surface="diary"]');
       if (!diaryTabHostVisible(sidecarHost)) window.PersonalFilters.syncUltrawideSidecar({ tab: 'diary' });
     }
-    const hosts = [
-      document.getElementById('diary-filter-inline-panel'),
-      document.querySelector('#ultrawide-sidecar-body [data-personal-filter-host][data-personal-filter-surface="diary"]'),
-    ].filter(Boolean);
-    for (const host of hosts) {
+    for (const host of inlineDiaryTabHosts()) {
       if (!diaryTabHostVisible(host)) continue;
       if (window.PersonalFilters.activateTab('diary', tabId, { host, visibleOnly: true })) {
         scheduleDiaryPanelLayout();
@@ -770,14 +784,16 @@ const DiaryPage = (() => {
 
   function clearSelectedEntry(options = {}) {
     const hadSelection = Boolean(state.selectedEntryId || state.selection);
+    const editModalWasActive = activeActionModalView() === 'edit-entry';
+    const editInlineWasActive = inlineDiaryTabIs('edit-entry');
     state.selectedEntryId = '';
     state.selection = null;
     if (window.PersonalFilters?.setSelectedIds) {
       window.PersonalFilters.setSelectedIds(EDIT_TAG_SURFACE, ENTRY_REQUIRED_TAGS);
     }
     if (options.moveEditToNew !== false) {
-      activateInlineDiaryTab('new-entry');
-      if (activeActionModalView() === 'edit-entry') {
+      if (editInlineWasActive) activateInlineDiaryTab('new-entry');
+      if (editModalWasActive) {
         openContentViewModal('new-entry');
       }
     }
