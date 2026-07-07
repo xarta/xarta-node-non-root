@@ -789,6 +789,11 @@ const EmailPage = (() => {
     ['received_at', 'Received date'],
   ];
 
+  const SEARCH_MODE_OPTIONS = [
+    ['simple', 'Simple'],
+    ['advanced', 'Advanced'],
+  ];
+
   function searchDefaultTerms() {
     return [{ field: 'default', operator: 'AND', value: '' }];
   }
@@ -822,10 +827,14 @@ const EmailPage = (() => {
     return options.join('');
   }
 
+  function searchModeLabel(mode = state.searchMode) {
+    const clean = mode === 'advanced' ? 'advanced' : 'simple';
+    return SEARCH_MODE_OPTIONS.find(([id]) => id === clean)?.[1] || 'Simple';
+  }
+
   function readSearchForm(form) {
     if (!form) return;
-    const mode = form.querySelector('[data-email-search-mode]:checked')?.value || state.searchMode || 'simple';
-    state.searchMode = mode === 'advanced' ? 'advanced' : 'simple';
+    state.searchMode = state.searchMode === 'advanced' ? 'advanced' : 'simple';
     state.searchQuery = String(form.querySelector('[data-email-search-query]')?.value || '').trim();
     state.searchFolder = String(form.querySelector('[data-email-search-folder]')?.value || '').trim();
     state.searchSentFrom = String(form.querySelector('[data-email-search-date="sent-from"]')?.value || '').trim();
@@ -845,13 +854,20 @@ const EmailPage = (() => {
   function syncSearchModeControls() {
     const advanced = state.searchMode === 'advanced';
     document.querySelectorAll('[data-email-search-form]').forEach(form => {
-      form.querySelectorAll('[data-email-search-mode]').forEach(input => {
-        input.checked = input.value === state.searchMode;
-      });
+      form.classList.toggle('email-search-form--advanced', advanced);
       const simplePanel = form.querySelector('.email-search-simple');
       const advancedPanel = form.querySelector('.email-search-advanced');
       if (simplePanel) simplePanel.hidden = advanced;
       if (advancedPanel) advancedPanel.hidden = !advanced;
+    });
+    document.querySelectorAll('[data-email-search-mode-dropdown]').forEach(dropdown => {
+      dropdown.dataset.mode = state.searchMode;
+      dropdown.querySelectorAll('[data-email-search-mode-label]').forEach(label => {
+        label.textContent = `Search: ${searchModeLabel()}`;
+      });
+      dropdown.querySelectorAll('[data-email-search-mode-option]').forEach(option => {
+        option.setAttribute('aria-checked', option.dataset.emailSearchModeOption === state.searchMode ? 'true' : 'false');
+      });
     });
   }
 
@@ -864,9 +880,6 @@ const EmailPage = (() => {
     }
     if (active.matches?.('[data-email-search-clear-date]')) {
       return { type: 'clear-date', key: active.dataset.emailSearchClearDate || '' };
-    }
-    if (active.matches?.('[data-email-search-mode]')) {
-      return { type: 'mode', value: active.value || '' };
     }
     if (active.matches?.('[data-email-search-toggle]')) {
       return { type: 'toggle', key: active.dataset.emailSearchToggle || '' };
@@ -918,9 +931,6 @@ const EmailPage = (() => {
     if (field.type === 'folder') return root.querySelector('[data-email-search-folder]');
     if (field.type === 'date') return matchingControlByData(root, '[data-email-search-date]', 'emailSearchDate', field.key);
     if (field.type === 'clear-date') return matchingControlByData(root, '[data-email-search-clear-date]', 'emailSearchClearDate', field.key);
-    if (field.type === 'mode') {
-      return Array.from(root.querySelectorAll('[data-email-search-mode]')).find(node => node.value === field.value) || null;
-    }
     if (field.type === 'toggle') return matchingControlByData(root, '[data-email-search-toggle]', 'emailSearchToggle', field.key);
     if (field.type.startsWith('term-')) {
       const row = root.querySelectorAll('[data-email-search-row]')[field.rowIndex];
@@ -1089,13 +1099,37 @@ const EmailPage = (() => {
     });
   }
 
+  function closeSearchModeMenus(except = null) {
+    document.querySelectorAll('[data-email-search-mode-dropdown].open').forEach(dropdown => {
+      if (except && dropdown === except) return;
+      dropdown.classList.remove('open');
+      dropdown.querySelectorAll('[data-email-search-mode-menu-toggle]').forEach(button => {
+        button.setAttribute('aria-expanded', 'false');
+      });
+    });
+  }
+
   function toggleFolderMenu(button) {
     const dropdown = button?.closest?.('[data-email-folder-dropdown]');
     if (!dropdown || dropdown.classList.contains('is-disabled') || button.disabled) return false;
     const nextOpen = !dropdown.classList.contains('open');
+    closeSearchModeMenus();
     closeFolderMenus(dropdown);
     dropdown.classList.toggle('open', nextOpen);
     dropdown.querySelectorAll('[data-email-folder-menu-toggle]').forEach(toggle => {
+      toggle.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+    });
+    return true;
+  }
+
+  function toggleSearchModeMenu(button) {
+    const dropdown = button?.closest?.('[data-email-search-mode-dropdown]');
+    if (!dropdown || button.disabled) return false;
+    const nextOpen = !dropdown.classList.contains('open');
+    closeFolderMenus();
+    closeSearchModeMenus(dropdown);
+    dropdown.classList.toggle('open', nextOpen);
+    dropdown.querySelectorAll('[data-email-search-mode-menu-toggle]').forEach(toggle => {
       toggle.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
     });
     return true;
@@ -3499,41 +3533,49 @@ const EmailPage = (() => {
     const advanced = state.searchMode === 'advanced';
     return `
       <div class="email-search-panel">
-        <form class="email-search-form" data-email-search-form>
+        <form class="email-search-form${advanced ? ' email-search-form--advanced' : ''}" data-email-search-form>
           <div class="email-search-toolbar">
-            <div class="email-search-mode" role="radiogroup" aria-label="Search mode">
-              <label><input type="radio" name="email-search-mode" data-email-search-mode value="simple"${advanced ? '' : ' checked'}> Simple</label>
-              <label><input type="radio" name="email-search-mode" data-email-search-mode value="advanced"${advanced ? ' checked' : ''}> Advanced</label>
+            <div class="email-search-simple"${advanced ? ' hidden' : ''}>
+              <input type="search" data-email-search-query value="${escHtml(state.searchQuery)}" placeholder="Search email" autocomplete="off">
             </div>
             <button type="submit" class="email-search-submit"${state.searchLoading ? ' disabled' : ''}>Search</button>
-          </div>
-          <div class="email-search-simple"${advanced ? ' hidden' : ''}>
-            <input type="search" data-email-search-query value="${escHtml(state.searchQuery)}" placeholder="Search email" autocomplete="off">
           </div>
           <div class="email-search-advanced"${advanced ? '' : ' hidden'}>
             ${searchTermRowsHtml()}
             <button class="email-search-add-row" type="button" data-email-search-add-row>Add row</button>
           </div>
           <div class="email-search-filters">
-            <select data-email-search-folder aria-label="Folder">
-              ${searchFolderOptionsHtml()}
-            </select>
-            ${searchDateFieldHtml('received-from', 'Received from', state.searchReceivedFrom)}
-            ${searchDateFieldHtml('received-to', 'Received to', state.searchReceivedTo)}
-            ${searchDateFieldHtml('sent-from', 'Sent from', state.searchSentFrom)}
-            ${searchDateFieldHtml('sent-to', 'Sent to', state.searchSentTo)}
-          </div>
-          <div class="email-search-toggles">
-            <label class="hub-checkbox email-search-toggle">
-              <input class="hub-checkbox__input" type="checkbox" data-email-search-toggle="hybrid"${state.searchHybrid ? ' checked' : ''}>
-              <span class="hub-checkbox__box" aria-hidden="true"></span>
-              <span class="hub-checkbox__label">Hybrid</span>
-            </label>
-            <label class="hub-checkbox email-search-toggle">
-              <input class="hub-checkbox__input" type="checkbox" data-email-search-toggle="rerank"${state.searchRerank ? ' checked' : ''}>
-              <span class="hub-checkbox__box" aria-hidden="true"></span>
-              <span class="hub-checkbox__label">Rerank</span>
-            </label>
+            <div class="email-search-filter-column">
+              ${searchDateFieldHtml('received-from', 'Received from', state.searchReceivedFrom)}
+              ${searchDateFieldHtml('received-to', 'Received to', state.searchReceivedTo)}
+            </div>
+            <div class="email-search-filter-column">
+              ${searchDateFieldHtml('sent-from', 'Sent from', state.searchSentFrom)}
+              ${searchDateFieldHtml('sent-to', 'Sent to', state.searchSentTo)}
+            </div>
+            <div class="email-search-filter-column email-search-filter-column--source">
+              <label class="email-search-filter-field">
+                <span>Folder</span>
+                <select data-email-search-folder aria-label="Folder">
+                  ${searchFolderOptionsHtml()}
+                </select>
+              </label>
+              <div class="email-search-filter-field">
+                <span>Options</span>
+                <div class="email-search-toggles">
+                  <label class="hub-checkbox email-search-toggle">
+                    <input class="hub-checkbox__input" type="checkbox" data-email-search-toggle="hybrid"${state.searchHybrid ? ' checked' : ''}>
+                    <span class="hub-checkbox__box" aria-hidden="true"></span>
+                    <span class="hub-checkbox__label">Hybrid</span>
+                  </label>
+                  <label class="hub-checkbox email-search-toggle">
+                    <input class="hub-checkbox__input" type="checkbox" data-email-search-toggle="rerank"${state.searchRerank ? ' checked' : ''}>
+                    <span class="hub-checkbox__box" aria-hidden="true"></span>
+                    <span class="hub-checkbox__label">Rerank</span>
+                  </label>
+                </div>
+              </div>
+            </div>
           </div>
         </form>
         ${searchSummaryHtml()}
@@ -3638,6 +3680,27 @@ const EmailPage = (() => {
     }
   }
 
+  function searchTabDropdownHtml(layout = 'secondary') {
+    const active = state.secondaryTab === 'search';
+    return `
+      <div class="email-search-tab-dropdown email-folder-tab-dropdown" data-email-search-mode-dropdown data-active="${active ? 'true' : 'false'}" data-mode="${escHtml(state.searchMode)}" data-email-secondary-layout="${escHtml(layout)}">
+        <div class="email-folder-tab-split">
+          <button class="email-folder-tab email-folder-tab--primary" type="button" data-email-secondary-tab="search" data-active="${active ? 'true' : 'false'}" data-email-secondary-layout="${escHtml(layout)}">
+            <span data-email-search-mode-label>Search: ${escHtml(searchModeLabel())}</span>
+          </button>
+          <button class="email-folder-tab-caret" type="button" aria-label="Choose search mode" aria-haspopup="menu" aria-expanded="false" data-email-search-mode-menu-toggle>
+            <span class="menu-editor-icon menu-editor-icon--chevron-down" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div class="email-folder-tab-menu" role="menu">
+          ${SEARCH_MODE_OPTIONS.map(([id, label]) => `
+            <button class="email-folder-tab-menu__item" type="button" role="menuitemradio" aria-checked="${state.searchMode === id ? 'true' : 'false'}" data-email-search-mode-option="${escHtml(id)}">${escHtml(label)}</button>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
   function secondaryTabsHtml(layout = 'secondary') {
     const tabs = [
       ['checks', 'Checks'],
@@ -3646,9 +3709,11 @@ const EmailPage = (() => {
       ['trusted', 'Trusted'],
       ['search', 'Search'],
     ];
-    return tabs.map(([id, label]) => `
-      <button type="button" data-email-secondary-tab="${escHtml(id)}" data-active="${state.secondaryTab === id ? 'true' : 'false'}" data-email-secondary-layout="${escHtml(layout)}">${escHtml(label)}</button>
-    `).join('');
+    return tabs.map(([id, label]) => (
+      id === 'search'
+        ? searchTabDropdownHtml(layout)
+        : `<button type="button" data-email-secondary-tab="${escHtml(id)}" data-active="${state.secondaryTab === id ? 'true' : 'false'}" data-email-secondary-layout="${escHtml(layout)}">${escHtml(label)}</button>`
+    )).join('');
   }
 
   function secondaryBodyHtml() {
@@ -4137,6 +4202,21 @@ const EmailPage = (() => {
     state.secondaryTab = 'folders';
     renderFolderControls();
     renderFolders();
+    renderSecondaryPanels();
+    renderUltrawide();
+    return true;
+  }
+
+  function setSearchMode(mode) {
+    const clean = mode === 'advanced' ? 'advanced' : 'simple';
+    const forms = Array.from(document.querySelectorAll('[data-email-search-form]'));
+    const activeForm = document.activeElement?.closest?.('[data-email-search-form]')
+      || forms.find(form => !form.closest('[hidden]') && form.getClientRects?.().length)
+      || forms[0];
+    if (activeForm) readSearchForm(activeForm);
+    state.searchMode = clean;
+    state.secondaryTab = 'search';
+    closeSearchModeMenus();
     renderSecondaryPanels();
     renderUltrawide();
     return true;
@@ -4788,6 +4868,18 @@ const EmailPage = (() => {
         openSecuritySegmentModal(securitySegment.dataset.emailSecuritySegment || securitySegment.dataset.segment || '');
         return;
       }
+      const searchModeToggle = target.closest?.('[data-email-search-mode-menu-toggle]');
+      if (searchModeToggle) {
+        event.preventDefault();
+        toggleSearchModeMenu(searchModeToggle);
+        return;
+      }
+      const searchModeOption = target.closest?.('[data-email-search-mode-option]');
+      if (searchModeOption) {
+        event.preventDefault();
+        setSearchMode(searchModeOption.dataset.emailSearchModeOption || 'simple');
+        return;
+      }
       const tabBtn = target.closest?.('[data-email-secondary-tab]');
       if (tabBtn) {
         event.preventDefault();
@@ -4902,14 +4994,12 @@ const EmailPage = (() => {
         return;
       }
       if (!target.closest?.('[data-email-folder-dropdown]')) closeFolderMenus();
+      if (!target.closest?.('[data-email-search-mode-dropdown]')) closeSearchModeMenus();
     });
     document.addEventListener('change', event => {
       const searchForm = event.target.closest?.('[data-email-search-form]');
       if (searchForm) {
         readSearchForm(searchForm);
-        if (event.target.closest?.('[data-email-search-mode]')) {
-          syncSearchModeControls();
-        }
         return;
       }
       const messageSelect = event.target.closest?.('[data-email-message-select]');
@@ -4920,9 +5010,6 @@ const EmailPage = (() => {
       const searchForm = event.target.closest?.('[data-email-search-form]');
       if (searchForm) {
         readSearchForm(searchForm);
-        if (event.target.closest?.('[data-email-search-mode]')) {
-          syncSearchModeControls();
-        }
       }
     });
     document.addEventListener('submit', event => {

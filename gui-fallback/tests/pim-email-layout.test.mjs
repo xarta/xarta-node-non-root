@@ -51,8 +51,8 @@ test('PIM Email tab follows the Blueprints managed-scroll shell contract', () =>
   assert.match(indexHtml, /id="email-secondary-modal"[\s\S]*data-email-secondary-tab="cache"[\s\S]*>Cache</, 'Folder/check modal must also expose the Cache tab.');
   assert.match(tabHtml, /data-email-secondary-tab="trusted"[\s\S]*>Trusted</, 'The bottom toolbar must expose the Trusted tab.');
   assert.match(indexHtml, /id="email-secondary-modal"[\s\S]*data-email-secondary-tab="trusted"[\s\S]*>Trusted</, 'Folder/check modal must also expose the Trusted tab.');
-  assert.match(tabHtml, /data-email-secondary-tab="trusted"[\s\S]*>Trusted<[\s\S]*data-email-secondary-tab="search"[\s\S]*>Search</, 'The bottom toolbar must expose Search directly after Trusted.');
-  assert.match(indexHtml, /id="email-secondary-modal"[\s\S]*data-email-secondary-tab="trusted"[\s\S]*>Trusted<[\s\S]*data-email-secondary-tab="search"[\s\S]*>Search</, 'Folder/check modal must expose Search directly after Trusted.');
+  assert.match(tabHtml, /data-email-secondary-tab="trusted"[\s\S]*>Trusted<[\s\S]*data-email-search-mode-dropdown[\s\S]*data-email-secondary-tab="search"[\s\S]*Search: Simple[\s\S]*data-email-search-mode-option="simple"[\s\S]*data-email-search-mode-option="advanced"/, 'The bottom toolbar must expose Search as a Simple/Advanced split dropdown directly after Trusted.');
+  assert.match(indexHtml, /id="email-secondary-modal"[\s\S]*data-email-secondary-tab="trusted"[\s\S]*>Trusted<[\s\S]*data-email-search-mode-dropdown[\s\S]*data-email-secondary-tab="search"[\s\S]*Search: Simple[\s\S]*data-email-search-mode-option="simple"[\s\S]*data-email-search-mode-option="advanced"/, 'Folder/check modal must expose Search as a Simple/Advanced split dropdown directly after Trusted.');
   assert.match(tabHtml, /data-email-list-toggle/, 'Message list collapse toggle must remain in the message header.');
 });
 
@@ -163,13 +163,18 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /\/local\/folders/, 'Email UI must list virtual local folders.');
   assert.match(emailJs, /function searchEndpoint\(\)[\s\S]*\/local\/search/, 'Email Search must call the local PIM search endpoint.');
   assert.match(emailJs, /SEARCH_FIELDS = \[[\s\S]*\['from', 'From'\][\s\S]*\['recipients', 'Recipients'\][\s\S]*\['subject', 'Subject'\][\s\S]*\['content', 'Body'\][\s\S]*\['image', 'Images'\][\s\S]*\['sent_at', 'Sent date'\][\s\S]*\['received_at', 'Received date'\]/, 'Email Search must expose production field targeting.');
-  assert.match(emailJs, /data-email-search-mode value="simple"[\s\S]*data-email-search-mode value="advanced"/, 'Email Search must expose simple and advanced modes.');
-  assert.match(emailJs, /function syncSearchModeControls\(\)/, 'Email Search mode toggles must update visible panels without a full secondary render.');
+  assert.match(emailJs, /SEARCH_MODE_OPTIONS = \[[\s\S]*\['simple', 'Simple'\][\s\S]*\['advanced', 'Advanced'\]/, 'Email Search must define simple and advanced modes.');
+  assert.match(emailJs, /function searchTabDropdownHtml\([\s\S]*data-email-search-mode-dropdown[\s\S]*data-email-search-mode-option/, 'Email Search mode must live in the secondary split dropdown.');
+  assert.match(emailJs, /function setSearchMode\(mode\)/, 'Email Search dropdown options must switch modes through a dedicated setter.');
+  assert.match(emailJs, /function syncSearchModeControls\(\)/, 'Email Search mode dropdowns must update visible panels without stale mode labels.');
+  assert.doesNotMatch(emailJs, /role="radiogroup" aria-label="Search mode"/, 'Email Search must not keep the old in-panel Simple/Advanced radio group.');
   assert.match(emailJs, /function captureSearchFocus\(\)/, 'Email Search must snapshot focused controls before secondary panel rerenders.');
   assert.match(emailJs, /function restoreSearchFocus\(snapshot\)/, 'Email Search must restore focused controls after background rerenders.');
   assert.match(emailJs, /readSearchForm\(form\);[\s\S]*rootId/, 'Email Search focus snapshots must persist typed values before replacing form DOM.');
   assert.match(emailJs, /searchDateFieldHtml\('received-from', 'Received from'/, 'Email Search received-from date input must have a visible label.');
   assert.match(emailJs, /searchDateFieldHtml\('sent-to', 'Sent to'/, 'Email Search sent-to date input must have a visible label.');
+  assert.match(emailJs, /class="email-search-toolbar"[\s\S]*class="email-search-simple"[\s\S]*data-email-search-query[\s\S]*class="email-search-submit"/, 'Simple Email Search must put the query input on the same row as the submit button.');
+  assert.match(emailJs, /class="email-search-filter-column"[\s\S]*searchDateFieldHtml\('received-from'[\s\S]*searchDateFieldHtml\('received-to'[\s\S]*class="email-search-filter-column"[\s\S]*searchDateFieldHtml\('sent-from'[\s\S]*searchDateFieldHtml\('sent-to'[\s\S]*email-search-filter-column--source[\s\S]*>Folder<[\s\S]*data-email-search-folder[\s\S]*>Options<[\s\S]*data-email-search-toggle="hybrid"[\s\S]*data-email-search-toggle="rerank"/, 'Email Search filters must render as received, sent, and aligned source/options two-row columns.');
   assert.match(emailJs, /data-email-search-clear-date/, 'Email Search date fields must expose a clear-date button.');
   assert.match(emailJs, /const searchClearDate = target\.closest\?\.\('\[data-email-search-clear-date\]'\)/, 'Email Search clear-date buttons must be handled without submitting the form.');
   assert.match(emailJs, /data-email-search-term-operator[\s\S]*<option value="AND"[\s\S]*<option value="OR"/, 'Advanced Email Search rows must support AND/OR composition.');
@@ -179,7 +184,12 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /search_elapsed_ms/, 'Email automation snapshot must expose search timing.');
   assert.match(emailJs, /search_total/, 'Email automation snapshot must expose search result totals.');
   assert.match(emailCss, /\.email-search-panel/, 'Email Search controls must have compact panel styling.');
-  assert.match(emailCss, /\.email-search-date-field\s*\{[\s\S]*display:\s*grid/, 'Email Search date labels must use compact stacked field styling.');
+  assert.match(emailCss, /\.email-search-tab-dropdown\[data-active="true"\][\s\S]*\.email-folder-tab/, 'Email Search dropdown must share active tab styling.');
+  assert.match(emailCss, /\.email-search-toolbar\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*560px\)\s+auto/, 'Simple Email Search toolbar must reserve a shorter query field beside the submit button.');
+  assert.match(emailCss, /\.email-search-filters\s*\{[\s\S]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/, 'Email Search filters must use three equal desktop columns.');
+  assert.match(emailCss, /\.email-search-filter-column\s*\{[\s\S]*display:\s*grid/, 'Email Search filter columns must stack their two rows.');
+  assert.match(emailCss, /\.email-search-date-field,\s*[\r\n]+\.email-search-filter-field\s*\{[\s\S]*display:\s*grid/, 'Email Search source/options rows must share the date field label rhythm.');
+  assert.match(emailCss, /\.email-search-date-field > span,\s*[\r\n]+\.email-search-filter-field > span\s*\{[\s\S]*font-size:\s*10px/, 'Email Search date and source/options labels must share compact stacked field styling.');
   assert.match(emailCss, /\.email-search-date-control\s*\{[\s\S]*position:\s*relative/, 'Email Search date controls must have room for an in-field clear button.');
   assert.match(emailCss, /\.email-search-clear-date::before[\s\S]*mask-image/, 'Email Search date clear buttons must use an icon glyph, not visible text.');
   assert.match(emailCss, /\.email-search-simple\[hidden\],[\s\S]*\.email-search-advanced\[hidden\]\s*\{[\s\S]*display:\s*none/, 'Email Search hidden mode panels must stay hidden despite grid display rules.');

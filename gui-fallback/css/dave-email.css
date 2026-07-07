@@ -920,6 +920,7 @@
   display: flex;
   gap: 6px;
   flex: 0 0 auto;
+  align-items: stretch;
 }
 
 .email-secondary-tabs button {
@@ -935,6 +936,16 @@
 .email-secondary-tabs button[data-active="true"] {
   color: var(--hub-accent);
   border-color: rgba(var(--hub-accent-rgb), 0.58);
+}
+
+.email-search-tab-dropdown[data-active="true"] .email-folder-tab,
+.email-search-tab-dropdown[data-active="true"] .email-folder-tab-caret {
+  color: var(--hub-accent);
+  border-color: rgba(var(--hub-accent-rgb), 0.58);
+}
+
+.email-search-tab-dropdown .email-folder-tab {
+  max-width: min(170px, calc(100vw - 80px));
 }
 
 .email-folder-tab-dropdown {
@@ -1324,7 +1335,6 @@
 
 .email-search-toolbar,
 .email-search-filters,
-.email-search-toggles,
 .email-search-row {
   align-items: center;
   display: grid;
@@ -1333,10 +1343,15 @@
 }
 
 .email-search-toolbar {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 560px) auto;
+  justify-content: start;
 }
 
-.email-search-mode,
+.email-search-form--advanced .email-search-toolbar {
+  grid-template-columns: auto;
+  justify-content: end;
+}
+
 .email-search-toggles {
   display: flex;
   flex-wrap: wrap;
@@ -1344,7 +1359,6 @@
   min-width: 0;
 }
 
-.email-search-mode label,
 .email-search-toggles label {
   align-items: center;
   color: var(--text-dim);
@@ -1371,11 +1385,19 @@
 }
 
 .email-search-filters {
-  align-items: end;
-  grid-template-columns: minmax(150px, 1fr) repeat(4, minmax(118px, 0.72fr));
+  align-items: start;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.email-search-date-field {
+.email-search-filter-column {
+  align-content: start;
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.email-search-date-field,
+.email-search-filter-field {
   display: grid;
   gap: 4px;
   min-width: 0;
@@ -1387,12 +1409,18 @@
   position: relative;
 }
 
-.email-search-date-field span {
+.email-search-date-field > span,
+.email-search-filter-field > span {
   color: var(--text-dim);
   font-size: 10px;
   line-height: 1;
   letter-spacing: 0;
   padding-left: 1px;
+}
+
+.email-search-filter-column--source .email-search-toggles {
+  align-items: center;
+  min-height: 32px;
 }
 
 .email-search-form input[type="search"],

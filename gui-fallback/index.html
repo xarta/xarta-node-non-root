@@ -3789,7 +3789,20 @@
             <button type="button" data-email-secondary-tab="security">Security</button>
             <button type="button" data-email-secondary-tab="cache">Cache</button>
             <button type="button" data-email-secondary-tab="trusted">Trusted</button>
-            <button type="button" data-email-secondary-tab="search">Search</button>
+            <div class="email-search-tab-dropdown email-folder-tab-dropdown" data-email-search-mode-dropdown data-active="false" data-mode="simple" data-email-secondary-layout="secondary">
+              <div class="email-folder-tab-split">
+                <button class="email-folder-tab email-folder-tab--primary" type="button" data-email-secondary-tab="search" data-active="false" data-email-secondary-layout="secondary">
+                  <span data-email-search-mode-label>Search: Simple</span>
+                </button>
+                <button class="email-folder-tab-caret" type="button" aria-label="Choose search mode" aria-haspopup="menu" aria-expanded="false" data-email-search-mode-menu-toggle>
+                  <span class="menu-editor-icon menu-editor-icon--chevron-down" aria-hidden="true"></span>
+                </button>
+              </div>
+              <div class="email-folder-tab-menu" role="menu">
+                <button class="email-folder-tab-menu__item" type="button" role="menuitemradio" aria-checked="true" data-email-search-mode-option="simple">Simple</button>
+                <button class="email-folder-tab-menu__item" type="button" role="menuitemradio" aria-checked="false" data-email-search-mode-option="advanced">Advanced</button>
+              </div>
+            </div>
           </div>
         </div>
         <div class="email-secondary-body" id="email-secondary-bottom-body"></div>
@@ -3967,7 +3980,20 @@
           <button type="button" data-email-secondary-tab="security">Security</button>
           <button type="button" data-email-secondary-tab="cache">Cache</button>
           <button type="button" data-email-secondary-tab="trusted">Trusted</button>
-          <button type="button" data-email-secondary-tab="search">Search</button>
+          <div class="email-search-tab-dropdown email-folder-tab-dropdown" data-email-search-mode-dropdown data-active="false" data-mode="simple" data-email-secondary-layout="modal">
+            <div class="email-folder-tab-split">
+              <button class="email-folder-tab email-folder-tab--primary" type="button" data-email-secondary-tab="search" data-active="false" data-email-secondary-layout="modal">
+                <span data-email-search-mode-label>Search: Simple</span>
+              </button>
+              <button class="email-folder-tab-caret" type="button" aria-label="Choose search mode" aria-haspopup="menu" aria-expanded="false" data-email-search-mode-menu-toggle>
+                <span class="menu-editor-icon menu-editor-icon--chevron-down" aria-hidden="true"></span>
+              </button>
+            </div>
+            <div class="email-folder-tab-menu" role="menu">
+              <button class="email-folder-tab-menu__item" type="button" role="menuitemradio" aria-checked="true" data-email-search-mode-option="simple">Simple</button>
+              <button class="email-folder-tab-menu__item" type="button" role="menuitemradio" aria-checked="false" data-email-search-mode-option="advanced">Advanced</button>
+            </div>
+          </div>
         </div>
       </div>
       <div class="email-secondary-body" id="email-secondary-modal-body"></div>
