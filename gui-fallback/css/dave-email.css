@@ -1197,19 +1197,21 @@
   overflow-wrap: anywhere;
 }
 
-.email-markdown-image {
-  display: block;
+.email-markdown-image,
+.email-markdown-view img.email-markdown-image {
+  display: inline-block !important;
   max-width: 100%;
   height: auto;
   border: 1px solid rgba(var(--hub-accent-rgb), 0.16);
   border-radius: var(--radius);
   background: rgba(0, 0, 0, 0.18);
-  margin: 4px 0;
+  margin: 4px 6px 4px 0 !important;
+  vertical-align: middle !important;
 }
 
 .email-markdown-view a .email-markdown-image {
-  display: inline-block;
-  vertical-align: middle;
+  display: inline-block !important;
+  vertical-align: middle !important;
 }
 
 .email-markdown-gap {
