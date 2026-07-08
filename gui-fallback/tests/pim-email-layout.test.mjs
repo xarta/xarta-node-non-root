@@ -503,6 +503,9 @@ test('PIM Email Trusted tab is stack-backed and editable', () => {
 });
 
 test('PIM Email INBOX_X meta folder and open-audit browser contract stays wired', () => {
+  const auditLedgerStart = emailJs.indexOf('function auditLedgerMessageSummary');
+  const auditLedgerEnd = emailJs.indexOf('async function loadAuditLedger', auditLedgerStart);
+  const auditLedgerSlice = emailJs.slice(auditLedgerStart, auditLedgerEnd);
   assert.match(emailJs, /function folderSystemKind\(node\)[\s\S]*metadata\.derived_from_folder === 'incoming-corpus'[\s\S]*return 'inbox'/, 'INBOX_X metadata must place the meta folder under Special folders.');
   assert.match(emailJs, /metadata\.count_semantics[\s\S]*distinct_messages[\s\S]*message/, 'INBOX_X count wording must be distinct-message aware.');
   assert.match(emailJs, /metadata\.virtual_path[\s\S]*virtual_path_association_rows[\s\S]*assignment/, 'Virtual-path count wording must be association-aware.');
@@ -518,6 +521,9 @@ test('PIM Email INBOX_X meta folder and open-audit browser contract stays wired'
   assert.match(emailJs, /function messageActionsEndpoint\(uid, options = \{\}\)[\s\S]*\/local\/messages\/\$\{encodeURIComponent\(emailUid\)\}\/actions\?limit=\$\{limit\}/, 'Audit ledger modal must read the real per-message action endpoint.');
   assert.match(indexHtml, /id="email-audit-ledger-modal"/, 'Email must include a HubModal for per-message audit ledger inspection.');
   assert.match(emailJs, /function auditLedgerModalHtml\(\)[\s\S]*current_virtual_paths[\s\S]*auditLedgerEventRowsHtml/, 'Audit ledger modal must render current paths and event history from the stack response.');
+  assert.match(emailJs, /function auditLedgerInfoGridHtml\(/, 'Audit ledger aggregate details must render as a compact responsive info grid.');
+  assert.match(auditLedgerSlice, /Subject unavailable/, 'Audit ledger must label missing subject data without the ambiguous no-subject wording.');
+  assert.doesNotMatch(auditLedgerSlice, /\(no subject\)/, 'Audit ledger modal must not show the ambiguous old no-subject label.');
   assert.match(emailJs, /class="email-audit-ledger-table"/, 'Audit ledger events must render as a dense table.');
   assert.match(emailJs, /data-email-audit-event-detail[\s\S]*name="email-audit-ledger-event"/, 'Audit ledger rows must be expandable details in one named accordion group.');
   assert.match(emailJs, /function wireAuditLedgerDetails\(\)[\s\S]*item\.open = false/, 'Opening one audit event detail must close the others.');
@@ -539,6 +545,22 @@ test('PIM Email INBOX_X meta folder and open-audit browser contract stays wired'
     /\.email-audit-ledger-table__head,\s*\.email-audit-ledger-row__summary\s*\{[\s\S]*grid-template-columns/,
     'Audit ledger event rows must use a dense aligned table grid.',
   );
+  assert.match(
+    emailCss,
+    /\.email-audit-ledger-shell\s*\{[\s\S]*align-content:\s*start/,
+    'Audit ledger sections must not stretch tiny content into tall empty cards.',
+  );
+  assert.match(
+    emailCss,
+    /\.email-audit-ledger-info-grid\s*\{[\s\S]*repeat\(auto-fit,\s*minmax\(118px,\s*1fr\)\)/,
+    'Audit ledger aggregate details must use responsive columns.',
+  );
+  assert.match(
+    emailCss,
+    /\.email-audit-ledger-row\s*\{[\s\S]*min-width:\s*900px/,
+    'Audit ledger rows must stay compact enough for normal full-screen modal widths.',
+  );
+  assert.doesNotMatch(emailCss, /min-width:\s*1110px/, 'Audit ledger table must not force the old over-wide minimum width.');
   assert.match(
     emailCss,
     /\.email-audit-ledger-row__detail\s*\{[\s\S]*grid-template-columns/,

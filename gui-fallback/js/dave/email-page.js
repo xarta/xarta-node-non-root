@@ -2558,6 +2558,19 @@ const EmailPage = (() => {
     `;
   }
 
+  function auditLedgerInfoGridHtml(rows) {
+    return `
+      <div class="email-audit-ledger-info-grid">
+        ${rows.map(([label, value, tone, wide]) => `
+          <div class="email-audit-ledger-info${wide ? ' email-audit-ledger-info--wide' : ''}">
+            <span class="email-audit-ledger-info__label">${escHtml(label)}</span>
+            <span class="email-audit-ledger-info__value">${tone ? securityPillHtml(value, tone) : escHtml(formatSecurityValue(value))}</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
   function auditLedgerMessageSummary(uid) {
     const clean = String(uid || '').trim();
     const row = state.messages.find(item => (
@@ -2573,6 +2586,11 @@ const EmailPage = (() => {
       from: source.from || source.sender || '',
       date: source.date || source.received_at || source.sent_at || '',
     };
+  }
+
+  function auditLedgerSubjectText(summary) {
+    const value = String(summary?.subject || '').trim();
+    return value || 'Subject unavailable';
   }
 
   function auditLedgerJsonHtml(value) {
@@ -2669,10 +2687,10 @@ const EmailPage = (() => {
           <span role="columnheader">Time</span>
           <span role="columnheader">Event</span>
           <span role="columnheader">Action</span>
-          <span role="columnheader">Operation</span>
-          <span role="columnheader">Virtual path</span>
+          <span role="columnheader">Op</span>
+          <span role="columnheader">Path</span>
           <span role="columnheader">Actor</span>
-          <span role="columnheader">Surface</span>
+          <span role="columnheader">Source</span>
           <span role="columnheader">Result</span>
         </div>
         ${rows.map(event => `
@@ -2690,7 +2708,7 @@ const EmailPage = (() => {
               <span role="cell">${securityPillHtml(event.virtual_path_operation || 'n/a', event.virtual_path_operation || 'info')}</span>
               <span role="cell" title="${escHtml(auditLedgerEventPathLabel(event))}">${escHtml(auditLedgerEventPathLabel(event))}</span>
               <span role="cell">${escHtml(formatSecurityValue(event.actor || 'n/a'))}</span>
-              <span role="cell">${escHtml(formatSecurityValue(event.source_surface || 'n/a'))}</span>
+              <span role="cell" title="${escHtml(formatSecurityValue(event.source_surface || 'n/a'))}">${escHtml(formatSecurityValue(event.source_surface || 'n/a'))}</span>
               <span role="cell">${securityPillHtml(event.result_status || 'n/a', event.result_status || 'info')}</span>
             </summary>
             ${auditLedgerEventDetailHtml(event)}
@@ -2727,27 +2745,30 @@ const EmailPage = (() => {
     const events = Array.isArray(history.events) ? history.events : [];
     return `
       <div class="email-audit-ledger-shell">
-        <section class="email-audit-ledger-summary">
-          <div>
-            <h3>${escHtml(summary.subject || '(no subject)')}</h3>
-            <p>${escHtml(summary.from || '')}</p>
-            <p>${escHtml(summary.date || '')}</p>
+        <section class="email-audit-ledger-overview">
+          <div class="email-audit-ledger-message-card">
+            <span class="email-audit-ledger-info__label">Subject</span>
+            <h3>${escHtml(auditLedgerSubjectText(summary))}</h3>
+            <div class="email-audit-ledger-message-card__meta">
+              ${summary.from ? `<span>${escHtml(summary.from)}</span>` : ''}
+              ${summary.date ? `<span>${escHtml(summary.date)}</span>` : ''}
+            </div>
           </div>
-          ${securityPillHtml(`${events.length} event${events.length === 1 ? '' : 's'}`, events.length ? 'info' : 'amber')}
+          ${auditLedgerInfoGridHtml([
+            ['Events', `${events.length} event${events.length === 1 ? '' : 's'}`, events.length ? 'info' : 'amber'],
+            ['Mailbox', history.mailbox_id || state.auditLedgerMailbox?.mailbox_id || 'n/a'],
+            ['Current paths', ledgerState.current_virtual_path_count ?? 0, 'info'],
+            ['Open count', ledgerState.open_count ?? 'n/a'],
+            ['Folder changes', ledgerState.folder_change_count ?? 'n/a'],
+            ['Latest operation', ledgerState.latest_virtual_path_operation || 'n/a', ledgerState.latest_virtual_path_operation || 'info'],
+            ['Latest path', ledgerState.latest_virtual_path || 'n/a'],
+            ['Last opened', ledgerState.last_opened_at || 'n/a'],
+            ['Latest path change', ledgerState.latest_virtual_path_changed_at || 'n/a'],
+            ['Loaded', state.auditLedgerLoadedAt || 'n/a'],
+            ['email_uid', history.email_uid || state.auditLedgerEmailUid || 'n/a', '', true],
+            ['Raw hash', ledgerState.raw_sha256 ? `${String(ledgerState.raw_sha256).slice(0, 16)}...` : 'n/a'],
+          ])}
         </section>
-        ${securityKvRowsHtml([
-          ['email_uid', history.email_uid || state.auditLedgerEmailUid || 'n/a'],
-          ['Mailbox', history.mailbox_id || state.auditLedgerMailbox?.mailbox_id || 'n/a'],
-          ['Raw hash', ledgerState.raw_sha256 ? `${String(ledgerState.raw_sha256).slice(0, 16)}...` : 'n/a'],
-          ['Latest virtual path', ledgerState.latest_virtual_path || 'n/a'],
-          ['Latest operation', ledgerState.latest_virtual_path_operation || 'n/a', ledgerState.latest_virtual_path_operation || 'info'],
-          ['Previous virtual path', ledgerState.previous_virtual_path || 'n/a'],
-          ['Latest path change', ledgerState.latest_virtual_path_changed_at || 'n/a'],
-          ['Folder change count', ledgerState.folder_change_count ?? 'n/a'],
-          ['Last opened', ledgerState.last_opened_at || 'n/a'],
-          ['Open count', ledgerState.open_count ?? 'n/a'],
-          ['Loaded', state.auditLedgerLoadedAt || 'n/a'],
-        ])}
         <section class="email-audit-ledger-section">
           <div class="email-audit-ledger-section__head">
             <h3>Current Virtual Paths</h3>
