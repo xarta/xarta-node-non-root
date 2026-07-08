@@ -568,6 +568,10 @@
   const HARD_REFRESH_TELEMETRY_KEY = 'blueprintsHardRefreshTelemetry';
   const HARD_REFRESH_SERVER_TELEMETRY_TYPE = 'hard_refresh_telemetry';
   const HARD_REFRESH_SERVER_TELEMETRY_SOURCE = 'gui-embed-hard-refresh';
+  const HARD_REFRESH_KEYBOARD_NUDGE_PARAM = '_bp_keyboard_nudge';
+  const HARD_REFRESH_KEYBOARD_NUDGE_DISABLE_PARAM = '_bp_no_keyboard_nudge';
+  const HARD_REFRESH_KEYBOARD_NUDGE_DIALOG_ID = 'bp-hard-refresh-keyboard-nudge';
+  const HARD_REFRESH_KEYBOARD_NUDGE_STYLE_ID = 'bp-hard-refresh-keyboard-nudge-style';
   const hardRefreshTelemetrySends = new Set();
 
   function hardRefreshManualLinksApi() {
@@ -632,6 +636,37 @@
     });
   }
 
+  function hardRefreshViewportSnapshot() {
+    const vv = window.visualViewport || null;
+    const orientation = window.screen?.orientation || null;
+    return {
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight,
+      outerWidth: window.outerWidth,
+      outerHeight: window.outerHeight,
+      devicePixelRatio: window.devicePixelRatio || 1,
+      screen: {
+        width: window.screen?.width || 0,
+        height: window.screen?.height || 0,
+        availWidth: window.screen?.availWidth || 0,
+        availHeight: window.screen?.availHeight || 0,
+      },
+      visualViewport: vv ? {
+        width: Math.round(vv.width * 1000) / 1000,
+        height: Math.round(vv.height * 1000) / 1000,
+        offsetLeft: Math.round(vv.offsetLeft * 1000) / 1000,
+        offsetTop: Math.round(vv.offsetTop * 1000) / 1000,
+        pageLeft: Math.round(vv.pageLeft * 1000) / 1000,
+        pageTop: Math.round(vv.pageTop * 1000) / 1000,
+        scale: Math.round(vv.scale * 1000) / 1000,
+      } : null,
+      orientation: orientation ? {
+        type: orientation.type || '',
+        angle: orientation.angle || 0,
+      } : null,
+    };
+  }
+
   function hardRefreshTelemetrySnapshot(extra = {}) {
     const bridge = window.BlueprintsHubMenuBridge || null;
     const manualApi = hardRefreshManualLinksApi();
@@ -677,6 +712,7 @@
       search: window.location.search,
       activePanels: [...document.querySelectorAll('.tab-panel.active[id^="tab-"]')].map(el => el.id),
       bodyClasses: document.body?.className || '',
+      viewport: hardRefreshViewportSnapshot(),
       manual: {
         panelActive: document.getElementById('tab-manual-links')?.classList.contains('active') || false,
         bodyGridActive: document.body?.classList.contains('manual-links-grid-active') || false,
@@ -798,6 +834,236 @@
       document.addEventListener('DOMContentLoaded', run, { once: true });
     } else {
       window.setTimeout(run, 0);
+    }
+  }
+
+  function hardRefreshIsEditableElement(element) {
+    if (!element || element === document.body || element === document.documentElement) return false;
+    if (element.isContentEditable) return true;
+    const tag = String(element.tagName || '').toLowerCase();
+    if (tag === 'textarea') return !element.disabled && !element.readOnly;
+    if (tag === 'select') return !element.disabled;
+    if (tag !== 'input') return false;
+    if (element.disabled || element.readOnly) return false;
+    const type = String(element.type || 'text').toLowerCase();
+    return ![
+      'button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio',
+      'range', 'reset', 'submit',
+    ].includes(type);
+  }
+
+  function hardRefreshActiveEditableElement() {
+    let active = document.activeElement || null;
+    for (let depth = 0; depth < 4 && active; depth += 1) {
+      if (hardRefreshIsEditableElement(active)) return active;
+      active = active.shadowRoot?.activeElement || null;
+    }
+    return null;
+  }
+
+  function hardRefreshKeyboardNudgePlatformEligible() {
+    const coarse = (
+      window.matchMedia?.('(pointer: coarse)').matches
+      || window.matchMedia?.('(any-pointer: coarse)').matches
+    );
+    const touch = (navigator.maxTouchPoints || 0) > 0 || !!coarse;
+    const mobileSized = Math.min(window.innerWidth || 0, window.innerHeight || 0) <= 700;
+    return touch && mobileSized;
+  }
+
+  function hardRefreshKeyboardNudgeDecision(state) {
+    let disabled = false;
+    try {
+      const params = new URL(window.location.href).searchParams;
+      disabled = params.get(HARD_REFRESH_KEYBOARD_NUDGE_DISABLE_PARAM) === '1';
+    } catch (_e) {}
+    if (disabled) return { ok: false, reason: 'disabled-by-url' };
+    if (!hardRefreshKeyboardNudgePlatformEligible()) return { ok: false, reason: 'not-mobile-touch' };
+    if (state === HardRefreshStateMachine.STATE.SSH_ACTIVE) return { ok: false, reason: 'ssh-active' };
+    const activeEditable = hardRefreshActiveEditableElement();
+    if (activeEditable) {
+      return {
+        ok: false,
+        reason: 'editable-active',
+        tag: String(activeEditable.tagName || '').toLowerCase(),
+        id: activeEditable.id || '',
+        name: activeEditable.getAttribute?.('name') || '',
+      };
+    }
+    return { ok: true, reason: 'mobile-touch-no-editable-focus' };
+  }
+
+  function hardRefreshApplyKeyboardNudgeParam(url, state) {
+    if (!url) return { ok: false, reason: 'missing-url' };
+    const decision = hardRefreshKeyboardNudgeDecision(state);
+    url.searchParams.delete(HARD_REFRESH_KEYBOARD_NUDGE_PARAM);
+    if (decision.ok) url.searchParams.set(HARD_REFRESH_KEYBOARD_NUDGE_PARAM, '1');
+    hardRefreshRecordTelemetry('keyboard-nudge:prepare', decision);
+    return decision;
+  }
+
+  function hardRefreshClearKeyboardNudgeParam() {
+    try {
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has(HARD_REFRESH_KEYBOARD_NUDGE_PARAM)) return false;
+      url.searchParams.delete(HARD_REFRESH_KEYBOARD_NUDGE_PARAM);
+      window.history.replaceState(window.history.state, document.title || '', url.toString());
+      return true;
+    } catch (error) {
+      hardRefreshRecordTelemetry('keyboard-nudge:clear-param-error', {
+        message: error && error.message ? error.message : String(error),
+      });
+      return false;
+    }
+  }
+
+  function hardRefreshEnsureKeyboardNudgeDialog() {
+    if (!document.getElementById(HARD_REFRESH_KEYBOARD_NUDGE_STYLE_ID)) {
+      const style = document.createElement('style');
+      style.id = HARD_REFRESH_KEYBOARD_NUDGE_STYLE_ID;
+      style.textContent = `
+        #${HARD_REFRESH_KEYBOARD_NUDGE_DIALOG_ID} {
+          width: min(220px, calc(100vw - 48px));
+          max-width: calc(100vw - 48px);
+          margin: auto;
+          padding: 12px;
+          border: 1px solid rgba(91, 156, 246, 0.32);
+          border-radius: 8px;
+          background: rgba(10, 12, 20, 0.82);
+          box-shadow: 0 20px 48px rgba(0, 0, 0, 0.42);
+        }
+        #${HARD_REFRESH_KEYBOARD_NUDGE_DIALOG_ID}::backdrop {
+          background: rgba(0, 0, 0, 0.08);
+        }
+        #${HARD_REFRESH_KEYBOARD_NUDGE_DIALOG_ID} .bp-keyboard-nudge-input {
+          display: block;
+          width: 100%;
+          height: 42px;
+          box-sizing: border-box;
+          border: 1px solid rgba(91, 156, 246, 0.45);
+          border-radius: 6px;
+          background: rgba(0, 0, 0, 0.3);
+          color: transparent;
+          caret-color: rgba(91, 156, 246, 0.8);
+          font-size: 16px;
+          outline: none;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    let dialog = document.getElementById(HARD_REFRESH_KEYBOARD_NUDGE_DIALOG_ID);
+    if (dialog) return dialog;
+
+    dialog = document.createElement('dialog');
+    dialog.id = HARD_REFRESH_KEYBOARD_NUDGE_DIALOG_ID;
+    dialog.setAttribute('aria-label', 'Viewport recalibration');
+    dialog.innerHTML = `
+      <input class="bp-keyboard-nudge-input" type="text" inputmode="text"
+        autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+        aria-label="Viewport recalibration input" />
+    `;
+    document.body.appendChild(dialog);
+    return dialog;
+  }
+
+  function hardRefreshRunKeyboardNudge() {
+    const activeEditable = hardRefreshActiveEditableElement();
+    if (activeEditable) {
+      hardRefreshRecordTelemetry('keyboard-nudge:skip', { reason: 'editable-active-after-load' });
+      return;
+    }
+    const openDialog = document.querySelector('dialog[open]');
+    if (openDialog && openDialog.id !== HARD_REFRESH_KEYBOARD_NUDGE_DIALOG_ID) {
+      hardRefreshRecordTelemetry('keyboard-nudge:skip', {
+        reason: 'dialog-already-open',
+        id: openDialog.id || '',
+      });
+      return;
+    }
+
+    const before = hardRefreshViewportSnapshot();
+    const dialog = hardRefreshEnsureKeyboardNudgeDialog();
+    const input = dialog.querySelector('.bp-keyboard-nudge-input');
+    if (!input) {
+      hardRefreshRecordTelemetry('keyboard-nudge:skip', { reason: 'missing-input' });
+      return;
+    }
+
+    let closed = false;
+    let resizeCount = 0;
+    let minVisualViewportHeight = before.visualViewport?.height || 0;
+    const onResize = () => {
+      resizeCount += 1;
+      const height = window.visualViewport?.height || 0;
+      if (height && (!minVisualViewportHeight || height < minVisualViewportHeight)) {
+        minVisualViewportHeight = height;
+      }
+    };
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', onResize);
+    }
+
+    function finish(reason) {
+      if (closed) return;
+      closed = true;
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', onResize);
+      }
+      const afterFocus = hardRefreshViewportSnapshot();
+      try { input.blur(); } catch (_e) {}
+      try { if (dialog.open) dialog.close(); } catch (_e) {}
+      window.setTimeout(() => {
+        hardRefreshRecordTelemetry('keyboard-nudge:finish', {
+          reason,
+          resizeCount,
+          minVisualViewportHeight,
+          before,
+          afterFocus,
+          afterBlur: hardRefreshViewportSnapshot(),
+        });
+      }, 250);
+    }
+
+    try {
+      if (typeof dialog.showModal === 'function' && !dialog.open) dialog.showModal();
+      else if (!dialog.open) dialog.setAttribute('open', '');
+      hardRefreshRecordTelemetry('keyboard-nudge:start', { before });
+      window.setTimeout(() => {
+        try {
+          input.value = '';
+          input.focus({ preventScroll: true });
+        } catch (_e) {
+          try { input.focus(); } catch (__e) {}
+        }
+        try { input.click(); } catch (_e) {}
+      }, 50);
+      window.setTimeout(() => finish('timeout'), 1200);
+    } catch (error) {
+      finish('error');
+      hardRefreshRecordTelemetry('keyboard-nudge:error', {
+        message: error && error.message ? error.message : String(error),
+      });
+    }
+  }
+
+  function hardRefreshScheduleKeyboardNudge() {
+    let requested = false;
+    try {
+      requested = new URL(window.location.href).searchParams.get(HARD_REFRESH_KEYBOARD_NUDGE_PARAM) === '1';
+    } catch (_e) {}
+    if (!requested) return;
+    const cleared = hardRefreshClearKeyboardNudgeParam();
+    hardRefreshRecordTelemetry('keyboard-nudge:scheduled', {
+      cleared,
+      viewport: hardRefreshViewportSnapshot(),
+    });
+    const run = () => window.setTimeout(hardRefreshRunKeyboardNudge, 220);
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', run, { once: true });
+    } else {
+      run();
     }
   }
 
@@ -924,8 +1190,14 @@
         }
       }
 
-      hardRefreshRecordTelemetry('prepare-reload:ok', { pageState, url: url.toString(), state });
-      return { ok: true, state, url, pageState, ssh };
+      const keyboardNudge = hardRefreshApplyKeyboardNudgeParam(url, state);
+      hardRefreshRecordTelemetry('prepare-reload:ok', {
+        pageState,
+        url: url.toString(),
+        state,
+        keyboardNudge,
+      });
+      return { ok: true, state, url, pageState, ssh, keyboardNudge };
     }
 
     return { STATE, prepareReloadUrl };
@@ -933,6 +1205,7 @@
 
   window.BlueprintsHardRefreshStateMachine = HardRefreshStateMachine;
   hardRefreshSchedulePostLoadTelemetry();
+  hardRefreshScheduleKeyboardNudge();
 
   async function hardRefreshClientAssets() {
     try {
