@@ -518,6 +518,9 @@ test('PIM Email INBOX_X meta folder and open-audit browser contract stays wired'
   assert.match(emailJs, /function messageActionsEndpoint\(uid, options = \{\}\)[\s\S]*\/local\/messages\/\$\{encodeURIComponent\(emailUid\)\}\/actions\?limit=\$\{limit\}/, 'Audit ledger modal must read the real per-message action endpoint.');
   assert.match(indexHtml, /id="email-audit-ledger-modal"/, 'Email must include a HubModal for per-message audit ledger inspection.');
   assert.match(emailJs, /function auditLedgerModalHtml\(\)[\s\S]*current_virtual_paths[\s\S]*auditLedgerEventRowsHtml/, 'Audit ledger modal must render current paths and event history from the stack response.');
+  assert.match(emailJs, /class="email-audit-ledger-table"/, 'Audit ledger events must render as a dense table.');
+  assert.match(emailJs, /data-email-audit-event-detail[\s\S]*name="email-audit-ledger-event"/, 'Audit ledger rows must be expandable details in one named accordion group.');
+  assert.match(emailJs, /function wireAuditLedgerDetails\(\)[\s\S]*item\.open = false/, 'Opening one audit event detail must close the others.');
   assert.match(emailJs, /openAuditLedger:\s*openAuditLedgerModal/, 'Browser proof automation must be able to open a selected message audit ledger.');
   assert.match(emailJs, /audit_ledger_modal_open/, 'Email automation snapshot must expose audit ledger modal state.');
   assert.match(emailJs, /audit_ledger_event_count/, 'Email automation snapshot must expose audit ledger event count.');
@@ -530,5 +533,15 @@ test('PIM Email INBOX_X meta folder and open-audit browser contract stays wired'
     emailCss,
     /\.email-audit-ledger-modal-body\s*\{[\s\S]*overflow-y:\s*scroll[\s\S]*scrollbar-gutter:\s*stable/,
     'Audit ledger modal body must assume a vertical scrollbar.',
+  );
+  assert.match(
+    emailCss,
+    /\.email-audit-ledger-table__head,\s*\.email-audit-ledger-row__summary\s*\{[\s\S]*grid-template-columns/,
+    'Audit ledger event rows must use a dense aligned table grid.',
+  );
+  assert.match(
+    emailCss,
+    /\.email-audit-ledger-row__detail\s*\{[\s\S]*grid-template-columns/,
+    'Expanded audit ledger event details must preserve an inspectable payload layout.',
   );
 });

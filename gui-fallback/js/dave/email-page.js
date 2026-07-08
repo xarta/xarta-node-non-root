@@ -2614,40 +2614,104 @@ const EmailPage = (() => {
     return type || 'ledger event';
   }
 
+  function auditLedgerEventTimestamp(event) {
+    const value = String(event?.event_ts || event?.created_at || '').trim();
+    if (!value) return 'n/a';
+    return value.replace('T', ' ').replace('+00:00', 'Z');
+  }
+
+  function auditLedgerEventPathLabel(event) {
+    const path = String(event?.virtual_path || '').trim();
+    const before = String(event?.virtual_path_before || '').trim();
+    const after = String(event?.virtual_path_after || '').trim();
+    const source = String(event?.source_virtual_path || '').trim();
+    const destination = String(event?.destination_virtual_path || '').trim();
+    if (path) return path;
+    if (before || after) return `${before || 'none'} -> ${after || 'none'}`;
+    if (source || destination) return `${source || 'none'} -> ${destination || 'none'}`;
+    return 'n/a';
+  }
+
+  function auditLedgerEventDetailHtml(event) {
+    return `
+      <div class="email-audit-ledger-row__detail">
+        ${securityKvRowsHtml([
+          ['Event id', event.event_id || 'n/a'],
+          ['Timestamp', event.event_ts || event.created_at || 'n/a'],
+          ['Event type', event.event_type || 'n/a', auditLedgerEventTone(event)],
+          ['Action', event.action || 'n/a'],
+          ['Operation', event.virtual_path_operation || 'n/a', event.virtual_path_operation || 'info'],
+          ['Virtual path', event.virtual_path || 'n/a'],
+          ['Before', event.virtual_path_before || 'n/a'],
+          ['After', event.virtual_path_after || 'n/a'],
+          ['Source path', event.source_virtual_path || 'n/a'],
+          ['Destination path', event.destination_virtual_path || 'n/a'],
+          ['Actor', event.actor || 'n/a'],
+          ['Surface', event.source_surface || 'n/a'],
+          ['Request', event.request_id || 'n/a'],
+          ['Result', event.result_status || 'n/a', event.result_status || 'info'],
+        ])}
+        <div class="email-audit-ledger-row__metadata">
+          <h4>Metadata</h4>
+          ${auditLedgerJsonHtml(event.metadata)}
+        </div>
+      </div>
+    `;
+  }
+
   function auditLedgerEventRowsHtml(events) {
     const rows = Array.isArray(events) ? events : [];
     if (!rows.length) return '<div class="email-audit-ledger-empty">No audit events are recorded for this message.</div>';
     return `
-      <div class="email-audit-ledger-events">
+      <div class="email-audit-ledger-table" role="table" aria-label="Audit ledger events">
+        <div class="email-audit-ledger-table__head" role="row">
+          <span></span>
+          <span role="columnheader">Time</span>
+          <span role="columnheader">Event</span>
+          <span role="columnheader">Action</span>
+          <span role="columnheader">Operation</span>
+          <span role="columnheader">Virtual path</span>
+          <span role="columnheader">Actor</span>
+          <span role="columnheader">Surface</span>
+          <span role="columnheader">Result</span>
+        </div>
         ${rows.map(event => `
-          <article class="email-audit-ledger-event" data-tone="${escHtml(auditLedgerEventTone(event))}">
-            <div class="email-audit-ledger-event__head">
-              <div>
-                <h4>${escHtml(auditLedgerEventTitle(event))}</h4>
-                <p>${escHtml(event.event_ts || event.created_at || '')}</p>
-              </div>
-              ${securityPillHtml(event.event_type || event.action || 'event', auditLedgerEventTone(event))}
-            </div>
-            ${securityKvRowsHtml([
-              ['Action', event.action || 'n/a'],
-              ['Operation', event.virtual_path_operation || 'n/a', event.virtual_path_operation || 'info'],
-              ['Virtual path', event.virtual_path || 'n/a'],
-              ['Before', event.virtual_path_before || 'n/a'],
-              ['After', event.virtual_path_after || 'n/a'],
-              ['Actor', event.actor || 'n/a'],
-              ['Surface', event.source_surface || 'n/a'],
-              ['Request', event.request_id || 'n/a'],
-              ['Result', event.result_status || 'n/a', event.result_status || 'info'],
-              ['Event id', event.event_id || 'n/a'],
-            ])}
-            <details class="email-audit-ledger-event__metadata">
-              <summary>Metadata</summary>
-              ${auditLedgerJsonHtml(event.metadata)}
-            </details>
-          </article>
+          <details
+            class="email-audit-ledger-row"
+            data-email-audit-event-detail
+            data-tone="${escHtml(auditLedgerEventTone(event))}"
+            name="email-audit-ledger-event"
+          >
+            <summary class="email-audit-ledger-row__summary" role="row">
+              <span class="email-audit-ledger-row__toggle" aria-hidden="true"></span>
+              <span role="cell" title="${escHtml(event.event_ts || event.created_at || '')}">${escHtml(auditLedgerEventTimestamp(event))}</span>
+              <span role="cell" title="${escHtml(event.event_id || '')}">${escHtml(auditLedgerEventTitle(event))}</span>
+              <span role="cell">${escHtml(formatSecurityValue(event.action || 'n/a'))}</span>
+              <span role="cell">${securityPillHtml(event.virtual_path_operation || 'n/a', event.virtual_path_operation || 'info')}</span>
+              <span role="cell" title="${escHtml(auditLedgerEventPathLabel(event))}">${escHtml(auditLedgerEventPathLabel(event))}</span>
+              <span role="cell">${escHtml(formatSecurityValue(event.actor || 'n/a'))}</span>
+              <span role="cell">${escHtml(formatSecurityValue(event.source_surface || 'n/a'))}</span>
+              <span role="cell">${securityPillHtml(event.result_status || 'n/a', event.result_status || 'info')}</span>
+            </summary>
+            ${auditLedgerEventDetailHtml(event)}
+          </details>
         `).join('')}
       </div>
     `;
+  }
+
+  function wireAuditLedgerDetails() {
+    const details = document.querySelectorAll('[data-email-audit-event-detail]');
+    details.forEach(detail => {
+      if (detail.dataset.emailAuditDetailBound === '1') return;
+      detail.dataset.emailAuditDetailBound = '1';
+      detail.addEventListener('toggle', () => {
+        if (!detail.open) return;
+        details.forEach(item => {
+          if (item !== detail) item.open = false;
+        });
+      });
+    });
   }
 
   function auditLedgerModalHtml() {
@@ -2708,7 +2772,10 @@ const EmailPage = (() => {
     const body = el('email-audit-ledger-modal-body');
     const status = el('email-audit-ledger-modal-status');
     if (title) title.textContent = 'Message Audit Ledger';
-    if (body) body.innerHTML = auditLedgerModalHtml();
+    if (body) {
+      body.innerHTML = auditLedgerModalHtml();
+      wireAuditLedgerDetails();
+    }
     if (status) {
       status.textContent = state.auditLedgerLoading
         ? 'Loading'
