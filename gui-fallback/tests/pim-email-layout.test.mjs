@@ -81,6 +81,11 @@ test('PIM Email viewport rules match Dave and Kanban precedent', () => {
     /@media\s*\(min-width:\s*821px\)[\s\S]*\.email-page__header\s*\{[\s\S]*justify-content:\s*space-between/,
     'Desktop Email header must keep the meta line on the left and actions on the right.',
   );
+  assert.match(emailCss, /\.email-page__actions\s*\{[\s\S]*flex-wrap:\s*nowrap/, 'Email security strip and top action buttons must never wrap into a second row.');
+  assert.match(emailCss, /\.email-page__actions\s*\{[\s\S]*justify-self:\s*end/, 'Email top actions must stay right-aligned.');
+  assert.match(emailCss, /@media\s*\(max-width:\s*820px\)[\s\S]*\.email-page__actions\s*\{[\s\S]*justify-content:\s*flex-end/, 'Mobile Email top actions must still be right-aligned.');
+  assert.match(emailCss, /\.email-page--intro\s*\{[\s\S]*min-height:\s*var\(--email-intro-min-height/, 'Email intro must support a page-lifetime height lock against shrink-back list bounce.');
+  assert.match(emailJs, /function scheduleEmailIntroHeightLock\(\)/, 'Email UI must lock the tallest seen intro height until page refresh.');
   assert.match(
     emailCss,
     /\.email-status-strip\s*\{[\s\S]*min-height:\s*var\(--email-status-strip-size\)/,
@@ -242,8 +247,9 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /role="tree"/, 'Email folders must render as a tree.');
   assert.match(emailJs, /email-health-heartbeat/, 'Email list heading must expose a compact PIM health heartbeat.');
   assert.match(emailCss, /\.email-health-heartbeat--beating/, 'Healthy active PIM work must animate the compact heartbeat.');
-  assert.match(emailJs, /return downloadHealthActivity\(\);/, 'Heartbeat animation must mean active IMAP folder checking, not generic health.');
-  assert.doesNotMatch(emailJs, /state\.health\?\.healthy \|\| state\.health\?\.activity \|\| downloadHealthActivity\(\)/, 'Generic health/status/cache activity must not drive the green heartbeat.');
+  assert.match(emailJs, /function cacheHeartbeatActivity\(\)/, 'Heartbeat animation must include active cache and browser warm work.');
+  assert.match(emailJs, /return downloadHealthActivity\(\) \|\| cacheHeartbeatActivity\(\);/, 'Heartbeat animation must beat for download or cache/browser activity.');
+  assert.doesNotMatch(emailJs, /state\.health\?\.healthy \|\| state\.health\?\.activity \|\| downloadHealthActivity\(\)/, 'Generic healthy state must not drive the heartbeat.');
   assert.match(emailJs, /checking IMAP folders/, 'Heartbeat copy must describe active IMAP folder checks.');
   assert.match(emailJs, /data-email-folder-menu-toggle="set"/, 'Folder list must render as a split dropdown tab.');
   assert.match(emailJs, /data-email-folder-menu-toggle="group"/, 'Folder group must render as a split dropdown tab.');
@@ -276,13 +282,15 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /function renderOpenedMessageSecurityProgress\(/, 'Completed local-message security progress must render after opening a stored message.');
   assert.doesNotMatch(emailJs, /include_safe_raw=true/, 'Local message reads must use the persisted sanitized raw artifact, not an on-read raw generation flag.');
   assert.match(emailJs, /MESSAGE_WARM_LIMIT = 100/, 'The current 100 rows must be sent for background stack warming.');
-  assert.match(emailJs, /MESSAGE_OPEN_CACHE_LIMIT = 240/, 'Opened and prefetched messages must have a bounded browser-side payload cache large enough for the recent and next set.');
+  assert.match(emailJs, /MESSAGE_OPEN_CACHE_LIMIT = Number\.POSITIVE_INFINITY/, 'Opened and prefetched messages must not have a hidden message-count cap.');
+  assert.match(emailJs, /MESSAGE_OPEN_CACHE_MAX_BYTES = 512 \* 1024 \* 1024/, 'Opened and prefetched browser payload cache must be bounded by bytes.');
   assert.match(emailJs, /MESSAGE_OPEN_PREFETCH_LIMIT = 100/, 'Browser body prefetch must target the currently loaded recent 100.');
   assert.match(emailJs, /MESSAGE_OPEN_PREFETCH_CONCURRENCY = 8/, 'Browser body prefetch must prioritize the recent set without waiting on images.');
   assert.match(emailJs, /MESSAGE_IMAGE_PREFETCH_CONCURRENCY = 2/, 'Browser image prefetch must run behind body prefetch with lower concurrency.');
   assert.match(emailJs, /function pauseMessageOpenPrefetch\(/, 'Opening a message must pause background body prefetch so active images get priority.');
   assert.match(emailJs, /controller\.abort\(\)/, 'Background body prefetch must be abortable when the user opens a message.');
-  assert.match(emailJs, /MESSAGE_IMAGE_CACHE_LIMIT = 24/, 'Opened HTML messages must keep a bounded browser-side image cache.');
+  assert.doesNotMatch(emailJs, /MESSAGE_IMAGE_CACHE_LIMIT = 24/, 'Opened HTML message image cache must not use the rejected 24-message cap.');
+  assert.match(emailJs, /MESSAGE_IMAGE_CACHE_MAX_BYTES = 256 \* 1024 \* 1024/, 'Opened HTML message image cache must be bounded by bytes.');
   assert.match(emailJs, /MESSAGE_IMAGE_CACHE_CONCURRENCY = 4/, 'Opened HTML image cache must warm local images concurrently without flooding the page.');
   assert.match(emailJs, /function ensureMessageImageCache\(/, 'HTML message rendering must preload local images into browser memory.');
   assert.match(emailJs, /htmlWithCachedMessageImages\(value, message\)/, 'HTML frame rendering must use cached local image data when available.');
@@ -314,6 +322,11 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /function pumpMessageImagePrefetch\(/, 'Browser image warming must be queued behind message body prefetch.');
   assert.match(emailJs, /function cacheStatusHtml\(/, 'Email UI must render an operator-visible Cache tab.');
   assert.match(emailJs, /\/local\/cache\/status/, 'Cache tab must read stack/proxy cache status.');
+  assert.match(emailJs, /CACHE_STATE_EVENT = 'pim\.email\.cache\.state'/, 'Email cache state must use the shared Blueprints SSE event stream.');
+  assert.match(emailJs, /function handleCacheStateEvent\(/, 'Email UI must consume server-pushed cache-state updates.');
+  assert.match(emailJs, /BlueprintsEventStream\.on\(CACHE_STATE_EVENT, handleCacheStateEvent\)/, 'Email cache-state SSE listener must be registered.');
+  assert.match(emailJs, /recordMessageOpenClickFireAndForget\(emailUid, row, 'browser-cache'\)/, 'Browser-cache opens must decouple audit telemetry from rendering.');
+  assert.doesNotMatch(emailJs, /await recordMessageOpenClick\(emailUid, row, 'browser-cache'\)/, 'Browser-cache opens must not await the opened-message telemetry POST.');
   assert.match(emailJs, /message_open_prefetch_completed/, 'Email automation snapshot must expose message body prefetch completion.');
   assert.match(emailJs, /last_message_timing/, 'Email automation snapshot must expose click-to-body timing.');
   assert.match(emailJs, /service_worker_image_cache_count/, 'Email automation snapshot must expose browser CacheStorage image count.');
@@ -516,7 +529,8 @@ test('PIM Email INBOX_X meta folder and open-audit browser contract stays wired'
   assert.match(emailJs, /function messageEndpoint\(uid, row = null, options = \{\}\)[\s\S]*options\.opened === false[\s\S]*opened/, 'Message endpoint must support opened=false for prefetch.');
   assert.match(emailJs, /messageEndpoint\(task\.uid, task\.row, \{ opened: false \}\)/, 'Open prefetch must not record message-open audit events.');
   assert.match(emailJs, /function messageOpenedEndpoint/, 'Cached opens must have an explicit audit endpoint.');
-  assert.match(emailJs, /await recordMessageOpenClick\(emailUid, row, 'browser-cache'\)/, 'Cached rendered opens must append an audit event before showing the cached body.');
+  assert.match(emailJs, /recordMessageOpenClickFireAndForget\(emailUid, row, 'browser-cache'\)/, 'Cached rendered opens must append audit telemetry without blocking the cached body.');
+  assert.doesNotMatch(emailJs, /await recordMessageOpenClick\(emailUid, row, 'browser-cache'\)/, 'Cached rendered opens must not wait for audit telemetry before showing the cached body.');
   assert.match(emailJs, /messageEndpoint\(emailUid, row, \{ opened: true \}\)/, 'Direct message opens must record open events through the stack endpoint.');
   assert.match(emailJs, /function messageActionsEndpoint\(uid, options = \{\}\)[\s\S]*\/local\/messages\/\$\{encodeURIComponent\(emailUid\)\}\/actions\?limit=\$\{limit\}/, 'Audit ledger modal must read the real per-message action endpoint.');
   assert.match(indexHtml, /id="email-audit-ledger-modal"/, 'Email must include a HubModal for per-message audit ledger inspection.');

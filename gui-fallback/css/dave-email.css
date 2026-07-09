@@ -11,8 +11,11 @@
   gap: 12px;
 }
 
+.email-page--intro {
+  min-height: var(--email-intro-min-height, 0);
+}
+
 .email-page__header,
-.email-page__actions,
 .email-control-strip,
 .email-view-tabs,
 .email-folder-list,
@@ -27,7 +30,19 @@
 }
 
 .email-page__header {
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: flex-start;
+  gap: 8px 12px;
+  justify-content: normal;
+}
+
+.email-page__title-block {
+  min-width: 0;
+}
+
+.email-page__meta {
+  overflow-wrap: anywhere;
 }
 
 .email-page__title-block h2 {
@@ -54,17 +69,26 @@
 }
 
 .email-page__actions {
-  flex-wrap: wrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
   justify-content: flex-end;
+  justify-self: end;
+  align-self: flex-start;
+  min-width: max-content;
+  max-width: 100%;
 }
 
 .email-status-strip {
   box-sizing: border-box;
+  flex: 0 0 auto;
   min-height: var(--email-status-strip-size);
   padding: 6px 10px;
   border: 1px solid rgba(var(--hub-accent-rgb), 0.22);
   border-radius: var(--radius);
   background: rgba(0, 0, 0, 0.22);
+  white-space: nowrap;
 }
 
 .email-status-dot {
@@ -96,7 +120,8 @@
   display: grid;
   grid-template-columns: repeat(10, minmax(14px, 1fr));
   gap: 3px;
-  width: min(360px, 52vw);
+  width: clamp(180px, 34vw, 360px);
+  flex: 0 0 auto;
   min-width: 180px;
   min-height: 16px;
   align-items: stretch;
@@ -1647,7 +1672,7 @@
   background: rgba(0, 0, 0, 0.2);
   display: grid;
   gap: 8px;
-  grid-template-columns: minmax(96px, 1.2fr) minmax(68px, .8fr) minmax(62px, .7fr) minmax(86px, 1fr);
+  grid-template-columns: minmax(96px, 1.2fr) minmax(68px, .8fr) minmax(62px, .7fr) minmax(86px, 1fr) minmax(92px, 1fr);
   min-width: 0;
   padding: 7px 8px;
 }
@@ -2298,8 +2323,7 @@ dialog.hub-modal.email-audit-ledger-modal[open] {
 }
 
 @media (max-width: 820px) {
-  .email-page__header,
-  .email-page__actions {
+  .email-page__header {
     align-items: stretch;
   }
 
@@ -2308,7 +2332,12 @@ dialog.hub-modal.email-audit-ledger-modal[open] {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .email-page__actions,
+  .email-page__actions {
+    align-items: center;
+    justify-content: flex-end;
+    justify-self: end;
+  }
+
   .email-control-strip,
   .email-folder-controls-host,
   .email-folder-browser-controls {
@@ -2392,8 +2421,7 @@ dialog.hub-modal.email-audit-ledger-modal[open] {
 }
 
 @media (max-height: 500px) and (max-width: 1000px) {
-  .email-page__header,
-  .email-page__actions {
+  .email-page__header {
     align-items: stretch;
   }
 
@@ -2402,7 +2430,12 @@ dialog.hub-modal.email-audit-ledger-modal[open] {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .email-page__actions,
+  .email-page__actions {
+    align-items: center;
+    justify-content: flex-end;
+    justify-self: end;
+  }
+
   .email-control-strip,
   .email-folder-controls-host,
   .email-folder-browser-controls {

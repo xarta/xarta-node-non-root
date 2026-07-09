@@ -47,6 +47,7 @@ const EmailPage = (() => {
   const HEALTH_POLL_MS = 15000;
   const CACHE_STATUS_POLL_MS = 30000;
   const SECURITY_PROGRESS_EVENT = 'pim.email.security.progress';
+  const CACHE_STATE_EVENT = 'pim.email.cache.state';
   const ORIGINAL_IMAGE_BUTTONS_STORAGE_KEY = 'blueprints.pimEmail.showOriginalImageButtons';
   const MARKDOWN_PREVIEW_STORAGE_KEY = 'blueprints.pimEmail.renderMarkdownPreview';
   const SECURITY_SEGMENTS = [
@@ -130,11 +131,18 @@ const EmailPage = (() => {
     messagePendingUid: '',
     messageTimings: [],
     lastMessageTiming: null,
+    messageOpenTelemetryInFlight: 0,
+    messageOpenTelemetryCompleted: 0,
+    messageOpenTelemetryFailed: 0,
+    messageOpenTelemetryLastError: '',
+    lastMessageOpenTelemetry: null,
     cacheStatus: null,
     cacheStatusError: '',
     cacheStatusLoading: false,
     cacheStatusLastRefreshed: 0,
     cacheStatusPollTimer: null,
+    cacheStateSseCount: 0,
+    cacheStateSseLastAt: 0,
     serviceWorkerImageCacheCount: null,
     selectedMessageUids: new Set(),
     messageListSignature: '',
@@ -185,6 +193,8 @@ const EmailPage = (() => {
     auditLedgerSeq: 0,
     auditLedgerLoadedAt: '',
     healthPollTimer: null,
+    emailIntroMinHeight: 0,
+    emailIntroHeightLockPending: false,
   };
 
   const escHtml = typeof esc === 'function'
@@ -219,6 +229,34 @@ const EmailPage = (() => {
     return new Promise(resolve => window.setTimeout(resolve, ms));
   }
 
+  function scheduleEmailIntroHeightLock() {
+    if (state.emailIntroHeightLockPending) return;
+    state.emailIntroHeightLockPending = true;
+    const applyLock = () => {
+      state.emailIntroHeightLockPending = false;
+      const intro = document.querySelector('#tab-email .email-page--intro');
+      if (!intro) return;
+      const rectHeight = intro.getBoundingClientRect?.().height || 0;
+      const measured = Math.ceil(Math.max(rectHeight, intro.scrollHeight || 0));
+      if (!measured) return;
+      if (measured > Number(state.emailIntroMinHeight || 0) + 1) {
+        state.emailIntroMinHeight = measured;
+        intro.style.setProperty('--email-intro-min-height', `${measured}px`);
+        if (window.BodyShade && typeof window.BodyShade.scheduleSizeFillTable === 'function') {
+          window.BodyShade.scheduleSizeFillTable();
+        }
+      } else if (state.emailIntroMinHeight > 0) {
+        intro.style.setProperty('--email-intro-min-height', `${state.emailIntroMinHeight}px`);
+      }
+    };
+    const schedule = () => {
+      if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(applyLock);
+      else window.setTimeout(applyLock, 0);
+    };
+    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(schedule);
+    else schedule();
+  }
+
   function errorMessageFromPayload(data, fallback) {
     const detail = data?.detail;
     if (typeof detail === 'string') return detail;
@@ -237,6 +275,7 @@ const EmailPage = (() => {
       <span class="email-status-dot email-status-dot--${cleanTone}" aria-hidden="true"></span>
       <span class="email-status-text">${escHtml(text || '')}</span>
     `;
+    scheduleEmailIntroHeightLock();
   }
 
   function staleHealthErrorVisible() {
@@ -1107,6 +1146,7 @@ const EmailPage = (() => {
     }
     const source = 'local corpus';
     meta.textContent = `${mailboxAddress()} - ${source} - ${folderCount} folders - ${rowSummary}`;
+    scheduleEmailIntroHeightLock();
   }
 
   function renderFolderChip() {
@@ -1134,10 +1174,24 @@ const EmailPage = (() => {
     );
   }
 
+  function cacheHeartbeatActivity() {
+    return Boolean(
+      state.health?.activity
+      || state.cacheStatusLoading
+      || state.messageCacheStateLoading
+      || state.messageOpenTelemetryInFlight > 0
+      || state.messageOpenPrefetchInFlight > 0
+      || state.messageOpenPrefetchQueue.length > 0
+      || state.messageImagePrefetchInFlight > 0
+      || state.messageImagePrefetchQueue.length > 0
+      || Array.from(state.messageImageCache.values()).some(entry => entry?.pending)
+    );
+  }
+
   function healthHeartbeatActive() {
     const status = String(state.health?.status || '').toLowerCase();
     if (status === 'red') return false;
-    return downloadHealthActivity();
+    return downloadHealthActivity() || cacheHeartbeatActivity();
   }
 
   function healthHeartbeatLabel() {
@@ -1151,13 +1205,14 @@ const EmailPage = (() => {
       ? 'download state stale'
       : downloadHealthActivity()
       ? 'checking IMAP folders'
-      : (health.activity ? 'background health/cache active' : 'health/cache OK');
+      : (cacheHeartbeatActivity() ? 'background cache/browser work active' : 'health/cache OK');
     if (issues) return `PIM Email ${status}, ${issues} issue${issues === 1 ? '' : 's'}, ${active}`;
     if (warnings) return `PIM Email ${status}, ${warnings} warning${warnings === 1 ? '' : 's'}, ${active}`;
     if (downloadHealthActivity()) {
       const running = Number(download.running || 0);
       return `PIM Email checking IMAP folders${running ? `, ${running} run${running === 1 ? '' : 's'} active` : ''}`;
     }
+    if (cacheHeartbeatActivity()) return `PIM Email ${status}, background cache/browser work active`;
     return `PIM Email ${status}, ${active}`;
   }
 
@@ -1356,6 +1411,15 @@ const EmailPage = (() => {
     return true;
   }
 
+  function handleCacheStateEvent(event) {
+    const payload = event?.payload && typeof event.payload === 'object' ? event.payload : {};
+    const states = payload.message_states || event?.message_states || null;
+    if (!setMessageServerCacheStates(states)) return;
+    state.cacheStateSseCount += 1;
+    state.cacheStateSseLastAt = Date.now();
+    notifyCacheStateChanged();
+  }
+
   function refreshMessageCacheStates(rows = state.messages, options = {}) {
     const uids = messageUidsFromRows(rows, Math.max(1, Math.min(Number(options.limit || 200), 200)));
     if (!uids.length) return Promise.resolve(null);
@@ -1420,6 +1484,7 @@ const EmailPage = (() => {
 
   function notifyCacheStateChanged() {
     updateMessageCacheStrips();
+    scheduleEmailIntroHeightLock();
     if (state.secondaryTab !== 'cache') return;
     renderSecondaryPanels();
     renderUltrawide();
@@ -2446,6 +2511,7 @@ const EmailPage = (() => {
       heading.innerHTML = `<span>${escHtml(state.folder || 'INBOX')}</span>${healthHeartbeatHtml()}`;
     }
     renderMeta();
+    scheduleEmailIntroHeightLock();
   }
 
   function messageRowHtml(row) {
@@ -3901,11 +3967,42 @@ const EmailPage = (() => {
       source: timing.source || 'network',
       body_ms: Math.max(0, Math.round(Number(timing.body_ms || 0))),
       network_ms: Math.max(0, Math.round(Number(timing.network_ms || 0))),
+      telemetry_status: timing.telemetry_status || '',
+      telemetry_ms: Number.isFinite(Number(timing.telemetry_ms))
+        ? Math.max(0, Math.round(Number(timing.telemetry_ms || 0)))
+        : null,
       at: Date.now(),
     };
     state.lastMessageTiming = entry;
     state.messageTimings.unshift(entry);
     state.messageTimings = state.messageTimings.slice(0, 12);
+    notifyCacheStateChanged();
+  }
+
+  function recordMessageOpenTelemetry(timing) {
+    const entry = {
+      uid: String(timing.uid || ''),
+      source: timing.source || 'email-ui',
+      status: timing.status || 'ok',
+      telemetry_ms: Math.max(0, Math.round(Number(timing.telemetry_ms || 0))),
+      error: timing.error || '',
+      at: Date.now(),
+    };
+    state.lastMessageOpenTelemetry = entry;
+    if (entry.status === 'ok') {
+      state.messageOpenTelemetryCompleted += 1;
+      state.messageOpenTelemetryLastError = '';
+    } else {
+      state.messageOpenTelemetryFailed += 1;
+      state.messageOpenTelemetryLastError = entry.error || 'message-open telemetry failed';
+    }
+    const row = state.messageTimings.find(item => (
+      item.uid === entry.uid && item.source === entry.source && item.telemetry_status === 'queued'
+    ));
+    if (row) {
+      row.telemetry_status = entry.status;
+      row.telemetry_ms = entry.telemetry_ms;
+    }
     notifyCacheStateChanged();
   }
 
@@ -4020,6 +4117,7 @@ const EmailPage = (() => {
             <span>${escHtml(item.source)}</span>
             <span>${escHtml(`${item.body_ms} ms`)}</span>
             <span>${escHtml(item.network_ms ? `${item.network_ms} ms API` : 'no API wait')}</span>
+            <span>${escHtml(item.telemetry_status ? `${item.telemetry_status}${item.telemetry_ms === null ? '' : ` ${item.telemetry_ms} ms`}` : 'telemetry n/a')}</span>
           </div>
         `).join('')}
       </div>
@@ -4045,21 +4143,24 @@ const EmailPage = (() => {
             ['Opened/body cache', `${state.messageOpenCache.size} messages, ${formatBytes(state.messageOpenCacheBytes)} / ${formatBytes(MESSAGE_OPEN_CACHE_MAX_BYTES)}`],
             ['Prefetch queue', `${prefetchTotal} pending/running, ${state.messageOpenPrefetchCompleted} done, ${state.messageOpenPrefetchFailed} failed, ${state.messageOpenPrefetchSkipped} skipped`],
             ['Prefetch pause', pausedMs ? `${pausedMs} ms remaining` : 'not paused'],
+            ['Open telemetry', `${state.messageOpenTelemetryInFlight} in flight, ${state.messageOpenTelemetryCompleted} done, ${state.messageOpenTelemetryFailed} failed`],
             ['Image prefetch queue', `${state.messageImagePrefetchQueue.length + state.messageImagePrefetchInFlight} pending/running, ${state.messageImagePrefetchCompleted} done, ${state.messageImagePrefetchFailed} failed`],
             ['Current source warm set', `${state.messageWarmSeen.size} UIDs seen`],
             ['Browser image memory', `${state.messageImageCache.size} messages, ${formatBytes(state.messageImageCacheBytes)} / ${formatBytes(MESSAGE_IMAGE_CACHE_MAX_BYTES)}`],
             ['Visible cache strips', `red ${stripCounts.none}, orange ${stripCounts.server_source}, amber ${stripCounts.server_assets}, dark green ${stripCounts.browser_raw}, light green ${stripCounts.browser_assets}`],
+            ['SSE cache-state events', `${state.cacheStateSseCount} received${state.cacheStateSseLastAt ? `, last ${Math.round((Date.now() - state.cacheStateSseLastAt) / 1000)}s ago` : ''}`],
             ['Row cache states', state.messageCacheStateLastRefreshed ? `${Math.round((Date.now() - state.messageCacheStateLastRefreshed) / 1000)}s ago` : 'pending'],
             ['Service worker image cache', state.serviceWorkerImageCacheCount === null ? 'pending' : `${state.serviceWorkerImageCacheCount} requests`],
             ['Last refreshed', lastRefresh],
           ])}
           ${state.messageOpenPrefetchLastError ? `<div class="email-empty">${escHtml(state.messageOpenPrefetchLastError)}</div>` : ''}
+          ${state.messageOpenTelemetryLastError ? `<div class="email-empty">${escHtml(state.messageOpenTelemetryLastError)}</div>` : ''}
           ${state.messageCacheStateError ? `<div class="email-empty">${escHtml(state.messageCacheStateError)}</div>` : ''}
           ${state.cacheStatusError ? `<div class="email-empty">${escHtml(state.cacheStatusError)}</div>` : ''}
         </section>
         ${cacheStatsSectionHtml('Stack Source Artifacts', status.source_artifact_cache || status.cache)}
         ${cacheStatsSectionHtml('Stack Local Images', status.image_asset_cache, [
-          ['Warm tasks', `${status.image_asset_cache_warm_tasks?.active ?? 'n/a'} active, ${status.image_asset_cache_warm_tasks?.queued ?? 'n/a'} queued / ${status.image_asset_cache_warm_tasks?.max ?? 'n/a'}`],
+          ['Warm tasks', `${status.image_asset_cache_warm_tasks?.active ?? 'n/a'} active, ${status.image_asset_cache_warm_tasks?.queued ?? 'n/a'} queued / ${status.image_asset_cache_warm_tasks?.max ?? 'memory-pressure'} (${status.image_asset_cache_warm_tasks?.limit_mode || 'memory-pressure-cache-capacity'})`],
         ])}
         ${cacheStatsSectionHtml('Blueprints Proxy Images', status.proxy_image_cache)}
         <section class="email-cache-section">
@@ -4496,6 +4597,7 @@ const EmailPage = (() => {
     if (window.BodyShade && typeof window.BodyShade.scheduleSizeFillTable === 'function') {
       window.BodyShade.scheduleSizeFillTable();
     }
+    scheduleEmailIntroHeightLock();
   }
 
   function renderError(message) {
@@ -4845,6 +4947,40 @@ const EmailPage = (() => {
     });
   }
 
+  function recordMessageOpenClickFireAndForget(uid, row = null, source = 'email-ui') {
+    const emailUid = String(row?.email_uid || uid || '').trim();
+    if (!emailUid) return false;
+    const run = () => {
+      const telemetryStartedAt = performance.now();
+      state.messageOpenTelemetryInFlight += 1;
+      notifyCacheStateChanged();
+      recordMessageOpenClick(emailUid, row, source)
+        .then(() => {
+          recordMessageOpenTelemetry({
+            uid: emailUid,
+            source,
+            status: 'ok',
+            telemetry_ms: performance.now() - telemetryStartedAt,
+          });
+        })
+        .catch(error => {
+          recordMessageOpenTelemetry({
+            uid: emailUid,
+            source,
+            status: 'failed',
+            telemetry_ms: performance.now() - telemetryStartedAt,
+            error: error.message || String(error),
+          });
+        })
+        .finally(() => {
+          state.messageOpenTelemetryInFlight = Math.max(0, state.messageOpenTelemetryInFlight - 1);
+          notifyCacheStateChanged();
+        });
+    };
+    window.setTimeout(run, 0);
+    return true;
+  }
+
   async function openMessage(uid) {
     const cleanUid = String(uid || '').trim();
     if (!cleanUid) return false;
@@ -4862,13 +4998,11 @@ const EmailPage = (() => {
     const cached = cachedOpenedMessage(emailUid, row, { opened: true });
     if (cached) {
       try {
-        const networkStartedAt = performance.now();
-        await recordMessageOpenClick(emailUid, row, 'browser-cache');
-        const networkMs = performance.now() - networkStartedAt;
         if (openSeq !== state.messageOpenSeq) return false;
         state.messageOpenCacheHit = true;
         state.message = cached;
         state.messagePendingUid = '';
+        ensureMessageImageCache(state.message);
         state.view = defaultMessageView(state.message);
         state.securityProgress = null;
         syncSelectedMessageRows();
@@ -4880,8 +5014,10 @@ const EmailPage = (() => {
           uid: emailUid,
           source: 'browser-cache',
           body_ms: performance.now() - startedAt,
-          network_ms: networkMs,
+          network_ms: 0,
+          telemetry_status: 'queued',
         });
+        recordMessageOpenClickFireAndForget(emailUid, row, 'browser-cache');
         return true;
       } catch (error) {
         if (openSeq === state.messageOpenSeq) state.messagePendingUid = '';
@@ -5625,10 +5761,12 @@ const EmailPage = (() => {
     if (messageList) messageList.addEventListener('scroll', handleMessageListScroll, { passive: true });
     if (window.BlueprintsEventStream && typeof window.BlueprintsEventStream.on === 'function') {
       window.BlueprintsEventStream.on(SECURITY_PROGRESS_EVENT, handleSecurityProgressEvent);
-      window.BlueprintsEventStream.resumeSoon?.('email security progress listener');
+      window.BlueprintsEventStream.on(CACHE_STATE_EVENT, handleCacheStateEvent);
+      window.BlueprintsEventStream.resumeSoon?.('email SSE listeners');
     } else {
       document.addEventListener('blueprints:event', event => {
         if (event.detail?.event_type === SECURITY_PROGRESS_EVENT) handleSecurityProgressEvent(event.detail);
+        if (event.detail?.event_type === CACHE_STATE_EVENT) handleCacheStateEvent(event.detail);
       });
     }
     document.addEventListener('visibilitychange', () => {
@@ -5892,6 +6030,11 @@ const EmailPage = (() => {
       message_open_prefetch_failed: state.messageOpenPrefetchFailed,
       message_open_prefetch_skipped: state.messageOpenPrefetchSkipped,
       message_open_prefetch_last_error: state.messageOpenPrefetchLastError,
+      message_open_telemetry_in_flight: state.messageOpenTelemetryInFlight,
+      message_open_telemetry_completed: state.messageOpenTelemetryCompleted,
+      message_open_telemetry_failed: state.messageOpenTelemetryFailed,
+      message_open_telemetry_last_error: state.messageOpenTelemetryLastError,
+      last_message_open_telemetry: state.lastMessageOpenTelemetry,
       message_image_prefetch_queue: state.messageImagePrefetchQueue.length,
       message_image_prefetch_in_flight: state.messageImagePrefetchInFlight,
       message_image_prefetch_completed: state.messageImagePrefetchCompleted,
@@ -5907,6 +6050,8 @@ const EmailPage = (() => {
       message_cache_state_loading: state.messageCacheStateLoading,
       message_cache_state_error: state.messageCacheStateError,
       message_cache_state_last_refreshed: state.messageCacheStateLastRefreshed,
+      cache_state_sse_count: state.cacheStateSseCount,
+      cache_state_sse_last_at: state.cacheStateSseLastAt,
       service_worker_image_cache_count: state.serviceWorkerImageCacheCount,
       cache_status: state.cacheStatus,
       cache_status_error: state.cacheStatusError,
@@ -5933,6 +6078,8 @@ const EmailPage = (() => {
       view: state.view,
       secondary_tab: state.secondaryTab,
       list_collapsed: state.listCollapsed,
+      health_heartbeat_active: healthHeartbeatActive(),
+      email_intro_min_height: state.emailIntroMinHeight,
       folder_set: state.folderSet,
       folder_group: state.folderGroup,
       error: state.error,
