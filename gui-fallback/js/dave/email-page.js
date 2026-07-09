@@ -212,6 +212,7 @@ const EmailPage = (() => {
 
   let messageContextPointerHandler = null;
   let messageContextKeyHandler = null;
+  let auditLedgerLocalDateTimeFormatter = null;
 
   function el(id) {
     return document.getElementById(id);
@@ -2897,6 +2898,60 @@ const EmailPage = (() => {
     return value || 'Subject unavailable';
   }
 
+  function auditLedgerParseDateTime(value) {
+    const raw = String(value ?? '').trim();
+    if (!raw || raw === 'n/a') return null;
+    const normalized = raw
+      .replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/, '$1T$2')
+      .replace(/\s+UTC$/i, 'Z');
+    const date = new Date(normalized);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  function auditLedgerRoundedDate(value) {
+    const date = auditLedgerParseDateTime(value);
+    if (!date) return null;
+    return new Date(Math.round(date.getTime() / 1000) * 1000);
+  }
+
+  function auditLedgerLocalFormatter() {
+    if (!auditLedgerLocalDateTimeFormatter && typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
+      auditLedgerLocalDateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hourCycle: 'h23',
+        timeZoneName: 'short',
+      });
+    }
+    return auditLedgerLocalDateTimeFormatter;
+  }
+
+  function auditLedgerLocalDateTime(value) {
+    const raw = String(value ?? '').trim();
+    if (!raw) return 'n/a';
+    const rounded = auditLedgerRoundedDate(raw);
+    if (!rounded) return raw;
+    const formatter = auditLedgerLocalFormatter();
+    if (formatter && typeof formatter.formatToParts === 'function') {
+      const parts = Object.fromEntries(formatter.formatToParts(rounded).map(part => [part.type, part.value]));
+      if (parts.year && parts.month && parts.day && parts.hour && parts.minute && parts.second) {
+        const hour = parts.hour === '24' ? '00' : parts.hour;
+        const zone = parts.timeZoneName ? ` ${parts.timeZoneName}` : '';
+        return `${parts.year}-${parts.month}-${parts.day} ${hour}:${parts.minute}:${parts.second}${zone}`;
+      }
+      return formatter.format(rounded);
+    }
+    const pad = valuePart => String(valuePart).padStart(2, '0');
+    return [
+      `${rounded.getFullYear()}-${pad(rounded.getMonth() + 1)}-${pad(rounded.getDate())}`,
+      `${pad(rounded.getHours())}:${pad(rounded.getMinutes())}:${pad(rounded.getSeconds())}`,
+    ].join(' ');
+  }
+
   function auditLedgerJsonHtml(value) {
     const safe = value && typeof value === 'object' ? value : {};
     const text = Object.keys(safe).length ? JSON.stringify(safe, null, 2) : '{}';
@@ -2938,8 +2993,7 @@ const EmailPage = (() => {
 
   function auditLedgerEventTimestamp(event) {
     const value = String(event?.event_ts || event?.created_at || '').trim();
-    if (!value) return 'n/a';
-    return value.replace('T', ' ').replace('+00:00', 'Z');
+    return auditLedgerLocalDateTime(value);
   }
 
   function auditLedgerEventPathLabel(event) {
@@ -2959,7 +3013,7 @@ const EmailPage = (() => {
       <div class="email-audit-ledger-row__detail">
         ${securityKvRowsHtml([
           ['Event id', event.event_id || 'n/a'],
-          ['Timestamp', event.event_ts || event.created_at || 'n/a'],
+          ['Timestamp', auditLedgerLocalDateTime(event.event_ts || event.created_at)],
           ['Event type', event.event_type || 'n/a', auditLedgerEventTone(event)],
           ['Action', event.action || 'n/a'],
           ['Operation', event.virtual_path_operation || 'n/a', event.virtual_path_operation || 'info'],
@@ -3066,9 +3120,9 @@ const EmailPage = (() => {
             ['Folder changes', ledgerState.folder_change_count ?? 'n/a'],
             ['Latest operation', ledgerState.latest_virtual_path_operation || 'n/a', ledgerState.latest_virtual_path_operation || 'info'],
             ['Latest path', ledgerState.latest_virtual_path || 'n/a'],
-            ['Last opened', ledgerState.last_opened_at || 'n/a'],
-            ['Latest path change', ledgerState.latest_virtual_path_changed_at || 'n/a'],
-            ['Loaded', state.auditLedgerLoadedAt || 'n/a'],
+            ['Last opened', auditLedgerLocalDateTime(ledgerState.last_opened_at)],
+            ['Latest path change', auditLedgerLocalDateTime(ledgerState.latest_virtual_path_changed_at)],
+            ['Loaded', auditLedgerLocalDateTime(state.auditLedgerLoadedAt)],
             ['email_uid', history.email_uid || state.auditLedgerEmailUid || 'n/a', '', true],
             ['Raw hash', ledgerState.raw_sha256 ? `${String(ledgerState.raw_sha256).slice(0, 16)}...` : 'n/a'],
           ])}

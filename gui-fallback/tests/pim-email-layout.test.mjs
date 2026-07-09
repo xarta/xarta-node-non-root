@@ -536,6 +536,12 @@ test('PIM Email INBOX_X meta folder and open-audit browser contract stays wired'
   assert.match(indexHtml, /id="email-audit-ledger-modal"/, 'Email must include a HubModal for per-message audit ledger inspection.');
   assert.match(emailJs, /function auditLedgerModalHtml\(\)[\s\S]*current_virtual_paths[\s\S]*auditLedgerEventRowsHtml/, 'Audit ledger modal must render current paths and event history from the stack response.');
   assert.match(emailJs, /function auditLedgerInfoGridHtml\(/, 'Audit ledger aggregate details must render as a compact responsive info grid.');
+  assert.match(auditLedgerSlice, /function auditLedgerLocalFormatter\(\)[\s\S]*Intl\.DateTimeFormat\('en-GB'[\s\S]*timeZoneName:\s*'short'/, 'Audit ledger timestamps must render in the browser local timezone with a visible zone label.');
+  assert.match(auditLedgerSlice, /Math\.round\(date\.getTime\(\) \/ 1000\) \* 1000/, 'Audit ledger timestamps must round fractional seconds to the nearest whole second.');
+  assert.match(auditLedgerSlice, /\['Last opened', auditLedgerLocalDateTime\(ledgerState\.last_opened_at\)\]/, 'Audit ledger last-opened summary must use local rounded timestamp display.');
+  assert.match(auditLedgerSlice, /\['Latest path change', auditLedgerLocalDateTime\(ledgerState\.latest_virtual_path_changed_at\)\]/, 'Audit ledger latest-path-change summary must use local rounded timestamp display.');
+  assert.match(auditLedgerSlice, /\['Loaded', auditLedgerLocalDateTime\(state\.auditLedgerLoadedAt\)\]/, 'Audit ledger loaded timestamp must use local rounded timestamp display.');
+  assert.match(auditLedgerSlice, /\['Timestamp', auditLedgerLocalDateTime\(event\.event_ts \|\| event\.created_at\)\]/, 'Expanded audit ledger event details must use local rounded timestamp display.');
   assert.match(auditLedgerSlice, /Subject unavailable/, 'Audit ledger must label missing subject data without the ambiguous no-subject wording.');
   assert.doesNotMatch(auditLedgerSlice, /\(no subject\)/, 'Audit ledger modal must not show the ambiguous old no-subject label.');
   assert.match(emailJs, /class="email-audit-ledger-table"/, 'Audit ledger events must render as a dense table.');
