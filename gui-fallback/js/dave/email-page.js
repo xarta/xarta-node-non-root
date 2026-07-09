@@ -34,7 +34,8 @@ const EmailPage = (() => {
   const MESSAGE_OPEN_CACHE_OPENED_BONUS_MS = 2 * 60 * 60 * 1000;
   const MESSAGE_OPEN_PREFETCH_LIMIT = 100;
   const MESSAGE_OPEN_PREFETCH_QUEUE_LIMIT = 240;
-  const MESSAGE_OPEN_PREFETCH_CONCURRENCY = 8;
+  const MESSAGE_OPEN_PREFETCH_CONCURRENCY = 1;
+  const MESSAGE_OPEN_PREFETCH_START_DELAY_MS = 2500;
   const MESSAGE_IMAGE_PREFETCH_CONCURRENCY = 2;
   const MESSAGE_IMAGE_CACHE_SOURCE_LIMIT = 120;
   const MESSAGE_IMAGE_CACHE_MAX_BYTES = 256 * 1024 * 1024;
@@ -46,6 +47,7 @@ const EmailPage = (() => {
   const PROBABLE_TRUSTED_SECURITY_POLL_ATTEMPTS = 36;
   const HEALTH_POLL_MS = 15000;
   const CACHE_STATUS_POLL_MS = 30000;
+  const CACHE_HEARTBEAT_RECENT_MS = 6000;
   const SECURITY_PROGRESS_EVENT = 'pim.email.security.progress';
   const CACHE_STATE_EVENT = 'pim.email.cache.state';
   const ORIGINAL_IMAGE_BUTTONS_STORAGE_KEY = 'blueprints.pimEmail.showOriginalImageButtons';
@@ -111,7 +113,8 @@ const EmailPage = (() => {
     messageOpenPrefetchSkipped: 0,
     messageOpenPrefetchLastError: '',
     messageOpenPrefetchLastUid: '',
-    messageOpenPrefetchControllers: new Set(),
+    messageOpenPrefetchControllers: new Map(),
+    messageOpenPrefetchPromises: new Map(),
     messageOpenPrefetchPausedUntil: 0,
     messageImagePrefetchSeen: new Set(),
     messageImagePrefetchQueue: [],
@@ -1175,8 +1178,11 @@ const EmailPage = (() => {
   }
 
   function cacheHeartbeatActivity() {
+    const recentCacheStateEvent = state.cacheStateSseLastAt
+      && Date.now() - state.cacheStateSseLastAt < CACHE_HEARTBEAT_RECENT_MS;
     return Boolean(
       state.health?.activity
+      || recentCacheStateEvent
       || state.cacheStatusLoading
       || state.messageCacheStateLoading
       || state.messageOpenTelemetryInFlight > 0
@@ -1205,14 +1211,14 @@ const EmailPage = (() => {
       ? 'download state stale'
       : downloadHealthActivity()
       ? 'checking IMAP folders'
-      : (cacheHeartbeatActivity() ? 'background cache/browser work active' : 'health/cache OK');
+      : (cacheHeartbeatActivity() ? 'cache/browser activity active' : 'health/cache OK');
     if (issues) return `PIM Email ${status}, ${issues} issue${issues === 1 ? '' : 's'}, ${active}`;
     if (warnings) return `PIM Email ${status}, ${warnings} warning${warnings === 1 ? '' : 's'}, ${active}`;
     if (downloadHealthActivity()) {
       const running = Number(download.running || 0);
       return `PIM Email checking IMAP folders${running ? `, ${running} run${running === 1 ? '' : 's'} active` : ''}`;
     }
-    if (cacheHeartbeatActivity()) return `PIM Email ${status}, background cache/browser work active`;
+    if (cacheHeartbeatActivity()) return `PIM Email ${status}, cache/browser activity active`;
     return `PIM Email ${status}, ${active}`;
   }
 
@@ -1370,13 +1376,14 @@ const EmailPage = (() => {
     state.messageOpenPrefetchSkipped = 0;
     state.messageOpenPrefetchLastError = '';
     state.messageOpenPrefetchLastUid = '';
-    state.messageOpenPrefetchControllers.forEach(controller => {
+    state.messageOpenPrefetchControllers.forEach((uid, controller) => {
       try {
         controller.abort();
       } catch (error) {}
     });
-    state.messageOpenPrefetchControllers = new Set();
-    state.messageOpenPrefetchPausedUntil = 0;
+    state.messageOpenPrefetchControllers = new Map();
+    state.messageOpenPrefetchPromises = new Map();
+    state.messageOpenPrefetchPausedUntil = performance.now() + MESSAGE_OPEN_PREFETCH_START_DELAY_MS;
     state.messageImagePrefetchSeen = new Set();
     state.messageImagePrefetchQueue = [];
     state.messageImagePrefetchInFlight = 0;
@@ -1426,7 +1433,10 @@ const EmailPage = (() => {
     state.messageCacheStateLoading = true;
     return fetchJson(cacheMessagesEndpoint(), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-PIM-Email-Client-Priority': 'background',
+      },
       body: JSON.stringify({ email_uids: uids, limit: uids.length }),
     }).then(data => {
       setMessageServerCacheStates(data?.message_states || {});
@@ -1466,7 +1476,10 @@ const EmailPage = (() => {
     const runWarm = () => {
       fetchJson(cacheWarmEndpoint(), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-PIM-Email-Client-Priority': 'background',
+        },
         body: JSON.stringify({ email_uids: batch, limit: batch.length }),
       }).then(data => {
         setMessageServerCacheStates(data?.message_states || {});
@@ -1612,16 +1625,24 @@ const EmailPage = (() => {
     if (state.messageOpenPrefetchQueue.length > MESSAGE_OPEN_PREFETCH_QUEUE_LIMIT) {
       state.messageOpenPrefetchQueue.splice(MESSAGE_OPEN_PREFETCH_QUEUE_LIMIT);
     }
+    if (state.messageOpenPrefetchStarted <= 0 && state.messageOpenPrefetchInFlight <= 0) {
+      state.messageOpenPrefetchPausedUntil = Math.max(
+        state.messageOpenPrefetchPausedUntil,
+        performance.now() + MESSAGE_OPEN_PREFETCH_START_DELAY_MS,
+      );
+    }
     pumpMessageOpenPrefetch();
     notifyCacheStateChanged();
   }
 
-  function pauseMessageOpenPrefetch(durationMs = 3500) {
+  function pauseMessageOpenPrefetch(durationMs = 3500, options = {}) {
+    const exceptUid = String(options.exceptUid || '').trim();
     state.messageOpenPrefetchPausedUntil = Math.max(
       state.messageOpenPrefetchPausedUntil,
       performance.now() + durationMs,
     );
-    state.messageOpenPrefetchControllers.forEach(controller => {
+    state.messageOpenPrefetchControllers.forEach((uid, controller) => {
+      if (exceptUid && uid === exceptUid) return;
       try {
         controller.abort();
       } catch (error) {}
@@ -1640,11 +1661,16 @@ const EmailPage = (() => {
     }
     const controller = new AbortController();
     task.controller = controller;
-    state.messageOpenPrefetchControllers.add(controller);
+    state.messageOpenPrefetchControllers.set(controller, task.uid);
+    let request = null;
     try {
-      const data = await fetchJson(messageEndpoint(task.uid, task.row, { opened: false }), {
+      request = fetchJson(messageEndpoint(task.uid, task.row, { opened: false }), {
+        headers: { 'X-PIM-Email-Client-Priority': 'background' },
         signal: controller.signal,
+        priority: 'low',
       });
+      state.messageOpenPrefetchPromises.set(task.uid, request);
+      const data = await request;
       if (task.seq !== state.folderLoadSeq || task.folder !== state.folder) {
         state.messageOpenPrefetchSkipped += 1;
         return;
@@ -1669,11 +1695,18 @@ const EmailPage = (() => {
       state.messageOpenPrefetchLastError = error.message || String(error);
     } finally {
       state.messageOpenPrefetchControllers.delete(controller);
+      if (request && state.messageOpenPrefetchPromises.get(task.uid) === request) {
+        state.messageOpenPrefetchPromises.delete(task.uid);
+      }
       notifyCacheStateChanged();
     }
   }
 
   function pumpMessageOpenPrefetch() {
+    if (state.messagePendingUid) {
+      window.setTimeout(pumpMessageOpenPrefetch, 250);
+      return;
+    }
     const pauseMs = state.messageOpenPrefetchPausedUntil - performance.now();
     if (pauseMs > 0) {
       window.setTimeout(pumpMessageOpenPrefetch, pauseMs + 25);
@@ -1939,6 +1972,9 @@ const EmailPage = (() => {
         lastUsed: performance.now(),
         totalSources: 0,
         complete: false,
+        renderedHtml: '',
+        renderedHtmlRawSha: '',
+        renderedHtmlLength: 0,
       };
       state.messageImageCache.set(uid, entry);
     }
@@ -1948,9 +1984,16 @@ const EmailPage = (() => {
   }
 
   function ensureMessageImageCache(message) {
-    const html = String(message?.views?.html || '');
     const uid = String(message?.email_uid || '').trim();
-    if (!uid || !html) return null;
+    if (!uid) return null;
+    const rawSha = messageRawSha(message);
+    const existing = state.messageImageCache.get(uid);
+    if (existing?.complete && (!rawSha || !existing.rawSha || existing.rawSha === rawSha)) {
+      existing.lastUsed = performance.now();
+      return Promise.resolve(existing);
+    }
+    const html = String(message?.views?.html || '');
+    if (!html) return null;
     const entry = imageCacheEntryForMessage(message);
     if (!entry) return null;
     if (entry.pending) return entry.pending;
@@ -2013,6 +2056,15 @@ const EmailPage = (() => {
   function htmlWithCachedMessageImages(value, message) {
     if (!value || typeof DOMParser === 'undefined') return value;
     const entry = imageCacheEntryForMessage(message);
+    const rawSha = messageRawSha(message);
+    if (
+      entry?.renderedHtml
+      && entry.renderedHtmlRawSha === rawSha
+      && entry.renderedHtmlLength === value.length
+    ) {
+      entry.lastUsed = performance.now();
+      return entry.renderedHtml;
+    }
     const doc = new DOMParser().parseFromString(`<body>${value}</body>`, 'text/html');
     let changed = false;
     if (entry?.sources?.size) {
@@ -2026,7 +2078,13 @@ const EmailPage = (() => {
       });
     }
     if (appendImageOutcomeDetails(doc, message)) changed = true;
-    return changed ? doc.body.innerHTML : value;
+    const html = changed ? doc.body.innerHTML : value;
+    if (entry && changed) {
+      entry.renderedHtml = html;
+      entry.renderedHtmlRawSha = rawSha;
+      entry.renderedHtmlLength = value.length;
+    }
+    return html;
   }
 
   function imageDerivativeRows(message) {
@@ -3615,7 +3673,7 @@ const EmailPage = (() => {
     });
     const frame = document.createElement('iframe');
     frame.className = 'email-html-frame';
-    frame.setAttribute('sandbox', 'allow-same-origin');
+    frame.setAttribute('sandbox', 'allow-same-origin allow-popups allow-popups-to-escape-sandbox');
     frame.setAttribute('referrerpolicy', 'no-referrer');
     frame.setAttribute('title', 'Sanitized email HTML');
     frame.srcdoc = htmlFrameDocument(value, message);
@@ -4987,7 +5045,6 @@ const EmailPage = (() => {
     const openSeq = state.messageOpenSeq + 1;
     state.messageOpenSeq = openSeq;
     const startedAt = performance.now();
-    pauseMessageOpenPrefetch();
     const row = state.messages.find(item => (
       String(item.email_uid || '') === cleanUid || String(item.uid || '') === cleanUid
     )) || null;
@@ -5018,6 +5075,7 @@ const EmailPage = (() => {
           telemetry_status: 'queued',
         });
         recordMessageOpenClickFireAndForget(emailUid, row, 'browser-cache');
+        window.setTimeout(() => pauseMessageOpenPrefetch(1500), 0);
         return true;
       } catch (error) {
         if (openSeq === state.messageOpenSeq) state.messagePendingUid = '';
@@ -5028,9 +5086,47 @@ const EmailPage = (() => {
     state.messagePendingUid = emailUid;
     syncSelectedMessageRows();
     renderMessageLoading(row, emailUid);
+    pauseMessageOpenPrefetch(3500);
+    const prefetched = state.messageOpenPrefetchPromises.get(emailUid) || null;
+    if (prefetched) {
+      try {
+        const networkStartedAt = performance.now();
+        const data = await prefetched;
+        const networkMs = performance.now() - networkStartedAt;
+        if (openSeq !== state.messageOpenSeq) return false;
+        state.message = data?.message || null;
+        if (state.message) {
+          state.messagePendingUid = '';
+          cacheOpenedMessage(emailUid, row, state.message, { opened: true });
+          ensureMessageImageCache(state.message);
+          state.view = defaultMessageView(state.message);
+          state.securityProgress = null;
+          syncSelectedMessageRows();
+          renderMessage();
+          renderSecondaryPanels();
+          setStatus('Local email loaded', 'ok');
+          renderOpenedMessageSecurityProgress();
+          recordMessageTiming({
+            uid: emailUid,
+            source: 'browser-prefetch',
+            body_ms: performance.now() - startedAt,
+            network_ms: networkMs,
+          });
+          recordMessageOpenClickFireAndForget(emailUid, row, 'browser-prefetch');
+          return true;
+        }
+      } catch (error) {
+        if (error?.name !== 'AbortError') {
+          state.messageOpenPrefetchLastError = error.message || String(error);
+        }
+      }
+    }
     try {
       const networkStartedAt = performance.now();
-      const data = await fetchJson(messageEndpoint(emailUid, row, { opened: true }));
+      const data = await fetchJson(messageEndpoint(emailUid, row, { opened: true }), {
+        headers: { 'X-PIM-Email-Client-Priority': 'foreground' },
+        priority: 'high',
+      });
       const networkMs = performance.now() - networkStartedAt;
       if (openSeq !== state.messageOpenSeq) return false;
       state.message = data.message || null;

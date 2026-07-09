@@ -59,6 +59,21 @@
   }
 }
 
+@media (min-width: 821px) and (max-width: 1180px) {
+  .email-page__header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .email-page__actions {
+    grid-row: 1;
+    justify-self: end;
+  }
+
+  .email-page__title-block {
+    grid-row: 2;
+  }
+}
+
 .email-page__meta,
 .email-empty,
 .email-message-meta,
@@ -78,6 +93,7 @@
   align-self: flex-start;
   min-width: max-content;
   max-width: 100%;
+  white-space: nowrap;
 }
 
 .email-status-strip {
@@ -217,6 +233,7 @@
   width: var(--email-action-size);
   height: var(--email-action-size);
   border-color: rgba(var(--hub-accent-rgb), 0.42);
+  flex: 0 0 var(--email-action-size);
 }
 
 .email-icon-btn::before,
