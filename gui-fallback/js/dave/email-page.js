@@ -2163,16 +2163,40 @@ const EmailPage = (() => {
         openImageDiagnosticModal(diagnostic);
         return true;
       };
+      const openLinkFromTarget = target => {
+        const anchor = target?.closest?.('a[href]');
+        if (!anchor) return false;
+        const cleanHref = safeMarkdownHref(anchor.getAttribute('href') || '');
+        if (!cleanHref) return false;
+        if (/^mailto:/i.test(cleanHref) || /^tel:/i.test(cleanHref)) {
+          window.location.href = cleanHref;
+          return true;
+        }
+        const opened = window.open(cleanHref, '_blank', 'noopener,noreferrer');
+        if (opened) opened.opener = null;
+        return true;
+      };
       doc.addEventListener('click', event => {
         if (!openFromTarget(event.target)) return;
         event.preventDefault();
-        event.stopPropagation();
+        event.stopImmediatePropagation();
+      });
+      doc.addEventListener('click', event => {
+        if (!openLinkFromTarget(event.target)) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
       });
       doc.addEventListener('keydown', event => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         if (!openFromTarget(event.target)) return;
         event.preventDefault();
-        event.stopPropagation();
+        event.stopImmediatePropagation();
+      });
+      doc.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        if (!openLinkFromTarget(event.target)) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
       });
     });
   }
