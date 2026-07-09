@@ -21,6 +21,7 @@ let _nodeRestartLongPressTimer = null;
 let _nodeRestartLongPressFiredAt = 0;
 let _nodeRestartSuppressNextClick = false;
 let _fleetHealthRunning = false;
+let _lastFleetHealthReport = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   const retouchBtn = document.getElementById('retouch-btn');
@@ -1121,6 +1122,7 @@ async function runFleetHealthChecks(options = {}) {
     if (!r.ok) {
       throw new Error(`HTTP ${r.status}`);
     }
+    _lastFleetHealthReport = data;
     const report = data?.text_report || JSON.stringify(data || {}, null, 2);
     _appendFleetHealthReport(report);
     const summary = data?.summary || {};
@@ -1133,6 +1135,7 @@ async function runFleetHealthChecks(options = {}) {
     _setFleetHealthStatus(`Checked ${checked}/${targeted}; problems ${problems}; blocked checks ${blocked}.${saved}`, tone);
     return data;
   } catch (e) {
+    _lastFleetHealthReport = null;
     const message = e?.message || String(e);
     _appendFleetHealthReport([
       `Fleet health check: failed`,
@@ -1169,10 +1172,32 @@ async function copyFleetHealthReport() {
   }
 }
 
-function clearFleetHealthReport() {
+async function clearFleetHealthReport() {
   const { output } = _fleetHealthEls();
+  const issues = Array.isArray(_lastFleetHealthReport?.fleet_health_issues)
+    ? _lastFleetHealthReport.fleet_health_issues
+    : [];
+  if (issues.length) {
+    try {
+      const r = await apiFetch('/api/v1/nodes/fleet-health-clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ issues }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json().catch(() => ({}));
+      if (output) output.value = '';
+      _lastFleetHealthReport = null;
+      _setFleetHealthStatus(`Cleared report; acknowledged ${data?.acknowledged || issues.length} current issue(s).`, 'ok');
+      return;
+    } catch (e) {
+      _setFleetHealthStatus(`Fleet health clear failed: ${e?.message || String(e)}`, 'err');
+      return;
+    }
+  }
   if (output) output.value = '';
-  _setFleetHealthStatus('', '');
+  _lastFleetHealthReport = null;
+  _setFleetHealthStatus('Cleared displayed fleet health report.', '');
 }
 
 async function fleetUpdate(btn) {
