@@ -639,11 +639,35 @@
 
 .email-message-row {
   display: grid;
-  grid-template-columns: 26px minmax(0, 1fr);
+  grid-template-columns: 26px minmax(0, 1fr) 4px;
   align-items: center;
   gap: 8px;
   padding: 9px;
   cursor: pointer;
+}
+
+.email-message-cache-strip {
+  align-self: stretch;
+  width: 4px;
+  min-height: 34px;
+  border-radius: 3px;
+  background: #6f1017;
+}
+
+.email-message-row[data-cache-state="server-source"] .email-message-cache-strip {
+  background: #d96c00;
+}
+
+.email-message-row[data-cache-state="server-assets"] .email-message-cache-strip {
+  background: #e6a817;
+}
+
+.email-message-row[data-cache-state="browser-raw"] .email-message-cache-strip {
+  background: #146c2e;
+}
+
+.email-message-row[data-cache-state="browser-assets"] .email-message-cache-strip {
+  background: #73d66b;
 }
 
 .email-row-select {

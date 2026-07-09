@@ -29,16 +29,15 @@ const EmailPage = (() => {
   const MESSAGE_PREFETCH_AHEAD = 100;
   const MESSAGE_SCROLL_LOAD_PX = 320;
   const MESSAGE_WARM_LIMIT = 100;
-  const MESSAGE_OPEN_CACHE_LIMIT = 240;
-  const MESSAGE_OPEN_CACHE_MAX_BYTES = 192 * 1024 * 1024;
+  const MESSAGE_OPEN_CACHE_LIMIT = Number.POSITIVE_INFINITY;
+  const MESSAGE_OPEN_CACHE_MAX_BYTES = 512 * 1024 * 1024;
   const MESSAGE_OPEN_CACHE_OPENED_BONUS_MS = 2 * 60 * 60 * 1000;
   const MESSAGE_OPEN_PREFETCH_LIMIT = 100;
   const MESSAGE_OPEN_PREFETCH_QUEUE_LIMIT = 240;
   const MESSAGE_OPEN_PREFETCH_CONCURRENCY = 8;
   const MESSAGE_IMAGE_PREFETCH_CONCURRENCY = 2;
-  const MESSAGE_IMAGE_CACHE_LIMIT = 24;
   const MESSAGE_IMAGE_CACHE_SOURCE_LIMIT = 120;
-  const MESSAGE_IMAGE_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+  const MESSAGE_IMAGE_CACHE_MAX_BYTES = 256 * 1024 * 1024;
   const MESSAGE_IMAGE_CACHE_CONCURRENCY = 4;
   const MESSAGE_CONTEXT_MENU_ID = 'email-message-context-menu';
   const MESSAGE_CONTEXT_LONG_PRESS_MS = 420;
@@ -121,6 +120,11 @@ const EmailPage = (() => {
     messageImagePrefetchSkipped: 0,
     messageImageCache: new Map(),
     messageImageCacheBytes: 0,
+    messageServerCacheStates: new Map(),
+    messageCacheStateTimer: null,
+    messageCacheStateLastRefreshed: 0,
+    messageCacheStateError: '',
+    messageCacheStateLoading: false,
     messageOpenCacheHit: false,
     messageOpenSeq: 0,
     messagePendingUid: '',
@@ -826,6 +830,10 @@ const EmailPage = (() => {
     return `${API_ROOT}/local/cache/warm`;
   }
 
+  function cacheMessagesEndpoint() {
+    return `${API_ROOT}/local/cache/messages`;
+  }
+
   function cacheStatusEndpoint() {
     return `${API_ROOT}/local/cache/status`;
   }
@@ -1322,6 +1330,64 @@ const EmailPage = (() => {
     state.messageImagePrefetchSkipped = 0;
   }
 
+  function messageUidsFromRows(rows, limit = 200) {
+    const uids = [];
+    const seen = new Set();
+    (rows || []).forEach(row => {
+      if (uids.length >= limit) return;
+      const uid = messageIdentity(row);
+      if (!uid || seen.has(uid)) return;
+      seen.add(uid);
+      uids.push(uid);
+    });
+    return uids;
+  }
+
+  function setMessageServerCacheStates(states) {
+    if (!states || typeof states !== 'object' || Array.isArray(states)) return false;
+    Object.entries(states).forEach(([uid, value]) => {
+      const cleanUid = String(uid || value?.email_uid || '').trim();
+      if (!cleanUid || !value || typeof value !== 'object') return;
+      state.messageServerCacheStates.set(cleanUid, value);
+    });
+    state.messageCacheStateLastRefreshed = Date.now();
+    state.messageCacheStateError = '';
+    notifyCacheStateChanged();
+    return true;
+  }
+
+  function refreshMessageCacheStates(rows = state.messages, options = {}) {
+    const uids = messageUidsFromRows(rows, Math.max(1, Math.min(Number(options.limit || 200), 200)));
+    if (!uids.length) return Promise.resolve(null);
+    state.messageCacheStateLoading = true;
+    return fetchJson(cacheMessagesEndpoint(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email_uids: uids, limit: uids.length }),
+    }).then(data => {
+      setMessageServerCacheStates(data?.message_states || {});
+      return data;
+    }).catch(error => {
+      state.messageCacheStateError = error.message || String(error);
+      return null;
+    }).finally(() => {
+      state.messageCacheStateLoading = false;
+      notifyCacheStateChanged();
+    });
+  }
+
+  function scheduleMessageCacheStateRefresh(rows = state.messages, delayMs = 700) {
+    if (state.messageCacheStateTimer) {
+      window.clearTimeout(state.messageCacheStateTimer);
+      state.messageCacheStateTimer = null;
+    }
+    const batch = Array.isArray(rows) ? rows.slice(0, 200) : state.messages.slice(0, 200);
+    state.messageCacheStateTimer = window.setTimeout(() => {
+      state.messageCacheStateTimer = null;
+      refreshMessageCacheStates(batch);
+    }, Math.max(0, Number(delayMs || 0)));
+  }
+
   function warmMessageArtifacts(rows) {
     const uids = [];
     (rows || []).forEach(row => {
@@ -1338,6 +1404,9 @@ const EmailPage = (() => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email_uids: batch, limit: batch.length }),
+      }).then(data => {
+        setMessageServerCacheStates(data?.message_states || {});
+        scheduleMessageCacheStateRefresh(rows, 900);
       }).catch(() => {
         // Background warm misses must never affect list scrolling or message opening.
       });
@@ -1350,6 +1419,7 @@ const EmailPage = (() => {
   }
 
   function notifyCacheStateChanged() {
+    updateMessageCacheStrips();
     if (state.secondaryTab !== 'cache') return;
     renderSecondaryPanels();
     renderUltrawide();
@@ -1403,7 +1473,6 @@ const EmailPage = (() => {
         0,
         state.messageOpenCacheBytes - Number(removed?.bytes || 0),
       );
-      invalidateMessageImageCache(evictKey);
     }
   }
 
@@ -1585,7 +1654,6 @@ const EmailPage = (() => {
   }
 
   function pumpMessageImagePrefetch() {
-    if (state.messageOpenPrefetchQueue.length || state.messageOpenPrefetchInFlight) return;
     while (
       state.messageImagePrefetchInFlight < MESSAGE_IMAGE_PREFETCH_CONCURRENCY
       && state.messageImagePrefetchQueue.length
@@ -1798,18 +1866,19 @@ const EmailPage = (() => {
     let entry = state.messageImageCache.get(uid);
     if (!entry || (entry.rawSha && rawSha && entry.rawSha !== rawSha)) {
       if (entry) dropMessageImageCacheEntry(uid);
-      entry = { rawSha, sources: new Map(), bytes: 0, pending: null, lastUsed: performance.now() };
+      entry = {
+        rawSha,
+        sources: new Map(),
+        bytes: 0,
+        pending: null,
+        lastUsed: performance.now(),
+        totalSources: 0,
+        complete: false,
+      };
       state.messageImageCache.set(uid, entry);
     }
     entry.rawSha = rawSha || entry.rawSha || '';
     entry.lastUsed = performance.now();
-    evictOldestMapEntry(state.messageImageCache, MESSAGE_IMAGE_CACHE_LIMIT, removed => {
-      state.messageImageCacheBytes = Math.max(
-        0,
-        state.messageImageCacheBytes - Number(removed?.bytes || 0),
-      );
-      revokeImageCacheEntry(removed);
-    });
     return entry;
   }
 
@@ -1821,8 +1890,13 @@ const EmailPage = (() => {
     if (!entry) return null;
     if (entry.pending) return entry.pending;
     const sources = localImageSourcesFromHtml(html).slice(0, MESSAGE_IMAGE_CACHE_SOURCE_LIMIT);
+    entry.totalSources = sources.length;
+    entry.complete = sources.length > 0 && entry.sources.size >= sources.length;
     const missing = sources.filter(item => !entry.sources.has(item.key));
-    if (!missing.length) return Promise.resolve(entry);
+    if (!missing.length) {
+      notifyCacheStateChanged();
+      return Promise.resolve(entry);
+    }
     const activeUid = uid;
     entry.pending = (async () => {
       let nextIndex = 0;
@@ -1859,6 +1933,8 @@ const EmailPage = (() => {
         () => warmNextImage(),
       );
       await Promise.all(workers);
+      entry.complete = sources.length > 0 && entry.sources.size >= sources.length;
+      notifyCacheStateChanged();
       return entry;
     })().finally(() => {
       entry.pending = null;
@@ -2147,7 +2223,7 @@ const EmailPage = (() => {
 
   function connectHtmlFrameImageDiagnostics(frame) {
     if (!frame) return;
-    frame.addEventListener('load', () => {
+    const bindFrameDocument = () => {
       let doc = null;
       try {
         doc = frame.contentDocument || frame.contentWindow?.document || null;
@@ -2177,27 +2253,22 @@ const EmailPage = (() => {
         return true;
       };
       doc.addEventListener('click', event => {
-        if (!openFromTarget(event.target)) return;
+        const handled = openFromTarget(event.target) || openLinkFromTarget(event.target);
+        if (!handled) return;
         event.preventDefault();
         event.stopImmediatePropagation();
-      });
-      doc.addEventListener('click', event => {
-        if (!openLinkFromTarget(event.target)) return;
-        event.preventDefault();
-        event.stopImmediatePropagation();
-      });
+      }, true);
       doc.addEventListener('keydown', event => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
-        if (!openFromTarget(event.target)) return;
+        const handled = openFromTarget(event.target) || openLinkFromTarget(event.target);
+        if (!handled) return;
         event.preventDefault();
         event.stopImmediatePropagation();
-      });
-      doc.addEventListener('keydown', event => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        if (!openLinkFromTarget(event.target)) return;
-        event.preventDefault();
-        event.stopImmediatePropagation();
-      });
+      }, true);
+    };
+    frame.addEventListener('load', bindFrameDocument);
+    [0, 25, 100, 250, 500].forEach(delay => {
+      window.setTimeout(bindFrameDocument, delay);
     });
   }
 
@@ -2248,6 +2319,87 @@ const EmailPage = (() => {
     });
   }
 
+  function messageBrowserCacheState(uid) {
+    const cleanUid = String(uid || '').trim();
+    const rawCached = cleanUid ? state.messageOpenCache.has(cleanUid) : false;
+    const imageEntry = cleanUid ? state.messageImageCache.get(cleanUid) : null;
+    const imageSources = imageEntry?.sources instanceof Map ? imageEntry.sources.size : 0;
+    const imageTotal = Number(imageEntry?.totalSources || imageSources || 0);
+    const imagesComplete = Boolean(
+      imageEntry
+      && !imageEntry.pending
+      && imageEntry.complete
+      && imageTotal > 0
+      && imageSources >= imageTotal
+    );
+    return {
+      rawCached,
+      imageSources,
+      imageTotal,
+      imagesComplete,
+    };
+  }
+
+  function messageCacheVisualState(uid) {
+    const cleanUid = String(uid || '').trim();
+    const server = state.messageServerCacheStates.get(cleanUid) || {};
+    const browser = messageBrowserCacheState(cleanUid);
+    const sourceCached = Boolean(server.source_cached);
+    const serverImagesTotal = Number(server.server_images_total || 0);
+    const serverImagesCached = Number(server.server_images_cached || 0);
+    const serverComplete = Boolean(server.server_complete);
+    let cacheState = 'none';
+    let label = 'No cache';
+    if (serverComplete && browser.rawCached && browser.imagesComplete) {
+      cacheState = 'browser-assets';
+      label = 'Server and browser message/assets cached';
+    } else if (serverComplete && browser.rawCached) {
+      cacheState = 'browser-raw';
+      label = 'Server cache complete and browser message cached';
+    } else if (sourceCached && (serverImagesCached > 0 || serverComplete)) {
+      cacheState = 'server-assets';
+      label = serverImagesTotal
+        ? `Server image cache ${serverImagesCached}/${serverImagesTotal}`
+        : 'Server cache complete; message has no local image assets';
+    } else if (sourceCached) {
+      cacheState = 'server-source';
+      label = 'Server sanitized source cached';
+    }
+    return {
+      state: cacheState,
+      label,
+      title: `${label}; browser raw ${browser.rawCached ? 'yes' : 'no'}; browser images ${browser.imageSources}/${browser.imageTotal}; server images ${serverImagesCached}/${serverImagesTotal}`,
+    };
+  }
+
+  function messageCacheVisualCounts(rows = state.messages) {
+    const counts = {
+      none: 0,
+      server_source: 0,
+      server_assets: 0,
+      browser_raw: 0,
+      browser_assets: 0,
+    };
+    (rows || []).forEach(row => {
+      const uid = messageIdentity(row);
+      if (!uid) return;
+      const key = messageCacheVisualState(uid).state.replace(/-/g, '_');
+      if (Object.prototype.hasOwnProperty.call(counts, key)) counts[key] += 1;
+    });
+    return counts;
+  }
+
+  function updateMessageCacheStrips() {
+    document.querySelectorAll('#email-message-list .email-message-row[data-email-message-email-uid]').forEach(row => {
+      const uid = rowMessageUid(row);
+      if (!uid) return;
+      const visual = messageCacheVisualState(uid);
+      row.dataset.cacheState = visual.state;
+      const strip = row.querySelector('.email-message-cache-strip');
+      if (strip) strip.setAttribute('title', visual.title);
+    });
+  }
+
   function toggleMessageSelection(uid, checked) {
     const clean = String(uid || '').trim();
     if (!clean) return false;
@@ -2275,6 +2427,8 @@ const EmailPage = (() => {
     state.messageListTotal = Number.isFinite(Number(data?.total)) ? Number(data.total) : null;
     state.messagesHasMore = Boolean(data?.has_more);
     state.messageListSignature = messageListSignature(state.messages);
+    setMessageServerCacheStates(data?.message_states || {});
+    refreshMessageCacheStates(incoming);
     warmMessageArtifacts(incoming);
     enqueueMessageOpenPrefetch(incoming);
   }
@@ -2298,6 +2452,7 @@ const EmailPage = (() => {
     const key = messageIdentity(row);
     const selected = key === activeMessageUid();
     const multiSelected = state.selectedMessageUids.has(key);
+    const cacheVisual = messageCacheVisualState(key);
     const search = row?.search && typeof row.search === 'object' ? row.search : null;
     const sources = Array.isArray(search?.sources) ? search.sources.join('+') : '';
     const score = Number(search?.score || 0);
@@ -2308,7 +2463,7 @@ const EmailPage = (() => {
       ? `<div class="email-message-snippet">${escHtml(search.snippet)}</div>`
       : '';
     return `
-      <div class="email-message-row" data-email-message-uid="${escHtml(row.uid || '')}" data-email-message-email-uid="${escHtml(row.email_uid || '')}" data-selected="${selected ? 'true' : 'false'}" data-multi-selected="${multiSelected ? 'true' : 'false'}" tabindex="0">
+      <div class="email-message-row" data-email-message-uid="${escHtml(row.uid || '')}" data-email-message-email-uid="${escHtml(row.email_uid || '')}" data-cache-state="${escHtml(cacheVisual.state)}" data-selected="${selected ? 'true' : 'false'}" data-multi-selected="${multiSelected ? 'true' : 'false'}" tabindex="0">
         <label class="hub-checkbox email-row-select" title="Select message" aria-label="Select message ${escHtml(row.subject || row.email_uid || '')}">
           <input class="hub-checkbox__input" type="checkbox" data-email-message-select="${escHtml(key)}"${multiSelected ? ' checked' : ''}>
           <span class="hub-checkbox__box" aria-hidden="true"></span>
@@ -2320,6 +2475,7 @@ const EmailPage = (() => {
           ${searchMeta}
           ${searchSnippet}
         </div>
+        <span class="email-message-cache-strip" title="${escHtml(cacheVisual.title)}" aria-hidden="true"></span>
       </div>
     `;
   }
@@ -3396,8 +3552,8 @@ const EmailPage = (() => {
     frame.setAttribute('sandbox', 'allow-same-origin');
     frame.setAttribute('referrerpolicy', 'no-referrer');
     frame.setAttribute('title', 'Sanitized email HTML');
-    connectHtmlFrameImageDiagnostics(frame);
     frame.srcdoc = htmlFrameDocument(value, message);
+    connectHtmlFrameImageDiagnostics(frame);
     shell.appendChild(safety);
     shell.appendChild(frame);
     content.appendChild(shell);
@@ -3874,6 +4030,7 @@ const EmailPage = (() => {
     const status = state.cacheStatus || {};
     const prefetchTotal = state.messageOpenPrefetchQueue.length + state.messageOpenPrefetchInFlight;
     const pausedMs = Math.max(0, Math.round(state.messageOpenPrefetchPausedUntil - performance.now()));
+    const stripCounts = messageCacheVisualCounts();
     const lastRefresh = state.cacheStatusLastRefreshed
       ? `${Math.round((Date.now() - state.cacheStatusLastRefreshed) / 1000)}s ago`
       : 'pending';
@@ -3891,15 +4048,18 @@ const EmailPage = (() => {
             ['Image prefetch queue', `${state.messageImagePrefetchQueue.length + state.messageImagePrefetchInFlight} pending/running, ${state.messageImagePrefetchCompleted} done, ${state.messageImagePrefetchFailed} failed`],
             ['Current source warm set', `${state.messageWarmSeen.size} UIDs seen`],
             ['Browser image memory', `${state.messageImageCache.size} messages, ${formatBytes(state.messageImageCacheBytes)} / ${formatBytes(MESSAGE_IMAGE_CACHE_MAX_BYTES)}`],
+            ['Visible cache strips', `red ${stripCounts.none}, orange ${stripCounts.server_source}, amber ${stripCounts.server_assets}, dark green ${stripCounts.browser_raw}, light green ${stripCounts.browser_assets}`],
+            ['Row cache states', state.messageCacheStateLastRefreshed ? `${Math.round((Date.now() - state.messageCacheStateLastRefreshed) / 1000)}s ago` : 'pending'],
             ['Service worker image cache', state.serviceWorkerImageCacheCount === null ? 'pending' : `${state.serviceWorkerImageCacheCount} requests`],
             ['Last refreshed', lastRefresh],
           ])}
           ${state.messageOpenPrefetchLastError ? `<div class="email-empty">${escHtml(state.messageOpenPrefetchLastError)}</div>` : ''}
+          ${state.messageCacheStateError ? `<div class="email-empty">${escHtml(state.messageCacheStateError)}</div>` : ''}
           ${state.cacheStatusError ? `<div class="email-empty">${escHtml(state.cacheStatusError)}</div>` : ''}
         </section>
         ${cacheStatsSectionHtml('Stack Source Artifacts', status.source_artifact_cache || status.cache)}
         ${cacheStatsSectionHtml('Stack Local Images', status.image_asset_cache, [
-          ['Warm tasks', `${status.image_asset_cache_warm_tasks?.active ?? 'n/a'} / ${status.image_asset_cache_warm_tasks?.max ?? 'n/a'}`],
+          ['Warm tasks', `${status.image_asset_cache_warm_tasks?.active ?? 'n/a'} active, ${status.image_asset_cache_warm_tasks?.queued ?? 'n/a'} queued / ${status.image_asset_cache_warm_tasks?.max ?? 'n/a'}`],
         ])}
         ${cacheStatsSectionHtml('Blueprints Proxy Images', status.proxy_image_cache)}
         <section class="email-cache-section">
@@ -5742,6 +5902,11 @@ const EmailPage = (() => {
       message_image_cache_ready: !!imageCache && !imageCache.pending && imageCache.sources.size > 0,
       message_image_cache_count: imageCache?.sources?.size || 0,
       message_image_cache_pending: !!imageCache?.pending,
+      message_cache_strip_counts: messageCacheVisualCounts(),
+      message_cache_state_count: state.messageServerCacheStates.size,
+      message_cache_state_loading: state.messageCacheStateLoading,
+      message_cache_state_error: state.messageCacheStateError,
+      message_cache_state_last_refreshed: state.messageCacheStateLastRefreshed,
       service_worker_image_cache_count: state.serviceWorkerImageCacheCount,
       cache_status: state.cacheStatus,
       cache_status_error: state.cacheStatusError,
