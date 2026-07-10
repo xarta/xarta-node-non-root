@@ -3,13 +3,13 @@
 'use strict';
 
 const VadDevModal = (() => {
-  const DEV_STATUS_URL = '/api/v1/voice-mode/dev-status';
-  const STT_WS_URL = '/api/v1/voice-mode/stt/ws';
+  const DEV_STATUS_URL = '/api/v1/active-browser-runtime/dev-status';
+  const STT_WS_URL = '/api/v1/active-browser-runtime/stt/ws';
   const SAMPLE_RATE = 16000;
   const AUDIO_BUFFER_SIZE = 4096;
   const WINDOW_MS = 10000;
   const POLL_MS = 500;
-  const DEV_COMMAND_EVENT_TYPE = 'voice.mode.dev.command';
+  const DEV_COMMAND_EVENT_TYPE = 'active_browser.runtime.dev.command';
   const DEV_COMMAND_MAX_SEEN = 200;
   const DEV_STATUS_MIN_MS = 500;
   const VAD_TEST_DELAY_FRAMES = 0;
@@ -3877,7 +3877,7 @@ const VadDevModal = (() => {
       fsm_state: fsm,
       reason: target.enabled ? `${config.label}; isolated browser VAD/STT probe.` : config.statusOff,
       session_id: target.enabled ? config.session : '',
-      active_instance_id: 'voice-mode-stt',
+      active_instance_id: 'active-browser-runtime-stt',
       detector,
       silero_enabled: sileroEnabled,
       silero_model: silero.model || SILERO_MODEL,
@@ -3968,7 +3968,7 @@ const VadDevModal = (() => {
       metrics: [
         { label: 'FSM', value: fsm },
         { label: 'Session', value: target.enabled ? config.session : '--' },
-        { label: 'Instance', value: 'voice-mode-stt' },
+        { label: 'Instance', value: 'active-browser-runtime-stt' },
         { label: 'Frames', value: String(target.framesSent || 0) },
         { label: 'Debug age', value: 'live' },
         { label: 'Level', value: formatDb(target.lastLevel || 0) },

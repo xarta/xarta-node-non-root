@@ -985,7 +985,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
         && typeof BlueprintsVoiceMode.canSpeakHermesUtterance === 'function'
         && !await BlueprintsVoiceMode.canSpeakHermesUtterance()) {
       void _showTtsOffModal(item);
-      _emitSpeechSuppressed('voice_mode_not_active_tts_browser', item);
+      _emitSpeechSuppressed('active_browser_runtime_not_active_tts_browser', item);
       return;
     }
     if (typeof BlueprintsNotifierDnd !== 'undefined') {
@@ -1362,7 +1362,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
         void _handleTtsStopRequested(evt);
         break;
 
-      case 'voice.mode.changed':
+      case 'active_browser.runtime.changed':
         void _showToastForEvent({
           title: evt.title || 'Active Browser State',
           message: evt.message || 'Active Browser state changed.',
@@ -1371,7 +1371,7 @@ const BlueprintsModelChangeAnnouncer = (() => {
         break;
 
       case 'blueprints.active_browser.command':
-      case 'voice.mode.dev.command': {
+      case 'active_browser.runtime.dev.command': {
         const payload = evt.payload || {};
         const action = payload.action || payload.command || payload.mode || '';
         void _showToastForEvent({

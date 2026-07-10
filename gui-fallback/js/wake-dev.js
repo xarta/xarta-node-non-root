@@ -4,8 +4,8 @@
 
 const WakeDevModal = (() => {
   const SURFACE = 'wake_dev';
-  const DEV_STATUS_URL = '/api/v1/voice-mode/dev-status';
-  const DEV_COMMAND_EVENT_TYPE = 'voice.mode.dev.command';
+  const DEV_STATUS_URL = '/api/v1/active-browser-runtime/dev-status';
+  const DEV_COMMAND_EVENT_TYPE = 'active_browser.runtime.dev.command';
   const DEV_COMMAND_MAX_SEEN = 200;
   const DEV_STATUS_MIN_MS = 500;
   const POLL_MS = 500;
@@ -1279,7 +1279,7 @@ const WakeDevModal = (() => {
   async function saveSettings() {
     const vm = voiceMode();
     if (typeof vm?.saveWakeSettings !== 'function') {
-      const response = await apiFetchCompat('/api/v1/voice-mode/wake-settings', {
+      const response = await apiFetchCompat('/api/v1/active-browser-runtime/wake-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ wake_to_talk: collectSettings() }),

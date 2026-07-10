@@ -686,6 +686,7 @@
   gap: 8px;
   padding: 9px;
   cursor: pointer;
+  overflow: visible;
 }
 
 .email-message-cache-strip {
@@ -694,6 +695,7 @@
   min-height: 34px;
   border-radius: 3px;
   background: #6f1017;
+  position: relative;
 }
 
 .email-message-row[data-cache-state="server-source"] .email-message-cache-strip {
@@ -709,6 +711,95 @@
 }
 
 .email-message-row[data-cache-state="browser-assets"] .email-message-cache-strip {
+  background: #73d66b;
+}
+
+.email-message-cache-strip:hover,
+.email-message-cache-strip:focus-visible {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.18), 0 0 0 4px rgba(var(--hub-accent-rgb), 0.28);
+}
+
+.email-cache-tooltip {
+  background: rgba(8, 14, 28, 0.98);
+  border: 1px solid rgba(100, 146, 220, 0.7);
+  border-radius: 6px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+  color: var(--text);
+  display: none;
+  gap: 6px;
+  line-height: 1.35;
+  max-width: min(330px, calc(100vw - 40px));
+  min-width: 280px;
+  padding: 10px 12px;
+  pointer-events: none;
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: max-content;
+  z-index: 30;
+}
+
+.email-message-cache-strip:hover .email-cache-tooltip,
+.email-message-cache-strip:focus-visible .email-cache-tooltip {
+  display: grid;
+}
+
+.email-cache-tooltip__title {
+  color: #f7faff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.email-cache-tooltip__meta,
+.email-cache-tooltip__note {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.email-cache-tooltip__legend {
+  display: grid;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.email-cache-tooltip__row {
+  align-items: start;
+  display: grid;
+  font-size: 11px;
+  gap: 7px;
+  grid-template-columns: 10px minmax(0, 1fr);
+}
+
+.email-cache-tooltip__row[data-current="true"] {
+  color: #fff;
+}
+
+.email-cache-tooltip__swatch {
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  height: 10px;
+  margin-top: 2px;
+  width: 10px;
+}
+
+.email-cache-tooltip__swatch[data-cache-state="none"] {
+  background: #6f1017;
+}
+
+.email-cache-tooltip__swatch[data-cache-state="server-source"] {
+  background: #d96c00;
+}
+
+.email-cache-tooltip__swatch[data-cache-state="server-assets"] {
+  background: #e6a817;
+}
+
+.email-cache-tooltip__swatch[data-cache-state="browser-raw"] {
+  background: #146c2e;
+}
+
+.email-cache-tooltip__swatch[data-cache-state="browser-assets"] {
   background: #73d66b;
 }
 

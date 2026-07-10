@@ -13,13 +13,13 @@ const BlueprintsVoiceMode = (() => {
   const LS_CUE_ENABLED = 'blueprints.voice.announcement_cue_enabled';
   const LS_CUE_SOUND = 'blueprints.voice.announcement_cue_sound';
   const LS_CUE_REARM_MS = 'blueprints.voice.announcement_cue_rearm_ms';
-  const STATUS_URL = '/api/v1/voice-mode/status';
-  const DEPENDENCY_HEALTH_URL = '/api/v1/voice-mode/dependency-health';
-  const ACTIVATE_URL = '/api/v1/voice-mode/activate';
-  const DEACTIVATE_URL = '/api/v1/voice-mode/deactivate';
-  const POLICY_URL = '/api/v1/voice-mode/policy';
-  const WAKE_SETTINGS_URL = '/api/v1/voice-mode/wake-settings';
-  const AGGREGATION_TIMEOUT_URL = '/api/v1/voice-mode/stt/aggregation-timeout';
+  const STATUS_URL = '/api/v1/active-browser-runtime/status';
+  const DEPENDENCY_HEALTH_URL = '/api/v1/active-browser-runtime/dependency-health';
+  const ACTIVATE_URL = '/api/v1/active-browser-runtime/activate';
+  const DEACTIVATE_URL = '/api/v1/active-browser-runtime/deactivate';
+  const POLICY_URL = '/api/v1/active-browser-runtime/policy';
+  const WAKE_SETTINGS_URL = '/api/v1/active-browser-runtime/wake-settings';
+  const AGGREGATION_TIMEOUT_URL = '/api/v1/active-browser-runtime/stt/aggregation-timeout';
   const CUE_DEFAULT_REARM_MS = 1500;
   const CUE_MIN_REARM_MS = 250;
   const CUE_MAX_REARM_MS = 5000;
@@ -1686,7 +1686,7 @@ const BlueprintsVoiceMode = (() => {
     });
 
     document.addEventListener('blueprints:event', (event) => {
-      if (event.detail?.event_type === 'voice.mode.changed') {
+      if (event.detail?.event_type === 'active_browser.runtime.changed') {
         const payload = event.detail.payload || {};
         _applyServerState(payload);
         const nextPolicy = payload.policy || {};

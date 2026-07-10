@@ -2464,6 +2464,43 @@ const EmailPage = (() => {
     };
   }
 
+  function cacheVisualLegendRows(currentState) {
+    const rows = [
+      ['none', 'Red', 'No cache', 'No server source or browser cache is currently reported.'],
+      ['server-source', 'Orange', 'Server source', 'Sanitized source is cached; local image assets are not confirmed.'],
+      ['server-assets', 'Amber', 'Server assets', 'Sanitized source and at least some local image assets are cached on the stack.'],
+      ['browser-raw', 'Dark green', 'Browser body', 'Server cache is complete and this browser tab has the message body cached.'],
+      ['browser-assets', 'Bright green', 'Browser assets', 'This browser tab has the message body and local images cached.'],
+    ];
+    return rows.map(([stateName, color, label, description]) => {
+      const current = stateName === currentState;
+      const text = `${color}: ${label}`;
+      return `
+        <span class="email-cache-tooltip__row" data-current="${current ? 'true' : 'false'}">
+          <span class="email-cache-tooltip__swatch" data-cache-state="${escHtml(stateName)}" aria-hidden="true"></span>
+          <span>${current ? `<strong>${escHtml(text)}</strong>` : escHtml(text)} - ${escHtml(description)}</span>
+        </span>
+      `;
+    }).join('');
+  }
+
+  function cacheStripTooltipHtml(visual) {
+    const current = visual?.state || 'none';
+    const serverText = `Server images ${visual?.server_images_cached ?? 0}/${visual?.server_images_total ?? 0}`;
+    const browserText = `Browser raw ${visual?.browser_raw_cached ? 'yes' : 'no'}, images ${visual?.browser_images_cached ?? 0}/${visual?.browser_images_total ?? 0}`;
+    const staleText = visual?.server_state_stale
+      ? '<span class="email-cache-tooltip__note">Server report was stale; browser-loaded local assets prove the displayed cached state.</span>'
+      : '';
+    return `
+      <span class="email-cache-tooltip" role="tooltip">
+        <span class="email-cache-tooltip__title">${escHtml(visual?.label || 'No cache')}</span>
+        <span class="email-cache-tooltip__meta">${escHtml(`${serverText}; ${browserText}`)}</span>
+        ${staleText}
+        <span class="email-cache-tooltip__legend">${cacheVisualLegendRows(current)}</span>
+      </span>
+    `;
+  }
+
   function messageCacheVisualState(uid) {
     const cleanUid = String(uid || '').trim();
     const server = state.messageServerCacheStates.get(cleanUid) || {};
@@ -2472,27 +2509,53 @@ const EmailPage = (() => {
     const serverImagesTotal = Number(server.server_images_total || 0);
     const serverImagesCached = Number(server.server_images_cached || 0);
     const serverComplete = Boolean(server.server_complete);
+    const browserImagesComplete = Boolean(
+      browser.imagesComplete
+      || (browser.rawCached && browser.imageTotal === 0 && serverImagesTotal === 0 && sourceCached)
+    );
+    const browserVerifiedComplete = Boolean(browser.rawCached && browserImagesComplete);
+    const serverStateStale = Boolean(!serverComplete && browserVerifiedComplete);
+    const effectiveServerComplete = Boolean(serverComplete || serverStateStale);
+    const effectiveSourceCached = Boolean(sourceCached || browser.rawCached);
     let cacheState = 'none';
     let label = 'No cache';
-    if (serverComplete && browser.rawCached && browser.imagesComplete) {
+    if (effectiveServerComplete && browser.rawCached && browserImagesComplete) {
       cacheState = 'browser-assets';
-      label = 'Server and browser message/assets cached';
-    } else if (serverComplete && browser.rawCached) {
+      label = serverStateStale
+        ? 'Browser message/assets cached; server report stale'
+        : 'Server and browser message/assets cached';
+    } else if (effectiveServerComplete && browser.rawCached) {
       cacheState = 'browser-raw';
       label = 'Server cache complete and browser message cached';
-    } else if (sourceCached && (serverImagesCached > 0 || serverComplete)) {
+    } else if (effectiveSourceCached && (serverImagesCached > 0 || effectiveServerComplete)) {
       cacheState = 'server-assets';
       label = serverImagesTotal
         ? `Server image cache ${serverImagesCached}/${serverImagesTotal}`
         : 'Server cache complete; message has no local image assets';
-    } else if (sourceCached) {
+    } else if (effectiveSourceCached) {
       cacheState = 'server-source';
       label = 'Server sanitized source cached';
     }
+    const title = [
+      label,
+      `browser raw ${browser.rawCached ? 'yes' : 'no'}`,
+      `browser images ${browser.imageSources}/${browser.imageTotal}`,
+      `server images ${serverImagesCached}/${serverImagesTotal}`,
+      serverStateStale ? 'server report stale' : '',
+    ].filter(Boolean).join('; ');
     return {
       state: cacheState,
       label,
-      title: `${label}; browser raw ${browser.rawCached ? 'yes' : 'no'}; browser images ${browser.imageSources}/${browser.imageTotal}; server images ${serverImagesCached}/${serverImagesTotal}`,
+      title,
+      source_cached: sourceCached,
+      server_complete: serverComplete,
+      server_state_stale: serverStateStale,
+      server_images_cached: serverImagesCached,
+      server_images_total: serverImagesTotal,
+      browser_raw_cached: browser.rawCached,
+      browser_images_cached: browser.imageSources,
+      browser_images_total: browser.imageTotal,
+      browser_images_complete: browserImagesComplete,
     };
   }
 
@@ -2520,7 +2583,14 @@ const EmailPage = (() => {
       const visual = messageCacheVisualState(uid);
       row.dataset.cacheState = visual.state;
       const strip = row.querySelector('.email-message-cache-strip');
-      if (strip) strip.setAttribute('title', visual.title);
+      if (strip) {
+        const tooltipKey = `${visual.state}|${visual.title}`;
+        if (strip.dataset.cacheTooltipKey === tooltipKey) return;
+        strip.dataset.cacheTooltipKey = tooltipKey;
+        strip.setAttribute('title', visual.title);
+        strip.setAttribute('aria-label', visual.title);
+        strip.innerHTML = cacheStripTooltipHtml(visual);
+      }
     });
   }
 
@@ -2600,7 +2670,9 @@ const EmailPage = (() => {
           ${searchMeta}
           ${searchSnippet}
         </div>
-        <span class="email-message-cache-strip" title="${escHtml(cacheVisual.title)}" aria-hidden="true"></span>
+        <span class="email-message-cache-strip" title="${escHtml(cacheVisual.title)}" aria-label="${escHtml(cacheVisual.title)}" data-cache-tooltip-key="${escHtml(`${cacheVisual.state}|${cacheVisual.title}`)}">
+          ${cacheStripTooltipHtml(cacheVisual)}
+        </span>
       </div>
     `;
   }
@@ -6142,6 +6214,7 @@ const EmailPage = (() => {
   function snapshot() {
     const activeUid = activeMessageUid();
     const imageCache = activeUid ? state.messageImageCache.get(activeUid) : null;
+    const selectedCacheVisual = activeUid ? messageCacheVisualState(activeUid) : null;
     const selectedFolder = selectedFolderRecord();
     const selectedCapabilities = selectedFolderCapabilities();
     return {
@@ -6196,6 +6269,7 @@ const EmailPage = (() => {
       message_image_cache_count: imageCache?.sources?.size || 0,
       message_image_cache_pending: !!imageCache?.pending,
       message_cache_strip_counts: messageCacheVisualCounts(),
+      selected_cache_visual: selectedCacheVisual,
       message_cache_state_count: state.messageServerCacheStates.size,
       message_cache_state_loading: state.messageCacheStateLoading,
       message_cache_state_error: state.messageCacheStateError,

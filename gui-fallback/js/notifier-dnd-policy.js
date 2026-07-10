@@ -421,10 +421,10 @@ const BlueprintsNotifierDnd = (() => {
     if (type === 'tts.utterance.requested') {
       return 'hermes_speech';
     }
-    if (type === 'voice.mode.changed') {
+    if (type === 'active_browser.runtime.changed') {
       return 'active_browser_state';
     }
-    if (type === 'blueprints.active_browser.command' || type === 'voice.mode.dev.command') {
+    if (type === 'blueprints.active_browser.command' || type === 'active_browser.runtime.dev.command') {
       return 'active_browser_commands';
     }
     if (type.startsWith('matrix.chat.')) {

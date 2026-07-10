@@ -3,7 +3,7 @@
 'use strict';
 
 const BlueprintsActiveBrowserObserver = (() => {
-  const REPORT_URL = '/api/v1/voice-mode/browser-view';
+  const REPORT_URL = '/api/v1/active-browser-runtime/browser-view';
   const ACTIVE_BROWSER_COMMAND_EVENT = 'blueprints.active_browser.command';
   const REPORT_DEBOUNCE_MS = 300;
   const MODAL_COMMAND_SETTLE_MS = 650;

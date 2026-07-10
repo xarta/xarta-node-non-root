@@ -3,9 +3,9 @@
 'use strict';
 
 const BlueprintsActiveBrowserHub = (() => {
-  const VIEW_URL = '/api/v1/voice-mode/active-browser-view';
-  const ACTIVATE_URL = '/api/v1/voice-mode/browser-clients/activate';
-  const DEACTIVATE_URL = '/api/v1/voice-mode/browser-clients/deactivate';
+  const VIEW_URL = '/api/v1/active-browser-runtime/active-browser-view';
+  const ACTIVATE_URL = '/api/v1/active-browser-runtime/browser-clients/activate';
+  const DEACTIVATE_URL = '/api/v1/active-browser-runtime/browser-clients/deactivate';
 
   let _state = null;
   let _pollTimer = null;
@@ -211,7 +211,7 @@ const BlueprintsActiveBrowserHub = (() => {
       open();
     });
     document.addEventListener('blueprints:event', event => {
-      if (event.detail?.event_type === 'voice.mode.changed') {
+      if (event.detail?.event_type === 'active_browser.runtime.changed') {
         if (_isOpen()) refresh().catch(() => {});
       }
     });
