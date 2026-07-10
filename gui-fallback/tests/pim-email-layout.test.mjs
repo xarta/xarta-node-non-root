@@ -297,6 +297,9 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /function appendImageOutcomeDetails\(/, 'HTML message rendering must annotate blocked image placeholders with backend worker outcomes.');
   assert.match(emailJs, /querySelectorAll\('\.email-image-blocked'\)/, 'Every blocked image placeholder must be considered for inline diagnostic decoration.');
   assert.match(emailJs, /function imageOriginalForPlaceholder\(/, 'Blocked image diagnostics must work for wrapped and unwrapped original links.');
+  assert.match(emailJs, /function imageExistingOutcomeText\(/, 'Blocked linked images must preserve server-rendered worker outcome text when no original-source link is present.');
+  assert.match(emailJs, /existingOutcomeText \|\| missingOutcomeText/, 'Frontend fallback text must not overwrite a pre-existing server-rendered image outcome.');
+  assert.match(emailJs, /sanitized_detail_only/, 'Diagnostics must distinguish preserved sanitized-image detail from truly missing worker rows.');
   assert.match(emailJs, /no worker outcome row is recorded/, 'Blocked image placeholders must still get inline explanations before worker outcome rows exist.');
   assert.match(emailJs, /email-image-error/, 'Blocked image placeholders must expose the exact image worker error inline.');
   assert.match(emailJs, /function imageOutcomeHoverText\(/, 'Inline image errors must expose a descriptive hover explanation.');

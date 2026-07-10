@@ -2108,6 +2108,12 @@ const EmailPage = (() => {
     return outcomes;
   }
 
+  function imageExistingOutcomeText(existingDetail) {
+    const text = String(existingDetail?.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!text || /no worker outcome row is recorded/i.test(text)) return '';
+    return text;
+  }
+
   function imageOutcomeText(row) {
     const status = String(row?.status || 'not stored').trim() || 'not stored';
     const reason = String(row?.reason || row?.last_error || 'image was not stored').trim();
@@ -2189,13 +2195,14 @@ const EmailPage = (() => {
 
   function imageOutcomeDiagnostic(row, context = {}) {
     const fallbackText = String(context.fallbackText || '').trim();
+    const preservedText = cleanImageOutcomeDetail(context.preservedText || '');
     const href = cleanImageOutcomeDetail(context.href || '');
     const message = context.message || state.message || {};
     const rawHash = cleanImageOutcomeDetail(message?.raw_sha256);
     const status = row ? String(row?.status || 'not stored').trim() : 'not recorded';
     const reason = row
       ? String(row?.reason || row?.last_error || 'image was not stored').trim()
-      : (fallbackText || 'No worker outcome row is recorded for this placeholder yet.');
+      : (preservedText || fallbackText || 'No worker outcome row is recorded for this placeholder yet.');
     const diagnostic = {
       schema: 'xarta.pim_email.image_block_diagnostic.v1',
       summary: row ? imageOutcomeText(row) : reason,
@@ -2203,6 +2210,8 @@ const EmailPage = (() => {
       reason,
       meaning: row
         ? imageOutcomeMeaning(row)
+        : preservedText
+          ? 'The sanitized HTML already carried this image outcome detail. This linked image placeholder has no separate original-source control, so the browser preserved the server-rendered detail instead of claiming the worker outcome row is missing.'
         : 'The sanitized HTML contains a local-safe placeholder, but the opened message payload did not include a matching external-image derivative row for this source.',
       policy: 'Blueprints never loads remote email images directly in the readable HTML view. The PIM Email image worker must fetch public image bytes, pass URL and size guards, decode them with Pillow, normalize/resize/re-encode them as a bounded local JPEG, validate the result, and store only that local asset. When any gate fails, the sanitized email keeps a placeholder.',
       source_url: cleanImageOutcomeDetail(row?.source_url) || href,
@@ -2213,7 +2222,8 @@ const EmailPage = (() => {
       updated_at: row ? cleanImageOutcomeDetail(row?.updated_at) : '',
       email_uid: cleanImageOutcomeDetail(message?.email_uid || message?.uid),
       raw_sha256: rawHash ? `${rawHash.slice(0, 16)}...` : '',
-      fallback_only: !row,
+      fallback_only: !row && !preservedText,
+      sanitized_detail_only: !row && Boolean(preservedText),
     };
     if (String(reason).toLowerCase().includes('could not be decoded safely')) {
       diagnostic.decode_detail = 'The remote worker received bytes, but the image transform library could not safely open and decode them. Common causes are truncated/corrupt bytes, unsupported image data, a non-image response body, or a decoder/decompression-bomb safety refusal.';
@@ -2321,12 +2331,19 @@ const EmailPage = (() => {
       if (!placeholder) return;
       const href = String(original?.getAttribute?.('href') || '').trim();
       const row = href ? (outcomes.get(href) || outcomes.get(original?.href || '')) : null;
-      const fallbackText = original
+      const existingOutcomeText = imageExistingOutcomeText(existingDetail);
+      const missingOutcomeText = original
         ? 'Remote image blocked in the local-safe view; no worker outcome row is recorded for this source yet.'
         : 'Image blocked in the local-safe view; no worker outcome row is recorded for this placeholder yet.';
+      const fallbackText = existingOutcomeText || missingOutcomeText;
       const text = row ? imageOutcomeText(row) : fallbackText;
       const title = row ? imageOutcomeHoverText(row) : (original ? `${fallbackText}\nOriginal URL: ${href}` : fallbackText);
-      const diagnostic = imageOutcomeDiagnostic(row, { fallbackText, href, message });
+      const diagnostic = imageOutcomeDiagnostic(row, {
+        fallbackText,
+        preservedText: existingOutcomeText,
+        href,
+        message,
+      });
       if (existingDetail) {
         existingDetail.textContent = text;
         decorateImageDiagnosticElement(existingDetail, diagnostic, title);
