@@ -904,6 +904,10 @@ const EmailPage = (() => {
     return `${API_ROOT}/local/messages/${encodeURIComponent(uid)}/force-refresh`;
   }
 
+  function localViewRefreshEndpoint(uid) {
+    return `${API_ROOT}/local/messages/${encodeURIComponent(uid)}/refresh-local-view`;
+  }
+
   function probableTrustedEndpoint(uid) {
     return `${API_ROOT}/local/messages/${encodeURIComponent(uid)}/probable-trusted-sender`;
   }
@@ -2814,7 +2818,10 @@ const EmailPage = (() => {
           [messageContextButton('toggle-original-image-buttons', state.showOriginalImageButtons ? 'Hide original buttons' : 'Show original buttons')],
         ]
       : [
-          [messageContextButton('force-refresh-message', 'Force refresh')],
+          [
+            messageContextButton('refresh-local-message-view', 'Refresh local view'),
+            messageContextButton('force-refresh-message', 'Force refresh'),
+          ],
           [messageContextButton('mark-sender-probable-trusted', 'Mark sender probable trusted')],
           [
             messageContextButton('open-message-audit-ledger', 'Open audit ledger'),
@@ -4891,6 +4898,7 @@ const EmailPage = (() => {
     }
     const selectedFolder = options.folder || (state.loaded ? state.folder : 'INBOX') || 'INBOX';
     const preserveList = Boolean(state.loaded && options.force);
+    const preserveOpenedMessage = options.preserveOpenedMessage !== false;
     const listAnchor = preserveList ? captureMessageListAnchor() : null;
     const previousMessage = state.message;
     const previousUid = activeMessageUid();
@@ -4915,7 +4923,7 @@ const EmailPage = (() => {
       state.folder = messages.folder || selectedFolder;
       applyMessageListResponse(messages, { append: false, offset: 0 });
       state.folderLoading = false;
-      state.message = preserveList && previousUid && state.messages.some(row => messageIdentity(row) === previousUid)
+      state.message = preserveList && preserveOpenedMessage && previousUid && state.messages.some(row => messageIdentity(row) === previousUid)
         ? previousMessage
         : null;
       state.loaded = true;
@@ -4942,7 +4950,13 @@ const EmailPage = (() => {
   }
 
   async function refresh() {
-    return load({ force: true });
+    const uid = activeMessageUid();
+    if (uid) invalidateOpenedMessageCache(uid);
+    const result = await load({ force: true, preserveOpenedMessage: false });
+    if (uid && state.messages.some(row => messageIdentity(row) === uid)) {
+      await openMessage(uid);
+    }
+    return result;
   }
 
   async function loadFolderMessages(folder) {
@@ -5520,6 +5534,41 @@ const EmailPage = (() => {
     }
   }
 
+  async function refreshLocalMessageView() {
+    closeMessageContextMenu();
+    const uid = activeMessageUid();
+    if (!uid) {
+      setStatus('Open a message before refreshing the local view', 'warn');
+      return false;
+    }
+    setStatus('Refreshing local-safe message view', 'unknown');
+    try {
+      invalidateOpenedMessageCache(uid);
+      clearBrowserImageStorageCache(uid);
+      const data = await fetchJson(localViewRefreshEndpoint(uid), { method: 'POST' });
+      if (isMessagePayload(data.message)) {
+        state.message = data.message;
+      } else {
+        const refreshed = await fetchJson(messageEndpoint(uid));
+        state.message = refreshed.message || state.message;
+      }
+      cacheOpenedMessage(uid, null, state.message);
+      clearBrowserImageStorageCache(uid);
+      ensureMessageImageCache(state.message);
+      state.view = defaultMessageView(state.message);
+      state.securityProgress = null;
+      renderMessage();
+      renderSecondaryPanels();
+      renderUltrawide();
+      syncSelectedMessageRows();
+      setStatus('Local-safe view refreshed', 'ok');
+      return true;
+    } catch (error) {
+      setStatus(error.message || String(error), 'err');
+      return false;
+    }
+  }
+
   async function copyText(value) {
     const text = String(value || '');
     if (!text) return false;
@@ -5776,6 +5825,7 @@ const EmailPage = (() => {
     if (action === 'toggle-list') return toggleList();
     if (action === 'safe-checks') return safeChecks();
     if (action === 'security-checks') return securityChecks();
+    if (action === 'refresh-local-message-view') return refreshLocalMessageView();
     if (action === 'force-refresh-message') return forceRefreshMessage();
     if (action === 'mark-sender-probable-trusted') return markSenderProbableTrusted();
     if (action === 'open-message-audit-ledger') return openContextAuditLedger();

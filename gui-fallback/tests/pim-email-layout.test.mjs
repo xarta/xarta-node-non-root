@@ -328,6 +328,7 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /CACHE_STATE_EVENT = 'pim\.email\.cache\.state'/, 'Email cache state must use the shared Blueprints SSE event stream.');
   assert.match(emailJs, /function handleCacheStateEvent\(/, 'Email UI must consume server-pushed cache-state updates.');
   assert.match(emailJs, /BlueprintsEventStream\.on\(CACHE_STATE_EVENT, handleCacheStateEvent\)/, 'Email cache-state SSE listener must be registered.');
+  assert.match(emailJs, /load\(\{ force: true, preserveOpenedMessage: false \}\)/, 'Top-level Refresh must refetch any opened message instead of preserving stale body HTML.');
   assert.match(emailJs, /recordMessageOpenClickFireAndForget\(emailUid, row, 'browser-cache'\)/, 'Browser-cache opens must decouple audit telemetry from rendering.');
   assert.doesNotMatch(emailJs, /await recordMessageOpenClick\(emailUid, row, 'browser-cache'\)/, 'Browser-cache opens must not await the opened-message telemetry POST.');
   assert.match(emailJs, /message_open_prefetch_completed/, 'Email automation snapshot must expose message body prefetch completion.');
@@ -434,7 +435,13 @@ test('PIM Email message context menu is shared by the list toggle and message ro
   assert.match(emailJs, /openMessageContextMenuForRow\(row\)/, 'The row FSM must open the shared message context menu.');
   assert.match(emailJs, /emailContextSuppressClick/, 'Long-press context opens must suppress the follow-up click.');
   assert.match(emailJs, /hub-context-menu-floating--columns/, 'The message context menu must use the shared 3-column context-menu layout.');
-  assert.match(emailJs, /force-refresh-message/, 'The first message context command must be Force refresh.');
+  const localRefreshIndex = emailJs.indexOf("messageContextButton('refresh-local-message-view'");
+  const forceRefreshIndex = emailJs.indexOf("messageContextButton('force-refresh-message'");
+  assert.notEqual(localRefreshIndex, -1, 'The single-message context menu must expose local-safe view refresh.');
+  assert.notEqual(forceRefreshIndex, -1, 'The single-message context menu must still expose remote Force refresh.');
+  assert.ok(localRefreshIndex < forceRefreshIndex, 'Local-safe view refresh must appear before remote Force refresh.');
+  assert.match(emailJs, /\/local\/messages\/\$\{encodeURIComponent\(uid\)\}\/refresh-local-view/, 'Local-safe view refresh must call the local-only rebuild endpoint.');
+  assert.match(emailJs, /function refreshLocalMessageView\(\)[\s\S]*invalidateOpenedMessageCache\(uid\)/, 'Local-safe view refresh must drop stale opened-message body cache.');
   assert.match(emailJs, /\/local\/messages\/\$\{encodeURIComponent\(uid\)\}\/force-refresh/, 'Force refresh must call the local safe refresh endpoint.');
   assert.match(emailJs, /open-message-audit-ledger/, 'Single-message context menus must expose the audit ledger opener.');
   assert.match(emailJs, /function openContextAuditLedger\(\)[\s\S]*uids\.length !== 1/, 'Audit ledger context action must require exactly one selected message.');
