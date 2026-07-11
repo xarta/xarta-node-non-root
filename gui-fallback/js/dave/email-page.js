@@ -12,6 +12,7 @@ const EmailPage = (() => {
     ['cache', 'Cache'],
     ['trusted', 'Trusted'],
     ['search', 'Search'],
+    ['rules', 'Rules'],
   ];
   const EMAIL_SECONDARY_TAB_IDS = new Set(['folders', ...EMAIL_SECONDARY_TABS.map(([id]) => id)]);
   const EMAIL_SECONDARY_TAB_TITLES = new Map([
@@ -21,6 +22,7 @@ const EmailPage = (() => {
     ['cache', 'Email Cache'],
     ['trusted', 'Email Trusted'],
     ['search', 'Email Search'],
+    ['rules', 'Email Rules'],
   ]);
   const TRUSTED_VIEW_OPTIONS = [
     ['probable', 'Probable trusted senders'],
@@ -47,6 +49,7 @@ const EmailPage = (() => {
   const PROBABLE_TRUSTED_SECURITY_POLL_ATTEMPTS = 36;
   const HEALTH_POLL_MS = 15000;
   const CACHE_STATUS_POLL_MS = 30000;
+  const ACTIVITY_HEARTBEAT_REFRESH_MS = 1000;
   const CACHE_HEARTBEAT_RECENT_MS = 6000;
   const SECURITY_PROGRESS_EVENT = 'pim.email.security.progress';
   const CACHE_STATE_EVENT = 'pim.email.cache.state';
@@ -146,6 +149,10 @@ const EmailPage = (() => {
     cacheStatusPollTimer: null,
     cacheStateSseCount: 0,
     cacheStateSseLastAt: 0,
+    activityHeartbeat: null,
+    activityHeartbeatLoading: false,
+    activityHeartbeatError: '',
+    activityHeartbeatLastRefreshed: 0,
     serviceWorkerImageCacheCount: null,
     selectedMessageUids: new Set(),
     messageListSignature: '',
@@ -183,6 +190,25 @@ const EmailPage = (() => {
     searchResults: null,
     searchLastElapsedMs: null,
     searchSeq: 0,
+    virtualPaths: [],
+    virtualPathRules: [],
+    virtualPathRulesLoading: false,
+    virtualPathRulesLoaded: false,
+    virtualPathRulesError: '',
+    virtualPathRuleLastRun: null,
+    virtualPathRuleApplyLoading: false,
+    virtualPathRuleSearch: '',
+    virtualPathRuleExpanded: new Set(),
+    virtualPathRuleOpenSections: new Set(),
+    virtualPathRuleContextEmailUid: '',
+    virtualPathRuleContextLoading: false,
+    virtualPathRuleContextError: '',
+    virtualPathRuleContextHistory: null,
+    virtualPathRuleContextPreview: null,
+    virtualPathEditorOpen: false,
+    virtualPathEditorEmailUid: '',
+    virtualPathEditorPaths: [],
+    virtualPathEditorError: '',
     messageContextMenuOpen: false,
     messageContextUids: [],
     securitySegmentModalOpen: false,
@@ -196,6 +222,7 @@ const EmailPage = (() => {
     auditLedgerSeq: 0,
     auditLedgerLoadedAt: '',
     healthPollTimer: null,
+    activityHeartbeatTimer: null,
     emailIntroMinHeight: 0,
     emailIntroHeightLockPending: false,
   };
@@ -881,6 +908,10 @@ const EmailPage = (() => {
     return `${API_ROOT}/local/cache/status`;
   }
 
+  function activityEndpoint() {
+    return `${API_ROOT}/local/activity`;
+  }
+
   function messageEndpoint(uid, row = null, options = {}) {
     const emailUid = String(row?.email_uid || uid || '').trim();
     const params = new URLSearchParams();
@@ -898,6 +929,42 @@ const EmailPage = (() => {
     const emailUid = String(uid || '').trim();
     const limit = Math.max(1, Math.min(Number(options.limit || 500), 500));
     return `${API_ROOT}/local/messages/${encodeURIComponent(emailUid)}/actions?limit=${limit}`;
+  }
+
+  function virtualPathsEndpoint() {
+    return `${API_ROOT}/local/virtual-paths`;
+  }
+
+  function virtualPathArchiveEndpoint() {
+    return `${API_ROOT}/local/virtual-paths/archive`;
+  }
+
+  function virtualPathBulkMoveEndpoint() {
+    return `${API_ROOT}/local/virtual-paths/bulk-move`;
+  }
+
+  function virtualPathRenameEndpoint() {
+    return `${API_ROOT}/local/virtual-paths/rename`;
+  }
+
+  function messageVirtualPathsReplaceEndpoint(uid) {
+    return `${API_ROOT}/local/messages/${encodeURIComponent(uid)}/virtual-paths/replace`;
+  }
+
+  function virtualPathRulesEndpoint() {
+    return `${API_ROOT}/local/virtual-path-rules`;
+  }
+
+  function virtualPathRuleArchiveEndpoint(ruleId) {
+    return `${API_ROOT}/local/virtual-path-rules/${encodeURIComponent(ruleId)}/archive`;
+  }
+
+  function virtualPathRuleApplyEndpoint() {
+    return `${API_ROOT}/local/virtual-path-rules/apply`;
+  }
+
+  function messageVirtualPathRuleHistoryEndpoint(uid) {
+    return `${API_ROOT}/local/messages/${encodeURIComponent(uid)}/virtual-path-rules/history`;
   }
 
   function forceRefreshEndpoint(uid) {
@@ -1045,10 +1112,36 @@ const EmailPage = (() => {
     return null;
   }
 
+  function controlSelectionSnapshot(active) {
+    if (!active) return null;
+    const type = String(active.type || '').toLowerCase();
+    if (
+      (type === 'text' || type === 'search' || active.tagName === 'TEXTAREA')
+      && typeof active.selectionStart === 'number'
+      && typeof active.selectionEnd === 'number'
+    ) {
+      return {
+        start: active.selectionStart,
+        end: active.selectionEnd,
+        direction: active.selectionDirection || 'none',
+      };
+    }
+    return null;
+  }
+
   function captureSearchFocus() {
     const active = document.activeElement;
     const form = active?.closest?.('[data-email-search-form]');
-    if (!form) return null;
+    if (!form) {
+      const preserveKey = String(active?.dataset?.emailPreserveFocus || '').trim();
+      if (!preserveKey) return null;
+      const root = active.closest?.('#email-secondary-bottom-body, #email-secondary-modal-body, #ultrawide-sidecar');
+      return {
+        rootId: root?.id || '',
+        field: { type: 'preserve', key: preserveKey },
+        selection: controlSelectionSnapshot(active),
+      };
+    }
     const field = searchFocusFieldFor(active, form);
     if (!field) return null;
     readSearchForm(form);
@@ -1056,19 +1149,8 @@ const EmailPage = (() => {
     const snapshot = {
       rootId: root?.id || '',
       field,
-      selection: null,
+      selection: controlSelectionSnapshot(active),
     };
-    if (
-      (active.type === 'text' || active.type === 'search')
-      && typeof active.selectionStart === 'number'
-      && typeof active.selectionEnd === 'number'
-    ) {
-      snapshot.selection = {
-        start: active.selectionStart,
-        end: active.selectionEnd,
-        direction: active.selectionDirection || 'none',
-      };
-    }
     return snapshot;
   }
 
@@ -1078,6 +1160,9 @@ const EmailPage = (() => {
 
   function searchFocusTarget(root, field) {
     if (!root || !field) return null;
+    if (field.type === 'preserve') {
+      return matchingControlByData(root, '[data-email-preserve-focus]', 'emailPreserveFocus', field.key);
+    }
     if (field.type === 'query') return root.querySelector('[data-email-search-query]');
     if (field.type === 'folder') return root.querySelector('[data-email-search-folder]');
     if (field.type === 'date') return matchingControlByData(root, '[data-email-search-date]', 'emailSearchDate', field.key);
@@ -1162,32 +1247,11 @@ const EmailPage = (() => {
     if (chip) chip.textContent = `Folder: ${state.folder || 'INBOX'}`;
   }
 
-  function healthTone() {
-    const status = String(state.health?.status || '').toLowerCase();
-    if (status === 'red') return 'red';
-    if (downloadHealthActivity()) return 'green';
-    if (status === 'amber') return 'amber';
-    if (status === 'green') return 'amber';
-    return 'unknown';
-  }
-
-  function downloadHealthActivity() {
-    const download = state.health?.download || {};
-    const stale = Number(download.stale_running || 0) > 0 || Boolean(download.last_run?.stale);
-    if (stale && Number(download.running || 0) <= 0) return false;
-    return Boolean(
-      Number(download.running || 0) > 0
-      || download.activity
-      || download.recent_activity
-    );
-  }
-
-  function cacheHeartbeatActivity() {
+  function browserActivityHeartbeatActive() {
     const recentCacheStateEvent = state.cacheStateSseLastAt
       && Date.now() - state.cacheStateSseLastAt < CACHE_HEARTBEAT_RECENT_MS;
     return Boolean(
-      state.health?.activity
-      || recentCacheStateEvent
+      recentCacheStateEvent
       || state.cacheStatusLoading
       || state.messageCacheStateLoading
       || state.messageOpenTelemetryInFlight > 0
@@ -1199,39 +1263,55 @@ const EmailPage = (() => {
     );
   }
 
-  function healthHeartbeatActive() {
+  function stackActivityHeartbeat() {
+    const activity = state.activityHeartbeat;
+    return activity && typeof activity === 'object' && !Array.isArray(activity) ? activity : {};
+  }
+
+  function stackActivityHeartbeatActive() {
+    return Boolean(stackActivityHeartbeat().active);
+  }
+
+  function activityHeartbeatActive() {
+    return stackActivityHeartbeatActive() || browserActivityHeartbeatActive();
+  }
+
+  function activityHeartbeatTone() {
+    const stack = stackActivityHeartbeat();
+    const tone = String(stack.tone || '').toLowerCase();
+    if (stack.active && ['green', 'amber', 'red'].includes(tone)) return tone;
+    if (browserActivityHeartbeatActive()) return 'amber';
+    return 'unknown';
+  }
+
+  function activityHeartbeatLabel() {
+    const stack = stackActivityHeartbeat();
+    if (stack.active && stack.label) return `PIM Email ${stack.label}`;
+    if (browserActivityHeartbeatActive()) return 'PIM Email cache/browser activity active';
+    if (state.activityHeartbeatError) return 'PIM Email activity unavailable';
+    return 'PIM Email activity idle';
+  }
+
+  function activityHeartbeatView() {
+    const tone = activityHeartbeatTone();
+    const beating = activityHeartbeatActive();
+    return {
+      className: `email-activity-heartbeat email-activity-heartbeat--${tone}${beating ? ' email-activity-heartbeat--beating' : ''}`,
+      label: activityHeartbeatLabel(),
+    };
+  }
+
+  function activityHeartbeatHtml() {
+    const view = activityHeartbeatView();
+    return `<span class="${escHtml(view.className)}" role="img" aria-label="${escHtml(view.label)}" title="${escHtml(view.label)}">&#9829;</span>`;
+  }
+
+  function healthStatusTone() {
     const status = String(state.health?.status || '').toLowerCase();
-    if (status === 'red') return false;
-    return downloadHealthActivity() || cacheHeartbeatActivity();
-  }
-
-  function healthHeartbeatLabel() {
-    const health = state.health || {};
-    const status = health.status || 'pending';
-    const issues = Array.isArray(health.issues) ? health.issues.length : 0;
-    const warnings = Array.isArray(health.warnings) ? health.warnings.length : 0;
-    const download = health.download || {};
-    const staleDownloads = Number(download.stale_running || 0) > 0 || Boolean(download.last_run?.stale);
-    const active = staleDownloads
-      ? 'download state stale'
-      : downloadHealthActivity()
-      ? 'checking IMAP folders'
-      : (cacheHeartbeatActivity() ? 'cache/browser activity active' : 'health/cache OK');
-    if (issues) return `PIM Email ${status}, ${issues} issue${issues === 1 ? '' : 's'}, ${active}`;
-    if (warnings) return `PIM Email ${status}, ${warnings} warning${warnings === 1 ? '' : 's'}, ${active}`;
-    if (downloadHealthActivity()) {
-      const running = Number(download.running || 0);
-      return `PIM Email checking IMAP folders${running ? `, ${running} run${running === 1 ? '' : 's'} active` : ''}`;
-    }
-    if (cacheHeartbeatActivity()) return `PIM Email ${status}, cache/browser activity active`;
-    return `PIM Email ${status}, ${active}`;
-  }
-
-  function healthHeartbeatHtml() {
-    const tone = healthTone();
-    const beating = healthHeartbeatActive() ? ' email-health-heartbeat--beating' : '';
-    const label = healthHeartbeatLabel();
-    return `<span class="email-health-heartbeat email-health-heartbeat--${escHtml(tone)}${beating}" role="img" aria-label="${escHtml(label)}" title="${escHtml(label)}">&#9829;</span>`;
+    if (status === 'red') return 'red';
+    if (status === 'amber') return 'amber';
+    if (status === 'green') return 'green';
+    return 'unknown';
   }
 
   function renderViewTabs() {
@@ -1501,6 +1581,7 @@ const EmailPage = (() => {
   }
 
   function notifyCacheStateChanged() {
+    renderActivityHeartbeatChrome();
     updateMessageCacheStrips();
     scheduleEmailIntroHeightLock();
     if (state.secondaryTab !== 'cache') return;
@@ -2658,7 +2739,7 @@ const EmailPage = (() => {
     }
     const heading = el('email-inbox-heading');
     if (heading) {
-      heading.innerHTML = `<span>${escHtml(state.folder || 'INBOX')}</span>${healthHeartbeatHtml()}`;
+      heading.innerHTML = `<span>${escHtml(state.folder || 'INBOX')}</span>${activityHeartbeatHtml()}`;
     }
     renderMeta();
     scheduleEmailIntroHeightLock();
@@ -2825,6 +2906,8 @@ const EmailPage = (() => {
           [messageContextButton('mark-sender-probable-trusted', 'Mark sender probable trusted')],
           [
             messageContextButton('open-message-audit-ledger', 'Open audit ledger'),
+            messageContextButton('edit-message-virtual-paths', 'Edit virtual paths'),
+            messageContextButton('open-virtual-path-rules', 'Open virtual-path rules'),
             messageContextButton('show-message-uid', 'Show / copy email_uid'),
           ],
           [messageContextButton('toggle-original-image-buttons', state.showOriginalImageButtons ? 'Hide original buttons' : 'Show original buttons')],
@@ -4594,6 +4677,390 @@ const EmailPage = (() => {
     }
   }
 
+  function parseRuleTextarea(form, name, fallback = {}) {
+    const raw = String(form?.querySelector?.(`[name="${name}"]`)?.value || '').trim();
+    if (!raw) return fallback;
+    return JSON.parse(raw);
+  }
+
+  async function refreshVirtualPathRules(options = {}) {
+    if (state.virtualPathRulesLoading) return state.virtualPathRules;
+    state.virtualPathRulesLoading = true;
+    state.virtualPathRulesError = '';
+    if (!options.silent) renderSecondaryPanels();
+    try {
+      const [paths, rules] = await Promise.all([
+        fetchJson(virtualPathsEndpoint()),
+        fetchJson(virtualPathRulesEndpoint()),
+      ]);
+      state.virtualPaths = Array.isArray(paths.result?.virtual_paths)
+        ? paths.result.virtual_paths
+        : [];
+      state.virtualPathRules = Array.isArray(rules.result?.rules)
+        ? rules.result.rules
+        : [];
+      state.virtualPathRulesLoaded = true;
+      return state.virtualPathRules;
+    } catch (error) {
+      state.virtualPathRulesError = virtualPathRulesErrorMessage(error);
+      return state.virtualPathRules;
+    } finally {
+      state.virtualPathRulesLoading = false;
+      if (state.secondaryTab === 'rules') {
+        renderSecondaryPanels();
+        renderUltrawide();
+      }
+    }
+  }
+
+  async function createVirtualPathFromForm(form) {
+    const input = form?.querySelector?.('[name="path"]');
+    const path = String(input?.value || '').trim();
+    if (!path) return false;
+    setStatus('Creating virtual path', 'unknown');
+    try {
+      await fetchJson(virtualPathsEndpoint(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ virtual_path: path, actor: 'email-ui', source_surface: 'pim-email-ui' }),
+      });
+      if (input) input.value = '';
+      await refreshVirtualPathRules({ silent: true });
+      await load({ force: true, preserveOpenedMessage: true });
+      setStatus(`Created ${path}`, 'ok');
+      return true;
+    } catch (error) {
+      setStatus(error.message || String(error), 'err');
+      return false;
+    }
+  }
+
+  async function bulkMoveVirtualPathFromForm(form) {
+    const source = String(form?.querySelector?.('[name="source"]')?.value || '').trim();
+    const destination = String(form?.querySelector?.('[name="destination"]')?.value || '').trim();
+    const apply = Boolean(form?.querySelector?.('[name="apply"]')?.checked);
+    if (!source || !destination) return false;
+    setStatus(apply ? 'Applying virtual-path bulk move' : 'Dry-running virtual-path bulk move', 'unknown');
+    try {
+      const data = await fetchJson(virtualPathBulkMoveEndpoint(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source_virtual_path: source,
+          destination_virtual_path: destination,
+          dry_run: !apply,
+          actor: 'email-ui',
+          source_surface: 'pim-email-ui',
+        }),
+      });
+      state.virtualPathRuleLastRun = {
+        run: {
+          mode: apply ? 'bulk_move' : 'bulk_move_dry_run',
+          run_id: `${source} -> ${destination}`,
+          status: 'completed',
+          changed_count: data.result?.changed_count ?? 0,
+        },
+      };
+      await refreshVirtualPathRules({ silent: true });
+      if (apply) await load({ force: true, preserveOpenedMessage: true });
+      setStatus(`${apply ? 'Moved' : 'Previewed'} ${data.result?.candidate_count ?? 0} messages`, 'ok');
+      return true;
+    } catch (error) {
+      setStatus(error.message || String(error), 'err');
+      return false;
+    }
+  }
+
+  async function createVirtualPathRuleFromForm(form) {
+    const name = String(form?.querySelector?.('[name="name"]')?.value || '').trim() || 'Virtual path rule';
+    setStatus('Creating virtual-path rule', 'unknown');
+    try {
+      await fetchJson(virtualPathRulesEndpoint(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          display_name: name,
+          predicate: parseRuleTextarea(form, 'predicate', {}),
+          action: parseRuleTextarea(form, 'action', {}),
+          scope: parseRuleTextarea(form, 'scope', {}),
+          actor: 'email-ui',
+          source_surface: 'pim-email-ui',
+        }),
+      });
+      await refreshVirtualPathRules({ silent: true });
+      setStatus(`Created ${name}`, 'ok');
+      return true;
+    } catch (error) {
+      setStatus(error.message || String(error), 'err');
+      return false;
+    }
+  }
+
+  async function applyVirtualPathRulesFromForm(form) {
+    const ruleId = String(form?.querySelector?.('[name="rule_id"]')?.value || '').trim();
+    const apply = Boolean(form?.querySelector?.('[name="apply"]')?.checked);
+    let scope = {};
+    try {
+      scope = scopeFromApplyForm(form);
+    } catch (error) {
+      setStatus(error.message || String(error), 'err');
+      return false;
+    }
+    setStatus(apply ? 'Applying virtual-path rules' : 'Dry-running virtual-path rules', 'unknown');
+    state.virtualPathRuleApplyLoading = true;
+    renderSecondaryPanels();
+    try {
+      const data = await fetchJson(virtualPathRuleApplyEndpoint(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rule_ids: ruleId ? [ruleId] : [],
+          scope,
+          dry_run: !apply,
+          actor: 'email-ui',
+          source_surface: 'pim-email-ui',
+        }),
+      });
+      state.virtualPathRuleLastRun = data.result || null;
+      await refreshVirtualPathRules({ silent: true });
+      if (apply) await load({ force: true, preserveOpenedMessage: true });
+      setStatus(`${apply ? 'Applied' : 'Previewed'} ${data.result?.application_count ?? 0} rule actions`, 'ok');
+      return true;
+    } catch (error) {
+      setStatus(error.message || String(error), 'err');
+      return false;
+    } finally {
+      state.virtualPathRuleApplyLoading = false;
+      renderSecondaryPanels();
+      renderUltrawide();
+    }
+  }
+
+  async function archiveVirtualPathRule(ruleId) {
+    const clean = String(ruleId || '').trim();
+    if (!clean) return false;
+    setStatus('Archiving virtual-path rule', 'unknown');
+    try {
+      await fetchJson(virtualPathRuleArchiveEndpoint(clean), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actor: 'email-ui' }),
+      });
+      await refreshVirtualPathRules({ silent: true });
+      setStatus('Virtual-path rule archived', 'ok');
+      return true;
+    } catch (error) {
+      setStatus(error.message || String(error), 'err');
+      return false;
+    }
+  }
+
+  async function toggleVirtualPathRuleActive(ruleId, checked) {
+    const clean = String(ruleId || '').trim();
+    if (!clean) return false;
+    if (checked) {
+      renderVirtualPathRuleListHosts();
+      return true;
+    }
+    const archived = await archiveVirtualPathRule(clean);
+    if (!archived) renderVirtualPathRuleListHosts();
+    return archived;
+  }
+
+  async function previewSingleVirtualPathRule(ruleId) {
+    const clean = String(ruleId || '').trim();
+    if (!clean) return false;
+    const contextUid = String(state.virtualPathRuleContextEmailUid || '').trim();
+    const scope = contextUid ? { message_uids: [contextUid], limit: 1 } : { limit: 100 };
+    setStatus('Previewing virtual-path rule', 'unknown');
+    state.virtualPathRuleApplyLoading = true;
+    renderSecondaryPanels();
+    try {
+      const data = await fetchJson(virtualPathRuleApplyEndpoint(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rule_ids: [clean],
+          scope,
+          dry_run: true,
+          actor: 'email-ui',
+          source_surface: 'pim-email-ui',
+        }),
+      });
+      state.virtualPathRuleLastRun = data.result || null;
+      setStatus(`Previewed ${data.result?.application_count ?? 0} rule actions`, 'ok');
+      return true;
+    } catch (error) {
+      setStatus(error.message || String(error), 'err');
+      return false;
+    } finally {
+      state.virtualPathRuleApplyLoading = false;
+      renderSecondaryPanels();
+      renderUltrawide();
+    }
+  }
+
+  async function loadVirtualPathRuleMessageContext(emailUid) {
+    const uid = String(emailUid || '').trim();
+    if (!uid || state.virtualPathRuleContextLoading) return false;
+    state.virtualPathRuleContextLoading = true;
+    state.virtualPathRuleContextError = '';
+    state.virtualPathRuleContextHistory = null;
+    state.virtualPathRuleContextPreview = null;
+    renderSecondaryPanels();
+    try {
+      const [historyResult, previewResult] = await Promise.allSettled([
+        fetchJson(messageVirtualPathRuleHistoryEndpoint(uid)),
+        fetchJson(virtualPathRuleApplyEndpoint(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            rule_ids: [],
+            scope: { message_uids: [uid], limit: 1 },
+            dry_run: true,
+            actor: 'email-ui',
+            source_surface: 'pim-email-ui-message-rules-filter',
+            request_id: `message-rules-filter:${uid}`,
+          }),
+        }),
+      ]);
+      if (historyResult.status === 'fulfilled') {
+        state.virtualPathRuleContextHistory = historyResult.value?.result || null;
+      } else {
+        state.virtualPathRuleContextError = virtualPathRulesErrorMessage(historyResult.reason);
+      }
+      if (previewResult.status === 'fulfilled') {
+        state.virtualPathRuleContextPreview = previewResult.value?.result || null;
+      } else {
+        const previewError = virtualPathRulesErrorMessage(previewResult.reason);
+        state.virtualPathRuleContextError = state.virtualPathRuleContextError
+          ? `${state.virtualPathRuleContextError}; ${previewError}`
+          : previewError;
+      }
+      return true;
+    } finally {
+      state.virtualPathRuleContextLoading = false;
+      renderSecondaryPanels();
+      renderUltrawide();
+    }
+  }
+
+  async function openVirtualPathRulesForMessage(emailUid) {
+    const uid = String(emailUid || activeMessageUid() || '').trim();
+    if (!uid) return openSecondaryModalTab('rules');
+    state.virtualPathRuleSearch = '';
+    state.virtualPathRuleExpanded = new Set();
+    state.virtualPathRuleContextEmailUid = uid;
+    state.virtualPathRuleContextLoading = false;
+    state.virtualPathRuleContextError = '';
+    state.virtualPathRuleContextHistory = null;
+    state.virtualPathRuleContextPreview = null;
+    await openSecondaryModalTab('rules');
+    loadVirtualPathRuleMessageContext(uid);
+    return true;
+  }
+
+  function renderVirtualPathRuleListHosts() {
+    document.querySelectorAll('[data-email-vpath-rules-list-host]').forEach(host => {
+      host.innerHTML = virtualPathRulesListHtml();
+    });
+    document.querySelectorAll('[data-email-vpath-rule-count]').forEach(node => {
+      node.textContent = virtualPathRuleCountSummary();
+    });
+  }
+
+  function toggleVirtualPathRuleExpanded(ruleId) {
+    const clean = String(ruleId || '').trim();
+    if (!clean) return false;
+    if (state.virtualPathRuleExpanded.has(clean)) state.virtualPathRuleExpanded.delete(clean);
+    else state.virtualPathRuleExpanded.add(clean);
+    renderVirtualPathRuleListHosts();
+    return true;
+  }
+
+  function activeVirtualPathRulesRoot() {
+    const modal = el('email-secondary-modal');
+    if (modal?.open) {
+      const modalBody = el('email-secondary-modal-body');
+      if (modalBody?.querySelector?.('.email-rules-panel')) return modalBody;
+    }
+    const ultrawide = document.querySelector('#ultrawide-sidecar .email-rules-panel');
+    if (ultrawide) return ultrawide.closest('#ultrawide-sidecar') || ultrawide;
+    const bottom = el('email-secondary-bottom-body');
+    if (bottom?.querySelector?.('.email-rules-panel')) return bottom;
+    return null;
+  }
+
+  function captureVirtualPathRuleSectionState(root = null) {
+    if (state.secondaryTab !== 'rules') return;
+    const host = root || activeVirtualPathRulesRoot();
+    if (!host) return;
+    host.querySelectorAll('[data-email-vpath-rule-section]').forEach(details => {
+      const sectionId = String(details.dataset.emailVpathRuleSection || '').trim();
+      if (!sectionId) return;
+      if (details.open) state.virtualPathRuleOpenSections.add(sectionId);
+      else state.virtualPathRuleOpenSections.delete(sectionId);
+    });
+  }
+
+  function virtualPathRuleSectionOpenAttr(sectionId) {
+    return state.virtualPathRuleOpenSections.has(String(sectionId || '').trim()) ? ' open' : '';
+  }
+
+  function syncVirtualPathRuleSectionDom(sectionId) {
+    const clean = String(sectionId || '').trim();
+    if (!clean) return;
+    const open = state.virtualPathRuleOpenSections.has(clean);
+    document.querySelectorAll('[data-email-vpath-rule-section]').forEach(details => {
+      if (String(details.dataset.emailVpathRuleSection || '').trim() === clean) details.open = open;
+    });
+  }
+
+  function toggleVirtualPathRuleSection(sectionId) {
+    const clean = String(sectionId || '').trim();
+    if (!clean) return false;
+    if (state.virtualPathRuleOpenSections.has(clean)) state.virtualPathRuleOpenSections.delete(clean);
+    else state.virtualPathRuleOpenSections.add(clean);
+    syncVirtualPathRuleSectionDom(clean);
+    return true;
+  }
+
+  function syncVirtualPathRunButton(form) {
+    const checked = Boolean(form?.querySelector?.('[data-email-vpath-apply-toggle]')?.checked);
+    const button = form?.querySelector?.('[data-email-vpath-run-label]');
+    if (!button) return;
+    button.textContent = checked
+      ? String(button.dataset.applyLabel || 'Apply')
+      : String(button.dataset.previewLabel || 'Preview');
+  }
+
+  function syncVirtualPathScopeControls(form) {
+    const select = form?.querySelector?.('[data-email-vpath-scope-mode]');
+    if (!select) return;
+    const mode = String(select.value || 'all');
+    form.querySelectorAll('[data-email-vpath-scope-field]').forEach(node => {
+      node.hidden = node.dataset.emailVpathScopeField !== mode;
+    });
+    const limit = form.querySelector('[name="limit"]');
+    if (limit) {
+      limit.disabled = mode === 'selected_message';
+      if (mode === 'selected_message') limit.value = '1';
+    }
+  }
+
+  function syncVirtualPathRuleControls(root = document) {
+    root.querySelectorAll('[data-email-vpath-bulk-form], [data-email-rule-apply-form]').forEach(form => {
+      syncVirtualPathRunButton(form);
+      syncVirtualPathScopeControls(form);
+    });
+  }
+
+  function syncSecondaryModalMode() {
+    const modal = el('email-secondary-modal');
+    if (!modal) return;
+    modal.classList.toggle('email-secondary-modal--rules', state.secondaryTab === 'rules');
+  }
+
   async function browserPimEmailImageCacheCount() {
     if (typeof caches === 'undefined') return null;
     try {
@@ -4734,17 +5201,436 @@ const EmailPage = (() => {
     return EMAIL_SECONDARY_TAB_IDS.has(clean) ? clean : 'folders';
   }
 
+  function ruleJsonValue(value, fallback = {}) {
+    try {
+      return JSON.stringify(value && typeof value === 'object' ? value : fallback, null, 2);
+    } catch (error) {
+      return JSON.stringify(fallback, null, 2);
+    }
+  }
+
+  function virtualPathRulesErrorMessage(error) {
+    const text = String(error?.message || error || '').trim();
+    if (/^(not found|http 404)$/i.test(text)) {
+      return 'Virtual-path rule endpoints are not available in the running Blueprints service.';
+    }
+    return text || 'Virtual-path rules are unavailable.';
+  }
+
+  function clearVirtualPathRuleMessageContext() {
+    state.virtualPathRuleContextEmailUid = '';
+    state.virtualPathRuleContextLoading = false;
+    state.virtualPathRuleContextError = '';
+    state.virtualPathRuleContextHistory = null;
+    state.virtualPathRuleContextPreview = null;
+  }
+
+  function virtualPathRuleContextApplications() {
+    const items = [];
+    const pushApps = value => {
+      const apps = Array.isArray(value?.applications) ? value.applications : [];
+      apps.forEach(app => items.push(app));
+    };
+    pushApps(state.virtualPathRuleContextHistory);
+    pushApps(state.virtualPathRuleContextPreview);
+    pushApps(state.virtualPathRuleLastRun);
+    return items;
+  }
+
+  function virtualPathRuleContextIds() {
+    const ids = new Set();
+    virtualPathRuleContextApplications().forEach(app => {
+      const id = String(app?.rule_id || '').trim();
+      if (id) ids.add(id);
+    });
+    return ids;
+  }
+
+  function ruleSearchText(rule) {
+    return [
+      rule?.display_name,
+      rule?.rule_id,
+      rule?.status,
+      rule?.current_version,
+      ruleJsonValue(rule?.predicate || {}),
+      ruleJsonValue(rule?.action || {}),
+      ruleJsonValue(rule?.scope || {}),
+    ].join(' ').toLowerCase();
+  }
+
+  function filteredVirtualPathRules() {
+    const rules = Array.isArray(state.virtualPathRules) ? state.virtualPathRules : [];
+    const query = String(state.virtualPathRuleSearch || '').trim().toLowerCase();
+    const contextUid = String(state.virtualPathRuleContextEmailUid || '').trim();
+    const contextIds = virtualPathRuleContextIds();
+    return rules.filter(rule => {
+      const ruleId = String(rule?.rule_id || '').trim();
+      if (contextUid && !contextIds.has(ruleId)) return false;
+      if (!query) return true;
+      return ruleSearchText(rule).includes(query);
+    });
+  }
+
+  function virtualPathRuleCountSummary() {
+    const total = Array.isArray(state.virtualPathRules) ? state.virtualPathRules.length : 0;
+    const shown = filteredVirtualPathRules().length;
+    return shown === total ? `${total} rules` : `${shown}/${total} rules`;
+  }
+
+  function formatRuleCondition(condition) {
+    if (!condition || typeof condition !== 'object' || Array.isArray(condition)) return 'Custom predicate';
+    if (Array.isArray(condition.all)) return `All of ${condition.all.length}`;
+    if (Array.isArray(condition.any)) return `Any of ${condition.any.length}`;
+    if (condition.not) return 'Not';
+    const field = String(condition.field || '').trim();
+    const op = String(condition.op || condition.operator || '').trim();
+    const value = String(condition.value ?? '').trim();
+    if (field && op && value) return `${field} ${op} ${value}`;
+    if (field && op) return `${field} ${op}`;
+    return 'Custom predicate';
+  }
+
+  function formatRuleAction(action) {
+    const actions = Array.isArray(action) ? action : [action];
+    return actions
+      .filter(item => item && typeof item === 'object')
+      .map(item => {
+        const op = String(item.operation || '').trim() || 'action';
+        if (op === 'move') {
+          const source = String(item.source_virtual_path || '').trim();
+          const dest = String(item.destination_virtual_path || item.virtual_path || '').trim();
+          return `${source || 'source'} -> ${dest || 'destination'}`;
+        }
+        const path = String(item.virtual_path || item.destination_virtual_path || '').trim();
+        return `${op}${path ? ` ${path}` : ''}`;
+      })
+      .join(', ') || 'Custom action';
+  }
+
+  function formatRuleScope(scope) {
+    const clean = scope && typeof scope === 'object' && !Array.isArray(scope) ? scope : {};
+    if (Array.isArray(clean.message_uids) && clean.message_uids.length) return `${clean.message_uids.length} messages`;
+    if (Array.isArray(clean.virtual_paths) && clean.virtual_paths.length) return clean.virtual_paths.join(', ');
+    if (clean.incoming_x) return 'Incoming-eligible messages';
+    if (clean.limit) return `All local emails, limit ${clean.limit}`;
+    return 'All local emails';
+  }
+
+  function ruleAuditForRule(ruleId) {
+    const clean = String(ruleId || '').trim();
+    const seen = new Set();
+    return virtualPathRuleContextApplications()
+      .filter(app => String(app?.rule_id || '').trim() === clean)
+      .filter(app => {
+        const key = String(app?.application_id || `${app?.run_id || ''}:${app?.email_uid || ''}:${app?.event_ts || ''}`);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 4);
+  }
+
+  function ruleDetailSectionHtml(title, value) {
+    return `
+      <section class="email-rule-detail-section">
+        <h4>${escHtml(title)}</h4>
+        <pre><code>${escHtml(ruleJsonValue(value || {}))}</code></pre>
+      </section>
+    `;
+  }
+
+  function ruleAuditHtml(rule) {
+    const apps = ruleAuditForRule(rule?.rule_id || '');
+    if (!apps.length) return '<div class="email-rule-audit-empty">No run history loaded for this rule.</div>';
+    return `
+      <div class="email-rule-audit-list">
+        ${apps.map(app => `
+          <div class="email-rule-audit-row">
+            <span>${escHtml(app.action_status || (app.matched ? 'matched' : 'not matched'))}</span>
+            <span>${escHtml(app.operation || '')}</span>
+            <span>${escHtml(app.event_ts || app.run_id || '')}</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  function virtualPathRuleRowHtml(rule) {
+    const ruleId = String(rule?.rule_id || '').trim();
+    const expanded = state.virtualPathRuleExpanded?.has?.(ruleId);
+    const status = String(rule?.status || 'unknown');
+    const active = status === 'active';
+    return `
+      <article class="email-rule-row" data-email-vpath-rule-row="${escHtml(ruleId)}">
+        <div class="email-rule-row__top">
+          <button class="email-rule-row__toggle" type="button" data-email-vpath-rule-toggle="${escHtml(ruleId)}" aria-expanded="${expanded ? 'true' : 'false'}">
+            <span class="email-rule-row__chevron" aria-hidden="true"></span>
+            <span class="email-rule-row__title">${escHtml(rule.display_name || ruleId || 'Virtual path rule')}</span>
+          </button>
+          <label class="hub-checkbox email-rule-row__active">
+            <input class="hub-checkbox__input" type="checkbox" data-email-vpath-rule-active-toggle="${escHtml(ruleId)}"${active ? ' checked' : ''}${active ? '' : ' disabled'}>
+            <span class="hub-checkbox__box" aria-hidden="true"></span>
+            <span class="hub-checkbox__label">Active</span>
+          </label>
+        </div>
+        <div class="email-rule-row__summary">
+          <span>${escHtml(status)}</span>
+          <span>v${escHtml(rule.current_version ?? '')}</span>
+          <span>${escHtml(formatRuleCondition(rule.predicate || {}))}</span>
+          <span>${escHtml(formatRuleAction(rule.action || {}))}</span>
+          <span>${escHtml(formatRuleScope(rule.scope || {}))}</span>
+        </div>
+        <div class="email-rule-row__meta">${escHtml(ruleId)}</div>
+        <div class="email-rule-row__details"${expanded ? '' : ' hidden'}>
+          <div class="email-rule-detail-grid">
+            ${ruleDetailSectionHtml('Predicate', rule.predicate || {})}
+            ${ruleDetailSectionHtml('Actions', rule.action || {})}
+            ${ruleDetailSectionHtml('Scope', rule.scope || {})}
+            <section class="email-rule-detail-section">
+              <h4>Run History</h4>
+              ${ruleAuditHtml(rule)}
+            </section>
+          </div>
+          <div class="email-rule-row__actions">
+            <button class="hub-action-btn" type="button" data-email-rule-apply-one="${escHtml(ruleId)}">Preview This Rule</button>
+            <button class="hub-action-btn email-rule-danger" type="button" data-email-vpath-rule-archive="${escHtml(ruleId)}">Archive</button>
+          </div>
+        </div>
+      </article>
+    `;
+  }
+
+  function virtualPathName(folder) {
+    return String(folder?.path || folder?.name || folder?.virtual_path || '').trim();
+  }
+
+  function virtualPathOptionsHtml() {
+    return state.virtualPaths
+      .map(item => virtualPathName(item))
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
+      .map(path => `<option value="${escHtml(path)}"></option>`)
+      .join('');
+  }
+
+  function splitVirtualPathInput(value) {
+    return String(value || '')
+      .split(/[\n,]+/)
+      .map(item => item.trim())
+      .filter(Boolean);
+  }
+
+  function scopeFromApplyForm(form) {
+    const mode = String(form?.querySelector?.('[name="scope_mode"]')?.value || 'all');
+    const limit = Math.max(1, Math.min(Number(form?.querySelector?.('[name="limit"]')?.value || 100), 20000));
+    if (mode === 'advanced') return parseRuleTextarea(form, 'scope_json', {});
+    if (mode === 'virtual_paths') {
+      const paths = splitVirtualPathInput(form?.querySelector?.('[name="scope_paths"]')?.value || '');
+      if (!paths.length) throw new Error('Choose at least one virtual path for selected-path scope.');
+      return { virtual_paths: paths, limit };
+    }
+    if (mode === 'incoming_x') return { incoming_x: true, limit };
+    if (mode === 'selected_message') {
+      const uid = String(state.virtualPathRuleContextEmailUid || activeMessageUid() || '').trim();
+      if (!uid) throw new Error('Open a message before using selected-message scope.');
+      return { message_uids: [uid], limit: 1 };
+    }
+    return { limit };
+  }
+
+  function rulesApplyScopeDefaultMode() {
+    return state.virtualPathRuleContextEmailUid ? 'selected_message' : 'all';
+  }
+
+  function scopeModeOptionsHtml(defaultMode) {
+    const selected = value => value === defaultMode ? ' selected' : '';
+    return `
+      <option value="all"${selected('all')}>All local emails</option>
+      <option value="virtual_paths"${selected('virtual_paths')}>Selected virtual path(s)</option>
+      <option value="incoming_x"${selected('incoming_x')}>Incoming-eligible messages</option>
+      ${state.virtualPathRuleContextEmailUid ? `<option value="selected_message"${selected('selected_message')}>Selected message</option>` : ''}
+      <option value="advanced"${selected('advanced')}>Advanced JSON scope</option>
+    `;
+  }
+
+  function ruleContextBannerHtml() {
+    const uid = String(state.virtualPathRuleContextEmailUid || '').trim();
+    if (!uid) return '';
+    const loading = state.virtualPathRuleContextLoading ? '<span>Checking current matches.</span>' : '';
+    const error = state.virtualPathRuleContextError
+      ? `<span class="email-rule-context-error">${escHtml(state.virtualPathRuleContextError)}</span>`
+      : '';
+    return `
+      <div class="email-rule-context">
+        <div>
+          <strong>Message Rules</strong>
+          <span>${escHtml(uid)}</span>
+        </div>
+        ${loading}
+        ${error}
+        <button class="hub-action-btn" type="button" data-email-vpath-rule-context-clear>Show All Rules</button>
+      </div>
+    `;
+  }
+
+  function virtualPathRulesListHtml() {
+    const rules = filteredVirtualPathRules();
+    if (!rules.length) {
+      const text = state.virtualPathRuleContextEmailUid
+        ? 'No current or historical virtual-path rules for this message.'
+        : state.virtualPathRuleSearch
+          ? 'No virtual-path rules match this search.'
+          : 'No virtual-path rules loaded.';
+      return `<div class="email-empty">${escHtml(text)}</div>`;
+    }
+    return `
+      <div class="email-rules-list">
+        ${rules.map(rule => virtualPathRuleRowHtml(rule)).join('')}
+      </div>
+    `;
+  }
+
+  function rulesPanelHtml() {
+    const loading = state.virtualPathRulesLoading ? '<div class="email-empty">Loading virtual-path rules.</div>' : '';
+    const error = state.virtualPathRulesError ? `<div class="email-error">${escHtml(state.virtualPathRulesError)}</div>` : '';
+    const pathCount = Array.isArray(state.virtualPaths) ? state.virtualPaths.length : 0;
+    const lastRun = state.virtualPathRuleLastRun?.run;
+    const defaultScopeMode = rulesApplyScopeDefaultMode();
+    return `
+      <section class="email-rules-panel">
+        <div class="email-rules-toolbar">
+          <div class="email-rules-counts">
+            <strong data-email-vpath-rule-count>${escHtml(virtualPathRuleCountSummary())}</strong>
+            <span>${escHtml(pathCount)} paths</span>
+          </div>
+          <input type="search" data-email-vpath-rule-search data-email-preserve-focus="vpath-rule-search" value="${escHtml(state.virtualPathRuleSearch || '')}" placeholder="Search rules" autocomplete="off">
+          <button class="hub-action-btn" type="button" data-email-action="refresh-vpath-rules">Refresh</button>
+        </div>
+        ${ruleContextBannerHtml()}
+        ${loading}
+        ${error}
+        <datalist id="email-vpath-options">${virtualPathOptionsHtml()}</datalist>
+        <div class="email-rules-list-host" data-email-vpath-rules-list-host>
+          ${virtualPathRulesListHtml()}
+        </div>
+        ${lastRun ? `
+          <div class="email-rule-last-run">
+            <strong>Last run</strong>
+            <span>${escHtml(lastRun.mode || '')}</span>
+            <span>${escHtml(lastRun.run_id || '')}</span>
+            <span>${escHtml(lastRun.status || '')}</span>
+            <span>${escHtml(lastRun.changed_count ?? 0)} changed</span>
+          </div>
+        ` : ''}
+        <div class="email-rules-operations">
+          <details class="email-rule-card" data-email-vpath-rule-section="paths"${virtualPathRuleSectionOpenAttr('paths')}>
+            <summary>Paths and Bulk Move</summary>
+            <div class="email-rules-grid">
+              <form class="email-rule-form" data-email-vpath-create-form>
+                <label>
+                  <span>New virtual path</span>
+                  <input name="path" data-email-preserve-focus="vpath-create-path" list="email-vpath-options" placeholder="Projects/Example" autocomplete="off">
+                </label>
+                <button class="hub-action-btn hub-primary" type="submit">Create Path</button>
+              </form>
+              <form class="email-rule-form" data-email-vpath-bulk-form>
+                <label>
+                  <span>Source path</span>
+                  <input name="source" data-email-preserve-focus="vpath-bulk-source" list="email-vpath-options" placeholder="Projects/Current" autocomplete="off">
+                </label>
+                <label>
+                  <span>Destination path</span>
+                  <input name="destination" data-email-preserve-focus="vpath-bulk-destination" list="email-vpath-options" placeholder="Projects/Next" autocomplete="off">
+                </label>
+                <label class="hub-checkbox email-rule-apply-toggle">
+                  <input class="hub-checkbox__input" name="apply" data-email-vpath-apply-toggle="bulk" type="checkbox">
+                  <span class="hub-checkbox__box" aria-hidden="true"></span>
+                  <span class="hub-checkbox__label">Move messages now</span>
+                </label>
+                <button class="hub-action-btn hub-primary" type="submit" data-email-vpath-run-label data-preview-label="Preview bulk move" data-apply-label="Move messages">Preview bulk move</button>
+              </form>
+            </div>
+          </details>
+          <details class="email-rule-card" data-email-vpath-rule-section="create"${virtualPathRuleSectionOpenAttr('create')}>
+            <summary>Create Rule</summary>
+            <form class="email-rule-form email-rule-form--wide" data-email-rule-create-form>
+              <label>
+                <span>Rule name</span>
+                <input name="name" data-email-preserve-focus="vpath-rule-create-name" placeholder="Rule name" autocomplete="off">
+              </label>
+              <label>
+                <span>Predicate JSON</span>
+                <textarea name="predicate" data-email-preserve-focus="vpath-rule-create-predicate" spellcheck="false">${escHtml(ruleJsonValue({ field: 'subject', op: 'contains', value: '' }))}</textarea>
+              </label>
+              <label>
+                <span>Action JSON</span>
+                <textarea name="action" data-email-preserve-focus="vpath-rule-create-action" spellcheck="false">${escHtml(ruleJsonValue({ operation: 'add', virtual_path: '' }))}</textarea>
+              </label>
+              <label>
+                <span>Default scope JSON</span>
+                <textarea name="scope" data-email-preserve-focus="vpath-rule-create-scope" spellcheck="false">${escHtml(ruleJsonValue({ limit: 100 }))}</textarea>
+              </label>
+              <button class="hub-action-btn hub-primary" type="submit">Create Rule</button>
+            </form>
+          </details>
+          <details class="email-rule-card" data-email-vpath-rule-section="apply"${virtualPathRuleSectionOpenAttr('apply')}>
+            <summary>Preview and Apply Rules</summary>
+            <form class="email-rule-form email-rule-form--wide" data-email-rule-apply-form>
+              <label>
+                <span>Rule id</span>
+                <input name="rule_id" data-email-preserve-focus="vpath-rule-apply-id" placeholder="Optional rule id" autocomplete="off">
+              </label>
+              <div class="email-rule-form__inline">
+                <label>
+                  <span>Scope</span>
+                  <select name="scope_mode" data-email-preserve-focus="vpath-rule-apply-scope-mode" data-email-vpath-scope-mode>
+                    ${scopeModeOptionsHtml(defaultScopeMode)}
+                  </select>
+                </label>
+                <label>
+                  <span>Limit</span>
+                  <input name="limit" data-email-preserve-focus="vpath-rule-apply-limit" type="number" min="1" max="20000" value="${defaultScopeMode === 'selected_message' ? '1' : '100'}">
+                </label>
+              </div>
+              <label data-email-vpath-scope-field="virtual_paths" hidden>
+                <span>Virtual path(s)</span>
+                <input name="scope_paths" data-email-preserve-focus="vpath-rule-apply-paths" list="email-vpath-options" placeholder="Projects/Example, Inbox/Watch" autocomplete="off">
+              </label>
+              <label data-email-vpath-scope-field="selected_message"${defaultScopeMode === 'selected_message' ? '' : ' hidden'}>
+                <span>Selected message</span>
+                <input value="${escHtml(state.virtualPathRuleContextEmailUid || '')}" disabled>
+              </label>
+              <label data-email-vpath-scope-field="advanced" hidden>
+                <span>Advanced scope JSON</span>
+                <textarea name="scope_json" data-email-preserve-focus="vpath-rule-apply-scope-json" spellcheck="false">${escHtml(ruleJsonValue({ limit: 100 }))}</textarea>
+              </label>
+              <label class="hub-checkbox email-rule-apply-toggle">
+                <input class="hub-checkbox__input" name="apply" data-email-vpath-apply-toggle="rules" type="checkbox">
+                <span class="hub-checkbox__box" aria-hidden="true"></span>
+                <span class="hub-checkbox__label">Apply matched changes now</span>
+              </label>
+              <button class="hub-action-btn hub-primary" type="submit" data-email-vpath-run-label data-preview-label="Preview rule matches" data-apply-label="Apply matched changes"${state.virtualPathRuleApplyLoading ? ' disabled' : ''}>Preview rule matches</button>
+            </form>
+          </details>
+        </div>
+      </section>
+    `;
+  }
+
   function secondaryBodyHtml() {
     if (state.secondaryTab === 'checks') return capabilityRowsHtml();
     if (state.secondaryTab === 'security') return messageSecurityHtml();
     if (state.secondaryTab === 'cache') return cacheStatusHtml();
     if (state.secondaryTab === 'trusted') return trustedSendersHtml();
     if (state.secondaryTab === 'search') return emailSearchHtml();
+    if (state.secondaryTab === 'rules') return rulesPanelHtml();
     return foldersHtml();
   }
 
   function renderSecondaryPanels() {
     const focusSnapshot = captureSearchFocus();
+    captureVirtualPathRuleSectionState();
+    syncSecondaryModalMode();
     document.querySelectorAll('.email-secondary-tabs').forEach(host => {
       host.innerHTML = secondaryTabsHtml(host.closest('#ultrawide-sidecar') ? 'ultrawide' : 'secondary');
     });
@@ -4755,6 +5641,7 @@ const EmailPage = (() => {
     if (modal) modal.innerHTML = secondaryBodyHtml();
     const modalTitle = el('email-secondary-modal-title');
     if (modalTitle) modalTitle.textContent = EMAIL_SECONDARY_TAB_TITLES.get(state.secondaryTab) || 'Email Folders';
+    syncVirtualPathRuleControls();
     restoreSearchFocus(focusSnapshot);
   }
 
@@ -4764,6 +5651,7 @@ const EmailPage = (() => {
     const match = window.matchMedia ? window.matchMedia(ULTRAWIDE_QUERY).matches : false;
     if (!active || !match) return;
     const focusSnapshot = captureSearchFocus();
+    captureVirtualPathRuleSectionState();
     const shell = document.createElement('div');
     shell.className = 'email-ultrawide-shell';
     shell.innerHTML = `
@@ -4779,6 +5667,7 @@ const EmailPage = (() => {
     window.UltrawideSidecar.clear();
     window.UltrawideSidecar.appendNode(shell);
     renderFolderControls();
+    syncVirtualPathRuleControls(shell);
     restoreSearchFocus(focusSnapshot);
   }
 
@@ -4820,6 +5709,70 @@ const EmailPage = (() => {
     renderSecondaryPanels();
   }
 
+  function renderActivityHeartbeatChrome() {
+    const heading = el('email-inbox-heading');
+    if (!heading) return;
+    const view = activityHeartbeatView();
+    let existing = heading.querySelector('.email-activity-heartbeat');
+    if (!existing) {
+      heading.insertAdjacentHTML('beforeend', activityHeartbeatHtml());
+      existing = heading.querySelector('.email-activity-heartbeat');
+    }
+    if (!existing) return;
+    if (existing.className !== view.className) existing.className = view.className;
+    if (existing.getAttribute('aria-label') !== view.label) existing.setAttribute('aria-label', view.label);
+    if (existing.getAttribute('title') !== view.label) existing.setAttribute('title', view.label);
+    const heart = String.fromCharCode(9829);
+    if (existing.textContent !== heart) existing.textContent = heart;
+  }
+
+  async function refreshActivityHeartbeat(options = {}) {
+    if (state.activityHeartbeatLoading) {
+      if (state.loaded && !options.deferRender) renderActivityHeartbeatChrome();
+      return state.activityHeartbeat;
+    }
+    state.activityHeartbeatLoading = true;
+    try {
+      const data = await fetchJson(activityEndpoint(), {
+        headers: { 'X-PIM-Email-Client-Priority': 'background' },
+      });
+      state.activityHeartbeat = data.activity || null;
+      state.activityHeartbeatError = '';
+      state.activityHeartbeatLastRefreshed = Date.now();
+      if (state.loaded && !options.deferRender) renderActivityHeartbeatChrome();
+      return state.activityHeartbeat;
+    } catch (error) {
+      state.activityHeartbeatError = error.message || String(error);
+      if (state.loaded && !options.deferRender) renderActivityHeartbeatChrome();
+      return state.activityHeartbeat;
+    } finally {
+      state.activityHeartbeatLoading = false;
+    }
+  }
+
+  function ensureActivityHeartbeat() {
+    renderActivityHeartbeatChrome();
+    refreshActivityHeartbeat({ silent: true });
+    if (state.activityHeartbeatTimer) return;
+    state.activityHeartbeatTimer = window.setInterval(() => {
+      if (!state.loaded || document.hidden) return;
+      refreshActivityHeartbeat({ silent: true });
+    }, ACTIVITY_HEARTBEAT_REFRESH_MS);
+  }
+
+  function ensureHealthPoll() {
+    ensureActivityHeartbeat();
+    if (state.healthPollTimer) return;
+    state.healthPollTimer = window.setInterval(() => {
+      if (!state.loaded || document.hidden) return;
+      refreshHealth({ silent: true });
+      const cacheAge = Date.now() - Number(state.cacheStatusLastRefreshed || 0);
+      if (state.secondaryTab === 'cache' || cacheAge >= CACHE_STATUS_POLL_MS) {
+        refreshCacheStatus({ silent: true });
+      }
+    }, Math.min(HEALTH_POLL_MS, CACHE_STATUS_POLL_MS));
+  }
+
   async function refreshHealth(options = {}) {
     try {
       const data = await fetchJson(`${API_ROOT}/local/health`);
@@ -4845,18 +5798,12 @@ const EmailPage = (() => {
           },
         },
       };
-      const tone = healthTone();
+      const tone = healthStatusTone();
       if (!options.silent || (tone !== 'red' && staleHealthErrorVisible())) {
         setStatus(
           staleHealthErrorVisible() ? 'Email health restored' : 'Email health refreshed',
           tone === 'red' ? 'err' : (tone === 'amber' ? 'warn' : 'ok')
         );
-      }
-      if (state.loaded && !options.deferRender) {
-        renderMeta();
-        renderMessageListChrome();
-        renderSecondaryPanels();
-        renderUltrawide();
       }
       return state.health;
     } catch (error) {
@@ -4869,29 +5816,14 @@ const EmailPage = (() => {
         warnings: [],
       };
       if (!options.silent) setStatus(error.message || String(error), 'err');
-      if (state.loaded && !options.deferRender) {
-        renderMessageListChrome();
-        renderSecondaryPanels();
-      }
       return null;
     }
-  }
-
-  function ensureHealthPoll() {
-    if (state.healthPollTimer) return;
-    state.healthPollTimer = window.setInterval(() => {
-      if (!state.loaded || document.hidden) return;
-      refreshHealth({ silent: true });
-      const cacheAge = Date.now() - Number(state.cacheStatusLastRefreshed || 0);
-      if (state.secondaryTab === 'cache' || cacheAge >= CACHE_STATUS_POLL_MS) {
-        refreshCacheStatus({ silent: true });
-      }
-    }, Math.min(HEALTH_POLL_MS, CACHE_STATUS_POLL_MS));
   }
 
   async function load(options = {}) {
     if (state.loading) return state.status;
     if (state.loaded && !options.force) {
+      ensureActivityHeartbeat();
       renderUltrawide();
       scheduleUltrawideRender();
       return state.status;
@@ -4935,10 +5867,7 @@ const EmailPage = (() => {
       ensureHealthPoll();
       healthPromise.then(() => {
         if (!state.loaded) return;
-        renderMeta();
-        renderMessageListChrome();
-        renderSecondaryPanels();
-        renderUltrawide();
+        refreshActivityHeartbeat({ silent: true });
       });
       return state.status;
     } catch (error) {
@@ -5315,6 +6244,128 @@ const EmailPage = (() => {
     return loadFolderMessages(name);
   }
 
+  function ensureVirtualPathEditorDialog() {
+    let dialog = el('email-vpath-editor-modal');
+    if (dialog) return dialog;
+    dialog = document.createElement('dialog');
+    dialog.id = 'email-vpath-editor-modal';
+    dialog.className = 'hub-modal email-vpath-editor-modal';
+    dialog.innerHTML = `
+      <form method="dialog" class="hub-modal__panel email-vpath-editor">
+        <header class="hub-modal__header">
+          <h2>Virtual Paths</h2>
+          <button type="button" class="hub-modal__close" data-email-vpath-editor-close aria-label="Close">&times;</button>
+        </header>
+        <div class="hub-modal__body" data-email-vpath-editor-body></div>
+        <footer class="hub-modal__footer">
+          <button type="button" data-email-vpath-editor-close>Close</button>
+          <button type="submit" data-email-vpath-editor-save>Save</button>
+        </footer>
+      </form>
+    `;
+    dialog.addEventListener('click', event => {
+      if (event.target === dialog || event.target.closest?.('[data-email-vpath-editor-close]')) {
+        event.preventDefault();
+        closeVirtualPathEditor();
+      }
+    });
+    dialog.addEventListener('submit', event => {
+      const form = event.target.closest?.('.email-vpath-editor');
+      if (!form) return;
+      event.preventDefault();
+      saveVirtualPathEditor(form);
+    });
+    document.body.appendChild(dialog);
+    return dialog;
+  }
+
+  function renderVirtualPathEditorDialog() {
+    const dialog = ensureVirtualPathEditorDialog();
+    const body = dialog.querySelector('[data-email-vpath-editor-body]');
+    const pathsText = (state.virtualPathEditorPaths || []).join('\n');
+    const options = virtualPathOptionsHtml();
+    if (body) {
+      body.innerHTML = `
+        ${state.virtualPathEditorError ? `<div class="email-error">${escHtml(state.virtualPathEditorError)}</div>` : ''}
+        <datalist id="email-vpath-editor-options">${options}</datalist>
+        <label class="email-vpath-editor__field">
+          <span>${escHtml(state.virtualPathEditorEmailUid || '')}</span>
+          <textarea name="virtual_paths" spellcheck="false" list="email-vpath-editor-options">${escHtml(pathsText)}</textarea>
+        </label>
+      `;
+    }
+  }
+
+  function closeVirtualPathEditor() {
+    const dialog = el('email-vpath-editor-modal');
+    state.virtualPathEditorOpen = false;
+    if (!dialog) return;
+    if (typeof dialog.close === 'function' && dialog.open) dialog.close();
+    else dialog.removeAttribute('open');
+  }
+
+  async function openVirtualPathEditor(emailUid = '') {
+    closeMessageContextMenu();
+    const uid = String(emailUid || activeMessageUid() || '').trim();
+    if (!uid) {
+      setStatus('Open a message before editing virtual paths', 'warn');
+      return false;
+    }
+    state.virtualPathEditorOpen = true;
+    state.virtualPathEditorEmailUid = uid;
+    state.virtualPathEditorError = '';
+    state.virtualPathEditorPaths = [];
+    renderVirtualPathEditorDialog();
+    const dialog = ensureVirtualPathEditorDialog();
+    if (typeof HubModal !== 'undefined') HubModal.open(dialog);
+    else if (typeof dialog.showModal === 'function' && !dialog.open) dialog.showModal();
+    try {
+      const [history] = await Promise.all([
+        fetchJson(messageActionsEndpoint(uid)),
+        refreshVirtualPathRules({ silent: true }),
+      ]);
+      const paths = history.history?.state?.current_virtual_paths;
+      state.virtualPathEditorPaths = Array.isArray(paths) ? paths.map(String) : [];
+      renderVirtualPathEditorDialog();
+      return true;
+    } catch (error) {
+      state.virtualPathEditorError = error.message || String(error);
+      renderVirtualPathEditorDialog();
+      return false;
+    }
+  }
+
+  async function saveVirtualPathEditor(form) {
+    const uid = state.virtualPathEditorEmailUid;
+    if (!uid) return false;
+    const paths = String(form?.querySelector?.('[name="virtual_paths"]')?.value || '')
+      .split(/\r?\n/)
+      .map(item => item.trim())
+      .filter(Boolean);
+    setStatus('Saving virtual paths', 'unknown');
+    try {
+      await fetchJson(messageVirtualPathsReplaceEndpoint(uid), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          virtual_paths: paths,
+          actor: 'email-ui',
+          source_surface: 'pim-email-ui',
+        }),
+      });
+      closeVirtualPathEditor();
+      await refreshVirtualPathRules({ silent: true });
+      await load({ force: true, preserveOpenedMessage: true });
+      setStatus('Virtual paths saved', 'ok');
+      return true;
+    } catch (error) {
+      state.virtualPathEditorError = error.message || String(error);
+      renderVirtualPathEditorDialog();
+      setStatus(error.message || String(error), 'err');
+      return false;
+    }
+  }
+
   function setFolderSet(setId) {
     const clean = String(setId || '').trim() || 'system';
     state.folderSet = clean;
@@ -5394,6 +6445,7 @@ const EmailPage = (() => {
     const clean = normalizeSecondaryTab(tabId);
     if (clean === 'cache') refreshCacheStatus({ silent: true });
     if (clean === 'trusted' && !state.trustedLoaded) refreshTrustedSenders({ silent: true });
+    if (clean === 'rules' && !state.virtualPathRulesLoaded) refreshVirtualPathRules({ silent: true });
   }
 
   function activateSecondaryTab(tabId) {
@@ -5465,6 +6517,7 @@ const EmailPage = (() => {
     if (!state.loaded) await load();
     if (clean === 'checks') await refreshHealth();
     if (clean === 'security') await prepareSecurityChecks();
+    if (clean === 'rules' && !state.virtualPathRulesLoaded) await refreshVirtualPathRules({ silent: true });
     activateSecondaryTab(clean);
     openSecondaryModalElement();
     focusSecondaryModalTab(clean);
@@ -5493,6 +6546,12 @@ const EmailPage = (() => {
 
   async function trustedPanel() {
     return openSecondaryModalTab('trusted');
+  }
+
+  async function rulesPanel() {
+    clearVirtualPathRuleMessageContext();
+    state.virtualPathRuleSearch = '';
+    return openSecondaryModalTab('rules');
   }
 
   async function openSecondaryPanel(tabId = 'folders') {
@@ -5815,7 +6874,14 @@ const EmailPage = (() => {
   }
 
   function handleAction(action) {
-    if (String(action || '').startsWith('secondary-')) return openSecondaryModalTab(String(action || '').slice('secondary-'.length));
+    if (String(action || '').startsWith('secondary-')) {
+      const tab = String(action || '').slice('secondary-'.length);
+      if (tab === 'rules') {
+        clearVirtualPathRuleMessageContext();
+        state.virtualPathRuleSearch = '';
+      }
+      return openSecondaryModalTab(tab);
+    }
     if (action === 'refresh') return refresh();
     if (action === 'browse-folders') return browseFolders();
     if (action === 'view-plain') return setView('plain');
@@ -5829,6 +6895,12 @@ const EmailPage = (() => {
     if (action === 'force-refresh-message') return forceRefreshMessage();
     if (action === 'mark-sender-probable-trusted') return markSenderProbableTrusted();
     if (action === 'open-message-audit-ledger') return openContextAuditLedger();
+    if (action === 'edit-message-virtual-paths') return openVirtualPathEditor();
+    if (action === 'open-virtual-path-rules') {
+      const uid = state.messageContextUids?.[0] || activeMessageUid() || '';
+      return openVirtualPathRulesForMessage(uid);
+    }
+    if (action === 'refresh-vpath-rules') return refreshVirtualPathRules();
     if (action === 'show-message-uid') return showMessageUid();
     if (action === 'copy-selected-message-uids') return copySelectedMessageUids();
     if (action === 'toggle-original-image-buttons') return toggleOriginalImageButtons();
@@ -6153,6 +7225,39 @@ const EmailPage = (() => {
         removeTrustedSender(trustedRemove.dataset.emailTrustedRemove || '');
         return;
       }
+      const ruleToggle = target.closest?.('[data-email-vpath-rule-toggle]');
+      if (ruleToggle) {
+        event.preventDefault();
+        toggleVirtualPathRuleExpanded(ruleToggle.dataset.emailVpathRuleToggle || '');
+        return;
+      }
+      const ruleSectionSummary = target.closest?.('[data-email-vpath-rule-section] > summary');
+      if (ruleSectionSummary) {
+        const details = ruleSectionSummary.closest('[data-email-vpath-rule-section]');
+        event.preventDefault();
+        toggleVirtualPathRuleSection(details?.dataset?.emailVpathRuleSection || '');
+        return;
+      }
+      const ruleContextClear = target.closest?.('[data-email-vpath-rule-context-clear]');
+      if (ruleContextClear) {
+        event.preventDefault();
+        clearVirtualPathRuleMessageContext();
+        renderSecondaryPanels();
+        renderUltrawide();
+        return;
+      }
+      const ruleApplyOne = target.closest?.('[data-email-rule-apply-one]');
+      if (ruleApplyOne) {
+        event.preventDefault();
+        previewSingleVirtualPathRule(ruleApplyOne.dataset.emailRuleApplyOne || '');
+        return;
+      }
+      const ruleArchive = target.closest?.('[data-email-vpath-rule-archive]');
+      if (ruleArchive) {
+        event.preventDefault();
+        archiveVirtualPathRule(ruleArchive.dataset.emailVpathRuleArchive || '');
+        return;
+      }
       const folderToggle = target.closest?.('[data-email-folder-toggle]');
       if (folderToggle) {
         event.preventDefault();
@@ -6216,11 +7321,32 @@ const EmailPage = (() => {
         readSearchForm(searchForm);
         return;
       }
+      const vpathApplyToggle = event.target.closest?.('[data-email-vpath-apply-toggle]');
+      if (vpathApplyToggle) {
+        syncVirtualPathRunButton(vpathApplyToggle.closest('form'));
+        return;
+      }
+      const vpathScopeMode = event.target.closest?.('[data-email-vpath-scope-mode]');
+      if (vpathScopeMode) {
+        syncVirtualPathScopeControls(vpathScopeMode.closest('form'));
+        return;
+      }
+      const ruleActiveToggle = event.target.closest?.('[data-email-vpath-rule-active-toggle]');
+      if (ruleActiveToggle) {
+        toggleVirtualPathRuleActive(ruleActiveToggle.dataset.emailVpathRuleActiveToggle || '', ruleActiveToggle.checked);
+        return;
+      }
       const messageSelect = event.target.closest?.('[data-email-message-select]');
       if (!messageSelect) return;
       toggleMessageSelection(messageSelect.dataset.emailMessageSelect || '', messageSelect.checked);
     });
     document.addEventListener('input', event => {
+      const ruleSearch = event.target.closest?.('[data-email-vpath-rule-search]');
+      if (ruleSearch) {
+        state.virtualPathRuleSearch = String(ruleSearch.value || '');
+        renderVirtualPathRuleListHosts();
+        return;
+      }
       const searchForm = event.target.closest?.('[data-email-search-form]');
       if (searchForm) {
         readSearchForm(searchForm);
@@ -6231,6 +7357,30 @@ const EmailPage = (() => {
       if (searchForm) {
         event.preventDefault();
         runEmailSearch({ form: searchForm });
+        return;
+      }
+      const vpathCreateForm = event.target.closest?.('[data-email-vpath-create-form]');
+      if (vpathCreateForm) {
+        event.preventDefault();
+        createVirtualPathFromForm(vpathCreateForm);
+        return;
+      }
+      const vpathBulkForm = event.target.closest?.('[data-email-vpath-bulk-form]');
+      if (vpathBulkForm) {
+        event.preventDefault();
+        bulkMoveVirtualPathFromForm(vpathBulkForm);
+        return;
+      }
+      const ruleCreateForm = event.target.closest?.('[data-email-rule-create-form]');
+      if (ruleCreateForm) {
+        event.preventDefault();
+        createVirtualPathRuleFromForm(ruleCreateForm);
+        return;
+      }
+      const ruleApplyForm = event.target.closest?.('[data-email-rule-apply-form]');
+      if (ruleApplyForm) {
+        event.preventDefault();
+        applyVirtualPathRulesFromForm(ruleApplyForm);
         return;
       }
       const form = event.target.closest?.('[data-email-trusted-add-form]');
@@ -6369,7 +7519,9 @@ const EmailPage = (() => {
       view: state.view,
       secondary_tab: state.secondaryTab,
       list_collapsed: state.listCollapsed,
-      health_heartbeat_active: healthHeartbeatActive(),
+      activity_heartbeat_active: activityHeartbeatActive(),
+      activity_heartbeat: state.activityHeartbeat,
+      activity_heartbeat_last_refreshed: state.activityHeartbeatLastRefreshed,
       email_intro_min_height: state.emailIntroMinHeight,
       folder_set: state.folderSet,
       folder_group: state.folderGroup,
@@ -6388,6 +7540,7 @@ const EmailPage = (() => {
     securityChecks,
     cachePanel,
     trustedPanel,
+    rulesPanel,
     openSecondaryPanel,
     setView,
     toggleList,
@@ -6418,11 +7571,13 @@ if (typeof DaveMenuConfig !== 'undefined') {
     'email.security': () => EmailPage.securityChecks(),
     'email.cache': () => EmailPage.cachePanel(),
     'email.trusted': () => EmailPage.trustedPanel(),
+    'email.rules': () => EmailPage.rulesPanel(),
     'email.secondary.folders': () => EmailPage.openSecondaryPanel('folders'),
     'email.secondary.checks': () => EmailPage.openSecondaryPanel('checks'),
     'email.secondary.security': () => EmailPage.openSecondaryPanel('security'),
     'email.secondary.cache': () => EmailPage.openSecondaryPanel('cache'),
     'email.secondary.trusted': () => EmailPage.openSecondaryPanel('trusted'),
     'email.secondary.search': () => EmailPage.openSecondaryPanel('search'),
+    'email.secondary.rules': () => EmailPage.openSecondaryPanel('rules'),
   });
 }
