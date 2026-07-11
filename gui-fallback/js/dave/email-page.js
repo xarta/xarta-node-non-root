@@ -5750,13 +5750,13 @@ const EmailPage = (() => {
 
   function virtualPathInputControlHtml({ label, name, key, value = '', placeholder = '', multi = false, allowRoot = false, mutable = false }) {
     return `
-      <label class="email-vpath-picker-field">
-        <span>${escHtml(label)}</span>
-        <div class="email-vpath-picker-input-row">
-          <input name="${escHtml(name)}" value="${escHtml(value)}" data-email-preserve-focus="${escHtml(key)}" data-email-vpath-input-key="${escHtml(key)}"${multi ? ' data-email-vpath-multi="true"' : ''}${allowRoot ? ' data-email-vpath-allow-root="true"' : ''}${mutable ? ' data-email-vpath-mutable="true"' : ''} placeholder="${escHtml(placeholder)}" autocomplete="off" readonly>
-          <button class="hub-action-btn" type="button" data-email-vpath-picker-open data-email-vpath-picker-target="${escHtml(key)}">Choose</button>
+      <div class="email-vpath-picker-field">
+        <span class="email-rule-field-label">${escHtml(label)}</span>
+        <div class="email-rule-field-action-row email-vpath-picker-input-row">
+          <input name="${escHtml(name)}" value="${escHtml(value)}" data-email-preserve-focus="${escHtml(key)}" data-email-vpath-input-key="${escHtml(key)}"${multi ? ' data-email-vpath-multi="true"' : ''}${allowRoot ? ' data-email-vpath-allow-root="true"' : ''}${mutable ? ' data-email-vpath-mutable="true"' : ''} placeholder="${escHtml(placeholder)}" autocomplete="off" aria-label="${escHtml(label)}" readonly>
+          <button class="hub-action-btn" type="button" data-email-vpath-picker-open data-email-vpath-picker-target="${escHtml(key)}" aria-label="Choose ${escHtml(label)}">Choose</button>
         </div>
-      </label>
+      </div>
     `;
   }
 

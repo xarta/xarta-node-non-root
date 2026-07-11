@@ -2636,7 +2636,8 @@ dialog.hub-modal.email-audit-ledger-modal[open] {
   text-transform: none;
 }
 
-.email-rule-form label > span:not(.hub-checkbox__box):not(.hub-checkbox__label) {
+.email-rule-form label > span:not(.hub-checkbox__box):not(.hub-checkbox__label),
+.email-rule-field-label {
   color: var(--text-dim);
   font-size: 0.78rem;
 }
@@ -2926,6 +2927,8 @@ dialog.hub-modal.email-audit-ledger-modal[open] {
 }
 
 .email-vpath-picker-field {
+  display: grid;
+  gap: 5px;
   min-width: 0;
 }
 
@@ -2940,6 +2943,11 @@ dialog.hub-modal.email-audit-ledger-modal[open] {
 .email-vpath-picker-input-row input {
   min-width: 0;
   width: 100%;
+}
+
+.email-vpath-picker-input-row .hub-action-btn {
+  align-self: stretch;
+  height: var(--email-rules-control-height);
 }
 
 .email-vpath-tree-create-row,
@@ -3182,8 +3190,7 @@ dialog.hub-modal.email-audit-ledger-modal[open] {
     flex-direction: column;
   }
 
-  .email-rules-toolbar__actions,
-  .email-vpath-picker-input-row {
+  .email-rules-toolbar__actions {
     align-items: flex-start;
     flex-direction: row;
   }
