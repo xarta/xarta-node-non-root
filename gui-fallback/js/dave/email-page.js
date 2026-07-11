@@ -963,16 +963,12 @@ const EmailPage = (() => {
     return `${API_ROOT}/local/virtual-paths`;
   }
 
-  function virtualPathArchiveEndpoint() {
-    return `${API_ROOT}/local/virtual-paths/archive`;
+  function virtualPathSubtreeEndpoint() {
+    return `${API_ROOT}/local/virtual-paths/subtree`;
   }
 
   function virtualPathBulkMoveEndpoint() {
     return `${API_ROOT}/local/virtual-paths/bulk-move`;
-  }
-
-  function virtualPathRenameEndpoint() {
-    return `${API_ROOT}/local/virtual-paths/rename`;
   }
 
   function messageVirtualPathsReplaceEndpoint(uid) {
@@ -4852,8 +4848,8 @@ const EmailPage = (() => {
     const childInput = form?.querySelector?.('[name="child_name"]');
     const path = normalizeVirtualPath(input?.value || childVirtualPath(parentInput?.value || '', childInput?.value || ''));
     if (!path) return false;
-    if (parentInput?.value && isReadOnlyVirtualPath(parentInput.value)) {
-      setStatus('That parent path is read-only.', 'err');
+    if (parentInput?.value && !virtualPathAllows(parentInput.value, 'can_create_child')) {
+      setStatus('Children cannot be created below that path.', 'err');
       return false;
     }
     setStatus('Creating virtual path', 'unknown');
@@ -5710,30 +5706,39 @@ const EmailPage = (() => {
     return (state.virtualPaths || []).find(item => normalizeVirtualPath(virtualPathName(item)) === clean) || null;
   }
 
+  function virtualPathCapabilities(path) {
+    const record = virtualPathRecordFor(path);
+    if (!record || typeof record !== 'object') return null;
+    const capabilities = record.capabilities && typeof record.capabilities === 'object'
+      ? record.capabilities
+      : record.metadata && typeof record.metadata === 'object'
+        ? record.metadata
+        : record;
+    return capabilities && typeof capabilities === 'object' ? capabilities : null;
+  }
+
   function isReadOnlyVirtualPath(path) {
     const clean = normalizeVirtualPath(path);
     if (!clean) return false;
-    const parts = clean.split('/');
-    if (parts.some(part => part === '_X' || part.endsWith('_X'))) return true;
-    const record = virtualPathRecordFor(clean);
-    if (!record || typeof record !== 'object') return false;
-    return Boolean(
-      record.read_only
-      || record.readonly
-      || record.is_read_only
-      || record.meta
-      || record.is_meta
-      || String(record.path_kind || record.kind || '').toLowerCase() === 'meta'
-    );
+    const capabilities = virtualPathCapabilities(clean);
+    return capabilities ? Boolean(capabilities.read_only) : true;
   }
 
   function isMutableVirtualPath(path) {
     const clean = normalizeVirtualPath(path);
-    return Boolean(clean && !isReadOnlyVirtualPath(clean));
+    const capabilities = virtualPathCapabilities(clean);
+    return Boolean(clean && capabilities && capabilities.assignable && !capabilities.read_only);
   }
 
-  function virtualPathOptionsHtml() {
+  function virtualPathAllows(path, capability) {
+    const clean = normalizeVirtualPath(path);
+    if (!clean) return capability === 'can_create_child';
+    return Boolean(virtualPathCapabilities(clean)?.[capability]);
+  }
+
+  function virtualPathOptionsHtml(options = {}) {
     return state.virtualPaths
+      .filter(item => !options.assignableOnly || Boolean((item.capabilities || item.metadata || item)?.assignable))
       .map(item => virtualPathName(item))
       .filter(Boolean)
       .sort((a, b) => a.localeCompare(b))
@@ -5762,7 +5767,16 @@ const EmailPage = (() => {
 
   function buildVirtualPathTree() {
     const root = { name: 'Virtual paths', path: '', direct: true, children: new Map() };
+    const query = String(state.virtualPathPicker?.searchQuery || '').trim().toLowerCase();
     state.virtualPaths
+      .filter(item => {
+        if (!query) return true;
+        const path = virtualPathName(item).toLowerCase();
+        const capabilities = item?.capabilities || item?.metadata || item || {};
+        return path.includes(query)
+          || String(capabilities.path_kind || '').toLowerCase().includes(query)
+          || String(capabilities.special_role || '').toLowerCase().includes(query);
+      })
       .map(item => normalizeVirtualPath(virtualPathName(item)))
       .filter(Boolean)
       .sort((a, b) => a.localeCompare(b))
@@ -5787,11 +5801,11 @@ const EmailPage = (() => {
     return root;
   }
 
-  function canDropVirtualPath(sourcePath, targetParentPath) {
+  function canDropVirtualPath(sourcePath, targetParentPath, operation = 'move') {
     const source = normalizeVirtualPath(sourcePath);
     const targetParent = normalizeVirtualPath(targetParentPath);
-    if (!isMutableVirtualPath(source)) return false;
-    if (targetParent && !isMutableVirtualPath(targetParent)) return false;
+    if (!virtualPathAllows(source, operation === 'copy' ? 'can_copy_subtree' : 'can_move_subtree')) return false;
+    if (targetParent && !virtualPathAllows(targetParent, 'can_create_child')) return false;
     if (source === targetParent || targetParent.startsWith(`${source}/`)) return false;
     const destination = childVirtualPath(targetParent, virtualPathBaseName(source));
     return Boolean(destination && destination !== source);
@@ -5801,16 +5815,21 @@ const EmailPage = (() => {
     const path = normalizeVirtualPath(node.path);
     const childNodes = Array.from(node.children.values()).sort((a, b) => a.name.localeCompare(b.name));
     const readOnly = isReadOnlyVirtualPath(path);
-    const mutable = isMutableVirtualPath(path);
+    const capabilities = virtualPathCapabilities(path) || {};
+    const mutable = Boolean(capabilities.can_move_subtree);
     const selected = normalizeVirtualPath(state.virtualPathPicker?.selectedPath || '') === path;
     const actionOpen = normalizeVirtualPath(state.virtualPathPicker?.actionPath || '') === path;
-    const kind = childNodes.length ? 'Branch' : 'Leaf';
+    const kind = capabilities.path_kind === 'meta_view'
+      ? 'Read-only meta view'
+      : capabilities.is_protected_root
+        ? `Protected ${capabilities.special_role || 'special'} root`
+        : childNodes.length ? 'Mutable branch' : 'Mutable path';
     return `
       <li class="email-vpath-tree-item" data-readonly="${readOnly ? 'true' : 'false'}">
         <div class="email-vpath-tree-node${selected ? ' is-selected' : ''}${actionOpen ? ' is-action-open' : ''}${readOnly ? ' is-readonly' : ''}" style="--vpath-depth:${depth}" data-email-vpath-tree-drop-target="${escHtml(path)}">
           <button class="email-vpath-tree-node__main" type="button" data-email-vpath-tree-select="${escHtml(path)}" data-email-vpath-tree-node="${escHtml(path)}" draggable="${mutable ? 'true' : 'false'}">
             <span class="email-vpath-tree-node__name">${escHtml(node.name)}</span>
-            <span class="email-vpath-tree-node__kind">${escHtml(kind)}${readOnly ? ' / read-only' : ''}</span>
+            <span class="email-vpath-tree-node__kind">${escHtml(kind)}</span>
           </button>
           <button class="email-vpath-tree-node__actions" type="button" aria-label="Path actions" data-email-vpath-tree-actions="${escHtml(path)}">...</button>
         </div>
@@ -5822,20 +5841,22 @@ const EmailPage = (() => {
 
   function virtualPathTreeActionPanelHtml(path) {
     const clean = normalizeVirtualPath(path);
-    const readonly = clean && isReadOnlyVirtualPath(clean);
+    const capabilities = virtualPathCapabilities(clean) || {};
+    const canCreateChild = !clean || Boolean(capabilities.can_create_child);
     const targetLabel = clean || 'Root';
     return `
       <div class="email-vpath-tree-actions-panel">
         <strong>${escHtml(targetLabel)}</strong>
         <div class="email-vpath-tree-create-row">
-          <input data-email-vpath-tree-child-name value="" placeholder="Child path name" autocomplete="off"${readonly ? ' disabled' : ''}>
-          <button class="hub-action-btn hub-primary" type="button" data-email-vpath-tree-create-child="${escHtml(clean)}"${readonly ? ' disabled' : ''}>Create child</button>
+          <input data-email-vpath-tree-child-name value="" placeholder="Child path name" autocomplete="off"${canCreateChild ? '' : ' disabled'}>
+          <button class="hub-action-btn hub-primary" type="button" data-email-vpath-tree-create-child="${escHtml(clean)}"${canCreateChild ? '' : ' disabled'}>Create child</button>
         </div>
         ${clean ? `
           <div class="email-vpath-tree-action-buttons">
-            <button class="hub-action-btn" type="button" data-email-vpath-tree-move="${escHtml(clean)}"${readonly ? ' disabled' : ''}>Move</button>
-            <button class="hub-action-btn" type="button" data-email-vpath-tree-archive="${escHtml(clean)}"${readonly ? ' disabled' : ''}>Archive</button>
-            <button class="hub-action-btn email-rule-danger" type="button" data-email-vpath-tree-delete="${escHtml(clean)}"${readonly ? ' disabled' : ''}>Delete</button>
+            ${capabilities.can_copy_subtree ? `<button class="hub-action-btn" type="button" data-email-vpath-tree-copy="${escHtml(clean)}">Copy</button>` : ''}
+            ${capabilities.can_move_subtree ? `<button class="hub-action-btn" type="button" data-email-vpath-tree-move="${escHtml(clean)}">Move</button>` : ''}
+            ${capabilities.can_archive_subtree ? `<button class="hub-action-btn" type="button" data-email-vpath-tree-archive="${escHtml(clean)}">Archive</button>` : ''}
+            ${capabilities.can_delete_subtree ? `<button class="hub-action-btn email-rule-danger" type="button" data-email-vpath-tree-delete="${escHtml(clean)}">Delete</button>` : ''}
           </div>
         ` : ''}
       </div>
@@ -5889,7 +5910,11 @@ const EmailPage = (() => {
     if (body) {
       body.innerHTML = `
         ${picker.error ? `<div class="email-error">${escHtml(picker.error)}</div>` : ''}
-        ${moving ? `<div class="email-vpath-tree-banner"><strong>Move</strong><span>${escHtml(picker.moveSourcePath)}</span></div>` : ''}
+        ${moving ? `<div class="email-vpath-tree-banner"><strong>${picker.subtreeOperation === 'copy' ? 'Copy' : 'Move'}</strong><span>${escHtml(picker.moveSourcePath)}</span></div>` : ''}
+        <label class="email-vpath-tree-search">
+          <span>Search paths</span>
+          <input type="search" value="${escHtml(picker.searchQuery || '')}" data-email-vpath-tree-search placeholder="Path, role, or kind" autocomplete="off">
+        </label>
         ${virtualPathTreeHtml()}
       `;
     }
@@ -5918,6 +5943,8 @@ const EmailPage = (() => {
       selectedPath: normalizeVirtualPath(options.selectedPath || current),
       actionPath: typeof options.actionPath === 'undefined' ? null : normalizeVirtualPath(options.actionPath),
       moveSourcePath: normalizeVirtualPath(options.moveSourcePath || ''),
+      subtreeOperation: options.subtreeOperation === 'copy' ? 'copy' : 'move',
+      searchQuery: String(options.searchQuery || ''),
       error: '',
     };
     const dialog = renderVirtualPathTreePicker();
@@ -5998,8 +6025,8 @@ const EmailPage = (() => {
       setVirtualPathPickerError('Enter a child path name.');
       return false;
     }
-    if (parentPath && isReadOnlyVirtualPath(parentPath)) {
-      setVirtualPathPickerError('This path is read-only.');
+    if (parentPath && !virtualPathAllows(parentPath, 'can_create_child')) {
+      setVirtualPathPickerError('Children cannot be created below this path.');
       return false;
     }
     setStatus('Creating virtual path', 'unknown');
@@ -6026,23 +6053,46 @@ const EmailPage = (() => {
 
   async function archiveVirtualPathFromPicker(path, action = 'archive') {
     const clean = normalizeVirtualPath(path);
-    if (!isMutableVirtualPath(clean)) {
-      setVirtualPathPickerError('This path is read-only.');
+    const capability = action === 'delete' ? 'can_delete_subtree' : 'can_archive_subtree';
+    if (!virtualPathAllows(clean, capability)) {
+      setVirtualPathPickerError('This path operation is protected.');
+      return false;
+    }
+    let preview;
+    try {
+      preview = await fetchJson(virtualPathSubtreeEndpoint(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          operation: action,
+          source_virtual_path: clean,
+          dry_run: true,
+          actor: 'email-ui',
+          source_surface: 'pim-email-ui-tree-picker',
+        }),
+      });
+    } catch (error) {
+      setVirtualPathPickerError(error.message || String(error));
+      return false;
+    }
+    const impact = preview.result || {};
+    if (!impact.can_apply) {
+      setVirtualPathPickerError(`Cannot ${action}: ${(impact.blockers || []).join(', ') || 'operation blocked'}.`);
       return false;
     }
     const ok = await confirmHubDelete({
       title: action === 'delete' ? 'Delete virtual path' : 'Archive virtual path',
       message: clean,
-      detail: 'Message content is unchanged.',
+      detail: `${impact.affected_path_count || 0} paths, ${impact.distinct_message_count || 0} messages, ${impact.association_remove_count || 0} associations. Message content is unchanged.`,
       confirmText: action === 'delete' ? 'Delete' : 'Archive',
     });
     if (!ok) return false;
     setStatus(action === 'delete' ? 'Deleting virtual path' : 'Archiving virtual path', 'unknown');
     try {
-      await fetchJson(virtualPathArchiveEndpoint(), {
+      await fetchJson(virtualPathSubtreeEndpoint(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ virtual_path: clean, actor: 'email-ui', source_surface: 'pim-email-ui-tree-picker' }),
+        body: JSON.stringify({ operation: action, source_virtual_path: clean, dry_run: false, actor: 'email-ui', source_surface: 'pim-email-ui-tree-picker' }),
       });
       const target = virtualPathPickerTargetInput();
       if (target && normalizeVirtualPath(target.value) === clean) {
@@ -6064,26 +6114,55 @@ const EmailPage = (() => {
     }
   }
 
-  async function moveVirtualPath(sourcePath, destinationPath) {
+  async function transferVirtualPathSubtree(sourcePath, destinationPath, operation = 'move') {
     const source = normalizeVirtualPath(sourcePath);
     const destination = normalizeVirtualPath(destinationPath);
     if (!source || !destination || source === destination) return false;
-    if (!isMutableVirtualPath(source)) {
-      setVirtualPathPickerError('This path is read-only.');
+    const capability = operation === 'copy' ? 'can_copy_subtree' : 'can_move_subtree';
+    if (!virtualPathAllows(source, capability)) {
+      setVirtualPathPickerError('This path operation is protected.');
       return false;
     }
-    const ok = await confirmHubAction({
-      title: 'Move virtual path',
-      message: `${source} -> ${destination}`,
-      confirmText: 'Move',
-    });
-    if (!ok) return false;
-    setStatus('Moving virtual path', 'unknown');
+    let preview;
     try {
-      await fetchJson(virtualPathRenameEndpoint(), {
+      preview = await fetchJson(virtualPathSubtreeEndpoint(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          operation,
+          source_virtual_path: source,
+          destination_virtual_path: destination,
+          dry_run: true,
+          actor: 'email-ui',
+          source_surface: 'pim-email-ui-tree-picker',
+        }),
+      });
+    } catch (error) {
+      setVirtualPathPickerError(error.message || String(error));
+      return false;
+    }
+    const impact = preview.result || {};
+    if (!impact.can_apply) {
+      const reason = (impact.collisions || []).length
+        ? `${impact.collisions.length} destination collision(s)`
+        : (impact.blockers || []).join(', ') || 'operation blocked';
+      setVirtualPathPickerError(`Cannot ${operation}: ${reason}.`);
+      return false;
+    }
+    const ok = await confirmHubAction({
+      title: `${operation === 'copy' ? 'Copy' : 'Move'} virtual-path subtree`,
+      message: `${source} -> ${destination}`,
+      detail: `${impact.affected_path_count || 0} paths, ${impact.distinct_message_count || 0} messages, ${impact.association_count || 0} source associations.`,
+      confirmText: operation === 'copy' ? 'Copy' : 'Move',
+    });
+    if (!ok) return false;
+    setStatus(`${operation === 'copy' ? 'Copying' : 'Moving'} virtual path`, 'unknown');
+    try {
+      await fetchJson(virtualPathSubtreeEndpoint(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          operation,
           source_virtual_path: source,
           destination_virtual_path: destination,
           dry_run: false,
@@ -6097,9 +6176,10 @@ const EmailPage = (() => {
       state.virtualPathPicker.actionPath = destination;
       state.virtualPathPicker.mode = 'select';
       state.virtualPathPicker.moveSourcePath = '';
+      state.virtualPathPicker.subtreeOperation = 'move';
       state.virtualPathPicker.error = '';
       renderVirtualPathTreePicker();
-      setStatus(`Moved ${source}`, 'ok');
+      setStatus(`${operation === 'copy' ? 'Copied' : 'Moved'} ${source}`, 'ok');
       return true;
     } catch (error) {
       setVirtualPathPickerError(error.message || String(error));
@@ -6108,24 +6188,31 @@ const EmailPage = (() => {
     }
   }
 
+  function moveVirtualPath(sourcePath, destinationPath) {
+    return transferVirtualPathSubtree(sourcePath, destinationPath, 'move');
+  }
+
   function moveVirtualPathIntoParent(sourcePath, parentPath) {
     const source = normalizeVirtualPath(sourcePath);
     const parent = normalizeVirtualPath(parentPath);
-    if (!canDropVirtualPath(source, parent)) {
+    const operation = state.virtualPathPicker?.subtreeOperation === 'copy' ? 'copy' : 'move';
+    if (!canDropVirtualPath(source, parent, operation)) {
       setVirtualPathPickerError('Choose a different mutable destination.');
       return false;
     }
-    return moveVirtualPath(source, childVirtualPath(parent, virtualPathBaseName(source)));
+    return transferVirtualPathSubtree(source, childVirtualPath(parent, virtualPathBaseName(source)), operation);
   }
 
-  function openVirtualPathMoveDestination(path) {
+  function openVirtualPathMoveDestination(path, operation = 'move') {
     const clean = normalizeVirtualPath(path);
-    if (!isMutableVirtualPath(clean)) {
-      setVirtualPathPickerError('This path is read-only.');
+    const capability = operation === 'copy' ? 'can_copy_subtree' : 'can_move_subtree';
+    if (!virtualPathAllows(clean, capability)) {
+      setVirtualPathPickerError('This path operation is protected.');
       return false;
     }
     state.virtualPathPicker.mode = 'move-destination';
     state.virtualPathPicker.moveSourcePath = clean;
+    state.virtualPathPicker.subtreeOperation = operation === 'copy' ? 'copy' : 'move';
     state.virtualPathPicker.selectedPath = '';
     state.virtualPathPicker.actionPath = '';
     state.virtualPathPicker.error = '';
@@ -7108,7 +7195,7 @@ const EmailPage = (() => {
     const dialog = ensureVirtualPathEditorDialog();
     const body = dialog.querySelector('[data-email-vpath-editor-body]');
     const pathsText = (state.virtualPathEditorPaths || []).join('\n');
-    const options = virtualPathOptionsHtml();
+    const options = virtualPathOptionsHtml({ assignableOnly: true });
     if (body) {
       body.innerHTML = `
         ${state.virtualPathEditorError ? `<div class="email-error">${escHtml(state.virtualPathEditorError)}</div>` : ''}
@@ -7167,6 +7254,12 @@ const EmailPage = (() => {
       .split(/\r?\n/)
       .map(item => item.trim())
       .filter(Boolean);
+    const protectedPath = paths.find(path => !isMutableVirtualPath(path));
+    if (protectedPath) {
+      state.virtualPathEditorError = `${protectedPath} is not an assignable mutable virtual path.`;
+      renderVirtualPathEditorDialog();
+      return false;
+    }
     setStatus('Saving virtual paths', 'unknown');
     try {
       await fetchJson(messageVirtualPathsReplaceEndpoint(uid), {
@@ -8162,6 +8255,12 @@ const EmailPage = (() => {
         openVirtualPathMoveDestination(pathTreeMove.dataset.emailVpathTreeMove || '');
         return;
       }
+      const pathTreeCopy = target.closest?.('[data-email-vpath-tree-copy]');
+      if (pathTreeCopy) {
+        event.preventDefault();
+        openVirtualPathMoveDestination(pathTreeCopy.dataset.emailVpathTreeCopy || '', 'copy');
+        return;
+      }
       const pathTreeSelect = target.closest?.('[data-email-vpath-tree-select]');
       if (pathTreeSelect) {
         event.preventDefault();
@@ -8257,6 +8356,15 @@ const EmailPage = (() => {
       toggleMessageSelection(messageSelect.dataset.emailMessageSelect || '', messageSelect.checked);
     });
     document.addEventListener('input', event => {
+      const pathTreeSearch = event.target.closest?.('[data-email-vpath-tree-search]');
+      if (pathTreeSearch) {
+        state.virtualPathPicker.searchQuery = String(pathTreeSearch.value || '');
+        renderVirtualPathTreePicker();
+        const restored = document.querySelector('[data-email-vpath-tree-search]');
+        restored?.focus?.({ preventScroll: true });
+        restored?.setSelectionRange?.(restored.value.length, restored.value.length);
+        return;
+      }
       const ruleSearch = event.target.closest?.('[data-email-vpath-rule-search]');
       if (ruleSearch) {
         state.virtualPathRuleSearch = String(ruleSearch.value || '');
@@ -8332,7 +8440,7 @@ const EmailPage = (() => {
       const node = event.target.closest?.('[data-email-vpath-tree-node]');
       if (!node) return;
       const path = normalizeVirtualPath(node.dataset.emailVpathTreeNode || '');
-      if (!isMutableVirtualPath(path)) {
+      if (!virtualPathAllows(path, 'can_move_subtree')) {
         event.preventDefault();
         return;
       }
