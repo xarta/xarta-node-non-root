@@ -160,6 +160,73 @@ test('PIM Email viewport rules match Dave and Kanban precedent', () => {
   );
 });
 
+test('PIM Email Rules form controls have explicit input-baseline alignment', () => {
+  const catalogRefreshStart = emailJs.indexOf('async function refreshVirtualPathRules');
+  const catalogRefreshEnd = emailJs.indexOf('async function createVirtualPathFromForm', catalogRefreshStart);
+  const catalogRefreshSlice = emailJs.slice(catalogRefreshStart, catalogRefreshEnd);
+
+  assert.match(
+    emailCss,
+    /\.email-rule-create-primary-grid\s*\{[\s\S]*grid-template-areas:\s*\n\s*"name-label sequence-label \."\s*\n\s*"name-control sequence-control stop"[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(84px,\s*94px\)\s+max-content/,
+    'Rules Create must put Rule name, Sequence, and Stop on match on one explicit control row.',
+  );
+  assert.match(
+    emailCss,
+    /\.email-rule-scope-limit-grid\s*\{[\s\S]*grid-template-areas:\s*\n\s*"scope-label limit-label"\s*\n\s*"scope-control limit-control"[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(84px,\s*94px\)/,
+    'Preview/apply Scope and Limit must use explicit shared label and control rows.',
+  );
+  assert.match(
+    emailCss,
+    /\.email-rule-field-action-row\s*>\s*\.hub-action-btn\s*\{[\s\S]*align-self:\s*end[\s\S]*block-size:\s*var\(--email-rules-control-height\)[\s\S]*height:\s*var\(--email-rules-control-height\)[\s\S]*min-height:\s*var\(--email-rules-control-height\)/,
+    'Rules Paths Create path must have the exact input control height and bottom baseline rather than an intrinsic button metric.',
+  );
+  assert.match(
+    emailJs,
+    /function rulesPathsToolHtml\(\)[\s\S]*<span class="email-rule-field-label">Child path<\/span>[\s\S]*<div class="email-rule-field-action-row email-vpath-picker-input-row">[\s\S]*<input name="child_name"[^>]*aria-label="Child path">[\s\S]*<button class="hub-action-btn hub-primary" type="submit">Create path<\/button>/,
+    'Rules Paths Child/Create must use the same label-above control-row structure as the aligned Parent/Choose field.',
+  );
+  assert.match(
+    emailJs,
+    /function rulesCreateToolHtml\(\)[\s\S]*email-rule-create-primary-grid__name-label[\s\S]*email-rule-create-primary-grid__sequence-label[\s\S]*email-rule-create-primary-grid__name-control[^>]*aria-label="Rule name"[\s\S]*email-rule-create-primary-grid__sequence-control[^>]*aria-label="Sequence"[\s\S]*email-rule-edit-stop/,
+    'Rules Create markup must expose labels separately from its shared control row.',
+  );
+  assert.match(
+    emailJs,
+    /function rulesApplyToolHtml\(defaultScopeMode\)[\s\S]*email-rule-scope-limit-grid__scope-label[\s\S]*email-rule-scope-limit-grid__limit-label[\s\S]*email-rule-scope-limit-grid__scope-control[^>]*aria-label="Scope"[\s\S]*email-rule-scope-limit-grid__limit-control[^>]*aria-label="Limit"/,
+    'Preview/apply markup must expose Scope and Limit labels separately from their shared control row.',
+  );
+  assert.match(
+    emailJs,
+    /function refreshActivityHeartbeat\(options = \{\}\)[\s\S]*renderActivityHeartbeatChrome\(\)[\s\S]*return state\.activityHeartbeat/,
+    'The heartbeat path must update only its compact chrome rather than rebuilding Rules forms.',
+  );
+  assert.match(
+    catalogRefreshSlice,
+    /renderVirtualPathRuleCatalogState\(\)/,
+    'Delayed Rules catalog responses must patch catalog-dependent controls in place.',
+  );
+  assert.doesNotMatch(
+    catalogRefreshSlice,
+    /renderSecondaryPanels\(\)|renderUltrawide\(\)/,
+    'Delayed Rules catalog responses must not replace mounted Create or Preview/apply forms.',
+  );
+  assert.match(
+    emailJs,
+    /function renderVirtualPathRuleCatalogState\(\)[\s\S]*data-email-vpath-options[\s\S]*select\[name="rule_id"\][\s\S]*select\.innerHTML = ruleOptions/,
+    'In-place catalog refresh must update path suggestions and rule options without remounting their forms.',
+  );
+  assert.match(
+    emailCss,
+    /\.email-secondary-modal--rules\s+\.hub-modal-body\s*\{[\s\S]*overflow:\s*clip/,
+    'Rules focus must not horizontally scroll the whole modal body after an update.',
+  );
+  assert.match(
+    emailCss,
+    /@media\s*\(max-width:\s*820px\)[\s\S]*\.email-secondary-modal--rules\s+\.email-secondary-toolbar,[\s\S]*\.email-secondary-modal--rules\s+\.email-secondary-tabs\s*\{[\s\S]*flex-wrap:\s*wrap[\s\S]*\.email-secondary-modal--rules\s+\.email-secondary-tabs\s*\{[\s\S]*flex:\s*1\s+1\s+100%[\s\S]*min-width:\s*0/,
+    'Phone Rules controls must wrap locally instead of shifting the form sideways.',
+  );
+});
+
 test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(daveMenuJs, /id:\s*'email'[\s\S]*label:\s*'Email'/, 'Dave menu must expose the Email tab.');
   for (const fn of [
@@ -423,6 +490,21 @@ test('PIM Email folder changes retain message and artifact caches', () => {
   assert.doesNotMatch(slice, /state\.messageImageCache\.clear\(/, 'Folder changes must not clear browser image memory cache.');
   assert.doesNotMatch(slice, /clearBrowserImageStorageCache\(/, 'Folder changes must not clear service-worker image cache.');
   assert.doesNotMatch(slice, /invalidateOpenedMessageCache\(/, 'Folder changes must not invalidate message-scoped opened cache entries.');
+});
+
+test('PIM Email Rules help distinguishes message associations from path-tree moves', () => {
+  assert.match(emailJs, /function rulesBulkToolHtml\(\)[\s\S]*<h3>Bulk Move \(messages\)<\/h3>/, 'Bulk Move must be labelled as a message operation.');
+  assert.match(emailJs, /const helpKind = tool === 'bulk' \|\| tool === 'paths' \? tool : ''/, 'Paths and Bulk tools must opt into contextual help.');
+  assert.match(emailJs, /data-email-vpath-help-open="\$\{helpKind\}"[\s\S]*data-email-action="refresh-vpath-rules"/, 'The help trigger must precede Refresh in the Rules toolbar.');
+  assert.match(emailJs, /function ensureVirtualPathHelpDialog\([\s\S]*class="hub-modal email-vpath-help-modal"[\s\S]*HubModal\.init\(document\.body\)/, 'The contextual help must use the shared HubModal contract.');
+  assert.match(emailJs, /Bulk Move changes where selected messages are currently associated[\s\S]*does not move, rename, or reorganise folder paths/, 'Bulk help must state that it changes associations rather than tree structure.');
+  assert.match(emailJs, /Root is not a destination here[\s\S]*cannot reparent a subtree/, 'Bulk help must reject using Root as a structural destination.');
+  assert.match(emailJs, /INBOX\/__ MORE 01\/docker\.com[\s\S]*Rules: Paths[\s\S]*<code>docker\.com<\/code>/, 'Bulk help must direct the operator to Paths with the concrete root-move example.');
+  assert.match(emailJs, /function virtualPathHelpContent\(kind\)[\s\S]*Move → Root[\s\S]*Protected special roots stay in place/, 'Paths help must explain Move → Root and protected-root behavior.');
+  assert.match(emailJs, /function applyVirtualPathPickerSelection\(path\)[\s\S]*picker\.mode === 'move-destination'[\s\S]*moveVirtualPathIntoParent\(picker\.moveSourcePath, clean\)/, 'The existing destination picker must keep Root as the structural parent selection.');
+  assert.match(emailCss, /\.email-vpath-help-trigger\s*\{[\s\S]*flex:\s*0\s+0\s+var\(--email-rules-control-height\)[\s\S]*width:\s*var\(--email-rules-control-height\)/, 'The help trigger must stay a compact square control beside Refresh.');
+  assert.match(emailCss, /\.email-vpath-help-modal\s*\{[\s\S]*width:\s*min\(860px,\s*calc\(100vw - 24px\)\)/, 'The help modal must stay viewport-bounded.');
+  assert.match(emailCss, /@media\s*\(max-width:\s*820px\)[\s\S]*\.email-vpath-help-flow,[\s\S]*\.email-vpath-help-tree\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/, 'Help diagrams must stack on narrow screens.');
 });
 
 test('PIM Email message context menu is shared by the list toggle and message rows', () => {

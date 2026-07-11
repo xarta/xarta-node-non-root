@@ -4816,7 +4816,7 @@ const EmailPage = (() => {
     if (state.virtualPathRulesLoading) return state.virtualPathRules;
     state.virtualPathRulesLoading = true;
     state.virtualPathRulesError = '';
-    if (!options.silent) renderSecondaryPanels();
+    renderVirtualPathRuleCatalogState();
     try {
       const [paths, rules] = await Promise.all([
         fetchJson(virtualPathsEndpoint()),
@@ -4836,8 +4836,7 @@ const EmailPage = (() => {
     } finally {
       state.virtualPathRulesLoading = false;
       if (state.secondaryTab === 'rules') {
-        renderSecondaryPanels();
-        renderUltrawide();
+        renderVirtualPathRuleCatalogState();
       }
     }
   }
@@ -5149,6 +5148,41 @@ const EmailPage = (() => {
       node.textContent = virtualPathRuleCountSummary();
     });
     restoreSearchFocus(focusSnapshot);
+  }
+
+  function renderVirtualPathRuleCatalogState() {
+    const tool = normalizeRulesTool(state.virtualPathRuleTool);
+    const listMode = tool === 'rules';
+    const pathCount = Array.isArray(state.virtualPaths) ? state.virtualPaths.length : 0;
+    const title = listMode ? virtualPathRuleCountSummary() : `${pathCount} paths available`;
+    const statusHtml = listMode
+      ? `${state.virtualPathRulesLoading ? '<div class="email-empty">Loading virtual-path rules.</div>' : ''}${state.virtualPathRulesError ? `<div class="email-error">${escHtml(state.virtualPathRulesError)}</div>` : ''}`
+      : '';
+    const pathOptions = virtualPathOptionsHtml();
+    const ruleOptions = ruleOptionsHtml();
+
+    if (listMode) readVirtualPathRuleDrafts();
+    document.querySelectorAll('.email-rules-panel').forEach(panel => {
+      const count = panel.querySelector('[data-email-vpath-rule-count]');
+      if (count) count.textContent = title;
+      const pathMeta = panel.querySelector('[data-email-vpath-path-count]');
+      if (pathMeta) pathMeta.textContent = `${pathCount} paths`;
+      const status = panel.querySelector('[data-email-vpath-rule-status]');
+      if (status) status.innerHTML = statusHtml;
+      panel.querySelectorAll('[data-email-vpath-options]').forEach(datalist => {
+        datalist.innerHTML = pathOptions;
+      });
+      if (listMode) {
+        const listHost = panel.querySelector('[data-email-vpath-rules-list-host]');
+        if (listHost) listHost.innerHTML = virtualPathRulesListHtml();
+      }
+      panel.querySelectorAll('[data-email-rule-apply-form] select[name="rule_id"]').forEach(select => {
+        const selected = select.value;
+        select.innerHTML = ruleOptions;
+        if (Array.from(select.options).some(option => option.value === selected)) select.value = selected;
+      });
+      syncVirtualPathRuleControls(panel);
+    });
   }
 
   function toggleVirtualPathRuleExpanded(ruleId) {
@@ -5900,6 +5934,118 @@ const EmailPage = (() => {
     return dialog;
   }
 
+  function virtualPathHelpContent(kind) {
+    if (kind === 'bulk') {
+      return `
+        <div class="email-vpath-help" data-email-vpath-help-kind="bulk">
+          <p class="email-vpath-help__lede">Bulk Move changes where selected messages are currently associated. It does not move, rename, or reorganise folder paths.</p>
+          <section class="email-vpath-help-card">
+            <h3>What this form changes</h3>
+            <div class="email-vpath-help-flow" aria-label="A message association moves from one exact path to another exact path">
+              <div class="email-vpath-help-flow__node">
+                <span>Message</span>
+                <code>example message</code>
+              </div>
+              <span class="email-vpath-help-flow__arrow" aria-hidden="true">→</span>
+              <div class="email-vpath-help-flow__node">
+                <span>Source association removed</span>
+                <code>INBOX</code>
+              </div>
+              <span class="email-vpath-help-flow__arrow" aria-hidden="true">→</span>
+              <div class="email-vpath-help-flow__node">
+                <span>Destination association added</span>
+                <code>Projects/Next</code>
+              </div>
+            </div>
+            <p>The source and destination are exact mutable paths. The path tree itself stays exactly where it is.</p>
+          </section>
+          <section class="email-vpath-help-card email-vpath-help-card--warning">
+            <h3>Root is not a destination here</h3>
+            <p>There is no <strong>Root</strong> value in this form because Root is a structural parent, not a message association path. This form intentionally cannot reparent a subtree.</p>
+          </section>
+          <section class="email-vpath-help-card">
+            <h3>What if I want to move a folder to Root?</h3>
+            <p>For example, to place <code>INBOX/__ MORE 01/docker.com</code> alongside <code>Authy</code>, switch to <strong>Rules: Paths</strong>. Open the path actions, choose <strong>Move</strong>, then choose <strong>Root</strong> in the destination picker. The resulting path is <code>docker.com</code>; its descendants are previewed and rebased with it.</p>
+          </section>
+        </div>
+      `;
+    }
+    return `
+      <div class="email-vpath-help" data-email-vpath-help-kind="paths">
+        <p class="email-vpath-help__lede">Paths is where you organise the virtual-path tree. A root-level path has no parent path segment.</p>
+        <section class="email-vpath-help-card">
+          <h3>Move a path branch to Root</h3>
+          <div class="email-vpath-help-tree" aria-label="Path tree before and after moving docker.com to Root">
+            <div class="email-vpath-help-tree__column">
+              <strong>Before</strong>
+              <code>Root</code>
+              <span>├─ Authy</span>
+              <span>└─ INBOX</span>
+              <span class="email-vpath-help-tree__nested">└─ __ MORE 01</span>
+              <span class="email-vpath-help-tree__nested2">└─ docker.com</span>
+            </div>
+            <span class="email-vpath-help-tree__arrow" aria-hidden="true">→</span>
+            <div class="email-vpath-help-tree__column">
+              <strong>After Move → Root</strong>
+              <code>Root</code>
+              <span>├─ Authy</span>
+              <span>├─ INBOX</span>
+              <span>└─ docker.com</span>
+            </div>
+          </div>
+          <p>Open <code>INBOX/__ MORE 01/docker.com</code> in the tree, choose <strong>Move</strong>, then press <strong>Root</strong> at the top of the destination picker. Root means “no parent path”, so the destination becomes <code>docker.com</code>.</p>
+        </section>
+        <section class="email-vpath-help-card">
+          <h3>Safe structural actions</h3>
+          <p>Preview before applying a copy, move, archive, or delete. The preview reports the affected descendants, association changes, collisions, and audit events. Protected special roots stay in place, but their mutable descendants can be organised normally. Read-only <code>_X</code> views are never mutable destinations.</p>
+        </section>
+        <section class="email-vpath-help-card email-vpath-help-card--tip">
+          <h3>When Bulk Move is the better tool</h3>
+          <p>Use <strong>Rules: Bulk Move</strong> when the tree should stay unchanged and you only want messages currently associated with one exact path to become associated with another one. For example, moving message associations from <code>INBOX</code> to <code>Projects/Next</code> does not move <code>INBOX</code> or any of its children.</p>
+        </section>
+      </div>
+    `;
+  }
+
+  function ensureVirtualPathHelpDialog() {
+    let dialog = el('email-vpath-help-modal');
+    if (dialog) return dialog;
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <dialog id="email-vpath-help-modal" class="hub-modal email-vpath-help-modal">
+        <div class="hub-modal-header">
+          <h2 class="hub-modal-title" data-email-vpath-help-title>Paths help</h2>
+          <button class="hub-modal-close" type="button" aria-label="Close" data-email-vpath-help-close>&#10005;</button>
+        </div>
+        <div class="hub-modal-body" data-email-vpath-help-body></div>
+        <div class="hub-modal-footer">
+          <button class="hub-modal-btn secondary" type="button" data-email-vpath-help-close>Close</button>
+        </div>
+      </dialog>
+    `.trim();
+    dialog = host.firstElementChild;
+    document.body.appendChild(dialog);
+    if (typeof HubModal !== 'undefined') HubModal.init(document.body);
+    return dialog;
+  }
+
+  function openVirtualPathHelp(kind) {
+    const cleanKind = kind === 'bulk' ? 'bulk' : 'paths';
+    const dialog = ensureVirtualPathHelpDialog();
+    const title = dialog.querySelector('[data-email-vpath-help-title]');
+    const body = dialog.querySelector('[data-email-vpath-help-body]');
+    if (title) title.textContent = cleanKind === 'bulk' ? 'Bulk Move messages' : 'Organise path trees';
+    if (body) body.innerHTML = virtualPathHelpContent(cleanKind);
+    if (typeof HubModal !== 'undefined') HubModal.open(dialog);
+    else if (typeof dialog.showModal === 'function') dialog.showModal();
+  }
+
+  function closeVirtualPathHelp() {
+    const dialog = el('email-vpath-help-modal');
+    if (dialog && typeof HubModal !== 'undefined') HubModal.close(dialog);
+    else if (dialog?.open && typeof dialog.close === 'function') dialog.close();
+  }
+
   function renderVirtualPathTreePicker() {
     const dialog = ensureVirtualPathTreePickerDialog();
     const title = dialog.querySelector('[data-email-vpath-tree-title]');
@@ -6333,12 +6479,12 @@ const EmailPage = (() => {
             allowRoot: true,
             mutable: true,
           })}
-          <div class="email-rule-field-action-row">
-          <label class="email-rule-field-action-row__field">
-            <span>Child path</span>
-            <input name="child_name" data-email-preserve-focus="vpath-create-child" placeholder="Project/Next" autocomplete="off">
-          </label>
-            <button class="hub-action-btn hub-primary" type="submit">Create path</button>
+          <div class="email-vpath-picker-field">
+            <span class="email-rule-field-label">Child path</span>
+            <div class="email-rule-field-action-row email-vpath-picker-input-row">
+              <input name="child_name" data-email-preserve-focus="vpath-create-child" placeholder="Project/Next" autocomplete="off" aria-label="Child path">
+              <button class="hub-action-btn hub-primary" type="submit">Create path</button>
+            </div>
           </div>
           <input name="path" type="hidden">
         </form>
@@ -6349,7 +6495,7 @@ const EmailPage = (() => {
   function rulesBulkToolHtml() {
     return `
       <section class="email-rule-card email-rule-tool-panel" data-email-rules-tool-panel="bulk">
-        <h3>Bulk Move</h3>
+        <h3>Bulk Move (messages)</h3>
         <form class="email-rule-form" data-email-vpath-bulk-form>
           ${virtualPathInputControlHtml({
             label: 'Source path',
@@ -6383,25 +6529,21 @@ const EmailPage = (() => {
       <section class="email-rule-card email-rule-tool-panel" data-email-rules-tool-panel="create">
         <h3>Create Rule</h3>
         <form class="email-rule-form email-rule-form--wide" data-email-rule-create-form>
-          <div class="email-rule-edit-grid">
-            <label>
-              <span>Rule name</span>
-              <input name="name" data-email-preserve-focus="vpath-rule-create-name" placeholder="Rule name" autocomplete="off">
-            </label>
-            <label class="email-rule-sequence-field">
-              <span>Sequence</span>
-              <input name="sequence" data-email-preserve-focus="vpath-rule-create-sequence" type="number" min="0" step="1" placeholder="100">
-            </label>
+          <div class="email-rule-create-primary-grid">
+            <span class="email-rule-field-label email-rule-create-primary-grid__name-label">Rule name</span>
+            <span class="email-rule-field-label email-rule-create-primary-grid__sequence-label">Sequence</span>
+            <input class="email-rule-create-primary-grid__name-control" name="name" data-email-preserve-focus="vpath-rule-create-name" placeholder="Rule name" autocomplete="off" aria-label="Rule name">
+            <input class="email-rule-create-primary-grid__sequence-control" name="sequence" data-email-preserve-focus="vpath-rule-create-sequence" type="number" min="0" step="1" placeholder="100" aria-label="Sequence">
             <label class="hub-checkbox email-rule-apply-toggle email-rule-edit-stop">
               <input class="hub-checkbox__input" name="stop_on_match" type="checkbox" data-email-preserve-focus="vpath-rule-create-stop">
               <span class="hub-checkbox__box" aria-hidden="true"></span>
               <span class="hub-checkbox__label">Stop on match</span>
             </label>
-            <label class="email-rule-edit-description">
-              <span>Description</span>
-              <textarea name="description" data-email-preserve-focus="vpath-rule-create-description" spellcheck="false"></textarea>
-            </label>
           </div>
+          <label class="email-rule-edit-description">
+            <span>Description</span>
+            <textarea name="description" data-email-preserve-focus="vpath-rule-create-description" spellcheck="false"></textarea>
+          </label>
           <label>
             <span>Predicate JSON</span>
             <textarea name="predicate" data-email-preserve-focus="vpath-rule-create-predicate" spellcheck="false">${escHtml(ruleJsonValue({ field: 'subject', op: 'contains', value: '' }))}</textarea>
@@ -6431,17 +6573,13 @@ const EmailPage = (() => {
               ${ruleOptionsHtml()}
             </select>
           </label>
-          <div class="email-rule-form__inline">
-            <label>
-              <span>Scope</span>
-              <select name="scope_mode" data-email-preserve-focus="vpath-rule-apply-scope-mode" data-email-vpath-scope-mode>
-                ${scopeModeOptionsHtml(defaultScopeMode)}
-              </select>
-            </label>
-            <label class="email-rule-limit-field">
-              <span>Limit</span>
-              <input name="limit" data-email-preserve-focus="vpath-rule-apply-limit" type="number" min="1" max="20000" value="${defaultScopeMode === 'selected_message' ? '1' : '100'}">
-            </label>
+          <div class="email-rule-scope-limit-grid">
+            <span class="email-rule-field-label email-rule-scope-limit-grid__scope-label">Scope</span>
+            <span class="email-rule-field-label email-rule-scope-limit-grid__limit-label">Limit</span>
+            <select class="email-rule-scope-limit-grid__scope-control" name="scope_mode" data-email-preserve-focus="vpath-rule-apply-scope-mode" data-email-vpath-scope-mode aria-label="Scope">
+              ${scopeModeOptionsHtml(defaultScopeMode)}
+            </select>
+            <input class="email-rule-scope-limit-grid__limit-control" name="limit" data-email-preserve-focus="vpath-rule-apply-limit" type="number" min="1" max="20000" value="${defaultScopeMode === 'selected_message' ? '1' : '100'}" aria-label="Limit">
           </div>
           <div data-email-vpath-scope-field="virtual_paths" hidden>
             ${virtualPathInputControlHtml({
@@ -6490,6 +6628,7 @@ const EmailPage = (() => {
     const pathCount = Array.isArray(state.virtualPaths) ? state.virtualPaths.length : 0;
     const lastRun = state.virtualPathRuleLastRun?.run;
     const defaultScopeMode = rulesApplyScopeDefaultMode();
+    const helpKind = tool === 'bulk' || tool === 'paths' ? tool : '';
     const toolbarTitle = listMode ? virtualPathRuleCountSummary() : `${pathCount} paths available`;
     const toolbarMeta = listMode ? `${pathCount} paths` : '';
     return `
@@ -6497,17 +6636,17 @@ const EmailPage = (() => {
         <div class="email-rules-toolbar${listMode ? '' : ' email-rules-toolbar--tool'}">
           <div class="email-rules-counts">
             <strong data-email-vpath-rule-count>${escHtml(toolbarTitle)}</strong>
-            ${toolbarMeta ? `<span>${escHtml(toolbarMeta)}</span>` : ''}
+            ${toolbarMeta ? `<span data-email-vpath-path-count>${escHtml(toolbarMeta)}</span>` : ''}
           </div>
           ${listMode ? `<input type="search" data-email-vpath-rule-search data-email-preserve-focus="vpath-rule-search" value="${escHtml(state.virtualPathRuleSearch || '')}" placeholder="Search rules" autocomplete="off">` : '<span class="email-rules-toolbar__spacer" aria-hidden="true"></span>'}
           <div class="email-rules-toolbar__actions">
+            ${helpKind ? `<button class="email-vpath-help-trigger" type="button" data-email-vpath-help-open="${helpKind}" aria-label="Help with ${helpKind === 'bulk' ? 'Bulk Move messages' : 'Paths'}" title="How this tool works"><span aria-hidden="true">?</span></button>` : ''}
             <button class="hub-action-btn" type="button" data-email-action="refresh-vpath-rules">Refresh</button>
           </div>
         </div>
         ${ruleContextBannerHtml()}
-        ${listMode ? loading : ''}
-        ${listMode ? error : ''}
-        <datalist id="email-vpath-options">${virtualPathOptionsHtml()}</datalist>
+        <div data-email-vpath-rule-status>${listMode ? loading : ''}${listMode ? error : ''}</div>
+        <datalist id="email-vpath-options" data-email-vpath-options>${virtualPathOptionsHtml()}</datalist>
         ${listMode ? `<div class="email-rules-list-host" data-email-vpath-rules-list-host>
           ${virtualPathRulesListHtml()}
         </div>` : ''}
@@ -8205,6 +8344,18 @@ const EmailPage = (() => {
       if (ruleArchive) {
         event.preventDefault();
         archiveVirtualPathRule(ruleArchive.dataset.emailVpathRuleArchive || '');
+        return;
+      }
+      const virtualPathHelpOpen = target.closest?.('[data-email-vpath-help-open]');
+      if (virtualPathHelpOpen) {
+        event.preventDefault();
+        openVirtualPathHelp(virtualPathHelpOpen.dataset.emailVpathHelpOpen || 'paths');
+        return;
+      }
+      const virtualPathHelpClose = target.closest?.('[data-email-vpath-help-close]');
+      if (virtualPathHelpClose) {
+        event.preventDefault();
+        closeVirtualPathHelp();
         return;
       }
       const pathPickerOpen = target.closest?.('[data-email-vpath-picker-open]');
