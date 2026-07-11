@@ -27,6 +27,15 @@ const EmailPage = (() => {
   const TRUSTED_VIEW_OPTIONS = [
     ['probable', 'Probable trusted senders'],
   ];
+  const RULES_TOOL_OPTIONS = [
+    ['rules', 'Rules list'],
+    ['paths', 'Paths'],
+    ['bulk', 'Bulk move'],
+    ['create', 'Create rule'],
+    ['apply', 'Preview/apply'],
+  ];
+  const RULES_TOOL_IDS = new Set(RULES_TOOL_OPTIONS.map(([id]) => id));
+  const VPATH_TREE_LONG_PRESS_MS = 520;
   const MESSAGE_LIST_LIMIT = 100;
   const MESSAGE_PREFETCH_AHEAD = 100;
   const MESSAGE_SCROLL_LOAD_PX = 320;
@@ -198,8 +207,23 @@ const EmailPage = (() => {
     virtualPathRuleLastRun: null,
     virtualPathRuleApplyLoading: false,
     virtualPathRuleSearch: '',
+    virtualPathRuleTool: 'rules',
     virtualPathRuleExpanded: new Set(),
+    virtualPathRuleDrafts: new Map(),
+    virtualPathRuleSaving: new Set(),
     virtualPathRuleOpenSections: new Set(),
+    virtualPathPicker: {
+      open: false,
+      targetKey: '',
+      mode: 'select',
+      selectedPath: '',
+      actionPath: '',
+      moveSourcePath: '',
+      error: '',
+    },
+    virtualPathPickerDragPath: '',
+    virtualPathPickerLongPressTimer: null,
+    virtualPathPickerLongPressPath: '',
     virtualPathRuleContextEmailUid: '',
     virtualPathRuleContextLoading: false,
     virtualPathRuleContextError: '',
@@ -791,6 +815,9 @@ const EmailPage = (() => {
     const trustedViewControl = layout === 'ultrawide' && state.secondaryTab === 'trusted'
       ? trustedViewToolbarDropdownHtml(layout)
       : '';
+    const rulesToolControl = layout === 'ultrawide' && state.secondaryTab === 'rules'
+      ? rulesToolToolbarDropdownHtml(layout)
+      : '';
     return `
       <div class="email-folder-browser-controls" data-email-folder-controls="${escHtml(layout)}">
         <div class="email-folder-tab-dropdown" data-email-folder-dropdown="set">
@@ -821,6 +848,7 @@ const EmailPage = (() => {
         </div>
         ${searchModeControl}
         ${trustedViewControl}
+        ${rulesToolControl}
       </div>
     `;
   }
@@ -953,6 +981,10 @@ const EmailPage = (() => {
 
   function virtualPathRulesEndpoint() {
     return `${API_ROOT}/local/virtual-path-rules`;
+  }
+
+  function virtualPathRuleUpdateEndpoint(ruleId) {
+    return `${API_ROOT}/local/virtual-path-rules/${encodeURIComponent(ruleId)}`;
   }
 
   function virtualPathRuleArchiveEndpoint(ruleId) {
@@ -1382,12 +1414,23 @@ const EmailPage = (() => {
     });
   }
 
+  function closeRulesToolMenus(except = null) {
+    document.querySelectorAll('[data-email-rules-tool-dropdown].open').forEach(dropdown => {
+      if (except && dropdown === except) return;
+      dropdown.classList.remove('open');
+      dropdown.querySelectorAll('[data-email-rules-tool-menu-toggle]').forEach(button => {
+        button.setAttribute('aria-expanded', 'false');
+      });
+    });
+  }
+
   function toggleFolderMenu(button) {
     const dropdown = button?.closest?.('[data-email-folder-dropdown]');
     if (!dropdown || dropdown.classList.contains('is-disabled') || button.disabled) return false;
     const nextOpen = !dropdown.classList.contains('open');
     closeSearchModeMenus();
     closeTrustedViewMenus();
+    closeRulesToolMenus();
     closeFolderMenus(dropdown);
     dropdown.classList.toggle('open', nextOpen);
     dropdown.querySelectorAll('[data-email-folder-menu-toggle]').forEach(toggle => {
@@ -1402,6 +1445,7 @@ const EmailPage = (() => {
     const nextOpen = !dropdown.classList.contains('open');
     closeFolderMenus();
     closeTrustedViewMenus();
+    closeRulesToolMenus();
     closeSearchModeMenus(dropdown);
     dropdown.classList.toggle('open', nextOpen);
     dropdown.querySelectorAll('[data-email-search-mode-menu-toggle]').forEach(toggle => {
@@ -1416,9 +1460,25 @@ const EmailPage = (() => {
     const nextOpen = !dropdown.classList.contains('open');
     closeFolderMenus();
     closeSearchModeMenus();
+    closeRulesToolMenus();
     closeTrustedViewMenus(dropdown);
     dropdown.classList.toggle('open', nextOpen);
     dropdown.querySelectorAll('[data-email-trusted-view-menu-toggle]').forEach(toggle => {
+      toggle.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+    });
+    return true;
+  }
+
+  function toggleRulesToolMenu(button) {
+    const dropdown = button?.closest?.('[data-email-rules-tool-dropdown]');
+    if (!dropdown || button.disabled) return false;
+    const nextOpen = !dropdown.classList.contains('open');
+    closeFolderMenus();
+    closeSearchModeMenus();
+    closeTrustedViewMenus();
+    closeRulesToolMenus(dropdown);
+    dropdown.classList.toggle('open', nextOpen);
+    dropdown.querySelectorAll('[data-email-rules-tool-menu-toggle]').forEach(toggle => {
       toggle.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
     });
     return true;
@@ -4683,6 +4743,79 @@ const EmailPage = (() => {
     return JSON.parse(raw);
   }
 
+  function parseRuleJsonField(form, name, fallback = {}, label = 'JSON') {
+    try {
+      return parseRuleTextarea(form, name, fallback);
+    } catch (error) {
+      throw new Error(`${label} is not valid JSON: ${error.message || String(error)}`);
+    }
+  }
+
+  function virtualPathRuleDraftFromRule(rule) {
+    return {
+      display_name: String(rule?.display_name || rule?.name || ''),
+      description: String(rule?.description || ''),
+      status: String(rule?.status || 'active'),
+      sequence: rule?.sequence === null || typeof rule?.sequence === 'undefined' ? '' : String(rule.sequence),
+      stop_on_match: Boolean(rule?.stop_on_match),
+      predicate: ruleJsonValue(rule?.predicate || {}),
+      action: ruleJsonValue(rule?.action || {}),
+      scope: ruleJsonValue(rule?.scope || {}),
+    };
+  }
+
+  function readVirtualPathRuleDrafts(root = document) {
+    const activeForm = document.activeElement?.closest?.('[data-email-rule-edit-form]') || null;
+    const forms = [
+      ...(root.matches?.('[data-email-rule-edit-form]') ? [root] : []),
+      ...Array.from(root.querySelectorAll?.('[data-email-rule-edit-form]') || []),
+    ];
+    forms.sort((a, b) => {
+      if (a === activeForm) return 1;
+      if (b === activeForm) return -1;
+      return 0;
+    }).forEach(form => {
+      if (root === document && form !== activeForm && !form.getClientRects?.().length) return;
+      const ruleId = String(form.dataset.emailRuleId || '').trim();
+      if (!ruleId) return;
+      state.virtualPathRuleDrafts.set(ruleId, {
+        display_name: String(form.querySelector('[name="display_name"]')?.value || ''),
+        description: String(form.querySelector('[name="description"]')?.value || ''),
+        status: String(form.querySelector('[name="status"]')?.value || 'active'),
+        sequence: String(form.querySelector('[name="sequence"]')?.value || ''),
+        stop_on_match: Boolean(form.querySelector('[name="stop_on_match"]')?.checked),
+        predicate: String(form.querySelector('[name="predicate"]')?.value || ''),
+        action: String(form.querySelector('[name="action"]')?.value || ''),
+        scope: String(form.querySelector('[name="scope"]')?.value || ''),
+      });
+    });
+  }
+
+  function virtualPathRuleDraft(rule) {
+    const ruleId = String(rule?.rule_id || '').trim();
+    return (ruleId && state.virtualPathRuleDrafts.get(ruleId)) || virtualPathRuleDraftFromRule(rule);
+  }
+
+  function virtualPathRuleSavePayload(form) {
+    const sequenceRaw = String(form?.querySelector?.('[name="sequence"]')?.value || '').trim();
+    const sequence = sequenceRaw ? Number(sequenceRaw) : undefined;
+    if (typeof sequence !== 'undefined' && (!Number.isFinite(sequence) || sequence < 0)) {
+      throw new Error('Sequence must be a non-negative number.');
+    }
+    return {
+      display_name: String(form?.querySelector?.('[name="display_name"]')?.value || '').trim() || 'Virtual path rule',
+      description: String(form?.querySelector?.('[name="description"]')?.value || ''),
+      status: String(form?.querySelector?.('[name="status"]')?.value || 'active'),
+      sequence,
+      stop_on_match: Boolean(form?.querySelector?.('[name="stop_on_match"]')?.checked),
+      predicate: parseRuleJsonField(form, 'predicate', {}, 'Predicate JSON'),
+      action: parseRuleJsonField(form, 'action', {}, 'Action JSON'),
+      scope: parseRuleJsonField(form, 'scope', {}, 'Scope JSON'),
+      actor: 'email-ui',
+      metadata: { source_surface: 'pim-email-ui' },
+    };
+  }
+
   async function refreshVirtualPathRules(options = {}) {
     if (state.virtualPathRulesLoading) return state.virtualPathRules;
     state.virtualPathRulesLoading = true;
@@ -4715,8 +4848,14 @@ const EmailPage = (() => {
 
   async function createVirtualPathFromForm(form) {
     const input = form?.querySelector?.('[name="path"]');
-    const path = String(input?.value || '').trim();
+    const parentInput = form?.querySelector?.('[name="parent_path"]');
+    const childInput = form?.querySelector?.('[name="child_name"]');
+    const path = normalizeVirtualPath(input?.value || childVirtualPath(parentInput?.value || '', childInput?.value || ''));
     if (!path) return false;
+    if (parentInput?.value && isReadOnlyVirtualPath(parentInput.value)) {
+      setStatus('That parent path is read-only.', 'err');
+      return false;
+    }
     setStatus('Creating virtual path', 'unknown');
     try {
       await fetchJson(virtualPathsEndpoint(), {
@@ -4725,6 +4864,7 @@ const EmailPage = (() => {
         body: JSON.stringify({ virtual_path: path, actor: 'email-ui', source_surface: 'pim-email-ui' }),
       });
       if (input) input.value = '';
+      if (childInput) childInput.value = '';
       await refreshVirtualPathRules({ silent: true });
       await load({ force: true, preserveOpenedMessage: true });
       setStatus(`Created ${path}`, 'ok');
@@ -4773,6 +4913,12 @@ const EmailPage = (() => {
 
   async function createVirtualPathRuleFromForm(form) {
     const name = String(form?.querySelector?.('[name="name"]')?.value || '').trim() || 'Virtual path rule';
+    const sequenceRaw = String(form?.querySelector?.('[name="sequence"]')?.value || '').trim();
+    const sequence = sequenceRaw ? Number(sequenceRaw) : undefined;
+    if (typeof sequence !== 'undefined' && (!Number.isFinite(sequence) || sequence < 0)) {
+      setStatus('Sequence must be a non-negative number.', 'err');
+      return false;
+    }
     setStatus('Creating virtual-path rule', 'unknown');
     try {
       await fetchJson(virtualPathRulesEndpoint(), {
@@ -4780,9 +4926,12 @@ const EmailPage = (() => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           display_name: name,
-          predicate: parseRuleTextarea(form, 'predicate', {}),
-          action: parseRuleTextarea(form, 'action', {}),
-          scope: parseRuleTextarea(form, 'scope', {}),
+          description: String(form?.querySelector?.('[name="description"]')?.value || ''),
+          sequence,
+          stop_on_match: Boolean(form?.querySelector?.('[name="stop_on_match"]')?.checked),
+          predicate: parseRuleJsonField(form, 'predicate', {}, 'Predicate JSON'),
+          action: parseRuleJsonField(form, 'action', {}, 'Action JSON'),
+          scope: parseRuleJsonField(form, 'scope', {}, 'Scope JSON'),
           actor: 'email-ui',
           source_surface: 'pim-email-ui',
         }),
@@ -4793,6 +4942,40 @@ const EmailPage = (() => {
     } catch (error) {
       setStatus(error.message || String(error), 'err');
       return false;
+    }
+  }
+
+  async function saveVirtualPathRuleFromForm(form) {
+    const ruleId = String(form?.dataset?.emailRuleId || '').trim();
+    if (!ruleId) return false;
+    readVirtualPathRuleDrafts(form);
+    let payload = {};
+    try {
+      payload = virtualPathRuleSavePayload(form);
+    } catch (error) {
+      setStatus(error.message || String(error), 'err');
+      return false;
+    }
+    setStatus('Saving virtual-path rule', 'unknown');
+    state.virtualPathRuleSaving.add(ruleId);
+    renderVirtualPathRuleListHosts();
+    try {
+      await fetchJson(virtualPathRuleUpdateEndpoint(ruleId), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      state.virtualPathRuleDrafts.delete(ruleId);
+      await refreshVirtualPathRules({ silent: true });
+      setStatus(`Saved ${payload.display_name || ruleId}`, 'ok');
+      return true;
+    } catch (error) {
+      setStatus(error.message || String(error), 'err');
+      return false;
+    } finally {
+      state.virtualPathRuleSaving.delete(ruleId);
+      renderVirtualPathRuleListHosts();
+      renderUltrawide();
     }
   }
 
@@ -4961,19 +5144,22 @@ const EmailPage = (() => {
   }
 
   function renderVirtualPathRuleListHosts() {
+    const focusSnapshot = captureSearchFocus();
+    readVirtualPathRuleDrafts();
     document.querySelectorAll('[data-email-vpath-rules-list-host]').forEach(host => {
       host.innerHTML = virtualPathRulesListHtml();
     });
     document.querySelectorAll('[data-email-vpath-rule-count]').forEach(node => {
       node.textContent = virtualPathRuleCountSummary();
     });
+    restoreSearchFocus(focusSnapshot);
   }
 
   function toggleVirtualPathRuleExpanded(ruleId) {
     const clean = String(ruleId || '').trim();
     if (!clean) return false;
     if (state.virtualPathRuleExpanded.has(clean)) state.virtualPathRuleExpanded.delete(clean);
-    else state.virtualPathRuleExpanded.add(clean);
+    else state.virtualPathRuleExpanded = new Set([clean]);
     renderVirtualPathRuleListHosts();
     return true;
   }
@@ -5182,6 +5368,59 @@ const EmailPage = (() => {
     return trustedViewDropdownHtml(layout, { activateTrusted: false, placement: 'toolbar' });
   }
 
+  function normalizeRulesTool(tool) {
+    const clean = String(tool || '').trim();
+    return RULES_TOOL_IDS.has(clean) ? clean : 'rules';
+  }
+
+  function rulesToolLabel(tool = state.virtualPathRuleTool) {
+    const clean = normalizeRulesTool(tool);
+    return RULES_TOOL_OPTIONS.find(([id]) => id === clean)?.[1] || 'Rules list';
+  }
+
+  function rulesToolTabLabel(tool = state.virtualPathRuleTool) {
+    const clean = normalizeRulesTool(tool);
+    if (clean === 'rules') return 'Rules: List';
+    if (clean === 'create') return 'Rules: Create';
+    return `Rules: ${rulesToolLabel(clean)}`;
+  }
+
+  function rulesToolDropdownHtml(layout = 'secondary', options = {}) {
+    const active = state.secondaryTab === 'rules';
+    const activeTool = normalizeRulesTool(state.virtualPathRuleTool);
+    const activateRules = options.activateRules !== false;
+    const placement = options.placement || (activateRules ? 'tab' : 'toolbar');
+    const label = activateRules ? rulesToolTabLabel(activeTool) : rulesToolLabel(activeTool);
+    const primaryAttrs = activateRules
+      ? `data-email-secondary-tab="rules" data-active="${active ? 'true' : 'false'}" data-email-secondary-layout="${escHtml(layout)}"`
+      : 'aria-label="Choose Rules tool" aria-haspopup="menu" aria-expanded="false" data-email-rules-tool-menu-toggle';
+    return `
+      <div class="email-rules-tool-dropdown email-folder-tab-dropdown" data-email-rules-tool-dropdown data-email-rules-tool-placement="${escHtml(placement)}" data-active="${active ? 'true' : 'false'}" data-tool="${escHtml(activeTool)}" data-email-secondary-layout="${escHtml(layout)}">
+        <div class="email-folder-tab-split">
+          <button class="email-folder-tab email-folder-tab--primary" type="button" ${primaryAttrs}>
+            <span data-email-rules-tool-label>${escHtml(label)}</span>
+          </button>
+          <button class="email-folder-tab-caret" type="button" aria-label="Choose Rules tool" aria-haspopup="menu" aria-expanded="false" data-email-rules-tool-menu-toggle>
+            <span class="menu-editor-icon menu-editor-icon--chevron-down" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div class="email-folder-tab-menu" role="menu">
+          ${RULES_TOOL_OPTIONS.map(([id, label]) => `
+            <button class="email-folder-tab-menu__item" type="button" role="menuitemradio" aria-checked="${activeTool === id ? 'true' : 'false'}" data-email-rules-tool-option="${escHtml(id)}">${escHtml(label)}</button>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  function rulesTabDropdownHtml(layout = 'secondary') {
+    return rulesToolDropdownHtml(layout, { activateRules: true, placement: 'tab' });
+  }
+
+  function rulesToolToolbarDropdownHtml(layout = 'ultrawide') {
+    return rulesToolDropdownHtml(layout, { activateRules: false, placement: 'toolbar' });
+  }
+
   function secondaryTabButtonHtml(id, label, layout = 'secondary') {
     return `<button type="button" data-email-secondary-tab="${escHtml(id)}" data-active="${state.secondaryTab === id ? 'true' : 'false'}" data-email-secondary-layout="${escHtml(layout)}">${escHtml(label)}</button>`;
   }
@@ -5192,6 +5431,8 @@ const EmailPage = (() => {
         ? searchTabDropdownHtml(layout)
         : id === 'trusted' && layout !== 'ultrawide'
           ? trustedTabDropdownHtml(layout)
+        : id === 'rules' && layout !== 'ultrawide'
+          ? rulesTabDropdownHtml(layout)
         : secondaryTabButtonHtml(id, label, layout)
     )).join('');
   }
@@ -5360,8 +5601,10 @@ const EmailPage = (() => {
     const expanded = state.virtualPathRuleExpanded?.has?.(ruleId);
     const status = String(rule?.status || 'unknown');
     const active = status === 'active';
+    const draft = virtualPathRuleDraft(rule);
+    const saving = state.virtualPathRuleSaving.has(ruleId);
     return `
-      <article class="email-rule-row" data-email-vpath-rule-row="${escHtml(ruleId)}">
+      <article class="email-rule-row" data-email-vpath-rule-row="${escHtml(ruleId)}" data-expanded="${expanded ? 'true' : 'false'}">
         <div class="email-rule-row__top">
           <button class="email-rule-row__toggle" type="button" data-email-vpath-rule-toggle="${escHtml(ruleId)}" aria-expanded="${expanded ? 'true' : 'false'}">
             <span class="email-rule-row__chevron" aria-hidden="true"></span>
@@ -5382,19 +5625,57 @@ const EmailPage = (() => {
         </div>
         <div class="email-rule-row__meta">${escHtml(ruleId)}</div>
         <div class="email-rule-row__details"${expanded ? '' : ' hidden'}>
-          <div class="email-rule-detail-grid">
-            ${ruleDetailSectionHtml('Predicate', rule.predicate || {})}
-            ${ruleDetailSectionHtml('Actions', rule.action || {})}
-            ${ruleDetailSectionHtml('Scope', rule.scope || {})}
+          <form class="email-rule-form email-rule-form--wide email-rule-edit-form" data-email-rule-edit-form data-email-rule-id="${escHtml(ruleId)}">
+            <div class="email-rule-edit-grid">
+              <label>
+                <span>Rule name</span>
+                <input name="display_name" value="${escHtml(draft.display_name)}" data-email-preserve-focus="vpath-rule-edit-${escHtml(ruleId)}-name" autocomplete="off"${saving ? ' disabled' : ''}>
+              </label>
+              <label>
+                <span>Status</span>
+                <select name="status" data-email-preserve-focus="vpath-rule-edit-${escHtml(ruleId)}-status"${saving ? ' disabled' : ''}>
+                  <option value="active"${draft.status === 'active' ? ' selected' : ''}>Active</option>
+                  <option value="archived"${draft.status === 'archived' ? ' selected' : ''}>Archived</option>
+                </select>
+              </label>
+              <label class="email-rule-sequence-field">
+                <span>Sequence</span>
+                <input name="sequence" type="number" min="0" step="1" value="${escHtml(draft.sequence)}" data-email-preserve-focus="vpath-rule-edit-${escHtml(ruleId)}-sequence"${saving ? ' disabled' : ''}>
+              </label>
+              <label class="hub-checkbox email-rule-apply-toggle email-rule-edit-stop">
+                <input class="hub-checkbox__input" name="stop_on_match" type="checkbox" data-email-preserve-focus="vpath-rule-edit-${escHtml(ruleId)}-stop"${draft.stop_on_match ? ' checked' : ''}${saving ? ' disabled' : ''}>
+                <span class="hub-checkbox__box" aria-hidden="true"></span>
+                <span class="hub-checkbox__label">Stop on match</span>
+              </label>
+              <label class="email-rule-edit-description">
+                <span>Description</span>
+                <textarea name="description" data-email-preserve-focus="vpath-rule-edit-${escHtml(ruleId)}-description" spellcheck="false"${saving ? ' disabled' : ''}>${escHtml(draft.description)}</textarea>
+              </label>
+            </div>
+            <div class="email-rule-detail-grid email-rule-detail-grid--edit">
+              <label class="email-rule-detail-section">
+                <span>Predicate JSON</span>
+                <textarea name="predicate" data-email-preserve-focus="vpath-rule-edit-${escHtml(ruleId)}-predicate" spellcheck="false"${saving ? ' disabled' : ''}>${escHtml(draft.predicate)}</textarea>
+              </label>
+              <label class="email-rule-detail-section">
+                <span>Action JSON</span>
+                <textarea name="action" data-email-preserve-focus="vpath-rule-edit-${escHtml(ruleId)}-action" spellcheck="false"${saving ? ' disabled' : ''}>${escHtml(draft.action)}</textarea>
+              </label>
+              <label class="email-rule-detail-section">
+                <span>Scope JSON</span>
+                <textarea name="scope" data-email-preserve-focus="vpath-rule-edit-${escHtml(ruleId)}-scope" spellcheck="false"${saving ? ' disabled' : ''}>${escHtml(draft.scope)}</textarea>
+              </label>
             <section class="email-rule-detail-section">
               <h4>Run History</h4>
               ${ruleAuditHtml(rule)}
             </section>
-          </div>
-          <div class="email-rule-row__actions">
-            <button class="hub-action-btn" type="button" data-email-rule-apply-one="${escHtml(ruleId)}">Preview This Rule</button>
-            <button class="hub-action-btn email-rule-danger" type="button" data-email-vpath-rule-archive="${escHtml(ruleId)}">Archive</button>
-          </div>
+            </div>
+            <div class="email-rule-row__actions">
+              <button class="hub-action-btn hub-primary" type="submit"${saving ? ' disabled' : ''}>${saving ? 'Saving...' : 'Save rule'}</button>
+              <button class="hub-action-btn" type="button" data-email-rule-apply-one="${escHtml(ruleId)}"${state.virtualPathRuleApplyLoading ? ' disabled' : ''}>Preview dry-run</button>
+              <button class="hub-action-btn email-rule-danger" type="button" data-email-vpath-rule-archive="${escHtml(ruleId)}"${saving ? ' disabled' : ''}>Archive</button>
+            </div>
+          </form>
         </div>
       </article>
     `;
@@ -5402,6 +5683,53 @@ const EmailPage = (() => {
 
   function virtualPathName(folder) {
     return String(folder?.path || folder?.name || folder?.virtual_path || '').trim();
+  }
+
+  function normalizeVirtualPath(path) {
+    return String(path || '')
+      .split('/')
+      .map(part => part.trim())
+      .filter(Boolean)
+      .join('/');
+  }
+
+  function virtualPathBaseName(path) {
+    const parts = normalizeVirtualPath(path).split('/').filter(Boolean);
+    return parts[parts.length - 1] || '';
+  }
+
+  function childVirtualPath(parentPath, childName) {
+    const parent = normalizeVirtualPath(parentPath);
+    const child = normalizeVirtualPath(childName);
+    if (!child) return parent;
+    return parent ? `${parent}/${child}` : child;
+  }
+
+  function virtualPathRecordFor(path) {
+    const clean = normalizeVirtualPath(path);
+    return (state.virtualPaths || []).find(item => normalizeVirtualPath(virtualPathName(item)) === clean) || null;
+  }
+
+  function isReadOnlyVirtualPath(path) {
+    const clean = normalizeVirtualPath(path);
+    if (!clean) return false;
+    const parts = clean.split('/');
+    if (parts.some(part => part === '_X' || part.endsWith('_X'))) return true;
+    const record = virtualPathRecordFor(clean);
+    if (!record || typeof record !== 'object') return false;
+    return Boolean(
+      record.read_only
+      || record.readonly
+      || record.is_read_only
+      || record.meta
+      || record.is_meta
+      || String(record.path_kind || record.kind || '').toLowerCase() === 'meta'
+    );
+  }
+
+  function isMutableVirtualPath(path) {
+    const clean = normalizeVirtualPath(path);
+    return Boolean(clean && !isReadOnlyVirtualPath(clean));
   }
 
   function virtualPathOptionsHtml() {
@@ -5418,6 +5746,409 @@ const EmailPage = (() => {
       .split(/[\n,]+/)
       .map(item => item.trim())
       .filter(Boolean);
+  }
+
+  function virtualPathInputControlHtml({ label, name, key, value = '', placeholder = '', multi = false, allowRoot = false, mutable = false }) {
+    return `
+      <label class="email-vpath-picker-field">
+        <span>${escHtml(label)}</span>
+        <div class="email-vpath-picker-input-row">
+          <input name="${escHtml(name)}" value="${escHtml(value)}" data-email-preserve-focus="${escHtml(key)}" data-email-vpath-input-key="${escHtml(key)}"${multi ? ' data-email-vpath-multi="true"' : ''}${allowRoot ? ' data-email-vpath-allow-root="true"' : ''}${mutable ? ' data-email-vpath-mutable="true"' : ''} placeholder="${escHtml(placeholder)}" autocomplete="off" readonly>
+          <button class="hub-action-btn" type="button" data-email-vpath-picker-open data-email-vpath-picker-target="${escHtml(key)}">Choose</button>
+        </div>
+      </label>
+    `;
+  }
+
+  function buildVirtualPathTree() {
+    const root = { name: 'Virtual paths', path: '', direct: true, children: new Map() };
+    state.virtualPaths
+      .map(item => normalizeVirtualPath(virtualPathName(item)))
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
+      .forEach(path => {
+        const parts = path.split('/').filter(Boolean);
+        let node = root;
+        const pathParts = [];
+        parts.forEach((part, index) => {
+          pathParts.push(part);
+          if (!node.children.has(part)) {
+            node.children.set(part, {
+              name: part,
+              path: pathParts.join('/'),
+              direct: false,
+              children: new Map(),
+            });
+          }
+          node = node.children.get(part);
+          if (index === parts.length - 1) node.direct = true;
+        });
+      });
+    return root;
+  }
+
+  function canDropVirtualPath(sourcePath, targetParentPath) {
+    const source = normalizeVirtualPath(sourcePath);
+    const targetParent = normalizeVirtualPath(targetParentPath);
+    if (!isMutableVirtualPath(source)) return false;
+    if (targetParent && !isMutableVirtualPath(targetParent)) return false;
+    if (source === targetParent || targetParent.startsWith(`${source}/`)) return false;
+    const destination = childVirtualPath(targetParent, virtualPathBaseName(source));
+    return Boolean(destination && destination !== source);
+  }
+
+  function virtualPathTreeNodeHtml(node, depth = 0) {
+    const path = normalizeVirtualPath(node.path);
+    const childNodes = Array.from(node.children.values()).sort((a, b) => a.name.localeCompare(b.name));
+    const readOnly = isReadOnlyVirtualPath(path);
+    const mutable = isMutableVirtualPath(path);
+    const selected = normalizeVirtualPath(state.virtualPathPicker?.selectedPath || '') === path;
+    const actionOpen = normalizeVirtualPath(state.virtualPathPicker?.actionPath || '') === path;
+    const kind = childNodes.length ? 'Branch' : 'Leaf';
+    return `
+      <li class="email-vpath-tree-item" data-readonly="${readOnly ? 'true' : 'false'}">
+        <div class="email-vpath-tree-node${selected ? ' is-selected' : ''}${actionOpen ? ' is-action-open' : ''}${readOnly ? ' is-readonly' : ''}" style="--vpath-depth:${depth}" data-email-vpath-tree-drop-target="${escHtml(path)}">
+          <button class="email-vpath-tree-node__main" type="button" data-email-vpath-tree-select="${escHtml(path)}" data-email-vpath-tree-node="${escHtml(path)}" draggable="${mutable ? 'true' : 'false'}">
+            <span class="email-vpath-tree-node__name">${escHtml(node.name)}</span>
+            <span class="email-vpath-tree-node__kind">${escHtml(kind)}${readOnly ? ' / read-only' : ''}</span>
+          </button>
+          <button class="email-vpath-tree-node__actions" type="button" aria-label="Path actions" data-email-vpath-tree-actions="${escHtml(path)}">...</button>
+        </div>
+        ${actionOpen ? virtualPathTreeActionPanelHtml(path) : ''}
+        ${childNodes.length ? `<ol class="email-vpath-tree-children">${childNodes.map(child => virtualPathTreeNodeHtml(child, depth + 1)).join('')}</ol>` : ''}
+      </li>
+    `;
+  }
+
+  function virtualPathTreeActionPanelHtml(path) {
+    const clean = normalizeVirtualPath(path);
+    const readonly = clean && isReadOnlyVirtualPath(clean);
+    const targetLabel = clean || 'Root';
+    return `
+      <div class="email-vpath-tree-actions-panel">
+        <strong>${escHtml(targetLabel)}</strong>
+        <div class="email-vpath-tree-create-row">
+          <input data-email-vpath-tree-child-name value="" placeholder="Child path name" autocomplete="off"${readonly ? ' disabled' : ''}>
+          <button class="hub-action-btn hub-primary" type="button" data-email-vpath-tree-create-child="${escHtml(clean)}"${readonly ? ' disabled' : ''}>Create child</button>
+        </div>
+        ${clean ? `
+          <div class="email-vpath-tree-action-buttons">
+            <button class="hub-action-btn" type="button" data-email-vpath-tree-move="${escHtml(clean)}"${readonly ? ' disabled' : ''}>Move</button>
+            <button class="hub-action-btn" type="button" data-email-vpath-tree-archive="${escHtml(clean)}"${readonly ? ' disabled' : ''}>Archive</button>
+            <button class="hub-action-btn email-rule-danger" type="button" data-email-vpath-tree-delete="${escHtml(clean)}"${readonly ? ' disabled' : ''}>Delete</button>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  function virtualPathTreeHtml() {
+    const root = buildVirtualPathTree();
+    const childNodes = Array.from(root.children.values()).sort((a, b) => a.name.localeCompare(b.name));
+    return `
+      <div class="email-vpath-tree-root">
+        <button class="hub-action-btn" type="button" data-email-vpath-tree-select="" data-email-vpath-tree-node="">Root</button>
+        <button class="hub-action-btn" type="button" data-email-vpath-tree-actions="">Root actions</button>
+      </div>
+      ${state.virtualPathPicker?.actionPath === '' ? virtualPathTreeActionPanelHtml('') : ''}
+      <ol class="email-vpath-tree">
+        ${childNodes.length ? childNodes.map(child => virtualPathTreeNodeHtml(child, 0)).join('') : '<li class="email-empty">No virtual paths loaded.</li>'}
+      </ol>
+    `;
+  }
+
+  function ensureVirtualPathTreePickerDialog() {
+    let dialog = el('email-vpath-tree-picker-modal');
+    if (dialog) return dialog;
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <dialog id="email-vpath-tree-picker-modal" class="hub-modal email-vpath-tree-picker-modal">
+        <div class="hub-modal-header">
+          <h2 class="hub-modal-title" data-email-vpath-tree-title>Virtual paths</h2>
+          <button class="hub-modal-close" type="button" aria-label="Close" data-email-vpath-tree-close>&#10005;</button>
+        </div>
+        <div class="hub-modal-body" data-email-vpath-tree-body></div>
+        <div class="hub-modal-footer">
+          <button class="hub-modal-btn secondary" type="button" data-email-vpath-tree-close>Close</button>
+        </div>
+      </dialog>
+    `.trim();
+    dialog = host.firstElementChild;
+    document.body.appendChild(dialog);
+    if (typeof HubModal !== 'undefined') HubModal.init(document.body);
+    return dialog;
+  }
+
+  function renderVirtualPathTreePicker() {
+    const dialog = ensureVirtualPathTreePickerDialog();
+    const title = dialog.querySelector('[data-email-vpath-tree-title]');
+    const body = dialog.querySelector('[data-email-vpath-tree-body]');
+    const picker = state.virtualPathPicker || {};
+    const moving = picker.mode === 'move-destination' && picker.moveSourcePath;
+    if (title) title.textContent = moving ? 'Choose destination' : 'Choose virtual path';
+    if (body) {
+      body.innerHTML = `
+        ${picker.error ? `<div class="email-error">${escHtml(picker.error)}</div>` : ''}
+        ${moving ? `<div class="email-vpath-tree-banner"><strong>Move</strong><span>${escHtml(picker.moveSourcePath)}</span></div>` : ''}
+        ${virtualPathTreeHtml()}
+      `;
+    }
+    return dialog;
+  }
+
+  function virtualPathPickerTargetInput() {
+    const key = String(state.virtualPathPicker?.targetKey || '').trim();
+    if (!key) return null;
+    return Array.from(document.querySelectorAll('[data-email-vpath-input-key]'))
+      .find(input => input.dataset.emailVpathInputKey === key) || null;
+  }
+
+  function openVirtualPathTreePicker(targetKey, options = {}) {
+    const cleanKey = String(targetKey || '').trim();
+    const input = cleanKey
+      ? Array.from(document.querySelectorAll('[data-email-vpath-input-key]')).find(node => node.dataset.emailVpathInputKey === cleanKey)
+      : null;
+    const current = input?.dataset?.emailVpathMulti === 'true'
+      ? splitVirtualPathInput(input.value)[0] || ''
+      : input?.value || '';
+    state.virtualPathPicker = {
+      open: true,
+      targetKey: cleanKey,
+      mode: options.mode || 'select',
+      selectedPath: normalizeVirtualPath(options.selectedPath || current),
+      actionPath: typeof options.actionPath === 'undefined' ? null : normalizeVirtualPath(options.actionPath),
+      moveSourcePath: normalizeVirtualPath(options.moveSourcePath || ''),
+      error: '',
+    };
+    const dialog = renderVirtualPathTreePicker();
+    if (typeof HubModal !== 'undefined') {
+      HubModal.open(dialog, {
+        onClose: () => {
+          state.virtualPathPicker.open = false;
+          clearVirtualPathTreeLongPress();
+        },
+      });
+    } else if (typeof dialog.showModal === 'function') {
+      dialog.showModal();
+    }
+    return true;
+  }
+
+  function closeVirtualPathTreePicker() {
+    const dialog = el('email-vpath-tree-picker-modal');
+    state.virtualPathPicker.open = false;
+    clearVirtualPathTreeLongPress();
+    if (dialog && typeof HubModal !== 'undefined') HubModal.close(dialog);
+    else if (dialog?.open && typeof dialog.close === 'function') dialog.close();
+  }
+
+  function setVirtualPathPickerError(message) {
+    state.virtualPathPicker.error = String(message || '');
+    renderVirtualPathTreePicker();
+  }
+
+  function dispatchPathInputChange(input) {
+    input?.dispatchEvent?.(new Event('input', { bubbles: true }));
+    input?.dispatchEvent?.(new Event('change', { bubbles: true }));
+  }
+
+  async function applyVirtualPathPickerSelection(path) {
+    const clean = normalizeVirtualPath(path);
+    const picker = state.virtualPathPicker || {};
+    if (picker.mode === 'move-destination' && picker.moveSourcePath) {
+      return moveVirtualPathIntoParent(picker.moveSourcePath, clean);
+    }
+    const input = virtualPathPickerTargetInput();
+    if (!input) return false;
+    if (!clean && input.dataset.emailVpathAllowRoot !== 'true') return false;
+    if (clean && input.dataset.emailVpathMutable === 'true' && isReadOnlyVirtualPath(clean)) {
+      setVirtualPathPickerError('This path is read-only.');
+      return false;
+    }
+    if (input.dataset.emailVpathMulti === 'true') {
+      const paths = splitVirtualPathInput(input.value);
+      if (clean && !paths.includes(clean)) paths.push(clean);
+      input.value = paths.join(', ');
+    } else {
+      input.value = clean;
+    }
+    dispatchPathInputChange(input);
+    closeVirtualPathTreePicker();
+    input.focus?.({ preventScroll: true });
+    return true;
+  }
+
+  function confirmHubAction(opts) {
+    if (typeof HubDialogs !== 'undefined' && typeof HubDialogs.confirm === 'function') {
+      return HubDialogs.confirm(opts);
+    }
+    return Promise.resolve(true);
+  }
+
+  function confirmHubDelete(opts) {
+    if (typeof HubDialogs !== 'undefined' && typeof HubDialogs.confirmDelete === 'function') {
+      return HubDialogs.confirmDelete(opts);
+    }
+    return confirmHubAction(Object.assign({ tone: 'danger' }, opts || {}));
+  }
+
+  async function createVirtualPathFromPicker(parentPath, childName) {
+    const path = childVirtualPath(parentPath, childName);
+    if (!path) {
+      setVirtualPathPickerError('Enter a child path name.');
+      return false;
+    }
+    if (parentPath && isReadOnlyVirtualPath(parentPath)) {
+      setVirtualPathPickerError('This path is read-only.');
+      return false;
+    }
+    setStatus('Creating virtual path', 'unknown');
+    try {
+      await fetchJson(virtualPathsEndpoint(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ virtual_path: path, actor: 'email-ui', source_surface: 'pim-email-ui-tree-picker' }),
+      });
+      await refreshVirtualPathRules({ silent: true });
+      state.virtualPathPicker.selectedPath = path;
+      state.virtualPathPicker.actionPath = path;
+      state.virtualPathPicker.error = '';
+      renderVirtualPathTreePicker();
+      await applyVirtualPathPickerSelection(path);
+      setStatus(`Created ${path}`, 'ok');
+      return true;
+    } catch (error) {
+      setVirtualPathPickerError(error.message || String(error));
+      setStatus(error.message || String(error), 'err');
+      return false;
+    }
+  }
+
+  async function archiveVirtualPathFromPicker(path, action = 'archive') {
+    const clean = normalizeVirtualPath(path);
+    if (!isMutableVirtualPath(clean)) {
+      setVirtualPathPickerError('This path is read-only.');
+      return false;
+    }
+    const ok = await confirmHubDelete({
+      title: action === 'delete' ? 'Delete virtual path' : 'Archive virtual path',
+      message: clean,
+      detail: 'Message content is unchanged.',
+      confirmText: action === 'delete' ? 'Delete' : 'Archive',
+    });
+    if (!ok) return false;
+    setStatus(action === 'delete' ? 'Deleting virtual path' : 'Archiving virtual path', 'unknown');
+    try {
+      await fetchJson(virtualPathArchiveEndpoint(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ virtual_path: clean, actor: 'email-ui', source_surface: 'pim-email-ui-tree-picker' }),
+      });
+      const target = virtualPathPickerTargetInput();
+      if (target && normalizeVirtualPath(target.value) === clean) {
+        target.value = '';
+        dispatchPathInputChange(target);
+      }
+      await refreshVirtualPathRules({ silent: true });
+      await load({ force: true, preserveOpenedMessage: true });
+      state.virtualPathPicker.selectedPath = '';
+      state.virtualPathPicker.actionPath = '';
+      state.virtualPathPicker.error = '';
+      renderVirtualPathTreePicker();
+      setStatus(`${action === 'delete' ? 'Deleted' : 'Archived'} ${clean}`, 'ok');
+      return true;
+    } catch (error) {
+      setVirtualPathPickerError(error.message || String(error));
+      setStatus(error.message || String(error), 'err');
+      return false;
+    }
+  }
+
+  async function moveVirtualPath(sourcePath, destinationPath) {
+    const source = normalizeVirtualPath(sourcePath);
+    const destination = normalizeVirtualPath(destinationPath);
+    if (!source || !destination || source === destination) return false;
+    if (!isMutableVirtualPath(source)) {
+      setVirtualPathPickerError('This path is read-only.');
+      return false;
+    }
+    const ok = await confirmHubAction({
+      title: 'Move virtual path',
+      message: `${source} -> ${destination}`,
+      confirmText: 'Move',
+    });
+    if (!ok) return false;
+    setStatus('Moving virtual path', 'unknown');
+    try {
+      await fetchJson(virtualPathRenameEndpoint(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source_virtual_path: source,
+          destination_virtual_path: destination,
+          dry_run: false,
+          actor: 'email-ui',
+          source_surface: 'pim-email-ui-tree-picker',
+        }),
+      });
+      await refreshVirtualPathRules({ silent: true });
+      await load({ force: true, preserveOpenedMessage: true });
+      state.virtualPathPicker.selectedPath = destination;
+      state.virtualPathPicker.actionPath = destination;
+      state.virtualPathPicker.mode = 'select';
+      state.virtualPathPicker.moveSourcePath = '';
+      state.virtualPathPicker.error = '';
+      renderVirtualPathTreePicker();
+      setStatus(`Moved ${source}`, 'ok');
+      return true;
+    } catch (error) {
+      setVirtualPathPickerError(error.message || String(error));
+      setStatus(error.message || String(error), 'err');
+      return false;
+    }
+  }
+
+  function moveVirtualPathIntoParent(sourcePath, parentPath) {
+    const source = normalizeVirtualPath(sourcePath);
+    const parent = normalizeVirtualPath(parentPath);
+    if (!canDropVirtualPath(source, parent)) {
+      setVirtualPathPickerError('Choose a different mutable destination.');
+      return false;
+    }
+    return moveVirtualPath(source, childVirtualPath(parent, virtualPathBaseName(source)));
+  }
+
+  function openVirtualPathMoveDestination(path) {
+    const clean = normalizeVirtualPath(path);
+    if (!isMutableVirtualPath(clean)) {
+      setVirtualPathPickerError('This path is read-only.');
+      return false;
+    }
+    state.virtualPathPicker.mode = 'move-destination';
+    state.virtualPathPicker.moveSourcePath = clean;
+    state.virtualPathPicker.selectedPath = '';
+    state.virtualPathPicker.actionPath = '';
+    state.virtualPathPicker.error = '';
+    renderVirtualPathTreePicker();
+    return true;
+  }
+
+  function clearVirtualPathTreeLongPress() {
+    if (state.virtualPathPickerLongPressTimer) window.clearTimeout(state.virtualPathPickerLongPressTimer);
+    state.virtualPathPickerLongPressTimer = null;
+    state.virtualPathPickerLongPressPath = '';
+  }
+
+  function startVirtualPathTreeLongPress(path) {
+    clearVirtualPathTreeLongPress();
+    state.virtualPathPickerLongPressPath = normalizeVirtualPath(path);
+    state.virtualPathPickerLongPressTimer = window.setTimeout(() => {
+      state.virtualPathPicker.actionPath = state.virtualPathPickerLongPressPath;
+      state.virtualPathPicker.selectedPath = state.virtualPathPickerLongPressPath;
+      state.virtualPathPicker.error = '';
+      renderVirtualPathTreePicker();
+      clearVirtualPathTreeLongPress();
+    }, VPATH_TREE_LONG_PRESS_MS);
   }
 
   function scopeFromApplyForm(form) {
@@ -5490,29 +6221,209 @@ const EmailPage = (() => {
     `;
   }
 
+  function ruleOptionsHtml() {
+    return `
+      <option value="">All active rules</option>
+      ${(state.virtualPathRules || []).map(rule => {
+        const ruleId = String(rule?.rule_id || '').trim();
+        if (!ruleId) return '';
+        const label = String(rule?.display_name || ruleId);
+        return `<option value="${escHtml(ruleId)}">${escHtml(label)}</option>`;
+      }).join('')}
+    `;
+  }
+
+  function rulesPathsToolHtml() {
+    return `
+      <section class="email-rule-card email-rule-tool-panel" data-email-rules-tool-panel="paths">
+        <h3>Paths</h3>
+        <form class="email-rule-form" data-email-vpath-create-form>
+          ${virtualPathInputControlHtml({
+            label: 'Parent path',
+            name: 'parent_path',
+            key: 'vpath-create-parent',
+            placeholder: 'Root',
+            allowRoot: true,
+            mutable: true,
+          })}
+          <div class="email-rule-field-action-row">
+          <label class="email-rule-field-action-row__field">
+            <span>Child path</span>
+            <input name="child_name" data-email-preserve-focus="vpath-create-child" placeholder="Project/Next" autocomplete="off">
+          </label>
+            <button class="hub-action-btn hub-primary" type="submit">Create path</button>
+          </div>
+          <input name="path" type="hidden">
+        </form>
+      </section>
+    `;
+  }
+
+  function rulesBulkToolHtml() {
+    return `
+      <section class="email-rule-card email-rule-tool-panel" data-email-rules-tool-panel="bulk">
+        <h3>Bulk Move</h3>
+        <form class="email-rule-form" data-email-vpath-bulk-form>
+          ${virtualPathInputControlHtml({
+            label: 'Source path',
+            name: 'source',
+            key: 'vpath-bulk-source',
+            placeholder: 'Projects/Current',
+            mutable: true,
+          })}
+          ${virtualPathInputControlHtml({
+            label: 'Destination path',
+            name: 'destination',
+            key: 'vpath-bulk-destination',
+            placeholder: 'Projects/Next',
+            mutable: true,
+          })}
+          <div class="email-rule-action-row">
+            <label class="hub-checkbox email-rule-apply-toggle">
+              <input class="hub-checkbox__input" name="apply" data-email-vpath-apply-toggle="bulk" type="checkbox">
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label">Move messages now</span>
+            </label>
+            <button class="hub-action-btn hub-primary" type="submit" data-email-vpath-run-label data-preview-label="Preview bulk move" data-apply-label="Move messages">Preview bulk move</button>
+          </div>
+        </form>
+      </section>
+    `;
+  }
+
+  function rulesCreateToolHtml() {
+    return `
+      <section class="email-rule-card email-rule-tool-panel" data-email-rules-tool-panel="create">
+        <h3>Create Rule</h3>
+        <form class="email-rule-form email-rule-form--wide" data-email-rule-create-form>
+          <div class="email-rule-edit-grid">
+            <label>
+              <span>Rule name</span>
+              <input name="name" data-email-preserve-focus="vpath-rule-create-name" placeholder="Rule name" autocomplete="off">
+            </label>
+            <label class="email-rule-sequence-field">
+              <span>Sequence</span>
+              <input name="sequence" data-email-preserve-focus="vpath-rule-create-sequence" type="number" min="0" step="1" placeholder="100">
+            </label>
+            <label class="hub-checkbox email-rule-apply-toggle email-rule-edit-stop">
+              <input class="hub-checkbox__input" name="stop_on_match" type="checkbox" data-email-preserve-focus="vpath-rule-create-stop">
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label">Stop on match</span>
+            </label>
+            <label class="email-rule-edit-description">
+              <span>Description</span>
+              <textarea name="description" data-email-preserve-focus="vpath-rule-create-description" spellcheck="false"></textarea>
+            </label>
+          </div>
+          <label>
+            <span>Predicate JSON</span>
+            <textarea name="predicate" data-email-preserve-focus="vpath-rule-create-predicate" spellcheck="false">${escHtml(ruleJsonValue({ field: 'subject', op: 'contains', value: '' }))}</textarea>
+          </label>
+          <label>
+            <span>Action JSON</span>
+            <textarea name="action" data-email-preserve-focus="vpath-rule-create-action" spellcheck="false">${escHtml(ruleJsonValue({ operation: 'add', virtual_path: '' }))}</textarea>
+          </label>
+          <label>
+            <span>Default scope JSON</span>
+            <textarea name="scope" data-email-preserve-focus="vpath-rule-create-scope" spellcheck="false">${escHtml(ruleJsonValue({ limit: 100 }))}</textarea>
+          </label>
+          <button class="hub-action-btn hub-primary" type="submit">Create rule</button>
+        </form>
+      </section>
+    `;
+  }
+
+  function rulesApplyToolHtml(defaultScopeMode) {
+    return `
+      <section class="email-rule-card email-rule-tool-panel" data-email-rules-tool-panel="apply">
+        <h3>Preview/Apply Rules</h3>
+        <form class="email-rule-form email-rule-form--wide" data-email-rule-apply-form>
+          <label>
+            <span>Rule</span>
+            <select name="rule_id" data-email-preserve-focus="vpath-rule-apply-id">
+              ${ruleOptionsHtml()}
+            </select>
+          </label>
+          <div class="email-rule-form__inline">
+            <label>
+              <span>Scope</span>
+              <select name="scope_mode" data-email-preserve-focus="vpath-rule-apply-scope-mode" data-email-vpath-scope-mode>
+                ${scopeModeOptionsHtml(defaultScopeMode)}
+              </select>
+            </label>
+            <label class="email-rule-limit-field">
+              <span>Limit</span>
+              <input name="limit" data-email-preserve-focus="vpath-rule-apply-limit" type="number" min="1" max="20000" value="${defaultScopeMode === 'selected_message' ? '1' : '100'}">
+            </label>
+          </div>
+          <div data-email-vpath-scope-field="virtual_paths" hidden>
+            ${virtualPathInputControlHtml({
+              label: 'Virtual path(s)',
+              name: 'scope_paths',
+              key: 'vpath-rule-apply-paths',
+              placeholder: 'Projects/Example',
+              multi: true,
+            })}
+          </div>
+          <label data-email-vpath-scope-field="selected_message"${defaultScopeMode === 'selected_message' ? '' : ' hidden'}>
+            <span>Selected message</span>
+            <input value="${escHtml(state.virtualPathRuleContextEmailUid || '')}" disabled>
+          </label>
+          <label data-email-vpath-scope-field="advanced" hidden>
+            <span>Advanced scope JSON</span>
+            <textarea name="scope_json" data-email-preserve-focus="vpath-rule-apply-scope-json" spellcheck="false">${escHtml(ruleJsonValue({ limit: 100 }))}</textarea>
+          </label>
+          <div class="email-rule-action-row">
+            <label class="hub-checkbox email-rule-apply-toggle">
+              <input class="hub-checkbox__input" name="apply" data-email-vpath-apply-toggle="rules" type="checkbox">
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label">Apply matched changes now</span>
+            </label>
+            <button class="hub-action-btn hub-primary" type="submit" data-email-vpath-run-label data-preview-label="Preview rule matches" data-apply-label="Apply matched changes"${state.virtualPathRuleApplyLoading ? ' disabled' : ''}>Preview rule matches</button>
+          </div>
+        </form>
+      </section>
+    `;
+  }
+
+  function rulesToolPanelHtml(defaultScopeMode) {
+    const tool = normalizeRulesTool(state.virtualPathRuleTool);
+    if (tool === 'paths') return rulesPathsToolHtml();
+    if (tool === 'bulk') return rulesBulkToolHtml();
+    if (tool === 'create') return rulesCreateToolHtml();
+    if (tool === 'apply') return rulesApplyToolHtml(defaultScopeMode);
+    return '';
+  }
+
   function rulesPanelHtml() {
+    const tool = normalizeRulesTool(state.virtualPathRuleTool);
+    const listMode = tool === 'rules';
     const loading = state.virtualPathRulesLoading ? '<div class="email-empty">Loading virtual-path rules.</div>' : '';
     const error = state.virtualPathRulesError ? `<div class="email-error">${escHtml(state.virtualPathRulesError)}</div>` : '';
     const pathCount = Array.isArray(state.virtualPaths) ? state.virtualPaths.length : 0;
     const lastRun = state.virtualPathRuleLastRun?.run;
     const defaultScopeMode = rulesApplyScopeDefaultMode();
+    const toolbarTitle = listMode ? virtualPathRuleCountSummary() : `${pathCount} paths available`;
+    const toolbarMeta = listMode ? `${pathCount} paths` : '';
     return `
       <section class="email-rules-panel">
-        <div class="email-rules-toolbar">
+        <div class="email-rules-toolbar${listMode ? '' : ' email-rules-toolbar--tool'}">
           <div class="email-rules-counts">
-            <strong data-email-vpath-rule-count>${escHtml(virtualPathRuleCountSummary())}</strong>
-            <span>${escHtml(pathCount)} paths</span>
+            <strong data-email-vpath-rule-count>${escHtml(toolbarTitle)}</strong>
+            ${toolbarMeta ? `<span>${escHtml(toolbarMeta)}</span>` : ''}
           </div>
-          <input type="search" data-email-vpath-rule-search data-email-preserve-focus="vpath-rule-search" value="${escHtml(state.virtualPathRuleSearch || '')}" placeholder="Search rules" autocomplete="off">
-          <button class="hub-action-btn" type="button" data-email-action="refresh-vpath-rules">Refresh</button>
+          ${listMode ? `<input type="search" data-email-vpath-rule-search data-email-preserve-focus="vpath-rule-search" value="${escHtml(state.virtualPathRuleSearch || '')}" placeholder="Search rules" autocomplete="off">` : '<span class="email-rules-toolbar__spacer" aria-hidden="true"></span>'}
+          <div class="email-rules-toolbar__actions">
+            <button class="hub-action-btn" type="button" data-email-action="refresh-vpath-rules">Refresh</button>
+          </div>
         </div>
         ${ruleContextBannerHtml()}
-        ${loading}
-        ${error}
+        ${listMode ? loading : ''}
+        ${listMode ? error : ''}
         <datalist id="email-vpath-options">${virtualPathOptionsHtml()}</datalist>
-        <div class="email-rules-list-host" data-email-vpath-rules-list-host>
+        ${listMode ? `<div class="email-rules-list-host" data-email-vpath-rules-list-host>
           ${virtualPathRulesListHtml()}
-        </div>
+        </div>` : ''}
         ${lastRun ? `
           <div class="email-rule-last-run">
             <strong>Last run</strong>
@@ -5523,95 +6434,7 @@ const EmailPage = (() => {
           </div>
         ` : ''}
         <div class="email-rules-operations">
-          <details class="email-rule-card" data-email-vpath-rule-section="paths"${virtualPathRuleSectionOpenAttr('paths')}>
-            <summary>Paths and Bulk Move</summary>
-            <div class="email-rules-grid">
-              <form class="email-rule-form" data-email-vpath-create-form>
-                <label>
-                  <span>New virtual path</span>
-                  <input name="path" data-email-preserve-focus="vpath-create-path" list="email-vpath-options" placeholder="Projects/Example" autocomplete="off">
-                </label>
-                <button class="hub-action-btn hub-primary" type="submit">Create Path</button>
-              </form>
-              <form class="email-rule-form" data-email-vpath-bulk-form>
-                <label>
-                  <span>Source path</span>
-                  <input name="source" data-email-preserve-focus="vpath-bulk-source" list="email-vpath-options" placeholder="Projects/Current" autocomplete="off">
-                </label>
-                <label>
-                  <span>Destination path</span>
-                  <input name="destination" data-email-preserve-focus="vpath-bulk-destination" list="email-vpath-options" placeholder="Projects/Next" autocomplete="off">
-                </label>
-                <label class="hub-checkbox email-rule-apply-toggle">
-                  <input class="hub-checkbox__input" name="apply" data-email-vpath-apply-toggle="bulk" type="checkbox">
-                  <span class="hub-checkbox__box" aria-hidden="true"></span>
-                  <span class="hub-checkbox__label">Move messages now</span>
-                </label>
-                <button class="hub-action-btn hub-primary" type="submit" data-email-vpath-run-label data-preview-label="Preview bulk move" data-apply-label="Move messages">Preview bulk move</button>
-              </form>
-            </div>
-          </details>
-          <details class="email-rule-card" data-email-vpath-rule-section="create"${virtualPathRuleSectionOpenAttr('create')}>
-            <summary>Create Rule</summary>
-            <form class="email-rule-form email-rule-form--wide" data-email-rule-create-form>
-              <label>
-                <span>Rule name</span>
-                <input name="name" data-email-preserve-focus="vpath-rule-create-name" placeholder="Rule name" autocomplete="off">
-              </label>
-              <label>
-                <span>Predicate JSON</span>
-                <textarea name="predicate" data-email-preserve-focus="vpath-rule-create-predicate" spellcheck="false">${escHtml(ruleJsonValue({ field: 'subject', op: 'contains', value: '' }))}</textarea>
-              </label>
-              <label>
-                <span>Action JSON</span>
-                <textarea name="action" data-email-preserve-focus="vpath-rule-create-action" spellcheck="false">${escHtml(ruleJsonValue({ operation: 'add', virtual_path: '' }))}</textarea>
-              </label>
-              <label>
-                <span>Default scope JSON</span>
-                <textarea name="scope" data-email-preserve-focus="vpath-rule-create-scope" spellcheck="false">${escHtml(ruleJsonValue({ limit: 100 }))}</textarea>
-              </label>
-              <button class="hub-action-btn hub-primary" type="submit">Create Rule</button>
-            </form>
-          </details>
-          <details class="email-rule-card" data-email-vpath-rule-section="apply"${virtualPathRuleSectionOpenAttr('apply')}>
-            <summary>Preview and Apply Rules</summary>
-            <form class="email-rule-form email-rule-form--wide" data-email-rule-apply-form>
-              <label>
-                <span>Rule id</span>
-                <input name="rule_id" data-email-preserve-focus="vpath-rule-apply-id" placeholder="Optional rule id" autocomplete="off">
-              </label>
-              <div class="email-rule-form__inline">
-                <label>
-                  <span>Scope</span>
-                  <select name="scope_mode" data-email-preserve-focus="vpath-rule-apply-scope-mode" data-email-vpath-scope-mode>
-                    ${scopeModeOptionsHtml(defaultScopeMode)}
-                  </select>
-                </label>
-                <label>
-                  <span>Limit</span>
-                  <input name="limit" data-email-preserve-focus="vpath-rule-apply-limit" type="number" min="1" max="20000" value="${defaultScopeMode === 'selected_message' ? '1' : '100'}">
-                </label>
-              </div>
-              <label data-email-vpath-scope-field="virtual_paths" hidden>
-                <span>Virtual path(s)</span>
-                <input name="scope_paths" data-email-preserve-focus="vpath-rule-apply-paths" list="email-vpath-options" placeholder="Projects/Example, Inbox/Watch" autocomplete="off">
-              </label>
-              <label data-email-vpath-scope-field="selected_message"${defaultScopeMode === 'selected_message' ? '' : ' hidden'}>
-                <span>Selected message</span>
-                <input value="${escHtml(state.virtualPathRuleContextEmailUid || '')}" disabled>
-              </label>
-              <label data-email-vpath-scope-field="advanced" hidden>
-                <span>Advanced scope JSON</span>
-                <textarea name="scope_json" data-email-preserve-focus="vpath-rule-apply-scope-json" spellcheck="false">${escHtml(ruleJsonValue({ limit: 100 }))}</textarea>
-              </label>
-              <label class="hub-checkbox email-rule-apply-toggle">
-                <input class="hub-checkbox__input" name="apply" data-email-vpath-apply-toggle="rules" type="checkbox">
-                <span class="hub-checkbox__box" aria-hidden="true"></span>
-                <span class="hub-checkbox__label">Apply matched changes now</span>
-              </label>
-              <button class="hub-action-btn hub-primary" type="submit" data-email-vpath-run-label data-preview-label="Preview rule matches" data-apply-label="Apply matched changes"${state.virtualPathRuleApplyLoading ? ' disabled' : ''}>Preview rule matches</button>
-            </form>
-          </details>
+          ${rulesToolPanelHtml(defaultScopeMode)}
         </div>
       </section>
     `;
@@ -5629,6 +6452,7 @@ const EmailPage = (() => {
 
   function renderSecondaryPanels() {
     const focusSnapshot = captureSearchFocus();
+    readVirtualPathRuleDrafts();
     captureVirtualPathRuleSectionState();
     syncSecondaryModalMode();
     document.querySelectorAll('.email-secondary-tabs').forEach(host => {
@@ -5651,6 +6475,7 @@ const EmailPage = (() => {
     const match = window.matchMedia ? window.matchMedia(ULTRAWIDE_QUERY).matches : false;
     if (!active || !match) return;
     const focusSnapshot = captureSearchFocus();
+    readVirtualPathRuleDrafts();
     captureVirtualPathRuleSectionState();
     const shell = document.createElement('div');
     shell.className = 'email-ultrawide-shell';
@@ -6398,6 +7223,7 @@ const EmailPage = (() => {
     state.searchMode = clean;
     state.secondaryTab = 'search';
     closeSearchModeMenus();
+    closeRulesToolMenus();
     renderSecondaryPanels();
     renderUltrawide();
     return true;
@@ -6408,9 +7234,21 @@ const EmailPage = (() => {
     state.trustedNestedTab = clean;
     state.secondaryTab = 'trusted';
     closeTrustedViewMenus();
+    closeRulesToolMenus();
     renderSecondaryPanels();
     renderUltrawide();
     if (!state.trustedLoaded) refreshTrustedSenders({ silent: true });
+    return true;
+  }
+
+  function setRulesTool(tool) {
+    readVirtualPathRuleDrafts();
+    state.virtualPathRuleTool = normalizeRulesTool(tool);
+    state.secondaryTab = 'rules';
+    closeRulesToolMenus();
+    renderSecondaryPanels();
+    renderUltrawide();
+    if (!state.virtualPathRulesLoaded) refreshVirtualPathRules({ silent: true });
     return true;
   }
 
@@ -7178,6 +8016,18 @@ const EmailPage = (() => {
         setTrustedNestedTab(trustedViewOption.dataset.emailTrustedViewOption || 'probable');
         return;
       }
+      const rulesToolToggle = target.closest?.('[data-email-rules-tool-menu-toggle]');
+      if (rulesToolToggle) {
+        event.preventDefault();
+        toggleRulesToolMenu(rulesToolToggle);
+        return;
+      }
+      const rulesToolOption = target.closest?.('[data-email-rules-tool-option]');
+      if (rulesToolOption) {
+        event.preventDefault();
+        setRulesTool(rulesToolOption.dataset.emailRulesToolOption || 'rules');
+        return;
+      }
       const tabBtn = target.closest?.('[data-email-secondary-tab]');
       if (tabBtn) {
         event.preventDefault();
@@ -7231,6 +8081,12 @@ const EmailPage = (() => {
         toggleVirtualPathRuleExpanded(ruleToggle.dataset.emailVpathRuleToggle || '');
         return;
       }
+      const ruleRow = target.closest?.('[data-email-vpath-rule-row]');
+      if (ruleRow && !target.closest?.('button, a, input, textarea, select, label, summary, form, [contenteditable="true"]')) {
+        event.preventDefault();
+        toggleVirtualPathRuleExpanded(ruleRow.dataset.emailVpathRuleRow || '');
+        return;
+      }
       const ruleSectionSummary = target.closest?.('[data-email-vpath-rule-section] > summary');
       if (ruleSectionSummary) {
         const details = ruleSectionSummary.closest('[data-email-vpath-rule-section]');
@@ -7256,6 +8112,60 @@ const EmailPage = (() => {
       if (ruleArchive) {
         event.preventDefault();
         archiveVirtualPathRule(ruleArchive.dataset.emailVpathRuleArchive || '');
+        return;
+      }
+      const pathPickerOpen = target.closest?.('[data-email-vpath-picker-open]');
+      if (pathPickerOpen) {
+        event.preventDefault();
+        openVirtualPathTreePicker(pathPickerOpen.dataset.emailVpathPickerTarget || '');
+        return;
+      }
+      const pathTreeClose = target.closest?.('[data-email-vpath-tree-close]');
+      if (pathTreeClose) {
+        event.preventDefault();
+        closeVirtualPathTreePicker();
+        return;
+      }
+      const pathTreeActions = target.closest?.('[data-email-vpath-tree-actions]');
+      if (pathTreeActions) {
+        event.preventDefault();
+        const path = normalizeVirtualPath(pathTreeActions.dataset.emailVpathTreeActions || '');
+        state.virtualPathPicker.actionPath = state.virtualPathPicker.actionPath === path ? null : path;
+        state.virtualPathPicker.selectedPath = path;
+        state.virtualPathPicker.error = '';
+        renderVirtualPathTreePicker();
+        return;
+      }
+      const pathTreeCreateChild = target.closest?.('[data-email-vpath-tree-create-child]');
+      if (pathTreeCreateChild) {
+        event.preventDefault();
+        const panel = pathTreeCreateChild.closest('.email-vpath-tree-actions-panel');
+        const childName = panel?.querySelector?.('[data-email-vpath-tree-child-name]')?.value || '';
+        createVirtualPathFromPicker(pathTreeCreateChild.dataset.emailVpathTreeCreateChild || '', childName);
+        return;
+      }
+      const pathTreeArchive = target.closest?.('[data-email-vpath-tree-archive]');
+      if (pathTreeArchive) {
+        event.preventDefault();
+        archiveVirtualPathFromPicker(pathTreeArchive.dataset.emailVpathTreeArchive || '', 'archive');
+        return;
+      }
+      const pathTreeDelete = target.closest?.('[data-email-vpath-tree-delete]');
+      if (pathTreeDelete) {
+        event.preventDefault();
+        archiveVirtualPathFromPicker(pathTreeDelete.dataset.emailVpathTreeDelete || '', 'delete');
+        return;
+      }
+      const pathTreeMove = target.closest?.('[data-email-vpath-tree-move]');
+      if (pathTreeMove) {
+        event.preventDefault();
+        openVirtualPathMoveDestination(pathTreeMove.dataset.emailVpathTreeMove || '');
+        return;
+      }
+      const pathTreeSelect = target.closest?.('[data-email-vpath-tree-select]');
+      if (pathTreeSelect) {
+        event.preventDefault();
+        applyVirtualPathPickerSelection(pathTreeSelect.dataset.emailVpathTreeSelect || '');
         return;
       }
       const folderToggle = target.closest?.('[data-email-folder-toggle]');
@@ -7314,6 +8224,7 @@ const EmailPage = (() => {
       if (!target.closest?.('[data-email-folder-dropdown]')) closeFolderMenus();
       if (!target.closest?.('[data-email-search-mode-dropdown]')) closeSearchModeMenus();
       if (!target.closest?.('[data-email-trusted-view-dropdown]')) closeTrustedViewMenus();
+      if (!target.closest?.('[data-email-rules-tool-dropdown]')) closeRulesToolMenus();
     });
     document.addEventListener('change', event => {
       const searchForm = event.target.closest?.('[data-email-search-form]');
@@ -7329,6 +8240,11 @@ const EmailPage = (() => {
       const vpathScopeMode = event.target.closest?.('[data-email-vpath-scope-mode]');
       if (vpathScopeMode) {
         syncVirtualPathScopeControls(vpathScopeMode.closest('form'));
+        return;
+      }
+      const ruleEditForm = event.target.closest?.('[data-email-rule-edit-form]');
+      if (ruleEditForm) {
+        readVirtualPathRuleDrafts(ruleEditForm);
         return;
       }
       const ruleActiveToggle = event.target.closest?.('[data-email-vpath-rule-active-toggle]');
@@ -7347,6 +8263,11 @@ const EmailPage = (() => {
         renderVirtualPathRuleListHosts();
         return;
       }
+      const ruleEditForm = event.target.closest?.('[data-email-rule-edit-form]');
+      if (ruleEditForm) {
+        readVirtualPathRuleDrafts(ruleEditForm);
+        return;
+      }
       const searchForm = event.target.closest?.('[data-email-search-form]');
       if (searchForm) {
         readSearchForm(searchForm);
@@ -7357,6 +8278,12 @@ const EmailPage = (() => {
       if (searchForm) {
         event.preventDefault();
         runEmailSearch({ form: searchForm });
+        return;
+      }
+      const ruleEditForm = event.target.closest?.('[data-email-rule-edit-form]');
+      if (ruleEditForm) {
+        event.preventDefault();
+        saveVirtualPathRuleFromForm(ruleEditForm);
         return;
       }
       const vpathCreateForm = event.target.closest?.('[data-email-vpath-create-form]');
@@ -7387,6 +8314,58 @@ const EmailPage = (() => {
       if (!form) return;
       event.preventDefault();
       addTrustedSenderFromForm(form);
+    });
+    document.addEventListener('pointerdown', event => {
+      const node = event.target.closest?.('[data-email-vpath-tree-node]');
+      if (!node) return;
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      startVirtualPathTreeLongPress(node.dataset.emailVpathTreeNode || '');
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(eventName => {
+      document.addEventListener(eventName, event => {
+        if (!state.virtualPathPickerLongPressTimer) return;
+        if (eventName === 'pointerleave' && event.target.closest?.('[data-email-vpath-tree-node]')) return;
+        clearVirtualPathTreeLongPress();
+      });
+    });
+    document.addEventListener('dragstart', event => {
+      const node = event.target.closest?.('[data-email-vpath-tree-node]');
+      if (!node) return;
+      const path = normalizeVirtualPath(node.dataset.emailVpathTreeNode || '');
+      if (!isMutableVirtualPath(path)) {
+        event.preventDefault();
+        return;
+      }
+      state.virtualPathPickerDragPath = path;
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', path);
+    });
+    document.addEventListener('dragover', event => {
+      const targetNode = event.target.closest?.('[data-email-vpath-tree-drop-target]');
+      if (!targetNode || !state.virtualPathPickerDragPath) return;
+      const parentPath = normalizeVirtualPath(targetNode.dataset.emailVpathTreeDropTarget || '');
+      const canDrop = canDropVirtualPath(state.virtualPathPickerDragPath, parentPath);
+      targetNode.classList.toggle('is-drop-target', canDrop);
+      if (!canDrop) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+    });
+    document.addEventListener('dragleave', event => {
+      const targetNode = event.target.closest?.('[data-email-vpath-tree-drop-target]');
+      targetNode?.classList?.remove('is-drop-target');
+    });
+    document.addEventListener('drop', event => {
+      const targetNode = event.target.closest?.('[data-email-vpath-tree-drop-target]');
+      if (!targetNode || !state.virtualPathPickerDragPath) return;
+      event.preventDefault();
+      const parentPath = normalizeVirtualPath(targetNode.dataset.emailVpathTreeDropTarget || '');
+      document.querySelectorAll('.email-vpath-tree-node.is-drop-target').forEach(node => node.classList.remove('is-drop-target'));
+      moveVirtualPathIntoParent(state.virtualPathPickerDragPath, parentPath);
+      state.virtualPathPickerDragPath = '';
+    });
+    document.addEventListener('dragend', () => {
+      state.virtualPathPickerDragPath = '';
+      document.querySelectorAll('.email-vpath-tree-node.is-drop-target').forEach(node => node.classList.remove('is-drop-target'));
     });
     document.addEventListener('keydown', event => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
