@@ -227,6 +227,26 @@ test('PIM Email Rules form controls have explicit input-baseline alignment', () 
   );
 });
 
+test('PIM Email virtual-path picker refreshes its catalog before mounting', () => {
+  const catalogRefreshStart = emailJs.indexOf('async function refreshVirtualPathCatalog');
+  const catalogRefreshEnd = emailJs.indexOf('async function createVirtualPathFromForm', catalogRefreshStart);
+  const catalogRefreshSlice = emailJs.slice(catalogRefreshStart, catalogRefreshEnd);
+  const pickerOpenStart = emailJs.indexOf('async function openVirtualPathTreePicker');
+  const pickerOpenEnd = emailJs.indexOf('function closeVirtualPathTreePicker', pickerOpenStart);
+  const pickerOpenSlice = emailJs.slice(pickerOpenStart, pickerOpenEnd);
+
+  assert.notEqual(catalogRefreshStart, -1, 'The picker needs a dedicated current-catalog refresh helper.');
+  assert.match(catalogRefreshSlice, /fetchJson\(virtualPathsEndpoint\(\)\)/, 'The helper must read the backend-owned catalog.');
+  assert.match(catalogRefreshSlice, /renderVirtualPathRuleCatalogState\(\)/, 'A fresh catalog may patch only catalog-owned Rules controls in place.');
+  assert.doesNotMatch(catalogRefreshSlice, /renderSecondaryPanels\(\)|renderUltrawide\(\)/, 'A fresh catalog must not remount active Rules forms.');
+  assert.match(pickerOpenSlice, /await refreshVirtualPathCatalog\(\{ patchControls: true \}\)/, 'The picker must await a current catalog before rendering.');
+  assert.ok(
+    pickerOpenSlice.indexOf('await refreshVirtualPathCatalog') < pickerOpenSlice.indexOf('state.virtualPathPicker = {'),
+    'The picker must not mount state before the fresh catalog is available.',
+  );
+  assert.match(pickerOpenSlice, /Could not refresh virtual paths/, 'A failed catalog fetch must fail closed instead of exposing stale paths.');
+});
+
 test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(daveMenuJs, /id:\s*'email'[\s\S]*label:\s*'Email'/, 'Dave menu must expose the Email tab.');
   for (const fn of [

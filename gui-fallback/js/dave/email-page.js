@@ -200,6 +200,7 @@ const EmailPage = (() => {
     searchLastElapsedMs: null,
     searchSeq: 0,
     virtualPaths: [],
+    virtualPathCatalogRequestSeq: 0,
     virtualPathRules: [],
     virtualPathRulesLoading: false,
     virtualPathRulesLoaded: false,
@@ -4817,14 +4818,17 @@ const EmailPage = (() => {
     state.virtualPathRulesLoading = true;
     state.virtualPathRulesError = '';
     renderVirtualPathRuleCatalogState();
+    const catalogRequestSeq = ++state.virtualPathCatalogRequestSeq;
     try {
       const [paths, rules] = await Promise.all([
         fetchJson(virtualPathsEndpoint()),
         fetchJson(virtualPathRulesEndpoint()),
       ]);
-      state.virtualPaths = Array.isArray(paths.result?.virtual_paths)
-        ? paths.result.virtual_paths
-        : [];
+      if (catalogRequestSeq === state.virtualPathCatalogRequestSeq) {
+        state.virtualPaths = Array.isArray(paths.result?.virtual_paths)
+          ? paths.result.virtual_paths
+          : [];
+      }
       state.virtualPathRules = Array.isArray(rules.result?.rules)
         ? rules.result.rules
         : [];
@@ -4839,6 +4843,21 @@ const EmailPage = (() => {
         renderVirtualPathRuleCatalogState();
       }
     }
+  }
+
+  async function refreshVirtualPathCatalog(options = {}) {
+    const catalogRequestSeq = ++state.virtualPathCatalogRequestSeq;
+    const paths = await fetchJson(virtualPathsEndpoint());
+    if (catalogRequestSeq !== state.virtualPathCatalogRequestSeq) return state.virtualPaths;
+    state.virtualPaths = Array.isArray(paths.result?.virtual_paths)
+      ? paths.result.virtual_paths
+      : [];
+    if (options.patchControls !== false && state.secondaryTab === 'rules') {
+      // Catalog values are response-owned. Patch those controls in place so an
+      // explicit picker open never recreates an operator-owned Rules form.
+      renderVirtualPathRuleCatalogState();
+    }
+    return state.virtualPaths;
   }
 
   async function createVirtualPathFromForm(form) {
@@ -6074,7 +6093,7 @@ const EmailPage = (() => {
       .find(input => input.dataset.emailVpathInputKey === key) || null;
   }
 
-  function openVirtualPathTreePicker(targetKey, options = {}) {
+  async function openVirtualPathTreePicker(targetKey, options = {}) {
     const cleanKey = String(targetKey || '').trim();
     const input = cleanKey
       ? Array.from(document.querySelectorAll('[data-email-vpath-input-key]')).find(node => node.dataset.emailVpathInputKey === cleanKey)
@@ -6082,6 +6101,14 @@ const EmailPage = (() => {
     const current = input?.dataset?.emailVpathMulti === 'true'
       ? splitVirtualPathInput(input.value)[0] || ''
       : input?.value || '';
+    try {
+      // The chooser can outlive another client or an audited stack mutation.
+      // Fetch before mounting so a retired path is never an actionable choice.
+      await refreshVirtualPathCatalog({ patchControls: true });
+    } catch (error) {
+      setStatus(`Could not refresh virtual paths: ${virtualPathRulesErrorMessage(error)}`, 'err');
+      return false;
+    }
     state.virtualPathPicker = {
       open: true,
       targetKey: cleanKey,
