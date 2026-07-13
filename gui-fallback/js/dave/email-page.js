@@ -33,6 +33,7 @@ const EmailPage = (() => {
     ['bulk', 'Bulk move'],
     ['create', 'Create rule'],
     ['apply', 'Preview/apply'],
+    ['scheduler', 'Scheduler'],
   ];
   const RULES_TOOL_IDS = new Set(RULES_TOOL_OPTIONS.map(([id]) => id));
   const VPATH_TREE_LONG_PRESS_MS = 520;
@@ -57,6 +58,7 @@ const EmailPage = (() => {
   const PROBABLE_TRUSTED_SECURITY_POLL_MS = 2500;
   const PROBABLE_TRUSTED_SECURITY_POLL_ATTEMPTS = 36;
   const HEALTH_POLL_MS = 15000;
+  const SCHEDULER_STATUS_POLL_MS = 15000;
   const CACHE_STATUS_POLL_MS = 30000;
   const ACTIVITY_HEARTBEAT_REFRESH_MS = 1000;
   const CACHE_HEARTBEAT_RECENT_MS = 6000;
@@ -230,6 +232,17 @@ const EmailPage = (() => {
     virtualPathRuleContextError: '',
     virtualPathRuleContextHistory: null,
     virtualPathRuleContextPreview: null,
+    schedulerTargets: [],
+    schedulerSchedules: [],
+    schedulerHealth: null,
+    schedulerCatalogFresh: false,
+    schedulerCatalogLoading: false,
+    schedulerStatusLoading: false,
+    schedulerError: '',
+    schedulerExpanded: new Set(),
+    schedulerHistory: new Map(),
+    schedulerPreview: new Map(),
+    schedulerStatusTimer: null,
     virtualPathEditorOpen: false,
     virtualPathEditorEmailUid: '',
     virtualPathEditorPaths: [],
@@ -994,6 +1007,10 @@ const EmailPage = (() => {
 
   function messageVirtualPathRuleHistoryEndpoint(uid) {
     return `${API_ROOT}/local/messages/${encodeURIComponent(uid)}/virtual-path-rules/history`;
+  }
+
+  function schedulerEndpoint(path = '') {
+    return `${API_ROOT}/local/scheduler${path}`;
   }
 
   function forceRefreshEndpoint(uid) {
@@ -4860,6 +4877,256 @@ const EmailPage = (() => {
     return state.virtualPaths;
   }
 
+  function schedulerTargetKey(kind, ref) {
+    return `${String(kind || '').trim()}::${String(ref || '').trim()}`;
+  }
+
+  function schedulerTargetFor(scheduleOrKey) {
+    const key = typeof scheduleOrKey === 'string'
+      ? scheduleOrKey
+      : schedulerTargetKey(scheduleOrKey?.target_kind, scheduleOrKey?.target_ref);
+    return (state.schedulerTargets || []).find(target => (
+      schedulerTargetKey(target?.kind, target?.ref) === key
+    )) || null;
+  }
+
+  function schedulerTargetOptionsHtml(selectedKey = '') {
+    const targets = (state.schedulerTargets || []).filter(target => target?.compatible !== false);
+    return targets.map(target => {
+      const key = schedulerTargetKey(target.kind, target.ref);
+      const kind = target.kind === 'virtual_path_rule' ? 'Rule' : 'Stack function';
+      return `<option value="${escHtml(key)}"${key === selectedKey ? ' selected' : ''}>${escHtml(`${kind}: ${target.display_name || target.ref}`)}</option>`;
+    }).join('');
+  }
+
+  function schedulerScheduleDefinition(schedule) {
+    return {
+      name: String(schedule?.name || ''),
+      target_kind: String(schedule?.target_kind || ''),
+      target_ref: String(schedule?.target_ref || ''),
+      target_config: schedule?.target_config || {},
+      schedule_kind: String(schedule?.schedule_kind || 'daily'),
+      schedule: schedule?.schedule || {},
+      timezone: String(schedule?.timezone || 'UTC'),
+      enabled: Boolean(schedule?.enabled),
+      policies: schedule?.policies || {},
+    };
+  }
+
+  function schedulerLocalDateTime(value) {
+    if (!value) return '';
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleString();
+  }
+
+  function patchSchedulerOwnedValues(root = document) {
+    const health = state.schedulerHealth || {};
+    root.querySelectorAll?.('[data-email-scheduler-health]').forEach(node => {
+      node.textContent = health.ok === false
+        ? `${health.stale_running_runs || 0} stale · ${health.recent_problem_runs || 0} recent problems`
+        : `${health.enabled_schedules || 0} enabled · ${health.queued_runs || 0} queued · ${health.running_runs || 0} running`;
+      node.dataset.state = health.ok === false ? 'error' : 'ok';
+    });
+    root.querySelectorAll?.('[data-email-scheduler-count]').forEach(node => {
+      node.textContent = `${state.schedulerSchedules.length} schedules`;
+    });
+    (state.schedulerSchedules || []).forEach(schedule => {
+      root.querySelectorAll?.(`[data-email-scheduler-row="${CSS.escape(String(schedule.schedule_id || ''))}"]`).forEach(row => {
+        const last = schedule.last_counts || {};
+        const values = {
+          state: schedule.last_status || (schedule.enabled ? 'enabled' : 'paused'),
+          next: schedule.next_run_at ? schedulerLocalDateTime(schedule.next_run_at) : 'Paused',
+          last: schedule.last_run_at ? schedulerLocalDateTime(schedule.last_run_at) : 'Never',
+          counts: `${last.candidate || 0} candidates · ${last.match || 0} matches · ${last.change || 0} changes · ${last.error || 0} errors`,
+          coverage: last.truncated ? 'Truncated' : last.coverage_complete === false ? 'Incomplete' : last.coverage_complete === true ? 'Complete' : 'Not run',
+        };
+        Object.entries(values).forEach(([key, value]) => {
+          row.querySelectorAll(`[data-email-scheduler-value="${key}"]`).forEach(node => {
+            node.textContent = value;
+          });
+        });
+      });
+    });
+  }
+
+  async function refreshSchedulerCatalog(options = {}) {
+    if (state.schedulerCatalogLoading) return state.schedulerCatalogFresh;
+    state.schedulerCatalogLoading = true;
+    state.schedulerError = '';
+    if (options.explicit) state.schedulerCatalogFresh = false;
+    try {
+      const [targets, schedules, health] = await Promise.all([
+        fetchJson(schedulerEndpoint('/targets')),
+        fetchJson(schedulerEndpoint('/schedules')),
+        fetchJson(schedulerEndpoint('/health')),
+      ]);
+      state.schedulerTargets = Array.isArray(targets.result?.targets) ? targets.result.targets : [];
+      state.schedulerSchedules = Array.isArray(schedules.result?.schedules) ? schedules.result.schedules : [];
+      state.schedulerHealth = health.result || null;
+      state.schedulerCatalogFresh = true;
+      return true;
+    } catch (error) {
+      state.schedulerError = error.message || String(error);
+      state.schedulerCatalogFresh = false;
+      return false;
+    } finally {
+      state.schedulerCatalogLoading = false;
+    }
+  }
+
+  async function refreshSchedulerStatus() {
+    if (state.schedulerStatusLoading || !state.schedulerCatalogFresh) return false;
+    state.schedulerStatusLoading = true;
+    try {
+      const [schedules, health] = await Promise.all([
+        fetchJson(schedulerEndpoint('/schedules')),
+        fetchJson(schedulerEndpoint('/health')),
+      ]);
+      state.schedulerSchedules = Array.isArray(schedules.result?.schedules) ? schedules.result.schedules : [];
+      state.schedulerHealth = health.result || null;
+      patchSchedulerOwnedValues();
+      return true;
+    } catch (error) {
+      state.schedulerError = error.message || String(error);
+      document.querySelectorAll('[data-email-scheduler-error]').forEach(node => {
+        node.textContent = state.schedulerError;
+      });
+      return false;
+    } finally {
+      state.schedulerStatusLoading = false;
+    }
+  }
+
+  function ensureSchedulerStatusTimer() {
+    if (state.schedulerStatusTimer) return;
+    state.schedulerStatusTimer = window.setInterval(() => {
+      if (state.secondaryTab === 'rules' && state.virtualPathRuleTool === 'scheduler') {
+        refreshSchedulerStatus();
+      }
+    }, SCHEDULER_STATUS_POLL_MS);
+  }
+
+  function schedulerDefinitionFromForm(form) {
+    const targetKey = String(form?.querySelector?.('[name="target_key"]')?.value || '');
+    const split = targetKey.indexOf('::');
+    if (split < 1) throw new Error('Choose a registered scheduler target.');
+    const scheduleKind = String(form.querySelector('[name="schedule_kind"]')?.value || 'daily');
+    const candidateLimit = Math.max(1, Math.min(Number(form.querySelector('[name="candidate_limit"]')?.value || 20000), 20000));
+    const scope = parseRuleJsonField(form, 'target_scope', {}, 'Target scope JSON');
+    scope.limit = candidateLimit;
+    let schedule;
+    if (scheduleKind === 'interval') {
+      schedule = { seconds: Math.max(60, Number(form.querySelector('[name="interval_minutes"]')?.value || 60) * 60) };
+    } else {
+      const [hour, minute] = String(form.querySelector('[name="daily_time"]')?.value || '04:00').split(':').map(Number);
+      schedule = { hour, minute };
+    }
+    return {
+      name: String(form.querySelector('[name="name"]')?.value || '').trim(),
+      target_kind: targetKey.slice(0, split),
+      target_ref: targetKey.slice(split + 2),
+      target_config: { candidate_limit: candidateLimit, scope },
+      schedule_kind: scheduleKind,
+      schedule,
+      timezone: String(form.querySelector('[name="timezone"]')?.value || 'UTC').trim(),
+      enabled: Boolean(form.querySelector('[name="enabled"]')?.checked),
+      policies: {
+        misfire_grace_seconds: Number(form.querySelector('[name="misfire_grace_seconds"]')?.value || 300),
+        catch_up_policy: String(form.querySelector('[name="catch_up_policy"]')?.value || 'bounded'),
+        max_catch_up: Number(form.querySelector('[name="max_catch_up"]')?.value || 1),
+        max_retries: Number(form.querySelector('[name="max_retries"]')?.value || 2),
+        retry_delay_seconds: Number(form.querySelector('[name="retry_delay_seconds"]')?.value || 60),
+        overlap_policy: String(form.querySelector('[name="overlap_policy"]')?.value || 'forbid'),
+        max_concurrency: Number(form.querySelector('[name="max_concurrency"]')?.value || 1),
+        lease_seconds: Number(form.querySelector('[name="lease_seconds"]')?.value || 300),
+      },
+      actor: 'email-ui',
+      source_surface: 'pim-email-ui',
+      request_id: `pim-email-scheduler-ui-${Date.now()}`,
+    };
+  }
+
+  async function saveSchedulerForm(form, scheduleId = '') {
+    try {
+      const definition = schedulerDefinitionFromForm(form);
+      setStatus(scheduleId ? 'Saving schedule' : 'Creating schedule', 'unknown');
+      await fetchJson(
+        scheduleId
+          ? schedulerEndpoint(`/schedules/${encodeURIComponent(scheduleId)}`)
+          : schedulerEndpoint('/schedules'),
+        {
+          method: scheduleId ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(definition),
+        },
+      );
+      await refreshSchedulerCatalog({ explicit: true });
+      renderSecondaryPanels();
+      renderUltrawide();
+      patchSchedulerOwnedValues();
+      setStatus(scheduleId ? 'Schedule saved' : 'Schedule created', 'ok');
+      return true;
+    } catch (error) {
+      setStatus(error.message || String(error), 'err');
+      return false;
+    }
+  }
+
+  async function schedulerMutation(scheduleId, action) {
+    const schedule = (state.schedulerSchedules || []).find(item => item.schedule_id === scheduleId);
+    if (!schedule) return false;
+    try {
+      if (action === 'history') {
+        const data = await fetchJson(`${schedulerEndpoint('/history')}?schedule_id=${encodeURIComponent(scheduleId)}&limit=100`);
+        state.schedulerHistory.set(scheduleId, Array.isArray(data.result?.runs) ? data.result.runs : []);
+        document.querySelectorAll(`[data-email-scheduler-row="${CSS.escape(scheduleId)}"] [data-email-scheduler-history]`).forEach(node => {
+          node.innerHTML = schedulerHistoryHtml(scheduleId);
+        });
+        return true;
+      }
+      if (action === 'preview' || action === 'run-now') {
+        const apply = action === 'run-now';
+        if (apply && !window.confirm(`Run ${schedule.name} now and allow target changes?`)) return false;
+        const data = await fetchJson(schedulerEndpoint(`/schedules/${encodeURIComponent(scheduleId)}/run-now`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dry_run: !apply, actor: 'email-ui', source_surface: 'pim-email-ui', request_id: `pim-email-scheduler-ui-${Date.now()}` }),
+        });
+        const message = `${apply ? 'Run' : 'Dry run'} queued: ${data.result?.run?.run_id || 'waiting for worker'}`;
+        state.schedulerPreview.set(scheduleId, message);
+        document.querySelectorAll(`[data-email-scheduler-row="${CSS.escape(scheduleId)}"] [data-email-scheduler-preview]`).forEach(node => {
+          node.textContent = message;
+        });
+        window.setTimeout(refreshSchedulerStatus, 2500);
+        return true;
+      }
+      if (action === 'toggle') {
+        await fetchJson(schedulerEndpoint(`/schedules/${encodeURIComponent(scheduleId)}`), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: !schedule.enabled, actor: 'email-ui', source_surface: 'pim-email-ui', request_id: `pim-email-scheduler-ui-${Date.now()}` }),
+        });
+      } else if (action === 'duplicate') {
+        await fetchJson(schedulerEndpoint(`/schedules/${encodeURIComponent(scheduleId)}/duplicate`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ actor: 'email-ui', source_surface: 'pim-email-ui', request_id: `pim-email-scheduler-ui-${Date.now()}` }),
+        });
+      } else {
+        return false;
+      }
+      await refreshSchedulerCatalog({ explicit: true });
+      renderSecondaryPanels();
+      renderUltrawide();
+      patchSchedulerOwnedValues();
+      setStatus(action === 'toggle' ? (schedule.enabled ? 'Schedule paused' : 'Schedule enabled') : 'Schedule duplicated', 'ok');
+      return true;
+    } catch (error) {
+      setStatus(error.message || String(error), 'err');
+      return false;
+    }
+  }
+
   async function createVirtualPathFromForm(form) {
     const input = form?.querySelector?.('[name="path"]');
     const parentInput = form?.querySelector?.('[name="parent_path"]');
@@ -5171,6 +5438,10 @@ const EmailPage = (() => {
 
   function renderVirtualPathRuleCatalogState() {
     const tool = normalizeRulesTool(state.virtualPathRuleTool);
+    if (tool === 'scheduler') {
+      patchSchedulerOwnedValues();
+      return;
+    }
     const listMode = tool === 'rules';
     const pathCount = Array.isArray(state.virtualPaths) ? state.virtualPaths.length : 0;
     const title = listMode ? virtualPathRuleCountSummary() : `${pathCount} paths available`;
@@ -6638,26 +6909,159 @@ const EmailPage = (() => {
     `;
   }
 
+  function schedulerHumanSchedule(schedule) {
+    if (schedule?.schedule_kind === 'interval') {
+      const seconds = Number(schedule?.schedule?.seconds || 0);
+      if (seconds % 3600 === 0) return `Every ${seconds / 3600} hour${seconds === 3600 ? '' : 's'}`;
+      return `Every ${Math.max(1, Math.round(seconds / 60))} minutes`;
+    }
+    const hour = String(schedule?.schedule?.hour ?? 0).padStart(2, '0');
+    const minute = String(schedule?.schedule?.minute ?? 0).padStart(2, '0');
+    return `Daily at ${hour}:${minute}`;
+  }
+
+  function schedulerFieldsHtml(schedule = null, prefix = 'create') {
+    const definition = schedulerScheduleDefinition(schedule || {});
+    const policies = definition.policies || {};
+    const targetConfig = definition.target_config || {};
+    const selectedTarget = schedulerTargetKey(definition.target_kind, definition.target_ref);
+    const daily = definition.schedule_kind !== 'interval';
+    const time = `${String(definition.schedule?.hour ?? 4).padStart(2, '0')}:${String(definition.schedule?.minute ?? 0).padStart(2, '0')}`;
+    const intervalMinutes = Math.max(1, Math.round(Number(definition.schedule?.seconds || 3600) / 60));
+    return `
+      <div class="email-scheduler-primary-grid">
+        <label><span>Schedule name</span><input name="name" data-email-preserve-focus="scheduler-${escHtml(prefix)}-name" value="${escHtml(definition.name)}" autocomplete="off" required></label>
+        <label><span>Target</span><select name="target_key" data-email-preserve-focus="scheduler-${escHtml(prefix)}-target" required><option value="">Choose a registered target</option>${schedulerTargetOptionsHtml(selectedTarget)}</select></label>
+        <label><span>Schedule</span><select name="schedule_kind" data-email-scheduler-kind data-email-preserve-focus="scheduler-${escHtml(prefix)}-kind"><option value="daily"${daily ? ' selected' : ''}>Daily wall time</option><option value="interval"${daily ? '' : ' selected'}>Fixed interval</option></select></label>
+        <label data-email-scheduler-daily${daily ? '' : ' hidden'}><span>Local time</span><input name="daily_time" type="time" value="${escHtml(time)}" data-email-preserve-focus="scheduler-${escHtml(prefix)}-time"></label>
+        <label data-email-scheduler-interval${daily ? ' hidden' : ''}><span>Interval minutes</span><input name="interval_minutes" type="number" min="1" max="525600" value="${intervalMinutes}" data-email-preserve-focus="scheduler-${escHtml(prefix)}-interval"></label>
+        <label><span>IANA timezone</span><input name="timezone" list="email-scheduler-timezones" value="${escHtml(definition.timezone || 'Europe/London')}" data-email-preserve-focus="scheduler-${escHtml(prefix)}-timezone" required></label>
+        <label><span>Candidate limit</span><input name="candidate_limit" type="number" min="1" max="20000" value="${Number(targetConfig.candidate_limit || 20000)}" data-email-preserve-focus="scheduler-${escHtml(prefix)}-limit"></label>
+      </div>
+      <label><span>Target scope JSON</span><textarea name="target_scope" spellcheck="false" data-email-preserve-focus="scheduler-${escHtml(prefix)}-scope">${escHtml(ruleJsonValue(targetConfig.scope || { virtual_paths: ['INBOX'], limit: Number(targetConfig.candidate_limit || 20000) }))}</textarea></label>
+      <details class="email-rule-edit-section" data-email-scheduler-policy-section>
+        <summary>Misfire, retry, overlap, and concurrency</summary>
+        <div class="email-scheduler-policy-grid">
+          <label><span>Misfire grace (seconds)</span><input name="misfire_grace_seconds" type="number" min="0" max="604800" value="${Number(policies.misfire_grace_seconds ?? 300)}"></label>
+          <label><span>Catch-up</span><select name="catch_up_policy"><option value="bounded"${policies.catch_up_policy === 'skip' ? '' : ' selected'}>Bounded</option><option value="skip"${policies.catch_up_policy === 'skip' ? ' selected' : ''}>Skip late</option></select></label>
+          <label><span>Max catch-up</span><input name="max_catch_up" type="number" min="0" max="24" value="${Number(policies.max_catch_up ?? 1)}"></label>
+          <label><span>Retries</span><input name="max_retries" type="number" min="0" max="10" value="${Number(policies.max_retries ?? 2)}"></label>
+          <label><span>Retry delay (seconds)</span><input name="retry_delay_seconds" type="number" min="1" max="86400" value="${Number(policies.retry_delay_seconds ?? 60)}"></label>
+          <label><span>Overlap</span><select name="overlap_policy"><option value="forbid"${policies.overlap_policy === 'skip' ? '' : ' selected'}>Queue / forbid overlap</option><option value="skip"${policies.overlap_policy === 'skip' ? ' selected' : ''}>Skip overlap</option></select></label>
+          <label><span>Max concurrency</span><input name="max_concurrency" type="number" min="1" max="16" value="${Number(policies.max_concurrency ?? 1)}"></label>
+          <label><span>Lease (seconds)</span><input name="lease_seconds" type="number" min="30" max="86400" value="${Number(policies.lease_seconds ?? 300)}"></label>
+        </div>
+      </details>
+      <label class="hub-checkbox email-scheduler-enabled">
+        <input class="hub-checkbox__input" name="enabled" type="checkbox"${definition.enabled ? ' checked' : ''}>
+        <span class="hub-checkbox__box" aria-hidden="true"></span>
+        <span class="hub-checkbox__label">Enabled after save</span>
+      </label>
+    `;
+  }
+
+  function schedulerHistoryHtml(scheduleId) {
+    const history = state.schedulerHistory.get(scheduleId) || [];
+    if (!history.length) return '<div class="email-empty">History has not been loaded.</div>';
+    return history.map(run => `
+      <div class="email-scheduler-history-row">
+        <span>${escHtml(schedulerLocalDateTime(run.started_at || run.created_at))}</span>
+        <strong>${escHtml(run.status || '')}</strong>
+        <span>${Number(run.candidate_count || 0)} candidates</span>
+        <span>${Number(run.matched_count || 0)} matches</span>
+        <span>${Number(run.changed_count || 0)} changes</span>
+        <span>${run.truncated ? 'truncated' : run.coverage_complete === false ? 'incomplete' : 'complete'}</span>
+      </div>
+    `).join('');
+  }
+
+  function schedulerRowHtml(schedule) {
+    const scheduleId = String(schedule?.schedule_id || '');
+    const target = schedulerTargetFor(schedule);
+    const last = schedule?.last_counts || {};
+    const expanded = state.schedulerExpanded.has(scheduleId);
+    const preview = state.schedulerPreview.get(scheduleId);
+    return `
+      <details class="email-rule-row email-scheduler-row" data-email-scheduler-row="${escHtml(scheduleId)}"${expanded ? ' open' : ''}>
+        <summary>
+          <span class="email-rule-summary-main"><strong>${escHtml(schedule?.name || 'Schedule')}</strong><span>${escHtml(target?.display_name || schedule?.target_ref || '')}</span></span>
+          <span class="email-scheduler-state" data-email-scheduler-value="state">${escHtml(schedule?.last_status || (schedule?.enabled ? 'enabled' : 'paused'))}</span>
+          <span>${escHtml(schedulerHumanSchedule(schedule))} · ${escHtml(schedule?.timezone || 'UTC')}</span>
+        </summary>
+        <div class="email-scheduler-status-grid">
+          <span><small>Next</small><strong data-email-scheduler-value="next">${escHtml(schedule?.next_run_at ? schedulerLocalDateTime(schedule.next_run_at) : 'Paused')}</strong></span>
+          <span><small>Last</small><strong data-email-scheduler-value="last">${escHtml(schedule?.last_run_at ? schedulerLocalDateTime(schedule.last_run_at) : 'Never')}</strong></span>
+          <span><small>Counts</small><strong data-email-scheduler-value="counts">${Number(last.candidate || 0)} candidates · ${Number(last.match || 0)} matches · ${Number(last.change || 0)} changes · ${Number(last.error || 0)} errors</strong></span>
+          <span><small>Coverage</small><strong data-email-scheduler-value="coverage">${last.truncated ? 'Truncated' : last.coverage_complete === false ? 'Incomplete' : last.coverage_complete === true ? 'Complete' : 'Not run'}</strong></span>
+        </div>
+        <div class="email-scheduler-actions">
+          <button class="hub-action-btn" type="button" data-email-scheduler-action="preview" data-schedule-id="${escHtml(scheduleId)}">Preview target</button>
+          <button class="hub-action-btn" type="button" data-email-scheduler-action="run-now" data-schedule-id="${escHtml(scheduleId)}">Run now</button>
+          <button class="hub-action-btn" type="button" data-email-scheduler-action="toggle" data-schedule-id="${escHtml(scheduleId)}">${schedule?.enabled ? 'Pause' : 'Enable'}</button>
+          <button class="hub-action-btn" type="button" data-email-scheduler-action="duplicate" data-schedule-id="${escHtml(scheduleId)}">Duplicate</button>
+          <button class="hub-action-btn" type="button" data-email-scheduler-action="history" data-schedule-id="${escHtml(scheduleId)}">History</button>
+        </div>
+        <div class="email-scheduler-preview" data-email-scheduler-preview>${preview ? escHtml(preview) : ''}</div>
+        <form class="email-rule-form email-rule-form--wide email-scheduler-edit-form" data-email-scheduler-edit-form data-schedule-id="${escHtml(scheduleId)}">
+          ${schedulerFieldsHtml(schedule, scheduleId)}
+          <button class="hub-action-btn hub-primary" type="submit">Save schedule</button>
+        </form>
+        <div class="email-scheduler-history" data-email-scheduler-history>${schedulerHistoryHtml(scheduleId)}</div>
+      </details>
+    `;
+  }
+
+  function schedulerToolHtml() {
+    if (state.schedulerCatalogLoading) {
+      return '<section class="email-rule-card email-rule-tool-panel" data-email-rules-tool-panel="scheduler"><div class="email-empty">Refreshing the stack-owned scheduler catalog before mounting controls.</div></section>';
+    }
+    if (!state.schedulerCatalogFresh) {
+      return `<section class="email-rule-card email-rule-tool-panel" data-email-rules-tool-panel="scheduler"><div class="email-error" data-email-scheduler-error>${escHtml(state.schedulerError || 'Scheduler catalog freshness could not be established. Controls are unavailable.')}</div></section>`;
+    }
+    return `
+      <section class="email-rule-card email-rule-tool-panel email-scheduler-tool" data-email-rules-tool-panel="scheduler">
+        <div class="email-scheduler-health-row"><strong>Scheduler</strong><span data-email-scheduler-health></span><span data-email-scheduler-count>${state.schedulerSchedules.length} schedules</span></div>
+        <datalist id="email-scheduler-timezones"><option value="UTC"><option value="Europe/London"><option value="America/New_York"><option value="America/Los_Angeles"><option value="Australia/Sydney"></datalist>
+        <details class="email-rule-row email-scheduler-create" data-email-scheduler-create-section>
+          <summary>Create schedule</summary>
+          <form class="email-rule-form email-rule-form--wide" data-email-scheduler-create-form>
+            ${schedulerFieldsHtml(null, 'create')}
+            <button class="hub-action-btn hub-primary" type="submit">Create schedule</button>
+          </form>
+        </details>
+        <div class="email-scheduler-list" data-email-scheduler-list>
+          ${state.schedulerSchedules.length ? state.schedulerSchedules.map(schedulerRowHtml).join('') : '<div class="email-empty">No schedules yet.</div>'}
+        </div>
+      </section>
+    `;
+  }
+
   function rulesToolPanelHtml(defaultScopeMode) {
     const tool = normalizeRulesTool(state.virtualPathRuleTool);
     if (tool === 'paths') return rulesPathsToolHtml();
     if (tool === 'bulk') return rulesBulkToolHtml();
     if (tool === 'create') return rulesCreateToolHtml();
     if (tool === 'apply') return rulesApplyToolHtml(defaultScopeMode);
+    if (tool === 'scheduler') return schedulerToolHtml();
     return '';
   }
 
   function rulesPanelHtml() {
     const tool = normalizeRulesTool(state.virtualPathRuleTool);
     const listMode = tool === 'rules';
+    const schedulerMode = tool === 'scheduler';
     const loading = state.virtualPathRulesLoading ? '<div class="email-empty">Loading virtual-path rules.</div>' : '';
     const error = state.virtualPathRulesError ? `<div class="email-error">${escHtml(state.virtualPathRulesError)}</div>` : '';
     const pathCount = Array.isArray(state.virtualPaths) ? state.virtualPaths.length : 0;
     const lastRun = state.virtualPathRuleLastRun?.run;
     const defaultScopeMode = rulesApplyScopeDefaultMode();
     const helpKind = tool === 'bulk' || tool === 'paths' ? tool : '';
-    const toolbarTitle = listMode ? virtualPathRuleCountSummary() : `${pathCount} paths available`;
-    const toolbarMeta = listMode ? `${pathCount} paths` : '';
+    const toolbarTitle = listMode
+      ? virtualPathRuleCountSummary()
+      : schedulerMode
+        ? `${state.schedulerSchedules.length} schedules`
+        : `${pathCount} paths available`;
+    const toolbarMeta = listMode ? `${pathCount} paths` : schedulerMode ? 'Stack-owned worker' : '';
     return `
       <section class="email-rules-panel">
         <div class="email-rules-toolbar${listMode ? '' : ' email-rules-toolbar--tool'}">
@@ -7500,11 +7904,25 @@ const EmailPage = (() => {
     return true;
   }
 
-  function setRulesTool(tool) {
+  async function setRulesTool(tool) {
     readVirtualPathRuleDrafts();
-    state.virtualPathRuleTool = normalizeRulesTool(tool);
+    const clean = normalizeRulesTool(tool);
+    state.virtualPathRuleTool = clean;
     state.secondaryTab = 'rules';
     closeRulesToolMenus();
+    if (clean === 'scheduler') {
+      state.schedulerCatalogLoading = true;
+      state.schedulerCatalogFresh = false;
+      renderSecondaryPanels();
+      renderUltrawide();
+      state.schedulerCatalogLoading = false;
+      await refreshSchedulerCatalog({ explicit: true });
+      renderSecondaryPanels();
+      renderUltrawide();
+      patchSchedulerOwnedValues();
+      ensureSchedulerStatusTimer();
+      return state.schedulerCatalogFresh;
+    }
     renderSecondaryPanels();
     renderUltrawide();
     if (!state.virtualPathRulesLoaded) refreshVirtualPathRules({ silent: true });
@@ -7997,7 +8415,16 @@ const EmailPage = (() => {
       const uid = state.messageContextUids?.[0] || activeMessageUid() || '';
       return openVirtualPathRulesForMessage(uid);
     }
-    if (action === 'refresh-vpath-rules') return refreshVirtualPathRules();
+    if (action === 'refresh-vpath-rules') {
+      if (state.virtualPathRuleTool === 'scheduler') {
+        return refreshSchedulerCatalog({ explicit: true }).then(() => {
+          renderSecondaryPanels();
+          renderUltrawide();
+          patchSchedulerOwnedValues();
+        });
+      }
+      return refreshVirtualPathRules();
+    }
     if (action === 'show-message-uid') return showMessageUid();
     if (action === 'copy-selected-message-uids') return copySelectedMessageUids();
     if (action === 'toggle-original-image-buttons') return toggleOriginalImageButtons();
@@ -8287,6 +8714,15 @@ const EmailPage = (() => {
         setRulesTool(rulesToolOption.dataset.emailRulesToolOption || 'rules');
         return;
       }
+      const schedulerAction = target.closest?.('[data-email-scheduler-action]');
+      if (schedulerAction) {
+        event.preventDefault();
+        schedulerMutation(
+          String(schedulerAction.dataset.scheduleId || ''),
+          String(schedulerAction.dataset.emailSchedulerAction || ''),
+        );
+        return;
+      }
       const tabBtn = target.closest?.('[data-email-secondary-tab]');
       if (tabBtn) {
         event.preventDefault();
@@ -8519,6 +8955,14 @@ const EmailPage = (() => {
         syncVirtualPathScopeControls(vpathScopeMode.closest('form'));
         return;
       }
+      const schedulerKind = event.target.closest?.('[data-email-scheduler-kind]');
+      if (schedulerKind) {
+        const form = schedulerKind.closest('form');
+        const daily = schedulerKind.value !== 'interval';
+        form?.querySelectorAll?.('[data-email-scheduler-daily]').forEach(node => { node.hidden = !daily; });
+        form?.querySelectorAll?.('[data-email-scheduler-interval]').forEach(node => { node.hidden = daily; });
+        return;
+      }
       const ruleEditForm = event.target.closest?.('[data-email-rule-edit-form]');
       if (ruleEditForm) {
         readVirtualPathRuleDrafts(ruleEditForm);
@@ -8596,11 +9040,30 @@ const EmailPage = (() => {
         applyVirtualPathRulesFromForm(ruleApplyForm);
         return;
       }
+      const schedulerCreateForm = event.target.closest?.('[data-email-scheduler-create-form]');
+      if (schedulerCreateForm) {
+        event.preventDefault();
+        saveSchedulerForm(schedulerCreateForm);
+        return;
+      }
+      const schedulerEditForm = event.target.closest?.('[data-email-scheduler-edit-form]');
+      if (schedulerEditForm) {
+        event.preventDefault();
+        saveSchedulerForm(schedulerEditForm, String(schedulerEditForm.dataset.scheduleId || ''));
+        return;
+      }
       const form = event.target.closest?.('[data-email-trusted-add-form]');
       if (!form) return;
       event.preventDefault();
       addTrustedSenderFromForm(form);
     });
+    document.addEventListener('toggle', event => {
+      const row = event.target.closest?.('[data-email-scheduler-row]');
+      if (!row) return;
+      const scheduleId = String(row.dataset.emailSchedulerRow || '');
+      if (row.open) state.schedulerExpanded.add(scheduleId);
+      else state.schedulerExpanded.delete(scheduleId);
+    }, true);
     document.addEventListener('pointerdown', event => {
       const node = event.target.closest?.('[data-email-vpath-tree-node]');
       if (!node) return;
@@ -8783,6 +9246,11 @@ const EmailPage = (() => {
       audit_ledger_last_opened_at: state.auditLedgerHistory?.state?.last_opened_at || '',
       view: state.view,
       secondary_tab: state.secondaryTab,
+      rules_tool: state.virtualPathRuleTool,
+      scheduler_catalog_fresh: state.schedulerCatalogFresh,
+      scheduler_schedule_count: state.schedulerSchedules.length,
+      scheduler_health: state.schedulerHealth,
+      scheduler_expanded_ids: Array.from(state.schedulerExpanded),
       list_collapsed: state.listCollapsed,
       activity_heartbeat_active: activityHeartbeatActive(),
       activity_heartbeat: state.activityHeartbeat,

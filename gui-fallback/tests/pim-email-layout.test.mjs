@@ -162,7 +162,10 @@ test('PIM Email viewport rules match Dave and Kanban precedent', () => {
 
 test('PIM Email Rules form controls have explicit input-baseline alignment', () => {
   const catalogRefreshStart = emailJs.indexOf('async function refreshVirtualPathRules');
-  const catalogRefreshEnd = emailJs.indexOf('async function createVirtualPathFromForm', catalogRefreshStart);
+  const schedulerHelpersStart = emailJs.indexOf('function schedulerTargetKey', catalogRefreshStart);
+  const catalogRefreshEnd = schedulerHelpersStart === -1
+    ? emailJs.indexOf('async function createVirtualPathFromForm', catalogRefreshStart)
+    : schedulerHelpersStart;
   const catalogRefreshSlice = emailJs.slice(catalogRefreshStart, catalogRefreshEnd);
 
   assert.match(
@@ -227,9 +230,32 @@ test('PIM Email Rules form controls have explicit input-baseline alignment', () 
   );
 });
 
+test('PIM Email Scheduler mounts from a fresh stack catalog and patches passive status in place', () => {
+  const passiveStart = emailJs.indexOf('async function refreshSchedulerStatus');
+  const passiveEnd = emailJs.indexOf('function ensureSchedulerStatusTimer', passiveStart);
+  const passiveSlice = emailJs.slice(passiveStart, passiveEnd);
+  const setToolStart = emailJs.indexOf('async function setRulesTool');
+  const setToolEnd = emailJs.indexOf('function setView', setToolStart);
+  const setToolSlice = emailJs.slice(setToolStart, setToolEnd);
+
+  assert.match(emailJs, /\['scheduler', 'Scheduler'\]/, 'Rules dropdown/subtabs must expose Scheduler on every responsive surface.');
+  assert.match(setToolSlice, /schedulerCatalogFresh = false[\s\S]*await refreshSchedulerCatalog\(\{ explicit: true \}\)[\s\S]*renderSecondaryPanels\(\)/, 'Scheduler must establish a fresh stack target catalog before mounting its controls.');
+  assert.match(emailJs, /Scheduler catalog freshness could not be established\. Controls are unavailable\./, 'A failed target catalog refresh must fail closed.');
+  assert.match(passiveSlice, /fetchJson\(schedulerEndpoint\('\/schedules'\)\)[\s\S]*patchSchedulerOwnedValues\(\)/, 'Passive scheduler status must patch response-owned nodes.');
+  assert.doesNotMatch(passiveSlice, /renderSecondaryPanels\(\)|renderUltrawide\(\)|innerHTML\s*=\s*schedulerToolHtml/, 'Passive scheduler status must not remount forms.');
+  assert.match(emailJs, /data-email-scheduler-create-form[\s\S]*data-email-scheduler-edit-form/, 'Scheduler must expose create and accordion edit forms.');
+  assert.match(emailJs, /data-email-scheduler-action="preview"[\s\S]*data-email-scheduler-action="run-now"[\s\S]*data-email-scheduler-action="toggle"[\s\S]*data-email-scheduler-action="duplicate"[\s\S]*data-email-scheduler-action="history"/, 'Scheduler rows must expose all operator actions.');
+  assert.match(emailJs, /class="hub-checkbox email-scheduler-enabled"[\s\S]*class="hub-checkbox__input"/, 'Scheduler enabled state must use the shared checkbox.');
+  assert.match(emailCss, /\.email-scheduler-actions \.hub-action-btn,[\s\S]*block-size:\s*var\(--email-rules-control-height\)[\s\S]*height:\s*var\(--email-rules-control-height\)/, 'Scheduler buttons must share the explicit input baseline.');
+  assert.match(emailCss, /@media\s*\(max-width:\s*820px\)[\s\S]*\.email-scheduler-primary-grid,[\s\S]*\.email-scheduler-policy-grid,[\s\S]*\.email-scheduler-status-grid,[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/, 'Scheduler must stack locally on mobile without horizontal form shifts.');
+});
+
 test('PIM Email virtual-path picker refreshes its catalog before mounting', () => {
   const catalogRefreshStart = emailJs.indexOf('async function refreshVirtualPathCatalog');
-  const catalogRefreshEnd = emailJs.indexOf('async function createVirtualPathFromForm', catalogRefreshStart);
+  const schedulerHelpersStart = emailJs.indexOf('function schedulerTargetKey', catalogRefreshStart);
+  const catalogRefreshEnd = schedulerHelpersStart === -1
+    ? emailJs.indexOf('async function createVirtualPathFromForm', catalogRefreshStart)
+    : schedulerHelpersStart;
   const catalogRefreshSlice = emailJs.slice(catalogRefreshStart, catalogRefreshEnd);
   const pickerOpenStart = emailJs.indexOf('async function openVirtualPathTreePicker');
   const pickerOpenEnd = emailJs.indexOf('function closeVirtualPathTreePicker', pickerOpenStart);

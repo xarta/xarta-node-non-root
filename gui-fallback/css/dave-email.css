@@ -2645,6 +2645,10 @@ dialog.hub-modal.email-audit-ledger-modal[open] {
   gap: 5px;
 }
 
+.email-rule-form [hidden] {
+  display: none;
+}
+
 .email-rule-form label.hub-checkbox {
   align-items: center;
   display: inline-flex;
@@ -2993,6 +2997,147 @@ dialog.hub-modal.email-audit-ledger-modal[open] {
   gap: 6px;
   grid-template-columns: minmax(80px, auto) minmax(70px, auto) minmax(0, 1fr);
   min-width: 0;
+}
+
+.email-scheduler-tool,
+.email-scheduler-list,
+.email-scheduler-edit-form,
+.email-scheduler-history {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.email-scheduler-health-row,
+.email-scheduler-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.email-scheduler-health-row {
+  background-color: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.16);
+  border-radius: var(--radius);
+  justify-content: space-between;
+  padding: 9px 10px;
+}
+
+.email-scheduler-health-row [data-state="error"],
+.email-scheduler-row [data-email-scheduler-value="coverage"]:is(:not(:empty)) {
+  color: var(--text);
+}
+
+.email-scheduler-create,
+.email-scheduler-row {
+  cursor: default;
+}
+
+.email-scheduler-create > summary,
+.email-scheduler-row > summary {
+  align-items: center;
+  cursor: pointer;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(180px, auto);
+  list-style-position: inside;
+  min-width: 0;
+}
+
+.email-rule-summary-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.email-rule-summary-main span,
+.email-scheduler-row > summary > span {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.email-scheduler-state {
+  background-color: rgba(var(--hub-accent-rgb), 0.1);
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.24);
+  border-radius: 999px;
+  padding: 4px 8px;
+}
+
+.email-scheduler-primary-grid,
+.email-scheduler-policy-grid,
+.email-scheduler-status-grid {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.email-scheduler-primary-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.email-scheduler-policy-grid {
+  grid-template-columns: repeat(4, minmax(110px, 1fr));
+  padding-top: 10px;
+}
+
+.email-scheduler-status-grid {
+  align-items: stretch;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.email-scheduler-status-grid > span {
+  background-color: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.12);
+  border-radius: var(--radius);
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 7px;
+}
+
+.email-scheduler-status-grid small {
+  color: var(--text-dim);
+}
+
+.email-scheduler-status-grid strong {
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.email-scheduler-actions .hub-action-btn,
+.email-scheduler-edit-form > .hub-action-btn,
+.email-scheduler-create .email-rule-form > .hub-action-btn {
+  block-size: var(--email-rules-control-height);
+  height: var(--email-rules-control-height);
+  min-block-size: var(--email-rules-control-height);
+  min-height: var(--email-rules-control-height);
+}
+
+.email-scheduler-preview {
+  color: var(--hub-accent);
+  font-size: 0.78rem;
+  min-height: 1em;
+  overflow-wrap: anywhere;
+}
+
+.email-scheduler-history-row {
+  align-items: center;
+  border-top: 1px solid rgba(var(--hub-accent-rgb), 0.1);
+  display: grid;
+  font-size: 0.76rem;
+  gap: 6px;
+  grid-template-columns: minmax(140px, 1fr) repeat(5, auto);
+  min-width: 0;
+  padding-top: 6px;
+}
+
+.email-scheduler-enabled {
+  margin-top: 2px;
 }
 
 .email-rule-danger {
@@ -3432,6 +3577,23 @@ dialog.hub-modal.email-vpath-help-modal {
   .email-rule-detail-grid,
   .email-rule-audit-row {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .email-scheduler-create > summary,
+  .email-scheduler-row > summary,
+  .email-scheduler-primary-grid,
+  .email-scheduler-policy-grid,
+  .email-scheduler-status-grid,
+  .email-scheduler-history-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .email-scheduler-actions {
+    align-items: stretch;
+  }
+
+  .email-scheduler-actions .hub-action-btn {
+    flex: 1 1 140px;
   }
 
   .email-rule-create-primary-grid {
