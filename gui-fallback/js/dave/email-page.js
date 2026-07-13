@@ -234,13 +234,19 @@ const EmailPage = (() => {
     virtualPathRuleContextPreview: null,
     schedulerTargets: [],
     schedulerSchedules: [],
+    schedulerRuleSets: [],
     schedulerHealth: null,
     schedulerCatalogFresh: false,
     schedulerCatalogLoading: false,
     schedulerStatusLoading: false,
     schedulerError: '',
     schedulerExpanded: new Set(),
+    schedulerRuleSetExpanded: new Set(),
+    schedulerRuleSetDrafts: new Map(),
+    schedulerRuleSetMessages: new Map(),
+    schedulerRuleSetDrag: null,
     schedulerHistory: new Map(),
+    schedulerRunDetails: new Map(),
     schedulerPreview: new Map(),
     schedulerStatusTimer: null,
     virtualPathEditorOpen: false,
@@ -4890,13 +4896,167 @@ const EmailPage = (() => {
     )) || null;
   }
 
+  function schedulerTargetKindLabel(kind) {
+    if (kind === 'virtual_path_rule') return 'Rule';
+    if (kind === 'virtual_path_rule_set') return 'Rule set';
+    return 'Stack function';
+  }
+
   function schedulerTargetOptionsHtml(selectedKey = '') {
     const targets = (state.schedulerTargets || []).filter(target => target?.compatible !== false);
     return targets.map(target => {
       const key = schedulerTargetKey(target.kind, target.ref);
-      const kind = target.kind === 'virtual_path_rule' ? 'Rule' : 'Stack function';
+      const kind = schedulerTargetKindLabel(target.kind);
       return `<option value="${escHtml(key)}"${key === selectedKey ? ' selected' : ''}>${escHtml(`${kind}: ${target.display_name || target.ref}`)}</option>`;
     }).join('');
+  }
+
+  function schedulerRuleCatalog() {
+    return (state.schedulerTargets || []).filter(target => (
+      target?.kind === 'virtual_path_rule'
+      && target?.status === 'active'
+      && target?.compatible !== false
+    ));
+  }
+
+  function schedulerRuleSetFor(ruleSetId) {
+    return (state.schedulerRuleSets || []).find(ruleSet => ruleSet?.rule_set_id === ruleSetId) || null;
+  }
+
+  function schedulerRuleSetSchedules(ruleSetId) {
+    return (state.schedulerSchedules || []).filter(schedule => (
+      schedule?.target_kind === 'virtual_path_rule_set'
+      && schedule?.target_ref === ruleSetId
+      && !schedule?.archived_at
+    ));
+  }
+
+  function schedulerRuleSetState(ruleSet) {
+    if (ruleSet?.status !== 'active' || ruleSet?.archived_at) return 'archived';
+    if (!ruleSet?.members?.length || ruleSet.members.some(member => member?.compatible === false)) return 'error';
+    return 'active';
+  }
+
+  function schedulerRuleSetDraftKey(ruleSetOrId) {
+    if (typeof ruleSetOrId === 'string') return ruleSetOrId || 'create';
+    return String(ruleSetOrId?.rule_set_id || 'create');
+  }
+
+  function schedulerRuleSetDraft(ruleSet = null) {
+    const key = schedulerRuleSetDraftKey(ruleSet);
+    const stored = state.schedulerRuleSetDrafts.get(key);
+    if (stored) return stored;
+    return {
+      display_name: String(ruleSet?.display_name || ''),
+      description: String(ruleSet?.description || ''),
+      expected_version: Number(ruleSet?.version || 0),
+      rule_ids: Array.isArray(ruleSet?.members)
+        ? ruleSet.members.map(member => String(member?.rule_id || '')).filter(Boolean)
+        : [],
+      dirty: false,
+    };
+  }
+
+  function readSchedulerRuleSetDraft(form) {
+    if (!form) return null;
+    const key = schedulerRuleSetDraftKey(form.dataset.ruleSetId || 'create');
+    const draft = {
+      display_name: String(form.querySelector('[name="display_name"]')?.value || ''),
+      description: String(form.querySelector('[name="description"]')?.value || ''),
+      expected_version: Number(form.querySelector('[name="expected_version"]')?.value || 0),
+      rule_ids: Array.from(form.querySelectorAll('[data-email-rule-set-member]'))
+        .map(node => String(node.dataset.ruleId || ''))
+        .filter(Boolean),
+      dirty: true,
+    };
+    state.schedulerRuleSetDrafts.set(key, draft);
+    return draft;
+  }
+
+  function schedulerRuleSetMemberHtml(ruleId, index, total) {
+    const target = schedulerTargetFor(schedulerTargetKey('virtual_path_rule', ruleId));
+    const name = target?.display_name || ruleId;
+    return `
+      <div class="email-rule-set-member" draggable="true" tabindex="0" data-email-rule-set-member data-rule-id="${escHtml(ruleId)}">
+        <span class="email-rule-set-drag-handle" aria-hidden="true" title="Drag to reorder">&#8942;&#8942;</span>
+        <span class="email-rule-set-member-position">${index + 1}</span>
+        <span class="email-rule-set-member-name"><strong>${escHtml(name)}</strong><small>${escHtml(ruleId)}</small></span>
+        <div class="email-rule-set-member-actions">
+          <button class="hub-action-btn" type="button" data-email-rule-set-member-action="up" aria-label="Move ${escHtml(name)} up"${index === 0 ? ' disabled' : ''}>Up</button>
+          <button class="hub-action-btn" type="button" data-email-rule-set-member-action="down" aria-label="Move ${escHtml(name)} down"${index === total - 1 ? ' disabled' : ''}>Down</button>
+          <button class="hub-action-btn email-rule-danger" type="button" data-email-rule-set-member-action="remove" aria-label="Remove ${escHtml(name)}">Remove</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function schedulerRuleSetAddOptionsHtml(ruleIds) {
+    const selected = new Set(ruleIds || []);
+    return schedulerRuleCatalog()
+      .filter(rule => !selected.has(String(rule.ref || '')))
+      .map(rule => `<option value="${escHtml(rule.ref)}">${escHtml(rule.display_name || rule.ref)}</option>`)
+      .join('');
+  }
+
+  function schedulerRuleSetFieldsHtml(ruleSet = null) {
+    const key = schedulerRuleSetDraftKey(ruleSet);
+    const draft = schedulerRuleSetDraft(ruleSet);
+    const ruleIds = Array.from(new Set(draft.rule_ids || []));
+    return `
+      <input name="expected_version" type="hidden" value="${Number(draft.expected_version || 0)}">
+      <div class="email-rule-set-primary-grid">
+        <label><span>Set name</span><input name="display_name" data-email-preserve-focus="rule-set-${escHtml(key)}-name" value="${escHtml(draft.display_name)}" autocomplete="off" required></label>
+        <label><span>Description</span><textarea name="description" data-email-preserve-focus="rule-set-${escHtml(key)}-description">${escHtml(draft.description)}</textarea></label>
+      </div>
+      <div class="email-rule-set-members-heading"><strong>Rules in execution order</strong><span>${ruleIds.length} selected</span></div>
+      <div class="email-rule-set-members" data-email-rule-set-members>
+        ${ruleIds.length
+          ? ruleIds.map((ruleId, index) => schedulerRuleSetMemberHtml(ruleId, index, ruleIds.length)).join('')
+          : '<div class="email-empty" data-email-rule-set-empty>Add at least one active rule. A set executes members in the order shown.</div>'}
+      </div>
+      <div class="email-rule-set-add-row">
+        <select data-email-rule-set-add-select aria-label="Active rule to add"><option value="">Choose an active rule</option>${schedulerRuleSetAddOptionsHtml(ruleIds)}</select>
+        <button class="hub-action-btn" type="button" data-email-rule-set-member-action="add">Add rule</button>
+      </div>
+      <div class="email-rule-set-form-actions">
+        <button class="hub-action-btn" type="button" data-email-rule-set-form-action="validate">Validate set</button>
+        <button class="hub-action-btn hub-primary" type="submit">${ruleSet ? 'Save set' : 'Create set'}</button>
+      </div>
+    `;
+  }
+
+  function renumberSchedulerRuleSetMembers(form) {
+    const rows = Array.from(form?.querySelectorAll?.('[data-email-rule-set-member]') || []);
+    rows.forEach((row, index) => {
+      const position = row.querySelector('.email-rule-set-member-position');
+      if (position) position.textContent = String(index + 1);
+      const up = row.querySelector('[data-email-rule-set-member-action="up"]');
+      const down = row.querySelector('[data-email-rule-set-member-action="down"]');
+      if (up) up.disabled = index === 0;
+      if (down) down.disabled = index === rows.length - 1;
+    });
+    const heading = form?.querySelector?.('.email-rule-set-members-heading span');
+    if (heading) heading.textContent = `${rows.length} selected`;
+    const list = form?.querySelector?.('[data-email-rule-set-members]');
+    const empty = list?.querySelector?.('[data-email-rule-set-empty]');
+    if (rows.length && empty) empty.remove();
+    if (!rows.length && list && !empty) {
+      list.insertAdjacentHTML('beforeend', '<div class="email-empty" data-email-rule-set-empty>Add at least one active rule. A set executes members in the order shown.</div>');
+    }
+    const select = form?.querySelector?.('[data-email-rule-set-add-select]');
+    if (select) {
+      const ids = rows.map(row => String(row.dataset.ruleId || ''));
+      select.innerHTML = `<option value="">Choose an active rule</option>${schedulerRuleSetAddOptionsHtml(ids)}`;
+    }
+  }
+
+  function patchSchedulerRuleSetMessage(ruleSetId, message, stateName = '') {
+    const key = schedulerRuleSetDraftKey(ruleSetId);
+    state.schedulerRuleSetMessages.set(key, { message, state: stateName });
+    document.querySelectorAll(`[data-email-rule-set-message="${CSS.escape(key)}"]`).forEach(node => {
+      node.textContent = message;
+      node.dataset.state = stateName;
+    });
   }
 
   function schedulerScheduleDefinition(schedule) {
@@ -4955,13 +5115,15 @@ const EmailPage = (() => {
     state.schedulerError = '';
     if (options.explicit) state.schedulerCatalogFresh = false;
     try {
-      const [targets, schedules, health] = await Promise.all([
+      const [targets, schedules, health, ruleSets] = await Promise.all([
         fetchJson(schedulerEndpoint('/targets')),
         fetchJson(schedulerEndpoint('/schedules')),
         fetchJson(schedulerEndpoint('/health')),
+        fetchJson(`${schedulerEndpoint('/rule-sets')}?include_archived=true`),
       ]);
       state.schedulerTargets = Array.isArray(targets.result?.targets) ? targets.result.targets : [];
       state.schedulerSchedules = Array.isArray(schedules.result?.schedules) ? schedules.result.schedules : [];
+      state.schedulerRuleSets = Array.isArray(ruleSets.result?.rule_sets) ? ruleSets.result.rule_sets : [];
       state.schedulerHealth = health.result || null;
       state.schedulerCatalogFresh = true;
       return true;
@@ -5112,6 +5274,13 @@ const EmailPage = (() => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ actor: 'email-ui', source_surface: 'pim-email-ui', request_id: `pim-email-scheduler-ui-${Date.now()}` }),
         });
+      } else if (action === 'archive') {
+        if (!window.confirm(`Archive schedule ${schedule.name}? Its append-only run history will remain available through the stack API.`)) return false;
+        await fetchJson(schedulerEndpoint(`/schedules/${encodeURIComponent(scheduleId)}/archive`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ actor: 'email-ui', source_surface: 'pim-email-ui', request_id: `pim-email-scheduler-ui-${Date.now()}` }),
+        });
       } else {
         return false;
       }
@@ -5119,9 +5288,204 @@ const EmailPage = (() => {
       renderSecondaryPanels();
       renderUltrawide();
       patchSchedulerOwnedValues();
-      setStatus(action === 'toggle' ? (schedule.enabled ? 'Schedule paused' : 'Schedule enabled') : 'Schedule duplicated', 'ok');
+      setStatus(
+        action === 'toggle'
+          ? (schedule.enabled ? 'Schedule paused' : 'Schedule enabled')
+          : action === 'archive' ? 'Schedule archived' : 'Schedule duplicated',
+        'ok',
+      );
       return true;
     } catch (error) {
+      setStatus(error.message || String(error), 'err');
+      return false;
+    }
+  }
+
+  async function loadSchedulerRunDetail(runId) {
+    const cleanId = String(runId || '');
+    if (!cleanId) return false;
+    try {
+      const data = await fetchJson(schedulerEndpoint(`/runs/${encodeURIComponent(cleanId)}`));
+      state.schedulerRunDetails.set(cleanId, data.result || {});
+      document.querySelectorAll(`[data-email-scheduler-run-detail-body="${CSS.escape(cleanId)}"]`).forEach(node => {
+        node.innerHTML = schedulerRunStagesHtml(cleanId);
+      });
+      return true;
+    } catch (error) {
+      setStatus(error.message || String(error), 'err');
+      return false;
+    }
+  }
+
+  function schedulerRuleSetDefinitionFromForm(form) {
+    const ruleIds = Array.from(form?.querySelectorAll?.('[data-email-rule-set-member]') || [])
+      .map(node => String(node.dataset.ruleId || ''))
+      .filter(Boolean);
+    if (!ruleIds.length) throw new Error('Add at least one active rule to the set.');
+    return {
+      display_name: String(form.querySelector('[name="display_name"]')?.value || '').trim(),
+      description: String(form.querySelector('[name="description"]')?.value || '').trim(),
+      rule_ids: ruleIds,
+      expected_version: Number(form.querySelector('[name="expected_version"]')?.value || 0),
+      actor: 'email-ui',
+      source_surface: 'pim-email-ui',
+      request_id: `pim-email-rule-set-ui-${Date.now()}`,
+    };
+  }
+
+  async function saveSchedulerRuleSetForm(form, options = {}) {
+    const ruleSetId = String(form?.dataset?.ruleSetId || '');
+    const key = schedulerRuleSetDraftKey(ruleSetId);
+    try {
+      const definition = schedulerRuleSetDefinitionFromForm(form);
+      if (!definition.display_name) throw new Error('Set name is required.');
+      if (options.validateOnly) {
+        const payload = { ...definition };
+        if (ruleSetId) payload.exclude_rule_set_id = ruleSetId;
+        const data = await fetchJson(schedulerEndpoint('/rule-sets/validate'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        patchSchedulerRuleSetMessage(key, `Valid: ${Number(data.result?.member_count || definition.rule_ids.length)} rules in order.`, 'ok');
+        return true;
+      }
+      setStatus(ruleSetId ? 'Saving rule set' : 'Creating rule set', 'unknown');
+      await fetchJson(
+        ruleSetId
+          ? schedulerEndpoint(`/rule-sets/${encodeURIComponent(ruleSetId)}`)
+          : schedulerEndpoint('/rule-sets'),
+        {
+          method: ruleSetId ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(definition),
+        },
+      );
+      state.schedulerRuleSetDrafts.delete(key);
+      state.schedulerRuleSetMessages.delete(key);
+      await refreshSchedulerCatalog({ explicit: true });
+      renderSecondaryPanels();
+      renderUltrawide();
+      patchSchedulerOwnedValues();
+      setStatus(ruleSetId ? 'Rule set saved' : 'Rule set created', 'ok');
+      return true;
+    } catch (error) {
+      patchSchedulerRuleSetMessage(key, error.message || String(error), 'error');
+      setStatus(error.message || String(error), 'err');
+      return false;
+    }
+  }
+
+  function updateSchedulerRuleSetMember(form, action, control) {
+    if (!form) return false;
+    const list = form.querySelector('[data-email-rule-set-members]');
+    if (!list) return false;
+    if (action === 'add') {
+      const select = form.querySelector('[data-email-rule-set-add-select]');
+      const ruleId = String(select?.value || '');
+      const rule = schedulerRuleCatalog().find(item => String(item.ref || '') === ruleId);
+      if (!rule || list.querySelector(`[data-email-rule-set-member][data-rule-id="${CSS.escape(ruleId)}"]`)) return false;
+      const total = list.querySelectorAll('[data-email-rule-set-member]').length;
+      list.insertAdjacentHTML('beforeend', schedulerRuleSetMemberHtml(ruleId, total, total + 1));
+      renumberSchedulerRuleSetMembers(form);
+      readSchedulerRuleSetDraft(form);
+      list.querySelector(`[data-email-rule-set-member][data-rule-id="${CSS.escape(ruleId)}"]`)?.focus?.({ preventScroll: true });
+      return true;
+    }
+    const row = control?.closest?.('[data-email-rule-set-member]');
+    if (!row) return false;
+    const rows = Array.from(list.querySelectorAll('[data-email-rule-set-member]'));
+    const index = rows.indexOf(row);
+    if (action === 'remove') {
+      row.remove();
+    } else if (action === 'up' && index > 0) {
+      list.insertBefore(row, rows[index - 1]);
+    } else if (action === 'down' && index >= 0 && index < rows.length - 1) {
+      list.insertBefore(rows[index + 1], row);
+    } else {
+      return false;
+    }
+    renumberSchedulerRuleSetMembers(form);
+    readSchedulerRuleSetDraft(form);
+    if (action !== 'remove') row.focus?.({ preventScroll: true });
+    return true;
+  }
+
+  async function schedulerRuleSetMutation(ruleSetId, action, control = null) {
+    const ruleSet = schedulerRuleSetFor(ruleSetId);
+    if (!ruleSet) return false;
+    const row = control?.closest?.('[data-email-rule-set-row]');
+    const scheduleId = String(row?.querySelector?.('[data-email-rule-set-schedule]')?.value || '');
+    const meta = {
+      actor: 'email-ui',
+      source_surface: 'pim-email-ui',
+      request_id: `pim-email-rule-set-ui-${Date.now()}`,
+    };
+    try {
+      if (action === 'schedule') {
+        const tool = row?.closest?.('[data-email-rules-tool-panel="scheduler"]');
+        const create = tool?.querySelector?.('[data-email-scheduler-create-section]');
+        const form = create?.querySelector?.('[data-email-scheduler-create-form]');
+        if (!form) throw new Error('Schedule controls are unavailable. Refresh the Scheduler catalog.');
+        create.open = true;
+        const target = form.querySelector('[name="target_key"]');
+        if (target) target.value = schedulerTargetKey('virtual_path_rule_set', ruleSetId);
+        const name = form.querySelector('[name="name"]');
+        if (name && !name.value.trim()) name.value = `${ruleSet.display_name} daily`;
+        target?.focus?.({ preventScroll: true });
+        create.scrollIntoView?.({ block: 'nearest' });
+        patchSchedulerRuleSetMessage(ruleSetId, 'Rule set selected as one schedule target.', 'ok');
+        return true;
+      }
+      if (action === 'validate') {
+        const data = await fetchJson(schedulerEndpoint(`/rule-sets/${encodeURIComponent(ruleSetId)}/validate`), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(meta),
+        });
+        patchSchedulerRuleSetMessage(ruleSetId, `Valid: ${Number(data.result?.target?.member_count || ruleSet.member_count || 0)} ordered rules.`, 'ok');
+        return true;
+      }
+      if (action === 'duplicate') {
+        await fetchJson(schedulerEndpoint(`/rule-sets/${encodeURIComponent(ruleSetId)}/duplicate`), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(meta),
+        });
+      } else if (action === 'archive') {
+        if (!window.confirm(`Archive rule set ${ruleSet.display_name}? Active schedules must be archived or retargeted first.`)) return false;
+        await fetchJson(schedulerEndpoint(`/rule-sets/${encodeURIComponent(ruleSetId)}/archive`), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(meta),
+        });
+      } else if (action === 'preview' || action === 'run-now') {
+        if (!scheduleId) throw new Error('Create or select a schedule for this set first.');
+        const apply = action === 'run-now';
+        if (apply && !window.confirm(`Run every rule in ${ruleSet.display_name} now, in the saved order, and allow changes?`)) return false;
+        const data = await fetchJson(schedulerEndpoint(`/rule-sets/${encodeURIComponent(ruleSetId)}/${action === 'preview' ? 'preview' : 'run-now'}`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...meta, schedule_id: scheduleId, dry_run: !apply }),
+        });
+        patchSchedulerRuleSetMessage(ruleSetId, `${apply ? 'Run' : 'Dry run'} queued as one parent run: ${data.result?.run?.run_id || 'waiting for worker'}`, 'ok');
+        window.setTimeout(refreshSchedulerStatus, 2500);
+        return true;
+      } else if (action === 'history') {
+        if (!scheduleId) throw new Error('Create or select a schedule for this set first.');
+        const data = await fetchJson(`${schedulerEndpoint('/history')}?schedule_id=${encodeURIComponent(scheduleId)}&limit=100`);
+        state.schedulerHistory.set(scheduleId, Array.isArray(data.result?.runs) ? data.result.runs : []);
+        row?.querySelectorAll?.('[data-email-rule-set-history]').forEach(node => {
+          node.innerHTML = schedulerHistoryHtml(scheduleId);
+        });
+        patchSchedulerRuleSetMessage(ruleSetId, 'Bounded run history loaded. Open Stages on a run for ordered member evidence.', 'ok');
+        return true;
+      } else {
+        return false;
+      }
+      state.schedulerRuleSetDrafts.delete(schedulerRuleSetDraftKey(ruleSetId));
+      await refreshSchedulerCatalog({ explicit: true });
+      renderSecondaryPanels();
+      renderUltrawide();
+      patchSchedulerOwnedValues();
+      setStatus(action === 'archive' ? 'Rule set archived' : 'Rule set duplicated', 'ok');
+      return true;
+    } catch (error) {
+      patchSchedulerRuleSetMessage(ruleSetId, error.message || String(error), 'error');
       setStatus(error.message || String(error), 'err');
       return false;
     }
@@ -6960,19 +7324,101 @@ const EmailPage = (() => {
     `;
   }
 
+  function schedulerRunStagesHtml(runId) {
+    const detail = state.schedulerRunDetails.get(runId);
+    if (!detail) return '<div class="email-empty">Stage detail has not been loaded.</div>';
+    const stages = Array.isArray(detail.stages) ? detail.stages : [];
+    if (!stages.length) return '<div class="email-empty">This run has no child stages; it targeted one rule or registered stack function.</div>';
+    return stages.map(stage => `
+      <div class="email-scheduler-stage-row">
+        <span>${Number(stage.stage_order || 0) + 1}</span>
+        <strong>${escHtml(stage.target_name || stage.target_ref || 'Stage')}</strong>
+        <span>${escHtml(stage.status || '')}</span>
+        <span>${Number(stage.candidate_count || 0)} candidates</span>
+        <span>${Number(stage.matched_count || 0)} matches</span>
+        <span>${Number(stage.changed_count || 0)} changes</span>
+        <span>${Number(stage.error_count || 0)} errors</span>
+        <span>${stage.truncated ? 'truncated' : stage.coverage_complete === false ? 'incomplete' : stage.coverage_complete === true ? 'complete' : 'unknown coverage'}</span>
+      </div>
+    `).join('');
+  }
+
   function schedulerHistoryHtml(scheduleId) {
     const history = state.schedulerHistory.get(scheduleId) || [];
     if (!history.length) return '<div class="email-empty">History has not been loaded.</div>';
     return history.map(run => `
-      <div class="email-scheduler-history-row">
-        <span>${escHtml(schedulerLocalDateTime(run.started_at || run.created_at))}</span>
-        <strong>${escHtml(run.status || '')}</strong>
-        <span>${Number(run.candidate_count || 0)} candidates</span>
-        <span>${Number(run.matched_count || 0)} matches</span>
-        <span>${Number(run.changed_count || 0)} changes</span>
-        <span>${run.truncated ? 'truncated' : run.coverage_complete === false ? 'incomplete' : 'complete'}</span>
+      <div class="email-scheduler-history-entry">
+        <div class="email-scheduler-history-row">
+          <span>${escHtml(schedulerLocalDateTime(run.started_at || run.created_at))}</span>
+          <strong>${escHtml(run.status || '')}</strong>
+          <span>${Number(run.candidate_count || 0)} candidates</span>
+          <span>${Number(run.matched_count || 0)} matches</span>
+          <span>${Number(run.changed_count || 0)} changes</span>
+          <span>${Number(run.error_count || 0)} errors</span>
+          <span>${run.truncated ? 'truncated' : run.coverage_complete === false ? 'incomplete' : run.coverage_complete === true ? 'complete' : 'unknown coverage'}</span>
+          <button class="hub-action-btn" type="button" data-email-scheduler-run-detail="${escHtml(run.run_id || '')}">Stages</button>
+        </div>
+        <div class="email-scheduler-run-detail" data-email-scheduler-run-detail-body="${escHtml(run.run_id || '')}">${schedulerRunStagesHtml(String(run.run_id || ''))}</div>
       </div>
     `).join('');
+  }
+
+  function schedulerRuleSetScheduleOptionsHtml(ruleSetId) {
+    const schedules = schedulerRuleSetSchedules(ruleSetId);
+    const placeholder = schedules.length > 1 ? '<option value="">Choose schedule</option>' : '';
+    return placeholder + schedules.map(schedule => (
+      `<option value="${escHtml(schedule.schedule_id || '')}">${escHtml(schedule.name || schedule.schedule_id)}</option>`
+    )).join('');
+  }
+
+  function schedulerRuleSetReadOnlyMembersHtml(ruleSet) {
+    const members = Array.isArray(ruleSet?.members) ? ruleSet.members : [];
+    if (!members.length) return '<div class="email-empty">No members.</div>';
+    return members.map((member, index) => `
+      <div class="email-rule-set-member email-rule-set-member--readonly">
+        <span class="email-rule-set-member-position">${index + 1}</span>
+        <span class="email-rule-set-member-name"><strong>${escHtml(member.display_name || member.rule_id)}</strong><small>${escHtml(member.rule_id || '')}</small></span>
+        <span class="email-rule-set-state" data-state="${member.compatible === false ? 'error' : 'active'}">${member.compatible === false ? escHtml(member.status || 'incompatible') : 'ready'}</span>
+      </div>
+    `).join('');
+  }
+
+  function schedulerRuleSetRowHtml(ruleSet) {
+    const ruleSetId = String(ruleSet?.rule_set_id || '');
+    const setState = schedulerRuleSetState(ruleSet);
+    const active = setState !== 'archived';
+    const schedules = schedulerRuleSetSchedules(ruleSetId);
+    const expanded = state.schedulerRuleSetExpanded.has(ruleSetId);
+    const message = state.schedulerRuleSetMessages.get(ruleSetId) || {};
+    return `
+      <details class="email-rule-row email-rule-set-row" data-email-rule-set-row="${escHtml(ruleSetId)}"${expanded ? ' open' : ''}>
+        <summary>
+          <span class="email-rule-summary-main"><strong>${escHtml(ruleSet?.display_name || 'Rule set')}</strong><span>${Number(ruleSet?.member_count || 0)} rules · saved order · version ${Number(ruleSet?.version || 0)}</span></span>
+          <span class="email-rule-set-state" data-state="${escHtml(setState)}">${escHtml(setState)}</span>
+          <span>${schedules.length} schedule${schedules.length === 1 ? '' : 's'}</span>
+        </summary>
+        ${ruleSet?.description ? `<p class="email-rule-set-description">${escHtml(ruleSet.description)}</p>` : ''}
+        <div class="email-rule-set-actions">
+          <button class="hub-action-btn" type="button" data-email-rule-set-action="schedule" data-rule-set-id="${escHtml(ruleSetId)}"${active ? '' : ' disabled'}>Schedule set</button>
+          <button class="hub-action-btn" type="button" data-email-rule-set-action="validate" data-rule-set-id="${escHtml(ruleSetId)}"${active ? '' : ' disabled'}>Validate</button>
+          <button class="hub-action-btn" type="button" data-email-rule-set-action="duplicate" data-rule-set-id="${escHtml(ruleSetId)}"${active ? '' : ' disabled'}>Duplicate</button>
+          <button class="hub-action-btn email-rule-danger" type="button" data-email-rule-set-action="archive" data-rule-set-id="${escHtml(ruleSetId)}"${active ? '' : ' disabled'}>Archive</button>
+        </div>
+        <div class="email-rule-form email-rule-set-run-row">
+          <label><span>Set schedule</span><select data-email-rule-set-schedule${schedules.length ? '' : ' disabled'}>${schedules.length ? schedulerRuleSetScheduleOptionsHtml(ruleSetId) : '<option value="">No schedule yet</option>'}</select></label>
+          <button class="hub-action-btn" type="button" data-email-rule-set-action="preview" data-rule-set-id="${escHtml(ruleSetId)}"${schedules.length ? '' : ' disabled'}>Preview set</button>
+          <button class="hub-action-btn" type="button" data-email-rule-set-action="run-now" data-rule-set-id="${escHtml(ruleSetId)}"${schedules.length ? '' : ' disabled'}>Run set now</button>
+          <button class="hub-action-btn" type="button" data-email-rule-set-action="history" data-rule-set-id="${escHtml(ruleSetId)}"${schedules.length ? '' : ' disabled'}>History</button>
+        </div>
+        <div class="email-rule-set-message" data-email-rule-set-message="${escHtml(ruleSetId)}" data-state="${escHtml(message.state || '')}">${escHtml(message.message || '')}</div>
+        ${active ? `
+          <form class="email-rule-form email-rule-set-form" data-email-rule-set-form data-rule-set-id="${escHtml(ruleSetId)}">
+            ${schedulerRuleSetFieldsHtml(ruleSet)}
+          </form>
+        ` : `<div class="email-rule-set-members">${schedulerRuleSetReadOnlyMembersHtml(ruleSet)}</div>`}
+        <div class="email-scheduler-history" data-email-rule-set-history>${schedules.length === 1 ? schedulerHistoryHtml(String(schedules[0].schedule_id || '')) : ''}</div>
+      </details>
+    `;
   }
 
   function schedulerRowHtml(schedule) {
@@ -7000,6 +7446,7 @@ const EmailPage = (() => {
           <button class="hub-action-btn" type="button" data-email-scheduler-action="toggle" data-schedule-id="${escHtml(scheduleId)}">${schedule?.enabled ? 'Pause' : 'Enable'}</button>
           <button class="hub-action-btn" type="button" data-email-scheduler-action="duplicate" data-schedule-id="${escHtml(scheduleId)}">Duplicate</button>
           <button class="hub-action-btn" type="button" data-email-scheduler-action="history" data-schedule-id="${escHtml(scheduleId)}">History</button>
+          <button class="hub-action-btn email-rule-danger" type="button" data-email-scheduler-action="archive" data-schedule-id="${escHtml(scheduleId)}">Archive</button>
         </div>
         <div class="email-scheduler-preview" data-email-scheduler-preview>${preview ? escHtml(preview) : ''}</div>
         <form class="email-rule-form email-rule-form--wide email-scheduler-edit-form" data-email-scheduler-edit-form data-schedule-id="${escHtml(scheduleId)}">
@@ -7018,10 +7465,24 @@ const EmailPage = (() => {
     if (!state.schedulerCatalogFresh) {
       return `<section class="email-rule-card email-rule-tool-panel" data-email-rules-tool-panel="scheduler"><div class="email-error" data-email-scheduler-error>${escHtml(state.schedulerError || 'Scheduler catalog freshness could not be established. Controls are unavailable.')}</div></section>`;
     }
+    const createRuleSetMessage = state.schedulerRuleSetMessages.get('create') || {};
     return `
       <section class="email-rule-card email-rule-tool-panel email-scheduler-tool" data-email-rules-tool-panel="scheduler">
         <div class="email-scheduler-health-row"><strong>Scheduler</strong><span data-email-scheduler-health></span><span data-email-scheduler-count>${state.schedulerSchedules.length} schedules</span></div>
         <datalist id="email-scheduler-timezones"><option value="UTC"><option value="Europe/London"><option value="America/New_York"><option value="America/Los_Angeles"><option value="Australia/Sydney"></datalist>
+        <section class="email-rule-set-manager" data-email-rule-set-manager>
+          <div class="email-rule-set-manager-heading"><strong>Named rule sets</strong><span>${state.schedulerRuleSets.length} sets · each set runs as one ordered target</span></div>
+          <details class="email-rule-row email-rule-set-create" data-email-rule-set-create-section>
+            <summary>Create named rule set</summary>
+            <form class="email-rule-form email-rule-set-form" data-email-rule-set-form data-rule-set-id="">
+              ${schedulerRuleSetFieldsHtml(null)}
+            </form>
+            <div class="email-rule-set-message" data-email-rule-set-message="create" data-state="${escHtml(createRuleSetMessage.state || '')}">${escHtml(createRuleSetMessage.message || '')}</div>
+          </details>
+          <div class="email-rule-set-list" data-email-rule-set-list>
+            ${state.schedulerRuleSets.length ? state.schedulerRuleSets.map(schedulerRuleSetRowHtml).join('') : '<div class="email-empty">No named rule sets yet.</div>'}
+          </div>
+        </section>
         <details class="email-rule-row email-scheduler-create" data-email-scheduler-create-section>
           <summary>Create schedule</summary>
           <form class="email-rule-form email-rule-form--wide" data-email-scheduler-create-form>
@@ -8723,6 +9184,38 @@ const EmailPage = (() => {
         );
         return;
       }
+      const schedulerRunDetail = target.closest?.('[data-email-scheduler-run-detail]');
+      if (schedulerRunDetail) {
+        event.preventDefault();
+        loadSchedulerRunDetail(String(schedulerRunDetail.dataset.emailSchedulerRunDetail || ''));
+        return;
+      }
+      const ruleSetMemberAction = target.closest?.('[data-email-rule-set-member-action]');
+      if (ruleSetMemberAction) {
+        event.preventDefault();
+        updateSchedulerRuleSetMember(
+          ruleSetMemberAction.closest('[data-email-rule-set-form]'),
+          String(ruleSetMemberAction.dataset.emailRuleSetMemberAction || ''),
+          ruleSetMemberAction,
+        );
+        return;
+      }
+      const ruleSetFormAction = target.closest?.('[data-email-rule-set-form-action]');
+      if (ruleSetFormAction) {
+        event.preventDefault();
+        saveSchedulerRuleSetForm(ruleSetFormAction.closest('[data-email-rule-set-form]'), { validateOnly: true });
+        return;
+      }
+      const ruleSetAction = target.closest?.('[data-email-rule-set-action]');
+      if (ruleSetAction) {
+        event.preventDefault();
+        schedulerRuleSetMutation(
+          String(ruleSetAction.dataset.ruleSetId || ''),
+          String(ruleSetAction.dataset.emailRuleSetAction || ''),
+          ruleSetAction,
+        );
+        return;
+      }
       const tabBtn = target.closest?.('[data-email-secondary-tab]');
       if (tabBtn) {
         event.preventDefault();
@@ -8963,6 +9456,11 @@ const EmailPage = (() => {
         form?.querySelectorAll?.('[data-email-scheduler-interval]').forEach(node => { node.hidden = daily; });
         return;
       }
+      const schedulerRuleSetForm = event.target.closest?.('[data-email-rule-set-form]');
+      if (schedulerRuleSetForm) {
+        readSchedulerRuleSetDraft(schedulerRuleSetForm);
+        return;
+      }
       const ruleEditForm = event.target.closest?.('[data-email-rule-edit-form]');
       if (ruleEditForm) {
         readVirtualPathRuleDrafts(ruleEditForm);
@@ -8996,6 +9494,11 @@ const EmailPage = (() => {
       const ruleEditForm = event.target.closest?.('[data-email-rule-edit-form]');
       if (ruleEditForm) {
         readVirtualPathRuleDrafts(ruleEditForm);
+        return;
+      }
+      const schedulerRuleSetForm = event.target.closest?.('[data-email-rule-set-form]');
+      if (schedulerRuleSetForm) {
+        readSchedulerRuleSetDraft(schedulerRuleSetForm);
         return;
       }
       const searchForm = event.target.closest?.('[data-email-search-form]');
@@ -9046,6 +9549,12 @@ const EmailPage = (() => {
         saveSchedulerForm(schedulerCreateForm);
         return;
       }
+      const schedulerRuleSetForm = event.target.closest?.('[data-email-rule-set-form]');
+      if (schedulerRuleSetForm) {
+        event.preventDefault();
+        saveSchedulerRuleSetForm(schedulerRuleSetForm);
+        return;
+      }
       const schedulerEditForm = event.target.closest?.('[data-email-scheduler-edit-form]');
       if (schedulerEditForm) {
         event.preventDefault();
@@ -9058,6 +9567,13 @@ const EmailPage = (() => {
       addTrustedSenderFromForm(form);
     });
     document.addEventListener('toggle', event => {
+      const ruleSetRow = event.target.closest?.('[data-email-rule-set-row]');
+      if (ruleSetRow) {
+        const ruleSetId = String(ruleSetRow.dataset.emailRuleSetRow || '');
+        if (ruleSetRow.open) state.schedulerRuleSetExpanded.add(ruleSetId);
+        else state.schedulerRuleSetExpanded.delete(ruleSetId);
+        return;
+      }
       const row = event.target.closest?.('[data-email-scheduler-row]');
       if (!row) return;
       const scheduleId = String(row.dataset.emailSchedulerRow || '');
@@ -9078,6 +9594,18 @@ const EmailPage = (() => {
       });
     });
     document.addEventListener('dragstart', event => {
+      const ruleSetMember = event.target.closest?.('[data-email-rule-set-member]');
+      if (ruleSetMember) {
+        const form = ruleSetMember.closest('[data-email-rule-set-form]');
+        state.schedulerRuleSetDrag = {
+          key: schedulerRuleSetDraftKey(form?.dataset?.ruleSetId || 'create'),
+          ruleId: String(ruleSetMember.dataset.ruleId || ''),
+        };
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', state.schedulerRuleSetDrag.ruleId);
+        ruleSetMember.classList.add('is-dragging');
+        return;
+      }
       const node = event.target.closest?.('[data-email-vpath-tree-node]');
       if (!node) return;
       const path = normalizeVirtualPath(node.dataset.emailVpathTreeNode || '');
@@ -9090,6 +9618,15 @@ const EmailPage = (() => {
       event.dataTransfer.setData('text/plain', path);
     });
     document.addEventListener('dragover', event => {
+      const ruleSetMember = event.target.closest?.('[data-email-rule-set-member]');
+      if (ruleSetMember && state.schedulerRuleSetDrag) {
+        const form = ruleSetMember.closest('[data-email-rule-set-form]');
+        if (schedulerRuleSetDraftKey(form?.dataset?.ruleSetId || 'create') !== state.schedulerRuleSetDrag.key) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        ruleSetMember.classList.add('is-drop-target');
+        return;
+      }
       const targetNode = event.target.closest?.('[data-email-vpath-tree-drop-target]');
       if (!targetNode || !state.virtualPathPickerDragPath) return;
       const parentPath = normalizeVirtualPath(targetNode.dataset.emailVpathTreeDropTarget || '');
@@ -9100,10 +9637,27 @@ const EmailPage = (() => {
       event.dataTransfer.dropEffect = 'move';
     });
     document.addEventListener('dragleave', event => {
+      const ruleSetMember = event.target.closest?.('[data-email-rule-set-member]');
+      ruleSetMember?.classList?.remove('is-drop-target');
       const targetNode = event.target.closest?.('[data-email-vpath-tree-drop-target]');
       targetNode?.classList?.remove('is-drop-target');
     });
     document.addEventListener('drop', event => {
+      const ruleSetMember = event.target.closest?.('[data-email-rule-set-member]');
+      if (ruleSetMember && state.schedulerRuleSetDrag) {
+        const form = ruleSetMember.closest('[data-email-rule-set-form]');
+        const key = schedulerRuleSetDraftKey(form?.dataset?.ruleSetId || 'create');
+        if (key !== state.schedulerRuleSetDrag.key) return;
+        event.preventDefault();
+        const dragged = form.querySelector(`[data-email-rule-set-member][data-rule-id="${CSS.escape(state.schedulerRuleSetDrag.ruleId)}"]`);
+        if (dragged && dragged !== ruleSetMember) ruleSetMember.parentNode.insertBefore(dragged, ruleSetMember);
+        form.querySelectorAll('[data-email-rule-set-member]').forEach(node => node.classList.remove('is-drop-target', 'is-dragging'));
+        renumberSchedulerRuleSetMembers(form);
+        readSchedulerRuleSetDraft(form);
+        dragged?.focus?.({ preventScroll: true });
+        state.schedulerRuleSetDrag = null;
+        return;
+      }
       const targetNode = event.target.closest?.('[data-email-vpath-tree-drop-target]');
       if (!targetNode || !state.virtualPathPickerDragPath) return;
       event.preventDefault();
@@ -9113,6 +9667,8 @@ const EmailPage = (() => {
       state.virtualPathPickerDragPath = '';
     });
     document.addEventListener('dragend', () => {
+      state.schedulerRuleSetDrag = null;
+      document.querySelectorAll('[data-email-rule-set-member].is-drop-target, [data-email-rule-set-member].is-dragging').forEach(node => node.classList.remove('is-drop-target', 'is-dragging'));
       state.virtualPathPickerDragPath = '';
       document.querySelectorAll('.email-vpath-tree-node.is-drop-target').forEach(node => node.classList.remove('is-drop-target'));
     });
@@ -9249,8 +9805,13 @@ const EmailPage = (() => {
       rules_tool: state.virtualPathRuleTool,
       scheduler_catalog_fresh: state.schedulerCatalogFresh,
       scheduler_schedule_count: state.schedulerSchedules.length,
+      scheduler_rule_set_count: state.schedulerRuleSets.length,
       scheduler_health: state.schedulerHealth,
       scheduler_expanded_ids: Array.from(state.schedulerExpanded),
+      scheduler_rule_set_expanded_ids: Array.from(state.schedulerRuleSetExpanded),
+      scheduler_rule_set_dirty_ids: Array.from(state.schedulerRuleSetDrafts.entries())
+        .filter(([, draft]) => draft?.dirty)
+        .map(([key]) => key),
       list_collapsed: state.listCollapsed,
       activity_heartbeat_active: activityHeartbeatActive(),
       activity_heartbeat: state.activityHeartbeat,

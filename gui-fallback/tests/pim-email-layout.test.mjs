@@ -250,6 +250,34 @@ test('PIM Email Scheduler mounts from a fresh stack catalog and patches passive 
   assert.match(emailCss, /@media\s*\(max-width:\s*820px\)[\s\S]*\.email-scheduler-primary-grid,[\s\S]*\.email-scheduler-policy-grid,[\s\S]*\.email-scheduler-status-grid,[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/, 'Scheduler must stack locally on mobile without horizontal form shifts.');
 });
 
+test('PIM Email Scheduler manages named ordered rule sets as one durable target', () => {
+  const catalogStart = emailJs.indexOf('async function refreshSchedulerCatalog');
+  const catalogEnd = emailJs.indexOf('async function refreshSchedulerStatus', catalogStart);
+  const catalogSlice = emailJs.slice(catalogStart, catalogEnd);
+  const passiveStart = catalogEnd;
+  const passiveEnd = emailJs.indexOf('function ensureSchedulerStatusTimer', passiveStart);
+  const passiveSlice = emailJs.slice(passiveStart, passiveEnd);
+  const ruleSetMutationStart = emailJs.indexOf('async function schedulerRuleSetMutation');
+  const ruleSetMutationEnd = emailJs.indexOf('async function createVirtualPathFromForm', ruleSetMutationStart);
+  const ruleSetMutationSlice = emailJs.slice(ruleSetMutationStart, ruleSetMutationEnd);
+
+  assert.match(catalogSlice, /schedulerEndpoint\('\/rule-sets'\)[\s\S]*include_archived=true/, 'Fresh Scheduler catalog must include active, archived, and incompatible named sets before controls mount.');
+  assert.match(catalogSlice, /schedulerRuleSets\s*=\s*Array\.isArray\(ruleSets\.result\?\.rule_sets\)/, 'The set catalog must remain stack-owned.');
+  assert.doesNotMatch(passiveSlice, /rule-sets|schedulerRuleSets\s*=/, 'Passive status polling must not replace set forms or dirty member order.');
+  assert.match(emailJs, /kind === 'virtual_path_rule_set'\) return 'Rule set'/, 'Named sets must be labelled separately from rules and registered stack functions.');
+  assert.match(emailJs, /data-email-rule-set-form/, 'Scheduler must expose create/edit named set forms.');
+  assert.match(emailJs, /data-email-rule-set-members/, 'Set forms must expose ordered membership.');
+  assert.match(emailJs, /data-email-rule-set-member-action="add"/, 'Set membership must come from the fresh active-rule catalog.');
+  assert.match(emailJs, /draggable="true"[\s\S]*data-email-rule-set-member-action="up"[\s\S]*data-email-rule-set-member-action="down"[\s\S]*data-email-rule-set-member-action="remove"/, 'Members must support drag/drop and explicit keyboard-operable ordering controls.');
+  assert.match(emailJs, /schedulerRuleSetDrafts\.set\(key, draft\)/, 'Dirty set name, description, and order must be stored independently of response-owned status.');
+  assert.match(ruleSetMutationSlice, /data-email-scheduler-create-form[\s\S]*virtual_path_rule_set/, 'Schedule set must select one named set target in the existing schedule form.');
+  assert.match(ruleSetMutationSlice, /action === 'preview' \|\| action === 'run-now'[\s\S]*schedule_id: scheduleId[\s\S]*dry_run: !apply/, 'Set preview and run-now must queue one parent schedule run, not member schedules.');
+  assert.match(emailJs, /data-email-scheduler-run-detail[\s\S]*schedulerRunStagesHtml/, 'Bounded history must expose ordered child stages on demand.');
+  assert.match(emailCss, /\.email-rule-set-actions \.hub-action-btn,[\s\S]*block-size:\s*var\(--email-rules-control-height\)[\s\S]*height:\s*var\(--email-rules-control-height\)/, 'Set buttons must use the explicit shared input baseline.');
+  assert.match(emailCss, /\.email-rule-form select\s*\{[\s\S]*appearance:\s*none[\s\S]*background-image:\s*url\(/, 'Set selectors must retain the accepted shared chevron.');
+  assert.match(emailCss, /@media\s*\(max-width:\s*820px\)[\s\S]*\.email-rule-set-primary-grid,[\s\S]*\.email-rule-set-run-row,[\s\S]*\.email-rule-set-add-row,[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/, 'Named set forms and actions must stack without horizontal shifts on mobile.');
+});
+
 test('PIM Email virtual-path picker refreshes its catalog before mounting', () => {
   const catalogRefreshStart = emailJs.indexOf('async function refreshVirtualPathCatalog');
   const schedulerHelpersStart = emailJs.indexOf('function schedulerTargetKey', catalogRefreshStart);
