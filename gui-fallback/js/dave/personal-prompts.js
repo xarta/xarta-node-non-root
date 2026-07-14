@@ -122,6 +122,18 @@ const PersonalPrompts = (() => {
     return `<div class="personal-prompts__meta">${pieces.map(piece => `<span>${escHtml(piece)}</span>`).join('')}</div>`;
   }
 
+  function promptOptionsHtml(prompts, selectedId) {
+    const groups = new Map();
+    prompts.forEach(prompt => {
+      const group = String(prompt?.group || 'Other prompts');
+      if (!groups.has(group)) groups.set(group, []);
+      groups.get(group).push(prompt);
+    });
+    return [...groups.entries()].map(([group, entries]) => (
+      `<optgroup label="${escHtml(group)}">${entries.map(item => `<option value="${escHtml(item.id)}"${item.id === selectedId ? ' selected' : ''}>${escHtml(item.label || item.id)}</option>`).join('')}</optgroup>`
+    )).join('');
+  }
+
   function actionSummary(actions) {
     const actionList = Array.isArray(actions) ? actions : [];
     if (!actionList.length) return 'APPLY complete.';
@@ -238,7 +250,7 @@ const PersonalPrompts = (() => {
         <label class="personal-filter-field personal-prompts__source">
           <span>Prompt</span>
           <select data-personal-prompt-select aria-label="Prompt source">
-            ${prompts.map(item => `<option value="${escHtml(item.id)}"${item.id === selectedId ? ' selected' : ''}>${escHtml(item.label || item.id)}</option>`).join('')}
+            ${promptOptionsHtml(prompts, selectedId)}
           </select>
         </label>
         <button class="personal-filter-command" type="button" data-personal-prompts-action="get"${doc.loading ? ' disabled' : ''}>GET</button>

@@ -1555,6 +1555,12 @@ const PersonalFilters = (() => {
       ...extraTabs,
     ];
     if (!tabDefs.some(tab => tab.id === active && !tab.disabled)) active = tabDefs.some(tab => tab.id === 'new-entry' && !tab.disabled) ? 'new-entry' : 'filters';
+    if (
+      surface === 'kanban'
+      && active === 'kanban-settings'
+      && host.querySelector('[data-kanban-model-settings]')
+      && window.KanbanModelSettings?.refreshHost?.(host)
+    ) return;
     if (active !== 'settings' && active !== 'meta-filters') resetSettingsOrderForHost(host);
     const framed = host.dataset.personalFilterFramed === 'false' ? '' : ' personal-filter-panel--framed';
     const tabs = layout === 'tabs'
@@ -1575,6 +1581,7 @@ const PersonalFilters = (() => {
     wireHost(host);
     bindHostControls(host);
     window.PersonalPrompts?.bind?.(host);
+    window.KanbanModelSettings?.bind?.(host);
   }
 
   function updateModalTitleForHost(host, tabId) {
@@ -1897,7 +1904,7 @@ const PersonalFilters = (() => {
       calendar: 'selected,milestones,search,new-event,upcoming,prompts,provenance',
       diary: 'selected,day,search,new-entry,edit-entry,upcoming,prompts,provenance',
       todo: 'selected,search,new-task,edit-task,sources,prompts,provenance',
-      kanban: 'selected,search,new-item,edit-item,priorities,postgres,automation,prompts,provenance',
+      kanban: 'selected,search,new-item,edit-item,priorities,postgres,automation,kanban-settings,prompts,provenance',
     };
     if (modalExtraTabsBySurface[surface]) root.dataset.personalFilterExtraTabs = modalExtraTabsBySurface[surface];
     else delete root.dataset.personalFilterExtraTabs;
@@ -1962,7 +1969,7 @@ const PersonalFilters = (() => {
       calendar: 'selected,milestones,search,new-event,upcoming,prompts,provenance',
       diary: 'selected,day,search,new-entry,edit-entry,upcoming,prompts,provenance',
       todo: 'selected,search,new-task,edit-task,sources,prompts,provenance',
-      kanban: 'selected,search,new-item,edit-item,priorities,postgres,automation,prompts,provenance',
+      kanban: 'selected,search,new-item,edit-item,priorities,postgres,automation,kanban-settings,prompts,provenance',
     };
     const extraTabs = extraTabsBySurface[surface] ? ` data-personal-filter-extra-tabs="${escHtml(extraTabsBySurface[surface])}"` : '';
     const activeTabAttr = activeTab ? ` data-personal-filter-tab="${escHtml(activeTab)}"` : '';

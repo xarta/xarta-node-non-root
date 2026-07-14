@@ -1619,6 +1619,38 @@
     'settings':         { icon: '⚙️',  label: 'Settings',         buildPath: () => '/fallback-ui/?group=settings',          bridgeGroup: 'settings' },
     'dave':             { icon: '', label: 'Dave',               buildPath: () => '/fallback-ui/?group=dave',              bridgeGroup: 'dave' },
     'kanban':           { icon: '', label: 'Kanban',             buildPath: () => '/fallback-ui/?group=kanban',            bridgeGroup: 'kanban' },
+    'kanban-settings': {
+      icon: '', label: 'Kanban Settings',
+      doAction() {
+        const visible = node => {
+          if (!node || !node.isConnected) return false;
+          const style = window.getComputedStyle?.(node);
+          if (style?.display === 'none' || style?.visibility === 'hidden') return false;
+          const rect = node.getBoundingClientRect?.();
+          return !rect || (rect.width > 0 && rect.height > 0);
+        };
+        const inlineHost = document.getElementById('kanban-filter-inline-panel');
+        if (visible(inlineHost) && window.PersonalFilters?.activateTab) {
+          window.PersonalFilters.activateTab('kanban', 'kanban-settings', {
+            host: inlineHost,
+            visibleOnly: false,
+          });
+          return;
+        }
+        if (visible(document.getElementById('ultrawide-sidecar'))) {
+          window.PersonalFilters?.syncUltrawideSidecar?.(window.BlueprintsPageState?.current?.());
+          const sidecarHost = document.querySelector('#ultrawide-sidecar-body [data-personal-filter-host]');
+          if (sidecarHost && window.PersonalFilters?.activateTab) {
+            window.PersonalFilters.activateTab('kanban', 'kanban-settings', {
+              host: sidecarHost,
+              visibleOnly: false,
+            });
+            return;
+          }
+        }
+        window.PersonalFilters?.openModal?.('kanban', 'kanban-settings');
+      },
+    },
     'database-tables':  { icon: '🗂️', label: 'Database Tables',  buildPath: () => `${getDbBasePath()}/database-tables.html` },
     'database-diagram': { icon: '🕸️', label: 'Database Diagram', buildPath: () => `${getDbBasePath()}/database-diagram.html` },
     'embed-menu':       { icon: '🪲', label: 'Embed Menu',        buildPath: () => '/fallback-ui/?group=settings&tab=embed-menu' },

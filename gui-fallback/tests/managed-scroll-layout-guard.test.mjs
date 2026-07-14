@@ -1766,8 +1766,8 @@ assert.ok(
 );
 assert.match(
   indexHtml + personalFiltersJs,
-  /selected,search,new-item,edit-item,priorities,postgres,automation,prompts,provenance/,
-  'Kanban shared tab hosts must place Priorities in the bottom/sidecar tab row after Edit Item.',
+  /selected,search,new-item,edit-item,priorities,postgres,automation,kanban-settings,prompts,provenance/,
+  'Kanban shared tab hosts must place Priorities and Kanban Settings in the bottom/sidecar tab row.',
 );
 assert.match(
   daveTodoJs,

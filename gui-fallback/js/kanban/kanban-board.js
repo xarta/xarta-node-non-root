@@ -4755,6 +4755,7 @@ const KanbanBoardPage = (() => {
           { id: 'priorities', label: 'Priorities' },
           { id: 'postgres', label: 'Postgres' },
           { id: 'automation', label: 'Automation' },
+          { id: 'kanban-settings', label: 'Kanban Settings' },
           { id: 'prompts', label: 'Prompts' },
           { id: 'provenance', label: 'Provenance' },
         ],
@@ -4766,6 +4767,7 @@ const KanbanBoardPage = (() => {
           if (tab === 'priorities') return embeddedPrioritiesHtml(host);
           if (tab === 'postgres') return embeddedPostgresHtml(host);
           if (tab === 'automation') return embeddedAutomationStatusHtml(host);
+          if (tab === 'kanban-settings') return window.KanbanModelSettings?.renderTab?.() || '';
           if (tab === 'prompts') return window.PersonalPrompts?.renderTab?.('kanban', host) || '';
           if (tab === 'provenance') return embeddedProvenanceHtml(host);
           return '';
@@ -5336,6 +5338,19 @@ const KanbanBoardPage = (() => {
     const items = boardItems();
     const breadcrumbs = currentBreadcrumbs();
     const detail = state.detail || {};
+    const visibleModelSettings = [...document.querySelectorAll('[data-kanban-model-settings]')]
+      .find(node => {
+        const rect = node.getBoundingClientRect?.();
+        const style = window.getComputedStyle?.(node);
+        return style?.display !== 'none' && style?.visibility !== 'hidden'
+          && (!rect || (rect.width > 0 && rect.height > 0));
+      }) || null;
+    const modelSettingsHost = visibleModelSettings?.closest?.('[data-personal-filter-host]') || null;
+    const modelSettingsSurface = modelSettingsHost?.id === 'kanban-filter-inline-panel'
+      ? 'desktop-portrait-sidecar'
+      : (modelSettingsHost?.closest?.('#ultrawide-sidecar-body')
+        ? 'ultrawide-sidecar'
+        : (modelSettingsHost?.id === 'personal-filter-modal-root' ? 'modal' : ''));
     return {
       loaded: state.loaded,
       loading: state.loading,
@@ -5434,6 +5449,10 @@ const KanbanBoardPage = (() => {
       priorities_loading: !!state.priorities.loading,
       priorities_error: state.priorities.error || '',
       priorities_count: priorityRecommendations().length,
+      model_settings_visible: Boolean(visibleModelSettings),
+      model_settings_surface: modelSettingsSurface,
+      model_settings_route_count: visibleModelSettings?.querySelectorAll?.('[data-kanban-model-route]')?.length || 0,
+      model_settings_dirty_count: visibleModelSettings?.querySelectorAll?.('[data-kanban-model-dirty]:not([hidden])')?.length || 0,
       error: state.error,
     };
   }
