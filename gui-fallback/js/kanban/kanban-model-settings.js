@@ -4,10 +4,11 @@
 
 const KanbanModelSettings = (() => {
   const API_ROOT = '/api/v1/personal/kanban/automation/model-routing/settings';
-  const KINDS = ['preprocessing', 'review'];
+  const KINDS = ['preprocessing', 'review', 'blocker'];
   const LABELS = {
     preprocessing: 'Kanban preprocessing',
     review: 'Review Processor processing',
+    blocker: 'Blocker Processor processing',
   };
   const state = {
     loaded: false,
@@ -246,7 +247,7 @@ const KanbanModelSettings = (() => {
     if (!state.loaded && !state.loadPromise) window.setTimeout(() => load().catch(() => {}), 0);
     return `<section class="kanban-model-settings" data-kanban-model-settings>
       <header class="kanban-model-settings__header">
-        <div><h3>Kanban model priorities</h3><p>Separate durable priority lists for preprocessing and Review Processor work.</p></div>
+        <div><h3>Kanban model priorities</h3><p>Separate durable priority lists for preprocessing, Review Processor, and Blocker Processor work.</p></div>
         <button type="button" class="personal-filter-command" data-kanban-model-action="refresh-availability"${state.loading ? ' disabled' : ''}>Refresh availability</button>
       </header>
       <div class="kanban-model-settings__body" data-kanban-model-body>${bodyHtml()}</div>

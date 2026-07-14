@@ -26,6 +26,16 @@ assert.match(
 );
 assert.match(
   settingsJs,
+  /const\s+KINDS\s*=\s*\['preprocessing',\s*'review',\s*'blocker'\]/,
+  'Settings must render all three first-class Kanban processor priority lists.',
+);
+assert.match(
+  settingsJs,
+  /blocker:\s*'Blocker Processor processing'/,
+  'The third list must be visibly named Blocker Processor.',
+);
+assert.match(
+  settingsJs,
   /body:\s*JSON\.stringify\(\{[\s\S]*route_ids:[\s\S]*expected_revision:[\s\S]*reset,[\s\S]*actor:/,
   'Saves must submit only the ordered opaque route ids plus stale-write and audit fields.',
 );
