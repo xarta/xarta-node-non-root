@@ -632,6 +632,7 @@
 .menu-editor-icon--move-down { --_menu-editor-icon-url: url("/fallback-ui/assets/icons/ui/arrow-down-blue.svg"); }
 .menu-editor-icon--promote { --_menu-editor-icon-url: url("/fallback-ui/assets/icons/ui/arrow-up-gold.svg"); }
 .menu-editor-icon--chevron-down { --_menu-editor-icon-url: url("/fallback-ui/assets/icons/ui/chevron-down-blue.svg"); }
+.menu-editor-icon--trash { --_menu-editor-icon-url: url("/fallback-ui/assets/icons/ui/trash-blue.svg"); }
 .menu-editor-icon--nest { --_menu-editor-icon-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 4v6a4 4 0 0 0 4 4h8'/%3E%3Cpath d='m14 10 4 4-4 4'/%3E%3C/svg%3E"); }
 .menu-editor-icon--edit-label { --_menu-editor-icon-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20h4l11-11a2.8 2.8 0 0 0-4-4L4 16v4z'/%3E%3Cpath d='m13.5 6.5 4 4'/%3E%3C/svg%3E"); }
 .menu-editor-icon--page-label { --_menu-editor-icon-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 13 12 21 3 12V4h8l9 9z'/%3E%3Ccircle cx='8' cy='8' r='1.5' fill='black' stroke='none'/%3E%3C/svg%3E"); }

@@ -2267,7 +2267,7 @@ dialog.hub-modal.email-audit-ledger-modal[open] {
 }
 
 .email-audit-ledger-row__summary {
-  min-height: 34px;
+  min-height: 40px;
   border-left: 3px solid transparent;
   color: var(--text);
   cursor: pointer;
@@ -2310,23 +2310,15 @@ dialog.hub-modal.email-audit-ledger-modal[open] {
 }
 
 .email-audit-ledger-row__toggle {
-  display: inline-grid;
-  place-items: center;
   width: 18px;
   height: 18px;
-  border: 1px solid rgba(var(--hub-accent-rgb), 0.28);
-  border-radius: 50%;
   color: var(--hub-accent);
-  font-size: 12px;
-  font-weight: 700;
+  transform: rotate(-90deg);
+  transition: transform 140ms ease;
 }
 
-.email-audit-ledger-row__toggle::before {
-  content: "+";
-}
-
-.email-audit-ledger-row[open] .email-audit-ledger-row__toggle::before {
-  content: "-";
+.email-audit-ledger-row[open] .email-audit-ledger-row__toggle {
+  transform: rotate(0deg);
 }
 
 .email-audit-ledger-row__detail {
@@ -2880,6 +2872,14 @@ dialog.hub-modal.email-audit-ledger-modal[open] {
   justify-content: space-between;
 }
 
+.email-rule-row__quick-actions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .email-rule-row__toggle {
   align-items: center;
   background: transparent;
@@ -2892,7 +2892,8 @@ dialog.hub-modal.email-audit-ledger-modal[open] {
   font-weight: 700;
   gap: 8px;
   min-width: 0;
-  padding: 0;
+  min-height: 40px;
+  padding: 2px 0;
   text-align: left;
 }
 
@@ -2902,22 +2903,15 @@ dialog.hub-modal.email-audit-ledger-modal[open] {
 }
 
 .email-rule-row__chevron {
-  align-items: center;
-  border: 1px solid rgba(var(--hub-accent-rgb), 0.24);
-  border-radius: var(--radius);
-  display: inline-flex;
-  flex: 0 0 22px;
-  height: 22px;
-  justify-content: center;
-  width: 22px;
+  flex: 0 0 18px;
+  height: 18px;
+  transform: rotate(-90deg);
+  transition: transform 140ms ease;
+  width: 18px;
 }
 
-.email-rule-row__chevron::before {
-  content: '+';
-}
-
-.email-rule-row__toggle[aria-expanded="true"] .email-rule-row__chevron::before {
-  content: '-';
+.email-rule-row__toggle[aria-expanded="true"] .email-rule-row__chevron {
+  transform: rotate(0deg);
 }
 
 .email-rule-row__active {
@@ -3038,6 +3032,40 @@ dialog.hub-modal.email-audit-ledger-modal[open] {
   padding-block: 10px;
 }
 
+.email-rule-sets-tool,
+.email-rule-set-quick-add {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.email-rule-set-quick-add {
+  background-color: rgba(var(--hub-accent-rgb), 0.06);
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.18);
+  border-radius: var(--radius);
+  padding: 10px;
+}
+
+.email-rule-set-quick-add-grid {
+  align-items: end;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(180px, 1fr)) repeat(2, max-content);
+  min-width: 0;
+}
+
+.email-rule-set-scheduler-link {
+  align-items: center;
+  background-color: rgba(var(--hub-accent-rgb), 0.06);
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.16);
+  border-radius: var(--radius);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 8px 10px;
+}
+
 .email-rule-set-manager-heading {
   justify-content: space-between;
 }
@@ -3071,7 +3099,57 @@ dialog.hub-modal.email-audit-ledger-modal[open] {
   gap: 8px;
   grid-template-columns: minmax(180px, 1fr) auto minmax(180px, auto);
   list-style-position: inside;
+  min-height: 42px;
   min-width: 0;
+}
+
+.email-scheduler-create > summary::marker,
+.email-scheduler-row > summary::marker,
+.email-rule-set-create > summary::marker,
+.email-rule-set-row > summary::marker,
+.email-rule-edit-section > summary::marker {
+  content: '';
+}
+
+.email-scheduler-create > summary::-webkit-details-marker,
+.email-scheduler-row > summary::-webkit-details-marker,
+.email-rule-set-create > summary::-webkit-details-marker,
+.email-rule-set-row > summary::-webkit-details-marker,
+.email-rule-edit-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.email-disclosure-summary-label {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.email-disclosure-icon {
+  flex: 0 0 18px;
+  height: 18px;
+  transform: rotate(-90deg);
+  transition: transform 140ms ease;
+  width: 18px;
+}
+
+details[open] > summary .email-disclosure-icon {
+  transform: rotate(0deg);
+}
+
+[data-email-audit-event-detail]:not([open]) > :not(summary),
+[data-email-scheduler-policy-section]:not([open]) > :not(summary),
+[data-email-rule-set-row]:not([open]) > :not(summary),
+[data-email-scheduler-row]:not([open]) > :not(summary),
+[data-email-rule-set-create-section]:not([open]) > :not(summary),
+[data-email-scheduler-create-section]:not([open]) > :not(summary) {
+  display: none;
+}
+
+.email-rule-edit-section > summary {
+  cursor: pointer;
+  min-height: 40px;
 }
 
 .email-rule-summary-main {
@@ -3137,6 +3215,166 @@ dialog.hub-modal.email-audit-ledger-modal[open] {
   min-height: var(--email-rules-control-height);
 }
 
+.email-catalog-picker {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  position: relative;
+}
+
+.email-catalog-picker__label,
+.email-catalog-picker__filters label > span,
+.email-catalog-picker__kind > span {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.email-catalog-picker__toggle {
+  align-items: center;
+  background-color: rgba(0, 0, 0, 0.26);
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.18);
+  border-radius: var(--radius);
+  box-sizing: border-box;
+  color: var(--text);
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) 16px;
+  height: var(--email-rules-control-height);
+  min-width: 0;
+  padding: 8px 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.email-catalog-picker__toggle > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.email-catalog-picker__toggle .menu-editor-icon {
+  transition: transform 140ms ease;
+}
+
+.email-catalog-picker.is-open .email-catalog-picker__toggle .menu-editor-icon {
+  transform: rotate(180deg);
+}
+
+.email-catalog-picker__toggle:focus-visible,
+.email-catalog-picker__option:focus-visible {
+  border-color: rgba(var(--hub-accent-rgb), 0.58);
+  box-shadow: 0 0 0 2px rgba(var(--hub-accent-rgb), 0.16);
+  outline: none;
+}
+
+.email-catalog-picker__popup {
+  background: color-mix(in srgb, var(--surface) 96%, #000 4%);
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.3);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.46);
+  display: grid;
+  gap: 8px;
+  inset: calc(100% + 4px) 0 auto 0;
+  min-width: min(520px, calc(100vw - 48px));
+  padding: 9px;
+  position: absolute;
+  z-index: 42;
+}
+
+.email-catalog-picker__popup[hidden] {
+  display: none;
+}
+
+.email-catalog-picker__filters {
+  align-items: end;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(180px, 1fr) minmax(130px, 0.45fr);
+}
+
+.email-catalog-picker__filters > label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.email-catalog-picker__filters input,
+.email-catalog-picker__filters select {
+  background-color: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.2);
+  border-radius: var(--radius);
+  box-sizing: border-box;
+  color: var(--text);
+  font: inherit;
+  height: var(--email-rules-control-height);
+  min-width: 0;
+  padding: 8px;
+  width: 100%;
+}
+
+.email-catalog-picker__list {
+  display: grid;
+  gap: 4px;
+  max-height: min(320px, 42vh);
+  min-height: 42px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.email-catalog-picker__option {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  gap: 8px;
+  grid-template-columns: minmax(88px, max-content) minmax(130px, 1fr);
+  min-height: 42px;
+  padding: 7px 8px;
+  text-align: left;
+}
+
+.email-catalog-picker__option[data-active="true"],
+.email-catalog-picker__option:hover {
+  background: rgba(var(--hub-accent-rgb), 0.12);
+  border-color: rgba(var(--hub-accent-rgb), 0.34);
+}
+
+.email-catalog-picker__option[aria-selected="true"] {
+  box-shadow: inset 3px 0 0 var(--hub-accent);
+}
+
+.email-catalog-picker__type {
+  border: 1px solid rgba(var(--hub-accent-rgb), 0.24);
+  border-radius: 999px;
+  color: var(--hub-accent);
+  font-size: 0.72rem;
+  padding: 3px 6px;
+}
+
+.email-catalog-picker__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.email-catalog-picker__option small {
+  color: var(--text-dim);
+  grid-column: 2;
+  overflow-wrap: anywhere;
+}
+
+.email-catalog-picker__status {
+  color: var(--text-dim);
+  font-size: 0.74rem;
+  min-height: 1em;
+}
+
 .email-rule-set-run-row {
   grid-template-columns: minmax(180px, 1fr) repeat(3, max-content);
 }
@@ -3200,6 +3438,19 @@ dialog.hub-modal.email-audit-ledger-modal[open] {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.email-rule-set-icon-action {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+  padding: 0;
+  width: var(--email-rules-control-height);
+}
+
+.email-rule-set-icon-action .menu-editor-icon {
+  height: 17px;
+  width: 17px;
 }
 
 .email-scheduler-policy-grid {
@@ -3743,9 +3994,24 @@ dialog.hub-modal.email-vpath-help-modal {
   .email-rule-set-primary-grid,
   .email-rule-set-run-row,
   .email-rule-set-add-row,
+  .email-rule-set-quick-add-grid,
   .email-rule-set-member,
   .email-rule-set-member--readonly {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .email-catalog-picker__popup {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .email-catalog-picker__filters,
+  .email-catalog-picker__option {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .email-catalog-picker__option small {
+    grid-column: 1;
   }
 
   .email-scheduler-actions {
@@ -3762,12 +4028,20 @@ dialog.hub-modal.email-vpath-help-modal {
     align-items: stretch;
   }
 
+  .email-rule-set-member-actions {
+    flex-wrap: nowrap;
+  }
+
   .email-rule-set-actions .hub-action-btn,
   .email-rule-set-form-actions .hub-action-btn,
   .email-rule-set-member-actions .hub-action-btn,
   .email-rule-set-add-row .hub-action-btn,
   .email-rule-set-run-row .hub-action-btn {
     width: 100%;
+  }
+
+  .email-rule-set-member-actions .email-rule-set-icon-action {
+    width: var(--email-rules-control-height);
   }
 
   .email-rule-create-primary-grid {

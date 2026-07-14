@@ -26,6 +26,14 @@ function tabSlice(tabId) {
   return indexHtml.slice(start, end);
 }
 
+function declarationSlice(source, declaration) {
+  const start = source.indexOf(declaration);
+  assert.notEqual(start, -1, `${declaration} must exist.`);
+  const tail = source.slice(start + declaration.length);
+  const next = tail.search(/\n  (?:async )?function [A-Za-z0-9_$]+\(/);
+  return source.slice(start, next === -1 ? source.length : start + declaration.length + next);
+}
+
 test('PIM Email tab follows the Blueprints managed-scroll shell contract', () => {
   const tabHtml = tabSlice('tab-email');
   assert.match(indexHtml, /css\/dave-email\.css\?v=/, 'Email stylesheet must be loaded.');
@@ -57,16 +65,20 @@ test('PIM Email tab follows the Blueprints managed-scroll shell contract', () =>
 });
 
 test('PIM Email viewport rules match Dave and Kanban precedent', () => {
+  const desktopHeaderStart = emailCss.indexOf('@media (min-width: 821px) {');
+  const desktopHeaderEnd = emailCss.indexOf('@media', desktopHeaderStart + 1);
+  const desktopHeaderCss = emailCss.slice(desktopHeaderStart, desktopHeaderEnd);
+
   assert.match(bodyShadeJs, /'tab-email'/, 'Body Shade resync must include Email.');
   assert.match(bodyShadeCss, /#tab-email\.active\s*>\s*\.tab-scroll-shell/, 'Body Shade CSS must include Email shell constraints.');
   assert.match(
-    emailCss,
-    /@media\s*\(min-width:\s*821px\)[\s\S]*\.email-page__title-block h2\s*\{[\s\S]*display:\s*none/,
+    desktopHeaderCss,
+    /\.email-page__title-block h2\s*\{[\s\S]*display:\s*none/,
     'Desktop Email must hide only the page title text.',
   );
   assert.doesNotMatch(
-    emailCss,
-    /@media\s*\(min-width:\s*821px\)[\s\S]*\.email-page__title-block\s*\{[\s\S]*display:\s*none/,
+    desktopHeaderCss,
+    /\.email-page__title-block\s*\{[\s\S]*display:\s*none/,
     'Desktop Email must keep the mailbox/open-folder meta line visible.',
   );
   assert.match(emailCss, /--email-status-strip-size:\s*32px/, 'Email status/security strip must keep the compact shared size.');
@@ -231,18 +243,15 @@ test('PIM Email Rules form controls have explicit input-baseline alignment', () 
 });
 
 test('PIM Email Scheduler mounts from a fresh stack catalog and patches passive status in place', () => {
-  const passiveStart = emailJs.indexOf('async function refreshSchedulerStatus');
-  const passiveEnd = emailJs.indexOf('function ensureSchedulerStatusTimer', passiveStart);
-  const passiveSlice = emailJs.slice(passiveStart, passiveEnd);
-  const setToolStart = emailJs.indexOf('async function setRulesTool');
-  const setToolEnd = emailJs.indexOf('function setView', setToolStart);
-  const setToolSlice = emailJs.slice(setToolStart, setToolEnd);
+  const passiveSlice = declarationSlice(emailJs, 'async function refreshSchedulerStatus');
+  const setToolSlice = declarationSlice(emailJs, 'async function setRulesTool');
 
   assert.match(emailJs, /\['scheduler', 'Scheduler'\]/, 'Rules dropdown/subtabs must expose Scheduler on every responsive surface.');
-  assert.match(setToolSlice, /schedulerCatalogFresh = false[\s\S]*await refreshSchedulerCatalog\(\{ explicit: true \}\)[\s\S]*renderSecondaryPanels\(\)/, 'Scheduler must establish a fresh stack target catalog before mounting its controls.');
+  assert.match(emailJs, /\['rule-sets', 'Rule Sets'\]/, 'Rules dropdown/subtabs must expose a dedicated Rule Sets surface beside Scheduler.');
+  assert.match(setToolSlice, /clean === 'scheduler' \|\| clean === 'rule-sets'[\s\S]*schedulerCatalogFresh = false[\s\S]*await refreshSchedulerCatalog\(\{ explicit: true \}\)[\s\S]*renderSecondaryPanels\(\)/, 'Scheduler and Rule Sets must establish a fresh stack catalog before mounting controls.');
   assert.match(emailJs, /Scheduler catalog freshness could not be established\. Controls are unavailable\./, 'A failed target catalog refresh must fail closed.');
   assert.match(passiveSlice, /fetchJson\(schedulerEndpoint\('\/schedules'\)\)[\s\S]*patchSchedulerOwnedValues\(\)/, 'Passive scheduler status must patch response-owned nodes.');
-  assert.doesNotMatch(passiveSlice, /renderSecondaryPanels\(\)|renderUltrawide\(\)|innerHTML\s*=\s*schedulerToolHtml/, 'Passive scheduler status must not remount forms.');
+  assert.doesNotMatch(passiveSlice, /renderSecondaryPanels\(\)|renderUltrawide\(\)|innerHTML\s*=|schedulerTargets\s*=|schedulerRuleSets\s*=/, 'Passive scheduler status must not remount forms, pickers, set editors, or catalogs.');
   assert.match(emailJs, /data-email-scheduler-create-form[\s\S]*data-email-scheduler-edit-form/, 'Scheduler must expose create and accordion edit forms.');
   assert.match(emailJs, /data-email-scheduler-action="preview"[\s\S]*data-email-scheduler-action="run-now"[\s\S]*data-email-scheduler-action="toggle"[\s\S]*data-email-scheduler-action="duplicate"[\s\S]*data-email-scheduler-action="history"/, 'Scheduler rows must expose all operator actions.');
   assert.match(emailJs, /class="hub-checkbox email-scheduler-enabled"[\s\S]*class="hub-checkbox__input"/, 'Scheduler enabled state must use the shared checkbox.');
@@ -265,17 +274,48 @@ test('PIM Email Scheduler manages named ordered rule sets as one durable target'
   assert.match(catalogSlice, /schedulerRuleSets\s*=\s*Array\.isArray\(ruleSets\.result\?\.rule_sets\)/, 'The set catalog must remain stack-owned.');
   assert.doesNotMatch(passiveSlice, /rule-sets|schedulerRuleSets\s*=/, 'Passive status polling must not replace set forms or dirty member order.');
   assert.match(emailJs, /kind === 'virtual_path_rule_set'\) return 'Rule set'/, 'Named sets must be labelled separately from rules and registered stack functions.');
-  assert.match(emailJs, /data-email-rule-set-form/, 'Scheduler must expose create/edit named set forms.');
+  assert.match(emailJs, /function ruleSetsToolHtml\([\s\S]*data-email-rules-tool-panel="rule-sets"[\s\S]*ruleSetsQuickAddHtml\(\)[\s\S]*ruleSetManagerHtml\(\)/, 'Rule Sets must have a dedicated management surface with quick membership and full set editing.');
+  assert.match(emailJs, /data-email-rule-add-to-set/, 'Every Rules-list row must expose a discoverable Add to set action.');
+  assert.match(emailJs, /async function openRuleSetsForRule\([\s\S]*setRulesTool\('rule-sets'\)[\s\S]*data-picker-mode="set"/, 'The row action must open Rule Sets with the active rule preselected and the named-set chooser ready.');
+  assert.match(emailJs, /function quickAddSchedulerRuleSetMember\([\s\S]*already a member[\s\S]*method: 'PATCH'[\s\S]*rule_ids: \[\.\.\.ruleIds,[\s\S]*expected_version:[\s\S]*No schedule was created/, 'Quick add must reject duplicates and patch durable ordered membership with optimistic versioning.');
+  assert.doesNotMatch(declarationSlice(emailJs, 'async function quickAddSchedulerRuleSetMember'), /\/schedules|run-now|preview/, 'Quick membership must never create or run member schedules.');
+  assert.match(emailJs, /data-email-rule-set-form/, 'Rule Sets must expose create/edit named set forms.');
   assert.match(emailJs, /data-email-rule-set-members/, 'Set forms must expose ordered membership.');
   assert.match(emailJs, /data-email-rule-set-member-action="add"/, 'Set membership must come from the fresh active-rule catalog.');
-  assert.match(emailJs, /draggable="true"[\s\S]*data-email-rule-set-member-action="up"[\s\S]*data-email-rule-set-member-action="down"[\s\S]*data-email-rule-set-member-action="remove"/, 'Members must support drag/drop and explicit keyboard-operable ordering controls.');
+  assert.match(emailJs, /draggable="true"[\s\S]*data-email-rule-set-member-action="up"[\s\S]*aria-label="Move [\s\S]* up"[\s\S]*title="Move up"[\s\S]*menu-editor-icon--move-up[\s\S]*data-email-rule-set-member-action="down"[\s\S]*menu-editor-icon--move-down[\s\S]*data-email-rule-set-member-action="remove"[\s\S]*title="Remove from set"[\s\S]*menu-editor-icon--trash/, 'Members must support drag/drop plus labelled arrow and trash icon controls.');
   assert.match(emailJs, /schedulerRuleSetDrafts\.set\(key, draft\)/, 'Dirty set name, description, and order must be stored independently of response-owned status.');
   assert.match(ruleSetMutationSlice, /data-email-scheduler-create-form[\s\S]*virtual_path_rule_set/, 'Schedule set must select one named set target in the existing schedule form.');
   assert.match(ruleSetMutationSlice, /action === 'preview' \|\| action === 'run-now'[\s\S]*schedule_id: scheduleId[\s\S]*dry_run: !apply/, 'Set preview and run-now must queue one parent schedule run, not member schedules.');
   assert.match(emailJs, /data-email-scheduler-run-detail[\s\S]*schedulerRunStagesHtml/, 'Bounded history must expose ordered child stages on demand.');
   assert.match(emailCss, /\.email-rule-set-actions \.hub-action-btn,[\s\S]*block-size:\s*var\(--email-rules-control-height\)[\s\S]*height:\s*var\(--email-rules-control-height\)/, 'Set buttons must use the explicit shared input baseline.');
   assert.match(emailCss, /\.email-rule-form select\s*\{[\s\S]*appearance:\s*none[\s\S]*background-image:\s*url\(/, 'Set selectors must retain the accepted shared chevron.');
-  assert.match(emailCss, /@media\s*\(max-width:\s*820px\)[\s\S]*\.email-rule-set-primary-grid,[\s\S]*\.email-rule-set-run-row,[\s\S]*\.email-rule-set-add-row,[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/, 'Named set forms and actions must stack without horizontal shifts on mobile.');
+  assert.match(emailCss, /@media\s*\(max-width:\s*820px\)[\s\S]*\.email-rule-set-primary-grid,[\s\S]*\.email-rule-set-run-row,[\s\S]*\.email-rule-set-add-row,[\s\S]*\.email-rule-set-quick-add-grid,[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/, 'Named set forms, quick membership, and actions must stack without horizontal shifts on mobile.');
+});
+
+test('PIM Email scheduler target picker is typed, searchable, bounded, and keyboard accessible', () => {
+  const catalogSlice = declarationSlice(emailJs, 'function schedulerTargetCatalog');
+  const renderSlice = declarationSlice(emailJs, 'function renderSchedulerCatalogPicker');
+  const definitionSlice = declarationSlice(emailJs, 'function schedulerDefinitionFromForm');
+
+  assert.match(emailJs, /SCHEDULER_PICKER_RENDER_LIMIT = 80/, 'The picker must keep a hard mounted-option bound for very large catalogs.');
+  assert.match(renderSlice, /matches\.slice\(0, SCHEDULER_PICKER_RENDER_LIMIT\)/, 'Filtering thousands of targets must mount only the bounded leading result window.');
+  assert.match(catalogSlice, /virtual_path_rule_set[\s\S]*virtual_path_rule[\s\S]*stack_function[\s\S]*localeCompare/, 'Target order must be deterministic by kind, name, and identifier.');
+  assert.match(emailJs, /role="combobox"[\s\S]*aria-autocomplete="list"[\s\S]*role="listbox"[\s\S]*role="option"[\s\S]*aria-posinset[\s\S]*aria-setsize/, 'The custom chooser must expose combobox/listbox semantics and bounded-set position metadata.');
+  assert.match(emailJs, /data-email-catalog-picker-kind[\s\S]*Rule sets[\s\S]*Rules[\s\S]*Stack functions/, 'Schedule targets must be filterable by registered target kind.');
+  assert.match(emailJs, /event\.key === 'ArrowDown'[\s\S]*event\.key === 'ArrowUp'[\s\S]*event\.key === 'Home'[\s\S]*event\.key === 'End'[\s\S]*event\.key === 'Enter'[\s\S]*event\.key === 'Escape'/, 'Keyboard users must be able to navigate, select, and close the filtered chooser.');
+  assert.match(definitionSlice, /schedulerTargetFor\(targetKey\)[\s\S]*current registered scheduler target[\s\S]*target_kind: target\.kind[\s\S]*target_ref: target\.ref/, 'Schedule submission must fail closed unless the selected target remains in the fresh typed catalog.');
+  assert.doesNotMatch(emailJs, /<select[^>]+name="target_key"/, 'The scheduler must not regress to an unscalable native target select.');
+  assert.match(emailCss, /\.email-catalog-picker__popup\s*\{[\s\S]*position:\s*absolute[\s\S]*max-height:/, 'The open chooser must overlay without shifting an already-open schedule form.');
+});
+
+test('PIM Email disclosures expose visible icon state and native accessible expansion', () => {
+  assert.match(emailJs, /function syncEmailDisclosureState\([\s\S]*setAttribute\('aria-expanded', details\.open \? 'true' : 'false'\)/, 'All dynamic details summaries must mirror native open state through aria-expanded.');
+  assert.match(emailJs, /data-email-audit-event-detail[\s\S]*data-email-disclosure-icon/, 'Audit ledger disclosures must use the shared chevron vocabulary.');
+  assert.match(emailJs, /data-email-scheduler-policy-section[\s\S]*data-email-disclosure-icon/, 'Scheduler policy disclosures must visibly indicate open and closed state.');
+  assert.match(emailJs, /data-email-rule-set-create-section[\s\S]*aria-expanded="false"[\s\S]*data-email-disclosure-icon/, 'Rule-set creation must start collapsed with an explicit accessible state icon.');
+  assert.match(emailJs, /data-email-scheduler-create-section[\s\S]*aria-expanded="false"[\s\S]*data-email-disclosure-icon/, 'Schedule creation must start collapsed with an explicit accessible state icon.');
+  assert.match(emailCss, /\.email-disclosure-icon\s*\{[\s\S]*transform:\s*rotate\(-90deg\)[\s\S]*details\[open\] > summary \.email-disclosure-icon\s*\{[\s\S]*transform:\s*rotate\(0deg\)/, 'Expanded details must rotate the established shared chevron from right-facing to down-facing.');
+  assert.match(emailCss, /\[data-email-audit-event-detail\]:not\(\[open\]\) > :not\(summary\),[\s\S]*\[data-email-scheduler-create-section\]:not\(\[open\]\) > :not\(summary\)[\s\S]*display:\s*none/, 'Closed disclosures must not leak hidden member content.');
 });
 
 test('PIM Email virtual-path picker refreshes its catalog before mounting', () => {
@@ -386,12 +426,12 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.doesNotMatch(emailJs, /Only Inbox message opening/, 'Email UI must open messages from the selected folder.');
   assert.match(emailJs, /\/local\/messages\/\$\{encodeURIComponent\(emailUid\)\}/, 'Email UI must open local corpus messages by email_uid.');
   assert.match(emailJs, /role="tree"/, 'Email folders must render as a tree.');
-  assert.match(emailJs, /email-health-heartbeat/, 'Email list heading must expose a compact PIM health heartbeat.');
-  assert.match(emailCss, /\.email-health-heartbeat--beating/, 'Healthy active PIM work must animate the compact heartbeat.');
-  assert.match(emailJs, /function cacheHeartbeatActivity\(\)/, 'Heartbeat animation must include active cache and browser warm work.');
-  assert.match(emailJs, /return downloadHealthActivity\(\) \|\| cacheHeartbeatActivity\(\);/, 'Heartbeat animation must beat for download or cache/browser activity.');
-  assert.doesNotMatch(emailJs, /state\.health\?\.healthy \|\| state\.health\?\.activity \|\| downloadHealthActivity\(\)/, 'Generic healthy state must not drive the heartbeat.');
-  assert.match(emailJs, /checking IMAP folders/, 'Heartbeat copy must describe active IMAP folder checks.');
+  assert.match(emailJs, /email-activity-heartbeat/, 'Email list heading must expose the compact current activity heartbeat.');
+  assert.match(emailCss, /\.email-activity-heartbeat--beating/, 'Healthy active PIM work must animate the compact activity heartbeat.');
+  assert.match(emailJs, /function browserActivityHeartbeatActive\(\)[\s\S]*messageOpenPrefetchInFlight[\s\S]*messageImagePrefetchQueue/, 'Heartbeat animation must include active cache and browser warm work.');
+  assert.match(emailJs, /return stackActivityHeartbeatActive\(\) \|\| browserActivityHeartbeatActive\(\);/, 'Heartbeat animation must combine stack-owned work with local cache/browser activity.');
+  assert.doesNotMatch(emailJs, /state\.health\?\.healthy \|\| state\.health\?\.activity/, 'Generic healthy state must not drive the heartbeat.');
+  assert.match(emailJs, /PIM Email cache\/browser activity active/, 'Heartbeat copy must describe active cache/browser work.');
   assert.match(emailJs, /data-email-folder-menu-toggle="set"/, 'Folder list must render as a split dropdown tab.');
   assert.match(emailJs, /data-email-folder-menu-toggle="group"/, 'Folder group must render as a split dropdown tab.');
   assert.match(emailJs, /data-email-folder-set-option/, 'Folder list dropdown tab must expose menu options.');
@@ -401,7 +441,7 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailCss, /\.email-folder-tab-split/, 'Email folder controls must use split tab styling.');
   assert.match(emailJs, /exclusiveFolderGroups/, 'Email folders must be grouped by exclusive initial ranges.');
   assert.match(emailJs, /distributeFolderColumns/, 'Selected folder ranges must distribute roots across columns.');
-  assert.match(emailJs, /frame\.setAttribute\('sandbox', 'allow-same-origin'\)/, 'HTML email must allow parent-owned diagnostics without allowing email scripts.');
+  assert.match(emailJs, /frame\.setAttribute\('sandbox', 'allow-same-origin [^']*'\)/, 'HTML email must allow parent-owned diagnostics without allowing email scripts.');
   assert.doesNotMatch(emailJs, /frame\.setAttribute\('sandbox', 'allow-scripts'\)/, 'HTML email iframe must never allow message scripts.');
   assert.match(emailJs, /img-src \$\{escHtml\(imgSources\)\}/, 'HTML email iframe must limit images to data and same-site proxy sources.');
   assert.doesNotMatch(emailJs, /RICH_VIEW_IDS/, 'HTML and Markdown tabs must not be gated by aggregate security colour.');
@@ -426,7 +466,7 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(emailJs, /MESSAGE_OPEN_CACHE_LIMIT = Number\.POSITIVE_INFINITY/, 'Opened and prefetched messages must not have a hidden message-count cap.');
   assert.match(emailJs, /MESSAGE_OPEN_CACHE_MAX_BYTES = 512 \* 1024 \* 1024/, 'Opened and prefetched browser payload cache must be bounded by bytes.');
   assert.match(emailJs, /MESSAGE_OPEN_PREFETCH_LIMIT = 100/, 'Browser body prefetch must target the currently loaded recent 100.');
-  assert.match(emailJs, /MESSAGE_OPEN_PREFETCH_CONCURRENCY = 8/, 'Browser body prefetch must prioritize the recent set without waiting on images.');
+  assert.match(emailJs, /MESSAGE_OPEN_PREFETCH_CONCURRENCY = 1/, 'Browser body prefetch must remain RAM-safe and yield to active message work.');
   assert.match(emailJs, /MESSAGE_IMAGE_PREFETCH_CONCURRENCY = 2/, 'Browser image prefetch must run behind body prefetch with lower concurrency.');
   assert.match(emailJs, /function pauseMessageOpenPrefetch\(/, 'Opening a message must pause background body prefetch so active images get priority.');
   assert.match(emailJs, /controller\.abort\(\)/, 'Background body prefetch must be abortable when the user opens a message.');
@@ -525,14 +565,11 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
 });
 
 test('PIM Email message list refreshes only on list data changes', () => {
-  const healthStart = emailJs.indexOf('async function refreshHealth');
-  const healthEnd = emailJs.indexOf('function ensureHealthPoll', healthStart);
-  assert.notEqual(healthStart, -1, 'refreshHealth must exist.');
-  const healthSlice = emailJs.slice(healthStart, healthEnd);
+  const healthSlice = declarationSlice(emailJs, 'async function refreshHealth');
 
   assert.match(emailJs, /function renderMessageListChrome\(/, 'Email UI must split list chrome from list row rendering.');
   assert.doesNotMatch(healthSlice, /renderMessages\(/, 'Health polling must not rebuild message rows.');
-  assert.match(healthSlice, /renderMessageListChrome\(\)/, 'Health polling may refresh heartbeat/count chrome.');
+  assert.doesNotMatch(healthSlice, /renderSecondaryPanels\(\)|renderUltrawide\(\)|innerHTML\s*=/, 'Health polling must not remount open Rules forms, rows, modals, or sidecars.');
   assert.match(emailJs, /function captureMessageListAnchor\(/, 'Explicit list refreshes must capture scroll anchors.');
   assert.match(emailJs, /function restoreMessageListAnchor\(/, 'Explicit list refreshes must restore scroll anchors.');
   assert.match(emailJs, /function syncSelectedMessageRows\(/, 'Opening a message must update row selection without rebuilding the list.');

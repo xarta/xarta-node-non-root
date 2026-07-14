@@ -29,6 +29,7 @@ const EmailPage = (() => {
   ];
   const RULES_TOOL_OPTIONS = [
     ['rules', 'Rules list'],
+    ['rule-sets', 'Rule Sets'],
     ['paths', 'Paths'],
     ['bulk', 'Bulk move'],
     ['create', 'Create rule'],
@@ -59,6 +60,7 @@ const EmailPage = (() => {
   const PROBABLE_TRUSTED_SECURITY_POLL_ATTEMPTS = 36;
   const HEALTH_POLL_MS = 15000;
   const SCHEDULER_STATUS_POLL_MS = 15000;
+  const SCHEDULER_PICKER_RENDER_LIMIT = 80;
   const CACHE_STATUS_POLL_MS = 30000;
   const ACTIVITY_HEARTBEAT_REFRESH_MS = 1000;
   const CACHE_HEARTBEAT_RECENT_MS = 6000;
@@ -244,6 +246,7 @@ const EmailPage = (() => {
     schedulerRuleSetExpanded: new Set(),
     schedulerRuleSetDrafts: new Map(),
     schedulerRuleSetMessages: new Map(),
+    schedulerQuickRuleId: '',
     schedulerRuleSetDrag: null,
     schedulerHistory: new Map(),
     schedulerRunDetails: new Map(),
@@ -284,6 +287,7 @@ const EmailPage = (() => {
   let messageContextPointerHandler = null;
   let messageContextKeyHandler = null;
   let auditLedgerLocalDateTimeFormatter = null;
+  let schedulerPickerRenderSequence = 0;
 
   function el(id) {
     return document.getElementById(id);
@@ -3317,8 +3321,8 @@ const EmailPage = (() => {
             data-tone="${escHtml(auditLedgerEventTone(event))}"
             name="email-audit-ledger-event"
           >
-            <summary class="email-audit-ledger-row__summary" role="row">
-              <span class="email-audit-ledger-row__toggle" aria-hidden="true"></span>
+            <summary class="email-audit-ledger-row__summary" role="row" aria-expanded="false">
+              <span class="email-audit-ledger-row__toggle menu-editor-icon menu-editor-icon--chevron-down" data-email-disclosure-icon aria-hidden="true"></span>
               <span role="cell" title="${escHtml(event.event_ts || event.created_at || '')}">${escHtml(auditLedgerEventTimestamp(event))}</span>
               <span role="cell" title="${escHtml(event.event_id || '')}">${escHtml(auditLedgerEventTitle(event))}</span>
               <span role="cell">${escHtml(formatSecurityValue(event.action || 'n/a'))}</span>
@@ -4902,13 +4906,224 @@ const EmailPage = (() => {
     return 'Stack function';
   }
 
-  function schedulerTargetOptionsHtml(selectedKey = '') {
-    const targets = (state.schedulerTargets || []).filter(target => target?.compatible !== false);
-    return targets.map(target => {
-      const key = schedulerTargetKey(target.kind, target.ref);
-      const kind = schedulerTargetKindLabel(target.kind);
-      return `<option value="${escHtml(key)}"${key === selectedKey ? ' selected' : ''}>${escHtml(`${kind}: ${target.display_name || target.ref}`)}</option>`;
-    }).join('');
+  function schedulerTargetLabel(target) {
+    if (!target) return 'Choose a registered target';
+    return `${schedulerTargetKindLabel(target.kind)}: ${target.display_name || target.ref}`;
+  }
+
+  function schedulerTargetCatalog(mode = 'target') {
+    const kindRank = new Map([
+      ['virtual_path_rule_set', 0],
+      ['virtual_path_rule', 1],
+      ['stack_function', 2],
+    ]);
+    return (state.schedulerTargets || [])
+      .filter(target => {
+        if (!target || target.compatible === false || target.status === 'archived') return false;
+        if (mode === 'rule') return target.kind === 'virtual_path_rule' && target.status === 'active';
+        if (mode === 'set') return target.kind === 'virtual_path_rule_set' && target.status === 'active';
+        return true;
+      })
+      .slice()
+      .sort((left, right) => {
+        const kindOrder = (kindRank.get(left.kind) ?? 9) - (kindRank.get(right.kind) ?? 9);
+        if (kindOrder) return kindOrder;
+        const leftName = String(left.display_name || left.ref || '').toLocaleLowerCase('en-GB');
+        const rightName = String(right.display_name || right.ref || '').toLocaleLowerCase('en-GB');
+        const nameOrder = leftName.localeCompare(rightName, 'en-GB');
+        if (nameOrder) return nameOrder;
+        return String(left.ref || '').localeCompare(String(right.ref || ''), 'en-GB');
+      });
+  }
+
+  function schedulerPickerDomId(prefix, suffix) {
+    return `email-catalog-${String(prefix || 'picker').replace(/[^a-z0-9_-]+/gi, '-')}-${suffix}`;
+  }
+
+  function schedulerCatalogPickerHtml(options = {}) {
+    const prefix = String(options.prefix || 'target');
+    const mode = options.mode === 'rule' || options.mode === 'set' ? options.mode : 'target';
+    const selectedKey = String(options.selectedKey || '');
+    const selectedTarget = schedulerTargetFor(selectedKey);
+    const label = String(options.label || (mode === 'rule' ? 'Active rule' : mode === 'set' ? 'Named rule set' : 'Target'));
+    const instancePrefix = `${prefix}-${++schedulerPickerRenderSequence}`;
+    const listId = schedulerPickerDomId(instancePrefix, 'listbox');
+    const searchId = schedulerPickerDomId(instancePrefix, 'search');
+    const valueAttrs = options.valueAttrs || '';
+    const nameAttr = options.name ? ` name="${escHtml(options.name)}"` : '';
+    const kindFilter = mode === 'target' ? `
+      <label class="email-catalog-picker__kind"><span>Type</span><select data-email-catalog-picker-kind aria-label="Filter targets by type">
+        <option value="">All types</option>
+        <option value="virtual_path_rule_set">Rule sets</option>
+        <option value="virtual_path_rule">Rules</option>
+        <option value="stack_function">Stack functions</option>
+      </select></label>
+    ` : '';
+    return `
+      <div class="email-catalog-picker" data-email-catalog-picker data-picker-mode="${escHtml(mode)}" data-picker-prefix="${escHtml(prefix)}">
+        <span class="email-catalog-picker__label">${escHtml(label)}</span>
+        <input type="hidden"${nameAttr} value="${escHtml(selectedTarget ? schedulerTargetKey(selectedTarget.kind, selectedTarget.ref) : '')}" data-email-catalog-picker-value ${valueAttrs}>
+        <button class="email-catalog-picker__toggle" type="button" data-email-catalog-picker-toggle data-email-preserve-focus="${escHtml(prefix)}-toggle" aria-label="${escHtml(label)}: ${escHtml(selectedTarget ? schedulerTargetLabel(selectedTarget) : 'not selected')}" aria-haspopup="listbox" aria-expanded="false" aria-controls="${escHtml(listId)}">
+          <span data-email-catalog-picker-selected>${escHtml(selectedTarget ? schedulerTargetLabel(selectedTarget) : mode === 'rule' ? 'Choose an active rule' : mode === 'set' ? 'Choose a named rule set' : 'Choose a registered target')}</span>
+          <span class="menu-editor-icon menu-editor-icon--chevron-down" aria-hidden="true"></span>
+        </button>
+        <div class="email-catalog-picker__popup" data-email-catalog-picker-popup hidden>
+          <div class="email-catalog-picker__filters">
+            <label><span>Filter</span><input id="${escHtml(searchId)}" type="search" data-email-catalog-picker-search data-email-preserve-focus="${escHtml(prefix)}-search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="${escHtml(listId)}" autocomplete="off" placeholder="Filter by name or identifier"></label>
+            ${kindFilter}
+          </div>
+          <div class="email-catalog-picker__list" id="${escHtml(listId)}" role="listbox" data-email-catalog-picker-list aria-label="${escHtml(label)} options"></div>
+          <div class="email-catalog-picker__status" data-email-catalog-picker-status aria-live="polite"></div>
+        </div>
+      </div>
+    `;
+  }
+
+  function syncEmailDisclosureState(details) {
+    if (!details?.matches?.('[data-email-audit-event-detail], [data-email-scheduler-policy-section], [data-email-rule-set-row], [data-email-scheduler-row], [data-email-rule-set-create-section], [data-email-scheduler-create-section]')) return false;
+    const summary = details.querySelector(':scope > summary');
+    if (!summary) return false;
+    summary.setAttribute('aria-expanded', details.open ? 'true' : 'false');
+    details.dataset.expanded = details.open ? 'true' : 'false';
+    return true;
+  }
+
+  function closeSchedulerCatalogPicker(picker, options = {}) {
+    if (!picker) return false;
+    const popup = picker.querySelector('[data-email-catalog-picker-popup]');
+    const toggle = picker.querySelector('[data-email-catalog-picker-toggle]');
+    const search = picker.querySelector('[data-email-catalog-picker-search]');
+    const list = picker.querySelector('[data-email-catalog-picker-list]');
+    if (popup) popup.hidden = true;
+    if (toggle) toggle.setAttribute('aria-expanded', 'false');
+    if (search) {
+      search.setAttribute('aria-expanded', 'false');
+      search.removeAttribute('aria-activedescendant');
+    }
+    if (list) list.textContent = '';
+    picker.dataset.pickerActiveIndex = '-1';
+    picker.classList.remove('is-open');
+    if (options.restoreFocus) toggle?.focus?.({ preventScroll: true });
+    return true;
+  }
+
+  function closeSchedulerCatalogPickers(except = null) {
+    document.querySelectorAll('[data-email-catalog-picker].is-open').forEach(picker => {
+      if (picker !== except) closeSchedulerCatalogPicker(picker);
+    });
+  }
+
+  function schedulerCatalogPickerCandidates(picker) {
+    const mode = String(picker?.dataset?.pickerMode || 'target');
+    const search = String(picker?.querySelector?.('[data-email-catalog-picker-search]')?.value || '').trim().toLocaleLowerCase('en-GB');
+    const kind = String(picker?.querySelector?.('[data-email-catalog-picker-kind]')?.value || '');
+    const form = picker?.closest?.('[data-email-rule-set-form]');
+    const excludedRuleIds = mode === 'rule' && form
+      ? new Set(Array.from(form.querySelectorAll('[data-email-rule-set-member]')).map(row => String(row.dataset.ruleId || '')))
+      : new Set();
+    return schedulerTargetCatalog(mode).filter(target => {
+      if (kind && target.kind !== kind) return false;
+      if (excludedRuleIds.has(String(target.ref || ''))) return false;
+      if (!search) return true;
+      const haystack = `${schedulerTargetLabel(target)} ${target.ref || ''}`.toLocaleLowerCase('en-GB');
+      return haystack.includes(search);
+    });
+  }
+
+  function renderSchedulerCatalogPicker(picker, activeIndex = null) {
+    if (!picker) return [];
+    const list = picker.querySelector('[data-email-catalog-picker-list]');
+    const status = picker.querySelector('[data-email-catalog-picker-status]');
+    const search = picker.querySelector('[data-email-catalog-picker-search]');
+    const selected = String(picker.querySelector('[data-email-catalog-picker-value]')?.value || '');
+    const matches = schedulerCatalogPickerCandidates(picker);
+    const mounted = matches.slice(0, SCHEDULER_PICKER_RENDER_LIMIT);
+    picker._emailCatalogRows = mounted;
+    if (list) {
+      list.innerHTML = mounted.length ? mounted.map((target, index) => {
+        const key = schedulerTargetKey(target.kind, target.ref);
+        return `
+          <button id="${escHtml(list.id)}-option-${index}" class="email-catalog-picker__option" type="button" role="option" aria-selected="${key === selected ? 'true' : 'false'}" aria-posinset="${index + 1}" aria-setsize="${matches.length}" data-email-catalog-picker-option="${escHtml(key)}" data-option-index="${index}">
+            <span class="email-catalog-picker__type">${escHtml(schedulerTargetKindLabel(target.kind))}</span>
+            <span class="email-catalog-picker__name">${escHtml(target.display_name || target.ref)}</span>
+            <small>${escHtml(target.ref || '')}</small>
+          </button>
+        `;
+      }).join('') : '<div class="email-empty">No registered targets match these filters.</div>';
+    }
+    if (status) {
+      status.textContent = matches.length > mounted.length
+        ? `${matches.length} matches · showing first ${mounted.length}. Refine the filter to narrow the list.`
+        : `${matches.length} match${matches.length === 1 ? '' : 'es'} · ${mounted.length} mounted.`;
+    }
+    const nextIndex = mounted.length
+      ? Math.max(0, Math.min(activeIndex === null ? Number(picker.dataset.pickerActiveIndex || 0) : activeIndex, mounted.length - 1))
+      : -1;
+    picker.dataset.pickerActiveIndex = String(nextIndex);
+    picker.querySelectorAll('[data-email-catalog-picker-option]').forEach((option, index) => {
+      option.dataset.active = index === nextIndex ? 'true' : 'false';
+    });
+    if (search) {
+      if (nextIndex >= 0 && list) search.setAttribute('aria-activedescendant', `${list.id}-option-${nextIndex}`);
+      else search.removeAttribute('aria-activedescendant');
+    }
+    return mounted;
+  }
+
+  function openSchedulerCatalogPicker(picker) {
+    if (!picker || !state.schedulerCatalogFresh) return false;
+    closeSchedulerCatalogPickers(picker);
+    const popup = picker.querySelector('[data-email-catalog-picker-popup]');
+    const toggle = picker.querySelector('[data-email-catalog-picker-toggle]');
+    const search = picker.querySelector('[data-email-catalog-picker-search]');
+    if (popup) popup.hidden = false;
+    if (toggle) toggle.setAttribute('aria-expanded', 'true');
+    if (search) search.setAttribute('aria-expanded', 'true');
+    picker.classList.add('is-open');
+    renderSchedulerCatalogPicker(picker, 0);
+    window.requestAnimationFrame(() => search?.focus?.({ preventScroll: true }));
+    return true;
+  }
+
+  function setSchedulerCatalogPickerValue(picker, key, options = {}) {
+    if (!picker) return false;
+    const target = schedulerTargetFor(String(key || ''));
+    const hidden = picker.querySelector('[data-email-catalog-picker-value]');
+    const selected = picker.querySelector('[data-email-catalog-picker-selected]');
+    const toggle = picker.querySelector('[data-email-catalog-picker-toggle]');
+    const label = String(picker.querySelector('.email-catalog-picker__label')?.textContent || 'Catalog choice');
+    const mode = String(picker.dataset.pickerMode || 'target');
+    if (hidden) hidden.value = target ? schedulerTargetKey(target.kind, target.ref) : '';
+    if (selected) selected.textContent = target
+      ? schedulerTargetLabel(target)
+      : mode === 'rule' ? 'Choose an active rule' : mode === 'set' ? 'Choose a named rule set' : 'Choose a registered target';
+    if (toggle) toggle.setAttribute('aria-label', `${label}: ${target ? schedulerTargetLabel(target) : 'not selected'}`);
+    if (hidden && options.dispatch !== false) hidden.dispatchEvent(new Event('change', { bubbles: true }));
+    closeSchedulerCatalogPicker(picker, { restoreFocus: options.restoreFocus !== false });
+    return Boolean(target);
+  }
+
+  function resetSchedulerCatalogPicker(picker) {
+    if (!picker) return false;
+    const search = picker.querySelector('[data-email-catalog-picker-search]');
+    const kind = picker.querySelector('[data-email-catalog-picker-kind]');
+    if (search) search.value = '';
+    if (kind) kind.value = '';
+    return setSchedulerCatalogPickerValue(picker, '', { dispatch: false, restoreFocus: false });
+  }
+
+  function moveSchedulerCatalogPickerActive(picker, delta) {
+    const rows = picker?._emailCatalogRows || renderSchedulerCatalogPicker(picker, 0);
+    if (!rows.length) return false;
+    const current = Number(picker.dataset.pickerActiveIndex || 0);
+    const next = delta === Number.POSITIVE_INFINITY
+      ? rows.length - 1
+      : delta === Number.NEGATIVE_INFINITY
+        ? 0
+        : Math.max(0, Math.min(current + delta, rows.length - 1));
+    renderSchedulerCatalogPicker(picker, next);
+    picker.querySelector(`[data-email-catalog-picker-option][data-option-index="${next}"]`)?.scrollIntoView?.({ block: 'nearest' });
+    return true;
   }
 
   function schedulerRuleCatalog() {
@@ -4982,20 +5197,12 @@ const EmailPage = (() => {
         <span class="email-rule-set-member-position">${index + 1}</span>
         <span class="email-rule-set-member-name"><strong>${escHtml(name)}</strong><small>${escHtml(ruleId)}</small></span>
         <div class="email-rule-set-member-actions">
-          <button class="hub-action-btn" type="button" data-email-rule-set-member-action="up" aria-label="Move ${escHtml(name)} up"${index === 0 ? ' disabled' : ''}>Up</button>
-          <button class="hub-action-btn" type="button" data-email-rule-set-member-action="down" aria-label="Move ${escHtml(name)} down"${index === total - 1 ? ' disabled' : ''}>Down</button>
-          <button class="hub-action-btn email-rule-danger" type="button" data-email-rule-set-member-action="remove" aria-label="Remove ${escHtml(name)}">Remove</button>
+          <button class="hub-action-btn email-rule-set-icon-action" type="button" data-email-rule-set-member-action="up" aria-label="Move ${escHtml(name)} up" title="Move up"${index === 0 ? ' disabled' : ''}><span class="menu-editor-icon menu-editor-icon--move-up" aria-hidden="true"></span></button>
+          <button class="hub-action-btn email-rule-set-icon-action" type="button" data-email-rule-set-member-action="down" aria-label="Move ${escHtml(name)} down" title="Move down"${index === total - 1 ? ' disabled' : ''}><span class="menu-editor-icon menu-editor-icon--move-down" aria-hidden="true"></span></button>
+          <button class="hub-action-btn email-rule-set-icon-action email-rule-danger" type="button" data-email-rule-set-member-action="remove" aria-label="Remove ${escHtml(name)}" title="Remove from set"><span class="menu-editor-icon menu-editor-icon--trash" aria-hidden="true"></span></button>
         </div>
       </div>
     `;
-  }
-
-  function schedulerRuleSetAddOptionsHtml(ruleIds) {
-    const selected = new Set(ruleIds || []);
-    return schedulerRuleCatalog()
-      .filter(rule => !selected.has(String(rule.ref || '')))
-      .map(rule => `<option value="${escHtml(rule.ref)}">${escHtml(rule.display_name || rule.ref)}</option>`)
-      .join('');
   }
 
   function schedulerRuleSetFieldsHtml(ruleSet = null) {
@@ -5015,7 +5222,12 @@ const EmailPage = (() => {
           : '<div class="email-empty" data-email-rule-set-empty>Add at least one active rule. A set executes members in the order shown.</div>'}
       </div>
       <div class="email-rule-set-add-row">
-        <select data-email-rule-set-add-select aria-label="Active rule to add"><option value="">Choose an active rule</option>${schedulerRuleSetAddOptionsHtml(ruleIds)}</select>
+        ${schedulerCatalogPickerHtml({
+          prefix: `rule-set-${key}-member`,
+          mode: 'rule',
+          label: 'Active rule to add',
+          valueAttrs: 'data-email-rule-set-add-value',
+        })}
         <button class="hub-action-btn" type="button" data-email-rule-set-member-action="add">Add rule</button>
       </div>
       <div class="email-rule-set-form-actions">
@@ -5043,11 +5255,8 @@ const EmailPage = (() => {
     if (!rows.length && list && !empty) {
       list.insertAdjacentHTML('beforeend', '<div class="email-empty" data-email-rule-set-empty>Add at least one active rule. A set executes members in the order shown.</div>');
     }
-    const select = form?.querySelector?.('[data-email-rule-set-add-select]');
-    if (select) {
-      const ids = rows.map(row => String(row.dataset.ruleId || ''));
-      select.innerHTML = `<option value="">Choose an active rule</option>${schedulerRuleSetAddOptionsHtml(ids)}`;
-    }
+    const picker = form?.querySelector?.('[data-email-catalog-picker][data-picker-mode="rule"]');
+    if (picker) resetSchedulerCatalogPicker(picker);
   }
 
   function patchSchedulerRuleSetMessage(ruleSetId, message, stateName = '') {
@@ -5162,7 +5371,7 @@ const EmailPage = (() => {
   function ensureSchedulerStatusTimer() {
     if (state.schedulerStatusTimer) return;
     state.schedulerStatusTimer = window.setInterval(() => {
-      if (state.secondaryTab === 'rules' && state.virtualPathRuleTool === 'scheduler') {
+      if (state.secondaryTab === 'rules' && (state.virtualPathRuleTool === 'scheduler' || state.virtualPathRuleTool === 'rule-sets')) {
         refreshSchedulerStatus();
       }
     }, SCHEDULER_STATUS_POLL_MS);
@@ -5170,8 +5379,10 @@ const EmailPage = (() => {
 
   function schedulerDefinitionFromForm(form) {
     const targetKey = String(form?.querySelector?.('[name="target_key"]')?.value || '');
-    const split = targetKey.indexOf('::');
-    if (split < 1) throw new Error('Choose a registered scheduler target.');
+    const target = schedulerTargetFor(targetKey);
+    if (!target || target.compatible === false || target.status === 'archived') {
+      throw new Error('Choose a current registered scheduler target.');
+    }
     const scheduleKind = String(form.querySelector('[name="schedule_kind"]')?.value || 'daily');
     const candidateLimit = Math.max(1, Math.min(Number(form.querySelector('[name="candidate_limit"]')?.value || 20000), 20000));
     const scope = parseRuleJsonField(form, 'target_scope', {}, 'Target scope JSON');
@@ -5185,8 +5396,8 @@ const EmailPage = (() => {
     }
     return {
       name: String(form.querySelector('[name="name"]')?.value || '').trim(),
-      target_kind: targetKey.slice(0, split),
-      target_ref: targetKey.slice(split + 2),
+      target_kind: target.kind,
+      target_ref: target.ref,
       target_config: { candidate_limit: candidateLimit, scope },
       schedule_kind: scheduleKind,
       schedule,
@@ -5376,15 +5587,81 @@ const EmailPage = (() => {
     }
   }
 
+  async function quickAddSchedulerRuleSetMember(root) {
+    const ruleKey = String(root?.querySelector?.('[data-email-rule-set-quick-rule]')?.value || '');
+    const setKey = String(root?.querySelector?.('[data-email-rule-set-quick-set]')?.value || '');
+    const rule = schedulerTargetFor(ruleKey);
+    const setTarget = schedulerTargetFor(setKey);
+    const ruleSet = schedulerRuleSetFor(String(setTarget?.ref || ''));
+    try {
+      if (!rule || rule.kind !== 'virtual_path_rule' || rule.status !== 'active' || rule.compatible === false) {
+        throw new Error('Choose a current active compatible rule.');
+      }
+      if (!ruleSet || setTarget?.kind !== 'virtual_path_rule_set' || ruleSet.status !== 'active' || ruleSet.archived_at) {
+        throw new Error('Choose a current active named rule set.');
+      }
+      const ruleIds = (ruleSet.members || []).map(member => String(member?.rule_id || '')).filter(Boolean);
+      if (ruleIds.includes(String(rule.ref || ''))) {
+        throw new Error(`${rule.display_name || rule.ref} is already a member of ${ruleSet.display_name || ruleSet.rule_set_id}.`);
+      }
+      if (state.schedulerRuleSetDrafts.get(ruleSet.rule_set_id)?.dirty) {
+        throw new Error('Save the open edits for this rule set before adding membership from the quick chooser.');
+      }
+      await fetchJson(schedulerEndpoint(`/rule-sets/${encodeURIComponent(ruleSet.rule_set_id)}`), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          display_name: ruleSet.display_name,
+          description: ruleSet.description || '',
+          rule_ids: [...ruleIds, String(rule.ref || '')],
+          expected_version: Number(ruleSet.version || 0),
+          actor: 'email-ui',
+          source_surface: 'pim-email-rule-sets-quick-membership',
+          request_id: `pim-email-rule-set-quick-add-${Date.now()}`,
+        }),
+      });
+      state.schedulerQuickRuleId = '';
+      state.schedulerRuleSetMessages.set('quick', {
+        message: `Added ${rule.display_name || rule.ref} to ${ruleSet.display_name || ruleSet.rule_set_id}. No schedule was created.`,
+        state: 'ok',
+      });
+      await refreshSchedulerCatalog({ explicit: true });
+      renderSecondaryPanels();
+      renderUltrawide();
+      setStatus('Rule-set membership saved', 'ok');
+      return true;
+    } catch (error) {
+      patchSchedulerRuleSetMessage('quick', error.message || String(error), 'error');
+      setStatus(error.message || String(error), 'err');
+      return false;
+    }
+  }
+
+  function clearQuickSchedulerRuleSetMember(root) {
+    state.schedulerQuickRuleId = '';
+    state.schedulerRuleSetMessages.delete('quick');
+    root?.querySelectorAll?.('[data-email-catalog-picker]').forEach(resetSchedulerCatalogPicker);
+    patchSchedulerRuleSetMessage('quick', '', '');
+    return true;
+  }
+
   function updateSchedulerRuleSetMember(form, action, control) {
     if (!form) return false;
     const list = form.querySelector('[data-email-rule-set-members]');
     if (!list) return false;
     if (action === 'add') {
-      const select = form.querySelector('[data-email-rule-set-add-select]');
-      const ruleId = String(select?.value || '');
-      const rule = schedulerRuleCatalog().find(item => String(item.ref || '') === ruleId);
-      if (!rule || list.querySelector(`[data-email-rule-set-member][data-rule-id="${CSS.escape(ruleId)}"]`)) return false;
+      const picker = form.querySelector('[data-email-catalog-picker][data-picker-mode="rule"]');
+      const selectedKey = String(picker?.querySelector?.('[data-email-rule-set-add-value]')?.value || '');
+      const rule = schedulerTargetFor(selectedKey);
+      const ruleId = String(rule?.ref || '');
+      if (!rule || rule.kind !== 'virtual_path_rule' || rule.status !== 'active' || rule.compatible === false) {
+        patchSchedulerRuleSetMessage(form.dataset.ruleSetId || 'create', 'Choose a current active compatible rule.', 'error');
+        return false;
+      }
+      if (list.querySelector(`[data-email-rule-set-member][data-rule-id="${CSS.escape(ruleId)}"]`)) {
+        patchSchedulerRuleSetMessage(form.dataset.ruleSetId || 'create', `${rule.display_name || ruleId} is already in this set.`, 'error');
+        return false;
+      }
       const total = list.querySelectorAll('[data-email-rule-set-member]').length;
       list.insertAdjacentHTML('beforeend', schedulerRuleSetMemberHtml(ruleId, total, total + 1));
       renumberSchedulerRuleSetMembers(form);
@@ -5423,18 +5700,21 @@ const EmailPage = (() => {
     };
     try {
       if (action === 'schedule') {
-        const tool = row?.closest?.('[data-email-rules-tool-panel="scheduler"]');
-        const create = tool?.querySelector?.('[data-email-scheduler-create-section]');
+        const ready = await setRulesTool('scheduler');
+        if (!ready) throw new Error('Schedule controls are unavailable because catalog freshness could not be established.');
+        const root = activeVirtualPathRulesRoot();
+        const create = root?.querySelector?.('[data-email-scheduler-create-section]');
         const form = create?.querySelector?.('[data-email-scheduler-create-form]');
         if (!form) throw new Error('Schedule controls are unavailable. Refresh the Scheduler catalog.');
         create.open = true;
-        const target = form.querySelector('[name="target_key"]');
-        if (target) target.value = schedulerTargetKey('virtual_path_rule_set', ruleSetId);
+        syncEmailDisclosureState(create);
+        const picker = form.querySelector('[data-email-catalog-picker][data-picker-mode="target"]');
+        setSchedulerCatalogPickerValue(picker, schedulerTargetKey('virtual_path_rule_set', ruleSetId), { dispatch: true, restoreFocus: false });
         const name = form.querySelector('[name="name"]');
         if (name && !name.value.trim()) name.value = `${ruleSet.display_name} daily`;
-        target?.focus?.({ preventScroll: true });
+        picker?.querySelector?.('[data-email-catalog-picker-toggle]')?.focus?.({ preventScroll: true });
         create.scrollIntoView?.({ block: 'nearest' });
-        patchSchedulerRuleSetMessage(ruleSetId, 'Rule set selected as one schedule target.', 'ok');
+        setStatus('Rule set selected as one schedule target.', 'ok');
         return true;
       }
       if (action === 'validate') {
@@ -5802,7 +6082,7 @@ const EmailPage = (() => {
 
   function renderVirtualPathRuleCatalogState() {
     const tool = normalizeRulesTool(state.virtualPathRuleTool);
-    if (tool === 'scheduler') {
+    if (tool === 'scheduler' || tool === 'rule-sets') {
       patchSchedulerOwnedValues();
       return;
     }
@@ -5845,6 +6125,32 @@ const EmailPage = (() => {
     if (state.virtualPathRuleExpanded.has(clean)) state.virtualPathRuleExpanded.delete(clean);
     else state.virtualPathRuleExpanded = new Set([clean]);
     renderVirtualPathRuleListHosts();
+    return true;
+  }
+
+  async function openRuleSetsForRule(ruleId) {
+    const clean = String(ruleId || '').trim();
+    const rule = (state.virtualPathRules || []).find(item => String(item?.rule_id || '') === clean);
+    if (!rule || rule.status !== 'active') {
+      setStatus('Only an active rule can be added to a named set.', 'err');
+      return false;
+    }
+    state.schedulerQuickRuleId = clean;
+    state.schedulerRuleSetMessages.delete('quick');
+    const ready = await setRulesTool('rule-sets');
+    if (!ready) return false;
+    const schedulableRule = schedulerTargetFor(schedulerTargetKey('virtual_path_rule', clean));
+    if (!schedulableRule || schedulableRule.status !== 'active' || schedulableRule.compatible === false) {
+      state.schedulerQuickRuleId = '';
+      patchSchedulerRuleSetMessage('quick', 'This rule is not available as a current compatible named-set member.', 'error');
+      setStatus('This rule cannot be added to a named set until it has a current compatible version.', 'err');
+      return false;
+    }
+    const root = activeVirtualPathRulesRoot();
+    const quick = root?.querySelector?.('[data-email-rule-set-quick-add]');
+    quick?.scrollIntoView?.({ block: 'nearest' });
+    const setPicker = quick?.querySelector?.('[data-email-catalog-picker][data-picker-mode="set"]');
+    if (setPicker) openSchedulerCatalogPicker(setPicker);
     return true;
   }
 
@@ -6291,14 +6597,17 @@ const EmailPage = (() => {
       <article class="email-rule-row" data-email-vpath-rule-row="${escHtml(ruleId)}" data-expanded="${expanded ? 'true' : 'false'}">
         <div class="email-rule-row__top">
           <button class="email-rule-row__toggle" type="button" data-email-vpath-rule-toggle="${escHtml(ruleId)}" aria-expanded="${expanded ? 'true' : 'false'}">
-            <span class="email-rule-row__chevron" aria-hidden="true"></span>
+            <span class="email-rule-row__chevron menu-editor-icon menu-editor-icon--chevron-down" data-email-disclosure-icon aria-hidden="true"></span>
             <span class="email-rule-row__title">${escHtml(rule.display_name || ruleId || 'Virtual path rule')}</span>
           </button>
-          <label class="hub-checkbox email-rule-row__active">
-            <input class="hub-checkbox__input" type="checkbox" data-email-vpath-rule-active-toggle="${escHtml(ruleId)}"${active ? ' checked' : ''}${active ? '' : ' disabled'}>
-            <span class="hub-checkbox__box" aria-hidden="true"></span>
-            <span class="hub-checkbox__label">Active</span>
-          </label>
+          <div class="email-rule-row__quick-actions">
+            <button class="hub-action-btn" type="button" data-email-rule-add-to-set="${escHtml(ruleId)}" aria-label="Add ${escHtml(rule.display_name || ruleId)} to a named rule set"${active ? '' : ' disabled'}>Add to set</button>
+            <label class="hub-checkbox email-rule-row__active">
+              <input class="hub-checkbox__input" type="checkbox" data-email-vpath-rule-active-toggle="${escHtml(ruleId)}"${active ? ' checked' : ''}${active ? '' : ' disabled'}>
+              <span class="hub-checkbox__box" aria-hidden="true"></span>
+              <span class="hub-checkbox__label">Active</span>
+            </label>
+          </div>
         </div>
         <div class="email-rule-row__summary">
           <span>${escHtml(status)}</span>
@@ -7295,7 +7604,7 @@ const EmailPage = (() => {
     return `
       <div class="email-scheduler-primary-grid">
         <label><span>Schedule name</span><input name="name" data-email-preserve-focus="scheduler-${escHtml(prefix)}-name" value="${escHtml(definition.name)}" autocomplete="off" required></label>
-        <label><span>Target</span><select name="target_key" data-email-preserve-focus="scheduler-${escHtml(prefix)}-target" required><option value="">Choose a registered target</option>${schedulerTargetOptionsHtml(selectedTarget)}</select></label>
+        ${schedulerCatalogPickerHtml({ prefix: `scheduler-${prefix}-target`, mode: 'target', label: 'Target', name: 'target_key', selectedKey: selectedTarget })}
         <label><span>Schedule</span><select name="schedule_kind" data-email-scheduler-kind data-email-preserve-focus="scheduler-${escHtml(prefix)}-kind"><option value="daily"${daily ? ' selected' : ''}>Daily wall time</option><option value="interval"${daily ? '' : ' selected'}>Fixed interval</option></select></label>
         <label data-email-scheduler-daily${daily ? '' : ' hidden'}><span>Local time</span><input name="daily_time" type="time" value="${escHtml(time)}" data-email-preserve-focus="scheduler-${escHtml(prefix)}-time"></label>
         <label data-email-scheduler-interval${daily ? ' hidden' : ''}><span>Interval minutes</span><input name="interval_minutes" type="number" min="1" max="525600" value="${intervalMinutes}" data-email-preserve-focus="scheduler-${escHtml(prefix)}-interval"></label>
@@ -7304,7 +7613,7 @@ const EmailPage = (() => {
       </div>
       <label><span>Target scope JSON</span><textarea name="target_scope" spellcheck="false" data-email-preserve-focus="scheduler-${escHtml(prefix)}-scope">${escHtml(ruleJsonValue(targetConfig.scope || { virtual_paths: ['INBOX'], limit: Number(targetConfig.candidate_limit || 20000) }))}</textarea></label>
       <details class="email-rule-edit-section" data-email-scheduler-policy-section>
-        <summary>Misfire, retry, overlap, and concurrency</summary>
+        <summary aria-expanded="false"><span class="email-disclosure-summary-label"><span class="email-disclosure-icon menu-editor-icon menu-editor-icon--chevron-down" data-email-disclosure-icon aria-hidden="true"></span><span>Misfire, retry, overlap, and concurrency</span></span></summary>
         <div class="email-scheduler-policy-grid">
           <label><span>Misfire grace (seconds)</span><input name="misfire_grace_seconds" type="number" min="0" max="604800" value="${Number(policies.misfire_grace_seconds ?? 300)}"></label>
           <label><span>Catch-up</span><select name="catch_up_policy"><option value="bounded"${policies.catch_up_policy === 'skip' ? '' : ' selected'}>Bounded</option><option value="skip"${policies.catch_up_policy === 'skip' ? ' selected' : ''}>Skip late</option></select></label>
@@ -7392,8 +7701,8 @@ const EmailPage = (() => {
     const message = state.schedulerRuleSetMessages.get(ruleSetId) || {};
     return `
       <details class="email-rule-row email-rule-set-row" data-email-rule-set-row="${escHtml(ruleSetId)}"${expanded ? ' open' : ''}>
-        <summary>
-          <span class="email-rule-summary-main"><strong>${escHtml(ruleSet?.display_name || 'Rule set')}</strong><span>${Number(ruleSet?.member_count || 0)} rules · saved order · version ${Number(ruleSet?.version || 0)}</span></span>
+        <summary aria-expanded="${expanded ? 'true' : 'false'}">
+          <span class="email-disclosure-summary-label"><span class="email-disclosure-icon menu-editor-icon menu-editor-icon--chevron-down" data-email-disclosure-icon aria-hidden="true"></span><span class="email-rule-summary-main"><strong>${escHtml(ruleSet?.display_name || 'Rule set')}</strong><span>${Number(ruleSet?.member_count || 0)} rules · saved order · version ${Number(ruleSet?.version || 0)}</span></span></span>
           <span class="email-rule-set-state" data-state="${escHtml(setState)}">${escHtml(setState)}</span>
           <span>${schedules.length} schedule${schedules.length === 1 ? '' : 's'}</span>
         </summary>
@@ -7429,8 +7738,8 @@ const EmailPage = (() => {
     const preview = state.schedulerPreview.get(scheduleId);
     return `
       <details class="email-rule-row email-scheduler-row" data-email-scheduler-row="${escHtml(scheduleId)}"${expanded ? ' open' : ''}>
-        <summary>
-          <span class="email-rule-summary-main"><strong>${escHtml(schedule?.name || 'Schedule')}</strong><span>${escHtml(target?.display_name || schedule?.target_ref || '')}</span></span>
+        <summary aria-expanded="${expanded ? 'true' : 'false'}">
+          <span class="email-disclosure-summary-label"><span class="email-disclosure-icon menu-editor-icon menu-editor-icon--chevron-down" data-email-disclosure-icon aria-hidden="true"></span><span class="email-rule-summary-main"><strong>${escHtml(schedule?.name || 'Schedule')}</strong><span>${escHtml(target?.display_name || schedule?.target_ref || '')}</span></span></span>
           <span class="email-scheduler-state" data-email-scheduler-value="state">${escHtml(schedule?.last_status || (schedule?.enabled ? 'enabled' : 'paused'))}</span>
           <span>${escHtml(schedulerHumanSchedule(schedule))} · ${escHtml(schedule?.timezone || 'UTC')}</span>
         </summary>
@@ -7458,6 +7767,58 @@ const EmailPage = (() => {
     `;
   }
 
+  function ruleSetManagerHtml() {
+    const createRuleSetMessage = state.schedulerRuleSetMessages.get('create') || {};
+    return `
+      <section class="email-rule-set-manager" data-email-rule-set-manager>
+        <div class="email-rule-set-manager-heading"><strong>Named rule sets</strong><span>${state.schedulerRuleSets.length} sets · durable membership only · each set runs as one ordered target</span></div>
+        <details class="email-rule-row email-rule-set-create" data-email-rule-set-create-section>
+          <summary aria-expanded="false"><span class="email-disclosure-summary-label"><span class="email-disclosure-icon menu-editor-icon menu-editor-icon--chevron-down" data-email-disclosure-icon aria-hidden="true"></span><span>Create named rule set</span></span></summary>
+          <form class="email-rule-form email-rule-set-form" data-email-rule-set-form data-rule-set-id="">
+            ${schedulerRuleSetFieldsHtml(null)}
+          </form>
+          <div class="email-rule-set-message" data-email-rule-set-message="create" data-state="${escHtml(createRuleSetMessage.state || '')}">${escHtml(createRuleSetMessage.message || '')}</div>
+        </details>
+        <div class="email-rule-set-list" data-email-rule-set-list>
+          ${state.schedulerRuleSets.length ? state.schedulerRuleSets.map(schedulerRuleSetRowHtml).join('') : '<div class="email-empty">No named rule sets yet.</div>'}
+        </div>
+      </section>
+    `;
+  }
+
+  function ruleSetsQuickAddHtml() {
+    const quickMessage = state.schedulerRuleSetMessages.get('quick') || {};
+    const quickRule = schedulerRuleCatalog().find(target => String(target.ref || '') === state.schedulerQuickRuleId);
+    const selectedRuleKey = quickRule ? schedulerTargetKey(quickRule.kind, quickRule.ref) : '';
+    return `
+      <section class="email-rule-set-quick-add" data-email-rule-set-quick-add>
+        <div class="email-rule-set-manager-heading"><strong>Add an active rule to a named set</strong><span>This changes saved membership/order only. It never creates a member schedule.</span></div>
+        <div class="email-rule-set-quick-add-grid">
+          ${schedulerCatalogPickerHtml({ prefix: 'quick-rule', mode: 'rule', label: 'Active rule', selectedKey: selectedRuleKey, valueAttrs: 'data-email-rule-set-quick-rule' })}
+          ${schedulerCatalogPickerHtml({ prefix: 'quick-set', mode: 'set', label: 'Named rule set', valueAttrs: 'data-email-rule-set-quick-set' })}
+          <button class="hub-action-btn hub-primary" type="button" data-email-rule-set-quick-action="add">Add to set</button>
+          <button class="hub-action-btn" type="button" data-email-rule-set-quick-action="clear">Clear</button>
+        </div>
+        <div class="email-rule-set-message" data-email-rule-set-message="quick" data-state="${escHtml(quickMessage.state || '')}">${escHtml(quickMessage.message || '')}</div>
+      </section>
+    `;
+  }
+
+  function ruleSetsToolHtml() {
+    if (state.schedulerCatalogLoading) {
+      return '<section class="email-rule-card email-rule-tool-panel" data-email-rules-tool-panel="rule-sets"><div class="email-empty">Refreshing the stack-owned rule and set catalog before mounting controls.</div></section>';
+    }
+    if (!state.schedulerCatalogFresh) {
+      return `<section class="email-rule-card email-rule-tool-panel" data-email-rules-tool-panel="rule-sets"><div class="email-error" data-email-scheduler-error>${escHtml(state.schedulerError || 'Rule-set catalog freshness could not be established. Controls are unavailable.')}</div></section>`;
+    }
+    return `
+      <section class="email-rule-card email-rule-tool-panel email-rule-sets-tool" data-email-rules-tool-panel="rule-sets">
+        ${ruleSetsQuickAddHtml()}
+        ${ruleSetManagerHtml()}
+      </section>
+    `;
+  }
+
   function schedulerToolHtml() {
     if (state.schedulerCatalogLoading) {
       return '<section class="email-rule-card email-rule-tool-panel" data-email-rules-tool-panel="scheduler"><div class="email-empty">Refreshing the stack-owned scheduler catalog before mounting controls.</div></section>';
@@ -7465,26 +7826,13 @@ const EmailPage = (() => {
     if (!state.schedulerCatalogFresh) {
       return `<section class="email-rule-card email-rule-tool-panel" data-email-rules-tool-panel="scheduler"><div class="email-error" data-email-scheduler-error>${escHtml(state.schedulerError || 'Scheduler catalog freshness could not be established. Controls are unavailable.')}</div></section>`;
     }
-    const createRuleSetMessage = state.schedulerRuleSetMessages.get('create') || {};
     return `
       <section class="email-rule-card email-rule-tool-panel email-scheduler-tool" data-email-rules-tool-panel="scheduler">
         <div class="email-scheduler-health-row"><strong>Scheduler</strong><span data-email-scheduler-health></span><span data-email-scheduler-count>${state.schedulerSchedules.length} schedules</span></div>
+        <div class="email-rule-set-scheduler-link"><span>${state.schedulerRuleSets.length} named rule set${state.schedulerRuleSets.length === 1 ? '' : 's'} available as one-target schedules.</span><button class="hub-action-btn" type="button" data-email-rules-tool-jump="rule-sets">Manage Rule Sets</button></div>
         <datalist id="email-scheduler-timezones"><option value="UTC"><option value="Europe/London"><option value="America/New_York"><option value="America/Los_Angeles"><option value="Australia/Sydney"></datalist>
-        <section class="email-rule-set-manager" data-email-rule-set-manager>
-          <div class="email-rule-set-manager-heading"><strong>Named rule sets</strong><span>${state.schedulerRuleSets.length} sets · each set runs as one ordered target</span></div>
-          <details class="email-rule-row email-rule-set-create" data-email-rule-set-create-section>
-            <summary>Create named rule set</summary>
-            <form class="email-rule-form email-rule-set-form" data-email-rule-set-form data-rule-set-id="">
-              ${schedulerRuleSetFieldsHtml(null)}
-            </form>
-            <div class="email-rule-set-message" data-email-rule-set-message="create" data-state="${escHtml(createRuleSetMessage.state || '')}">${escHtml(createRuleSetMessage.message || '')}</div>
-          </details>
-          <div class="email-rule-set-list" data-email-rule-set-list>
-            ${state.schedulerRuleSets.length ? state.schedulerRuleSets.map(schedulerRuleSetRowHtml).join('') : '<div class="email-empty">No named rule sets yet.</div>'}
-          </div>
-        </section>
         <details class="email-rule-row email-scheduler-create" data-email-scheduler-create-section>
-          <summary>Create schedule</summary>
+          <summary aria-expanded="false"><span class="email-disclosure-summary-label"><span class="email-disclosure-icon menu-editor-icon menu-editor-icon--chevron-down" data-email-disclosure-icon aria-hidden="true"></span><span>Create schedule</span></span></summary>
           <form class="email-rule-form email-rule-form--wide" data-email-scheduler-create-form>
             ${schedulerFieldsHtml(null, 'create')}
             <button class="hub-action-btn hub-primary" type="submit">Create schedule</button>
@@ -7503,6 +7851,7 @@ const EmailPage = (() => {
     if (tool === 'bulk') return rulesBulkToolHtml();
     if (tool === 'create') return rulesCreateToolHtml();
     if (tool === 'apply') return rulesApplyToolHtml(defaultScopeMode);
+    if (tool === 'rule-sets') return ruleSetsToolHtml();
     if (tool === 'scheduler') return schedulerToolHtml();
     return '';
   }
@@ -7511,6 +7860,7 @@ const EmailPage = (() => {
     const tool = normalizeRulesTool(state.virtualPathRuleTool);
     const listMode = tool === 'rules';
     const schedulerMode = tool === 'scheduler';
+    const ruleSetsMode = tool === 'rule-sets';
     const loading = state.virtualPathRulesLoading ? '<div class="email-empty">Loading virtual-path rules.</div>' : '';
     const error = state.virtualPathRulesError ? `<div class="email-error">${escHtml(state.virtualPathRulesError)}</div>` : '';
     const pathCount = Array.isArray(state.virtualPaths) ? state.virtualPaths.length : 0;
@@ -7521,8 +7871,10 @@ const EmailPage = (() => {
       ? virtualPathRuleCountSummary()
       : schedulerMode
         ? `${state.schedulerSchedules.length} schedules`
+        : ruleSetsMode
+          ? `${state.schedulerRuleSets.length} named rule set${state.schedulerRuleSets.length === 1 ? '' : 's'}`
         : `${pathCount} paths available`;
-    const toolbarMeta = listMode ? `${pathCount} paths` : schedulerMode ? 'Stack-owned worker' : '';
+    const toolbarMeta = listMode ? `${pathCount} paths` : schedulerMode ? 'Stack-owned worker' : ruleSetsMode ? 'Saved membership and order' : '';
     return `
       <section class="email-rules-panel">
         <div class="email-rules-toolbar${listMode ? '' : ' email-rules-toolbar--tool'}">
@@ -8371,7 +8723,7 @@ const EmailPage = (() => {
     state.virtualPathRuleTool = clean;
     state.secondaryTab = 'rules';
     closeRulesToolMenus();
-    if (clean === 'scheduler') {
+    if (clean === 'scheduler' || clean === 'rule-sets') {
       state.schedulerCatalogLoading = true;
       state.schedulerCatalogFresh = false;
       renderSecondaryPanels();
@@ -8877,7 +9229,7 @@ const EmailPage = (() => {
       return openVirtualPathRulesForMessage(uid);
     }
     if (action === 'refresh-vpath-rules') {
-      if (state.virtualPathRuleTool === 'scheduler') {
+      if (state.virtualPathRuleTool === 'scheduler' || state.virtualPathRuleTool === 'rule-sets') {
         return refreshSchedulerCatalog({ explicit: true }).then(() => {
           renderSecondaryPanels();
           renderUltrawide();
@@ -9175,6 +9527,37 @@ const EmailPage = (() => {
         setRulesTool(rulesToolOption.dataset.emailRulesToolOption || 'rules');
         return;
       }
+      const rulesToolJump = target.closest?.('[data-email-rules-tool-jump]');
+      if (rulesToolJump) {
+        event.preventDefault();
+        setRulesTool(rulesToolJump.dataset.emailRulesToolJump || 'rules');
+        return;
+      }
+      const catalogPickerToggle = target.closest?.('[data-email-catalog-picker-toggle]');
+      if (catalogPickerToggle) {
+        event.preventDefault();
+        const picker = catalogPickerToggle.closest('[data-email-catalog-picker]');
+        if (picker?.classList.contains('is-open')) closeSchedulerCatalogPicker(picker);
+        else openSchedulerCatalogPicker(picker);
+        return;
+      }
+      const catalogPickerOption = target.closest?.('[data-email-catalog-picker-option]');
+      if (catalogPickerOption) {
+        event.preventDefault();
+        setSchedulerCatalogPickerValue(
+          catalogPickerOption.closest('[data-email-catalog-picker]'),
+          catalogPickerOption.dataset.emailCatalogPickerOption || '',
+        );
+        return;
+      }
+      const quickRuleSetAction = target.closest?.('[data-email-rule-set-quick-action]');
+      if (quickRuleSetAction) {
+        event.preventDefault();
+        const root = quickRuleSetAction.closest('[data-email-rule-set-quick-add]');
+        if (quickRuleSetAction.dataset.emailRuleSetQuickAction === 'add') quickAddSchedulerRuleSetMember(root);
+        else clearQuickSchedulerRuleSetMember(root);
+        return;
+      }
       const schedulerAction = target.closest?.('[data-email-scheduler-action]');
       if (schedulerAction) {
         event.preventDefault();
@@ -9267,6 +9650,12 @@ const EmailPage = (() => {
       if (ruleToggle) {
         event.preventDefault();
         toggleVirtualPathRuleExpanded(ruleToggle.dataset.emailVpathRuleToggle || '');
+        return;
+      }
+      const ruleAddToSet = target.closest?.('[data-email-rule-add-to-set]');
+      if (ruleAddToSet) {
+        event.preventDefault();
+        openRuleSetsForRule(ruleAddToSet.dataset.emailRuleAddToSet || '');
         return;
       }
       const ruleRow = target.closest?.('[data-email-vpath-rule-row]');
@@ -9431,8 +9820,14 @@ const EmailPage = (() => {
       if (!target.closest?.('[data-email-search-mode-dropdown]')) closeSearchModeMenus();
       if (!target.closest?.('[data-email-trusted-view-dropdown]')) closeTrustedViewMenus();
       if (!target.closest?.('[data-email-rules-tool-dropdown]')) closeRulesToolMenus();
+      if (!target.closest?.('[data-email-catalog-picker]')) closeSchedulerCatalogPickers();
     });
     document.addEventListener('change', event => {
+      const catalogPickerKind = event.target.closest?.('[data-email-catalog-picker-kind]');
+      if (catalogPickerKind) {
+        renderSchedulerCatalogPicker(catalogPickerKind.closest('[data-email-catalog-picker]'), 0);
+        return;
+      }
       const searchForm = event.target.closest?.('[data-email-search-form]');
       if (searchForm) {
         readSearchForm(searchForm);
@@ -9476,6 +9871,11 @@ const EmailPage = (() => {
       toggleMessageSelection(messageSelect.dataset.emailMessageSelect || '', messageSelect.checked);
     });
     document.addEventListener('input', event => {
+      const catalogPickerSearch = event.target.closest?.('[data-email-catalog-picker-search]');
+      if (catalogPickerSearch) {
+        renderSchedulerCatalogPicker(catalogPickerSearch.closest('[data-email-catalog-picker]'), 0);
+        return;
+      }
       const pathTreeSearch = event.target.closest?.('[data-email-vpath-tree-search]');
       if (pathTreeSearch) {
         state.virtualPathPicker.searchQuery = String(pathTreeSearch.value || '');
@@ -9567,6 +9967,7 @@ const EmailPage = (() => {
       addTrustedSenderFromForm(form);
     });
     document.addEventListener('toggle', event => {
+      syncEmailDisclosureState(event.target);
       const ruleSetRow = event.target.closest?.('[data-email-rule-set-row]');
       if (ruleSetRow) {
         const ruleSetId = String(ruleSetRow.dataset.emailRuleSetRow || '');
@@ -9673,6 +10074,32 @@ const EmailPage = (() => {
       document.querySelectorAll('.email-vpath-tree-node.is-drop-target').forEach(node => node.classList.remove('is-drop-target'));
     });
     document.addEventListener('keydown', event => {
+      const catalogPickerSearch = event.target.closest?.('[data-email-catalog-picker-search]');
+      if (catalogPickerSearch) {
+        const picker = catalogPickerSearch.closest('[data-email-catalog-picker]');
+        if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          moveSchedulerCatalogPickerActive(picker, 1);
+        } else if (event.key === 'ArrowUp') {
+          event.preventDefault();
+          moveSchedulerCatalogPickerActive(picker, -1);
+        } else if (event.key === 'Home') {
+          event.preventDefault();
+          moveSchedulerCatalogPickerActive(picker, Number.NEGATIVE_INFINITY);
+        } else if (event.key === 'End') {
+          event.preventDefault();
+          moveSchedulerCatalogPickerActive(picker, Number.POSITIVE_INFINITY);
+        } else if (event.key === 'Enter') {
+          event.preventDefault();
+          const index = Number(picker.dataset.pickerActiveIndex || 0);
+          const target = (picker._emailCatalogRows || [])[index];
+          if (target) setSchedulerCatalogPickerValue(picker, schedulerTargetKey(target.kind, target.ref));
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          closeSchedulerCatalogPicker(picker, { restoreFocus: true });
+        }
+        return;
+      }
       if (event.key !== 'Enter' && event.key !== ' ') return;
       const row = event.target.closest?.('.email-message-row[data-email-message-uid]');
       if (!row) return;
