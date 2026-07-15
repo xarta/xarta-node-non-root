@@ -442,6 +442,11 @@ assert.match(
   'Triangle filter labels must sit nearer the bottom of the shape where there is width for text.',
 );
 assert.match(
+  personalFiltersCss,
+  /\.calendar-filter-strip\s+\.personal-filter-chip\[data-shape="triangle"\]\s+\.personal-filter-chip__label\s*\{[\s\S]*position:\s*static[\s\S]*bottom:\s*auto[\s\S]*transform:\s*none/,
+  'Compact tag summaries must reset full-size triangle label placement so assigned tag names remain visible.',
+);
+assert.match(
   personalFiltersJs,
   /function\s+countBadgeHtml[\s\S]*personal-filter-count-badge/,
   'Personal filter assignment counts must render as their own badge, not inline text in the label.',

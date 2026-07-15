@@ -1084,6 +1084,18 @@ dialog.hub-modal.personal-filter-modal[open] {
   white-space: nowrap;
 }
 
+/* Compact summaries deliberately render every tag as a 24px pill. Reset the
+ * full-size triangle label placement as well, otherwise its more-specific
+ * absolute positioning leaves only a clipped coloured sliver in tag strips. */
+.calendar-filter-strip .personal-filter-chip[data-shape="triangle"] .personal-filter-chip__label {
+  position: static;
+  left: auto;
+  bottom: auto;
+  transform: none;
+  width: auto;
+  max-width: none;
+}
+
 .calendar-filter-strip .personal-filter-chip__label-line {
   display: inline;
 }
