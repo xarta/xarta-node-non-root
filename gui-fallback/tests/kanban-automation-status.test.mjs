@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 
-const root = '/workspace/gui-fallback';
+const root = fileURLToPath(new URL('..', import.meta.url));
 const indexHtml = readFileSync(`${root}/index.html`, 'utf8');
 const kanbanJs = readFileSync(`${root}/js/kanban/kanban-board.js`, 'utf8');
+const activeBrowserObserverJs = readFileSync(`${root}/js/active-browser-observer.js`, 'utf8');
 const kanbanMenuJs = readFileSync(`${root}/js/kanban/kanban-menu.js`, 'utf8');
 const kanbanCss = readFileSync(`${root}/css/kanban-board.css`, 'utf8');
 
@@ -15,7 +18,7 @@ assert.match(
 
 assert.match(
   indexHtml,
-  /data-personal-filter-extra-tabs="[^"]*postgres,automation,prompts,provenance/,
+  /data-personal-filter-extra-tabs="[^"]*postgres[^"]*automation[^"]*prompts[^"]*provenance/,
   'Kanban adaptive panel must register the Automation tab beside Postgres, Prompts, and Provenance.',
 );
 
@@ -157,8 +160,223 @@ assert.match(
   'Automation status icon, metric grid, controls, marker/failure rows, contract/policy strips, and modal styles must be present.',
 );
 
+const stableAutomationBlock = activeBrowserObserverJs.match(/function _stableAutomationKey\(automation\)[\s\S]*?function _stableLayoutKey/)?.[0] || '';
+assert.match(
+  stableAutomationBlock,
+  /automation_proposal_surface_schema:[\s\S]*automation_proposal_inbox_entry_count:[\s\S]*automation_proposal_outbox_processed_count:[\s\S]*automation_proposal_response_busy:[\s\S]*automation_proposal_response_error_count:/,
+  'Active Browser stable automation state must expose bounded proposal lifecycle proof.',
+);
+assert.doesNotMatch(
+  stableAutomationBlock,
+  /response_text|responseDrafts|proposal_response_text/,
+  'Active Browser automation state must not expose operator response text or drafts.',
+);
+
 assert.match(
   kanbanCss,
   /@media\s*\(max-width:\s*760px\)[\s\S]*\.kanban-automation-grid[\s\S]*grid-template-columns:\s*1fr/,
   'Automation status panel must collapse to one column on narrow viewports.',
 );
+
+assert.match(
+  kanbanJs,
+  /data-kanban-proposal-surfaces/,
+  'Automation status must expose stable proposal surface and item selectors.',
+);
+assert.match(kanbanJs, /data-kanban-proposal-surface="\$\{escHtml\(kind\)\}"/);
+assert.match(kanbanJs, /data-kanban-proposal-item-id="\$\{escHtml\(itemId\)\}"/);
+
+assert.match(
+  kanbanJs,
+  /response_endpoint_template[\s\S]*response_text:\s*cleanResponse[\s\S]*actor:\s*'operator'[\s\S]*source_surface:\s*'kanban-automation-status'/,
+  'Open INBOX entries must submit an explicit operator response through the advertised endpoint.',
+);
+
+assert.match(
+  kanbanCss,
+  /\.kanban-proposal-surfaces__grid[\s\S]*\.kanban-proposal-response[\s\S]*\.kanban-proposal-response__error/,
+  'Proposal surfaces, response forms, and failures must have maintained layout styles.',
+);
+
+function storageStub() {
+  const values = new Map();
+  return {
+    getItem(key) { return values.get(key) ?? null; },
+    setItem(key, value) { values.set(key, String(value)); },
+    removeItem(key) { values.delete(key); },
+  };
+}
+
+function proposalStatusFixture() {
+  return {
+    proposal_surfaces: {
+      schema: 'xarta.kanban.proposal_surfaces.contract.v1',
+      version: '2026-07-15',
+      response_endpoint_template: '/api/v1/personal/kanban/automation/proposal-surfaces/inbox/{item_id}/responses',
+      inbox: {
+        item_id: 'kanban-inbox-surface',
+        total_count: 2,
+        open_count: 1,
+        processed_count: 1,
+        entries: [
+          {
+            item_id: 'kanban-choice-a',
+            title: 'Choose the amber transit window',
+            state_id: 'todo',
+            status: 'active',
+            entry_type: 'question',
+            proposal_status: 'awaiting_operator',
+            requested_operator_action: 'Select one safe operating window.',
+            exact_decision_needed: 'Should this run before dawn or after lunch <local>?',
+            source_item_refs: [{ item_id: 'kanban-source-a', title: 'Origin packet' }],
+            implementation_refs: ['xarta-kanban:item:kanban-work-a'],
+            updated_at: '2026-07-15T10:00:00Z',
+          },
+          {
+            item_id: 'kanban-choice-b',
+            title: 'Retired violet path',
+            state_id: 'done',
+            status: 'closed',
+            entry_type: 'proposal',
+            proposal_status: 'processed',
+            requested_operator_action: 'No action remains.',
+            exact_decision_needed: 'This lifecycle is complete.',
+          },
+        ],
+      },
+      outbox: {
+        item_id: 'kanban-outbox-surface',
+        total_count: 1,
+        open_count: 0,
+        processed_count: 1,
+        retry_count: 1,
+        entries: [{
+          item_id: 'kanban-outcome-a',
+          title: 'Recorded outcome 47',
+          state_id: 'doing',
+          status: 'active',
+          entry_type: 'processed_outcome',
+          proposal_status: 'accepted',
+          retry_state: 'retry_waiting',
+          source_refs: ['xarta-kanban:item:kanban-choice-a'],
+          outcome_refs: [{ item_id: 'kanban-proof-a', role: 'proof' }],
+        }],
+      },
+    },
+  };
+}
+
+function createProposalHarness() {
+  const document = {
+    getElementById() { return null; },
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+    addEventListener() {},
+  };
+  const window = {
+    document,
+    location: new URL('https://blueprints.example.test/ui/?group=kanban&tab=kanban'),
+    history: { replaceState() {} },
+    addEventListener() {},
+    requestAnimationFrame(callback) { callback(); },
+    CSS: { escape(value) { return String(value); } },
+  };
+  window.window = window;
+  const requests = [];
+  let latestStatus = proposalStatusFixture();
+  const context = {
+    console,
+    document,
+    window,
+    localStorage: storageStub(),
+    URL,
+    URLSearchParams,
+    setTimeout() { return 0; },
+    clearTimeout() {},
+    fetch: async () => { throw new Error('unexpected native fetch'); },
+    apiFetch: async (url, options = {}) => {
+      requests.push({ url: String(url), options });
+      if (options.method === 'POST') {
+        return { ok: true, status: 200, json: async () => ({ status: 'accepted' }) };
+      }
+      return { ok: true, status: 200, json: async () => latestStatus };
+    },
+  };
+  const marker = '\n  bind();\n\n  return {';
+  assert.ok(kanbanJs.includes(marker), 'Kanban behavior harness export marker must stay available.');
+  const source = kanbanJs.replace(marker, `
+  window.__proposalSurfaceTest = {
+    state,
+    setData(value) { state.automationStatus.data = value; },
+    render: automationProposalSurfacesHtml,
+    submit: submitProposalResponse,
+    snapshot,
+  };
+
+  bind();
+
+  return {`);
+  vm.runInNewContext(source, context, { filename: 'kanban-board.js' });
+  return {
+    api: window.__proposalSurfaceTest,
+    requests,
+    context,
+    setLatestStatus(value) { latestStatus = value; },
+  };
+}
+
+{
+  const harness = createProposalHarness();
+  const fixture = proposalStatusFixture();
+  harness.api.setData(fixture);
+  const html = harness.api.render();
+  assert.match(html, /data-kanban-proposal-surfaces/);
+  assert.match(html, /data-kanban-proposal-surface="inbox"/);
+  assert.match(html, /data-kanban-proposal-surface="outbox"/);
+  assert.match(html, /data-kanban-proposal-item-id="kanban-choice-a"/);
+  assert.match(html, /Decision needed[\s\S]*after lunch &lt;local&gt;/);
+  assert.match(html, /data-kanban-proposal-open-item-id="kanban-work-a"/);
+  assert.equal((html.match(/data-kanban-proposal-response-for=/g) || []).length, 1, 'Only the lifecycle-open INBOX entry may accept a response.');
+  assert.match(html, /retry: retry_waiting/);
+
+  const responseText = 'Take the amber route; use your judgment for the remaining spacing.';
+  const result = await harness.api.submit('kanban-choice-a', responseText);
+  assert.equal(result.status, 'accepted');
+  const post = harness.requests.find(request => request.options.method === 'POST');
+  assert.equal(post.url, '/api/v1/personal/kanban/automation/proposal-surfaces/inbox/kanban-choice-a/responses');
+  assert.deepEqual(JSON.parse(post.options.body), {
+    response_text: responseText,
+    actor: 'operator',
+    source_surface: 'kanban-automation-status',
+  });
+  const snapshot = harness.api.snapshot();
+  assert.equal(snapshot.automation_proposal_inbox_entry_count, 2);
+  assert.equal(snapshot.automation_proposal_inbox_open_count, 1);
+  assert.equal(snapshot.automation_proposal_response_busy, false);
+  assert.doesNotMatch(JSON.stringify(snapshot), /amber route|remaining spacing/, 'Observable snapshots must never expose operator response text.');
+}
+
+{
+  const harness = createProposalHarness();
+  const fixture = proposalStatusFixture();
+  fixture.proposal_surfaces.inbox.entries = [];
+  fixture.proposal_surfaces.inbox.total_count = 0;
+  fixture.proposal_surfaces.inbox.open_count = 0;
+  fixture.proposal_surfaces.inbox.processed_count = 0;
+  harness.api.setData(fixture);
+  assert.match(harness.api.render(), /No INBOX entries\./, 'An empty surface must render a truthful zero state.');
+  harness.api.setData(proposalStatusFixture());
+
+  harness.context.apiFetch = async (url, options = {}) => {
+    harness.requests.push({ url: String(url), options });
+    return { ok: false, status: 503, statusText: 'Unavailable', json: async () => ({ detail: 'Classifier is warming; retry is available.' }) };
+  };
+  const failedText = 'Wait for the blue window and revisit the bounded choice.';
+  const result = await harness.api.submit('kanban-choice-a', failedText);
+  assert.equal(result, null);
+  const failedHtml = harness.api.render();
+  assert.match(failedHtml, /Classifier is warming; retry is available\./);
+  assert.match(failedHtml, /Wait for the blue window/);
+  assert.equal(harness.api.snapshot().automation_proposal_response_error_count, 1);
+  assert.doesNotMatch(JSON.stringify(harness.api.snapshot()), /blue window|bounded choice/, 'Failure snapshots must keep response drafts private.');
+}

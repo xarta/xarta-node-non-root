@@ -1360,6 +1360,218 @@ dialog.hub-modal#kanban-detail-modal[open] {
   text-transform: uppercase;
 }
 
+.kanban-proposal-surfaces {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.kanban-proposal-surfaces__contract {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  color: var(--text-dim);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.kanban-proposal-surfaces__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.kanban-proposal-surface {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255,255,255,.025);
+  padding: 10px;
+}
+
+.kanban-proposal-surface__head,
+.kanban-proposal-entry__head,
+.kanban-proposal-response__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.kanban-proposal-surface__head > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.kanban-proposal-surface__head span,
+.kanban-proposal-surface__head strong,
+.kanban-proposal-entry__head > span,
+.kanban-proposal-entry__meta span,
+.kanban-proposal-response__actions span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kanban-proposal-surface__head span,
+.kanban-proposal-entry__meta,
+.kanban-proposal-response__actions span {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.kanban-proposal-surface__entries {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.kanban-proposal-entry {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid rgba(125, 183, 255, .2);
+  border-radius: 8px;
+  background: rgba(125, 183, 255, .055);
+  padding: 9px;
+}
+
+.kanban-proposal-entry[data-retry-state]:not([data-retry-state=""]),
+.kanban-proposal-entry[data-proposal-status="failed"] {
+  border-color: rgba(217, 170, 50, .42);
+  background: rgba(217, 170, 50, .08);
+}
+
+.kanban-proposal-entry__title {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent, #7db7ff);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 720;
+  overflow-wrap: anywhere;
+  padding: 0;
+  text-align: left;
+}
+
+.kanban-proposal-entry__title:hover,
+.kanban-proposal-entry__title:focus-visible,
+.kanban-proposal-entry__refs button:hover,
+.kanban-proposal-entry__refs button:focus-visible {
+  text-decoration: underline;
+}
+
+.kanban-proposal-entry__head > span {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-size: 10px;
+  padding: 3px 6px;
+}
+
+.kanban-proposal-entry__head > span[data-tone="warn"] {
+  border-color: rgba(217, 170, 50, .42);
+  color: #e9c96f;
+}
+
+.kanban-proposal-entry__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.kanban-proposal-entry__decision {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.kanban-proposal-entry__decision > div {
+  display: grid;
+  grid-template-columns: minmax(92px, auto) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.kanban-proposal-entry__decision dt,
+.kanban-proposal-entry__decision dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+
+.kanban-proposal-entry__decision dt {
+  color: var(--text-dim);
+}
+
+.kanban-proposal-entry__refs {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.kanban-proposal-entry__refs-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  min-width: 0;
+}
+
+.kanban-proposal-entry__refs-row strong,
+.kanban-proposal-entry__refs-row span,
+.kanban-proposal-entry__refs-row button {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 10px;
+}
+
+.kanban-proposal-entry__refs-row strong {
+  color: var(--text-dim);
+}
+
+.kanban-proposal-entry__refs-row button {
+  border: 0;
+  background: transparent;
+  color: var(--accent, #7db7ff);
+  cursor: pointer;
+  padding: 0;
+}
+
+.kanban-proposal-response {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.kanban-proposal-response label {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.kanban-proposal-response textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 74px;
+  resize: vertical;
+}
+
+.kanban-proposal-response__error,
+.kanban-proposal-surface__error {
+  color: #ff9aa1;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .kanban-automation-queue-summary {
   display: flex;
   flex-wrap: wrap;
@@ -1722,6 +1934,10 @@ dialog.hub-modal#kanban-detail-modal[open] {
 }
 
 @media (max-width: 1180px) {
+  .kanban-proposal-surfaces__grid {
+    grid-template-columns: 1fr;
+  }
+
   .kanban-automation-grid {
     grid-template-columns: repeat(2, minmax(140px, 1fr));
   }
@@ -1788,6 +2004,18 @@ dialog.hub-modal#kanban-detail-modal[open] {
   .kanban-automation-decision--head,
   .kanban-automation-marker--head {
     display: none;
+  }
+
+  .kanban-proposal-surface__head,
+  .kanban-proposal-entry__head,
+  .kanban-proposal-response__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .kanban-proposal-entry__decision > div {
+    grid-template-columns: 1fr;
+    gap: 2px;
   }
 
   .kanban-ai-decision-card__head {

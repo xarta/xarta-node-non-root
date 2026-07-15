@@ -103,6 +103,9 @@ const KanbanBoardPage = (() => {
       lastLoadedAt: 0,
       lastResult: null,
       busyAction: '',
+      responseBusyItemId: '',
+      responseDrafts: {},
+      responseErrors: {},
     },
     routeApplied: false,
     routeDetailItemId: '',
@@ -2363,6 +2366,167 @@ const KanbanBoardPage = (() => {
     </div>`;
   }
 
+  function automationProposalSurfaces() {
+    const surfaces = state.automationStatus.data?.proposal_surfaces;
+    return surfaces && typeof surfaces === 'object' ? surfaces : {};
+  }
+
+  function proposalSurfaceEntries(surface) {
+    return Array.isArray(surface?.entries) ? surface.entries : [];
+  }
+
+  function proposalSurfaceCount(surface, key, fallback = 0) {
+    const direct = surface?.[key];
+    const nested = surface?.counts?.[key];
+    const shortKey = String(key || '').replace(/_count$/, '');
+    const value = direct ?? nested ?? surface?.[shortKey] ?? surface?.counts?.[shortKey];
+    return Number.isFinite(Number(value)) ? Number(value) : Number(fallback || 0);
+  }
+
+  function proposalRefItemId(ref) {
+    if (typeof ref === 'string') {
+      const clean = ref.trim();
+      const shareMatch = clean.match(/^xarta-kanban:item:(.+)$/);
+      return cleanRouteId(shareMatch ? shareMatch[1] : clean);
+    }
+    if (!ref || typeof ref !== 'object') return '';
+    return cleanRouteId(
+      ref.item_id
+      || ref.target_item_id
+      || ref.source_item_id
+      || ref.affected_item_id
+      || ref.item_ref
+      || ref.ref
+      || '',
+    ).replace(/^xarta-kanban:item:/, '');
+  }
+
+  function proposalRefLabel(ref, itemId) {
+    if (ref && typeof ref === 'object') {
+      return String(ref.title || ref.label || ref.role || itemId || '').trim();
+    }
+    return itemId || String(ref || '').trim();
+  }
+
+  function proposalEntryIsOpen(entry) {
+    const stateId = String(entry?.state_id || '').trim().toLowerCase();
+    const status = String(entry?.status || '').trim().toLowerCase();
+    const proposalStatus = String(entry?.proposal_status || '').trim().toLowerCase();
+    if (['done', 'closed', 'archived', 'cancelled'].includes(stateId)) return false;
+    if (['done', 'closed', 'archived', 'cancelled'].includes(status)) return false;
+    if (['processed', 'accepted', 'rejected', 'deferred', 'superseded', 'closed'].includes(proposalStatus)) return false;
+    return true;
+  }
+
+  function proposalEntryRefsHtml(entry) {
+    const groups = [
+      ['Source', entry?.source_item_refs || entry?.source_refs],
+      ['Outcome', entry?.outcome_refs],
+      ['Work', entry?.implementation_refs],
+    ];
+    const rows = groups.map(([label, refs]) => {
+      const items = Array.isArray(refs) ? refs : [];
+      if (!items.length) return '';
+      const buttons = items.map(ref => {
+        const itemId = proposalRefItemId(ref);
+        const display = proposalRefLabel(ref, itemId);
+        if (!itemId) return `<span>${escHtml(display)}</span>`;
+        return `<button type="button" data-kanban-automation-action="open-proposal-item" data-kanban-proposal-open-item-id="${escHtml(itemId)}">${escHtml(display)}</button>`;
+      }).join('');
+      return `<div class="kanban-proposal-entry__refs-row"><strong>${escHtml(label)}</strong>${buttons}</div>`;
+    }).join('');
+    return rows ? `<div class="kanban-proposal-entry__refs" aria-label="Linked Kanban items">${rows}</div>` : '';
+  }
+
+  function proposalEntryHtml(entry, surfaceKind) {
+    const itemId = cleanRouteId(entry?.item_id || '');
+    if (!itemId) return '';
+    const title = entry?.title || itemId;
+    const proposalStatus = entry?.proposal_status || entry?.status || entry?.state_id || 'unknown';
+    const retryState = String(entry?.retry_state || '').trim();
+    const openForResponse = surfaceKind === 'inbox' && proposalEntryIsOpen(entry);
+    const busy = state.automationStatus.responseBusyItemId === itemId;
+    const globallyBusy = !!state.automationStatus.responseBusyItemId
+      || !!state.automationStatus.busyAction
+      || !!state.automationStatus.loading;
+    const draft = String(state.automationStatus.responseDrafts[itemId] || '');
+    const responseError = state.automationStatus.responseErrors[itemId] || '';
+    const action = entry?.requested_operator_action || '';
+    const decision = entry?.exact_decision_needed || '';
+    return `<article class="kanban-proposal-entry" data-kanban-proposal-entry data-kanban-proposal-item-id="${escHtml(itemId)}" data-proposal-status="${escHtml(proposalStatus)}" data-retry-state="${escHtml(retryState)}">
+      <div class="kanban-proposal-entry__head">
+        <button class="kanban-proposal-entry__title" type="button" data-kanban-automation-action="open-proposal-item" data-kanban-proposal-open-item-id="${escHtml(itemId)}">${escHtml(title)}</button>
+        <span>${escHtml(entry?.entry_type || surfaceKind)}</span>
+        <span data-tone="${retryState || String(proposalStatus).includes('fail') ? 'warn' : 'info'}">${escHtml(proposalStatus)}</span>
+      </div>
+      <div class="kanban-proposal-entry__meta">
+        <span>${escHtml(entry?.state_id || entry?.status || '')}</span>
+        ${retryState ? `<span>retry: ${escHtml(retryState)}</span>` : ''}
+        ${entry?.updated_at ? `<span>updated ${escHtml(formatBackupDate(entry.updated_at))}</span>` : ''}
+      </div>
+      ${(action || decision) ? `<dl class="kanban-proposal-entry__decision">
+        ${action ? `<div><dt>Operator action</dt><dd>${escHtml(action)}</dd></div>` : ''}
+        ${decision ? `<div><dt>Decision needed</dt><dd>${escHtml(decision)}</dd></div>` : ''}
+      </dl>` : ''}
+      ${proposalEntryRefsHtml(entry)}
+      ${openForResponse ? `<div class="kanban-proposal-response" data-kanban-proposal-response-for="${escHtml(itemId)}">
+        <label for="kanban-proposal-response-${escHtml(itemId)}">Operator response</label>
+        <textarea id="kanban-proposal-response-${escHtml(itemId)}" rows="3" maxlength="12000" data-kanban-proposal-response-input="${escHtml(itemId)}" placeholder="Approve, reject, defer, specify choices, or authorize best judgment."${busy ? ' disabled' : ''}>${escHtml(draft)}</textarea>
+        ${responseError ? `<div class="kanban-proposal-response__error" role="alert">${escHtml(responseError)}</div>` : ''}
+        <div class="kanban-proposal-response__actions">
+          <span role="status">${busy ? 'Recording the operator response…' : 'The full response and current proposal context are classified together.'}</span>
+          <button class="kanban-command-btn" type="button" data-kanban-automation-action="submit-proposal-response" data-kanban-proposal-response-item-id="${escHtml(itemId)}"${busy || globallyBusy || !draft.trim() ? ' disabled' : ''}>${busy ? 'Sending…' : 'Submit Response'}</button>
+        </div>
+      </div>` : ''}
+    </article>`;
+  }
+
+  function proposalSurfaceHtml(kind, label) {
+    const surfaces = automationProposalSurfaces();
+    const surface = surfaces[kind] && typeof surfaces[kind] === 'object' ? surfaces[kind] : {};
+    const entries = proposalSurfaceEntries(surface);
+    const total = proposalSurfaceCount(surface, 'total_count', proposalSurfaceCount(surface, 'count', entries.length));
+    const open = proposalSurfaceCount(surface, 'open_count', entries.filter(proposalEntryIsOpen).length);
+    const processed = proposalSurfaceCount(surface, 'processed_count', Math.max(0, total - open));
+    const retry = proposalSurfaceCount(surface, 'retry_count', entries.filter(entry => !!entry?.retry_state).length);
+    const surfaceId = cleanRouteId(surface.item_id || '');
+    const surfaceError = surface.error || '';
+    return `<section class="kanban-proposal-surface" data-kanban-proposal-surface="${escHtml(kind)}">
+      <div class="kanban-proposal-surface__head">
+        <div><span>${escHtml(label)}</span><strong>${escHtml(String(total))} entries</strong></div>
+        ${surfaceId ? `<button class="kanban-command-btn" type="button" data-kanban-automation-action="open-proposal-item" data-kanban-proposal-open-item-id="${escHtml(surfaceId)}">Open ${escHtml(label)}</button>` : ''}
+      </div>
+      <div class="kanban-automation-queue-summary" aria-label="${escHtml(label)} proposal counts">
+        <span class="kanban-automation-queue-chip"><strong>${escHtml(String(open))}</strong>open</span>
+        <span class="kanban-automation-queue-chip"><strong>${escHtml(String(processed))}</strong>processed</span>
+        <span class="kanban-automation-queue-chip"><strong>${escHtml(String(retry))}</strong>retry</span>
+      </div>
+      ${surfaceError ? `<div class="kanban-proposal-surface__error" role="alert">${escHtml(surfaceError)}</div>` : ''}
+      <div class="kanban-proposal-surface__entries">
+        ${entries.map(entry => proposalEntryHtml(entry, kind)).join('') || `<div class="kanban-empty">No ${escHtml(label)} entries.</div>`}
+      </div>
+    </section>`;
+  }
+
+  function automationProposalSurfacesHtml() {
+    const surfaces = automationProposalSurfaces();
+    const schema = surfaces.schema || '';
+    const version = surfaces.version || '';
+    const unavailable = !schema && !surfaces.inbox && !surfaces.outbox;
+    return `<section class="kanban-proposal-surfaces" data-kanban-proposal-surfaces data-contract-schema="${escHtml(schema)}">
+      <div class="kanban-automation-section-head">Operator Proposal Surfaces</div>
+      <div class="kanban-proposal-surfaces__contract">
+        <span>${escHtml(schema || 'Proposal surface status unavailable')}</span>
+        ${version ? `<span>version ${escHtml(version)}</span>` : ''}
+      </div>
+      ${state.automationStatus.error ? `<div class="kanban-proposal-surface__error" role="alert">Refresh failed: ${escHtml(state.automationStatus.error)}</div>` : ''}
+      ${unavailable ? '<div class="kanban-empty">INBOX and OUTBOX status has not been returned by this node.</div>' : `<div class="kanban-proposal-surfaces__grid">
+        ${proposalSurfaceHtml('inbox', 'INBOX')}
+        ${proposalSurfaceHtml('outbox', 'OUTBOX')}
+      </div>`}
+    </section>`;
+  }
+
   function automationDecisionRowsHtml() {
     const rows = automationRecentDecisions();
     if (state.automationStatus.loading && !rows.length) {
@@ -2430,7 +2594,7 @@ const KanbanBoardPage = (() => {
     const healthDecisionCount = Number(health.decision_count ?? health.decisions ?? 0);
     const activeItem = processor.active_item_id || 'none';
     const healthOk = health.ok !== false;
-    const busy = state.automationStatus.loading;
+    const busy = state.automationStatus.loading || !!state.automationStatus.responseBusyItemId;
     const scanBusy = state.automationStatus.busyAction === 'scan-reviews';
     const requeueBusy = state.automationStatus.busyAction === 'requeue-timeouts';
     const tickBusy = state.automationStatus.busyAction === 'run-idle-tick';
@@ -2470,6 +2634,7 @@ const KanbanBoardPage = (() => {
       ${loadedAt ? `<div class="kanban-backup-paths"><span>Loaded: ${escHtml(loadedAt)}</span></div>` : ''}
       ${state.automationStatus.loading ? '<div class="kanban-backup-result" data-tone="info" role="status"><strong>Loading automation status...</strong></div>' : ''}
       ${automationStatusResultHtml()}
+      ${automationProposalSurfacesHtml()}
       ${automationReviewMarkersHtml()}
       ${automationFailureAggregatesHtml()}
       ${automationProcessingPolicyHtml()}
@@ -2547,7 +2712,85 @@ const KanbanBoardPage = (() => {
     if (action === 'scan-reviews') return runAutomationStatusControl('scan-reviews');
     if (action === 'requeue-timeouts') return runAutomationStatusControl('requeue-timeouts');
     if (action === 'run-idle-tick') return runAutomationStatusControl('run-idle-tick');
+    if (action === 'open-proposal-item') {
+      const itemId = button?.dataset?.kanbanProposalOpenItemId || '';
+      button?.closest?.('dialog')?.close?.();
+      return openItemById(itemId);
+    }
+    if (action === 'submit-proposal-response') {
+      const itemId = button?.dataset?.kanbanProposalResponseItemId || '';
+      const entry = button?.closest?.('[data-kanban-proposal-entry]');
+      const input = entry?.querySelector?.('[data-kanban-proposal-response-input]');
+      const responseText = String(input?.value ?? state.automationStatus.responseDrafts[itemId] ?? '');
+      return submitProposalResponse(itemId, responseText);
+    }
     return null;
+  }
+
+  function proposalResponseEndpoint(itemId) {
+    const canonical = `/api/v1/personal/kanban/automation/proposal-surfaces/inbox/${encodeURIComponent(itemId)}/responses`;
+    const template = String(automationProposalSurfaces().response_endpoint_template || '').trim();
+    if (!template.startsWith('/api/v1/personal/kanban/automation/proposal-surfaces/inbox/') || !template.includes('{item_id}')) {
+      return canonical;
+    }
+    return template.replace('{item_id}', encodeURIComponent(itemId));
+  }
+
+  async function submitProposalResponse(itemId, responseText) {
+    const cleanItemId = cleanRouteId(itemId);
+    const cleanResponse = String(responseText || '').trim();
+    if (
+      !cleanItemId
+      || !cleanResponse
+      || state.automationStatus.responseBusyItemId
+      || state.automationStatus.busyAction
+      || state.automationStatus.loading
+    ) return null;
+    state.automationStatus.responseDrafts[cleanItemId] = cleanResponse;
+    delete state.automationStatus.responseErrors[cleanItemId];
+    state.automationStatus.responseBusyItemId = cleanItemId;
+    refreshAutomationStatusPanels();
+    refreshAutomationStatusModal();
+    try {
+      const payload = await requestJson(proposalResponseEndpoint(cleanItemId), {
+        method: 'POST',
+        body: JSON.stringify({
+          response_text: cleanResponse,
+          actor: 'operator',
+          source_surface: 'kanban-automation-status',
+        }),
+      });
+      delete state.automationStatus.responseDrafts[cleanItemId];
+      setAutomationStatusResult('Operator response recorded.', payload, {
+        detail: payload?.proposal_status || payload?.status || 'Proposal workflow refreshed.',
+        tone: 'ok',
+      });
+      await loadAutomationStatusPanel({ force: true });
+      return payload;
+    } catch (err) {
+      const message = err?.message || String(err);
+      state.automationStatus.responseErrors[cleanItemId] = message;
+      setAutomationStatusResult('Operator response failed.', {}, { detail: message, tone: 'err' });
+      return null;
+    } finally {
+      state.automationStatus.responseBusyItemId = '';
+      refreshAutomationStatusPanels();
+      refreshAutomationStatusModal();
+    }
+  }
+
+  function handleProposalResponseInput(field) {
+    const itemId = cleanRouteId(field?.dataset?.kanbanProposalResponseInput || '');
+    if (!itemId) return;
+    state.automationStatus.responseDrafts[itemId] = String(field.value || '');
+    delete state.automationStatus.responseErrors[itemId];
+    const entry = field.closest?.('[data-kanban-proposal-entry]');
+    const button = entry?.querySelector?.('[data-kanban-automation-action="submit-proposal-response"]');
+    if (button) {
+      button.disabled = !String(field.value || '').trim()
+        || !!state.automationStatus.responseBusyItemId
+        || !!state.automationStatus.busyAction;
+    }
   }
 
   async function runAutomationStatusControl(action) {
@@ -5162,7 +5405,11 @@ const KanbanBoardPage = (() => {
     root.addEventListener('pointerup', () => cancelRefreshLongPress('pointerup'));
     root.addEventListener('pointercancel', () => cancelRefreshLongPress('pointercancel'));
     el('kanban-board-shell')?.addEventListener('scroll', resetBoardVerticalOffset, { passive: true });
-    root.addEventListener('input', handleDetailFieldEvent);
+    root.addEventListener('input', event => {
+      handleDetailFieldEvent(event);
+      const proposalField = event.target?.closest?.('[data-kanban-proposal-response-input]');
+      if (proposalField) handleProposalResponseInput(proposalField);
+    });
     root.addEventListener('change', handleDetailFieldEvent);
     root.addEventListener('click', async event => {
       if (event.target.closest('[data-kanban-lane-width-handle]')) {
@@ -5302,6 +5549,11 @@ const KanbanBoardPage = (() => {
       if (!btn || root.contains(btn)) return;
       event.preventDefault();
       handleAutomationStatusAction(btn);
+    });
+    document.addEventListener('input', event => {
+      const field = event.target?.closest?.('[data-kanban-proposal-response-input]');
+      if (!field || root.contains(field)) return;
+      handleProposalResponseInput(field);
     });
     document.addEventListener('click', event => {
       const btn = event.target.closest('[data-kanban-action="toggle-markdown-preview"]');
@@ -5445,6 +5697,24 @@ const KanbanBoardPage = (() => {
       automation_processing_policy_active_mode: state.automationStatus.data?.processing_policy?.active_mode || '',
       automation_processing_policy_local_gate:
         state.automationStatus.data?.processing_policy?.local_processing?.gate || '',
+      automation_proposal_surface_schema: automationProposalSurfaces().schema || '',
+      automation_proposal_inbox_item_id: automationProposalSurfaces().inbox?.item_id || '',
+      automation_proposal_outbox_item_id: automationProposalSurfaces().outbox?.item_id || '',
+      automation_proposal_inbox_entry_count: proposalSurfaceEntries(automationProposalSurfaces().inbox).length,
+      automation_proposal_outbox_entry_count: proposalSurfaceEntries(automationProposalSurfaces().outbox).length,
+      automation_proposal_inbox_open_count: proposalSurfaceCount(
+        automationProposalSurfaces().inbox,
+        'open_count',
+        proposalSurfaceEntries(automationProposalSurfaces().inbox).filter(proposalEntryIsOpen).length,
+      ),
+      automation_proposal_outbox_processed_count: proposalSurfaceCount(
+        automationProposalSurfaces().outbox,
+        'processed_count',
+        proposalSurfaceEntries(automationProposalSurfaces().outbox).length,
+      ),
+      automation_proposal_response_busy: !!state.automationStatus.responseBusyItemId,
+      automation_proposal_response_busy_item_id: state.automationStatus.responseBusyItemId || '',
+      automation_proposal_response_error_count: Object.keys(state.automationStatus.responseErrors).length,
       priorities_loaded: !!state.priorities.data,
       priorities_loading: !!state.priorities.loading,
       priorities_error: state.priorities.error || '',
