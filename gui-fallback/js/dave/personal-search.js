@@ -15,7 +15,24 @@ const BlueprintsPersonalSearch = (() => {
       links: [],
       sync: null,
     },
+    scheduler: {
+      payload: null,
+      error: '',
+      inFlight: null,
+      runNowInFlight: null,
+      timer: null,
+      lastRequestedAt: 0,
+      clockOffsetMs: 0,
+      liveMessage: '',
+      lastLiveKey: '',
+      visibilityWired: false,
+    },
   };
+
+  const schedulerStatusSchema = 'xarta.personal.search.scheduler-status.v1';
+  const schedulerStatusUrl = '/api/v1/personal/search/scheduler/status';
+  const schedulerRunNowUrl = '/api/v1/personal/search/scheduler/run-now';
+  const schedulerPollMs = 15000;
 
   const surfaceDefaults = {
     diary: { restrictToRange: false },
@@ -34,6 +51,412 @@ const BlueprintsPersonalSearch = (() => {
         '"': '&quot;',
         "'": '&#39;',
       }[ch]));
+
+  function schedulerHosts() {
+    return Array.from(document.querySelectorAll('[data-personal-search-sync-status]'));
+  }
+
+  function finiteNumber(value) {
+    if (value == null || value === '' || typeof value === 'boolean') return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function timestampMs(value) {
+    const parsed = Date.parse(String(value || ''));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function schedulerNowMs() {
+    return Date.now() + state.scheduler.clockOffsetMs;
+  }
+
+  function timestampAgeSeconds(value) {
+    const parsed = timestampMs(value);
+    if (parsed == null) return null;
+    return Math.max(0, Math.floor((schedulerNowMs() - parsed) / 1000));
+  }
+
+  function formatAge(seconds) {
+    if (!Number.isFinite(seconds)) return 'unknown';
+    const clean = Math.max(0, Math.floor(seconds));
+    if (clean < 5) return 'now';
+    if (clean < 60) return `${clean}s ago`;
+    if (clean < 3600) return `${Math.floor(clean / 60)}m ago`;
+    if (clean < 86400) return `${Math.floor(clean / 3600)}h ago`;
+    return `${Math.floor(clean / 86400)}d ago`;
+  }
+
+  function formatUntil(value) {
+    const parsed = timestampMs(value);
+    if (parsed == null) return 'not scheduled';
+    const seconds = Math.ceil((parsed - schedulerNowMs()) / 1000);
+    if (seconds <= 0) return 'due now';
+    if (seconds < 60) return `in ${seconds}s`;
+    if (seconds < 3600) return `in ${Math.ceil(seconds / 60)}m`;
+    return `in ${Math.ceil(seconds / 3600)}h`;
+  }
+
+  function exactTime(value) {
+    const parsed = timestampMs(value);
+    if (parsed == null) return 'No timestamp reported';
+    return new Date(parsed).toLocaleString();
+  }
+
+  function newerFailure(provider) {
+    const failureAt = timestampMs(provider?.latest_failure?.finished_at);
+    if (failureAt == null) return false;
+    const successAt = timestampMs(provider?.latest_success?.finished_at);
+    return successAt == null || failureAt > successAt;
+  }
+
+  function latestIndexTimestamp(provider) {
+    const success = provider?.latest_success;
+    if (!success) return '';
+    return Object.prototype.hasOwnProperty.call(success.result || {}, 'index_updated_at')
+      ? success.result.index_updated_at
+      : success.finished_at;
+  }
+
+  function schedulerViewModel(payload) {
+    const scheduler = payload?.scheduler;
+    const provider = payload?.provider;
+    const schedule = payload?.schedule;
+    const thresholds = payload?.thresholds;
+    const heartbeatThreshold = finiteNumber(thresholds?.heartbeat_stale_seconds);
+    const successThreshold = finiteNumber(thresholds?.success_stale_seconds);
+    const heartbeatAge = timestampAgeSeconds(provider?.last_seen_at);
+    const successAge = timestampAgeSeconds(provider?.latest_success?.finished_at);
+    const indexAge = timestampAgeSeconds(latestIndexTimestamp(provider));
+    const failureAge = timestampAgeSeconds(provider?.latest_failure?.finished_at);
+    const queued = finiteNumber(provider?.queued_runs);
+    const running = finiteNumber(provider?.running_runs);
+    const queueCount = queued == null ? 0 : Math.max(0, Math.floor(queued));
+    const runningCount = running == null ? 0 : Math.max(0, Math.floor(running));
+    const busy = queueCount > 0 || runningCount > 0;
+    let tone = 'fault';
+    let label = 'Sync status unavailable';
+    let detail = 'No scheduler status has been received.';
+
+    if (!payload) {
+      tone = state.scheduler.error ? 'fault' : 'checking';
+      label = state.scheduler.error ? 'Sync status unavailable' : 'Checking search sync';
+      detail = state.scheduler.error
+        ? 'The status request failed. Search may be out of date.'
+        : 'Waiting for the scheduler status endpoint.';
+    } else if (payload.schema !== schedulerStatusSchema) {
+      label = 'Unknown status format';
+      detail = 'The scheduler status response is not the supported v1 contract.';
+    } else if (state.scheduler.error) {
+      label = 'Sync status check failed';
+      detail = 'The latest status request failed. The measurements shown are from the last response.';
+    } else if (!scheduler || scheduler.available !== true) {
+      label = 'Scheduler unavailable';
+      detail = 'The application cannot reach xarta-scheduler.';
+    } else if (!scheduler.health || scheduler.health.ok !== true) {
+      label = 'Scheduler unhealthy';
+      detail = 'xarta-scheduler reported an unhealthy service state.';
+    } else if (!schedule || !schedule.schedule_id) {
+      label = 'Search sync not scheduled';
+      detail = 'No scheduler-owned Personal Search schedule was found.';
+    } else if (schedule.target_key !== 'blueprints_personal_search_sync_v1') {
+      label = 'Wrong search sync schedule';
+      detail = 'The reported schedule is not the typed Personal Search target.';
+    } else if (schedule.enabled !== true) {
+      label = 'Search sync disabled';
+      detail = 'The Personal Search schedule exists but is disabled.';
+    } else if (!provider || provider.available !== true) {
+      label = 'Search sync worker unavailable';
+      detail = 'The typed Personal Search provider is not available.';
+    } else if (provider.provider_id !== 'blueprints-personal-search') {
+      label = 'Wrong search sync provider';
+      detail = 'The reported provider is not the typed Personal Search provider.';
+    } else if (provider.source_of_truth !== 'xarta-scheduler-postgresql') {
+      label = 'Search sync provenance missing';
+      detail = 'The provider status is not identified as scheduler-owned PostgreSQL state.';
+    } else if (!String(provider.state || '').trim()) {
+      label = 'Search sync worker state missing';
+      detail = 'The typed provider did not report a worker state.';
+    } else if (queued == null || running == null || queued < 0 || running < 0) {
+      label = 'Scheduler work state missing';
+      detail = 'The provider did not report usable queued and running run counts.';
+    } else if (!heartbeatThreshold || heartbeatAge == null) {
+      label = 'Worker heartbeat missing';
+      detail = 'A usable worker heartbeat and staleness threshold were not reported.';
+    } else if (heartbeatAge > heartbeatThreshold) {
+      label = 'Worker heartbeat stale';
+      detail = `The worker last reported ${formatAge(heartbeatAge)}; the limit is ${heartbeatThreshold}s.`;
+    } else if (String(provider.state || '').toLowerCase() === 'degraded') {
+      label = 'Search sync degraded';
+      detail = 'The Personal Search provider reported a degraded state.';
+    } else if (newerFailure(provider)) {
+      label = busy ? 'Latest sync failed; retry pending' : 'Latest search sync failed';
+      detail = busy
+        ? 'The latest terminal run failed and scheduler work is now queued or running.'
+        : 'The latest terminal run failed after the last successful sync.';
+    } else if (!provider.latest_success) {
+      tone = busy ? 'busy' : 'fault';
+      label = runningCount > 0 ? 'First search sync running' : (queueCount > 0 ? 'First search sync queued' : 'No successful search sync');
+      detail = busy
+        ? 'The index has no completed sync yet; scheduler work is genuinely queued or running.'
+        : 'The index has no successful sync and no scheduler work is reported.';
+    } else if (!successThreshold || successAge == null) {
+      label = 'Index freshness unknown';
+      detail = 'A usable successful-sync timestamp and staleness threshold were not reported.';
+    } else if (successAge > successThreshold) {
+      label = busy ? 'Search index stale; catching up' : 'Search index stale';
+      detail = `The index was last verified current ${formatAge(successAge)}; the limit is ${successThreshold}s.`;
+    } else {
+      tone = busy ? 'busy' : 'ok';
+      label = runningCount > 0 ? 'Search sync running' : (queueCount > 0 ? 'Search sync queued' : 'Search index current');
+      detail = busy
+        ? 'The current index is within its freshness limit while more scheduler work is queued or running.'
+        : 'Scheduler, provider heartbeat, and successful index sync are within their reported limits.';
+    }
+
+    return {
+      tone, label, detail, scheduler, provider, schedule,
+      heartbeatThreshold, successThreshold, heartbeatAge, successAge, indexAge, failureAge,
+      queueCount, runningCount,
+    };
+  }
+
+  function schedulerMetric(label, value, title, kind) {
+    return `
+      <div class="personal-search-sync__metric" data-kind="${escHtml(kind)}" title="${escHtml(title)}">
+        <span class="personal-search-sync__metric-label">${escHtml(label)}</span>
+        <strong>${escHtml(value)}</strong>
+      </div>
+    `;
+  }
+
+  function schedulerStatusHtml() {
+    const model = schedulerViewModel(state.scheduler.payload);
+    const scheduler = model.scheduler || {};
+    const provider = model.provider || {};
+    const schedule = model.schedule || {};
+    const version = scheduler.version ? `v${scheduler.version}` : '';
+    const schedulerValue = scheduler.available === true
+      ? (scheduler.health?.ok === true ? `Online${version ? ` ${version}` : ''}` : 'Unhealthy')
+      : 'Unavailable';
+    const heartbeatValue = model.heartbeatAge == null ? 'No heartbeat' : `Seen ${formatAge(model.heartbeatAge)}`;
+    const skipped = provider.latest_success?.result?.skipped === true;
+    const successValue = model.successAge == null
+      ? 'No completed sync'
+      : (skipped
+        ? `Verified ${formatAge(model.successAge)} · updated ${formatAge(model.indexAge)}`
+        : `Updated ${formatAge(model.indexAge ?? model.successAge)}`);
+    const workParts = [];
+    if (model.runningCount) workParts.push(`${model.runningCount} running`);
+    if (model.queueCount) workParts.push(`${model.queueCount} queued`);
+    const workValue = workParts.length
+      ? workParts.join(' · ')
+      : (newerFailure(provider) ? `Failed ${formatAge(model.failureAge)}` : `Next ${formatUntil(schedule.next_run_at)}`);
+    const heartbeatTitle = model.heartbeatAge == null
+      ? 'Provider supplied no usable last_seen_at timestamp.'
+      : `Provider ${provider.provider_id || 'blueprints-personal-search'} last reported ${exactTime(provider.last_seen_at)}; browser-computed age ${model.heartbeatAge}s; stale after ${model.heartbeatThreshold ?? 'unknown'}s.`;
+    const indexTimestamp = latestIndexTimestamp(provider);
+    const successTitle = model.successAge == null
+      ? 'Provider supplied no successful run.'
+      : `Index last verified current ${exactTime(provider.latest_success?.finished_at)}; browser-computed verification age ${model.successAge}s; stale after ${model.successThreshold ?? 'unknown'}s. Index physically updated ${exactTime(indexTimestamp)}.${skipped ? ' The latest successful run truthfully skipped rewriting because the source signature was unchanged.' : ''} Latest successful scheduler run ${provider.latest_success?.run_id || ''}.`;
+    const workTitleParts = [
+      `Schedule ${schedule.schedule_id || 'missing'}; ${schedule.enabled === true ? 'enabled' : 'not enabled'}.`,
+      schedule.schedule_definition?.seconds != null ? `Interval ${schedule.schedule_definition.seconds}s.` : '',
+      schedule.next_run_at ? `Next run ${exactTime(schedule.next_run_at)}.` : 'No next run reported.',
+      `${model.runningCount} running; ${model.queueCount} queued.`,
+      provider.oldest_queue_lag_seconds != null ? `Oldest queue lag ${provider.oldest_queue_lag_seconds}s.` : '',
+      newerFailure(provider) ? `Latest failure finished ${exactTime(provider.latest_failure?.finished_at)}.` : '',
+    ].filter(Boolean);
+    const runLabel = state.scheduler.runNowInFlight ? 'Queueing…' : 'Run now';
+    const liveText = state.scheduler.liveMessage || '';
+    return `
+      <div class="personal-search-sync__header">
+        <div class="personal-search-sync__summary" title="${escHtml(model.detail)}">
+          <span class="personal-search-sync__lamp" aria-hidden="true"></span>
+          <span><strong>Search sync</strong><span>${escHtml(model.label)}</span></span>
+        </div>
+        <div class="personal-search-sync__actions">
+          <button class="personal-search-sync__run" type="button" data-personal-search-sync-run${state.scheduler.runNowInFlight ? ' disabled' : ''} title="Queue one scheduler-owned Personal Search sync">${escHtml(runLabel)}</button>
+          <button class="personal-search-sync__help" type="button" data-personal-search-sync-help aria-label="How search sync works" title="How search sync works">?</button>
+        </div>
+      </div>
+      <div class="personal-search-sync__flow" aria-label="Search sync pipeline status">
+        ${schedulerMetric('Scheduler', schedulerValue, scheduler.available === true ? `xarta-scheduler ${version || 'version not reported'}; health ${scheduler.health?.ok === true ? 'ok' : 'not ok'}.` : 'xarta-scheduler is unavailable.', 'scheduler')}
+        ${schedulerMetric('Provider', heartbeatValue, heartbeatTitle, 'provider')}
+        ${schedulerMetric('Index', successValue, successTitle, 'index')}
+        ${schedulerMetric('Work', workValue, workTitleParts.join(' '), 'work')}
+      </div>
+      <span class="personal-search-sync__sr" role="status" aria-live="polite" aria-atomic="true">${escHtml(liveText)}</span>
+    `;
+  }
+
+  function renderSchedulerStatus() {
+    const tone = schedulerViewModel(state.scheduler.payload).tone;
+    schedulerHosts().forEach((host, index) => {
+      host.dataset.tone = tone;
+      const liveMessage = state.scheduler.liveMessage;
+      if (index > 0) state.scheduler.liveMessage = '';
+      host.innerHTML = schedulerStatusHtml();
+      state.scheduler.liveMessage = liveMessage;
+    });
+    state.scheduler.liveMessage = '';
+  }
+
+  function updateSchedulerLiveMessage() {
+    const model = schedulerViewModel(state.scheduler.payload);
+    const key = `${model.tone}:${model.label}`;
+    if (key !== state.scheduler.lastLiveKey) {
+      state.scheduler.lastLiveKey = key;
+      state.scheduler.liveMessage = `Search sync: ${model.label}.`;
+    }
+  }
+
+  function clearSchedulerTimer() {
+    if (state.scheduler.timer) window.clearTimeout(state.scheduler.timer);
+    state.scheduler.timer = null;
+  }
+
+  function scheduleSchedulerPoll() {
+    clearSchedulerTimer();
+    if (!schedulerHosts().length || document.visibilityState === 'hidden') return;
+    state.scheduler.timer = window.setTimeout(() => {
+      state.scheduler.timer = null;
+      void refreshSchedulerStatus({ force: true });
+    }, schedulerPollMs);
+  }
+
+  async function refreshSchedulerStatus(options = {}) {
+    if (state.scheduler.inFlight) return state.scheduler.inFlight;
+    if (!schedulerHosts().length) return null;
+    const recentlyRequested = Date.now() - state.scheduler.lastRequestedAt < 2000;
+    if (!options.force && recentlyRequested && state.scheduler.payload) {
+      renderSchedulerStatus();
+      scheduleSchedulerPoll();
+      return state.scheduler.payload;
+    }
+    state.scheduler.lastRequestedAt = Date.now();
+    const request = (async () => {
+      try {
+        const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
+        const response = await fetcher(schedulerStatusUrl);
+        if (!response.ok) throw new Error('scheduler status request failed');
+        const payload = await response.json();
+        const checkedAt = timestampMs(payload?.checked_at);
+        if (checkedAt != null) state.scheduler.clockOffsetMs = checkedAt - Date.now();
+        state.scheduler.payload = payload;
+        state.scheduler.error = '';
+      } catch (error) {
+        state.scheduler.error = 'status-request-failed';
+      } finally {
+        state.scheduler.inFlight = null;
+        updateSchedulerLiveMessage();
+        renderSchedulerStatus();
+        scheduleSchedulerPoll();
+      }
+      return state.scheduler.payload;
+    })();
+    state.scheduler.inFlight = request;
+    renderSchedulerStatus();
+    return request;
+  }
+
+  async function runSchedulerNow() {
+    if (state.scheduler.runNowInFlight) return state.scheduler.runNowInFlight;
+    state.scheduler.liveMessage = 'Queueing a Personal Search sync.';
+    const request = (async () => {
+      try {
+        renderSchedulerStatus();
+        const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
+        const response = await fetcher(schedulerRunNowUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        if (!response.ok) throw new Error('scheduler run-now request failed');
+        const payload = await response.json();
+        const status = String(payload?.run?.status || '').toLowerCase();
+        state.scheduler.liveMessage = status === 'running'
+          ? 'Personal Search sync is running.'
+          : 'Personal Search sync queued.';
+      } catch (error) {
+        state.scheduler.liveMessage = 'Could not queue the Personal Search sync.';
+      } finally {
+        state.scheduler.runNowInFlight = null;
+        renderSchedulerStatus();
+        await refreshSchedulerStatus({ force: true });
+      }
+    })();
+    state.scheduler.runNowInFlight = request;
+    renderSchedulerStatus();
+    return request;
+  }
+
+  function ensureSchedulerHelpDialog() {
+    let dialog = document.getElementById('personal-search-sync-help-modal');
+    if (dialog) return dialog;
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <dialog id="personal-search-sync-help-modal" class="hub-modal personal-search-sync-help-modal">
+        <div class="hub-modal-header">
+          <h2 class="hub-modal-title">How Search stays current</h2>
+          <button class="hub-modal-close" type="button" aria-label="Close">&#10005;</button>
+        </div>
+        <div class="hub-modal-body">
+          <p class="personal-search-sync-help__intro">Search reads a separate index. xarta-scheduler keeps that index aligned with the records owned by Diary, Calendar, ToDo, Imports, and Kanban.</p>
+          <div class="personal-search-sync-help__flow" aria-label="Search indexing pipeline">
+            <div><strong>Source records</strong><span>Apps remain authoritative</span></div>
+            <span aria-hidden="true">→</span>
+            <div><strong>Occurrence</strong><span>Scheduler queues work</span></div>
+            <span aria-hidden="true">→</span>
+            <div><strong>Typed provider</strong><span>Worker performs sync</span></div>
+            <span aria-hidden="true">→</span>
+            <div><strong>Search index</strong><span>Search reads here</span></div>
+          </div>
+          <section class="personal-search-sync-help__card">
+            <h3>What the indicator means</h3>
+            <p><strong>Current</strong> means the scheduler is healthy, the provider heartbeat is recent, and a successful sync has recently verified that the index matches its sources. An unchanged source signature can safely skip rewriting the index; in that case the indicator shows the fresh verification separately and retains the genuine earlier index-update time instead of pretending the index changed. <strong>Queued</strong> or <strong>running</strong> is scheduler-owned work in progress. A fault means a required component, heartbeat, or successful verification is absent, stale, disabled, degraded, or failed.</p>
+          </section>
+          <section class="personal-search-sync-help__card">
+            <h3>Run now</h3>
+            <p><strong>Run now</strong> asks xarta-scheduler to queue one sync. It does not run work in the browser and it does not claim success; the indicator changes only when the backend reports genuine queue, run, heartbeat, and completion state.</p>
+          </section>
+          <p class="personal-search-sync-help__note">A Search can return no results when its index is behind even though source records are visible on a page. The status strip makes that condition observable without changing the source data.</p>
+        </div>
+        <div class="hub-modal-footer">
+          <button class="hub-modal-btn secondary hub-modal-close" type="button">Close</button>
+        </div>
+      </dialog>
+    `.trim();
+    dialog = host.firstElementChild;
+    document.body.appendChild(dialog);
+    if (typeof HubModal !== 'undefined') HubModal.init(document.body);
+    return dialog;
+  }
+
+  function openSchedulerHelp() {
+    const dialog = ensureSchedulerHelpDialog();
+    if (typeof HubModal !== 'undefined') HubModal.open(dialog);
+    else if (typeof dialog.showModal === 'function') dialog.showModal();
+  }
+
+  function schedulerStatusSurfaceHtml() {
+    return '<section class="personal-search-sync" data-personal-search-sync-status role="status" aria-live="off" aria-label="Search sync status"></section>';
+  }
+
+  function ensureSchedulerStatus() {
+    renderSchedulerStatus();
+    if (!state.scheduler.visibilityWired) {
+      state.scheduler.visibilityWired = true;
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+          clearSchedulerTimer();
+          return;
+        }
+        void refreshSchedulerStatus({ force: true });
+      });
+    }
+    void refreshSchedulerStatus();
+  }
 
   function adapterFor(surface) {
     return state.adapters[surface] || {};
@@ -666,6 +1089,7 @@ const BlueprintsPersonalSearch = (() => {
     const allDay = data.allDay !== false;
     const disabled = allDay ? ' disabled' : '';
     return `
+      ${schedulerStatusSurfaceHtml()}
       <form class="personal-search-form personal-search-form--calendar-range calendar-event-form-grid" data-personal-search-form="${safeSurface}">
         <label class="calendar-field calendar-field--wide" for="${escHtml(prefix)}-query">
           <span>Search</span>
@@ -799,6 +1223,7 @@ const BlueprintsPersonalSearch = (() => {
       root.innerHTML = calendarRangeFormHtml(surface, data, root.dataset.personalSearchInstance);
     } else {
       root.innerHTML = `
+      ${schedulerStatusSurfaceHtml()}
       <form class="personal-search-form" data-personal-search-form="${escHtml(surface)}">
         <input type="search" data-personal-search-query="${escHtml(surface)}" value="${escHtml(data.query)}" autocomplete="off" spellcheck="false" aria-label="Search personal records" />
         <div class="personal-search-filter-strip" role="button" tabindex="0" data-personal-search-tags-strip="${escHtml(surface)}" data-personal-filter-open="${escHtml(filterSurfaceFor(surface))}" data-personal-filter-tab="filters">
@@ -818,6 +1243,7 @@ const BlueprintsPersonalSearch = (() => {
     if (root.dataset.personalSearchWired === '1') {
       renderResults(surface);
       syncRangeInputs(surface);
+      ensureSchedulerStatus();
       return;
     }
     root.dataset.personalSearchWired = '1';
@@ -893,10 +1319,23 @@ const BlueprintsPersonalSearch = (() => {
       const graphButton = event.target.closest?.('[data-personal-graph-open]');
       if (graphButton) {
         openGraphLinks(surface, graphButton.dataset.personalGraphOpen);
+        return;
+      }
+      const runNowButton = event.target.closest?.('[data-personal-search-sync-run]');
+      if (runNowButton) {
+        event.preventDefault();
+        void runSchedulerNow();
+        return;
+      }
+      const helpButton = event.target.closest?.('[data-personal-search-sync-help]');
+      if (helpButton) {
+        event.preventDefault();
+        openSchedulerHelp();
       }
     });
     renderResults(surface);
     syncRangeInputs(surface);
+    ensureSchedulerStatus();
   }
 
   function init() {
@@ -961,6 +1400,14 @@ const BlueprintsPersonalSearch = (() => {
         link_count: state.graph.links.length,
         first_link: state.graph.links[0]?.target_ref || '',
         sync: state.graph.sync,
+      },
+      scheduler: {
+        schema: state.scheduler.payload?.schema || '',
+        checked_at: state.scheduler.payload?.checked_at || '',
+        tone: schedulerViewModel(state.scheduler.payload).tone,
+        label: schedulerViewModel(state.scheduler.payload).label,
+        error: state.scheduler.error,
+        run_now_pending: Boolean(state.scheduler.runNowInFlight),
       },
     };
   }
