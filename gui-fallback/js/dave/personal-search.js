@@ -396,10 +396,13 @@ const BlueprintsPersonalSearch = (() => {
     if (dialog) return dialog;
     const host = document.createElement('div');
     host.innerHTML = `
-      <dialog id="personal-search-sync-help-modal" class="hub-modal personal-search-sync-help-modal">
+      <dialog id="personal-search-sync-help-modal" class="hub-modal hub-dialog personal-search-sync-help-modal" data-tone="info">
         <div class="hub-modal-header">
-          <h2 class="hub-modal-title">How Search stays current</h2>
-          <button class="hub-modal-close" type="button" aria-label="Close">&#10005;</button>
+          <h2 class="hub-modal-title">
+            <span class="hub-dialog-badge">HELP</span>
+            <span class="hub-dialog-title-text">How Search stays current</span>
+          </h2>
+          <button class="hub-modal-close hub-dialog-close" type="button" aria-label="Close">&#10005;</button>
         </div>
         <div class="hub-modal-body">
           <p class="personal-search-sync-help__intro">Search reads a separate index. xarta-scheduler keeps that index aligned with the records owned by Diary, Calendar, ToDo, Imports, and Kanban.</p>
@@ -421,9 +424,6 @@ const BlueprintsPersonalSearch = (() => {
             <p><strong>Run now</strong> asks xarta-scheduler to queue one sync. It does not run work in the browser and it does not claim success; the indicator changes only when the backend reports genuine queue, run, heartbeat, and completion state.</p>
           </section>
           <p class="personal-search-sync-help__note">A Search can return no results when its index is behind even though source records are visible on a page. The status strip makes that condition observable without changing the source data.</p>
-        </div>
-        <div class="hub-modal-footer">
-          <button class="hub-modal-btn secondary hub-modal-close" type="button">Close</button>
         </div>
       </dialog>
     `.trim();

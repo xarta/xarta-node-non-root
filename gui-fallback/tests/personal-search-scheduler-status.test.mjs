@@ -3,6 +3,10 @@ import { readFileSync } from 'node:fs';
 
 const source = readFileSync('/workspace/gui-fallback/js/dave/personal-search.js', 'utf8');
 const css = readFileSync('/workspace/gui-fallback/css/personal-search.css', 'utf8');
+const helpDialogSource = source.slice(
+  source.indexOf('function ensureSchedulerHelpDialog()'),
+  source.indexOf('function schedulerStatusSurfaceHtml()'),
+);
 
 assert.match(
   source,
@@ -95,9 +99,19 @@ assert.match(
   'Run now must finish by reading direct scheduler status instead of inventing success.',
 );
 assert.match(
-  source,
+  helpDialogSource,
   /function ensureSchedulerHelpDialog\(\)[\s\S]*document\.body\.appendChild\(dialog\)[\s\S]*HubModal\.init\(document\.body\)[\s\S]*function openSchedulerHelp\(\)[\s\S]*HubModal\.open\(dialog\)/,
-  'The question-mark help must dynamically create and open a house-style HubModal.',
+  'The question-mark help must dynamically create and initialise a HubModal.',
+);
+assert.match(
+  helpDialogSource,
+  /<dialog id="personal-search-sync-help-modal" class="hub-modal hub-dialog personal-search-sync-help-modal" data-tone="info">[\s\S]*<span class="hub-dialog-badge">HELP<\/span>[\s\S]*<span class="hub-dialog-title-text">How Search stays current<\/span>[\s\S]*class="hub-modal-close hub-dialog-close"/,
+  'The help surface must use the shared informational dialogue chrome.',
+);
+assert.doesNotMatch(
+  helpDialogSource,
+  /hub-modal-footer/,
+  'The content-only help surface must not add a redundant footer close action.',
 );
 assert.match(
   source,
