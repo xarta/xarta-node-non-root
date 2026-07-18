@@ -1447,6 +1447,11 @@ dialog.hub-modal#kanban-detail-modal[open] {
   background: rgba(217, 170, 50, .08);
 }
 
+.kanban-proposal-entry--history {
+  border-color: rgba(105, 190, 132, .28);
+  background: rgba(105, 190, 132, .065);
+}
+
 .kanban-proposal-entry__title {
   min-width: 0;
   border: 0;
@@ -1480,6 +1485,11 @@ dialog.hub-modal#kanban-detail-modal[open] {
   color: #e9c96f;
 }
 
+.kanban-proposal-entry__head > span[data-tone="ok"] {
+  border-color: rgba(105, 190, 132, .42);
+  color: #8fd6a4;
+}
+
 .kanban-proposal-entry__meta {
   display: flex;
   flex-wrap: wrap;
@@ -1508,6 +1518,21 @@ dialog.hub-modal#kanban-detail-modal[open] {
 
 .kanban-proposal-entry__decision dt {
   color: var(--text-dim);
+}
+
+.kanban-proposal-entry__history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  border-left: 3px solid rgba(105, 190, 132, .5);
+  color: var(--text-dim);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+  padding: 4px 7px;
+}
+
+.kanban-proposal-entry__history strong {
+  color: #8fd6a4;
 }
 
 .kanban-proposal-entry__refs {

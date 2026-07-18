@@ -163,7 +163,7 @@ assert.match(
 const stableAutomationBlock = activeBrowserObserverJs.match(/function _stableAutomationKey\(automation\)[\s\S]*?function _stableLayoutKey/)?.[0] || '';
 assert.match(
   stableAutomationBlock,
-  /automation_proposal_surface_schema:[\s\S]*automation_proposal_inbox_entry_count:[\s\S]*automation_proposal_outbox_processed_count:[\s\S]*automation_proposal_response_busy:[\s\S]*automation_proposal_response_error_count:/,
+  /automation_proposal_surface_schema:[\s\S]*automation_proposal_inbox_entry_count:[\s\S]*automation_proposal_inbox_actionable_count:[\s\S]*automation_proposal_inbox_history_count:[\s\S]*automation_proposal_inbox_superseded_count:[\s\S]*automation_proposal_inbox_obsolete_count:[\s\S]*automation_proposal_outbox_processed_count:[\s\S]*automation_proposal_response_busy:[\s\S]*automation_proposal_response_error_count:/,
   'Active Browser stable automation state must expose bounded proposal lifecycle proof.',
 );
 assert.doesNotMatch(
@@ -194,7 +194,7 @@ assert.match(
 
 assert.match(
   kanbanCss,
-  /\.kanban-proposal-surfaces__grid[\s\S]*\.kanban-proposal-response[\s\S]*\.kanban-proposal-response__error/,
+  /\.kanban-proposal-surfaces__grid[\s\S]*\.kanban-proposal-entry--history[\s\S]*\.kanban-proposal-entry__history[\s\S]*\.kanban-proposal-response[\s\S]*\.kanban-proposal-response__error/,
   'Proposal surfaces, response forms, and failures must have maintained layout styles.',
 );
 
@@ -215,9 +215,14 @@ function proposalStatusFixture() {
       response_endpoint_template: '/api/v1/personal/kanban/automation/proposal-surfaces/inbox/{item_id}/responses',
       inbox: {
         item_id: 'kanban-inbox-surface',
-        total_count: 2,
+        total_count: 4,
         open_count: 1,
-        processed_count: 1,
+        actionable_count: 1,
+        processed_count: 3,
+        canonical_processed_count: 1,
+        superseded_count: 1,
+        obsolete_count: 1,
+        history_count: 3,
         entries: [
           {
             item_id: 'kanban-choice-a',
@@ -241,6 +246,34 @@ function proposalStatusFixture() {
             proposal_status: 'processed',
             requested_operator_action: 'No action remains.',
             exact_decision_needed: 'This lifecycle is complete.',
+          },
+          {
+            item_id: 'kanban-choice-c',
+            title: 'Duplicate violet approval',
+            state_id: 'done',
+            status: 'done',
+            entry_type: 'approval_request',
+            proposal_status: 'superseded',
+            superseded: true,
+            reconciliation: {
+              disposition: 'superseded',
+              canonical_decision_id: 'kanban-decision-canonical-violet',
+            },
+            outcome_refs: ['xarta-kanban:item:kanban-outcome-violet'],
+          },
+          {
+            item_id: 'kanban-choice-d',
+            title: 'Obsolete migration approval',
+            state_id: 'done',
+            status: 'done',
+            entry_type: 'approval_request',
+            proposal_status: 'obsolete',
+            obsolete: true,
+            reconciliation: {
+              disposition: 'obsolete',
+              canonical_decision_id: 'kanban-decision-canonical-migration',
+            },
+            outcome_refs: ['xarta-kanban:item:kanban-outcome-migration'],
           },
         ],
       },
@@ -337,6 +370,13 @@ function createProposalHarness() {
   assert.match(html, /Decision needed[\s\S]*after lunch &lt;local&gt;/);
   assert.match(html, /data-kanban-proposal-open-item-id="kanban-work-a"/);
   assert.equal((html.match(/data-kanban-proposal-response-for=/g) || []).length, 1, 'Only the lifecycle-open INBOX entry may accept a response.');
+  assert.equal((html.match(/Resolved history/g) || []).length, 2, 'Superseded and obsolete records remain visible as history.');
+  assert.match(html, /superseded history/);
+  assert.match(html, /obsolete history/);
+  assert.match(html, /<strong>1<\/strong>actionable/);
+  assert.match(html, /<strong>1<\/strong>processed/);
+  assert.match(html, /<strong>1<\/strong>superseded/);
+  assert.match(html, /<strong>1<\/strong>obsolete/);
   assert.match(html, /retry: retry_waiting/);
 
   const responseText = 'Take the amber route; use your judgment for the remaining spacing.';
@@ -350,8 +390,12 @@ function createProposalHarness() {
     source_surface: 'kanban-automation-status',
   });
   const snapshot = harness.api.snapshot();
-  assert.equal(snapshot.automation_proposal_inbox_entry_count, 2);
+  assert.equal(snapshot.automation_proposal_inbox_entry_count, 4);
   assert.equal(snapshot.automation_proposal_inbox_open_count, 1);
+  assert.equal(snapshot.automation_proposal_inbox_actionable_count, 1);
+  assert.equal(snapshot.automation_proposal_inbox_history_count, 3);
+  assert.equal(snapshot.automation_proposal_inbox_superseded_count, 1);
+  assert.equal(snapshot.automation_proposal_inbox_obsolete_count, 1);
   assert.equal(snapshot.automation_proposal_response_busy, false);
   assert.doesNotMatch(JSON.stringify(snapshot), /amber route|remaining spacing/, 'Observable snapshots must never expose operator response text.');
 }
@@ -362,7 +406,12 @@ function createProposalHarness() {
   fixture.proposal_surfaces.inbox.entries = [];
   fixture.proposal_surfaces.inbox.total_count = 0;
   fixture.proposal_surfaces.inbox.open_count = 0;
+  fixture.proposal_surfaces.inbox.actionable_count = 0;
   fixture.proposal_surfaces.inbox.processed_count = 0;
+  fixture.proposal_surfaces.inbox.canonical_processed_count = 0;
+  fixture.proposal_surfaces.inbox.superseded_count = 0;
+  fixture.proposal_surfaces.inbox.obsolete_count = 0;
+  fixture.proposal_surfaces.inbox.history_count = 0;
   harness.api.setData(fixture);
   assert.match(harness.api.render(), /No INBOX entries\./, 'An empty surface must render a truthful zero state.');
   harness.api.setData(proposalStatusFixture());

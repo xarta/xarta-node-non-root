@@ -2414,7 +2414,7 @@ const KanbanBoardPage = (() => {
     const proposalStatus = String(entry?.proposal_status || '').trim().toLowerCase();
     if (['done', 'closed', 'archived', 'cancelled'].includes(stateId)) return false;
     if (['done', 'closed', 'archived', 'cancelled'].includes(status)) return false;
-    if (['processed', 'accepted', 'rejected', 'deferred', 'superseded', 'closed'].includes(proposalStatus)) return false;
+    if (['processed', 'accepted', 'rejected', 'deferred', 'superseded', 'obsolete', 'resolved', 'closed'].includes(proposalStatus)) return false;
     return true;
   }
 
@@ -2444,6 +2444,12 @@ const KanbanBoardPage = (() => {
     const title = entry?.title || itemId;
     const proposalStatus = entry?.proposal_status || entry?.status || entry?.state_id || 'unknown';
     const retryState = String(entry?.retry_state || '').trim();
+    const reconciliation = entry?.reconciliation && typeof entry.reconciliation === 'object'
+      ? entry.reconciliation
+      : {};
+    const disposition = String(reconciliation.disposition || proposalStatus || '').trim().toLowerCase();
+    const resolvedHistory = ['superseded', 'obsolete'].includes(disposition);
+    const statusLabel = resolvedHistory ? `${disposition} history` : proposalStatus;
     const openForResponse = surfaceKind === 'inbox' && proposalEntryIsOpen(entry);
     const busy = state.automationStatus.responseBusyItemId === itemId;
     const globallyBusy = !!state.automationStatus.responseBusyItemId
@@ -2453,11 +2459,11 @@ const KanbanBoardPage = (() => {
     const responseError = state.automationStatus.responseErrors[itemId] || '';
     const action = entry?.requested_operator_action || '';
     const decision = entry?.exact_decision_needed || '';
-    return `<article class="kanban-proposal-entry" data-kanban-proposal-entry data-kanban-proposal-item-id="${escHtml(itemId)}" data-proposal-status="${escHtml(proposalStatus)}" data-retry-state="${escHtml(retryState)}">
+    return `<article class="kanban-proposal-entry${resolvedHistory ? ' kanban-proposal-entry--history' : ''}" data-kanban-proposal-entry data-kanban-proposal-item-id="${escHtml(itemId)}" data-proposal-status="${escHtml(proposalStatus)}" data-reconciliation-disposition="${escHtml(disposition)}" data-retry-state="${escHtml(retryState)}">
       <div class="kanban-proposal-entry__head">
         <button class="kanban-proposal-entry__title" type="button" data-kanban-automation-action="open-proposal-item" data-kanban-proposal-open-item-id="${escHtml(itemId)}">${escHtml(title)}</button>
         <span>${escHtml(entry?.entry_type || surfaceKind)}</span>
-        <span data-tone="${retryState || String(proposalStatus).includes('fail') ? 'warn' : 'info'}">${escHtml(proposalStatus)}</span>
+        <span data-tone="${retryState || String(proposalStatus).includes('fail') ? 'warn' : resolvedHistory ? 'ok' : 'info'}">${escHtml(statusLabel)}</span>
       </div>
       <div class="kanban-proposal-entry__meta">
         <span>${escHtml(entry?.state_id || entry?.status || '')}</span>
@@ -2468,6 +2474,11 @@ const KanbanBoardPage = (() => {
         ${action ? `<div><dt>Operator action</dt><dd>${escHtml(action)}</dd></div>` : ''}
         ${decision ? `<div><dt>Decision needed</dt><dd>${escHtml(decision)}</dd></div>` : ''}
       </dl>` : ''}
+      ${resolvedHistory ? `<div class="kanban-proposal-entry__history" role="status">
+        <strong>Resolved history</strong>
+        <span>${escHtml(disposition)}</span>
+        ${reconciliation.canonical_decision_id ? `<span>decision ${escHtml(reconciliation.canonical_decision_id)}</span>` : ''}
+      </div>` : ''}
       ${proposalEntryRefsHtml(entry)}
       ${openForResponse ? `<div class="kanban-proposal-response" data-kanban-proposal-response-for="${escHtml(itemId)}">
         <label for="kanban-proposal-response-${escHtml(itemId)}">Operator response</label>
@@ -2486,8 +2497,31 @@ const KanbanBoardPage = (() => {
     const surface = surfaces[kind] && typeof surfaces[kind] === 'object' ? surfaces[kind] : {};
     const entries = proposalSurfaceEntries(surface);
     const total = proposalSurfaceCount(surface, 'total_count', proposalSurfaceCount(surface, 'count', entries.length));
-    const open = proposalSurfaceCount(surface, 'open_count', entries.filter(proposalEntryIsOpen).length);
-    const processed = proposalSurfaceCount(surface, 'processed_count', Math.max(0, total - open));
+    const actionable = proposalSurfaceCount(
+      surface,
+      'actionable_count',
+      proposalSurfaceCount(surface, 'open_count', entries.filter(proposalEntryIsOpen).length),
+    );
+    const history = proposalSurfaceCount(
+      surface,
+      'history_count',
+      proposalSurfaceCount(surface, 'processed_count', Math.max(0, total - actionable)),
+    );
+    const superseded = proposalSurfaceCount(
+      surface,
+      'superseded_count',
+      entries.filter(entry => String(entry?.proposal_status || '').toLowerCase() === 'superseded').length,
+    );
+    const obsolete = proposalSurfaceCount(
+      surface,
+      'obsolete_count',
+      entries.filter(entry => String(entry?.proposal_status || '').toLowerCase() === 'obsolete').length,
+    );
+    const canonicalProcessed = proposalSurfaceCount(
+      surface,
+      'canonical_processed_count',
+      Math.max(0, history - superseded - obsolete),
+    );
     const retry = proposalSurfaceCount(surface, 'retry_count', entries.filter(entry => !!entry?.retry_state).length);
     const surfaceId = cleanRouteId(surface.item_id || '');
     const surfaceError = surface.error || '';
@@ -2497,8 +2531,10 @@ const KanbanBoardPage = (() => {
         ${surfaceId ? `<button class="kanban-command-btn" type="button" data-kanban-automation-action="open-proposal-item" data-kanban-proposal-open-item-id="${escHtml(surfaceId)}">Open ${escHtml(label)}</button>` : ''}
       </div>
       <div class="kanban-automation-queue-summary" aria-label="${escHtml(label)} proposal counts">
-        <span class="kanban-automation-queue-chip"><strong>${escHtml(String(open))}</strong>open</span>
-        <span class="kanban-automation-queue-chip"><strong>${escHtml(String(processed))}</strong>processed</span>
+        <span class="kanban-automation-queue-chip"><strong>${escHtml(String(actionable))}</strong>actionable</span>
+        <span class="kanban-automation-queue-chip"><strong>${escHtml(String(canonicalProcessed))}</strong>processed</span>
+        <span class="kanban-automation-queue-chip"><strong>${escHtml(String(superseded))}</strong>superseded</span>
+        <span class="kanban-automation-queue-chip"><strong>${escHtml(String(obsolete))}</strong>obsolete</span>
         <span class="kanban-automation-queue-chip"><strong>${escHtml(String(retry))}</strong>retry</span>
       </div>
       ${surfaceError ? `<div class="kanban-proposal-surface__error" role="alert">${escHtml(surfaceError)}</div>` : ''}
@@ -5706,6 +5742,26 @@ const KanbanBoardPage = (() => {
         automationProposalSurfaces().inbox,
         'open_count',
         proposalSurfaceEntries(automationProposalSurfaces().inbox).filter(proposalEntryIsOpen).length,
+      ),
+      automation_proposal_inbox_actionable_count: proposalSurfaceCount(
+        automationProposalSurfaces().inbox,
+        'actionable_count',
+        proposalSurfaceEntries(automationProposalSurfaces().inbox).filter(proposalEntryIsOpen).length,
+      ),
+      automation_proposal_inbox_history_count: proposalSurfaceCount(
+        automationProposalSurfaces().inbox,
+        'history_count',
+        0,
+      ),
+      automation_proposal_inbox_superseded_count: proposalSurfaceCount(
+        automationProposalSurfaces().inbox,
+        'superseded_count',
+        0,
+      ),
+      automation_proposal_inbox_obsolete_count: proposalSurfaceCount(
+        automationProposalSurfaces().inbox,
+        'obsolete_count',
+        0,
       ),
       automation_proposal_outbox_processed_count: proposalSurfaceCount(
         automationProposalSurfaces().outbox,
