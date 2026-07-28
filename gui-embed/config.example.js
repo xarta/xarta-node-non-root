@@ -43,7 +43,7 @@ window.BLUEPRINTS_SELECTOR_BUTTONS = {
 
   // Optional short-edge threshold (px) used by auto mode.
   // Portrait + landscape mobile both qualify while short-edge is <= this value.
-  touchRibbonMaxShortEdge: 920,
+  touchRibbonMaxShortEdge: 500,
 
   // Fallback paging chunk size.
   pageSize: 3,

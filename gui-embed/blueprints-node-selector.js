@@ -406,7 +406,7 @@
     showPagingButton: true,
     showOriginButton: true,
     touchRibbonMode: 'auto',
-    touchRibbonMaxShortEdge: 920,
+    touchRibbonMaxShortEdge: 500,
     side: 'right',
     pageSize: 3,
     nodeSwitchPath: '/ui/',
@@ -2172,7 +2172,7 @@
       touchRibbonMode,
       touchRibbonMaxShortEdge: Number.isFinite(configuredRibbonMaxShortEdge) && configuredRibbonMaxShortEdge > 0
         ? configuredRibbonMaxShortEdge
-        : 920,
+        : 500,
       side: raw.side === 'left' ? 'left' : 'right',
       pageSize: configuredPageSize,
       nodeSwitchPath: raw.nodeSwitchPath || '/ui/',
@@ -3066,7 +3066,7 @@
     const width = Number(window.innerWidth) || 0;
     const height = Number(window.innerHeight) || 0;
     const shortEdge = Math.min(width || height, height || width);
-    const maxShortEdge = Math.max(320, Number(SELECTOR_CFG.touchRibbonMaxShortEdge) || 920);
+    const maxShortEdge = Math.max(320, Number(SELECTOR_CFG.touchRibbonMaxShortEdge) || 500);
     const root = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement : null;
     const isS25SpecialMode = !!(root && root.dataset && root.dataset.specialUiMode === 's25-stargate-touch-nav');
 
