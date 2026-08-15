@@ -79,6 +79,15 @@
   background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 7%, transparent), rgba(10, 15, 24, .44));
 }
 
+.imports-wiki,
+.imports-wiki > *,
+.imports-wiki-markdown,
+.imports-wiki-evidence,
+.imports-wiki-answer__meta {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .imports-wiki__head {
   align-items: flex-start;
 }
@@ -207,6 +216,12 @@
   margin-bottom: 10px;
   color: var(--text-dim);
   font-size: 11px;
+}
+
+.imports-wiki-answer__meta code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .imports-wiki-markdown {
@@ -855,6 +870,11 @@
   .imports-wiki__browse,
   .imports-wiki__ask-row {
     grid-template-columns: 1fr;
+  }
+
+  .imports-wiki-answer__meta {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 
