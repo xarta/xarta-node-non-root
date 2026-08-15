@@ -587,13 +587,17 @@ dialog.hub-modal.personal-search-sync-help-modal[open] {
 }
 
 .personal-search-open {
+  align-items: center;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: #101624;
   color: var(--accent);
+  display: inline-flex;
   height: 28px;
+  justify-content: center;
   padding: 0 10px;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .personal-graph-modal {

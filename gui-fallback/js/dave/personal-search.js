@@ -931,6 +931,26 @@ const BlueprintsPersonalSearch = (() => {
     return String(result?.document_id || result?.record_id || result?.source?.ref || index);
   }
 
+  function safeExternalResultUrl(result) {
+    const value = String(result?.page_ref?.external_url || '').trim();
+    if (!value) return '';
+    try {
+      const url = new URL(value);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+      return url.href;
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function resultOpenControl(result, identity) {
+    const externalUrl = safeExternalResultUrl(result);
+    if (externalUrl) {
+      return `<a class="personal-search-open" href="${escHtml(externalUrl)}" target="_blank" rel="noopener noreferrer">Open</a>`;
+    }
+    return `<button class="personal-search-open" type="button" data-personal-search-open="${escHtml(identity)}">Open</button>`;
+  }
+
   function resultHtml(result, index) {
     const source = result.source || {};
     const dateLabel = dateSpanLabel(result);
@@ -946,7 +966,7 @@ const BlueprintsPersonalSearch = (() => {
         </div>
         <div class="personal-search-score">
           ${scoreChips(result)}
-          <button class="personal-search-open" type="button" data-personal-search-open="${escHtml(identity)}">Open</button>
+          ${resultOpenControl(result, identity)}
           <button class="personal-search-open" type="button" data-personal-graph-open="${index}">Links</button>
         </div>
       </article>
