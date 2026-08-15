@@ -946,9 +946,23 @@ const BlueprintsPersonalSearch = (() => {
   function resultOpenControl(result, identity) {
     const externalUrl = safeExternalResultUrl(result);
     if (externalUrl) {
-      return `<a class="personal-search-open" href="${escHtml(externalUrl)}" target="_blank" rel="noopener noreferrer">Open</a>`;
+      const label = result?.source?.type === 'interests-ingestion' ? 'Source' : 'Open';
+      return `<a class="personal-search-open" href="${escHtml(externalUrl)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
     }
     return `<button class="personal-search-open" type="button" data-personal-search-open="${escHtml(identity)}">Open</button>`;
+  }
+
+  function resultWikiControls(result, identity) {
+    if (result?.source?.type !== 'interests-ingestion') return '';
+    const wikiPath = String(result?.page_ref?.wiki_path || '').trim();
+    const wiki = wikiPath
+      ? `<button class="personal-search-open" type="button" data-personal-wiki-open="${escHtml(identity)}">Wiki</button>`
+      : '';
+    const category = String(result?.page_ref?.wiki_category || result?.provenance?.category || '').trim();
+    const ask = category
+      ? `<button class="personal-search-open" type="button" data-personal-wiki-ask="${escHtml(identity)}">Ask</button>`
+      : '';
+    return `${wiki}${ask}`;
   }
 
   function resultHtml(result, index) {
@@ -966,6 +980,7 @@ const BlueprintsPersonalSearch = (() => {
         </div>
         <div class="personal-search-score">
           ${scoreChips(result)}
+          ${resultWikiControls(result, identity)}
           ${resultOpenControl(result, identity)}
           <button class="personal-search-open" type="button" data-personal-graph-open="${index}">Links</button>
         </div>
@@ -1334,6 +1349,19 @@ const BlueprintsPersonalSearch = (() => {
       const openButton = event.target.closest?.('[data-personal-search-open]');
       if (openButton) {
         openResult(surface, openButton.dataset.personalSearchOpen);
+        return;
+      }
+      const wikiButton = event.target.closest?.('[data-personal-wiki-open]');
+      if (wikiButton) {
+        const result = findResult(surface, wikiButton.dataset.personalWikiOpen);
+        const path = result?.page_ref?.wiki_path;
+        if (path && window.BlueprintsImportsWiki?.openPage) void window.BlueprintsImportsWiki.openPage(path);
+        return;
+      }
+      const wikiAskButton = event.target.closest?.('[data-personal-wiki-ask]');
+      if (wikiAskButton) {
+        const result = findResult(surface, wikiAskButton.dataset.personalWikiAsk);
+        if (result && window.BlueprintsImportsWiki?.prepareQuestion) void window.BlueprintsImportsWiki.prepareQuestion(result);
         return;
       }
       const graphButton = event.target.closest?.('[data-personal-graph-open]');

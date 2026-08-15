@@ -13,12 +13,17 @@ assert.match(
 );
 assert.match(
   source,
-  /function\s+resultOpenControl\(result, identity\)[\s\S]*href="\$\{escHtml\(externalUrl\)\}"[\s\S]*target="_blank"[\s\S]*rel="noopener noreferrer"/,
+  /function\s+resultOpenControl\(result, identity\)[\s\S]*interests-ingestion'[\s\S]*'Source'[\s\S]*href="\$\{escHtml\(externalUrl\)\}"[\s\S]*target="_blank"[\s\S]*rel="noopener noreferrer"/,
   'External Personal Search results must render a safe new-tab link.',
 );
 assert.match(
   source,
-  /function\s+resultHtml\(result, index\)[\s\S]*\$\{resultOpenControl\(result, identity\)\}/,
+  /function\s+resultWikiControls\(result, identity\)[\s\S]*page_ref\?\.wiki_path[\s\S]*data-personal-wiki-open[\s\S]*data-personal-wiki-ask/,
+  'Interests results must expose separate Wiki and Ask controls when their contracts are available.',
+);
+assert.match(
+  source,
+  /function\s+resultHtml\(result, index\)[\s\S]*\$\{resultWikiControls\(result, identity\)\}[\s\S]*\$\{resultOpenControl\(result, identity\)\}/,
   'Personal Search rows must use the result-aware Open control.',
 );
 

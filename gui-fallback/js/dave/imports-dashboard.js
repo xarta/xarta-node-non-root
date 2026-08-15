@@ -11,6 +11,16 @@ const ImportsDashboard = (() => {
     lastLoadedAt: '',
     sourceFilter: 'all',
     selection: null,
+    wiki: {
+      categories: [],
+      pages: [],
+      loading: false,
+      asking: false,
+      category: '',
+      query: '',
+      answer: null,
+      error: '',
+    },
   };
 
   const escHtml = typeof esc === 'function'
@@ -757,6 +767,196 @@ const ImportsDashboard = (() => {
     );
   }
 
+  function wikiMarkdownHtml(markdown, emptyText = 'No content returned.') {
+    if (window.BlueprintsMarkdown?.render) {
+      return window.BlueprintsMarkdown.render(String(markdown || ''), { emptyText });
+    }
+    return `<pre class="imports-artifact-preview">${escHtml(markdown || emptyText)}</pre>`;
+  }
+
+  function wikiPagePath(category, relativePath) {
+    const cleanCategory = String(category || '').trim();
+    const cleanPath = String(relativePath || '').replace(/^\/+/, '');
+    if (!cleanCategory || !/^(entities|queries)\//.test(cleanPath)) return '';
+    return `interests/${cleanCategory}/${cleanPath}`;
+  }
+
+  function renderWikiCatalog() {
+    const wiki = state.wiki;
+    const categorySelect = el('imports-wiki-category');
+    const catalog = el('imports-wiki-catalog');
+    const pill = el('imports-wiki-pill');
+    if (categorySelect) {
+      const current = wiki.category || categorySelect.value;
+      categorySelect.innerHTML = wiki.categories.map(category => `
+        <option value="${escHtml(category.id)}">${escHtml(category.label || category.id)} (${Number(category.page_count || 0)})</option>
+      `).join('');
+      const preferred = wiki.categories.some(category => category.id === current)
+        ? current
+        : wiki.categories.some(category => category.id === 'science') ? 'science' : wiki.categories[0]?.id || '';
+      categorySelect.value = preferred;
+      wiki.category = preferred;
+    }
+    if (pill) {
+      const tone = wiki.error ? 'err' : wiki.loading ? 'unknown' : 'ok';
+      pill.className = `imports-pill imports-pill--${tone}`;
+      pill.textContent = wiki.error ? 'Unavailable' : wiki.loading ? 'Loading' : `${wiki.pages.length} pages`;
+    }
+    if (!catalog) return;
+    if (wiki.loading) {
+      catalog.innerHTML = '<div class="imports-empty">Loading generated wiki pages...</div>';
+      return;
+    }
+    if (wiki.error) {
+      catalog.innerHTML = `<div class="imports-empty imports-wiki__error">${escHtml(wiki.error)}</div>`;
+      return;
+    }
+    catalog.innerHTML = wiki.pages.length ? wiki.pages.map(page => `
+      <button class="imports-wiki-page" type="button" data-imports-action="open-wiki-page" data-wiki-path="${escHtml(page.artifact_path || '')}">
+        <span class="imports-wiki-page__title">${escHtml(page.title || page.relative_path)}</span>
+        <span class="imports-wiki-page__meta">${escHtml(page.category)} · ${escHtml(page.artifact_kind)} · ${escHtml(compactDateTime(page.updated_at))}</span>
+        <span class="imports-wiki-page__snippet">${escHtml(page.snippet || '')}</span>
+      </button>
+    `).join('') : '<div class="imports-empty">No generated wiki pages match this category and filter.</div>';
+  }
+
+  async function loadWikiCatalog(options = {}) {
+    const wiki = state.wiki;
+    const categorySelect = el('imports-wiki-category');
+    const filter = el('imports-wiki-filter');
+    const category = options.category ?? categorySelect?.value ?? wiki.category;
+    const query = options.query ?? filter?.value?.trim() ?? wiki.query;
+    wiki.loading = true;
+    wiki.error = '';
+    wiki.category = String(category || '').trim();
+    wiki.query = String(query || '').trim();
+    renderWikiCatalog();
+    const params = new URLSearchParams({ limit: '100' });
+    if (wiki.category) params.set('category', wiki.category);
+    if (wiki.query) params.set('q', wiki.query);
+    try {
+      const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
+      const response = await fetcher(`/api/v1/personal/interests-wiki/catalog?${params}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) throw new Error(payload.detail || payload.error || `HTTP ${response.status}`);
+      const returnedCategories = Array.isArray(payload.categories) ? payload.categories : [];
+      if (!wiki.categories.length || returnedCategories.length > wiki.categories.length) {
+        wiki.categories = returnedCategories;
+      }
+      wiki.pages = Array.isArray(payload.pages) ? payload.pages : [];
+      return payload;
+    } catch (error) {
+      wiki.error = error.message || String(error);
+      wiki.pages = [];
+      return null;
+    } finally {
+      wiki.loading = false;
+      renderWikiCatalog();
+    }
+  }
+
+  async function openWikiPage(path) {
+    const clean = String(path || '').trim();
+    if (!clean) return false;
+    showActionModal('Opening Wiki Page', `<p>${escHtml(clean)}</p>`, 'Loading...');
+    try {
+      const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
+      const response = await fetcher(`/api/v1/personal/interests-wiki/page?path=${encodeURIComponent(clean)}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) throw new Error(payload.detail || payload.error || `HTTP ${response.status}`);
+      return showActionModal(
+        payload.title || clean,
+        `${kvHtml([['Category', payload.category], ['Kind', payload.kind], ['Path', payload.path], ['SHA-256', payload.sha256]])}<article class="imports-wiki-markdown">${wikiMarkdownHtml(payload.markdown)}</article>`
+      );
+    } catch (error) {
+      return showActionModal('Wiki Page Unavailable', kvHtml([['Path', clean], ['Error', error.message || String(error)]]));
+    }
+  }
+
+  function renderWikiAnswer(payload = state.wiki.answer) {
+    const target = el('imports-wiki-answer');
+    if (!target) return;
+    if (state.wiki.asking) {
+      target.innerHTML = '<div class="imports-empty">The private local model is reading the selected category...</div>';
+      return;
+    }
+    if (state.wiki.error && !payload) {
+      target.innerHTML = `<div class="imports-empty imports-wiki__error">${escHtml(state.wiki.error)}</div>`;
+      return;
+    }
+    if (!payload) {
+      target.innerHTML = '<div class="imports-empty">Ask a question to create a grounded answer with local evidence citations.</div>';
+      return;
+    }
+    const evidence = (Array.isArray(payload.evidence) ? payload.evidence : []).map((item, index) => {
+      const path = wikiPagePath(payload.category, item.relative_path);
+      const open = path ? ` <button type="button" class="imports-mini-btn imports-mini-btn--inline" data-imports-action="open-wiki-page" data-wiki-path="${escHtml(path)}">Open evidence</button>` : '';
+      return `<li><strong>[${index + 1}] ${escHtml(item.title || item.relative_path || 'Evidence')}</strong>${open}<br><span>${escHtml(item.snippet || '')}</span></li>`;
+    }).join('');
+    const filed = payload.filed_query?.artifact_path
+      ? `<button type="button" class="imports-mini-btn" data-imports-action="open-wiki-page" data-wiki-path="${escHtml(payload.filed_query.artifact_path)}">Open filed answer</button>`
+      : '';
+    target.innerHTML = `
+      <div class="imports-wiki-answer__meta">Local model: <code>${escHtml(payload.model || 'PRIMARY-LOCAL')}</code>${filed}</div>
+      <article class="imports-wiki-markdown">${wikiMarkdownHtml(payload.answer_markdown)}</article>
+      ${evidence ? `<details class="imports-wiki-evidence" open><summary>Evidence (${payload.evidence.length})</summary><ol>${evidence}</ol></details>` : ''}
+    `;
+  }
+
+  async function askWiki(question, category) {
+    const questionInput = el('imports-wiki-question');
+    const categorySelect = el('imports-wiki-category');
+    const cleanQuestion = String(question ?? questionInput?.value ?? '').trim();
+    const cleanCategory = String(category ?? categorySelect?.value ?? state.wiki.category).trim();
+    if (!cleanCategory || cleanQuestion.length < 3) {
+      state.wiki.error = !cleanCategory ? 'Choose a wiki category first.' : 'Enter a question of at least three characters.';
+      state.wiki.answer = null;
+      renderWikiAnswer();
+      return null;
+    }
+    state.wiki.asking = true;
+    state.wiki.error = '';
+    state.wiki.answer = null;
+    renderWikiAnswer();
+    try {
+      const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
+      const response = await fetcher('/api/v1/personal/interests-wiki/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: cleanQuestion, category: cleanCategory, top_k: 8, file_answer: true }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) throw new Error(payload.detail || payload.error || `HTTP ${response.status}`);
+      state.wiki.answer = payload;
+      void loadWikiCatalog({ category: cleanCategory, query: '' });
+      return payload;
+    } catch (error) {
+      state.wiki.error = error.message || String(error);
+      return null;
+    } finally {
+      state.wiki.asking = false;
+      renderWikiAnswer();
+    }
+  }
+
+  async function prepareQuestion(result) {
+    const category = String(result?.page_ref?.wiki_category || result?.provenance?.category || '').trim();
+    const question = `What does the local wiki say about ${String(result?.title || 'this imported item').trim()}?`;
+    if (typeof switchGroup === 'function') switchGroup('dave');
+    if (typeof switchTab === 'function') switchTab('imports');
+    const categorySelect = el('imports-wiki-category');
+    const questionInput = el('imports-wiki-question');
+    if (categorySelect && category) categorySelect.value = category;
+    state.wiki.category = category || state.wiki.category;
+    if (questionInput) {
+      questionInput.value = question;
+      questionInput.focus();
+    }
+    await loadWikiCatalog({ category: state.wiki.category, query: '' });
+    el('imports-wiki-heading')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    return true;
+  }
+
   function bind() {
     const root = document.querySelector('[data-imports-dashboard]');
     if (!root || root.dataset.importsBound === '1') return;
@@ -767,6 +967,7 @@ const ImportsDashboard = (() => {
       if (action === 'open-doc-path') openDocPath(btn.dataset.docPath || '');
       if (action === 'show-submission') showSubmission(btn.dataset.importsSelectIndex || '0');
       if (action === 'open-artifact-path') openArtifactPath(btn.dataset.artifactPath || '');
+      if (action === 'open-wiki-page') openWikiPage(btn.dataset.wikiPath || '');
     }
     root.addEventListener('click', event => {
       const selectable = event.target.closest('[data-imports-select-type]');
@@ -796,6 +997,18 @@ const ImportsDashboard = (() => {
       const btn = el(id);
       if (btn) btn.addEventListener('click', closeActionModal);
     });
+    const browseForm = el('imports-wiki-browse-form');
+    if (browseForm) browseForm.addEventListener('submit', event => {
+      event.preventDefault();
+      void loadWikiCatalog();
+    });
+    const askForm = el('imports-wiki-ask-form');
+    if (askForm) askForm.addEventListener('submit', event => {
+      event.preventDefault();
+      void askWiki();
+    });
+    void loadWikiCatalog();
+    renderWikiAnswer();
   }
 
   function snapshot() {
@@ -833,11 +1046,21 @@ const ImportsDashboard = (() => {
     filterGit: () => setSourceFilter('git'),
     runSafeChecks,
     explainStatus,
+    loadWikiCatalog,
+    openWikiPage,
+    askWiki,
+    prepareQuestion,
     snapshot,
   };
 })();
 
 window.BlueprintsImportsDashboard = ImportsDashboard;
+window.BlueprintsImportsWiki = {
+  browse: options => ImportsDashboard.loadWikiCatalog(options),
+  openPage: path => ImportsDashboard.openWikiPage(path),
+  ask: (question, category) => ImportsDashboard.askWiki(question, category),
+  prepareQuestion: result => ImportsDashboard.prepareQuestion(result),
+};
 
 if (typeof DaveMenuConfig !== 'undefined') {
 DaveMenuConfig.registerFunctions({

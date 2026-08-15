@@ -3849,6 +3849,36 @@
     <div class="tab-scroll-shell">
     <div class="imports-dashboard imports-dashboard--body">
       <div class="personal-search-strip" data-personal-search-surface="imports"></div>
+      <section class="imports-band imports-wiki" aria-labelledby="imports-wiki-heading">
+        <div class="imports-band__head imports-wiki__head">
+          <div>
+            <h3 id="imports-wiki-heading">Interests Wiki</h3>
+            <p class="imports-wiki__intro">Browse generated pages or ask a category-grounded question using the private local model.</p>
+          </div>
+          <span class="imports-pill imports-pill--unknown" id="imports-wiki-pill">Loading</span>
+        </div>
+        <form class="imports-wiki__browse" id="imports-wiki-browse-form">
+          <label>
+            <span>Category</span>
+            <select id="imports-wiki-category" aria-label="Interests wiki category"></select>
+          </label>
+          <label class="imports-wiki__filter">
+            <span>Find pages</span>
+            <input id="imports-wiki-filter" type="search" autocomplete="off" placeholder="e.g. intermittent fasting" />
+          </label>
+          <button class="imports-mini-btn" type="submit">Browse</button>
+        </form>
+        <div class="imports-wiki__catalog" id="imports-wiki-catalog" aria-live="polite"></div>
+        <form class="imports-wiki__ask" id="imports-wiki-ask-form">
+          <label for="imports-wiki-question">Ask this wiki category</label>
+          <div class="imports-wiki__ask-row">
+            <textarea id="imports-wiki-question" rows="3" maxlength="2000" placeholder="What does the collected evidence say, and what are its limitations?"></textarea>
+            <button class="imports-mini-btn imports-wiki__ask-button" id="imports-wiki-ask-button" type="submit">Ask local LLM</button>
+          </div>
+          <p class="imports-wiki__boundary">Answers are grounded in the selected local wiki category, include evidence citations, and are filed back into its Queries folder.</p>
+        </form>
+        <div class="imports-wiki__answer" id="imports-wiki-answer" aria-live="polite"></div>
+      </section>
       <div class="imports-metrics" id="imports-metrics" aria-label="Import metrics"></div>
 
       <section class="imports-band imports-band--submissions" aria-labelledby="imports-submissions-heading">
