@@ -788,12 +788,12 @@ const ImportsDashboard = (() => {
     const pill = el('imports-wiki-pill');
     if (categorySelect) {
       const current = wiki.category || categorySelect.value;
-      categorySelect.innerHTML = wiki.categories.map(category => `
+      categorySelect.innerHTML = `<option value="">All categories</option>${wiki.categories.map(category => `
         <option value="${escHtml(category.id)}">${escHtml(category.label || category.id)} (${Number(category.page_count || 0)})</option>
-      `).join('');
+      `).join('')}`;
       const preferred = wiki.categories.some(category => category.id === current)
         ? current
-        : wiki.categories.some(category => category.id === 'science') ? 'science' : wiki.categories[0]?.id || '';
+        : '';
       categorySelect.value = preferred;
       wiki.category = preferred;
     }
