@@ -362,6 +362,11 @@ test('PIM Email UI is read-only and registered in Dave navigation', () => {
   assert.match(daveMenuJs, /const DaveEmailSecondaryPanelItems = \[[\s\S]*email\.secondary\.checks[\s\S]*email\.secondary\.security[\s\S]*email\.secondary\.cache[\s\S]*email\.secondary\.trusted[\s\S]*email\.secondary\.search/, 'Email secondary panels must be grouped as context-menu function items.');
   assert.match(appJs, /tab === 'email'[\s\S]*BlueprintsEmailPage\.load\(\)/, 'switchTab must lazy-load Email.');
   assert.match(appJs, /email:\s*typeof window\.BlueprintsEmailPage\?\.snapshot === 'function'/, 'Active Browser automation reports must include Email snapshot state.');
+  assert.match(
+    activeBrowserObserverJs,
+    /if \(action === 'menu_function'\) \{[\s\S]*?_runMenuFunction\(payload\);[\s\S]*?return true;/,
+    'Active Browser menu-function commands must return success so the command result is recorded.',
+  );
   assert.match(activeBrowserObserverJs, /const emailSnapshot = typeof window\.BlueprintsEmailPage\?\.snapshot === 'function'/, 'Active Browser observer reports must normalize Email snapshot state.');
   assert.match(activeBrowserObserverJs, /surfaces\.email = emailSnapshot/, 'Active Browser observer must preserve Email surface details in raw reports.');
   assert.match(activeBrowserObserverJs, /message_context_menu_open: !!email\.message_context_menu_open/, 'Active Browser stable keys must notice Email context menu state changes.');

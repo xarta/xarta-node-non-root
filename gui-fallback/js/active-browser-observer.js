@@ -510,7 +510,7 @@ const BlueprintsActiveBrowserObserver = (() => {
     if (action === 'menu_function') {
       _runMenuFunction(payload);
       scheduleReport('command-menu-function');
-      return;
+      return true;
     }
     if (action === 'open_synthesis' || action === 'open_probes' || action === 'open_settings' || action === 'open_dave' || action === 'open_kanban') {
       _runSelectorAction(action.replace(/^open_/, ''), payload?.event_kind || 'click');
