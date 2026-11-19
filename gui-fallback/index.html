@@ -3769,6 +3769,7 @@
           <div class="email-panel-head email-message-head">
             <div class="email-message-head__row">
               <h3 id="email-message-heading">Message</h3>
+              <div class="email-attachments-host" id="email-attachments-host"></div>
               <button class="email-icon-btn email-icon-btn--list-toggle" type="button" data-email-action="toggle-list" data-email-list-toggle aria-expanded="true" title="Collapse message list" aria-label="Collapse message list"></button>
             </div>
             <div class="email-message-meta" id="email-message-meta">Select a message</div>
@@ -4055,6 +4056,23 @@
     <div class="hub-modal-footer">
       <span id="email-secondary-modal-status" class="hub-modal-status"></span>
       <button type="button" class="hub-modal-secondary" id="email-secondary-modal-footer-close">Close</button>
+    </div>
+  </dialog>
+
+  <dialog class="hub-modal hub-dialog email-modal email-attachment-properties-modal" data-tone="info" id="email-attachment-properties-modal" style="width:min(640px,94vw);max-width:94vw">
+    <div class="hub-modal-header">
+      <h2 class="hub-modal-title">
+        <span class="hub-dialog-badge">EMAIL</span>
+        <span class="hub-dialog-title-text">Attachment Properties</span>
+      </h2>
+      <button type="button" class="hub-modal-close hub-dialog-close" id="email-attachment-properties-modal-close" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="hub-modal-body">
+      <div class="email-attachment-properties-body" id="email-attachment-properties-body"></div>
+    </div>
+    <div class="hub-modal-footer">
+      <span id="email-attachment-properties-modal-status" class="hub-modal-status"></span>
+      <button type="button" class="hub-modal-secondary" id="email-attachment-properties-modal-footer-close">Close</button>
     </div>
   </dialog>
 

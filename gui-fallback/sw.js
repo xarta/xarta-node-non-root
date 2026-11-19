@@ -1,4 +1,4 @@
-const BP_CACHE_VERSION = 'bp-fallback-v381';
+const BP_CACHE_VERSION = 'bp-fallback-v382';
 const STATIC_CACHE = `${BP_CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${BP_CACHE_VERSION}-runtime`;
 const PIM_EMAIL_IMAGE_CACHE = `${BP_CACHE_VERSION}-pim-email-images`;

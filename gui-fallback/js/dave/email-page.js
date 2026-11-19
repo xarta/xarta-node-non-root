@@ -13,6 +13,7 @@ const EmailPage = (() => {
     ['trusted', 'Trusted'],
     ['search', 'Search'],
     ['rules', 'Rules'],
+    ['attachments', 'Attachments'],
   ];
   const EMAIL_SECONDARY_TAB_IDS = new Set(['folders', ...EMAIL_SECONDARY_TABS.map(([id]) => id)]);
   const EMAIL_SECONDARY_TAB_TITLES = new Map([
@@ -23,6 +24,7 @@ const EmailPage = (() => {
     ['trusted', 'Email Trusted'],
     ['search', 'Email Search'],
     ['rules', 'Email Rules'],
+    ['attachments', 'Email Attachments'],
   ]);
   const TRUSTED_VIEW_OPTIONS = [
     ['probable', 'Probable trusted senders'],
@@ -272,6 +274,28 @@ const EmailPage = (() => {
     activityHeartbeatTimer: null,
     emailIntroMinHeight: 0,
     emailIntroHeightLockPending: false,
+    // ── Phase 1B: human attachment downloads ──
+    attachments: {
+      seq: 0,
+      emailUid: '',
+      mailboxId: '',
+      flowContext: '',
+      messageRevision: '',
+      listState: 'idle',
+      listError: '',
+      listErrorCode: '',
+      listErrorAction: '',
+      rows: [],
+      expanded: false,
+      detailView: 'files',
+      propertiesRef: '',
+      propertiesLoading: false,
+      propertiesError: '',
+      propertiesData: null,
+      propertiesInvoker: null,
+    },
+    attachmentChecks: new Map(),
+    attachmentPollTimers: new Map(),
   };
 
   const escHtml = typeof esc === 'function'
@@ -842,6 +866,9 @@ const EmailPage = (() => {
     const rulesToolControl = layout === 'ultrawide' && state.secondaryTab === 'rules'
       ? rulesToolToolbarDropdownHtml(layout)
       : '';
+    const attachmentViewControl = layout === 'ultrawide' && state.secondaryTab === 'attachments'
+      ? attachmentViewToolbarDropdownHtml(layout)
+      : '';
     return `
       <div class="email-folder-browser-controls" data-email-folder-controls="${escHtml(layout)}">
         <div class="email-folder-tab-dropdown" data-email-folder-dropdown="set">
@@ -873,6 +900,7 @@ const EmailPage = (() => {
         ${searchModeControl}
         ${trustedViewControl}
         ${rulesToolControl}
+        ${attachmentViewControl}
       </div>
     `;
   }
@@ -975,6 +1003,723 @@ const EmailPage = (() => {
   function messageOpenedEndpoint(uid, row = null) {
     const emailUid = String(row?.email_uid || uid || '').trim();
     return `${API_ROOT}/local/messages/${encodeURIComponent(emailUid)}/opened`;
+  }
+
+  /* ── Phase 1B: human attachment downloads ─────────────────────────── */
+
+  function attachmentsBasePath(emailUid) {
+    const uid = encodeURIComponent(String(emailUid || '').trim());
+    return `${API_ROOT}/local/messages/${uid}/attachments`;
+  }
+
+  function attachmentsQuery(mailboxId = '') {
+    const mailbox = String(mailboxId || '').trim();
+    return mailbox ? `?mailbox_id=${encodeURIComponent(mailbox)}` : '';
+  }
+
+  function attachmentsEndpoint(emailUid, subPath = '', mailboxId = '') {
+    return `${attachmentsBasePath(emailUid)}${subPath}${attachmentsQuery(mailboxId)}`;
+  }
+
+  function attachmentHeaders(flowContext) {
+    const headers = {};
+    const flow = String(flowContext || '').trim();
+    if (flow) headers['X-Attachment-Flow'] = flow;
+    return headers;
+  }
+
+  function newIdempotencyKey() {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~-';
+    let value = '';
+    for (let i = 0; i < 24; i += 1) {
+      value += alphabet[Math.floor(Math.random() * alphabet.length)];
+    }
+    return value;
+  }
+
+  function attachmentRowByIdentifier(ref) {
+    const clean = String(ref || '').trim();
+    return (state.attachments.rows || []).find(row => String(row?.attachment_ref || '') === clean) || null;
+  }
+
+  function attachmentCheckState(ref) {
+    const clean = String(ref || '').trim();
+    return state.attachmentChecks.get(clean) || null;
+  }
+
+  function attachmentEligibleCount() {
+    return (state.attachments.rows || []).filter(row => row && row.eligible === true).length;
+  }
+
+  function attachmentContextMatches(emailUid) {
+    const clean = String(emailUid || '').trim();
+    return clean !== '' && String(state.attachments.emailUid || '') === clean;
+  }
+
+  function clearAttachmentPollTimers() {
+    state.attachmentPollTimers.forEach(timer => {
+      if (timer) window.clearInterval(timer);
+    });
+    state.attachmentPollTimers.clear();
+  }
+
+  function resetAttachmentState() {
+    clearAttachmentPollTimers();
+    state.attachments.seq += 1;
+    state.attachments.emailUid = '';
+    state.attachments.mailboxId = '';
+    state.attachments.flowContext = '';
+    state.attachments.messageRevision = '';
+    state.attachments.listState = 'idle';
+    state.attachments.listError = '';
+    state.attachments.listErrorCode = '';
+    state.attachments.listErrorAction = '';
+    state.attachments.rows = [];
+    state.attachments.expanded = false;
+    state.attachments.detailView = 'files';
+    state.attachments.propertiesRef = '';
+    state.attachments.propertiesLoading = false;
+    state.attachments.propertiesError = '';
+    state.attachments.propertiesData = null;
+    state.attachments.propertiesInvoker = null;
+    state.attachmentChecks.clear();
+  }
+
+  function attachmentListErrorAction(code) {
+    const clean = String(code || '').trim();
+    if (['policy_blocked', 'policy_block', 'blocked'].includes(clean)) return 'blocked';
+    if (['not_found', '404'].includes(clean)) return 'not-found';
+    return 'retry';
+  }
+
+  async function loadAttachments({ force = false } = {}) {
+    const uid = activeMessageUid();
+    if (!uid) {
+      resetAttachmentState();
+      renderAttachments();
+      return;
+    }
+    if (!force && attachmentContextMatches(uid) && state.attachments.listState !== 'idle') {
+      renderAttachments();
+      return;
+    }
+    const seq = state.attachments.seq + 1;
+    state.attachments.seq = seq;
+    clearAttachmentPollTimers();
+    state.attachmentChecks.clear();
+    state.attachments.emailUid = uid;
+    state.attachments.mailboxId = String(state.mailbox?.mailbox_id || state.mailbox?.id || '').trim();
+    state.attachments.flowContext = '';
+    state.attachments.messageRevision = '';
+    state.attachments.rows = [];
+    state.attachments.listState = 'loading';
+    state.attachments.listError = '';
+    state.attachments.listErrorCode = '';
+    state.attachments.listErrorAction = '';
+    state.attachments.propertiesRef = '';
+    state.attachments.propertiesLoading = false;
+    state.attachments.propertiesError = '';
+    state.attachments.propertiesData = null;
+    renderAttachments();
+    try {
+      const data = await fetchJson(attachmentsEndpoint(uid, '', state.attachments.mailboxId));
+      if (seq !== state.attachments.seq) return;
+      state.attachments.flowContext = String(data?.flow_context || '').trim();
+      state.attachments.messageRevision = String(data?.message_revision || '').trim();
+      state.attachments.rows = Array.isArray(data?.attachments) ? data.attachments : [];
+      state.attachments.listState = 'ready';
+      state.attachments.listError = '';
+      state.attachments.listErrorCode = '';
+      state.attachments.listErrorAction = '';
+      renderAttachments();
+    } catch (error) {
+      if (seq !== state.attachments.seq) return;
+      state.attachments.listState = 'error';
+      state.attachments.listError = error?.message || String(error);
+      state.attachments.listErrorCode = String(error?.code || '');
+      state.attachments.listErrorAction = attachmentListErrorAction(state.attachments.listErrorCode);
+      renderAttachments();
+    }
+  }
+
+  function attachmentRowStatus(row) {
+    const ref = String(row?.attachment_ref || '').trim();
+    const check = attachmentCheckState(ref);
+    if (check && check.state) return check;
+    return {
+      state: row?.eligible === true ? 'unchecked' : 'ineligible',
+      reason_code: row?.reason_code || '',
+      check_id: '',
+      coverage: 'not_run',
+      verdict: '',
+      verdict_detail: '',
+      byte_count: row?.byte_count ?? null,
+      detected_type: row?.detected_type || '',
+      download_filename: row?.download_filename || '',
+      release_token: '',
+      release_expires_at: '',
+      release_claimed_at: '',
+      release_error: '',
+      release_error_code: '',
+      release_action: '',
+    };
+  }
+
+  function attachmentCoverageClean(coverage) {
+    const clean = String(coverage || '').toLowerCase();
+    return clean === 'complete_clean';
+  }
+
+  function attachmentStatusTone(status) {
+    const state = String(status?.state || '').toLowerCase();
+    if (state === 'ready') {
+      return attachmentCoverageClean(status.coverage) ? 'green' : 'red';
+    }
+    if (['blocked', 'failed', 'expired'].includes(state)) return 'red';
+    if (['checking', 'queued'].includes(state)) return 'amber';
+    if (state === 'unchecked') return 'amber';
+    if (state === 'released') return 'dim';
+    if (state === 'ineligible') return 'dim';
+    return 'dim';
+  }
+
+  function attachmentStatusLabel(status) {
+    const state = String(status?.state || '').toLowerCase();
+    switch (state) {
+      case 'ready':
+        return attachmentCoverageClean(status.coverage) ? 'Ready to save' : 'Infected';
+      case 'blocked': return 'Blocked';
+      case 'failed': return 'Check failed';
+      case 'expired': return 'Expired';
+      case 'checking': return 'Checking…';
+      case 'queued': return 'Queued';
+      case 'unchecked': return 'Not checked';
+      case 'released': return 'Released';
+      case 'ineligible': return 'Not eligible';
+      default: return state ? state : 'Unknown';
+    }
+  }
+
+  function attachmentStatusGlyph(tone) {
+    switch (tone) {
+      case 'green': return '✓';
+      case 'red': return '✕';
+      case 'amber': return '…';
+      default: return '·';
+    }
+  }
+
+  function attachmentReasonLabel(code) {
+    const clean = String(code || '').trim();
+    if (!clean) return '';
+    if (clean === 'inline_part') return 'inline part';
+    if (clean === 'nested_message') return 'nested message';
+    if (clean === 'too_large') return 'too large';
+    if (clean === 'unsupported_type') return 'unsupported type';
+    if (clean === 'policy_blocked') return 'policy blocked';
+    return clean;
+  }
+
+  function formatAttachmentBytes(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num) || num < 0) return '—';
+    if (num < 1024) return `${num} B`;
+    if (num < 1024 * 1024) return `${(num / 1024).toFixed(1)} KiB`;
+    return `${(num / (1024 * 1024)).toFixed(1)} MiB`;
+  }
+
+  function attachmentDetailRowHtml(row) {
+    const ref = String(row?.attachment_ref || '').trim();
+    const status = attachmentRowStatus(row);
+    const tone = attachmentStatusTone(status);
+    const glyph = attachmentStatusGlyph(tone);
+    const name = String(row?.display_name || 'attachment');
+    const size = formatAttachmentBytes(status.byte_count ?? row?.byte_count);
+    const type = String(row?.declared_type || status.detected_type || '');
+    const reason = attachmentReasonLabel(row?.reason_code || status.reason_code);
+    const canDownload = status.state === 'ready' && attachmentCoverageClean(status.coverage);
+    const canCheck = row?.eligible === true && !['checking', 'queued'].includes(status.state);
+    const checking = ['checking', 'queued'].includes(status.state);
+    return `
+      <li class="email-attachment-row" data-email-attachment-row="${escHtml(ref)}" data-tone="${escHtml(tone)}">
+        <span class="email-attachment-status" aria-hidden="true">${glyph}</span>
+        <span class="email-attachment-actions">
+          <button type="button" class="email-attachment-btn" data-email-attachment-check="${escHtml(ref)}" ${canCheck ? '' : 'disabled'} aria-label="Check ${escHtml(name)}">Check</button>
+          <button type="button" class="email-attachment-btn" data-email-attachment-download="${escHtml(ref)}" ${canDownload ? '' : 'disabled'} aria-label="Download ${escHtml(name)}">Download</button>
+          <button type="button" class="email-attachment-btn" data-email-attachment-properties="${escHtml(ref)}" aria-label="Properties for ${escHtml(name)}">Properties</button>
+        </span>
+        <span class="email-attachment-name" title="${escHtml(name)}">${escHtml(name)}</span>
+        <span class="email-attachment-meta">${escHtml(size)}${type ? ` · ${escHtml(type)}` : ''}${reason ? ` · ${escHtml(reason)}` : ''}</span>
+      </li>
+    `;
+  }
+
+  function attachmentListHtml() {
+    const a = state.attachments;
+    if (a.listState === 'loading') {
+      return `<div class="email-attachment-state" data-tone="amber"><span class="email-attachment-state__glyph" aria-hidden="true">…</span><span>Loading attachments…</span></div>`;
+    }
+    if (a.listState === 'error') {
+      const action = a.listErrorAction === 'blocked' ? 'Policy block' : a.listErrorAction === 'not-found' ? 'Not available' : 'List failed';
+      const retry = a.listErrorAction === 'retry'
+        ? `<button type="button" class="email-attachment-btn" data-email-attachment-retry-list>Retry</button>`
+        : '';
+      return `
+        <div class="email-attachment-state" data-tone="red">
+          <span class="email-attachment-state__glyph" aria-hidden="true">✕</span>
+          <span>${escHtml(action)}: ${escHtml(a.listError || 'unknown error')}</span>
+          ${retry}
+        </div>
+      `;
+    }
+    if (a.listState === 'ready') {
+      const rows = a.rows || [];
+      if (!rows.length) {
+        return `<div class="email-attachment-state" data-tone="dim"><span class="email-attachment-state__glyph" aria-hidden="true">·</span><span>No attachments in this message.</span></div>`;
+      }
+      return `<ul class="email-attachment-list" role="list">${rows.map(attachmentDetailRowHtml).join('')}</ul>`;
+    }
+    return '';
+  }
+
+  function attachmentDisclosureHtml() {
+    const a = state.attachments;
+    const uid = activeMessageUid();
+    if (!uid) return '';
+    const eligible = attachmentEligibleCount();
+    if (a.listState !== 'ready' && a.listState !== 'error') {
+      return `
+        <div class="email-attachments" data-email-attachments data-state="${escHtml(a.listState)}">
+          <button type="button" class="email-attachments__toggle" data-email-attachments-toggle aria-expanded="false" disabled>
+            <span class="email-attachments__label">Attachments</span>
+            <span class="email-attachments__count" aria-hidden="true">…</span>
+            <span class="email-attachments__chevron" aria-hidden="true">▾</span>
+          </button>
+        </div>
+      `;
+    }
+    if (a.listState === 'ready' && eligible === 0) {
+      return '';
+    }
+    const count = eligible > 0 ? eligible : (a.rows || []).length;
+    const expanded = a.expanded;
+    return `
+      <div class="email-attachments" data-email-attachments data-state="${escHtml(a.listState)}">
+        <button type="button" class="email-attachments__toggle" data-email-attachments-toggle aria-expanded="${expanded ? 'true' : 'false'}">
+          <span class="email-attachments__label">Attachments</span>
+          <span class="email-attachments__count" aria-hidden="true">${count}</span>
+          <span class="email-attachments__chevron" aria-hidden="true">▾</span>
+        </button>
+        <div class="email-attachments__panel" ${expanded ? '' : 'hidden'}>
+          ${attachmentListHtml()}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderAttachments() {
+    const host = el('email-attachments-host');
+    if (!host) return;
+    const html = attachmentDisclosureHtml();
+    if (host.innerHTML !== html) host.innerHTML = html;
+    renderSecondaryPanels();
+    renderUltrawide();
+  }
+
+  function toggleAttachmentsDisclosure() {
+    state.attachments.expanded = !state.attachments.expanded;
+    renderAttachments();
+    if (state.attachments.expanded) {
+      const first = document.querySelector('[data-email-attachments] [data-email-attachment-check], [data-email-attachments] [data-email-attachment-download], [data-email-attachments] [data-email-attachment-properties]');
+      first?.focus?.({ preventScroll: true });
+    }
+  }
+
+  function attachmentDetailHtml() {
+    const a = state.attachments;
+    const view = a.detailView === 'clamav' ? 'clamav' : 'files';
+    if (view === 'clamav') {
+      return attachmentClamavHtml();
+    }
+    return attachmentListHtml();
+  }
+
+  function attachmentDropdownHtml(layout = 'secondary', options = {}) {
+    const active = state.secondaryTab === 'attachments';
+    const activateAttachments = options.activateAttachments !== false;
+    const placement = options.placement || (activateAttachments ? 'tab' : 'toolbar');
+    const view = state.attachments.detailView === 'clamav' ? 'clamav' : 'files';
+    const label = activateAttachments ? 'Attachments' : (view === 'clamav' ? 'ClamAV' : 'Attachments');
+    const primaryAttrs = activateAttachments
+      ? `data-email-secondary-tab="attachments" data-active="${active ? 'true' : 'false'}" data-email-secondary-layout="${escHtml(layout)}"`
+      : 'aria-label="Choose attachment view" aria-haspopup="menu" aria-expanded="false" data-email-attachment-menu-toggle';
+    return `
+      <div class="email-attachment-tab-dropdown email-folder-tab-dropdown" data-email-attachment-dropdown data-email-attachment-placement="${escHtml(placement)}" data-active="${active ? 'true' : 'false'}" data-email-secondary-layout="${escHtml(layout)}">
+        <div class="email-folder-tab-split">
+          <button class="email-folder-tab email-folder-tab--primary" type="button" ${primaryAttrs}>
+            <span data-email-attachment-tab-label>${escHtml(label)}</span>
+          </button>
+          <button class="email-folder-tab-caret" type="button" aria-label="Choose attachment view" aria-haspopup="menu" aria-expanded="false" data-email-attachment-menu-toggle>
+            <span class="menu-editor-icon menu-editor-icon--chevron-down" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div class="email-folder-tab-menu" role="menu">
+          <button class="email-folder-tab-menu__item" type="button" role="menuitemradio" aria-checked="${view === 'files' ? 'true' : 'false'}" data-email-attachment-view-option="files">Attachments</button>
+          <button class="email-folder-tab-menu__item" type="button" role="menuitemradio" aria-checked="${view === 'clamav' ? 'true' : 'false'}" data-email-attachment-view-option="clamav">ClamAV</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function attachmentTabDropdownHtml(layout = 'secondary') {
+    return attachmentDropdownHtml(layout, { activateAttachments: true, placement: 'tab' });
+  }
+
+  function attachmentViewToolbarDropdownHtml(layout = 'ultrawide') {
+    return attachmentDropdownHtml(layout, { activateAttachments: false, placement: 'toolbar' });
+  }
+
+  function closeAttachmentMenus(except = null) {
+    document.querySelectorAll('[data-email-attachment-dropdown].open').forEach(dropdown => {
+      if (except && dropdown === except) return;
+      dropdown.classList.remove('open');
+      dropdown.querySelectorAll('[data-email-attachment-menu-toggle]').forEach(button => {
+        button.setAttribute('aria-expanded', 'false');
+      });
+    });
+  }
+
+  function toggleAttachmentMenu(button) {
+    const dropdown = button?.closest?.('[data-email-attachment-dropdown]');
+    if (!dropdown || button.disabled) return false;
+    const nextOpen = !dropdown.classList.contains('open');
+    closeFolderMenus();
+    closeSearchModeMenus();
+    closeTrustedViewMenus();
+    closeRulesToolMenus();
+    closeAttachmentMenus(dropdown);
+    dropdown.classList.toggle('open', nextOpen);
+    dropdown.querySelectorAll('[data-email-attachment-menu-toggle]').forEach(toggle => {
+      toggle.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+    });
+    return true;
+  }
+
+  function attachmentClamavHtml() {
+    return `
+      <div class="email-attachment-state" data-tone="amber">
+        <span class="email-attachment-state__glyph" aria-hidden="true">…</span>
+        <span>ClamAV installation details are coming soon. A backend status endpoint (database version, latest signature update, scanner health) is pending; this view will surface that information once it is available.</span>
+      </div>
+    `;
+  }
+
+  function attachmentPropertiesHtml() {
+    const a = state.attachments;
+    const ref = a.propertiesRef;
+    const row = attachmentRowByIdentifier(ref);
+    if (!row) {
+      return `<div class="email-attachment-state" data-tone="dim"><span class="email-attachment-state__glyph" aria-hidden="true">·</span><span>Select an attachment to view properties.</span></div>`;
+    }
+    if (a.propertiesLoading) {
+      return `<div class="email-attachment-state" data-tone="amber"><span class="email-attachment-state__glyph" aria-hidden="true">…</span><span>Loading properties…</span></div>`;
+    }
+    if (a.propertiesError) {
+      return `
+        <div class="email-attachment-state" data-tone="red">
+          <span class="email-attachment-state__glyph" aria-hidden="true">✕</span>
+          <span>${escHtml(a.propertiesError)}</span>
+          <button type="button" class="email-attachment-btn" data-email-attachment-properties-retry="${escHtml(ref)}">Retry</button>
+        </div>
+      `;
+    }
+    const data = a.propertiesData || {};
+    const status = attachmentRowStatus(row);
+    const tone = attachmentStatusTone(status);
+    const label = attachmentStatusLabel(status);
+    const kv = (key, value) => `
+      <div class="email-kv-row">
+        <span class="email-kv-key">${escHtml(key)}</span>
+        <span class="email-kv-value">${escHtml(value ?? '—')}</span>
+      </div>
+    `;
+    return `
+      <div class="email-attachment-properties" data-tone="${escHtml(tone)}">
+        <div class="email-attachment-properties__name">${escHtml(String(row.display_name || 'attachment'))}</div>
+        <div class="email-kv">
+          ${kv('Status', label)}
+          ${kv('Declared type', row.declared_type || data.declared_type || '—')}
+          ${kv('Detected type', data.detected_type || status.detected_type || '—')}
+          ${kv('Size', formatAttachmentBytes(data.byte_count ?? status.byte_count ?? row.byte_count))}
+          ${kv('Download filename', data.download_filename || status.download_filename || '—')}
+          ${kv('Verdict', status.verdict || '—')}
+          ${kv('Verdict detail', status.verdict_detail || '—')}
+          ${kv('Check ID', status.check_id || '—')}
+          ${kv('Ordinal', row.ordinal ?? '—')}
+        </div>
+      </div>
+    `;
+  }
+
+  async function openAttachmentProperties(ref, invoker = null) {
+    const clean = String(ref || '').trim();
+    if (!clean) return;
+    if (!attachmentContextMatches(activeMessageUid())) return;
+    state.attachments.propertiesRef = clean;
+    state.attachments.propertiesLoading = true;
+    state.attachments.propertiesError = '';
+    state.attachments.propertiesData = null;
+    state.attachments.propertiesInvoker = invoker;
+    renderAttachmentPropertiesDialog();
+    try {
+      const data = await fetchJson(
+        attachmentsEndpoint(state.attachments.emailUid, `/${encodeURIComponent(clean)}`, state.attachments.mailboxId),
+        { headers: attachmentHeaders(state.attachments.flowContext) },
+      );
+      if (!attachmentContextMatches(activeMessageUid()) || state.attachments.propertiesRef !== clean) return;
+      state.attachments.propertiesLoading = false;
+      state.attachments.propertiesData = data;
+      renderAttachmentPropertiesDialog();
+    } catch (error) {
+      if (!attachmentContextMatches(activeMessageUid()) || state.attachments.propertiesRef !== clean) return;
+      state.attachments.propertiesLoading = false;
+      state.attachments.propertiesError = error?.message || String(error);
+      renderAttachmentPropertiesDialog();
+    }
+  }
+
+  function renderAttachmentPropertiesDialog() {
+    const body = el('email-attachment-properties-body');
+    if (!body) return;
+    body.innerHTML = attachmentPropertiesHtml();
+  }
+
+  function openAttachmentPropertiesModal() {
+    const modal = el('email-attachment-properties-modal');
+    if (!modal) return false;
+    renderAttachmentPropertiesDialog();
+    if (typeof HubModal !== 'undefined') HubModal.open(modal, { onClose: () => { state.attachments.propertiesInvoker = null; } });
+    else if (typeof modal.showModal === 'function' && !modal.open) modal.showModal();
+    return true;
+  }
+
+  function closeAttachmentPropertiesModal() {
+    const modal = el('email-attachment-properties-modal');
+    if (!modal) return;
+    state.attachments.propertiesInvoker = null;
+    if (typeof HubModal !== 'undefined') HubModal.close(modal);
+    else if (typeof modal.close === 'function') modal.close();
+  }
+
+  function setAttachmentDetailView(view) {
+    state.attachments.detailView = view === 'clamav' ? 'clamav' : 'files';
+    state.secondaryTab = 'attachments';
+    renderAttachments();
+  }
+
+  function attachmentCheckRecord(ref) {
+    const clean = String(ref || '').trim();
+    let record = state.attachmentChecks.get(clean);
+    if (!record) {
+      record = {
+        state: 'unchecked',
+        reason_code: '',
+        check_id: '',
+        coverage: 'not_run',
+        verdict: '',
+        verdict_detail: '',
+        byte_count: null,
+        detected_type: '',
+        download_filename: '',
+        release_token: '',
+        release_expires_at: '',
+        release_claimed_at: '',
+        release_error: '',
+        release_error_code: '',
+        release_action: '',
+      };
+      state.attachmentChecks.set(clean, record);
+    }
+    return record;
+  }
+
+  function applyCheckPayload(record, payload) {
+    if (!payload || typeof payload !== 'object') return;
+    if (payload.state) record.state = String(payload.state);
+    if (payload.check_id) record.check_id = String(payload.check_id);
+    if (payload.coverage) record.coverage = String(payload.coverage);
+    if (payload.verdict) record.verdict = String(payload.verdict);
+    if (payload.verdict_detail) record.verdict_detail = String(payload.verdict_detail);
+    if (payload.byte_count !== undefined) record.byte_count = payload.byte_count;
+    if (payload.detected_type) record.detected_type = String(payload.detected_type);
+    if (payload.download_filename) record.download_filename = String(payload.download_filename);
+    if (payload.release_token) record.release_token = String(payload.release_token);
+    if (payload.release_expires_at) record.release_expires_at = String(payload.release_expires_at);
+    if (payload.release_claimed_at) record.release_claimed_at = String(payload.release_claimed_at);
+    if (payload.release_error) record.release_error = String(payload.release_error);
+    if (payload.release_error_code) record.release_error_code = String(payload.release_error_code);
+    if (payload.release_action) record.release_action = String(payload.release_action);
+  }
+
+  function stopAttachmentPoll(ref) {
+    const clean = String(ref || '').trim();
+    const timer = state.attachmentPollTimers.get(clean);
+    if (timer) {
+      window.clearInterval(timer);
+      state.attachmentPollTimers.delete(clean);
+    }
+  }
+
+  function startAttachmentPoll(ref) {
+    const clean = String(ref || '').trim();
+    if (!clean) return;
+    stopAttachmentPoll(clean);
+    const timer = window.setInterval(async () => {
+      const record = attachmentCheckState(clean);
+      if (!record || !record.check_id) {
+        stopAttachmentPoll(clean);
+        return;
+      }
+      if (!attachmentContextMatches(activeMessageUid())) {
+        stopAttachmentPoll(clean);
+        return;
+      }
+      if (['ready', 'blocked', 'failed', 'expired'].includes(record.state)) {
+        stopAttachmentPoll(clean);
+        return;
+      }
+      try {
+        const data = await fetchJson(
+          attachmentsEndpoint(state.attachments.emailUid, `/${encodeURIComponent(clean)}/checks/${encodeURIComponent(record.check_id)}`, state.attachments.mailboxId),
+          { headers: attachmentHeaders(state.attachments.flowContext) },
+        );
+        if (!attachmentContextMatches(activeMessageUid())) {
+          stopAttachmentPoll(clean);
+          return;
+        }
+        applyCheckPayload(record, data);
+        renderAttachments();
+        if (['ready', 'blocked', 'failed', 'expired'].includes(record.state)) {
+          stopAttachmentPoll(clean);
+        }
+      } catch (error) {
+        if (String(error?.message || '').includes('404') || String(error?.code || '') === '404') {
+          stopAttachmentPoll(clean);
+        }
+      }
+    }, 1500);
+    state.attachmentPollTimers.set(clean, timer);
+  }
+
+  async function runAttachmentCheck(ref) {
+    const clean = String(ref || '').trim();
+    if (!clean) return;
+    if (!attachmentContextMatches(activeMessageUid())) return;
+    const a = state.attachments;
+    if (!a.flowContext || !a.messageRevision) {
+      renderAttachments();
+      return;
+    }
+    const record = attachmentCheckRecord(clean);
+    if (['checking', 'queued'].includes(record.state)) return;
+    record.state = 'checking';
+    record.release_error = '';
+    record.release_error_code = '';
+    record.release_action = '';
+    renderAttachments();
+    try {
+      const data = await fetchJson(
+        attachmentsEndpoint(a.emailUid, `/${encodeURIComponent(clean)}/checks`, a.mailboxId),
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...attachmentHeaders(a.flowContext),
+          },
+          body: JSON.stringify({
+            message_revision: a.messageRevision,
+            idempotency_key: newIdempotencyKey(),
+          }),
+        },
+      );
+      if (!attachmentContextMatches(activeMessageUid())) return;
+      applyCheckPayload(record, data);
+      renderAttachments();
+      if (['ready', 'blocked', 'failed', 'expired'].includes(record.state)) {
+        stopAttachmentPoll(clean);
+      } else {
+        startAttachmentPoll(clean);
+      }
+    } catch (error) {
+      if (!attachmentContextMatches(activeMessageUid())) return;
+      record.state = 'failed';
+      record.verdict_detail = error?.message || String(error);
+      renderAttachments();
+    }
+  }
+
+  function attachmentSaveBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
+  async function downloadAttachment(ref) {
+    const clean = String(ref || '').trim();
+    if (!clean) return;
+    if (!attachmentContextMatches(activeMessageUid())) return;
+    const a = state.attachments;
+    const record = attachmentCheckState(clean);
+    if (!record || !record.check_id) {
+      renderAttachments();
+      return;
+    }
+    if (record.state !== 'ready' || !attachmentCoverageClean(record.coverage)) {
+      renderAttachments();
+      return;
+    }
+    record.state = 'checking';
+    record.release_error = '';
+    record.release_error_code = '';
+    record.release_action = '';
+    renderAttachments();
+    try {
+      const response = await fetcher()(
+        attachmentsEndpoint(a.emailUid, `/${encodeURIComponent(clean)}/checks/${encodeURIComponent(record.check_id)}/download`, a.mailboxId),
+        { method: 'POST', headers: attachmentHeaders(a.flowContext) },
+      );
+      if (!attachmentContextMatches(activeMessageUid())) return;
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        const code = String(payload?.code || response.status);
+        record.state = 'failed';
+        record.release_error = payload?.detail?.message || payload?.message || `HTTP ${response.status}`;
+        record.release_error_code = code;
+        record.release_action = attachmentListErrorAction(code);
+        renderAttachments();
+        return;
+      }
+      const blob = await response.blob();
+      if (!attachmentContextMatches(activeMessageUid())) return;
+      const filename = record.download_filename || String(attachmentRowByIdentifier(clean)?.display_name || 'attachment');
+      attachmentSaveBlob(blob, filename);
+      record.state = 'released';
+      record.release_token = '';
+      record.release_expires_at = '';
+      record.release_claimed_at = '';
+      renderAttachments();
+    } catch (error) {
+      if (!attachmentContextMatches(activeMessageUid())) return;
+      record.state = 'failed';
+      record.release_error = error?.message || String(error);
+      record.release_action = 'retry';
+      renderAttachments();
+    }
   }
 
   function messageActionsEndpoint(uid, options = {}) {
@@ -6423,6 +7168,8 @@ const EmailPage = (() => {
           ? trustedTabDropdownHtml(layout)
         : id === 'rules' && layout !== 'ultrawide'
           ? rulesTabDropdownHtml(layout)
+        : id === 'attachments' && layout !== 'ultrawide'
+          ? attachmentTabDropdownHtml(layout)
         : secondaryTabButtonHtml(id, label, layout)
     )).join('');
   }
@@ -7917,6 +8664,7 @@ const EmailPage = (() => {
     if (state.secondaryTab === 'trusted') return trustedSendersHtml();
     if (state.secondaryTab === 'search') return emailSearchHtml();
     if (state.secondaryTab === 'rules') return rulesPanelHtml();
+    if (state.secondaryTab === 'attachments') return attachmentDetailHtml();
     return foldersHtml();
   }
 
@@ -8448,6 +9196,7 @@ const EmailPage = (() => {
         renderSecondaryPanels();
         setStatus('Local email loaded', 'ok');
         renderOpenedMessageSecurityProgress();
+        loadAttachments();
         recordMessageTiming({
           uid: emailUid,
           source: 'browser-cache',
@@ -8487,6 +9236,7 @@ const EmailPage = (() => {
           renderSecondaryPanels();
           setStatus('Local email loaded', 'ok');
           renderOpenedMessageSecurityProgress();
+          loadAttachments();
           recordMessageTiming({
             uid: emailUid,
             source: 'browser-prefetch',
@@ -8521,6 +9271,7 @@ const EmailPage = (() => {
       renderSecondaryPanels();
       setStatus('Local email loaded', 'ok');
       renderOpenedMessageSecurityProgress();
+      loadAttachments();
       recordMessageTiming({
         uid: emailUid,
         source: 'api',
@@ -9485,6 +10236,56 @@ const EmailPage = (() => {
         handleAction(actionBtn.dataset.emailAction);
         return;
       }
+      const attachmentsToggle = target.closest?.('[data-email-attachments-toggle]');
+      if (attachmentsToggle) {
+        event.preventDefault();
+        toggleAttachmentsDisclosure();
+        return;
+      }
+      const attachmentCheck = target.closest?.('[data-email-attachment-check]');
+      if (attachmentCheck) {
+        event.preventDefault();
+        runAttachmentCheck(attachmentCheck.dataset.emailAttachmentCheck || '');
+        return;
+      }
+      const attachmentDownload = target.closest?.('[data-email-attachment-download]');
+      if (attachmentDownload) {
+        event.preventDefault();
+        downloadAttachment(attachmentDownload.dataset.emailAttachmentDownload || '');
+        return;
+      }
+      const attachmentProperties = target.closest?.('[data-email-attachment-properties]');
+      if (attachmentProperties) {
+        event.preventDefault();
+        openAttachmentProperties(attachmentProperties.dataset.emailAttachmentProperties || '', attachmentProperties);
+        openAttachmentPropertiesModal();
+        return;
+      }
+      const attachmentPropertiesRetry = target.closest?.('[data-email-attachment-properties-retry]');
+      if (attachmentPropertiesRetry) {
+        event.preventDefault();
+        openAttachmentProperties(attachmentPropertiesRetry.dataset.emailAttachmentPropertiesRetry || '');
+        return;
+      }
+      const attachmentMenuToggle = target.closest?.('[data-email-attachment-menu-toggle]');
+      if (attachmentMenuToggle) {
+        event.preventDefault();
+        toggleAttachmentMenu(attachmentMenuToggle);
+        return;
+      }
+      const attachmentViewOption = target.closest?.('[data-email-attachment-view-option]');
+      if (attachmentViewOption) {
+        event.preventDefault();
+        closeAttachmentMenus();
+        setAttachmentDetailView(attachmentViewOption.dataset.emailAttachmentViewOption || 'files');
+        return;
+      }
+      const attachmentRetryList = target.closest?.('[data-email-attachment-retry-list]');
+      if (attachmentRetryList) {
+        event.preventDefault();
+        loadAttachments({ force: true });
+        return;
+      }
       const securitySegment = target.closest?.('[data-email-security-segment]');
       if (securitySegment) {
         event.preventDefault();
@@ -9820,6 +10621,7 @@ const EmailPage = (() => {
       if (!target.closest?.('[data-email-search-mode-dropdown]')) closeSearchModeMenus();
       if (!target.closest?.('[data-email-trusted-view-dropdown]')) closeTrustedViewMenus();
       if (!target.closest?.('[data-email-rules-tool-dropdown]')) closeRulesToolMenus();
+      if (!target.closest?.('[data-email-attachment-dropdown]')) closeAttachmentMenus();
       if (!target.closest?.('[data-email-catalog-picker]')) closeSchedulerCatalogPickers();
     });
     document.addEventListener('change', event => {
@@ -10118,6 +10920,10 @@ const EmailPage = (() => {
     ['email-audit-ledger-modal-close', 'email-audit-ledger-modal-footer-close'].forEach(id => {
       const btn = el(id);
       if (btn) btn.addEventListener('click', closeAuditLedgerModal);
+    });
+    ['email-attachment-properties-modal-close', 'email-attachment-properties-modal-footer-close'].forEach(id => {
+      const btn = el(id);
+      if (btn) btn.addEventListener('click', closeAttachmentPropertiesModal);
     });
     const securitySegmentModal = el('email-security-segment-modal');
     if (securitySegmentModal) {
