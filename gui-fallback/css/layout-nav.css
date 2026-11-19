@@ -118,7 +118,7 @@ h2 { font-size: 13px; font-weight: 600; text-transform: uppercase;
     content: '';
     position: absolute;
     top: 12px;
-    left: 50%;
+    left: calc(50% + 2px);
     width: 4px;
     height: 36px;
     transform: translateX(-50%);
