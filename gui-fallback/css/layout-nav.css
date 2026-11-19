@@ -117,17 +117,20 @@ h2 { font-size: 13px; font-weight: 600; text-transform: uppercase;
   .ultrawide-splitter::before {
     content: '';
     position: absolute;
-    top: 0;
-    bottom: 0;
+    top: 12px;
     left: 50%;
+    width: 4px;
+    height: 36px;
     transform: translateX(-50%);
-    border-left: 1px solid rgba(123, 130, 160, 0.42);
+    border-radius: 2px;
+    background: rgba(var(--hub-accent-rgb), 0.6);
+    transition: background 0.2s ease, height 0.2s ease;
   }
 
   .ultrawide-splitter:hover::before,
   .is-dragging-ultrawide-splitter .ultrawide-splitter::before {
-    border-left-color: var(--accent);
-    box-shadow: 0 0 0 1px rgba(91, 156, 246, 0.16);
+    background: rgba(var(--hub-accent-rgb), 1.0);
+    height: 52px;
   }
 
   body.shade-is-up .ultrawide-sidecar {
