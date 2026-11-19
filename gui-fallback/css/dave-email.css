@@ -2408,6 +2408,21 @@ dialog.hub-modal.email-audit-ledger-modal[open] {
     overflow: hidden;
     padding-bottom: var(--ultrawide-gap, 10px);
   }
+
+  /* Landscape + portrait: let the main surface fill its grid row so the email
+     panels reach the bottom of the workspace instead of leaving a content-sized
+     gap. In portrait the surface only fills its own 1fr row, so the bottom-panel
+     shade handle and under-panel (and their splitter) are untouched. */
+  #tab-email.active .email-main-surface {
+    height: 100%;
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  #tab-email.active .email-main-surface > .email-list-panel,
+  #tab-email.active .email-main-surface > .email-message-panel {
+    height: 100%;
+  }
 }
 
 @media (min-width: 821px) and (orientation: portrait) {
@@ -2444,8 +2459,26 @@ dialog.hub-modal.email-audit-ledger-modal[open] {
 }
 
 @media (min-width: 2400px) and (max-height: 1280px) {
+  /* Ultrawide: the secondary under-panel and local shade handle are hidden, so
+     collapse the body to a single fill row and let the main surface stretch to
+     the bottom of the workspace. This aligns the email panels' bottom edge with
+     the ultrawide sidecar (matching the Diary/Kanban fill behaviour) instead of
+     leaving a content-sized gap. */
+  #tab-email.active > .tab-scroll-shell > .email-page--body {
+    grid-template-rows: minmax(0, 1fr);
+    padding-bottom: var(--ultrawide-gap, 10px);
+  }
+
   #tab-email.active .email-main-surface {
     grid-template-columns: minmax(300px, 420px) minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  #tab-email.active .email-main-surface > .email-list-panel,
+  #tab-email.active .email-main-surface > .email-message-panel {
+    height: 100%;
   }
 
   #tab-email.active.email-list-collapsed .email-main-surface {
