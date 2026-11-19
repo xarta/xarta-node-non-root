@@ -293,6 +293,7 @@ const EmailPage = (() => {
       propertiesError: '',
       propertiesData: null,
       propertiesInvoker: null,
+      scannerStatus: { state: 'idle', data: null, error: '' },
     },
     attachmentChecks: new Map(),
     attachmentPollTimers: new Map(),
@@ -1405,11 +1406,96 @@ const EmailPage = (() => {
     return true;
   }
 
+  function scannerStatusLocalDateTime(value) {
+    if (!value) return '';
+    const formatter = auditLedgerLocalFormatter();
+    if (!formatter) return String(value);
+    try {
+      return formatter.format(new Date(value));
+    } catch {
+      return String(value);
+    }
+  }
+
+  function scannerStatusAgeLabel(seconds) {
+    if (seconds == null || Number.isNaN(seconds)) return '';
+    const s = Math.max(0, Math.floor(seconds));
+    const days = Math.floor(s / 86400);
+    const hours = Math.floor((s % 86400) / 3600);
+    const minutes = Math.floor((s % 3600) / 60);
+    if (days > 0) return `${days}d ${hours}h`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  }
+
+  function scannerStatusTone(state) {
+    if (state === 'ready') return 'green';
+    if (state === 'stale' || state === 'changing') return 'amber';
+    return 'red';
+  }
+
+  function scannerStatusLabel(state) {
+    if (state === 'ready') return 'Ready';
+    if (state === 'stale') return 'Stale';
+    if (state === 'changing') return 'Updating';
+    if (state === 'unavailable') return 'Unavailable';
+    return state;
+  }
+
   function attachmentClamavHtml() {
+    const a = state.attachments;
+    const ss = a.scannerStatus;
+    if (ss.state === 'idle' || ss.state === 'loading') {
+      return `
+        <div class="email-attachment-state" data-tone="amber">
+          <span class="email-attachment-state__glyph" aria-hidden="true">…</span>
+          <span>Loading ClamAV scanner status…</span>
+        </div>
+      `;
+    }
+    if (ss.state === 'error') {
+      return `
+        <div class="email-attachment-state" data-tone="red">
+          <span class="email-attachment-state__glyph" aria-hidden="true">✕</span>
+          <span>Could not load ClamAV scanner status. ${escHtml(ss.error)}</span>
+        </div>
+      `;
+    }
+    const d = ss.data || {};
+    const tone = scannerStatusTone(d.state);
+    const label = scannerStatusLabel(d.state);
+    const glyph = tone === 'green' ? '✓' : tone === 'amber' ? '…' : '✕';
+    const rows = [];
+    rows.push(['Engine version', d.engine_version || '—']);
+    rows.push(['Daily database', d.daily_database_version != null ? `v${d.daily_database_version}` : '—']);
+    if (d.daily_database_published_at) {
+      rows.push(['Database published', scannerStatusLocalDateTime(d.daily_database_published_at)]);
+    }
+    if (d.daily_database_age_seconds != null) {
+      rows.push(['Database age', scannerStatusAgeLabel(d.daily_database_age_seconds)]);
+    }
+    if (d.last_successful_update_check_at) {
+      rows.push(['Last update check', scannerStatusLocalDateTime(d.last_successful_update_check_at)]);
+    }
+    if (d.last_local_daily_install_at) {
+      rows.push(['Last local install', scannerStatusLocalDateTime(d.last_local_daily_install_at)]);
+    }
+    if (d.observed_at) {
+      rows.push(['Observed at', scannerStatusLocalDateTime(d.observed_at)]);
+    }
+    const kv = rows.map(([key, value]) => `
+      <div class="email-kv-row">
+        <span class="email-kv-key">${escHtml(key)}</span>
+        <span class="email-kv-value">${escHtml(value)}</span>
+      </div>
+    `).join('');
     return `
-      <div class="email-attachment-state" data-tone="amber">
-        <span class="email-attachment-state__glyph" aria-hidden="true">…</span>
-        <span>ClamAV installation details are coming soon. A backend status endpoint (database version, latest signature update, scanner health) is pending; this view will surface that information once it is available.</span>
+      <div class="email-attachment-clamav">
+        <div class="email-attachment-state" data-tone="${escHtml(tone)}">
+          <span class="email-attachment-state__glyph" aria-hidden="true">${glyph}</span>
+          <span>ClamAV scanner: ${escHtml(label)}</span>
+        </div>
+        <div class="email-kv">${kv}</div>
       </div>
     `;
   }
@@ -1514,6 +1600,23 @@ const EmailPage = (() => {
   function setAttachmentDetailView(view) {
     state.attachments.detailView = view === 'clamav' ? 'clamav' : 'files';
     state.secondaryTab = 'attachments';
+    renderAttachments();
+    if (state.attachments.detailView === 'clamav') {
+      loadScannerStatus();
+    }
+  }
+
+  async function loadScannerStatus() {
+    const a = state.attachments;
+    if (a.scannerStatus.state === 'loading') return;
+    a.scannerStatus = { state: 'loading', data: null, error: '' };
+    renderAttachments();
+    try {
+      const data = await fetchJson('/api/v1/personal/email/local/attachments/scanner-status');
+      a.scannerStatus = { state: 'ready', data, error: '' };
+    } catch (err) {
+      a.scannerStatus = { state: 'error', data: null, error: String(err?.message || err) };
+    }
     renderAttachments();
   }
 
